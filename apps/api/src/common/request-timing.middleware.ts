@@ -1,5 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 
+import {
+  createRequestPerformance,
+  withRequestPerformance,
+} from '../observability/request-performance.js';
+
 /**
  * Emit one structured `http.request` line per API call (D150, D159).
  *
@@ -34,12 +39,14 @@ import type { NextFunction, Request, Response } from 'express';
  */
 export function requestTimingMiddleware(req: Request, res: Response, next: NextFunction): void {
   const startedAt = process.hrtime.bigint();
+  const performanceContext = createRequestPerformance();
   let emitted = false;
 
   const emit = (): void => {
     // 'finish' and 'close' can both fire; the first one wins.
     if (emitted) return;
     emitted = true;
+    if (performanceContext) performanceContext.closed = true;
 
     const route = routeTemplate(req);
     // Probes are skipped here rather than earlier so the check costs
@@ -62,13 +69,15 @@ export function requestTimingMiddleware(req: Request, res: Response, next: NextF
         // line and the exception line for the same request carry the
         // same uuid under two different keys and will not join.
         cid: req.correlationId ?? null,
+        // Bounded, sampled application read timings. No SQL or mailbox data.
+        ...(performanceContext ? { operations: performanceContext.operations } : {}),
       }),
     );
   };
 
   res.on('finish', emit);
   res.on('close', emit);
-  next();
+  withRequestPerformance(performanceContext, next);
 }
 
 /**

@@ -86,6 +86,26 @@ describe('fetchSenders', () => {
     expect(observed).toEqual(['true', 'not', null, null]);
   });
 
+  it('sends the live Inbox-mail filter only when selected', async () => {
+    const observed: Array<string | null> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          observed.push(url.searchParams.get('has_inbox_mail'));
+          return jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 25 } },
+          });
+        },
+      },
+    ]);
+    await fetchSenders({ hasInboxMail: true });
+    await fetchSenders();
+    expect(observed).toEqual(['true', null]);
+  });
+
   it('omits empty params', async () => {
     let observedUrl: URL | null = null;
     installFetchStub([

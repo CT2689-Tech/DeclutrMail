@@ -101,6 +101,12 @@ describe('pricing points answer engines at its machine-readable twin', () => {
   });
 });
 
+describe('historical changelog visibility', () => {
+  it('keeps the incomplete archive out of search results until release notes catch up', () => {
+    expect(changelog.robots).toEqual({ index: false, follow: true });
+  });
+});
+
 describe('the simulator carries its own share card — playbook G7', () => {
   /**
    * The card is attached by Next's file convention, at a URL carrying a

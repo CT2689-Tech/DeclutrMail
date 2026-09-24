@@ -41,16 +41,10 @@ import type {
  * never read the response body, so they are body-free by construction.
  * Enforced by `privacy-auditor`.
  *
- * QUOTA — D5. Gmail meters 15,000 quota units / user / minute. The local
- * `RateLimiter` is a coarse per-call governor: it already charges the
- * read rate (`UNITS_PER_CALL = 5`) for every request, and we keep that
- * same per-call accounting for the mutation POSTs — each `modify` call
- * and each `batchModify` chunk is one request through the limiter — so
- * the per-mailbox window paces writes the same way it paces reads. (Gmail
- * bills `messages.modify` at 5 and `messages.batchModify` at 50 units
- * server-side; the local governor does not attempt to mirror that finer
- * billing — the 12,000/60,000ms window already runs 20% under Gmail's
- * documented ceiling, per ADR-0005.) A 403 "Quota exceeded" (Gmail's
+ * QUOTA — D5. Reserve the documented cost of each Gmail API method before
+ * calling it. In particular, messages.get now costs 20 units, and
+ * messages.batchModify costs 50; charging every request 5 units makes a
+ * large mailbox outpace Google's per-user budget. A 403 "Quota exceeded" (Gmail's
  * rate-limit signal — it is NOT always a 429) is classified as
  * `RateLimitError` so the worker treats it as retryable throttling, not
  * a generic fault.
@@ -72,8 +66,19 @@ const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const GOOGLE_OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
-/** Quota units charged to the local limiter per request (D5). */
-const UNITS_PER_CALL = 5;
+/** Gmail API method costs (2026-09-10 quota table, D5). */
+const QUOTA_UNITS = {
+  profile: 1,
+  historyList: 2,
+  labelsList: 1,
+  labelsCreate: 5,
+  messagesList: 5,
+  messagesGet: 20,
+  messagesModify: 5,
+  messagesBatchModify: 50,
+  watch: 100,
+  stop: 50,
+} as const;
 /** Gmail caps `messages.batchModify` at 1000 ids per request. */
 const BATCH_MODIFY_MAX_IDS = 1000;
 
@@ -238,12 +243,17 @@ export class GmailClientService
   }
 
   /** Page through every message id in the mailbox (ids only — no bodies). */
-  async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
+  async listMessageIds(pageToken?: string, signal?: AbortSignal): Promise<GmailMessageListPage> {
     const params = new URLSearchParams({ maxResults: String(PAGE_SIZE) });
     if (pageToken) {
       params.set('pageToken', pageToken);
     }
-    const json = await this.get<GmailListResponse>(`/messages?${params.toString()}`, false);
+    const json = await this.get<GmailListResponse>(
+      `/messages?${params.toString()}`,
+      false,
+      QUOTA_UNITS.messagesList,
+      signal,
+    );
     const ids = (json?.messages ?? [])
       .map((m) => m.id)
       .filter((id): id is string => typeof id === 'string');
@@ -255,7 +265,10 @@ export class GmailClientService
    * fetched (D7). Returns `null` when the message no longer exists (404
    * — it was deleted between `messages.list` and this call).
    */
-  async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
+  async getMessageMetadata(
+    messageId: string,
+    signal?: AbortSignal,
+  ): Promise<GmailMessageMetadata | null> {
     const params = new URLSearchParams();
     params.set('format', METADATA_FORMAT);
     for (const header of GMAIL_METADATA_HEADERS) {
@@ -266,6 +279,8 @@ export class GmailClientService
       json = await this.get<GmailGetResponse>(
         `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
         true,
+        QUOTA_UNITS.messagesGet,
+        signal,
       );
     } catch (err) {
       // Gmail cannot render EVERY message in the metadata projection and
@@ -347,11 +362,13 @@ export class GmailClientService
    * plus a fields mask keeps snippets, headers, bodies, and attachment data
    * out of the response entirely.
    */
-  async getMessageLabelIds(messageId: string): Promise<string[] | null> {
+  async getMessageLabelIds(messageId: string, signal?: AbortSignal): Promise<string[] | null> {
     const params = new URLSearchParams({ format: 'minimal', fields: 'id,labelIds' });
     const json = await this.get<GmailGetResponse>(
       `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
       true,
+      QUOTA_UNITS.messagesGet,
+      signal,
     );
     if (json === null) return null;
     return Array.isArray(json.labelIds) ? json.labelIds : [];
@@ -362,8 +379,13 @@ export class GmailClientService
    * `users.getProfile` (D5 — incremental-sync starting cursor for PR-D).
    * Body-free; just the profile resource (email, historyId, totals).
    */
-  async getProfile(): Promise<{ historyId: string }> {
-    const json = await this.get<GmailProfileResponse>('/profile', false);
+  async getProfile(signal?: AbortSignal): Promise<{ historyId: string }> {
+    const json = await this.get<GmailProfileResponse>(
+      '/profile',
+      false,
+      QUOTA_UNITS.profile,
+      signal,
+    );
     if (!json?.historyId) {
       throw new TransientError('Gmail profile response missing historyId');
     }
@@ -386,12 +408,21 @@ export class GmailClientService
    * snapshotting `getProfile()` + scheduling a full re-sync rather
    * than blindly retrying.
    */
-  async listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null> {
+  async listHistory(
+    startHistoryId: string,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<GmailHistoryPage | null> {
     const params = new URLSearchParams({ startHistoryId, maxResults: String(PAGE_SIZE) });
     if (pageToken) {
       params.set('pageToken', pageToken);
     }
-    const json = await this.get<GmailHistoryResponse>(`/history?${params.toString()}`, true);
+    const json = await this.get<GmailHistoryResponse>(
+      `/history?${params.toString()}`,
+      true,
+      QUOTA_UNITS.historyList,
+      signal,
+    );
     if (json === null) {
       // 404 — `startHistoryId` too old. Caller falls back to full re-sync.
       return null;
@@ -461,17 +492,29 @@ export class GmailClientService
    * `BaseDeclutrWorker` classifies retry vs. dead-letter correctly.
    * `allow404` returns `null` instead of throwing.
    */
-  private async get<T>(path: string, allow404: boolean): Promise<T | null> {
-    await this.limiter.acquire(UNITS_PER_CALL);
+  private async get<T>(
+    path: string,
+    allow404: boolean,
+    quotaUnits: number,
+    signal?: AbortSignal,
+  ): Promise<T | null> {
+    signal?.throwIfAborted();
+    if (signal) await this.limiter.acquire(quotaUnits, signal);
+    else await this.limiter.acquire(quotaUnits);
+    signal?.throwIfAborted();
     const token = await this.accessToken();
+    signal?.throwIfAborted();
 
     let res: Response;
     try {
       res = await fetch(`${GMAIL_API_BASE}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+          : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
+      signal?.throwIfAborted();
       // Network failure or request timeout — retryable.
       throw new TransientError(`Gmail request failed: ${errorMessage(err)}`);
     }
@@ -493,8 +536,8 @@ export class GmailClientService
    * response body: a label-modify response carries only ids/labels, none
    * of which we need, and not reading it keeps the call body-free (D7).
    */
-  private async post(path: string, body: unknown): Promise<void> {
-    await this.limiter.acquire(UNITS_PER_CALL);
+  private async post(path: string, body: unknown, quotaUnits: number): Promise<void> {
+    await this.limiter.acquire(quotaUnits);
     const token = await this.accessToken();
 
     let res: Response;
@@ -527,8 +570,8 @@ export class GmailClientService
    * responses carry label metadata (id/name/visibility) — message
    * content cannot appear in a labels resource.
    */
-  private async postJson<T>(path: string, body: unknown): Promise<T> {
-    await this.limiter.acquire(UNITS_PER_CALL);
+  private async postJson<T>(path: string, body: unknown, quotaUnits: number): Promise<T> {
+    await this.limiter.acquire(quotaUnits);
     const token = await this.accessToken();
 
     let res: Response;
@@ -608,10 +651,14 @@ export class GmailClientService
    * call (D5).
    */
   async modifyLabels(messageId: string, change: LabelChange): Promise<void> {
-    await this.post(`/messages/${encodeURIComponent(messageId)}/modify`, {
-      addLabelIds: change.addLabelIds ?? [],
-      removeLabelIds: change.removeLabelIds ?? [],
-    });
+    await this.post(
+      `/messages/${encodeURIComponent(messageId)}/modify`,
+      {
+        addLabelIds: change.addLabelIds ?? [],
+        removeLabelIds: change.removeLabelIds ?? [],
+      },
+      QUOTA_UNITS.messagesModify,
+    );
   }
 
   /**
@@ -626,7 +673,11 @@ export class GmailClientService
     const removeLabelIds = change.removeLabelIds ?? [];
     for (let i = 0; i < messageIds.length; i += BATCH_MODIFY_MAX_IDS) {
       const ids = messageIds.slice(i, i + BATCH_MODIFY_MAX_IDS);
-      await this.post('/messages/batchModify', { ids, addLabelIds, removeLabelIds });
+      await this.post(
+        '/messages/batchModify',
+        { ids, addLabelIds, removeLabelIds },
+        QUOTA_UNITS.messagesBatchModify,
+      );
     }
   }
 
@@ -646,7 +697,11 @@ export class GmailClientService
    * than half-stored.
    */
   async listLabels(): Promise<{ id: string; name: string }[]> {
-    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    const listed = await this.get<GmailLabelsListResponse>(
+      '/labels',
+      false,
+      QUOTA_UNITS.labelsList,
+    );
     return (listed?.labels ?? []).flatMap((label) =>
       label.id && label.name ? [{ id: label.id, name: label.name }] : [],
     );
@@ -659,7 +714,11 @@ export class GmailClientService
   async findLabelId(name: string): Promise<string | null> {
     const cached = this.labelIdCache.get(name);
     if (cached) return cached;
-    const listed = await this.get<GmailLabelsListResponse>('/labels', false);
+    const listed = await this.get<GmailLabelsListResponse>(
+      '/labels',
+      false,
+      QUOTA_UNITS.labelsList,
+    );
     const match = (listed?.labels ?? []).find((label) => label.name === name);
     if (!match?.id) return null;
     this.labelIdCache.set(name, match.id);
@@ -680,11 +739,15 @@ export class GmailClientService
   async ensureLabelId(name: string): Promise<string> {
     const existing = await this.findLabelId(name);
     if (existing) return existing;
-    const created = await this.postJson<GmailLabelCreateResponse>('/labels', {
-      name,
-      labelListVisibility: 'labelShow',
-      messageListVisibility: 'show',
-    });
+    const created = await this.postJson<GmailLabelCreateResponse>(
+      '/labels',
+      {
+        name,
+        labelListVisibility: 'labelShow',
+        messageListVisibility: 'show',
+      },
+      QUOTA_UNITS.labelsCreate,
+    );
     if (!created.id) {
       throw new TransientError('Gmail labels.create response missing id');
     }
@@ -715,11 +778,15 @@ export class GmailClientService
    * Reads the response via `postJson` (the watch handle is the point).
    */
   async watch(topicName: string): Promise<GmailWatchResult> {
-    const json = await this.postJson<GmailWatchResponse>('/watch', {
-      topicName,
-      labelIds: ['INBOX'],
-      labelFilterBehavior: 'include',
-    });
+    const json = await this.postJson<GmailWatchResponse>(
+      '/watch',
+      {
+        topicName,
+        labelIds: ['INBOX'],
+        labelFilterBehavior: 'include',
+      },
+      QUOTA_UNITS.watch,
+    );
     if (!json.historyId || !json.expiration) {
       throw new TransientError('Gmail watch response missing historyId/expiration');
     }
@@ -737,7 +804,7 @@ export class GmailClientService
    * with no active watch is a 204 no-op at Gmail.
    */
   async stopWatch(): Promise<void> {
-    await this.post('/stop', {});
+    await this.post('/stop', {}, QUOTA_UNITS.stop);
   }
 
   /**

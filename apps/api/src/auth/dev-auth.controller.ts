@@ -97,7 +97,7 @@ export class DevAuthController {
     this.logger.warn(`DEV login issued for ${email} (NODE_ENV=${process.env.NODE_ENV ?? 'unset'})`);
 
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    res.redirect(302, `${webBase}/senders`);
+    res.redirect(302, `${webBase}/home`);
   }
 
   /**

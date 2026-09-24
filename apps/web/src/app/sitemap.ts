@@ -15,7 +15,6 @@ import {
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from '@/features/marketing/learn/answer-content';
 import { BLOG_ARTICLES, BLOG_SLUGS } from '@/features/marketing/learn/blog-content';
-import { CHANGELOG_ENTRIES } from '@/features/marketing/learn/changelog-content';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '@/features/marketing/learn/how-to-content';
 
 /** Public marketing paths, in crawl-priority order. */
@@ -36,7 +35,6 @@ export const MARKETING_PATHS = [
   ...ANSWER_SLUGS.map((slug) => `/answers/${slug}` as const),
   '/blog',
   ...BLOG_SLUGS.map((slug) => `/blog/${slug}` as const),
-  '/changelog',
   '/faq',
   '/help',
   '/contact',
@@ -65,8 +63,8 @@ function oldest(dates: readonly string[]): string {
  * Hubs claim the OLDEST of their children, matching the rule
  * `COMPARISONS_VERIFIED_FLOOR_ISO` already sets for `/compare`: a hub
  * covers every child at once, so it is only as fresh as its weakest.
- * `/changelog` is the exception — it genuinely changes when its newest
- * entry lands, and `CHANGELOG_ENTRIES` is newest-first.
+ * The historical changelog is omitted while its newer entries are being
+ * curated; it is noindexed separately until it becomes current again.
  */
 const LAST_MODIFIED = new Map<string, string>([
   ...COMPARISONS.map((comparison) => [`/vs/${comparison.slug}`, comparison.verifiedIso] as const),
@@ -83,7 +81,6 @@ const LAST_MODIFIED = new Map<string, string>([
   ['/how-to', oldest(HOW_TO_SLUGS.map((slug) => HOW_TO_ARTICLES[slug].updatedAt))],
   ['/answers', oldest(ANSWER_SLUGS.map((slug) => ANSWER_ARTICLES[slug].updatedAt))],
   ['/blog', oldest(BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug].updatedAt))],
-  ...CHANGELOG_ENTRIES.slice(0, 1).map((entry) => ['/changelog', entry.date] as const),
 ]);
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -93,7 +90,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     return {
       url: `${base}${path === '/' ? '' : path}`,
       ...(lastModified === undefined ? {} : { lastModified }),
-      changeFrequency: path === '/' || path === '/changelog' ? 'weekly' : 'monthly',
+      changeFrequency: path === '/' ? 'weekly' : 'monthly',
       priority:
         path === '/'
           ? 1

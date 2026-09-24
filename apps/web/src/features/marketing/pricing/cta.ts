@@ -6,22 +6,22 @@
  * resolve it lazily:
  *
  *   - Free CTA          → probe `GET /api/auth/me`; authed → `/senders`,
- *                         unauthed → OAuth start.
+ *                         unauthed → permissions entry.
  *   - Plus/Pro CTA      → same probe; authed → `/billing` with validated
- *                         plan/cycle/promo intent, unauthed → OAuth start
+ *                         plan/cycle/promo intent, unauthed → permissions entry
  *                         carrying that local post-login destination.
  *
  * The probe reuses `apiGet`, so an expired-access-but-valid-refresh
  * session silently rotates and still lands on /billing instead of
  * bouncing through Google. On a terminal 401 the shared client already
- * hard-redirects to OAuth start; the explicit assign below covers
+ * normally redirects to OAuth, but this probe suppresses that redirect. The explicit assign below covers
  * non-401 failures (API unreachable) so the button never silently does
  * nothing.
  */
 
 import { apiGet } from '@/lib/api/client';
 import { billingIntentPath, type BillingIntent } from '@/features/billing/billing-intent';
-import { oauthStartUrl } from '@/features/marketing/landing/urls';
+import { oauthStartUrl, permissionEntryUrl } from '@/features/marketing/landing/urls';
 import { withSignupRef } from '@/features/marketing/signup-ref';
 
 export { oauthStartUrl };
@@ -44,10 +44,10 @@ export async function navigateToCheckout(
     push(destination);
     return;
   }
-  // Attached HERE, not inside `oauthStartUrl`: this runs only in a click
+  // Attached HERE, not inside `permissionEntryUrl`: this runs only in a click
   // handler, so there is no server render for the cookie read to disagree
   // with. `SignupRefCapture` covers the anchor CTAs the same way.
-  window.location.assign(withSignupRef(oauthStartUrl(destination)));
+  window.location.assign(withSignupRef(permissionEntryUrl(destination)));
 }
 
 export async function navigateToFreeApp(push: (path: string) => void): Promise<void> {
@@ -55,5 +55,5 @@ export async function navigateToFreeApp(push: (path: string) => void): Promise<v
     push('/senders');
     return;
   }
-  window.location.assign(withSignupRef(oauthStartUrl()));
+  window.location.assign(withSignupRef(permissionEntryUrl()));
 }

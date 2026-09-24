@@ -1,83 +1,48 @@
 /* ─────────────────────────────────────────────────────────────
    DeclutrMail marketing landing (D134, D223).
 
-   Editorial-broadsheet treatment of the existing warm-newsprint
-   token palette: hairline rules, mono microcaps eyebrows, Fraunces
-   display headlines, deep-teal accent. Scoped to `.dm-mkt` so none
-   of this leaks into the app shell.
+   One idea per viewport: Fraunces display headlines in one ink colour,
+   Geist for everything else, lots of air, muted plum as the brand accent.
+   Nothing under 13px; mono only inside a <kbd>. Raised surfaces are
+   reserved for product visuals and pricing; everything else sits flat. Scoped to `.dm-mkt` so none of this leaks
+   into the app shell. The comparison pages share the primitives
+   (shell, eyebrow, h1/h2, lede, CTA); the landing-only scale lives
+   under `.dm-mkt-landing`.
 
-   The `--mkt-*` aliases keep this feature-local treatment readable
-   while the public layout deliberately stays in one consistent light
-   theme across landing, pricing, product, support, and legal pages.
+   The `--mkt-*` aliases inherit the application's resolved palette
+   across landing, pricing, product, support, and legal pages.
    ───────────────────────────────────────────────────────────── */
 
+/* Inherit the same paper, ink and plum palette as the working product. */
 .dm-mkt {
-  /* Light = the app's warm-newsprint palette, verbatim. */
-  --mkt-bg: #fafaf7;
-  --mkt-paper: #f4f4f0;
-  --mkt-card: #ffffff;
-  --mkt-ink: #0e1413;
-  --mkt-ink-soft: #4b5552;
-  --mkt-ink-muted: #646d69;
-  --mkt-line: rgba(14, 20, 19, 0.14);
-  --mkt-line-soft: rgba(14, 20, 19, 0.08);
-  --mkt-accent: #006b5f;
-  --mkt-accent-deep: #00463f;
-  --mkt-accent-soft: rgba(0, 107, 95, 0.08);
-  --mkt-accent-border: rgba(0, 107, 95, 0.35);
-  --mkt-mint: #79e6dc;
-  --mkt-amber: #b45309;
-  --mkt-danger: #a12525;
-  /* The full-bleed "ink desk" privacy section. */
-  --mkt-desk: #0e1413;
-  --mkt-desk-ink: #f2f3f0;
-  --mkt-desk-ink-soft: rgba(242, 243, 240, 0.66);
-  --mkt-desk-line: rgba(242, 243, 240, 0.16);
-  /* Filled CTA. */
-  --mkt-cta-bg: #0e1413;
-  --mkt-cta-fg: #fafaf7;
-
-  color-scheme: light;
+  --mkt-bg: var(--dm-bg);
+  --mkt-paper: var(--dm-paper);
+  --mkt-card: var(--dm-card);
+  --mkt-ink: var(--dm-fg);
+  --mkt-ink-soft: var(--dm-fg-soft);
+  --mkt-ink-muted: var(--dm-fg-muted);
+  --mkt-line: var(--dm-line);
+  --mkt-line-soft: var(--dm-line-soft);
+  --mkt-accent: var(--dm-primary);
+  --mkt-accent-deep: var(--dm-primary-deep);
+  --mkt-accent-soft: var(--dm-primary-soft);
+  --mkt-accent-border: var(--dm-line);
+  --mkt-lilac: var(--dm-lilac);
+  --mkt-amber: var(--dm-amber);
+  --mkt-danger: var(--dm-danger);
+  --mkt-desk: var(--dm-nav-bg);
+  --mkt-desk-ink: var(--dm-nav-fg);
+  --mkt-desk-ink-soft: var(--dm-nav-muted);
+  --mkt-desk-line: var(--dm-line-inverse);
+  --mkt-cta-bg: var(--dm-primary);
+  --mkt-cta-fg: var(--dm-fg-inverse);
   background: var(--mkt-bg);
   color: var(--mkt-ink);
   min-height: 100vh;
 }
 
-/* Dark = the app's dark palette, verbatim, exactly as the light block
-   above mirrors the light one. Only the aliases are redefined; every
-   rule below consumes `var(--mkt-*)` and re-resolves for free.
-
-   Two relationships INVERT rather than translate:
-   - The "ink desk" is a dark slab on light paper. Recoloured to the
-     dark page background it would vanish, so on dark it goes one step
-     darker than the page instead of lighter.
-   - The filled CTA is a near-black button with light lettering. On dark
-     it flips to a near-white button with dark lettering, which is how
-     filled buttons already behave in the app shell. */
 [data-theme='dark'] .dm-mkt {
-  --mkt-bg: #0f1211;
-  --mkt-paper: #141817;
-  --mkt-card: #1a1f1e;
-  --mkt-ink: #f1f4f3;
-  --mkt-ink-soft: #b6bfbb;
-  --mkt-ink-muted: #8b948f;
-  --mkt-line: rgba(238, 246, 243, 0.16);
-  --mkt-line-soft: rgba(238, 246, 243, 0.08);
-  --mkt-accent: #2fb5a0;
-  --mkt-accent-deep: #52c9b6;
-  --mkt-accent-soft: rgba(47, 181, 160, 0.14);
-  --mkt-accent-border: rgba(47, 181, 160, 0.42);
-  --mkt-mint: #79e6dc;
-  --mkt-amber: #e3a75c;
-  --mkt-danger: #f27d7d;
-  --mkt-desk: #080a0a;
-  --mkt-desk-ink: #f1f4f3;
-  --mkt-desk-ink-soft: rgba(241, 244, 243, 0.66);
-  --mkt-desk-line: rgba(241, 244, 243, 0.16);
-  --mkt-cta-bg: #f1f4f3;
-  --mkt-cta-fg: #0f1211;
-
-  color-scheme: dark;
+  --mkt-desk: var(--dm-nav-bg);
 }
 
 /* ── Shared primitives ──────────────────────────────────────── */
@@ -90,28 +55,16 @@
 
 @media (max-width: 480px) {
   .dm-mkt-shell {
-    padding: 0 18px;
+    padding: 0 16px;
   }
 }
 
-/* Mono microcaps eyebrow — the "№ 01 — Section" device. */
+/* A small sans label above a heading (comparison pages). */
 .dm-mkt-eyebrow {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--mkt-accent);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dm-mkt-eyebrow::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--mkt-line);
+  margin: 0;
 }
 
 .dm-mkt-h2 {
@@ -125,15 +78,32 @@
 }
 
 .dm-mkt-lede {
-  font-size: clamp(15px, 1.6vw, 17px);
-  line-height: 1.65;
+  font-size: clamp(17px, 1.7vw, 19px);
+  line-height: 1.6;
   color: var(--mkt-ink-soft);
   max-width: 60ch;
-  margin: 16px 0 0;
+  margin: 20px 0 0;
 }
 
+/* Longhand on purpose: sections also carry `.dm-mkt-shell`, and a padding
+   shorthand here would zero the shell's side gutter. */
 .dm-mkt-section {
-  padding: clamp(64px, 9vw, 112px) 0 0;
+  padding-top: clamp(68px, 8vw, 112px);
+}
+
+.dm-mkt-center {
+  text-align: center;
+}
+
+.dm-mkt-center .dm-mkt-lede {
+  margin-inline: auto;
+}
+
+.dm-mkt-landing .dm-mkt-h2 {
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-top: 0;
 }
 
 /* CTA buttons. */
@@ -141,35 +111,29 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 13px 22px;
+  padding: 15px 28px;
   border-radius: 9999px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.01em;
   text-decoration: none;
   border: 1px solid transparent;
   transition:
     transform 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
-    box-shadow 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
     background 0.15s ease;
 }
 
 .dm-mkt-cta-primary {
   background: var(--mkt-cta-bg);
   color: var(--mkt-cta-fg);
+  box-shadow: var(--dm-shadow-button);
 }
 
 .dm-mkt-cta-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px -8px rgba(14, 20, 19, 0.35);
 }
 
-.dm-mkt-cta-primary .dm-mkt-cta-arrow {
-  transition: transform 0.15s ease;
-}
-
-.dm-mkt-cta-primary:hover .dm-mkt-cta-arrow {
-  transform: translateX(3px);
+.dm-mkt-cta-primary:active {
+  transform: scale(0.98);
 }
 
 .dm-mkt-cta-ghost {
@@ -182,114 +146,42 @@
   border-color: var(--mkt-ink);
 }
 
-/* ── Masthead ───────────────────────────────────────────────── */
-
-.dm-mkt-masthead {
-  border-bottom: 1px solid var(--mkt-line);
-  position: relative;
-}
-
-/* Double-rule, newspaper style: thick + thin. */
-.dm-mkt-masthead::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--mkt-ink);
-}
-
-.dm-mkt-masthead-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 0;
-}
-
-.dm-mkt-wordmark {
-  font-family: var(--dm-font-display);
-  font-size: 21px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  color: var(--mkt-ink);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.dm-mkt-wordmark b {
-  color: var(--mkt-accent);
-  font-weight: inherit;
-}
-
-.dm-mkt-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-}
-
-.dm-mkt-nav-links a {
-  color: var(--mkt-ink-soft);
-  text-decoration: none;
-}
-
-.dm-mkt-nav-links a:hover {
-  color: var(--mkt-ink);
-}
-
-.dm-mkt-nav-cta {
+/* The quiet second action: a text link, never a second button. */
+.dm-mkt-cta-link {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-radius: 9999px;
-  background: var(--mkt-cta-bg);
-  color: var(--mkt-cta-fg);
-  font-family: var(--dm-font-sans);
-  font-size: 12.5px;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--mkt-accent);
+  font-size: 16px;
   font-weight: 600;
   text-decoration: none;
-  white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .dm-mkt-nav-links .dm-mkt-nav-link {
-    display: none;
-  }
+.dm-mkt-cta-link:hover,
+.dm-mkt-cta-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
-/* ── Hero ───────────────────────────────────────────────────── */
-
-.dm-mkt-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: clamp(32px, 5vw, 72px);
-  align-items: center;
-  padding: clamp(48px, 7vw, 96px) 0 clamp(40px, 5vw, 64px);
+/* The landing aligns its content edge with the header's (1180px). */
+.dm-mkt-landing .dm-mkt-shell {
+  max-width: 1228px;
 }
 
-@media (max-width: 980px) {
-  .dm-mkt-hero {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* ── Shared hero primitives (comparison + landing) ──────────── */
 
+/* A small sans label above the h1 (comparison pages). */
 .dm-mkt-hero-kicker {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--mkt-ink-muted);
   margin: 0 0 20px;
 }
 
 .dm-mkt-hero-kicker b {
   color: var(--mkt-accent);
-  font-weight: 500;
+  font-weight: inherit;
 }
 
 .dm-mkt-h1 {
@@ -302,14 +194,16 @@
   text-wrap: balance;
 }
 
+/* Comparison-page headlines stay in one ink colour; the landing overrides
+   its accented phrase below. */
 .dm-mkt-h1 em {
-  font-style: italic;
-  color: var(--mkt-accent);
+  font-style: inherit;
+  color: inherit;
 }
 
 .dm-mkt-hero-sub {
-  font-size: clamp(15px, 1.8vw, 18px);
-  line-height: 1.6;
+  font-size: clamp(17px, 1.8vw, 19px);
+  line-height: 1.55;
   color: var(--mkt-ink-soft);
   max-width: 54ch;
   margin: 22px 0 0;
@@ -319,16 +213,15 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  margin-top: 32px;
+  gap: 14px 28px;
+  margin-top: 36px;
 }
 
 .dm-mkt-hero-note {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--mkt-ink-muted);
-  margin: 14px 0 0;
+  margin: 18px 0 0;
 }
 
 .dm-mkt-hero-note a {
@@ -342,969 +235,318 @@
   color: var(--mkt-ink);
 }
 
-/* Staggered load reveal — opacity/transform only (zero layout shift). */
-.dm-mkt-reveal {
-  animation: dm-mkt-reveal 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
+/* ── Landing hero ───────────────────────────────────────────── */
 
-.dm-mkt-reveal-2 {
-  animation-delay: 0.08s;
-}
-.dm-mkt-reveal-3 {
-  animation-delay: 0.16s;
-}
-.dm-mkt-reveal-4 {
-  animation-delay: 0.24s;
-}
-
-@keyframes dm-mkt-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ── Hero ledger card (D135 adaptation) ─────────────────────────
-   8s one-shot timeline with explicit pause/replay controls. The global
-   reduced-motion override advances it immediately to its final state. */
-
-.dm-mkt-ledger {
-  background: var(--mkt-card);
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  box-shadow:
-    0 1px 2px rgba(14, 20, 19, 0.05),
-    0 24px 48px -24px rgba(14, 20, 19, 0.18);
-  overflow: hidden;
-  position: relative;
-  min-height: 332px;
-  display: flex;
-  flex-direction: column;
-}
-
-.dm-mkt-ledger-head {
-  display: flex;
+.dm-mkt-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
   align-items: center;
-  justify-content: space-between;
-  /* At 375px the two labels measure exactly the content width, so
-     space-between has nothing left to distribute: they abut, each wraps
-     mid-phrase, and the row reads "DECISION 1 OFTHIS / 14 WEEK". The gap
-     guarantees separation and the wrap lets "this week" drop to its own
-     line instead of interleaving. */
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--mkt-line-soft);
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
+  gap: clamp(48px, 6vw, 96px);
+  padding-top: clamp(48px, 7vw, 104px);
 }
 
-.dm-mkt-ledger-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--mkt-accent);
-  display: inline-block;
-  margin-right: 8px;
+.dm-mkt-hero-copy {
+  max-width: 560px;
 }
 
-.dm-mkt-ledger-body {
-  padding: 18px 16px 16px;
-  flex: 1;
-  position: relative;
+.dm-mkt-landing .dm-mkt-h1 {
+  font-size: clamp(44px, 5.4vw, 78px);
+  font-weight: 560;
+  line-height: 1.02;
+  letter-spacing: -0.032em;
 }
 
-.dm-mkt-ledger-row {
-  border: 1px solid var(--mkt-line);
-  border-radius: 12px;
-  padding: 14px;
-  animation: dm-mkt-row 8s 1 forwards;
-}
-
-.dm-mkt-ledger-sender {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dm-mkt-ledger-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
-  background: var(--mkt-accent-soft);
-  border: 1px solid var(--mkt-accent-border);
-  color: var(--mkt-accent);
-  display: grid;
-  place-items: center;
-  font-family: var(--dm-font-display);
-  font-weight: 620;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.dm-mkt-ledger-name {
-  font-weight: 600;
-  font-size: 14.5px;
-  animation: dm-mkt-strike 8s 1 forwards;
-}
-
-.dm-mkt-ledger-meta {
-  display: block;
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  color: var(--mkt-ink-muted);
-  margin-top: 3px;
-}
-
-.dm-mkt-ledger-verbs {
-  display: flex;
-  gap: 6px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-
-.dm-mkt-ledger-preview {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 10px;
-  padding: 10px 11px;
-  border: 1px solid var(--mkt-accent-border);
-  border-radius: 8px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-ink-soft);
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-}
-
-.dm-mkt-ledger-preview b {
-  grid-row: 1 / span 2;
-  color: var(--mkt-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.dm-mkt-ledger-verb {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 550;
-  color: var(--mkt-ink-soft);
-  background: transparent;
-}
-
-.dm-mkt-ledger-verb kbd {
-  font-family: var(--dm-font-mono);
-  font-size: 10px;
-  border: 1px solid var(--mkt-line);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 1px 4px;
-  color: var(--mkt-ink-muted);
-}
-
-/* The Archive chip is "pressed" mid-loop. */
-.dm-mkt-ledger-verb-archive {
-  animation: dm-mkt-press 8s 1 forwards;
-}
-
-/* The completed state replaces the departing sender row, keeping the
-   demo informative after its one-shot motion has finished. */
-.dm-mkt-ledger-receipt {
-  position: absolute;
-  inset: 18px 16px 68px;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 7px;
-  padding: 18px;
-  text-align: center;
-  opacity: 0;
-  transform: scale(0.97);
-  pointer-events: none;
-  animation: dm-mkt-receipt 8s 1 forwards;
-}
-
-.dm-mkt-ledger-receipt-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 9999px;
-  background: var(--mkt-accent-soft);
-  border: 1px solid var(--mkt-accent-border);
-  color: var(--mkt-accent);
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.dm-mkt-ledger-receipt b {
-  font-family: var(--dm-font-display);
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.dm-mkt-ledger-receipt > span:last-child {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  color: var(--mkt-ink-muted);
-}
-
-/* Undo toast — hidden at frame 0, slides up mid-loop. */
-.dm-mkt-ledger-toast {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--mkt-desk);
-  color: var(--mkt-desk-ink);
-  border-radius: 10px;
-  padding: 11px 14px;
-  font-size: 12.5px;
-  opacity: 0;
-  transform: translateY(10px);
-  animation: dm-mkt-toast 8s 1 forwards;
-}
-
-.dm-mkt-ledger-toast b {
-  font-weight: 600;
-}
-
-.dm-mkt-ledger-toast .dm-mkt-undo {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mkt-mint);
-  white-space: nowrap;
-}
-
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-row,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-name,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-verb-archive,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-receipt,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-toast {
-  animation-play-state: paused;
-}
-
-.dm-mkt-ledger-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 8px 14px;
-  margin-top: 11px;
-  font-size: 11px;
-}
-
-.dm-mkt-ledger-controls button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--mkt-ink-muted);
-  font: 600 11px/1.4 var(--dm-font-sans);
-  cursor: pointer;
-}
-
-.dm-mkt-ledger-controls a {
-  color: var(--mkt-accent);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.dm-mkt-ledger-controls button:hover,
-.dm-mkt-ledger-controls button:focus-visible,
-.dm-mkt-ledger-controls a:hover,
-.dm-mkt-ledger-controls a:focus-visible {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Caption under the card. */
-.dm-mkt-ledger-caption {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
-  color: var(--mkt-ink-muted);
-  text-align: center;
-  margin-top: 8px;
-}
-
-/* One-shot timeline (8s, then settles on the confirmed receipt):
-   0.0–1.0s  row settles (frame 0 base)
-   1.5–3.0s  Archive chip highlights
-   3.0–4.0s  press → strikethrough + row slides out
-   4.0–8.0s  toast visible */
-
-@keyframes dm-mkt-row {
-  0%,
-  37.5% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  47%,
-  100% {
-    opacity: 0;
-    transform: translateX(28px);
-  }
-}
-
-@keyframes dm-mkt-press {
-  0%,
-  16% {
-    background: transparent;
-    color: var(--mkt-ink-soft);
-    border-color: var(--mkt-line);
-    transform: scale(1);
-  }
-  22%,
-  36% {
-    background: var(--mkt-cta-bg);
-    color: var(--mkt-cta-fg);
-    border-color: var(--mkt-cta-bg);
-    transform: scale(1);
-  }
-  39% {
-    transform: scale(0.94);
-  }
-  42%,
-  100% {
-    background: transparent;
-    color: var(--mkt-ink-soft);
-    border-color: var(--mkt-line);
-    transform: scale(1);
-  }
-}
-
-@keyframes dm-mkt-strike {
-  0%,
-  36% {
-    text-decoration-color: transparent;
-  }
-  40%,
-  100% {
-    text-decoration: line-through;
-    text-decoration-color: var(--mkt-ink-muted);
-  }
-}
-
-@keyframes dm-mkt-toast {
-  0%,
-  47% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  53%,
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes dm-mkt-receipt {
-  0%,
-  45% {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  52%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* ── Trust strip ────────────────────────────────────────────── */
-
-.dm-mkt-trust {
-  border-top: 1px solid var(--mkt-line);
-  border-bottom: 1px solid var(--mkt-line);
-  padding: 16px 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 28px;
-}
-
-/* ── Gmail companion ───────────────────────────────────────── */
-
-.dm-mkt-companion-grid > div > p {
-  color: var(--mkt-accent);
-  font-family: var(--dm-font-mono);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.dm-mkt-section-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px 28px;
-  margin-top: 22px;
-}
-
-.dm-mkt-section-link-row a {
-  color: var(--mkt-accent);
-  font-size: 12.5px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.dm-mkt-companion-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: hidden;
-  margin-top: 30px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 12px;
-  background: var(--mkt-card);
-}
-
-.dm-mkt-companion-grid > div {
-  padding: 24px;
-}
-
-.dm-mkt-companion-grid > div + div {
-  border-left: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-companion-grid ul {
-  display: grid;
-  gap: 9px;
-  margin: 15px 0 0;
-  padding-left: 20px;
-  color: var(--mkt-ink-soft);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-@media (max-width: 620px) {
-  .dm-mkt-companion-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dm-mkt-companion-grid > div + div {
-    border-top: 1px solid var(--mkt-line);
-    border-left: 0;
-  }
-}
-
-.dm-mkt-trust-item {
-  min-width: 0;
-  max-width: 100%;
-  flex: 0 1 auto;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
-  line-height: 1.55;
-  letter-spacing: 0.04em;
-  color: var(--mkt-ink-soft);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: normal;
-}
-
-.dm-mkt-trust-item::before {
-  content: '·';
-  color: var(--mkt-accent);
-  font-weight: 700;
-}
-
-/* A trust item the visitor can go and check for themselves. */
-a.dm-mkt-trust-item {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--mkt-line);
-  text-underline-offset: 3px;
-}
-
-a.dm-mkt-trust-item:hover,
-a.dm-mkt-trust-item:focus-visible {
-  text-decoration-color: var(--mkt-accent);
-}
-
-/* ── Problem: the arithmetic ────────────────────────────────── */
-
-.dm-mkt-arith {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  overflow: hidden;
-  margin-top: 40px;
-  background: var(--mkt-card);
-}
-
-.dm-mkt-arith-cell {
-  padding: clamp(20px, 3vw, 34px);
-  border-left: 1px solid var(--mkt-line-soft);
-}
-
-.dm-mkt-arith-cell:first-child {
-  border-left: 0;
-}
-
-.dm-mkt-arith-label {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
-}
-
-.dm-mkt-arith-value {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: clamp(26px, 4vw, 44px);
-  letter-spacing: -0.02em;
-  margin-top: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.dm-mkt-arith-value s {
-  color: var(--mkt-ink-muted);
-  text-decoration-thickness: 2px;
-}
-
-.dm-mkt-arith-value em {
-  font-style: normal;
-  color: var(--mkt-accent);
-}
-
-.dm-mkt-arith-note {
-  font-size: 12.5px;
-  color: var(--mkt-ink-muted);
-  margin-top: 8px;
-  line-height: 1.5;
-}
-
-@media (max-width: 720px) {
-  .dm-mkt-arith {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .dm-mkt-arith-cell {
-    border-left: 0;
-    border-top: 1px solid var(--mkt-line-soft);
-  }
-  .dm-mkt-arith-cell:first-child {
-    border-top: 0;
-  }
-}
-
-/* ── How it works ───────────────────────────────────────────── */
-
-.dm-mkt-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(20px, 3vw, 36px);
-  margin-top: 44px;
-}
-
-@media (max-width: 720px) {
-  .dm-mkt-steps {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-.dm-mkt-step {
-  border-top: 2px solid var(--mkt-ink);
-  padding-top: 18px;
-}
-
-.dm-mkt-step-no {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--mkt-accent);
-}
-
-.dm-mkt-step-title {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: 21px;
-  margin: 10px 0 0;
-}
-
-.dm-mkt-step-body {
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--mkt-ink-soft);
-  margin: 10px 0 0;
-}
-
-/* ── The ritual (K/A/U/L/D) ─────────────────────────────────── */
-
-.dm-mkt-ritual-title {
-  margin: 44px 0 0;
-  font-family: var(--dm-font-display);
-  font-size: clamp(23px, 3vw, 30px);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.dm-mkt-ritual {
-  margin-top: 16px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  background: var(--mkt-card);
-  overflow: hidden;
-}
-
-.dm-mkt-ritual-row {
-  display: grid;
-  grid-template-columns: 64px 150px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--mkt-line-soft);
-}
-
-.dm-mkt-ritual-row:first-child {
-  border-top: 0;
-}
-
-.dm-mkt-ritual-row-delete {
-  border-top: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-ritual-key {
-  font-family: var(--dm-font-mono);
-  font-size: 15px;
-  font-weight: 600;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--mkt-line);
-  border-bottom-width: 3px;
-  border-radius: 9px;
-  color: var(--mkt-ink);
-  background: var(--mkt-paper);
-}
-
-.dm-mkt-ritual-row-delete .dm-mkt-ritual-key {
-  color: var(--mkt-danger);
-}
-
-.dm-mkt-ritual-verb {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: 19px;
-}
-
-.dm-mkt-ritual-desc {
-  font-size: 13px;
+.dm-mkt-hero .dm-mkt-hero-sub {
+  font-size: clamp(18px, 1.5vw, 20px);
   line-height: 1.6;
-  color: var(--mkt-ink-soft);
+  max-width: 40ch;
+  margin-top: 28px;
 }
 
-@media (max-width: 640px) {
-  .dm-mkt-ritual-row {
-    grid-template-columns: 52px minmax(0, 1fr);
+.dm-mkt-hero .dm-mkt-hero-ctas {
+  margin-top: 40px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-note {
+  margin-top: 20px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-note + .dm-mkt-hero-note {
+  margin-top: 2px;
+}
+
+@media (max-width: 960px) {
+  .dm-mkt-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 56px;
   }
-  .dm-mkt-ritual-desc {
-    grid-column: 1 / -1;
-    margin-top: -4px;
+
+  .dm-mkt-hero-copy {
+    max-width: 620px;
   }
 }
 
-/* ── Privacy desk (full-bleed ink) ──────────────────────────── */
+/* ── Privacy: flat, calm, two columns ───────────────────────── */
 
-.dm-mkt-desk-section {
-  background: var(--mkt-desk);
-  color: var(--mkt-desk-ink);
-  margin-top: clamp(64px, 9vw, 112px);
-  padding: clamp(56px, 8vw, 96px) 0;
-}
-
-.dm-mkt-desk-grid {
+.dm-mkt-privacy {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: clamp(32px, 5vw, 64px);
-  align-items: center;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px clamp(48px, 7vw, 112px);
+  align-items: start;
 }
 
 @media (max-width: 900px) {
-  .dm-mkt-desk-grid {
+  .dm-mkt-privacy {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.dm-mkt-desk-section .dm-mkt-eyebrow {
-  color: var(--mkt-mint);
+.dm-mkt-privacy .dm-mkt-h2 {
+  font-size: clamp(30px, 3.6vw, 44px);
 }
 
-.dm-mkt-desk-section .dm-mkt-eyebrow::after {
-  background: var(--mkt-desk-line);
-}
-
-.dm-mkt-desk-section .dm-mkt-h2 {
-  color: var(--mkt-desk-ink);
-}
-
-.dm-mkt-desk-section .dm-mkt-lede {
-  color: var(--mkt-desk-ink-soft);
-}
-
-.dm-mkt-desk-points {
-  list-style: none;
-  margin: 26px 0 0;
-  padding: 0;
+.dm-mkt-privacy-links {
   display: grid;
-  gap: 14px;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 28px;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
-.dm-mkt-desk-points li {
+.dm-mkt-privacy-links a {
+  color: var(--mkt-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--mkt-accent-border);
+  text-underline-offset: 4px;
+}
+
+.dm-mkt-privacy-links a:hover,
+.dm-mkt-privacy-links a:focus-visible {
+  text-decoration-color: currentColor;
+}
+
+/* The shared PrivacyBadge, re-laid out flat: the trust line across the
+   top, then the storage list and the never-fetched list side by side.
+   Its box (fill, border, shadow, padding) is reset through its `style`
+   prop; the few inline typographic values that fight this layout are
+   overridden here, scoped to the landing. */
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 48px;
+}
+
+/* A short answer at scan speed; the complete registry stays one click away. */
+.dm-mkt-privacy-summary {
+  display: grid;
+  gap: 18px;
+}
+
+.dm-mkt-privacy-summary > div {
+  padding: 0 0 17px;
+  border-bottom: 1px solid var(--mkt-line);
+}
+
+.dm-mkt-privacy-summary strong {
+  font-size: 17px;
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-privacy-summary p {
+  margin: 7px 0 0;
+  color: var(--mkt-ink-soft);
+  line-height: 1.55;
+}
+
+.dm-mkt-privacy-inventory summary {
+  width: fit-content;
+  color: var(--mkt-accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dm-mkt-privacy-inventory .dm-mkt-privacy-badge {
+  padding-top: 22px;
+}
+
+.dm-mkt-companion {
   display: flex;
-  gap: 12px;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--mkt-desk-ink-soft);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 32px;
 }
 
-.dm-mkt-desk-points li::before {
-  content: '—';
-  color: var(--mkt-mint);
-  flex-shrink: 0;
+.dm-mkt-companion-head {
+  max-width: 720px;
+}
+.dm-mkt-companion-head .dm-mkt-lede {
+  margin-top: 18px;
+}
+.dm-mkt-companion > .dm-mkt-cta-link {
+  flex: 0 0 auto;
 }
 
-.dm-mkt-desk-link {
-  display: inline-block;
-  margin-top: 26px;
-  font-family: var(--dm-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: var(--mkt-mint);
-  text-decoration: none;
-  border-bottom: 1px solid var(--mkt-desk-line);
-  padding-bottom: 3px;
+@media (max-width: 760px) {
+  .dm-mkt-companion {
+    display: block;
+  }
+  .dm-mkt-companion > .dm-mkt-cta-link {
+    margin-top: 20px;
+  }
 }
 
-.dm-mkt-desk-link:hover {
-  border-bottom-color: var(--mkt-mint);
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--mkt-line);
 }
 
-/* The PrivacyBadge card stays its designed light-paper self in both
-   schemes — a document lying on the dark desk. */
-.dm-mkt-desk-paper {
-  filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.4));
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header h3 {
+  font-size: clamp(22px, 2.2vw, 28px) !important;
+  line-height: 1.25;
+  color: var(--mkt-ink) !important;
 }
 
-/* ── Pricing teaser ─────────────────────────────────────────── */
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header p {
+  margin-top: 10px !important;
+  font-size: 17px !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div {
+  margin-top: 0 !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div > div {
+  margin-bottom: 14px !important;
+  font-size: 15px !important;
+  color: var(--mkt-ink) !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] ul {
+  gap: 10px !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] li {
+  font-size: 16px !important;
+  color: var(--mkt-ink-soft);
+}
+
+@media (max-width: 560px) {
+  .dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Pricing teaser: one raised slab, three tiers ───────────── */
 
 .dm-mkt-tiers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 44px;
-}
-
-@media (max-width: 860px) {
-  .dm-mkt-tiers {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  margin-top: clamp(28px, 4vw, 44px);
+  border-radius: 28px;
+  background: var(--mkt-card);
+  box-shadow: var(--dm-shadow-lift);
+  text-align: left;
 }
 
 .dm-mkt-tier {
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  background: var(--mkt-card);
-  padding: 26px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  padding: clamp(28px, 3vw, 40px);
 }
 
-.dm-mkt-tier-flag {
-  border-color: var(--mkt-accent-border);
-  box-shadow: 0 0 0 1px var(--mkt-accent-border) inset;
+.dm-mkt-tier + .dm-mkt-tier {
+  border-left: 1px solid var(--mkt-line-soft);
+}
+
+@media (max-width: 760px) {
+  .dm-mkt-tiers {
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 22px;
+  }
+
+  .dm-mkt-tier + .dm-mkt-tier {
+    border-left: 0;
+    border-top: 1px solid var(--mkt-line-soft);
+  }
 }
 
 .dm-mkt-tier-name {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.dm-mkt-tier-star {
-  color: var(--mkt-accent);
-  letter-spacing: 0.04em;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .dm-mkt-tier-price {
   font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: 40px;
-  letter-spacing: -0.02em;
-  margin-top: 14px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: clamp(40px, 4.4vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  margin-top: 16px;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .dm-mkt-tier-price small {
   font-family: var(--dm-font-sans);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
   color: var(--mkt-ink-muted);
   letter-spacing: 0;
 }
 
-.dm-mkt-tier-alt {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  color: var(--mkt-ink-muted);
-  margin-top: 4px;
-  min-height: 14px;
-}
-
-.dm-mkt-tier-feats {
-  list-style: none;
-  margin: 18px 0 0;
-  padding: 18px 0 0;
-  border-top: 1px solid var(--mkt-line-soft);
-  display: grid;
-  gap: 9px;
-  font-size: 13px;
+.dm-mkt-tier-line {
+  margin: 16px 0 0;
+  max-width: 30ch;
+  font-size: 16px;
+  line-height: 1.55;
   color: var(--mkt-ink-soft);
 }
 
-.dm-mkt-tier-feats li {
-  display: flex;
+.dm-mkt-tier-job {
+  min-height: 44px;
+  margin: 8px 0 0;
+  color: var(--mkt-ink-soft);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.dm-mkt-tier-features {
+  display: grid;
   gap: 9px;
-  line-height: 1.5;
-}
-
-.dm-mkt-tier-feats li::before {
-  content: '✓';
-  color: var(--mkt-accent);
-  font-size: 11px;
-  margin-top: 1px;
-  flex-shrink: 0;
-}
-
-.dm-mkt-founding {
-  margin-top: 16px;
-  border: 1px dashed var(--mkt-accent-border);
-  background: var(--mkt-accent-soft);
-  border-radius: 12px;
-  padding: 14px 18px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
+  padding: 16px 0 0;
+  margin: 18px 0 0;
+  list-style: none;
+  border-top: 1px solid var(--mkt-line-soft);
+  color: var(--mkt-ink-soft);
   font-size: 13px;
+  line-height: 1.35;
 }
 
-.dm-mkt-founding b {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-accent);
+.dm-mkt-tier-features li::before {
+  content: '✓';
+  margin-right: 9px;
+  color: var(--dm-primary);
 }
 
 .dm-mkt-pricing-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
+  margin: 32px auto 8px;
+  max-width: 64ch;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--mkt-ink-muted);
-}
-
-.dm-mkt-pricing-foot a {
-  color: var(--mkt-accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--mkt-accent-border);
-  padding-bottom: 2px;
-}
-
-/* ── FAQ ────────────────────────────────────────────────────── */
-
-.dm-mkt-faq {
-  margin-top: 36px;
-  border-top: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-faq details {
-  border-bottom: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-faq summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 4px;
-  font-family: var(--dm-font-display);
-  font-weight: 560;
-  font-size: clamp(16px, 2vw, 19px);
-}
-
-.dm-mkt-faq summary::-webkit-details-marker {
-  display: none;
-}
-
-.dm-mkt-faq summary::after {
-  content: '+';
-  font-family: var(--dm-font-mono);
-  font-size: 18px;
-  color: var(--mkt-accent);
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
-
-.dm-mkt-faq details[open] summary::after {
-  transform: rotate(45deg);
-}
-
-.dm-mkt-faq-a {
-  padding: 0 4px 22px;
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--mkt-ink-soft);
-  max-width: 68ch;
-}
-
-.dm-mkt-faq-a a {
-  color: var(--mkt-accent);
 }
 
 /* ── Pre-consent scope disclosure ───────────────────────────── */
 
-/* Inherits the mono/muted note treatment from .dm-mkt-hero-note; only
-   the summary affordance and the expanded body need styling. */
+/* Inherits the muted note treatment from .dm-mkt-hero-note; only the
+   summary affordance and the expanded body need styling. */
 .dm-mkt-scope summary {
   cursor: pointer;
   list-style: none;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  min-height: 44px;
   color: inherit;
   text-decoration: underline;
   text-decoration-color: var(--mkt-line);
@@ -1331,89 +573,28 @@ a.dm-mkt-trust-item:focus-visible {
 }
 
 .dm-mkt-scope p {
-  margin: 10px 0 0;
+  margin: 6px 0 0;
   max-width: 62ch;
-  line-height: 1.6;
 }
 
-/* The final CTA column is centred, so the disclosure centres with it. */
-.dm-mkt-scope-center .dm-mkt-scope p {
+.dm-mkt-final .dm-mkt-scope p {
   margin-inline: auto;
 }
 
-/* ── Final CTA + footer ─────────────────────────────────────── */
+/* ── Final CTA ──────────────────────────────────────────────── */
 
 .dm-mkt-final {
   text-align: center;
-  padding: clamp(72px, 10vw, 128px) 0;
+  padding-top: clamp(76px, 9vw, 120px);
+  padding-bottom: clamp(72px, 9vw, 120px);
 }
 
-.dm-mkt-final .dm-mkt-h2 {
-  font-size: clamp(32px, 5.5vw, 56px);
+.dm-mkt-landing .dm-mkt-final .dm-mkt-hero-ctas {
+  justify-content: center;
 }
 
-.dm-mkt-footer {
-  border-top: 1px solid var(--mkt-line);
-  padding: 32px 0 44px;
-}
-
-.dm-mkt-footer-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px 28px;
-}
-
-.dm-mkt-footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.05em;
-}
-
-.dm-mkt-footer-links a {
-  color: var(--mkt-ink-soft);
-  text-decoration: none;
-}
-
-.dm-mkt-footer-links a:hover {
-  color: var(--mkt-ink);
-}
-
-.dm-mkt-footer-fine {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  color: var(--mkt-ink-muted);
-  margin-top: 20px;
-  line-height: 1.8;
-}
-
-/* Keep the next step and recovery promise readable beside the product demo. */
-.dm-mkt-hero-reassurance {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--mkt-ink-soft);
-  margin: 20px 0 0;
-  max-width: 44ch;
-}
-
-.dm-mkt-hero-reassurance > span {
-  color: var(--mkt-accent);
-  font-size: 20px;
-}
-
-.dm-mkt-final-sub {
-  max-width: 48ch;
-  margin: 20px auto 0;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--mkt-ink-soft);
+.dm-mkt-landing .dm-mkt-final .dm-mkt-h2 {
+  font-size: clamp(40px, 6.5vw, 80px);
 }
 
 @media (max-width: 560px) {
@@ -1423,8 +604,467 @@ a.dm-mkt-trust-item:focus-visible {
     gap: 10px;
   }
 
-  .dm-mkt-hero-ctas .dm-mkt-cta {
+  .dm-mkt-hero-ctas .dm-mkt-cta,
+  .dm-mkt-hero-ctas .dm-mkt-cta-link {
     justify-content: center;
     text-align: center;
+  }
+}
+
+/* Warm editorial: a generous opening, followed by a tangible working surface. */
+.dm-mkt-landing .dm-mkt-hero {
+  max-width: 1520px;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  text-align: left;
+  gap: clamp(25px, 3vw, 54px);
+  padding: 48px clamp(20px, 4vw, 64px) 68px;
+}
+.dm-mkt-landing .dm-mkt-hero-copy {
+  max-width: 620px;
+  margin: 0;
+}
+.dm-mkt-landing .dm-mkt-h1 {
+  font-size: clamp(58px, 6vw, 94px);
+  font-weight: 560;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+.dm-mkt-landing .dm-mkt-h1 em {
+  color: var(--dm-primary);
+  font-style: italic;
+  font-weight: 440;
+}
+.dm-mkt-landing .dm-mkt-hero-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 32px;
+  color: var(--dm-primary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+.dm-mkt-landing .dm-mkt-hero-kicker::before {
+  content: '';
+  width: 23px;
+  height: 1px;
+  background: currentColor;
+}
+.dm-mkt-landing .dm-mkt-hero-sub {
+  max-width: 43ch;
+  margin: 26px 0 0;
+}
+.dm-mkt-landing .dm-mkt-hero-ctas {
+  justify-content: flex-start;
+  margin-top: 33px;
+}
+.dm-mkt-landing .dm-mkt-hero-visual {
+  position: relative;
+  min-width: 0;
+  padding: 38px 0 24px 23px;
+}
+.dm-mkt-landing .dm-mkt-hero-visual::before {
+  position: absolute;
+  content: '';
+  inset: 7px -3% 7px 4%;
+  border-radius: 140px 8px 8px 8px;
+  background: var(--dm-primary-wash);
+}
+.dm-mkt-hero-stage-label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 17px 13px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+}
+.dm-mkt-hero-stage-label span {
+  font-size: 18px;
+  line-height: 0.6;
+}
+.dm-mkt-landing .dm-mkt-hero-visual > figure {
+  position: relative;
+  z-index: 1;
+}
+.dm-mkt-landing .dm-mkt-cta {
+  border-radius: 5px;
+}
+.dm-mkt-landing .dm-mkt-hero-note {
+  font-size: 12px;
+  margin-top: 16px;
+}
+.dm-mkt .dm-mkt-cta {
+  border-radius: 8px;
+}
+.dm-mkt-landing .dm-mkt-h2 {
+  font-weight: 450;
+  line-height: 1.12;
+}
+@media (max-width: 1100px) {
+  .dm-mkt-landing .dm-mkt-hero {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 800px;
+    gap: 28px;
+    padding-top: 48px;
+  }
+
+  .dm-mkt-landing .dm-mkt-hero-visual {
+    padding-top: 20px;
+  }
+}
+@media (max-width: 600px) {
+  .dm-mkt-landing .dm-mkt-hero {
+    gap: 22px;
+    padding-top: 36px;
+  }
+  .dm-mkt-landing .dm-mkt-hero-visual {
+    padding: 25px 0 15px;
+  }
+  .dm-mkt-landing .dm-mkt-h1 {
+    font-size: clamp(54px, 13vw, 75px);
+  }
+}
+
+.dm-mkt-values-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-block: 22px;
+  border-block: 1px solid var(--dm-line);
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.dm-mkt-values-strip span + span::before {
+  content: '✳';
+  padding-right: clamp(20px, 3vw, 45px);
+  color: var(--dm-primary);
+  font-size: 15px;
+}
+@media (max-width: 680px) {
+  .dm-mkt-values-strip {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px 18px;
+    padding-block: 18px;
+    font-size: 11px;
+  }
+  .dm-mkt-values-strip span + span::before {
+    padding-right: 18px;
+  }
+}
+.dm-mkt-breadth {
+  padding-top: clamp(72px, 9vw, 120px);
+}
+.dm-mkt-breadth-heading {
+  max-width: 760px;
+  margin-bottom: clamp(28px, 4vw, 46px);
+}
+.dm-mkt-breadth-heading .dm-mkt-lede {
+  max-width: 57ch;
+}
+.dm-mkt-breadth-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--dm-line);
+  background: var(--dm-card);
+}
+.dm-mkt-breadth-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: clamp(22px, 2.8vw, 35px);
+}
+.dm-mkt-breadth-card + .dm-mkt-breadth-card {
+  border-left: 1px solid var(--dm-line);
+}
+.dm-mkt-breadth-number {
+  color: var(--dm-primary);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+.dm-mkt-breadth-visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 13px;
+  min-height: 178px;
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid var(--dm-line);
+  border-radius: 10px;
+  background: var(--dm-paper);
+  box-shadow: 0 9px 28px rgb(31 20 42 / 5%);
+}
+.dm-mkt-breadth-visual span {
+  color: var(--dm-primary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+.dm-mkt-breadth-visual strong {
+  color: var(--dm-fg);
+  font-family: var(--dm-font-display);
+  font-size: clamp(22px, 2.1vw, 28px);
+  font-weight: 500;
+  line-height: 1.15;
+}
+.dm-mkt-breadth-visual i {
+  padding-top: 12px;
+  border-top: 1px solid var(--dm-line);
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+.dm-mkt-breadth-card h3 {
+  margin: 0 0 9px;
+  color: var(--dm-fg);
+  font-family: var(--dm-font-display);
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.18;
+}
+.dm-mkt-breadth-card p {
+  flex: 1;
+  margin: 0;
+  color: var(--dm-fg-soft);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.dm-mkt-breadth-card a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  margin-top: 20px;
+  color: var(--dm-primary);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.dm-mkt-breadth-card a:hover,
+.dm-mkt-breadth-card a:focus-visible {
+  text-decoration: underline;
+}
+.dm-mkt-breadth-note {
+  margin: 16px 0 0;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+@media (max-width: 850px) {
+  .dm-mkt-breadth-grid {
+    grid-template-columns: 1fr;
+  }
+  .dm-mkt-breadth-card + .dm-mkt-breadth-card {
+    border-left: 0;
+    border-top: 1px solid var(--dm-line);
+  }
+}
+
+.dm-mkt-journey {
+  padding-block: 54px;
+}
+.dm-mkt-journey-heading {
+  max-width: 700px;
+  margin-bottom: 28px;
+}
+.dm-mkt-journey-kicker,
+.dm-mkt-sample-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-journey-heading em,
+.dm-mkt-workspace-heading em {
+  color: var(--dm-primary);
+  font-weight: 400;
+}
+[data-theme='dark'] .dm-mkt-journey em {
+  color: var(--dm-primary);
+}
+.dm-mkt-workspace-example {
+  margin: 0;
+}
+.dm-mkt-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 0;
+  border-top: 1px solid var(--dm-line);
+}
+.dm-mkt-workspace-heading strong {
+  font-family: var(--dm-font-display);
+  font-size: 28px;
+  font-weight: 400;
+}
+.dm-mkt-workspace-heading > span,
+.dm-mkt-workspace-example figcaption {
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-workspace-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.dm-mkt-sample-list,
+.dm-mkt-sample-inspector {
+  min-width: 0;
+  background: var(--dm-card);
+  padding: 22px;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+}
+.dm-mkt-sample-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.dm-mkt-sample-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.dm-mkt-sample-row strong {
+  font-size: 14px;
+}
+.dm-mkt-sample-row small,
+.dm-mkt-sample-identity small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
+  overflow-wrap: anywhere;
+}
+.dm-mkt-sample-row > span:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dm-mkt-sample-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: var(--dm-fill);
+  border-radius: 8px;
+  color: var(--dm-primary);
+}
+.dm-mkt-sample-row-selected {
+  box-shadow: inset 3px 0 var(--dm-primary);
+  padding-left: 12px;
+}
+.dm-mkt-sample-identity {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-block: 16px;
+}
+.dm-mkt-sample-identity h3 {
+  font-family: var(--dm-font-display);
+  font-size: 27px;
+  margin: 0;
+  font-weight: 400;
+}
+.dm-mkt-sample-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px 0;
+  border-block: 1px solid var(--dm-line);
+  margin: 0;
+  gap: 16px;
+}
+.dm-mkt-sample-metrics div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+.dm-mkt-sample-metrics dt {
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-sample-metrics dd {
+  font-size: 30px;
+  margin: 0;
+}
+.dm-mkt-sample-note,
+.dm-mkt-sample-preview p,
+.dm-mkt-journey-steps p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dm-fg-soft);
+}
+.dm-mkt-sample-preview {
+  padding: 16px 0;
+  border-block: 1px solid var(--dm-line);
+}
+.dm-mkt-sample-preview strong {
+  font-size: 16px;
+}
+.dm-mkt-sample-preview span,
+.dm-mkt-sample-verbs {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-journey-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--dm-primary);
+  font-size: 13px;
+}
+.dm-mkt-workspace-example figcaption {
+  padding: 12px 0;
+  line-height: 1.6;
+}
+.dm-mkt-journey-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  padding: 24px 0 0;
+  margin: 0;
+  border-top: 1px solid var(--dm-line);
+}
+.dm-mkt-journey-steps strong {
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .dm-mkt-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .dm-mkt-journey-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .dm-mkt-sample-list,
+  .dm-mkt-sample-inspector {
+    padding: 16px;
+  }
+  .dm-mkt-journey-steps {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .dm-mkt-sample-row {
+    gap: 8px;
+  }
+  .dm-mkt-sample-avatar {
+    width: 32px;
+    height: 32px;
   }
 }

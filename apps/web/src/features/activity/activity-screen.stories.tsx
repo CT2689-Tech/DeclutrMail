@@ -206,6 +206,25 @@ const ROWS: ActivityRowWire[] = [
   },
 ];
 
+/** Lifetime totals — the muted "N all time" line under each window count. */
+const ALL_TIME_STATS: ActivityStatsWire = {
+  ...STATS,
+  archived: 1335,
+  unsubscribed: 86,
+  kept: 41,
+  later: 19,
+  deleted: 212,
+};
+
+const ZERO_STATS: ActivityStatsWire = {
+  ...STATS,
+  archived: 0,
+  unsubscribed: 0,
+  kept: 0,
+  later: 0,
+  deleted: 0,
+};
+
 function makeClient(
   rows: ActivityRowWire[] | undefined,
   window: ActivityWindowWire,
@@ -215,6 +234,7 @@ function makeClient(
     hasMore: false,
     limit: 25,
   },
+  stats: ActivityStatsWire = STATS,
 ): QueryClient {
   const client = new QueryClient({
     // `retryOnMount: false` keeps the NextPageError story stable — an
@@ -225,14 +245,16 @@ function makeClient(
     },
   });
   client.setQueryData(ME_QUERY_KEY, STORY_ME);
+  // D246 — the seven-day strip; zero outcomes are hidden, so this shows
+  // three chips.
   client.setQueryData(activityKeys.weeklyReview(), {
     window: '7d',
     from: isoHoursAgo(168),
     to: isoHoursAgo(0),
-    completed: 0,
+    completed: 23,
     skipped: 0,
-    failed: 0,
-    recovered: 0,
+    failed: 1,
+    recovered: 2,
     protected: 0,
   });
   if (rows) {
@@ -244,8 +266,8 @@ function makeClient(
           data: rows,
           meta: {
             pagination,
-            stats: STATS,
-            allTimeStats: STATS,
+            stats,
+            allTimeStats: ALL_TIME_STATS,
             window,
             source,
             verbs: [],
@@ -280,7 +302,7 @@ const meta: StoryMeta<typeof ActivityScreen> = {
     docs: {
       description: {
         component:
-          'Activity feed (D55-D60). Stats header (D59), source chips (D56 partial), window picker (D55), and row list with D58 undo affordances rendered from the pre-resolved undoState discriminator.',
+          'Activity feed (D55-D60). One summary line (D59), every filter behind the Filter button (D55/D56), and a timeline under day headers with D58 undo affordances rendered from the pre-resolved undoState discriminator.',
       },
     },
   },
@@ -315,13 +337,42 @@ export const EmptyFiltered: Story<typeof ActivityScreen> = {
 };
 
 /**
- * Mobile (< sm) — the 7-column desktop row grid restacks into cards and
- * the 5-tile metrics strip collapses to 3-per-row. Driven by
- * `useIsAtMost('sm')` reading the resized story viewport's matchMedia.
+ * Mobile (< sm) — each row's controls drop to their own line, the search
+ * takes a header line of its own, and Filter opens a bottom sheet. Driven
+ * by `useIsAtMost('sm')` reading the resized story viewport's matchMedia.
  */
 export const Mobile: Story<typeof ActivityScreen> = {
   globals: { viewport: 'mobile1' },
   render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient(ROWS, '30d', 'all')),
+};
+
+/** B11 — the same rows folded under one expandable header per sender. */
+export const GroupedBySender: Story<typeof ActivityScreen> = {
+  parameters: {
+    nextjs: {
+      appDirectory: true,
+      navigation: { pathname: '/activity', query: { group: 'sender' } },
+    },
+  },
+  render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient(ROWS, '30d', 'all')),
+};
+
+/**
+ * A window whose only rows were undone: the five columns stay as muted
+ * zeros over their all-time totals, and the caption
+ * says why the undone rows aren't counted.
+ */
+export const QuietWindow: Story<typeof ActivityScreen> = {
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(
+      makeClient(
+        ROWS.filter((r) => r.undoState.kind === 'executed'),
+        '30d',
+        'all',
+        undefined,
+        ZERO_STATS,
+      ),
+    ),
 };
 
 /** Source-filtered (Autopilot only). */

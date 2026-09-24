@@ -1,15 +1,14 @@
+import { afterLead } from '@/lib/copy/after-lead';
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
-import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
-import type { CSSProperties, ReactNode } from 'react';
 
 import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
-const { color, font } = tokens;
+const { color } = tokens;
 
 /**
  * The live "what moves" figure for the preview — the sender's
@@ -20,7 +19,7 @@ const { color, font } = tokens;
  */
 export type PreviewCount = number | 'loading' | 'unavailable';
 
-export interface ActionPreviewPresentationProps {
+export interface PreviewFactsInput {
   verb: ActionVerb;
   row: TriageDecisionRow;
   /**
@@ -32,70 +31,71 @@ export interface ActionPreviewPresentationProps {
   /** Live inbox count for the sender — see {@link PreviewCount}. */
   inboxCount: PreviewCount;
   /** Exact Later return time carried by the pending action. */
-  wakeAt?: string | null;
+  wakeAt?: string | null | undefined;
   /**
    * ADR-0028 — the reach a Delete preview is armed at; `inboxCount` is
    * then the count AT that reach. Absent = `inbox_only`.
    */
   reach?: ActionReach | undefined;
-  /** Chrome variant — modal (inside sheet) vs inline (no chrome). */
-  mode: 'modal' | 'inline';
-  /** Optional app-owned context shown before the action copy. */
-  accountContext?: ReactNode;
-  /**
-   * Rendered verification detail, or omitted for the compact preview.
-   *
-   * A NODE rather than data, for the same reason `accountContext` is:
-   * tree-shaking is per-module, so a component referenced in this file's
-   * JSX lands in every importer's chunk — including the public inbox
-   * simulator, which passes none of it. Measured: inlining the block
-   * here put `/inbox-simulator` at 175.5 kB against a 175 kB budget.
-   */
-  detailSlot?: ReactNode | undefined;
-  /**
-   * Cleanup actions left this month, or `null`/omitted when the tier
-   * does not meter them. Stays here (rather than in the slot) because
-   * how many units THIS action costs is derived from the verb and the
-   * backlog toggle, which only this component holds.
-   */
-  quotaRemaining?: number | null | undefined;
 }
 
 /**
- * Pure mandatory "what happens next" preview (D208, D226).
+ * What a preview says, as data (D208, D226, ADR-0042).
  *
- * This component owns only presentation and receives every value it renders.
- * Authenticated surfaces inject their Gmail-account note through
- * `accountContext`; the public simulator intentionally leaves that slot empty,
- * removing this preview's auth/query edge from the public route-specific chunk.
+ * A preview owes the user three things, each ONCE: the count (`title`),
+ * where the email goes (`subtitle`), how to undo it (`note`). Everything
+ * else the product knows is a `disclosure` and lives behind "Details".
+ * The sheet and the inline (D34 skip-sheet) preview both read this, so
+ * the two cannot drift.
  *
- * Variant `mode` only changes the chrome — the content (counts, historic
- * backlog hint, reasoning recap, and what-changes copy) remains identical.
- * The impact figure is the current inbox match count fetched server-side in
- * the app, never a client estimate. The worker re-checks Gmail at execution,
- * so this preview is not a promise of the final affected count.
+ * Every sentence is either composed from a field passed in, or comes from
+ * the shared action semantics (`buildActionPresentation`) — the undo
+ * window, the Gmail Trash retention, the unsubscribe channel and the
+ * Later schedule are never restated by hand here.
  */
-export function ActionPreviewPresentation({
+export interface PreviewFacts {
+  /** The verb moves mail right now (Unsubscribe only with the backlog on). */
+  counts: boolean;
+  /** Numeric live count, or null while loading / unavailable. */
+  liveCount: number | null;
+  /** A count-based verb whose live count resolved to zero. */
+  nothingToMove: boolean;
+  allMail: boolean;
+  title: string;
+  subtitle: string | null;
+  note: string | null;
+  /** Count + destination in one line, for the inline preview. */
+  compactLine: string;
+  /** Confirm label — verb + count when the count is known. */
+  primaryLabel: string;
+  /**
+   * Collapsed facts, in reading order, as short label/value pairs for
+   * the Details well's `SheetFactList`. Each value states the same fact
+   * as the shared semantics sentence it is cut from — shorter, never
+   * wider or narrower.
+   */
+  disclosures: readonly PreviewDisclosure[];
+  /** Cleanup actions this confirm spends (metered tiers). */
+  unitsNeeded: number;
+}
+
+/** One Details row. `value` is plain text so the inline path can render it anywhere. */
+export interface PreviewDisclosure {
+  label: string;
+  value: string;
+}
+
+const n = (value: number) => value.toLocaleString('en-US');
+const emails = (count: number) => `${n(count)} email${count === 1 ? '' : 's'}`;
+
+export function buildPreviewFacts({
   verb,
   row,
   archiveHistoric,
   inboxCount,
   wakeAt = null,
   reach = 'inbox_only',
-  mode,
-  accountContext,
-  detailSlot,
-  quotaRemaining,
-}: ActionPreviewPresentationProps) {
-  // `useNow`, not an ambient `new Date()` — same hydration reasoning as
-  // `TriageRowExpanded`, which this age label is copied from (D25,
-  // founder 2026-08-19): the reasoning sentence freezes at score time,
-  // the impact count above is live, and this dialog is the one place a
-  // destructive verb cannot be confirmed without seeing both
-  // (QA-archive-20260828-02).
-  const now = useNow();
-  const ageLabel =
-    row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
+}: PreviewFactsInput): PreviewFacts {
   const subject = row.senderName;
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
@@ -114,249 +114,165 @@ export function ActionPreviewPresentation({
       actionVerb === 'unsubscribe' && archiveHistoric ? { verb: 'archive', liveCount } : null,
     reach: allMail ? 'all_mail' : 'inbox_only',
   });
+  const { primary, secondary } = presentation;
 
-  // Copy per verb — literal, and TRUE to the pipeline each verb rides:
-  // Archive/Later/Delete move the sender's current inbox mail via the worker;
-  // Unsubscribe sends the real one-click request (D9 Wave 2) or opens
-  // the manual Gmail-compose path (mailto stays manual per D230);
-  // Keep moves nothing.
-  //
-  // QA-delete-20260829-08 — a header that always promises a move read as
-  // active even when the live count is 0 ("Move inbox email from Victoria's
-  // Secret Panty Party to Gmail Trash" above a body reading "0 matching
-  // emails"). Only the three count-based verbs can BE zero this way —
-  // Unsubscribe and Keep never claim a mail move, so their headers are
-  // unaffected.
+  // Archive/Later/Delete act on the sender's current inbox mail via the
+  // worker; Unsubscribe only when the backlog toggle is on; Keep never.
   const movesCurrentInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
-  const title =
-    movesCurrentInbox && liveCount === 0
-      ? `Nothing to move from ${subject} right now`
-      : verb === 'Archive'
-        ? `Archive all inbox email from ${subject}`
+  const counts = movesCurrentInbox || (verb === 'Unsubscribe' && archiveHistoric);
+  // QA-delete-20260829-08 — a header that promises a move read as active
+  // even when the live count is 0. Only the count-based verbs can BE zero
+  // this way; Unsubscribe and Keep never claim a mail move.
+  const nothingToMove = movesCurrentInbox && liveCount === 0;
+
+  const title = nothingToMove
+    ? `Nothing in your inbox${allMail ? ' or archive' : ''} from ${subject}`
+    : verb === 'Archive'
+      ? liveCount === null
+        ? `Archive email from ${subject}?`
+        : `Archive ${emails(liveCount)}?`
+      : verb === 'Delete'
+        ? liveCount === null
+          ? `Delete email from ${subject}?`
+          : `Delete ${emails(liveCount)}?`
         : verb === 'Later'
-          ? `Move ${subject} to Later`
+          ? liveCount === null
+            ? `Move email from ${subject} to Later?`
+            : `Move ${emails(liveCount)} to Later?`
           : verb === 'Unsubscribe'
-            ? `Unsubscribe from ${subject}`
-            : verb === 'Delete'
-              ? `Move ${allMail ? 'inbox + archived' : 'inbox'} email from ${subject} to Gmail Trash`
-              : `Keep ${subject}`;
+            ? `Unsubscribe from ${subject}?`
+            : `Keep ${subject}?`;
 
-  // Zero matches: the title already says nothing moves, the figure below
-  // shows the 0, and the footer states why confirm is disabled. A lead
-  // describing a move and its undo is noise about an action that cannot run.
-  const lead = movesCurrentInbox && liveCount === 0 ? null : presentation.previewCopy;
+  const destination =
+    verb === 'Archive'
+      ? 'They leave your inbox and stay in Gmail.'
+      : verb === 'Delete'
+        ? allMail
+          ? 'Inbox and archived email both move to Gmail Trash.'
+          : 'They move to Gmail Trash.'
+        : verb === 'Later'
+          ? 'They wait in Gmail’s DeclutrMail/Later label, then return to your inbox.'
+          : null;
+  const subtitle = nothingToMove
+    ? null
+    : verb === 'Unsubscribe'
+      ? primary.unsubscribeChannel.kind === 'not-applicable' ||
+        primary.unsubscribeChannel.kind === 'varies'
+        ? primary.futureMail.summary
+        : primary.unsubscribeChannel.summary
+      : destination === null
+        ? primary.currentMail.summary
+        : `From ${subject}. ${destination}`;
 
-  // The server charges a second unit for a backlog verb riding an
-  // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
-  // ? 2 : 1`, and the paired Archive enqueues as its own action). The
-  // senders modal stated one for both cases until 2026-08-27; this
-  // surface never stated a number at all, so a Free user spent from
-  // Triage blind.
-  const unitsNeeded = 1 + (verb === 'Unsubscribe' && archiveHistoric ? 1 : 0);
+  // How to undo it — or the one thing that cannot be undone. Zero
+  // matches: nothing can run, so there is nothing to undo.
+  const note = nothingToMove
+    ? null
+    : verb === 'Unsubscribe'
+      ? `A sent unsubscribe can’t be recalled.${
+          archiveHistoric ? ' The archived email can be undone from Activity.' : ''
+        }`
+      : [
+          primary.activityUndo.summary,
+          // Delete is the one verb where the reader plausibly fears the
+          // opposite (CLAUDE.md §2.3).
+          ...(verb === 'Delete' && primary.futureMail.inPreview
+            ? [primary.futureMail.summary]
+            : []),
+          ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
+        ].join(' ');
 
-  // What actually moves: Archive + Later + Delete act on the sender's current
-  // inbox mail; Unsubscribe only when the historic toggle is on;
-  // Keep never.
-  const counts: boolean =
-    verb === 'Archive' ||
-    verb === 'Later' ||
-    verb === 'Delete' ||
-    (verb === 'Unsubscribe' && archiveHistoric);
+  const compactLine = nothingToMove
+    ? title
+    : verb === 'Unsubscribe'
+      ? (subtitle ?? title)
+      : `${liveCount === null ? 'Email' : emails(liveCount)} from ${subject}. ${destination ?? ''}`.trim();
 
-  const containerStyle: CSSProperties =
-    mode === 'inline'
-      ? {
-          background: color.paper,
-          border: `1px solid ${color.line}`,
-          borderRadius: 9,
-          padding: '12px 14px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          fontFamily: font.sans,
-        }
-      : {
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        };
+  const disclosures: PreviewDisclosure[] = [];
+  if (counts && liveCount !== null) {
+    disclosures.push({
+      label: 'Count',
+      value: `${allMail ? 'Inbox + archived' : 'Inbox'} now, rechecked when it runs`,
+    });
+  }
+  // "from", a floor rather than a delivery time — see `presentationSchedule`.
+  if (primary.schedule.kind === 'scheduled') {
+    disclosures.push({
+      label: 'Returns',
+      value: afterLead(primary.schedule.summary, 'Returns to Inbox '),
+    });
+  }
+  if (verb === 'Unsubscribe') {
+    disclosures.push({
+      label: 'Past email',
+      value:
+        secondary === null ? 'Stays where it is' : secondary.currentMail.summary.replace(/\.$/, ''),
+    });
+    if (secondary !== null) {
+      disclosures.push({
+        label: 'Undo archive',
+        value: afterLead(secondary.activityUndo.summary, 'Undo '),
+      });
+    }
+  }
+  if (primary.providerRecovery.kind === 'gmail-trash') {
+    disclosures.push({
+      label: 'Gmail Trash',
+      value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+    });
+  }
 
-  return (
-    <div
-      role="region"
-      aria-label={`Preview · ${verb} ${subject}`}
-      data-dm-preview-mode={mode}
-      style={containerStyle}
-    >
-      {mode === 'inline' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: color.primary,
-            }}
-          >
-            {previewEyebrowLabel(verb)}
-          </span>
-        </div>
-      )}
+  return {
+    counts,
+    liveCount,
+    nothingToMove,
+    allMail,
+    title,
+    subtitle,
+    note,
+    compactLine,
+    primaryLabel:
+      counts && liveCount !== null && liveCount > 0 && verb !== 'Unsubscribe'
+        ? `${verb} ${n(liveCount)}`
+        : verb,
+    disclosures,
+    // The server charges a second unit for a backlog verb riding an
+    // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
+    // ? 2 : 1`, and the paired Archive enqueues as its own action).
+    unitsNeeded: 1 + (verb === 'Unsubscribe' && archiveHistoric ? 1 : 0),
+  };
+}
 
-      {accountContext}
-
-      <div>
-        <h3
-          style={{
-            fontSize: mode === 'modal' ? 19 : 14,
-            fontWeight: 600,
-            letterSpacing: '-0.012em',
-            margin: 0,
-          }}
-        >
-          {title}
-        </h3>
-        {lead !== null && (
-          <p
-            style={{
-              fontSize: 12.5,
-              color: color.fgSoft,
-              margin: '4px 0 0',
-              lineHeight: 1.5,
-            }}
-          >
-            {lead}
-          </p>
-        )}
-      </div>
-
-      {/* Current match count, fetched server-side. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          gap: 8,
-          padding: '10px 12px',
-          background: mode === 'inline' ? color.card : color.paper,
-          border: `1px solid ${color.line}`,
-          borderRadius: 8,
-        }}
-      >
-        <ImpactFigure counts={counts} inboxCount={inboxCount} mode={mode} allMail={allMail} />
-      </div>
-
-      {/* Verification detail — the same three affordances the senders
-          confirm modal has always carried, in the same words. They exist
-          so the reader can check the real set BEFORE confirming, which
-          matters most here: triage is the keyboard surface where people
-          move fastest. Rendered only when the verb actually moves mail;
-          a sample of what "currently matches" under an action that moves
-          nothing invites inspection of mail nothing will touch. */}
-      {counts && detailSlot}
-
-      {quotaRemaining !== null && quotaRemaining !== undefined && (
-        <div style={{ fontSize: 11.5, color: color.fgMuted }}>
-          Uses {unitsNeeded.toLocaleString('en-US')} of your{' '}
-          {quotaRemaining.toLocaleString('en-US')} cleanup action
-          {quotaRemaining === 1 ? '' : 's'} left this month.
-        </div>
-      )}
-
-      {/* Reasoning recap — the engine's "why this verdict" copy. */}
-      {verb !== 'Keep' && (
-        <div
-          style={{
-            fontSize: 12,
-            color: color.fgMuted,
-            lineHeight: 1.5,
-            fontFamily: font.sans,
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              gap: 8,
-            }}
-          >
-            <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this:</span>
-            {ageLabel !== null && (
-              <span
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 9.5,
-                  color: color.fgMuted,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {ageLabel}
-              </span>
-            )}
-          </div>
-          {row.reasoning}
-        </div>
-      )}
-    </div>
-  );
+/** "Uses 1 of your 34 cleanup actions left this month." — metered tiers only. */
+export function cleanupCostLine(
+  unitsNeeded: number,
+  quotaRemaining: number | null | undefined,
+): string | null {
+  if (quotaRemaining == null) return null;
+  return `Uses ${n(unitsNeeded)} of your ${n(quotaRemaining)} cleanup action${
+    quotaRemaining === 1 ? '' : 's'
+  } left this month.`;
 }
 
 /**
- * The "N emails move" strip. Four states, all rendered (D211 — edge
- * states are first-class):
+ * The engine's "why this verdict" copy, with how old that read is — the
+ * value of the Details "Why suggested" row.
  *
- *   - `counts=false` — the verb touches nothing in the inbox.
- *   - counting       — the live count is still loading.
- *   - unavailable    — the count fetch failed; say so plainly rather
- *                      than showing a stale or estimated number.
- *   - n              — the real figure.
+ * `useNow`, not an ambient `new Date()` — same hydration reasoning as
+ * `TriageRowExpanded` (D25, founder 2026-08-19): the reasoning sentence
+ * freezes at score time while the count beside it is live
+ * (QA-archive-20260828-02).
  */
-function ImpactFigure({
-  counts,
-  inboxCount,
-  mode,
-  allMail,
-}: {
-  counts: boolean;
-  inboxCount: PreviewCount;
-  mode: 'modal' | 'inline';
-  allMail: boolean;
-}) {
-  const strongStyle: CSSProperties = {
-    fontFamily: font.display,
-    fontSize: mode === 'modal' ? 22 : 18,
-    fontWeight: 600,
-    letterSpacing: '-0.02em',
-    color: color.fg,
-    fontVariantNumeric: 'tabular-nums',
-  };
-  const captionStyle: CSSProperties = { fontSize: 12, color: color.fgSoft };
-
-  if (!counts) {
-    return (
-      <>
-        <strong style={strongStyle}>0</strong>
-        <span style={captionStyle}>emails move.</span>
-      </>
-    );
-  }
-  if (inboxCount === 'loading') {
-    return <span style={captionStyle}>Counting the inbox…</span>;
-  }
-  if (inboxCount === 'unavailable') {
-    return (
-      <span style={captionStyle}>Couldn't load the preview. Nothing can move until it loads.</span>
-    );
-  }
+export function PreviewReasoning({ row }: { row: TriageDecisionRow }) {
+  const now = useNow();
+  const ageLabel =
+    row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   return (
     <>
-      <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
-      <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} {allMail ? 'across inbox + archived' : 'in Inbox'} now.
-        Rechecked when it runs.
-      </span>
+      {row.reasoning}
+      {ageLabel !== null && (
+        <span style={{ display: 'block', color: color.fgMuted, fontWeight: 400 }}>{ageLabel}</span>
+      )}
     </>
   );
 }

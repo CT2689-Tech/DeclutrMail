@@ -27,6 +27,7 @@ vi.mock('@/lib/api/client', async () => {
 });
 
 import { ApiError } from '@/lib/api/client';
+import { MAILBOX_SWITCH_STORAGE_KEY } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { AuthProvider } from './auth-provider';
 import { ME_QUERY_KEY } from './api/use-me';
 
@@ -59,6 +60,30 @@ beforeEach(() => {
 });
 
 describe('AuthProvider', () => {
+  it('refreshes another tab’s mailbox-scoped cache when the active account changes', async () => {
+    apiGet.mockResolvedValue({ data: { ...ME, activeMailboxId: 'mailbox-a' } });
+    const { client } = mount();
+    await waitFor(() => expect(screen.getByTestId('app')).toBeTruthy());
+    client.setQueryData(['senders', 'list'], [{ id: 'mailbox-a-sender' }]);
+
+    apiGet.mockResolvedValue({ data: { ...ME, activeMailboxId: 'mailbox-b' } });
+    await act(async () => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: MAILBOX_SWITCH_STORAGE_KEY,
+          newValue: 'mailbox-b',
+        }),
+      );
+      await waitFor(() => expect(client.getQueryData(['senders', 'list'])).toBeUndefined());
+    });
+
+    await waitFor(() =>
+      expect(client.getQueryData<{ activeMailboxId: string }>(ME_QUERY_KEY)?.activeMailboxId).toBe(
+        'mailbox-b',
+      ),
+    );
+  });
+
   it('keeps the app mounted when a background re-read fails', async () => {
     apiGet.mockResolvedValue({ data: ME });
     const { client } = mount();
@@ -108,9 +133,13 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('auth-skeleton')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     // The loading rail and real AppShell must switch at the same width;
-    // otherwise 768–900px tablets jump from a desktop rail to a hamburger.
+    // otherwise loading and authenticated content shift on tablet widths.
     expect(container.innerHTML).not.toContain('min-width: 768px');
-    expect(container.innerHTML).toContain('min-width: 901px');
+    expect(container.innerHTML).toContain('min-width: 761px');
+    expect(container.querySelector('.dm-skeleton-sidebar')).toHaveStyle({
+      width: '72px',
+      boxSizing: 'border-box',
+    });
   });
 
   it('drops a revoked session even though one is cached, without navigating itself', async () => {

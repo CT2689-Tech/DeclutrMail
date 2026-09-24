@@ -1,6 +1,14 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+  EditorialDescription,
+} from '@/features/editorial/page';
+
 import { useEffect } from 'react';
+import Link from 'next/link';
 
 import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/contracts';
@@ -13,7 +21,7 @@ import { useQuietHours } from './api/use-quiet-hours';
 import { useUpdateQuietHours } from './api/use-update-quiet-hours';
 import { QuietHoursCard, type QuietHoursCardState } from './quiet-hours-card';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Quiet screen (U18 — D92/D95/D96-partial).
@@ -43,22 +51,21 @@ export function QuietRoute() {
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        ...editorialColumnStyle,
         display: 'grid',
-        gap: 16,
-        maxWidth: 1180,
-        fontFamily: font.sans,
+        gap: 24,
       }}
     >
+      <EditorialKicker>Automations / On your schedule</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Quiet hours</h1>
+      <EditorialDescription>
+        Schedules for all connected inboxes. Autopilot pauses during each inbox’s quiet hours; Gmail
+        delivery and your own actions continue.
+      </EditorialDescription>
       <ScreenIntro
         id="quiet"
         title="Quiet hours"
-        body={
-          <>
-            Pick a daily window per mailbox — while it&apos;s active, Autopilot holds its moves and
-            runs them after the window ends. Your own actions always run immediately.
-          </>
-        }
+        body="Autopilot pauses during quiet hours. Your own actions still run."
       />
       {mailboxes.length === 0 ? (
         <EmptyState
@@ -66,14 +73,22 @@ export function QuietRoute() {
           description="Connect a Gmail account to set quiet hours for it."
         />
       ) : (
-        mailboxes.map((mailbox) => <QuietHoursCardContainer key={mailbox.id} mailbox={mailbox} />)
+        <div style={{ display: 'grid', gap: 32, maxWidth: 720 }}>
+          {mailboxes.map((mailbox) => (
+            <QuietHoursCardContainer
+              key={mailbox.id}
+              mailbox={mailbox}
+              active={mailbox.id === me.activeMailboxId}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
 }
 
 /** Wires one mailbox's live query + mutation into the dumb card. */
-function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
+function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; active: boolean }) {
   const query = useQuietHours(mailbox.id);
   const update = useUpdateQuietHours(mailbox.id);
 
@@ -115,7 +130,9 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
   };
 
   return (
+    // One raised settings group per mailbox, its address as the group title.
     <div style={{ display: 'grid', gap: 8 }}>
+      {active && <p style={{ margin: 0, color: color.primary, fontSize: text.sm }}>Active inbox</p>}
       <QuietHoursCard
         mailboxEmail={mailbox.email}
         mailboxStatus={mailbox.status}
@@ -126,6 +143,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
       />
       {query.data && (
         <QuietQueueSummary
+          activeInbox={active}
           activeNow={query.data.activeNow}
           heldCount={query.data.heldCount}
           endsAt={query.data.endsAt}
@@ -137,11 +155,13 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
 }
 
 function QuietQueueSummary({
+  activeInbox,
   activeNow,
   heldCount,
   endsAt,
   timezone,
 }: {
+  activeInbox: boolean;
   activeNow: boolean;
   heldCount: number;
   endsAt: string | null;
@@ -150,13 +170,15 @@ function QuietQueueSummary({
   const actionLabel = heldCount === 1 ? 'Autopilot action' : 'Autopilot actions';
   const endLabel = endsAt ? formatQuietEnd(endsAt, timezone) : null;
 
-  let summary = <>Quiet is off. No Autopilot actions are held.</>;
+  // Off with nothing held: the unchecked toggle already says it.
+  if (!activeNow && heldCount === 0) return null;
 
-  if (!activeNow && heldCount > 0) {
+  let summary = <>No Autopilot actions are held.</>;
+
+  if (!activeNow) {
     summary = (
       <>
-        Quiet is off. {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} waiting to run;{' '}
-        quiet is not delaying {heldCount === 1 ? 'it' : 'them'}.
+        {heldCount} {actionLabel} waiting to run — not held by quiet hours.
       </>
     );
   } else if (activeNow && heldCount === 0 && endLabel) {
@@ -188,13 +210,22 @@ function QuietQueueSummary({
       role="status"
       style={{
         fontFamily: font.sans,
-        fontSize: 12,
+        fontSize: text.sm,
         lineHeight: 1.5,
-        color: color.fgSoft,
-        margin: '0 12px',
+        color: color.fgMuted,
+        margin: 0,
+        padding: '0 16px',
+        fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {summary}
+      {summary}{' '}
+      {activeInbox ? (
+        <Link href="/autopilot" style={{ color: color.primary }}>
+          Review Autopilot rules →
+        </Link>
+      ) : (
+        <span>Choose this inbox in the account menu to review its rules.</span>
+      )}
     </p>
   );
 }

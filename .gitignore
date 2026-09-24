@@ -69,6 +69,7 @@ docs/handoff/
 # Test artifacts
 playwright-report/
 test-results/
+.playwright-mcp/
 
 # Local dev runtime — pidfiles + tailed logs from scripts/dev-up.sh
 .local-logs/

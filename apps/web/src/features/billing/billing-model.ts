@@ -36,8 +36,8 @@ function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): stri
  * would be routed to.
  *
  * CLAMPED to what that rail can actually charge: preferring Razorpay
- * does not make a plan purchasable on it (India is deferred, every
- * `razorpayPlanId` is null), and checkout falls back to Paddle/USD. A
+ * does not make an unprovisioned price point purchasable on it; such
+ * points fall back to Paddle/USD. A
  * quote naming a currency the checkout cannot take is a promise we
  * break one click later.
  *
@@ -55,7 +55,8 @@ export function quotedPlanPrice(
 }
 
 /**
- * "₹15,999/yr" — what an EXISTING subscription is actually billed.
+ * Configured plan price for an existing subscription, not a provider
+ * upcoming-invoice total. Taxes/adjustments are not available here.
  *
  * NOT clamped, deliberately. The subscription's own provider is settled
  * fact: it exists, so it was purchasable on that rail, whatever the
@@ -85,31 +86,10 @@ export function chargedPlanPrice(
   return priceLabel(tier, cycle, currency);
 }
 
-/**
- * Whole months of the monthly price the annual cycle saves ("2 months
- * free"), derived from the manifest — never a hardcoded claim. Null
- * when a cycle is missing, the tier is free, or the saving isn't an
- * exact whole number of months (an approximate claim would be a lie).
- */
-export function annualMonthsFree(tier: TierId): number | null {
-  const { monthly, annual } = TIER_MANIFEST[tier].prices;
-  if (!monthly || !annual || monthly.usdCents <= 0) return null;
-  const savedCents = monthly.usdCents * 12 - annual.usdCents;
-  if (savedCents <= 0 || savedCents % monthly.usdCents !== 0) return null;
-  return savedCents / monthly.usdCents;
-}
-
-/**
- * The annual saving shared by EVERY purchasable paid tier, or null when
- * the tiers disagree — a single toggle badge must not promise a saving
- * some plan doesn't deliver.
- */
-export function sharedAnnualMonthsFree(): number | null {
-  const values = STRIP_TIER_IDS.filter((id) => id !== 'free').map((id) => annualMonthsFree(id));
-  const [first] = values;
-  if (first == null || values.some((v) => v !== first)) return null;
-  return first;
-}
+export {
+  annualMonthsFree,
+  sharedAnnualMonthsFree,
+} from '@/features/marketing/pricing/pricing-model';
 
 /**
  * D120 — is this paid→paid change a deferred (period-end) downgrade?

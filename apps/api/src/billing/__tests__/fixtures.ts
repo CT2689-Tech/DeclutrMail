@@ -170,6 +170,28 @@ export function paddleAdjustmentCreated(args: {
   };
 }
 
+/** Paddle's final decision on a previously pending refund. */
+export function paddleAdjustmentUpdated(args: {
+  eventId?: string;
+  status: 'approved' | 'rejected' | 'pending_approval';
+  action?: string;
+  subscriptionId?: string | null;
+  itemTypes?: string[];
+}): Record<string, unknown> {
+  const created = paddleAdjustmentCreated({
+    eventId: args.eventId ?? 'evt_01paddle_adj_updated',
+    ...(args.action !== undefined ? { action: args.action } : {}),
+    ...(args.subscriptionId !== undefined ? { subscriptionId: args.subscriptionId } : {}),
+    ...(args.itemTypes !== undefined ? { itemTypes: args.itemTypes } : {}),
+  });
+  return {
+    ...created,
+    event_type: 'adjustment.updated',
+    occurred_at: '2026-06-12T10:10:00.000000Z',
+    data: { ...(created.data as Record<string, unknown>), status: args.status },
+  };
+}
+
 /**
  * Razorpay subscription webhook envelope. NOTE: the event id is NOT in
  * the body — Razorpay delivers it in the `x-razorpay-event-id` header;

@@ -1,25 +1,27 @@
 import Link from 'next/link';
+import { SupportTasks } from './support-tasks';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
-import { LearnEyebrow, LearnShell } from './learn-shell';
+import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle } from './types';
 
-function ArticleCards({ articles, label }: { articles: readonly LearnArticle[]; label: string }) {
+function ArticleList({ articles, label }: { articles: readonly LearnArticle[]; label: string }) {
   return (
-    <section className="dm-learn-grid" aria-label={label}>
+    <ul className="dm-read-list" aria-label={label}>
       {articles.map((article) => (
-        <Link className="dm-learn-card" href={article.path} key={article.slug}>
-          <em>{article.eyebrow}</em>
-          <strong>{article.title}</strong>
-          <span>{article.description}</span>
-          <span>{article.readingMinutes} minute read</span>
-        </Link>
+        <li key={article.slug}>
+          <Link href={article.path}>
+            <span className="dm-read-list-title">{article.title}</span>
+            <span className="dm-read-list-desc">{article.description}</span>
+            <span className="dm-read-list-meta">{article.readingMinutes} minute read</span>
+          </Link>
+        </li>
       ))}
-    </section>
+    </ul>
   );
 }
 
@@ -34,9 +36,15 @@ function ArticleCards({ articles, label }: { articles: readonly LearnArticle[]; 
  * inferred from the markup.
  */
 function LearnHub({ hub }: { hub: LearnHubDefinition }) {
-  const { eyebrow, heading, lead, meta, path, description, articles, label } = hub;
+  const { heading, lead, meta, path, description, articles, label } = hub;
   return (
-    <LearnShell>
+    <ReadingLayout
+      title={heading}
+      lede={lead}
+      meta={meta.map((item) => (
+        <span key={item}>{item}</span>
+      ))}
+    >
       <JsonLd
         data={{
           '@context': 'https://schema.org',
@@ -58,23 +66,8 @@ function LearnHub({ hub }: { hub: LearnHubDefinition }) {
           },
         }}
       />
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>{eyebrow}</LearnEyebrow>
-          <h1 className="dm-learn-title">{heading}</h1>
-          <p className="dm-learn-lead">{lead}</p>
-          <div className="dm-learn-meta">
-            {meta.map((item, index) => (
-              <span key={item}>
-                {index > 0 ? <span aria-hidden="true">· </span> : null}
-                {item}
-              </span>
-            ))}
-          </div>
-        </div>
-      </header>
-      <ArticleCards articles={articles} label={label} />
-    </LearnShell>
+      <ArticleList articles={articles} label={label} />
+    </ReadingLayout>
   );
 }
 
@@ -89,7 +82,16 @@ export function AnswersIndexPage() {
 export function BlogIndexPage() {
   const articles = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
   return (
-    <LearnShell>
+    <ReadingLayout
+      title="Notes on calmer, inspectable email"
+      lede="First-party essays about decisions by sender, privacy boundaries, recovery, and the design trade-offs behind a Gmail companion."
+      meta={
+        <>
+          <span>{articles.length} launch essays</span>
+          <span>No sponsored posts</span>
+        </>
+      }
+    >
       <JsonLd
         data={{
           '@context': 'https://schema.org',
@@ -103,53 +105,39 @@ export function BlogIndexPage() {
           })),
         }}
       />
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>DeclutrMail articles</LearnEyebrow>
-          <h1 className="dm-learn-title">Notes on calmer, inspectable email</h1>
-          <p className="dm-learn-lead">
-            First-party essays about decisions by sender, privacy boundaries, recovery, and the
-            design trade-offs behind a Gmail companion.
-          </p>
-          <div className="dm-learn-meta">
-            <span>{articles.length} launch essays</span>
-            <span aria-hidden="true">·</span>
-            <span>No sponsored posts</span>
-          </div>
-        </div>
-      </header>
-      <ArticleCards articles={articles} label="DeclutrMail articles" />
+      <ArticleList articles={articles} label="DeclutrMail articles" />
       {/* The how-to and answer clusters used to be listed in full here,
           because the footer's "Guides" link landed on /blog and they had
           no hub of their own. They now have one each, so this is two
-          pointers instead of twenty duplicated cards — the hub stays the
+          pointers instead of twenty duplicated rows — the hub stays the
           canonical entry point for its cluster, and the essays are not
           buried under content they have nothing to do with. Every field
           reads off the hub definition (`meta[0]` is its cluster count) so
           this pointer cannot describe a hub the hub does not describe. */}
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>Also on DeclutrMail</LearnEyebrow>
-          <h2 className="dm-learn-title">Guides and answers</h2>
-        </div>
-      </header>
-      <section className="dm-learn-grid" aria-label="Other learning hubs">
-        {[HOW_TO_HUB, ANSWERS_HUB].map((hub) => (
-          <Link className="dm-learn-card" href={hub.path} key={hub.path}>
-            <em>{hub.eyebrow}</em>
-            <strong>{hub.heading}</strong>
-            <span>{hub.description}</span>
-            <span>{hub.meta[0]}</span>
-          </Link>
-        ))}
+      <section aria-labelledby="other-hubs">
+        <h2 id="other-hubs">Guides and answers</h2>
+        <ul className="dm-read-list" aria-label="Other learning hubs">
+          {[HOW_TO_HUB, ANSWERS_HUB].map((hub) => (
+            <li key={hub.path}>
+              <Link href={hub.path}>
+                <span className="dm-read-list-title">{hub.heading}</span>
+                <span className="dm-read-list-desc">{hub.description}</span>
+                <span className="dm-read-list-meta">{hub.meta[0]}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </section>
-    </LearnShell>
+    </ReadingLayout>
   );
 }
 
 export function FaqPage() {
   return (
-    <LearnShell>
+    <ReadingLayout
+      title="Questions worth answering before Gmail access"
+      lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
+    >
       <JsonLd
         data={{
           '@context': 'https://schema.org',
@@ -161,87 +149,94 @@ export function FaqPage() {
           })),
         }}
       />
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>Product FAQ · precise answers</LearnEyebrow>
-          <h1 className="dm-learn-title">Questions worth answering before Gmail access</h1>
-          <p className="dm-learn-lead">
-            What is stored, what each action changes, where recovery stops, and how DeclutrMail fits
-            beside Gmail. No universal-undo shorthand.
-          </p>
-        </div>
-      </header>
-      <section className="dm-learn-faq" aria-label="Frequently asked questions">
+      <SupportTasks />
+      <section className="dm-read-faq" aria-label="Frequently asked questions">
         {FAQ_ENTRIES.map((entry, index) => (
           <details key={entry.id} id={entry.id} open={index === 0}>
             <summary>{entry.question}</summary>
-            <p>{entry.answer}</p>
-            {entry.link ? (
-              <p>
-                <Link href={entry.link.href}>{entry.link.label} →</Link>
-              </p>
-            ) : null}
+            <div className="dm-read-faq-answer">
+              <p>{entry.answer}</p>
+              {entry.link ? (
+                <p>
+                  <Link href={entry.link.href}>{entry.link.label}</Link>
+                </p>
+              ) : null}
+            </div>
           </details>
         ))}
       </section>
-    </LearnShell>
+      <ReadingCta />
+    </ReadingLayout>
   );
 }
 
 export function ChangelogPage() {
   return (
-    <LearnShell>
-      <header className="dm-learn-hero dm-learn-hero--solo">
-        <div>
-          <LearnEyebrow>Product updates</LearnEyebrow>
-          <h1 className="dm-learn-title">What changed, and when</h1>
-          <p className="dm-learn-lead">
-            DeclutrMail does not use public version numbers yet, so updates are listed by the date
-            they shipped rather than under invented release names. Every entry describes a change
-            you can see in the product — it is not a promise that every account has received a
-            rollout.
-          </p>
-          <div className="dm-learn-meta">
-            <Link href="/changelog/rss.xml">RSS feed</Link>
-          </div>
-        </div>
-      </header>
-      <section className="dm-learn-log" aria-label="Product update history">
+    <ReadingLayout
+      title="What changed, and when"
+      lede="This archive currently covers updates through July 2026. The product has newer changes; their release notes are still being curated. Entries are dated by when they shipped."
+      meta={<Link href="/changelog/rss.xml">RSS feed</Link>}
+    >
+      <nav className="dm-support-tasks" aria-label="Explore product updates">
+        <Link href="/how-it-works">
+          Review the current workflow
+          <small>See what changes in Gmail and what stays under your control</small>
+        </Link>
+        <Link href="/help">
+          Find help with a change<small>Recovery, connections and subscription support</small>
+        </Link>
+      </nav>
+      <section className="dm-read-log" aria-label="Product update history">
         {CHANGELOG_ENTRIES.map((entry) => (
           <article key={entry.id} id={entry.id}>
-            <LearnEyebrow>Update · {entry.date}</LearnEyebrow>
-            <h2>{entry.title}</h2>
-            <p>{entry.summary}</p>
-            {entry.added.length ? (
-              <>
-                <h3>Added</h3>
-                <ul>
-                  {entry.added.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-            {entry.improved.length ? (
-              <>
-                <h3>Improved</h3>
-                <ul>
-                  {entry.improved.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
-            {entry.fixed.length ? (
-              <>
-                <h3>Fixed</h3>
-                <ul>
-                  {entry.fixed.map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
+            <time dateTime={entry.date}>{formatReadingDate(entry.date)}</time>
+            <div className="dm-read-log-entry">
+              <h2>{entry.title}</h2>
+              <p>{entry.summary}</p>
+              <p>
+                <Link
+                  href={
+                    /payment|plan|rupees|tier/i.test(entry.title)
+                      ? '/pricing'
+                      : /access|deletion/i.test(entry.title)
+                        ? '/security'
+                        : '/how-it-works'
+                  }
+                >
+                  Explore this part of the product →
+                </Link>
+              </p>
+              {entry.added.length ? (
+                <>
+                  <h3>Added</h3>
+                  <ul>
+                    {entry.added.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {entry.improved.length ? (
+                <>
+                  <h3>Improved</h3>
+                  <ul>
+                    {entry.improved.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {entry.fixed.length ? (
+                <>
+                  <h3>Fixed</h3>
+                  <ul>
+                    {entry.fixed.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </div>
             {/*
               `entry.evidence` is deliberately NOT rendered. It stays in the
               data as build-time provenance so `pnpm check-changelog` can
@@ -253,6 +248,6 @@ export function ChangelogPage() {
           </article>
         ))}
       </section>
-    </LearnShell>
+    </ReadingLayout>
   );
 }

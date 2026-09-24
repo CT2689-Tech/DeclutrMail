@@ -740,10 +740,29 @@ describe('BaseDeclutrWorker', () => {
       const startKeys = Object.keys(lines[0]!).sort();
       const successKeys = Object.keys(lines[1]!).sort();
       expect(startKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'worker'].sort(),
+        [
+          'attempt',
+          'durationMs',
+          'jobRef',
+          'kind',
+          'level',
+          'severity',
+          'mailboxRef',
+          'worker',
+        ].sort(),
       );
       expect(successKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'result', 'worker'].sort(),
+        [
+          'attempt',
+          'durationMs',
+          'jobRef',
+          'kind',
+          'level',
+          'severity',
+          'mailboxRef',
+          'result',
+          'worker',
+        ].sort(),
       );
       // None of the forbidden fields (D203 forbidden-fields list).
       for (const line of lines) {
@@ -752,5 +771,41 @@ describe('BaseDeclutrWorker', () => {
         }
       }
     });
+  });
+});
+
+describe('cooperative deadline ownership', () => {
+  it('signals expiry but keeps the attempt alive until cleanup finishes', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let signal!: AbortSignal;
+    let cleaned = false;
+    const worker = new TestWorker(async (_, ctx) => {
+      signal = ctx.signal!;
+      try {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      } finally {
+        cleaned = true;
+      }
+      return { ok: true };
+    }, 'cronPolicy');
+    let settled = false;
+    const run = worker.run(fakeJob({ data: {} })).catch((error: Error) => {
+      settled = true;
+      return error;
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(WORKER_POLICIES.cronPolicy.timeoutMs!);
+      expect(signal.aborted).toBe(true);
+      expect(settled).toBe(false);
+      expect(cleaned).toBe(false);
+      release();
+      expect(await run).toHaveProperty('message', expect.stringContaining('exceeded'));
+      expect(cleaned).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

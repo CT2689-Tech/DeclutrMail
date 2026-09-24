@@ -3,27 +3,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
+import { Switch } from '@/features/settings/switch';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
-import { presetDisplayName } from './preset-labels';
+import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /** The plan granting unattended action — derived, never hardcoded. */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
 /**
- * One preset rule in the D101 rules-management list.
- *
- * Surfaces per D101: enabled toggle, threshold slider (confidence-
- * gated presets only), last-run summary, pending-match count, mode
- * pill with the D10 observe-window countdown, dry-run "Preview
- * matches" (D103 scoped to presets per D192), and a Resume affordance
- * for paused rules (the PausedBanner's "re-enable from the rules
- * list").
+ * One preset rule in the D101 rules-management list — a quiet row:
+ * name + status pill + enabled switch, a one-line description, then
+ * ONE "Details" capsule (and Resume for paused rules). Details holds the
+ * rest of D101's surface — last-run summary, pending-match count, the
+ * D10 observe-window countdown, the Observe digest, the
+ * confidence-threshold slider — and "Preview matches" (D103 dry-run,
+ * scoped to presets per D192), which stays an explicit request.
  *
  * Mode changes that START automation (observe/paused → active) do NOT
  * live here — activation is the day-7 banner's explicit, previewed
@@ -79,27 +79,34 @@ export function RuleCard({
   onRetryPreview: () => void;
 }) {
   const now = useNow();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const name = presetDisplayName(rule.presetKey, rule.name);
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
+  const explanation = isReviewOnlyPreset(rule.presetKey)
+    ? rule.enabled
+      ? 'Matches wait for your approval; no mail moves on its own.'
+      : null
+    : ruleModeExplanation(rule, canActivate);
+  const detailsId = `rule-details-${rule.id}`;
 
   return (
     <li
       data-rule-id={rule.id}
+      className="dm-rule-row"
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
-        padding: '14px 16px',
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
+        gap: 4,
+        padding: '16px 20px',
         fontFamily: font.sans,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <style>{RULE_ROW_CSS}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
         <div
           style={{
             flex: 1,
@@ -110,17 +117,24 @@ export function RuleCard({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: color.fg }}>{name}</span>
-          <Pill tone="default">{describeRuleAction(rule.actionKind)}</Pill>
-          <ModePill rule={rule} canActivate={canActivate} />
+          <span style={{ fontSize: text.lg, fontWeight: 550, color: color.fg }}>{name}</span>
+          <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
-        <EnabledSwitch
-          ruleName={name}
-          enabled={rule.enabled}
+        <Switch
+          checked={rule.enabled}
           disabled={isSaving}
-          onToggle={() => onToggleEnabled(!rule.enabled)}
+          ariaLabel={`${rule.enabled ? 'Disable' : 'Enable'} rule ${name}`}
+          onChange={() => onToggleEnabled(!rule.enabled)}
         />
       </div>
+
+      {/* The one-line description: what it does, and how it is running.
+          This is where Watching vs Active is explained — at the rule,
+          not in a page preamble. */}
+      <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+        {describeRuleAction(rule.actionKind)}
+        {explanation === null ? '' : ` · ${explanation}`}
+      </p>
 
       <div
         style={{
@@ -128,72 +142,108 @@ export function RuleCard({
           alignItems: 'center',
           gap: 8,
           flexWrap: 'wrap',
-          fontSize: 11.5,
-          color: color.fgMuted,
+          marginTop: 6,
+          marginLeft: -12,
         }}
       >
-        <span>{lastRunSummary(rule, now !== null)}</span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {pendingApproximate
-            ? `${pendingCount}+ pending`
-            : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
-        </span>
-        {observeSummary != null && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span>{observeSummary}</span>
-          </>
-        )}
-      </div>
-
-      {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
-      {digestSummary != null && (
-        <div style={{ fontSize: 11.5, color: color.fgSoft }}>{digestSummary}</div>
-      )}
-
-      <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-        {ruleModeExplanation(rule, canActivate)}
-      </p>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        {rule.confidenceThreshold != null && (
-          <ThresholdSlider
-            ruleName={name}
-            committed={rule.confidenceThreshold}
-            disabled={isSaving}
-            onCommit={onCommitThreshold}
-          />
-        )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {rule.mode === 'paused' && (
-            <Button
-              tone="default"
-              size="sm"
-              onClick={onResume}
-              disabled={isSaving}
-              ariaLabel={`Resume rule ${name}`}
-            >
-              {isSaving ? 'Resuming…' : 'Resume'}
-            </Button>
-          )}
+        <Button
+          tone="ghost"
+          size="sm"
+          onClick={() => setDetailsOpen((open) => !open)}
+          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
+          ariaExpanded={detailsOpen}
+        >
+          {detailsOpen ? 'Hide details' : 'Details'}
+        </Button>
+        {rule.mode === 'paused' && (
           <Button
             tone="default"
             size="sm"
-            onClick={onTogglePreview}
-            ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+            onClick={onResume}
+            disabled={isSaving}
+            ariaLabel={`Resume rule ${name}`}
           >
-            {previewOpen ? 'Hide preview' : 'Preview matches'}
+            {isSaving ? 'Resuming…' : 'Resume'}
           </Button>
-        </div>
+        )}
       </div>
 
+      {detailsOpen && (
+        <div
+          id={detailsId}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+            paddingTop: 4,
+            fontSize: text.sm,
+            color: color.fgMuted,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            <span>{lastRunSummary(rule, now !== null)}</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {pendingApproximate
+                ? `${pendingCount}+ pending`
+                : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
+            </span>
+            {observeSummary != null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{observeSummary}</span>
+              </>
+            )}
+          </div>
+
+          {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
+          {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+
+          {rule.confidenceThreshold != null && (
+            <ThresholdSlider
+              ruleName={name}
+              committed={rule.confidenceThreshold}
+              disabled={isSaving}
+              onCommit={onCommitThreshold}
+            />
+          )}
+
+          {/* D103/D192 — the dry-run stays an explicit, per-rule request. */}
+          <div style={{ marginLeft: -12 }}>
+            <Button
+              tone="ghost"
+              size="sm"
+              onClick={onTogglePreview}
+              ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+            >
+              {previewOpen ? 'Hide preview' : 'Preview matches'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {previewOpen && preview != null && (
-        <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
+        <RulePreviewPanel
+          ruleName={name}
+          state={preview}
+          onRetry={onRetryPreview}
+          requiresApproval={isReviewOnlyPreset(rule.presetKey)}
+        />
       )}
     </li>
   );
 }
+
+/** Inset hairline between rule rows inside the raised group. */
+const RULE_ROW_CSS = `.dm-rule-row + .dm-rule-row::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: ${color.lineSoft}; }`;
 
 /** Canonical-verb description of the rule's action (D227 — K/A/U/L/D only). */
 function describeRuleAction(kind: AutopilotActionKind): string {
@@ -207,34 +257,36 @@ function describeRuleAction(kind: AutopilotActionKind): string {
   }
 }
 
-/** Rule lifecycle pill — Observing / Active / Not running / Paused (D10, D251). */
-function ModePill({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
+/** Rule lifecycle status — Observing / Active / Not running / Paused (D10, D251). */
+function ModeStatus({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
   // A disabled rule keeps whatever mode it had — `{enabled:false}` does
-  // not reset it — so an off rule could render a green "Active" pill
-  // directly above "Off — this rule records no new matches and takes no
-  // actions". That was rare while `mode='active'` needed the day-7
-  // banner; since turning a rule on defaults to acting, off-but-active
-  // is now the ordinary end state of enable-then-disable.
-  if (!rule.enabled) return <Pill tone="default">Off</Pill>;
-  if (rule.mode === 'paused') return <Pill tone="amber">Paused</Pill>;
-  if (rule.mode === 'active') {
+  // not reset it — so an off rule could read "Active" while taking no
+  // actions. Since turning a rule on defaults to acting, off-but-active
+  // is the ordinary end state of enable-then-disable.
+  // The switch beside it already says Off; a status word would repeat it.
+  if (!rule.enabled) return null;
+  let label = 'Watch first';
+  let tone: 'default' | 'primary' | 'amber' = 'default';
+  if (rule.mode === 'paused') {
+    label = 'Paused';
+    tone = 'amber';
+  } else if (rule.mode === 'active') {
     // D251 — the apply worker skips `active` rules on a tier without
-    // `autopilot-active` (the Pro→Plus downgrade path). A green "Active" pill
-    // here would assert automation that is not happening.
-    if (!canActivate) return <Pill tone="amber">Not running</Pill>;
-    return <Pill tone="emerald">Active</Pill>;
+    // `autopilot-active` (the Pro→Plus downgrade path). "Active" here
+    // would assert automation that is not happening.
+    label = canActivate ? 'Active' : 'Not running';
+    tone = canActivate ? 'primary' : 'amber';
   }
-  return <Pill tone="default">Observing</Pill>;
+  return <Pill tone={tone}>{label}</Pill>;
 }
 
-/** Rule-local mode explanation — users should not have to remember the page intro. */
-function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): string {
-  if (!rule.enabled) {
-    return 'Off — this rule records no new matches and takes no actions.';
-  }
-  if (rule.mode === 'paused') {
-    return 'Paused — this rule records no new matches and takes no actions until you resume it.';
-  }
+/**
+ * Rule-local mode explanation — users should not have to remember a
+ * page intro. Null for a rule that is off — the switch already says so.
+ */
+function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): string | null {
+  if (!rule.enabled) return null;
+  if (rule.mode === 'paused') return 'Does nothing until you resume it.';
   if (rule.mode === 'active') {
     if (!canActivate) {
       // Copy contract (Codex stop-review ×5): no absolute claims. "Keep
@@ -244,16 +296,13 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
       // "Still completes" — false, work can fail at the boundary.
       // "Result lands in Activity" — false too: EXECUTION_VERBS
       // excludes unsubscribe and no-op terminals write no Activity row.
-      // Claim ONLY the guarantees: in-flight work is not interrupted,
-      // and mail that actually moves keeps its Activity record (and,
-      // for label verbs, its undo).
       // 2026-09-19 brevity sweep: the in-flight clause is gone rather
       // than qualified — the line now says nothing about work underway.
-      return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Observe and collects fresh matches for your approval.`;
+      return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Watch first and collects fresh matches for your approval.`;
     }
-    return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
+    return 'Future matches run automatically; results appear in Activity.';
   }
-  return 'Observe — matches become suggestions for your approval.';
+  return 'Matches become suggestions for your approval.';
 }
 
 /**
@@ -281,83 +330,12 @@ function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): string {
 /** D10 observe-window countdown; null when not in Observe mode. */
 function observeWindowSummary(rule: AutopilotRuleDto, now: number | null): string | null {
   if (rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'Observe window complete';
+  if (rule.observeWindowElapsed) return 'Watch first window complete';
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
   const daysLeft = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
-  return `Observing · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
-}
-
-/**
- * Switch-style enabled toggle (D101 "single toggle"). Toggling off
- * stops the matcher from producing new matches; nothing in the inbox
- * moves either way, so this PATCHes directly without a D226 preview
- * (the preview ladder applies to mail-mutating actions).
- */
-function EnabledSwitch({
-  ruleName,
-  enabled,
-  disabled,
-  onToggle,
-}: {
-  ruleName: string;
-  enabled: boolean;
-  disabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={`${enabled ? 'Disable' : 'Enable'} rule ${ruleName}`}
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 7,
-        background: 'transparent',
-        border: 'none',
-        padding: 0,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        fontFamily: font.sans,
-      }}
-    >
-      <span style={{ fontSize: 11, color: color.fgMuted, minWidth: 20, textAlign: 'right' }}>
-        {enabled ? 'On' : 'Off'}
-      </span>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 32,
-          height: 18,
-          borderRadius: 999,
-          background: enabled ? color.primary : color.mutedBg,
-          border: `1px solid ${enabled ? color.primary : color.border}`,
-          position: 'relative',
-          transition: 'background 120ms',
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 1,
-            left: enabled ? 15 : 1,
-            width: 14,
-            height: 14,
-            borderRadius: 999,
-            background: '#FFFFFF',
-            boxShadow: '0 1px 2px rgba(14,20,19,0.25)',
-            transition: 'left 120ms',
-          }}
-        />
-      </span>
-    </button>
-  );
+  return `Watch first · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
 }
 
 /**
@@ -413,7 +391,7 @@ function ThresholdSlider({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 8,
-        fontSize: 11.5,
+        fontSize: text.sm,
         color: color.fgMuted,
       }}
     >
@@ -434,8 +412,8 @@ function ThresholdSlider({
       />
       <span
         style={{
-          fontFamily: font.mono,
-          fontSize: 11.5,
+          fontSize: text.sm,
+          fontWeight: 600,
           color: color.fgSoft,
           minWidth: 32,
           fontVariantNumeric: 'tabular-nums',

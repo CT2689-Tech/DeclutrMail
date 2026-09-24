@@ -34,10 +34,5 @@ export function isPublicNavLinkActive(pathname: string, href: string): boolean {
   if (href === '/inbox-simulator') {
     return pathname === href || pathname === '/demo';
   }
-  if (href === '/compare') {
-    return (
-      pathname === href || pathname.startsWith('/vs/') || pathname.startsWith('/alternatives/')
-    );
-  }
   return pathname === href;
 }

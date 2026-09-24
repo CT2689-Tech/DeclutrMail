@@ -114,6 +114,7 @@ const VIEW = {
   compose: {
     activity: 'quiet' as const,
     activityNegate: false,
+    hasInboxMail: false,
     unsubReady: true,
     wroteTo: null,
     protectedFlag: null,

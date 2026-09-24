@@ -28,14 +28,20 @@ export const color = {
   line: 'var(--dm-line)',
   lineSoft: 'var(--dm-line-soft)',
   mutedBg: 'var(--dm-muted-bg)',
+  /** Neutral fill for quiet buttons, segmented controls and input wells. */
+  fill: 'var(--dm-fill)',
+  fillHover: 'var(--dm-fill-hover)',
+  scrim: 'var(--dm-scrim)',
 
-  /** Deep-teal accent. */
+  /** Muted-plum brand accent. */
   primary: 'var(--dm-primary)',
   primaryDeep: 'var(--dm-primary-deep)',
   primarySoft: 'var(--dm-primary-soft)',
   primaryBorder: 'var(--dm-primary-border)',
-  /** Pale teal wash — informational banner backgrounds. */
+  /** Pale plum wash — informational banner backgrounds. */
   primaryWash: 'var(--dm-primary-wash)',
+  lilac: 'var(--dm-lilac)',
+  /** Legacy alias for existing consumers. */
   mint: 'var(--dm-mint)',
 
   /** Semantic hues. */
@@ -88,21 +94,9 @@ export const color = {
   fgInverseMuted: 'var(--dm-fg-inverse-muted)',
   lineInverse: 'var(--dm-line-inverse)',
 
-  /**
-   * Dashboard-surface palette extension per ADR-0009 (amends D2).
-   *
-   * SCOPE: Senders, Activity, Brief, future Insights surfaces ONLY.
-   * Use violet for live/active affordances + filter-chip active state.
-   *
-   * FORBIDDEN everywhere: violet on action buttons (Keep / Archive /
-   * Unsubscribe / Later — D227), on trust affordances (D7 / D228), on
-   * recommendation tones (D26 / D31), or on any non-dashboard surface
-   * (Triage / Onboarding / Settings / Billing / marketing).
-   *
-   * Consumer convention: files importing `color.dashboard.*` must
-   * include the ADR-0009 file-header comment block. An ESLint guardrail
-   * scoping these imports to apps/web/src/features/{senders,activity,brief}/**
-   * is tracked in FOUNDER-FOLLOWUPS.md (2026-05-25 entry).
+  /** Dashboard emphasis. Warm plum hues from the approved Editorial
+   * redesign (2026-09-22), reserved for navigation and evidence filters.
+   * Action tones remain independently semantic: danger, warning, primary.
    */
   dashboard: {
     accent: 'var(--dm-dash-accent)',
@@ -119,16 +113,16 @@ export const font = {
 
 /** Normalised type scale (px). */
 export const text = {
-  '2xs': 10,
-  xs: 11,
-  sm: 12,
-  base: 13,
-  md: 14,
-  lg: 16,
-  xl: 18,
-  '2xl': 22,
-  '3xl': 28,
-  '4xl': 34,
+  '2xs': 11,
+  xs: 12,
+  sm: 13,
+  base: 14,
+  md: 15,
+  lg: 17,
+  xl: 20,
+  '2xl': 24,
+  '3xl': 32,
+  '4xl': 44,
 } as const;
 
 /** 4px spacing scale (px). */
@@ -147,10 +141,12 @@ export const space = {
 } as const;
 
 export const radius = {
-  sm: 6,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  sm: 8,
+  md: 10,
+  lg: 14,
+  xl: 20,
+  /** Sheets and dialogs — the largest surface gets the softest corner. */
+  '2xl': 28,
   pill: 9999,
 } as const;
 
@@ -158,11 +154,25 @@ export const shadow = {
   card: 'var(--dm-shadow-card)',
   pop: 'var(--dm-shadow-pop)',
   lift: 'var(--dm-shadow-lift)',
+  modal: 'var(--dm-shadow-modal)',
+  button: 'var(--dm-shadow-button)',
+} as const;
+
+/**
+ * Motion — two durations, one easing. Every transition in the app uses
+ * these; `prefers-reduced-motion` is handled globally in tokens.css.
+ */
+export const motion = {
+  fast: '120ms',
+  base: '220ms',
+  ease: 'cubic-bezier(0.2, 0, 0, 1)',
 } as const;
 
 /** Responsive ceilings (px) — see useIsAtMost. */
 export const breakpoint = {
   xs: 480,
+  /** Desktop navigation and persistent workspace inspectors share this boundary. */
+  shell: 760,
   sm: 900,
   md: 1100,
   lg: 1280,
@@ -180,6 +190,7 @@ export const tokens = {
   space,
   radius,
   shadow,
+  motion,
   breakpoint,
 } as const;
 

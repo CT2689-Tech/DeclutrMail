@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import { ApiError } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import {
@@ -9,15 +9,15 @@ import {
   useCancelAccountDeletion,
   useRequestAccountDeletion,
 } from './api/use-account-deletion';
+import { SettingsRow, SettingsRowStatus } from '@/features/settings/settings-list';
 import { DeleteAccountModal, formatDate } from './delete-account-modal';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Settings → Account · "Delete account and data" section (D216).
  *
- * Standalone component — U23 owns `settings/page.tsx` and mounts this
- * (import + render snippet in the PR body). Owns the full client flow:
+ * Renders as rows inside Settings' Account group. Owns the full client flow:
  * status display → typed-confirm modal → cancel.
  *
  * States: loading · error (+retry) · none · pending (flat-grace /
@@ -36,46 +36,40 @@ export function AccountDeletionSection() {
     : null;
 
   return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
-          Delete account and data
-        </h3>
-
-        {status.isPending ? (
-          <p style={mutedTextStyle}>Loading deletion status…</p>
-        ) : status.isError ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-            <span style={{ fontSize: 13, color: color.danger }}>
-              Could not load deletion status.
-            </span>
-            <Button tone="default" size="sm" onClick={() => void status.refetch()}>
-              Retry
-            </Button>
-          </div>
-        ) : status.data.request ? (
-          <PendingState
-            effectiveAt={status.data.request.effectiveAt}
-            basis={status.data.request.basis}
-            executing={status.data.request.status === 'executing'}
-            onCancel={() => cancel.mutate()}
-            isCancelling={cancel.isPending}
-            cancelFailed={cancel.isError}
-          />
-        ) : (
-          <>
-            <p style={mutedTextStyle}>
-              Deletes your DeclutrMail account and the mailbox data it stored. Your Gmail email is
-              untouched. 7-day grace period (longer if an undo window is open); you can cancel.
-            </p>
-            <div style={{ marginTop: 12 }}>
-              <Button tone="danger" onClick={() => setModalOpen(true)}>
-                Delete account and data
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
+    <>
+      {status.isPending ? (
+        <SettingsRowStatus
+          state={{ kind: 'loading' }}
+          loadingLabel="Loading deletion status…"
+          errorLabel="Could not load deletion status."
+        />
+      ) : status.isError ? (
+        <SettingsRowStatus
+          state={{ kind: 'error', onRetry: () => void status.refetch() }}
+          loadingLabel="Loading deletion status…"
+          errorLabel="Could not load deletion status."
+        />
+      ) : status.data.request ? (
+        <PendingState
+          effectiveAt={status.data.request.effectiveAt}
+          basis={status.data.request.basis}
+          executing={status.data.request.status === 'executing'}
+          onCancel={() => cancel.mutate()}
+          isCancelling={cancel.isPending}
+          cancelFailed={cancel.isError}
+        />
+      ) : (
+        // The timing and retention disclosure lives in the modal — the
+        // decision point. This row only says what is NOT touched.
+        <SettingsRow
+          label={<h3 style={rowHeadingStyle}>Delete account and data</h3>}
+          detail="Your email in Gmail is not deleted."
+        >
+          <Button tone="danger" size="sm" onClick={() => setModalOpen(true)}>
+            Delete account
+          </Button>
+        </SettingsRow>
+      )}
 
       <DeleteAccountModal
         open={modalOpen}
@@ -95,7 +89,7 @@ export function AccountDeletionSection() {
           )
         }
       />
-    </Card>
+    </>
   );
 }
 
@@ -116,8 +110,18 @@ function PendingState({
 }) {
   const timeZone = useUserTimeZone();
   return (
-    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <p style={{ fontSize: 13, color: color.danger, fontWeight: 600, margin: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: '12px 0',
+        borderTop: `1px solid ${color.line}`,
+        fontFamily: font.sans,
+      }}
+    >
+      <h3 style={rowHeadingStyle}>Delete account and data</h3>
+      <p style={{ fontSize: text.md, color: color.danger, fontWeight: 600, margin: 0 }}>
         {executing
           ? 'Deletion is in progress — your data is being removed.'
           : basis === 'waived-immediate'
@@ -125,14 +129,13 @@ function PendingState({
             : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (
-        <p style={{ ...mutedTextStyle, marginTop: 0 }}>
-          This date is later than the usual 7 days because an undo window from a recent action is
-          still open. Undo keeps working until then. To delete sooner, cancel this request and
-          choose “Delete immediately”, which waives those windows.
+        <p style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
+          Later than 7 days because an undo window is still open. To delete sooner, cancel and
+          choose “Delete immediately”.
         </p>
       )}
       {cancelFailed && (
-        <p role="alert" style={{ fontSize: 12, color: color.danger, margin: 0 }}>
+        <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: 0 }}>
           Could not cancel. Refresh and try again.
         </p>
       )}
@@ -147,9 +150,9 @@ function PendingState({
   );
 }
 
-const mutedTextStyle = {
-  fontSize: 13,
-  color: color.fgSoft,
-  lineHeight: 1.55,
-  margin: '8px 0 0',
-};
+const rowHeadingStyle = {
+  margin: 0,
+  fontSize: text.md,
+  fontWeight: 400,
+  color: color.fg,
+} as const;

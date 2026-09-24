@@ -365,10 +365,19 @@ export class SyncService {
    * Ids only, no message-derived state — privacy posture §2.1.
    */
   async getNeedsReconnectByMailbox(mailboxAccountIds: string[]): Promise<Map<string, boolean>> {
+    const health = await this.getMailboxHealth(mailboxAccountIds);
+    return new Map([...health].map(([id, value]) => [id, value.needsReconnect]));
+  }
+
+  /** One snapshot for auth bootstrap: readiness and reconnect share the same rows. */
+  async getMailboxHealth(
+    mailboxAccountIds: string[],
+  ): Promise<Map<string, { readiness: SyncReadiness; needsReconnect: boolean }>> {
     if (mailboxAccountIds.length === 0) return new Map();
     const rows = await this.db
       .select({
         mailboxAccountId: providerSyncState.mailboxAccountId,
+        readiness: providerSyncState.readinessStatus,
         errorCode: providerSyncState.errorCode,
         lastIncrementalErrorCode: providerSyncState.lastIncrementalErrorCode,
         lastIncrementalErrorAt: providerSyncState.lastIncrementalErrorAt,
@@ -383,7 +392,13 @@ export class SyncService {
           r.lastIncrementalErrorCode === INVALID_GRANT_ERROR &&
           r.lastIncrementalErrorAt !== null &&
           (r.lastSyncedAt === null || r.lastIncrementalErrorAt > r.lastSyncedAt);
-        return [r.mailboxAccountId, incrementalAuthError || r.errorCode === INVALID_GRANT_ERROR];
+        return [
+          r.mailboxAccountId,
+          {
+            readiness: r.readiness,
+            needsReconnect: incrementalAuthError || r.errorCode === INVALID_GRANT_ERROR,
+          },
+        ];
       }),
     );
   }

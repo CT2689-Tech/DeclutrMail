@@ -18,10 +18,11 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { ACTION_OVERDUE_MS, isCurrentYearMonth, SenderDetailRoute } from './sender-detail-page';
+import { ACTION_OVERDUE_MS, SenderDetailRoute } from './sender-detail-page';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
+import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 import { useRevertUndo } from '@/lib/api/use-action';
 import {
   addFetchHandlers,
@@ -158,7 +159,7 @@ const HISTORY_ROW = {
   affectedCount: 12,
 };
 
-function installHappyPath(message = MESSAGE) {
+function installHappyPath(message = MESSAGE, messageResponse?: (url: URL) => (typeof MESSAGE)[]) {
   installFetchStub([
     {
       method: 'GET',
@@ -168,9 +169,9 @@ function installHappyPath(message = MESSAGE) {
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+\/messages$/,
-      respond: () =>
+      respond: (_req, url) =>
         jsonOk({
-          data: [message],
+          data: messageResponse ? messageResponse(url) : [message],
           meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
         }),
     },
@@ -203,33 +204,6 @@ function renderDetail(id = 'linkedin') {
   );
 }
 
-describe('isCurrentYearMonth', () => {
-  /**
-   * QA-sender-detail-20260902-03, Codex adversarial review round 2: an
-   * integration test deriving its fixture from ambient "now" can't prove
-   * the UTC-vs-local distinction, since real UTC and local months only
-   * diverge within a day of a boundary — most days it's accidentally
-   * correct either way. This tests the function directly against a fixed
-   * instant chosen to cross a month boundary in UTC, independent of
-   * whatever timezone the CI/dev machine itself runs in — 02:00 UTC on
-   * October 1st is October in UTC everywhere, and September in any
-   * timezone west of UTC by 2+ hours (which is most of the Americas).
-   */
-  const octoberFirst2AmUtc = Date.UTC(2026, 9, 1, 2, 0, 0);
-
-  it('is true for the UTC month, even one a negative-offset local timezone would call last month', () => {
-    expect(isCurrentYearMonth('2026-10', octoberFirst2AmUtc)).toBe(true);
-  });
-
-  it('is false for the local month when it differs from the UTC month', () => {
-    expect(isCurrentYearMonth('2026-09', octoberFirst2AmUtc)).toBe(false);
-  });
-
-  it('returns false for a malformed yearMonth', () => {
-    expect(isCurrentYearMonth('not-a-date', octoberFirst2AmUtc)).toBe(false);
-  });
-});
-
 describe('SenderDetailRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
@@ -245,13 +219,42 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    // Wire-backed category and recent-message subject are present. The
-    // endpoint has no recommendation payload, so no fixture suggestion
-    // may appear even though this sender's facts used to synthesize one.
-    expect(screen.getByText('Gmail: Social')).toBeInTheDocument();
+    // Identity, the one 90-day count, and the recent-message subject are
+    // wire-backed. The endpoint has no recommendation payload, so no
+    // fixture suggestion may appear even though this sender's facts used
+    // to synthesize one.
+    expect(screen.getByRole('heading', { level: 1, name: 'LinkedIn' })).toBeInTheDocument();
+    expect(screen.getByText('noreply@linkedin.com')).toBeInTheDocument();
+    expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+    // The Gmail category eyebrow is gone from this surface.
+    expect(screen.queryByText('Gmail: Social')).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
+  });
+
+  it('shows archived-only senders by default and lets the reader switch location', async () => {
+    const archived = { ...MESSAGE, location: 'archived' as const };
+    installHappyPath(archived, (url) =>
+      url.searchParams.get('scope') === 'inbox' ? [] : [archived],
+    );
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
+    );
+    expect(screen.getAllByText('Archived').length).toBeGreaterThan(1);
+    expect(screen.getByRole('button', { name: 'Inbox + archived' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Inbox$/ }));
+    await waitFor(() => expect(screen.getByText('No Inbox messages')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Archived$/ }));
+    await waitFor(() =>
+      expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
+    );
   });
 
   /**
@@ -275,77 +278,24 @@ describe('SenderDetailRoute', () => {
 
   /**
    * QA-sender-detail-20260902-02: "we never render bodies" sat directly
-   * above each row's Gmail-snippet text. Recent Messages now names what's
-   * actually shown instead.
+   * above each row's Gmail-snippet text. The rows speak for themselves
+   * now — no caption at all.
    */
   it('never claims "no bodies" beside the rendered Gmail preview snippet', async () => {
     installHappyPath();
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    expect(screen.queryByText(/we never render bodies/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/subject and the Gmail preview snippet only/i)).toBeInTheDocument();
+    expect(screen.getByText(MESSAGE.snippet)).toBeInTheDocument();
+    expect(screen.queryByText(/never render bodies/i)).not.toBeInTheDocument();
   });
 
-  /**
-   * QA-sender-detail-20260902-03, gap found by Codex adversarial review:
-   * the pre-existing `TIMESERIES` fixture used `YYYY-MM-DD`, which
-   * silently failed `isCurrentYearMonth`'s regex — no test here ever
-   * exercised the "current month" ("so far in") branch with a genuinely
-   * current point, only the (indistinguishable, by accident) stale-month
-   * fallback. This constructs a timeseries whose latest point IS the
-   * real current calendar month.
-   */
-  it('shows "so far in" framing for a genuinely current month, and stale-month framing otherwise', async () => {
-    const now = new Date();
-    // UTC, matching `isCurrentYearMonth`'s comparison basis (fixed after
-    // Codex adversarial review to agree with the server's UTC bucketing)
-    // — avoids test flakiness within ~24h of a month boundary in a
-    // non-UTC CI/dev timezone.
-    const currentYearMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-    installFetchStub([
-      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/messages$/,
-        respond: () =>
-          jsonOk({
-            data: [MESSAGE],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
-          }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/timeseries$/,
-        respond: () => jsonOk({ data: [{ yearMonth: currentYearMonth, volume: 5, readCount: 1 }] }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/history$/,
-        respond: () =>
-          jsonOk({
-            data: [],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
-          }),
-      },
-    ]);
-    renderDetail();
-
-    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/so far in/i)).toBeInTheDocument());
-    expect(screen.queryByText(/^Last mailed you in/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Sent \d/)).not.toBeInTheDocument();
-  });
-
-  // F012 / ADR-0037 — the sweeper split must stay VISIBLE (a footnote
-  // line, not a tooltip), and the hero keeps its two truth-required
-  // window labels. Facts pinned, not the sentence.
-  it('keeps the read-rate window labels and shows the sweeper split as visible text', async () => {
+  function installWith(detail: Partial<SenderDetailDto>, timeseries: unknown[] = TIMESERIES) {
     installFetchStub([
       {
         method: 'GET',
         path: /^\/api\/senders\/[^/]+$/,
-        respond: () => jsonOk({ data: { ...DETAIL, readRateSweeperMarked: 20819 } }),
+        respond: () => jsonOk({ data: { ...DETAIL, ...detail } }),
       },
       {
         method: 'GET',
@@ -359,7 +309,7 @@ describe('SenderDetailRoute', () => {
       {
         method: 'GET',
         path: /^\/api\/senders\/[^/]+\/timeseries$/,
-        respond: () => jsonOk({ data: [{ yearMonth: '2020-01', volume: 5, readCount: 1 }] }),
+        respond: () => jsonOk({ data: timeseries }),
       },
       {
         method: 'GET',
@@ -371,57 +321,82 @@ describe('SenderDetailRoute', () => {
           }),
       },
     ]);
+  }
+
+  // The one number is the 90-day count, stated once; the sentence under
+  // it names the window and adds only the lifetime total.
+  it('states the 90-day count once, with its window and the lifetime total', async () => {
+    installWith({ monthlyVolume: 64, totalReceived: 2_048 });
     renderDetail();
 
-    await waitFor(() =>
-      expect(screen.getByText(/marked read in the last 90 days/)).toBeInTheDocument(),
-    );
-    const note = screen.getByText(/marked read by another tool/);
-    expect(note).toHaveTextContent('20,819');
-    expect(note).toHaveTextContent(/not counted/);
-    // The rate is stated once — in the KPI cell, with both window labels —
-    // and the hero keeps only the population it is computed over.
-    const main = document.body.textContent ?? '';
-    expect(main.match(/marked read in the last 90 days/g)).toHaveLength(1);
-    const hero = screen.getByText(/so far in|Last mailed you in/).closest('p');
-    expect(hero).toHaveTextContent(/in the last 90 days/);
-    expect(hero).not.toHaveTextContent(/%/);
+    const count = await screen.findByTestId('sender-detail-window-count');
+    expect(count).toHaveTextContent(/^64$/);
+    const sentence = count.nextElementSibling!;
+    expect(sentence).toHaveTextContent(/emails in the last 90 days/);
+    expect(sentence).toHaveTextContent('2,048 received · all time');
+    expect((document.body.textContent ?? '').match(/in the last 90 days/g)).toHaveLength(1);
+    // No derived cadence, and no percentage in the headline.
+    expect(sentence).not.toHaveTextContent(/%|\/mo/);
   });
 
-  it('shows "Last mailed you in" framing for a stale (non-current) latest month', async () => {
-    installFetchStub([
-      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/messages$/,
-        respond: () =>
-          jsonOk({
-            data: [MESSAGE],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
-          }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/timeseries$/,
-        respond: () => jsonOk({ data: [{ yearMonth: '2020-01', volume: 5, readCount: 1 }] }),
-      },
-      {
-        method: 'GET',
-        path: /^\/api\/senders\/[^/]+\/history$/,
-        respond: () =>
-          jsonOk({
-            data: [],
-            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
-          }),
-      },
-    ]);
+  it('says "email", not "emails", for a count of one', async () => {
+    installWith({ monthlyVolume: 1 });
+    renderDetail();
+    const count = await screen.findByTestId('sender-detail-window-count');
+    expect(count.nextElementSibling).toHaveTextContent(/^email in the last 90 days/);
+  });
+
+  it('shows an em-dash, never a fabricated 0, when the wire has no 90-day count', async () => {
+    installWith({ monthlyVolume: null });
+    renderDetail();
+    expect(await screen.findByTestId('sender-detail-window-count')).toHaveTextContent('—');
+  });
+
+  // The four stats that left the list row all live here.
+  it('shows read rate, trend, last seen and "you wrote" in the stats row', async () => {
+    installWith({ readRate: 0.42, wroteToCount: 3 });
     renderDetail();
 
-    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText(/^Last mailed you in Jan/)).toBeInTheDocument());
-    // The KPI cell disambiguates a stale month with the year, not just
-    // the abbreviation, so it doesn't read as this year's January.
-    expect(screen.getByText('Jan 2020')).toBeInTheDocument();
+    const stats = within(await screen.findByLabelText('Sender stats'));
+    expect(stats.getByText(/Marked read/).nextElementSibling).toHaveTextContent('42%');
+    expect(
+      stats.getByText('12-month trend').nextElementSibling?.querySelector('svg'),
+    ).not.toBeNull();
+    expect(stats.getByText('Last seen').nextElementSibling).toHaveTextContent(
+      /ago|today|yesterday/,
+    );
+    expect(stats.getByText('You wrote').nextElementSibling).toHaveTextContent('3×');
+    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent(
+      TIMESERIES[0]!.yearMonth,
+    );
+  });
+
+  it('shows "—" for a read rate the wire does not know, never 0%', async () => {
+    installWith({ readRate: null }, []);
+    renderDetail();
+
+    const stats = within(await screen.findByLabelText('Sender stats'));
+    expect(stats.getByText(/Marked read/).nextElementSibling).toHaveTextContent(/^—$/);
+    expect(stats.getByText('12-month trend').nextElementSibling).toHaveTextContent(/^—$/);
+  });
+
+  // F012 / ADR-0037 — the sweeper split must stay VISIBLE (a line, not a
+  // tooltip) whenever there is something to disclose. Facts pinned, not
+  // the sentence.
+  it('shows the sweeper split as visible text only when its count is above zero', async () => {
+    installWith({ readRateSweeperMarked: 20819 });
+    const first = renderDetail();
+
+    const note = await screen.findByText(/marked read by another tool/);
+    expect(note).toHaveTextContent('20,819');
+    expect(note).toHaveTextContent(/not counted/);
+    first.unmount();
+
+    installWith({ readRateSweeperMarked: 0 });
+    renderDetail();
+    await screen.findByTestId('sender-detail-window-count');
+    expect(screen.queryByText(/marked read by another tool/)).not.toBeInTheDocument();
   });
 
   /**
@@ -460,7 +435,10 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    expect(screen.getByText(/Nothing in the last 12 months\./)).toBeInTheDocument();
+    // Still a sender with history: the count + lifetime total render,
+    // and "Last seen" carries how long ago — never the "never" sentence.
+    expect(screen.getByTestId('sender-detail-window-count')).toBeInTheDocument();
+    expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
     expect(screen.queryByText(/Hasn.t mailed you yet\./)).not.toBeInTheDocument();
   });
 
@@ -499,13 +477,19 @@ describe('SenderDetailRoute', () => {
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
     expect(screen.getByText(/Hasn.t mailed you yet\./)).toBeInTheDocument();
+    // No headline number for a sender with no mail at all.
+    expect(screen.queryByTestId('sender-detail-window-count')).not.toBeInTheDocument();
   });
 
   it('shows the action it has, with the real message count', async () => {
     installHappyPath();
     renderDetail();
 
-    await waitFor(() => expect(screen.getByText('Archived')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Decision timeline' })).getByText('Archived'),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByText('You')).toBeInTheDocument();
     expect(screen.getByText(/12 messages/)).toBeInTheDocument();
   });
@@ -620,7 +604,9 @@ describe('SenderDetailRoute', () => {
       'Unsubscribe request recorded',
       'Moved to Later',
     ]) {
-      expect(screen.queryByText(claim)).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'Decision timeline' })).queryByText(claim),
+      ).not.toBeInTheDocument();
     }
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
@@ -676,10 +662,11 @@ describe('SenderDetailRoute', () => {
     ]);
     renderDetail();
 
-    const summary = await screen.findByText(/Optional suggestion · Keep/);
+    const details = await screen.findByRole('group', { name: 'Optional suggestion: Keep' });
+    const summary = details.querySelector('summary')!;
     // QA-sender-detail-20260902-08: "scored" renamed to "Last checked".
     expect(summary).toHaveTextContent(/Last checked/);
-    expect(summary.closest('details')).not.toHaveAttribute('open');
+    expect(details).not.toHaveAttribute('open');
     // The suggestion never claims the user did anything.
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });
@@ -689,7 +676,31 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
-    expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: /Optional suggestion/ })).not.toBeInTheDocument();
+  });
+
+  // D226 — every mail-changing verb stops at the preview; none mutates on
+  // click. (Keep is the exception by design, D40 — covered below.)
+  it.each([
+    ['Archive', 'A'],
+    ['Unsubscribe', 'U'],
+    ['Later', 'L'],
+    ['Delete', 'D'],
+  ] as const)('%s opens the preview before anything changes', async (verb, key) => {
+    installHappyPath();
+    renderDetail();
+
+    fireEvent.click(await screen.findByRole('button', { name: `${verb} (${key})` }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('opens the same preview from the keyboard shortcut', async () => {
+    installHappyPath();
+    renderDetail();
+
+    await screen.findByRole('button', { name: 'Archive (A)' });
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('renders the not-found UI when the detail endpoint returns 404', async () => {
@@ -1153,29 +1164,34 @@ describe('SenderDetailRoute', () => {
       });
       renderDetail();
 
-      const protectButton = await waitFor(() => screen.getByRole('button', { name: 'Protect' }));
-      fireEvent.click(protectButton);
+      const protectSwitch = await waitFor(() =>
+        screen.getByRole('switch', { name: 'Protected', checked: false }),
+      );
+      fireEvent.click(protectSwitch);
       await waitFor(() => expect(bodies).toEqual([{ isProtected: true }]));
-      expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument();
+      expect(screen.getByRole('switch', { name: 'Protected', checked: true })).toBeInTheDocument();
       // CLAUDE.md §2.6 / D245 — the exact reason, on the surface that
       // owns this sender. The toggle said only "Protect", so a user
       // looking at an automatically-protected sender had no way to
       // learn why (three of the four reasons are automatic).
       // Rendered ONCE, as the visible line — not repeated as a tooltip.
-      expect(screen.getByText(/^Protected — .+\.$/)).toBeInTheDocument();
+      // It sits under the row's "Protected" label, so it is the reason alone.
+      expect(screen.getByTestId('protection-reason')).toHaveTextContent(/marked it Protected\.$/);
       // The tooltip carries the one thing the label cannot: that a click
       // unprotects. It does not repeat the reason.
-      const protectedToggle = screen.getByRole('button', { name: 'Protected' });
+      const protectedToggle = screen.getByRole('switch', { name: 'Protected', checked: true });
       expect(protectedToggle).toHaveAttribute('title', expect.stringMatching(/unprotect/i));
       expect(protectedToggle.getAttribute('title')).not.toMatch(/—/);
 
       // Second toggle (unprotect) fails → rollback to the set chip.
       fail = true;
-      fireEvent.click(screen.getByRole('button', { name: 'Protected' }));
+      fireEvent.click(screen.getByRole('switch', { name: 'Protected', checked: true }));
       await waitFor(() => expect(bodies).toHaveLength(2));
       expect(bodies[1]).toEqual({ isProtected: false });
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument(),
+        expect(
+          screen.getByRole('switch', { name: 'Protected', checked: true }),
+        ).toBeInTheDocument(),
       );
     });
 
@@ -1231,14 +1247,16 @@ describe('SenderDetailRoute', () => {
           <SenderDetailRoute id="linkedin" />
         </QueryWrapper>,
       );
-      await waitFor(() => screen.getByRole('button', { name: 'Protect' }));
+      await waitFor(() => screen.getByRole('switch', { name: 'Protected', checked: false }));
 
       // Server diverges, then any invalidation-driven refetch lands.
       serverIsProtected = true;
       await client.invalidateQueries();
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument(),
+        expect(
+          screen.getByRole('switch', { name: 'Protected', checked: true }),
+        ).toBeInTheDocument(),
       );
     });
 
@@ -1380,7 +1398,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/currently match.*Archive/i);
+        screen.getByText(/rechecked when it runs/i);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(1);
@@ -1422,7 +1440,9 @@ describe('SenderDetailRoute', () => {
         previewCount = 5;
         firstActionDone = true;
         await tick(2_500);
-        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['senders', 'list'] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['senders', 'summary'] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.detail('linkedin') });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
         // The verb that was "not confirmed" now says what happened.
         expect(doneMark()).toHaveTextContent('Archived 12');
@@ -1440,7 +1460,9 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(archiveFreed);
         await tick(500);
         expect(previewGets).toBeGreaterThan(previewGetsBefore);
-        expect(within(screen.getByRole('dialog')).getAllByText('5').length).toBeGreaterThan(0);
+        expect(
+          within(screen.getByRole('dialog')).getByRole('heading', { name: 'Archive 5 emails?' }),
+        ).toBeInTheDocument();
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(2);
@@ -1473,7 +1495,7 @@ describe('SenderDetailRoute', () => {
       ]);
       renderDetail();
       fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       // It used to close before the request was even sent.
@@ -1519,7 +1541,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       // The latch is armed once its status poll starts.
@@ -1567,7 +1589,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/currently match.*Archive/i);
+        await screen.findByText(/rechecked when it runs/i);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -1587,6 +1609,32 @@ describe('SenderDetailRoute', () => {
           'aria-disabled',
           'true',
         );
+      });
+
+      it('explains an environment-disabled unsubscribe without reporting an exception', async () => {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: () =>
+              new Response(JSON.stringify({ error: { code: 'UNSUB_SEND_DISABLED' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              }),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(UNSUB_SEND_DISABLED_MESSAGE, 'warn'),
+        );
+        expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
       it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
@@ -1708,7 +1756,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
 
@@ -1773,7 +1821,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       await waitFor(() => expect(doneMark()).not.toBeNull());
@@ -1881,7 +1929,7 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
     renderDetail();
     // Guard the guard: a missing POST proves nothing if the page never
     // loaded. Fail on the fixture first, not on the assertion under test.
-    await screen.findByText(/Optional suggestion/);
+    await screen.findByRole('group', { name: /Optional suggestion/ });
     await waitFor(() => expect(posted).toHaveLength(1));
     expect(posted[0]).toEqual({ senderId: 'linkedin', reason: 'stale' });
   });
@@ -1889,7 +1937,7 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
   it('leaves a read that is still inside its TTL alone', async () => {
     stubWithRecommendation({ ...AGED, stale: false });
     renderDetail();
-    await screen.findByText(/Optional suggestion/);
+    await screen.findByRole('group', { name: /Optional suggestion/ });
     await new Promise((r) => setTimeout(r, 60));
     expect(posted).toHaveLength(0);
   });
@@ -1903,7 +1951,7 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
     const { stale: _omitted, ...noFlag } = AGED;
     stubWithRecommendation(noFlag);
     renderDetail();
-    await screen.findByText(/Optional suggestion/);
+    await screen.findByRole('group', { name: /Optional suggestion/ });
     await new Promise((r) => setTimeout(r, 60));
     expect(posted).toHaveLength(0);
   });

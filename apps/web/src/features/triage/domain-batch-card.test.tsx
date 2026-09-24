@@ -32,12 +32,22 @@ describe('DomainBatchCard — count reads the eligible set (D245)', () => {
     const [batch] = findDomainBatches([row('a'), row('b', 'replied'), row('c'), row('d')]);
     expect(batch).toBeDefined();
     render(<DomainBatchCard batch={batch!} onVerb={() => {}} onDismiss={() => {}} />);
-    expect(screen.getByText(/3 senders from amazon\.com — decide together\?/)).toBeInTheDocument();
+    expect(screen.getByText('3 senders from amazon.com')).toBeInTheDocument();
     expect(screen.getByText(/1 protected sender stays untouched/)).toBeInTheDocument();
   });
 
   it('a run left with one actionable sender yields no card to render', () => {
     const batches = findDomainBatches([row('a'), row('b', 'replied'), row('c', 'replied')]);
     expect(batches).toHaveLength(0);
+  });
+
+  it('names uncertain members separately without calling them Protected', () => {
+    const uncertain = { ...row('new'), verdict: 'later' as const, confidence: 0.7 };
+    const [batch] = findDomainBatches([row('a'), uncertain, row('b'), row('c')]);
+    expect(batch?.eligibleRows.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    render(<DomainBatchCard batch={batch!} onVerb={() => {}} onDismiss={() => {}} />);
+    expect(screen.getByText('3 senders from amazon.com')).toBeInTheDocument();
+    expect(screen.getByText('1 sender needs individual review')).toBeInTheDocument();
+    expect(screen.queryByText(/protected sender/)).toBeNull();
   });
 });

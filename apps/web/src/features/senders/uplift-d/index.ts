@@ -7,10 +7,9 @@
 // in the same commit.
 //
 // InboxStoryHero + WeeklyProgress deleted in the 2026-07-04 dead-code
-// sweep (retired by spec v1.2 Decision 4, zero consumers).
-
-export { KpiStrip } from './kpi-strip';
-export type { KpiStripProps, KpiCellProps } from './kpi-strip';
+// sweep (retired by spec v1.2 Decision 4, zero consumers). KpiStrip
+// deleted 2026-09-21 — Sender Detail's bordered KPI cards became a quiet
+// stats row, leaving it with zero consumers too.
 
 export { DecisionTimeline } from './decision-timeline';
 export type { DecisionTimelineProps, TimelineItem } from './decision-timeline';

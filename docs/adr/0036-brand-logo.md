@@ -80,7 +80,8 @@ they are likely to happen:
 - **Never letterspace, re-weight or re-set the wordmark.** Fraunces
   800 at `-0.03em` is specification.
 
-**Palette** — Ink `#0E1413` (frame, `Declutr`), Teal `#006B5F`
+**Palette** — Superseded by [ADR-0037](0037-editorial-plum-palette.md).
+The original decision used Ink `#0E1413` (frame, `Declutr`), Teal `#006B5F`
 (stroke, `Mail`), Mint `#79E6DC` (dark-surface accent), Paper
 `#FAFAF7`. These are the existing D1/D2 brand hexes already hardcoded
 in `opengraph-image.tsx` and `manifest.ts`.

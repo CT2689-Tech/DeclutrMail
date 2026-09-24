@@ -1,9 +1,14 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { ErrorState } from '@declutrmail/shared';
 
+import {
+  MAILBOX_SWITCH_STORAGE_KEY,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 import { ApiError } from '@/lib/api/client';
 import { useMe, type Me } from './api/use-me';
 
@@ -57,6 +62,18 @@ export function useOptionalAuth(): AuthContextValue | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useMe();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const handleMailboxSwitch = (event: StorageEvent) => {
+      if (event.key !== MAILBOX_SWITCH_STORAGE_KEY || event.newValue === null) return;
+      // Storage events only reach other tabs, not the tab that switched.
+      // Reset before any later action can reuse that tab's old rows.
+      void resetMailboxScopedCache(queryClient);
+    };
+    window.addEventListener('storage', handleMailboxSwitch);
+    return () => window.removeEventListener('storage', handleMailboxSwitch);
+  }, [queryClient]);
 
   // A revoked session is the one failure that must NOT keep rendering off a
   // cached identity. The redirect itself is NOT done here: `apiGet`'s own
@@ -168,7 +185,9 @@ function AuthSkeleton() {
       <div
         aria-hidden
         style={{
-          width: 228,
+          // Match AppShell's compact first-render rail (SIDEBAR_RAIL_WIDTH).
+          width: 72,
+          boxSizing: 'border-box',
           flexShrink: 0,
           borderRight: '1px solid var(--color-line, rgba(20,30,50,0.08))',
           padding: '20px 14px',
@@ -179,10 +198,9 @@ function AuthSkeleton() {
         }}
         className="dm-skeleton-sidebar"
       />
-      {/* Keep first paint on the exact same breakpoint as AppShell. A
-          tablet between 768px and 900px used to receive a desktop rail
-          while loading, then jump to the mobile hamburger after auth. */}
-      <style>{`@media (min-width: 901px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
+      {/* Match the shell's 760px navigation threshold; feature content
+          keeps its independent 900px small-screen breakpoint. */}
+      <style>{`@media (min-width: 761px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
       <div
         aria-hidden
         style={{

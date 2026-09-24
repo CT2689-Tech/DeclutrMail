@@ -234,6 +234,14 @@ export interface ActivitySummary {
   /** Row counts per canonical verb (a decision each, D227 K/A/U/L/D). */
   byVerb: Record<CanonicalVerb, number>;
   /**
+   * Messages moved per canonical verb — `SUM(affected_count)` grouped by
+   * action, the same non-reverted rows `byVerb` counts. Split out because
+   * the verbs do not mean the same thing for a total: Later mail comes
+   * back to the inbox when it wakes, so a "cleared" figure can only sum
+   * `archive` + `delete`. Keep and Unsubscribe rows are written with 0.
+   */
+  emailsByVerb: Record<CanonicalVerb, number>;
+  /**
    * Total messages moved by canonical-verb decisions —
    * `SUM(affected_count)`. Keep rows contribute 0 by design (the
    * verdict is recorded; no messages move).

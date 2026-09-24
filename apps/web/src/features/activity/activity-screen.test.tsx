@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
 import {
@@ -23,14 +23,18 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { useUiStore } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
   absoluteTime,
+  activityActionDot,
+  activityDayLabel,
+  activityResultColor,
+  activityRowTime,
   activityUndoRecoveryHelp,
   ActivityScreen,
   formatExpiry,
-  relativeTime,
   windowToLabel,
 } from './activity-screen';
 import type { ActivityRowWire, ActivityStatsWire } from '@/lib/api/activity';
@@ -118,24 +122,24 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
   };
 }
 
+const WEEKLY_ZERO = {
+  window: '7d',
+  from: '2026-05-18T08:00:00.000Z',
+  to: '2026-05-25T08:00:00.000Z',
+  completed: 0,
+  skipped: 0,
+  failed: 0,
+  recovered: 0,
+  protected: 0,
+};
+
 function renderScreen() {
+  // Appended, so a test's own weekly handler (registered first) wins.
   addFetchHandlers([
     {
       method: 'GET',
       path: '/api/activity/weekly-review',
-      respond: () =>
-        jsonOk({
-          data: {
-            window: '7d',
-            from: '2026-05-18T08:00:00.000Z',
-            to: '2026-05-25T08:00:00.000Z',
-            completed: 0,
-            skipped: 0,
-            failed: 0,
-            recovered: 0,
-            protected: 0,
-          },
-        }),
+      respond: () => jsonOk({ data: WEEKLY_ZERO }),
     },
   ]);
   const client = createTestQueryClient();
@@ -147,6 +151,12 @@ function renderScreen() {
   // Expose the client so tests can force cache effects (e.g. a
   // background refetch) that have no DOM trigger in happy-dom.
   return { ...utils, client };
+}
+
+/** Every filter lives behind the one header button. */
+async function openFilters(): Promise<HTMLElement> {
+  await userEvent.click(await screen.findByRole('button', { name: /^Filter/ }));
+  return screen.getByRole('dialog', { name: 'Activity filters' });
 }
 
 beforeEach(() => {
@@ -240,10 +250,9 @@ describe('ActivityScreen — edge states', () => {
     expect(
       within(alert).getByRole('heading', { name: /check your activity filters/i }),
     ).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('region', { name: 'About Activity' })).getByText('Activity'),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Filters' })).toBeInTheDocument();
+    // The header and the active filters stay mounted around the error.
+    expect(screen.getByRole('heading', { level: 1, name: 'Activity' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove filter: Manual' })).toBeInTheDocument();
 
     const reset = within(alert).getByRole('button', { name: 'Reset filters' });
     expect(reset).toHaveStyle({ minHeight: '44px' });
@@ -277,9 +286,15 @@ describe('ActivityScreen — edge states', () => {
       within(alert).getByRole('heading', { name: /check your activity filters/i }),
     ).toBeInTheDocument();
     expect(requestedUrls).toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
-    expect(alert.parentElement).not.toHaveStyle({ padding: '20px 24px 28px' });
+    const filterDialog = await openFilters();
+    expect(within(filterDialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(filterDialog).getByRole('button', { name: 'Group by sender' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
 
     await userEvent.click(within(alert).getByRole('button', { name: 'Reset filters' }));
     expect(replaceMock).toHaveBeenCalledWith('/activity?source=manual&group=sender');
@@ -301,8 +316,7 @@ describe('ActivityScreen — edge states', () => {
     expect(requestedUrls[0]!.searchParams.has('date_to')).toBe(false);
     expect(screen.queryByRole('alert')).toBeNull();
     expect(await screen.findByText('Sender One')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Remove filter: Manual' })).toBeInTheDocument();
   });
 
   it('blocks a reversed valid date range before making an API request', async () => {
@@ -385,41 +399,9 @@ describe('ActivityScreen — edge states', () => {
     await screen.findByRole('alert');
     expect(requests).toBe(1);
     expect(screen.queryByText('Sender One')).toBeNull();
-    expect(screen.queryByRole('status', { name: 'Activity metrics' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Activity summary' })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Bulk actions' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeDisabled();
-  });
-
-  it('restacks the metrics grid via a CSS media query, not a JS default (QA-undo-20260828-02)', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/activity',
-        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
-      },
-    ]);
-    const view = renderScreen();
-    await screen.findByText('Sender One');
-
-    // `useIsAtMost`'s `useState(false)` default means the FIRST render —
-    // server-rendered HTML included — always computes the desktop value.
-    // The regression is a hardcoded `gridTemplateColumns` ternary keyed
-    // on that JS flag; the fix moves the mobile override into a `@media`
-    // block so the served HTML is never wrong, only ever restacked later
-    // by CSS the browser already has. Assert the mechanism directly:
-    // inline style states the 5-column desktop track unconditionally,
-    // and a co-located `<style>` tag carries the 3-column override.
-    const metrics = screen.getByRole('status', { name: 'Activity metrics' });
-    const grid = metrics.querySelector('.dm-activity-metrics-grid');
-    expect(grid).not.toBeNull();
-    expect(grid).toHaveStyle({ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' });
-
-    const styleTag = Array.from(view.container.querySelectorAll('style')).find((el) =>
-      el.textContent?.includes('.dm-activity-metrics-grid'),
-    );
-    expect(styleTag).toBeDefined();
-    expect(styleTag!.textContent).toContain('max-width: 900px');
-    expect(styleTag!.textContent).toContain('repeat(3, minmax(0, 1fr))');
   });
 
   it('does not mislabel a non-validation 4xx as a filter problem', async () => {
@@ -486,12 +468,8 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     ]);
     renderScreen();
 
-    expect(
-      await screen.findByText(
-        /Counts actions, not emails\. Undone actions are not counted\. Sender and date filters apply; source, action, and outcome filters do not\./,
-      ),
-    ).toBeInTheDocument();
-    // Same window, narrowed to failures — not the 7-day card's window.
+    expect(await screen.findByText(/Actions, not emails/)).toBeInTheDocument();
+    // Same window, narrowed to failures.
     expect(screen.getByRole('link', { name: '6 failed · Review' })).toHaveAttribute(
       'href',
       '/activity?window=90d&outcome=failed',
@@ -599,60 +577,257 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     ]);
     renderScreen();
 
-    const gmail = await screen.findByTitle('Open Sender One in Gmail');
-    // The pill holds the Gmail link and nothing else: no spacer glyph, no
+    const gmail = await screen.findByRole('link', { name: 'Open Sender One in Gmail' });
+    // The frame holds the Gmail link and nothing else: no spacer glyph, no
     // divider standing in front of a control that is not there.
-    expect(gmail.parentElement?.children).toHaveLength(1);
+    expect(gmail.closest('[data-row-actions-frame]')?.children).toHaveLength(1);
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });
 
-describe('ActivityScreen — weekly review (D246)', () => {
-  it('shows five exact evidence links and tracks factual counts once', async () => {
+describe('ActivityScreen — timeline (D57)', () => {
+  it('groups rows under one header per day, newest first', async () => {
     installFetchStub([
       {
         method: 'GET',
         path: '/api/activity',
         respond: () =>
           jsonOk({
-            data: [row({ reviewOutcome: 'completed' })],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              allTimeStats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-              verbs: [],
-              senderQuery: '',
-              dateFrom: null,
-              dateTo: null,
-              outcomes: [],
-            },
-          }),
-      },
-      {
-        method: 'GET',
-        path: '/api/activity/weekly-review',
-        respond: () =>
-          jsonOk({
-            data: {
-              window: '7d',
-              from: '2026-05-18T08:00:00.000Z',
-              to: '2026-05-25T08:00:00.000Z',
-              completed: 9,
-              skipped: 2,
-              failed: 1,
-              recovered: 3,
-              protected: 4,
-            },
+            data: [
+              row({ id: 't-1', occurredAt: new Date().toISOString() }),
+              row({ id: 't-2', occurredAt: '2026-05-25T07:00:00.000Z', affectedCount: 212 }),
+              row({ id: 't-3', occurredAt: '2026-05-25T05:30:00.000Z' }),
+              row({ id: 't-4', occurredAt: '2026-05-24T23:00:00.000Z' }),
+            ],
+            meta: META_BASE,
           }),
       },
     ]);
     renderScreen();
 
-    const card = await screen.findByRole('region', { name: /your last 7 days/i });
-    expect(within(card).getAllByRole('link')).toHaveLength(5);
-    const failed = within(card).getByRole('link', { name: /1 failed/i });
+    // No `me` in the cache → the user zone falls back to UTC.
+    await screen.findByRole('heading', { level: 2, name: 'Today' });
+    // History leads; weekly context is separate below the result list.
+    expect(
+      screen
+        .getAllByRole('heading', { level: 2 })
+        .map((el) => el.textContent)
+        .filter((t) => t !== 'Last 7 days'),
+    ).toEqual([
+      'Today',
+      expect.stringMatching(/^Mon, May 25/),
+      expect.stringMatching(/^Sun, May 24/),
+    ]);
+    const may25 = screen.getByRole('region', { name: /^Mon, May 25/ });
+    expect(within(may25).getAllByRole('listitem')).toHaveLength(2);
+    // The row says the verb and the count the wire carries, then the clock.
+    expect(within(may25).getByText('212 emails')).toBeInTheDocument();
+    expect(within(may25).getByText('7:00 AM')).toBeInTheDocument();
+    const weekly = screen.getByRole('region', { name: 'Separate weekly overview' });
+    expect(may25.compareDocumentPosition(weekly) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      weekly.compareDocumentPosition(
+        screen.getByRole('button', { name: 'Export support bundle' }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(may25).getByText('5:30 AM')).toBeInTheDocument();
+  });
+});
+
+describe('ActivityScreen — outcome filter (D246)', () => {
+  it('offers the five outcomes in the Filter popover and writes ?outcome=', async () => {
+    currentSearch = 'window=90d';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: { ...META_BASE, window: '90d' } }),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /^Filter/ }));
+    const outcomes = within(screen.getByRole('dialog', { name: 'Activity filters' })).getByRole(
+      'group',
+      { name: 'Outcome' },
+    );
+    expect(
+      within(outcomes)
+        .getAllByRole('button')
+        .map((el) => el.textContent),
+    ).toEqual([
+      'Completed',
+      'Dismissed by you',
+      'Failed',
+      'Fixed on retry',
+      'Skipped for Protected',
+    ]);
+    await userEvent.click(within(outcomes).getByRole('button', { name: 'Skipped for Protected' }));
+    // The window the user was on is kept.
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?window=90d&outcome=protected');
+  });
+
+  it('passes the outcome to the Activity API and shows it as a removable chip', async () => {
+    currentSearch = 'window=7d&outcome=protected';
+    let requested = '';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requested = url.search;
+          return jsonOk({
+            data: [],
+            meta: { ...META_BASE, window: '7d', outcomes: ['protected'] },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(requested).toContain('outcome=protected'));
+
+    const active = await screen.findByRole('group', { name: 'Active filters' });
+    await userEvent.click(
+      within(active).getByRole('button', { name: 'Remove filter: Skipped for Protected' }),
+    );
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?window=7d');
+  });
+});
+
+describe('ActivityScreen — Filter popover', () => {
+  it('keeps every filter behind the one button until it is opened', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const trigger = await screen.findByRole('button', { name: /^Filter/ });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: 'Autopilot' })).toBeNull();
+
+    const dialog = await openFilters();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      within(dialog)
+        .getAllByRole('group')
+        .map((el) => el.getAttribute('aria-label')),
+    ).toEqual(['Source', 'Outcome', 'Time', 'View']);
+  });
+
+  it('closes on Escape, returning focus to the button, and on an outside click', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await openFilters();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Activity filters' })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Filter/ })).toHaveFocus();
+
+    await openFilters();
+    await userEvent.click(screen.getByText('Sender One'));
+    expect(screen.queryByRole('dialog', { name: 'Activity filters' })).toBeNull();
+  });
+});
+
+describe('ActivityScreen — active filters', () => {
+  it('renders no filter row at the defaults', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await screen.findByText('Sender One');
+    expect(screen.queryByRole('group', { name: 'Active filters' })).toBeNull();
+  });
+
+  it('Clear resets every filter but keeps the sender search and grouping', async () => {
+    currentSearch =
+      'window=7d&source=autopilot&verb=archive&outcome=failed&sender_q=acme&group=sender';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+
+    const active = await screen.findByRole('group', { name: 'Active filters' });
+    expect(
+      within(active)
+        .getAllByRole('button')
+        .map((el) => el.getAttribute('aria-label') ?? el.textContent),
+    ).toEqual([
+      'Remove filter: Autopilot',
+      'Remove filter: Archived',
+      'Remove filter: Failed',
+      'Remove filter: Last 7 days',
+      'Clear',
+    ]);
+    // The button counts the same set the row names.
+    expect(screen.getByRole('button', { name: /^Filter/ })).toHaveTextContent('4');
+
+    await userEvent.click(within(active).getByRole('button', { name: 'Clear' }));
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?sender_q=acme&group=sender');
+  });
+
+  it('removing the window chip returns to the default window', async () => {
+    currentSearch = 'window=90d';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: { ...META_BASE, window: '90d' } }),
+      },
+    ]);
+    renderScreen();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Remove filter: Last 90 days' }),
+    );
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?window=30d');
+  });
+});
+
+describe('ActivityScreen — weekly review (D246)', () => {
+  const WEEK = { ...WEEKLY_ZERO, completed: 9, skipped: 2, failed: 1, recovered: 3, protected: 4 };
+
+  it('shows one link per outcome and tracks factual counts once', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ reviewOutcome: 'completed' })], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: WEEK }),
+      },
+    ]);
+    renderScreen();
+
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(strip).getAllByRole('link')).toHaveLength(5);
+    const failed = within(strip).getByRole('link', { name: /1 failed/i });
+    // The Failed tile is the one number in danger, and says "Review".
+    expect(failed).toHaveAccessibleName(/Review/);
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="failed"]')?.style.color).toBe(
+      'var(--dm-danger)',
+    );
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="completed"]')?.style.color).toBe(
+      'var(--dm-fg)',
+    );
     expect(failed).toHaveAttribute('href', expect.stringContaining('outcome=failed'));
     expect(failed).toHaveAttribute('href', expect.stringContaining('date_from='));
     await waitFor(() =>
@@ -669,9 +844,65 @@ describe('ActivityScreen — weekly review (D246)', () => {
     );
   });
 
+  it('keeps zero outcomes as muted tiles, and shows an empty week when the mailbox has activity', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: { ...WEEKLY_ZERO, completed: 2 } }),
+      },
+    ]);
+    const view = renderScreen();
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(strip).getAllByRole('link')).toHaveLength(5);
+    expect(within(strip).getByRole('link', { name: /2 completed/i })).toBeInTheDocument();
+    const failedZero = within(strip).getByRole('link', { name: /^0 failed/i });
+    // A zero Failed is not an alarm: muted, and no "Review".
+    expect(failedZero).not.toHaveAccessibleName(/Review/);
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="failed"]')?.style.color).toBe(
+      'var(--dm-fg-muted)',
+    );
+    view.unmount();
+
+    // An all-zero week still shows while the mailbox has any activity.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    const second = renderScreen();
+    const empty = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(empty).getAllByRole('link')).toHaveLength(5);
+    second.unmount();
+
+    // A mailbox with no activity at all leaves it to the empty state.
+    const zero = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [], meta: { ...META_BASE, stats: zero, allTimeStats: zero } }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(trackMock.mock.calls.some(([name]) => name === 'weekly_review_viewed')).toBe(true),
+    );
+    expect(screen.queryByRole('region', { name: /last 7 days/i })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Activity summary' })).toBeNull();
+  });
+
   /**
    * Founder decision 2026-08-19: on a sender-filtered page every number
-   * narrows, including this card. Before that its counts were
+   * narrows, including this strip. Before that its counts were
    * mailbox-wide and its links dropped `sender_q` on click, so a count
    * you saw for "one sender" opened the whole mailbox.
    */
@@ -682,59 +913,30 @@ describe('ActivityScreen — weekly review (D246)', () => {
       {
         method: 'GET',
         path: '/api/activity',
-        respond: () =>
-          jsonOk({
-            data: [],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              allTimeStats: STATS_BASE,
-              window: '30d',
-              source: 'all',
-              verbs: [],
-              senderQuery: 'news@brand.com',
-              dateFrom: null,
-              dateTo: null,
-              outcomes: [],
-            },
-          }),
+        respond: () => jsonOk({ data: [], meta: { ...META_BASE, senderQuery: 'news@brand.com' } }),
       },
       {
         method: 'GET',
         path: '/api/activity/weekly-review',
-        respond: (req: Request, url: URL) => {
-          void req;
+        respond: (_req: Request, url: URL) => {
           weeklyUrls.push(url.search);
-          return jsonOk({
-            data: {
-              window: '7d',
-              from: '2026-05-18T08:00:00.000Z',
-              to: '2026-05-25T08:00:00.000Z',
-              completed: 1,
-              skipped: 0,
-              failed: 0,
-              recovered: 0,
-              protected: 0,
-            },
-          });
+          return jsonOk({ data: { ...WEEKLY_ZERO, completed: 1 } });
         },
       },
     ]);
     renderScreen();
 
-    const card = await screen.findByRole('region', { name: /your last 7 days/i });
-    await waitFor(() => expect(weeklyUrls.length).toBeGreaterThan(0));
+    const strip = await screen.findByRole('region', { name: /for this sender/i });
     expect(weeklyUrls[0]).toContain('sender_q=news%40brand.com');
-    // The card says which scope it answered for.
-    expect(within(card).getByText(/for this sender/i)).toBeInTheDocument();
-    // …and a count keeps that scope when clicked.
-    const completed = within(card).getByRole('link', { name: /1 completed/i });
+    const completed = within(strip).getByRole('link', { name: /1 completed/i });
     expect(completed).toHaveAttribute('href', expect.stringContaining('sender_q=news%40brand.com'));
     expect(completed).toHaveAttribute('href', expect.stringContaining('outcome=completed'));
   });
 
-  it('passes the outcome evidence filter to the Activity API', async () => {
-    currentSearch = 'window=7d&outcome=protected';
+  it('the active outcome chip links back out of the outcome, dropping its own dates', async () => {
+    currentSearch = `window=7d&outcome=protected&date_from=${encodeURIComponent(
+      WEEKLY_ZERO.from,
+    )}&date_to=${encodeURIComponent(WEEKLY_ZERO.to)}`;
     let requested = '';
     installFetchStub([
       {
@@ -744,25 +946,41 @@ describe('ActivityScreen — weekly review (D246)', () => {
           requested = url.search;
           return jsonOk({
             data: [],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              stats: STATS_BASE,
-              allTimeStats: STATS_BASE,
-              window: '7d',
-              source: 'all',
-              verbs: [],
-              senderQuery: '',
-              dateFrom: null,
-              dateTo: null,
-              outcomes: ['protected'],
-            },
+            meta: { ...META_BASE, window: '7d', outcomes: ['protected'] },
           });
         },
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: WEEK }),
       },
     ]);
     renderScreen();
     await waitFor(() => expect(requested).toContain('outcome=protected'));
-    expect(await screen.findByRole('link', { name: /clear this filter/i })).toBeInTheDocument();
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    const active = within(strip).getByRole('link', { name: /4 skipped for protected/i });
+    expect(active).toHaveAttribute('aria-current', 'page');
+    expect(active).toHaveAttribute('href', '/activity?window=7d');
+  });
+
+  it('offers a retry when the week cannot load, without blocking the feed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonServerError(),
+      },
+    ]);
+    renderScreen();
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Activity summary' })).toBeInTheDocument();
   });
 
   it('tracks each mailbox review once when the active mailbox changes', async () => {
@@ -807,7 +1025,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
-    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
       'aria-pressed',
@@ -859,7 +1077,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
-    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
@@ -889,7 +1107,7 @@ describe('ActivityScreen — populated', () => {
     expect(within(dialog).getByRole('button', { name: 'Download bundle' })).toBeEnabled();
   });
 
-  it('explains the difference between Activity Undo and provider recovery', async () => {
+  it('registers the Undo disclosure as the screen help', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -898,31 +1116,24 @@ describe('ActivityScreen — populated', () => {
       },
     ]);
     renderScreen();
+    await screen.findByText('Sender One');
 
-    expect(await screen.findByText('Which Undo or recovery option applies?')).toBeInTheDocument();
-    expect(screen.getByText(/Gmail Trash for up to 30 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/sent unsubscribe can't be recalled/i)).toBeInTheDocument();
-
-    // D245 fix-wave: states the window instead of hedging with "your
-    // DeclutrMail plan's window" once the ladder is uniform. Asserted
-    // against the rendered DOM (not just the exported constant) so a
-    // regression that stops wiring `activityUndoRecoveryHelp` into the
-    // JSX — not just one that reintroduces the hedge text itself — is
-    // also caught here.
-    expect(screen.queryByText(/DeclutrMail plan's window/)).not.toBeInTheDocument();
-    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(
-        screen.getByText(new RegExp(`a ${UNIFORM_UNDO_WINDOW_DAYS}-day window`)),
-      ).toBeInTheDocument();
-    }
+    // Asserted against what the screen registers (not just the exported
+    // constant) so a regression that stops wiring the disclosure into the
+    // `<ScreenIntro>` is also caught here.
+    const help = useUiStore.getState().screenHelp;
+    expect(help?.id).toBe('activity');
+    expect(help?.body).toBe(activityUndoRecoveryHelp);
   });
 
-  it('exports the same Activity Undo help text it renders', () => {
-    // Guards against the two halves drifting: a hand-edit to the JSX that
-    // doesn't touch the exported constant, or vice versa.
-    expect(activityUndoRecoveryHelp).not.toMatch(/plan(?:'s)?\s+(?:activity\s+)?window/i);
+  it('discloses what Undo cannot take back, without hedging the window', () => {
+    expect(activityUndoRecoveryHelp).toMatch(/Gmail Trash for up to 30 days/);
+    expect(activityUndoRecoveryHelp).toMatch(/sent unsubscribe can't be recalled/);
+    // D245 fix-wave: states the window instead of hedging with "your
+    // plan's window" once the ladder is uniform.
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(activityUndoRecoveryHelp).toContain(`a ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
+      expect(activityUndoRecoveryHelp).not.toMatch(/plan/i);
+      expect(activityUndoRecoveryHelp).toContain(`${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`);
     }
   });
 
@@ -939,20 +1150,121 @@ describe('ActivityScreen — populated', () => {
       },
     ]);
     renderScreen();
-    // The redesigned metrics block renders one tile per verb. Each
-    // tile pairs a label (Archived / Unsubscribes / Kept …) with the
-    // window count displayed as a large display-font numeral. Labels
-    // also appear on the verb-filter chip row, so `getAllByText` is
-    // intentional — we assert the labels render somewhere. The
-    // unsubscribe bucket counts requests, so the honest label is
-    // "Unsubscribes", never the success-claiming "Unsubscribed" (D9).
-    await waitFor(() => expect(screen.getAllByText(/^Archived$/).length).toBeGreaterThan(0));
-    expect(screen.getAllByText(/^Unsubscribes$/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/^Kept$/).length).toBeGreaterThan(0);
-    // Counts render as standalone numerals — assert the trio.
-    expect(screen.getAllByText('12').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('4').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
+    // One line, one count per verb. The unsubscribe bucket counts
+    // requests, so the honest label is "Unsubscribes", never the
+    // success-claiming "Unsubscribed" (D9).
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    expect(within(summary).getByText('Last 30 days')).toBeInTheDocument();
+    expect(
+      within(summary)
+        .getAllByRole('button')
+        .map(
+          (el) =>
+            `${el.firstChild?.textContent}${el.querySelector('[data-summary-count]')?.textContent}`,
+        ),
+    ).toEqual(['Archived12', 'Deleted0', 'Unsubscribes4', 'Later1', 'Kept3']);
+  });
+
+  it('puts the all-time total under each window count, formatted', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({})],
+            meta: { ...META_BASE, allTimeStats: { ...STATS_BASE, archived: 1335 } },
+          }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(within(archived).getByText('12')).toBeInTheDocument();
+    // Still the verb filter.
+    await userEvent.click(archived);
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=archive');
+  });
+
+  it('drops the all-time echo when the window already is all time', async () => {
+    currentSearch = 'window=all';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: { ...META_BASE, window: 'all' } }),
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    expect(screen.queryByText(/all time$/)).toBeNull();
+  });
+
+  it('keeps the five columns for an all-zero window, zeros muted, with the all-time totals', async () => {
+    const zero = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() } }),
+            ],
+            meta: {
+              ...META_BASE,
+              stats: zero,
+              allTimeStats: { ...zero, archived: 1335, deleted: 40 },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    expect(within(summary).getByText('Last 30 days')).toBeInTheDocument();
+    expect(within(summary).queryByText(/Nothing in/)).toBeNull();
+    expect(within(summary).getAllByRole('button')).toHaveLength(5);
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(summary.querySelector<HTMLElement>('[data-summary-count="archived"]')?.style.color).toBe(
+      'var(--dm-fg-muted)',
+    );
+    // The window's rows are all undone — say why they aren't counted.
+    expect(within(summary).getByText(/Undone actions aren’t counted/)).toBeInTheDocument();
+  });
+
+  it('only mentions undone actions when the window has one', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    expect(within(summary).getByText(/Actions, not emails/)).toBeInTheDocument();
+    expect(within(summary).queryByText(/Undone actions/)).toBeNull();
+  });
+
+  it('a summary count toggles its verb filter', async () => {
+    currentSearch = 'verb=delete';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const deleted = within(summary).getByRole('button', { name: /Deleted/ });
+    expect(deleted).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(within(summary).getByRole('button', { name: /Archived/ }));
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=delete%2Carchive');
+    await userEvent.click(deleted);
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity');
   });
 
   it('D55 defaults to window=30d when no ?window= present', async () => {
@@ -987,9 +1299,8 @@ describe('ActivityScreen — populated', () => {
       },
     ]);
     renderScreen();
-    // Wait for the chips to mount.
-    const triage = await screen.findByRole('button', { name: 'Triage' });
-    await userEvent.click(triage);
+    const filters = await openFilters();
+    await userEvent.click(within(filters).getByRole('button', { name: 'Triage' }));
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('source=triage'));
   });
 });
@@ -1106,6 +1417,32 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
+    // A quiet status, not an Undo control.
+    expect(screen.getByText(/^Undone$/).closest('[role="status"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^undo/i })).toBeNull();
+  });
+
+  it('marks each row with a rail in its verb’s colour', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ id: 'a-1', action: 'delete' }),
+              row({ id: 'a-2', action: 'marked_protected', affectedCount: 0 }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await waitFor(() => expect(container.querySelectorAll('[data-action-rail]')).toHaveLength(2));
+    const rail = (action: string) =>
+      container.querySelector<HTMLElement>(`[data-action-rail="${action}"]`);
+    expect(rail('delete')?.style.background).toBe('var(--dm-danger)');
+    expect(rail('marked_protected')?.style.background).toBe('var(--dm-primary)');
   });
 
   it('D56 — renders a distinct endpoint-accepted row for the outcome action', async () => {
@@ -1198,16 +1535,45 @@ describe('ActivityScreen — D58 undo affordances', () => {
 });
 
 describe('ActivityScreen — pure helpers', () => {
-  it('relativeTime buckets days / hours / minutes / just-now', () => {
-    expect(relativeTime(new Date(NOW - 3 * 24 * 60 * 60 * 1000).toISOString(), NOW)).toBe('3d ago');
-    expect(relativeTime(new Date(NOW - 2 * 60 * 60 * 1000).toISOString(), NOW)).toBe('2h ago');
-    expect(relativeTime(new Date(NOW - 90 * 1000).toISOString(), NOW)).toBe('1m ago');
-    expect(relativeTime(new Date(NOW).toISOString(), NOW)).toBe('just now');
+  it('activityActionDot takes the verb registry tone, and outlines protection', () => {
+    expect(activityActionDot('delete')).toEqual({ color: 'var(--dm-danger)', outline: false });
+    expect(activityActionDot('archive')).toEqual({ color: 'var(--dm-fg)', outline: false });
+    expect(activityActionDot('unsubscribe_failed').color).toBe('var(--dm-amber)');
+    expect(activityActionDot('later').color).toBe('var(--dm-primary)');
+    expect(activityActionDot('keep').color).toBe('var(--dm-fg-muted)');
+    expect(activityActionDot('unmarked_protected')).toEqual({
+      color: 'var(--dm-primary)',
+      outline: true,
+    });
+  });
+
+  it('activityDayLabel says Today / Yesterday in the user zone, then the date', () => {
+    const tz = 'Asia/Kolkata';
+    // 20:00 UTC on Aug 10 is already Aug 11 in IST — the user zone
+    // decides which day a row falls under, not the machine.
+    const now = new Date('2026-08-11T06:00:00Z').getTime();
+    expect(activityDayLabel('2026-08-10T20:00:00Z', now, tz)).toBe('Today');
+    expect(activityDayLabel('2026-08-10T12:00:00Z', now, tz)).toBe('Yesterday');
+    expect(activityDayLabel('2026-08-10T20:00:00Z', now, 'UTC')).toBe('Yesterday');
+    expect(activityDayLabel('2026-08-03T12:00:00Z', now, tz)).toBe('Mon, Aug 3');
+    // Another year says so; an unparseable stamp never reads as a day.
+    expect(activityDayLabel('2025-12-31T12:00:00Z', now, 'UTC')).toBe('Wed, Dec 31, 2025');
+    expect(activityDayLabel('not-a-date', now, tz)).toBe('Unknown date');
+  });
+
+  it('activityDayLabel is absolute before the clock is known (server render)', () => {
+    expect(activityDayLabel('2026-08-10T12:00:00Z', null, 'UTC')).toBe('Mon, Aug 10');
+  });
+
+  it('activityRowTime is a clock under a day header and dated inside a sender group', () => {
+    expect(activityRowTime('2026-08-12T10:34:56Z', 'Asia/Kolkata', false)).toBe('4:04 PM');
+    expect(activityRowTime('2026-08-12T10:34:56Z', 'UTC', true)).toBe('Aug 12, 10:34 AM');
+    expect(activityRowTime('not-a-date', 'UTC', false)).toBe('');
   });
 
   it('absoluteTime keeps seconds — the bucket alone hides one composite burst', () => {
-    // Three rows of one composite all render "1h ago"; only the exact
-    // stamp shows they were seconds apart (founder, 2026-08-12).
+    // Three rows of one composite all render the same minute; only the
+    // exact stamp shows they were seconds apart (founder, 2026-08-12).
     // Exact strings via an explicit zone: locale is pinned to en-US, so
     // only the zone may move the label — never the machine.
     expect(absoluteTime('2026-08-12T10:34:56Z', 'Asia/Kolkata')).toBe('Aug 12, 2026, 4:04:56 PM');
@@ -1795,8 +2161,19 @@ describe('ActivityScreen — B8 verb filter', () => {
       },
     ]);
     renderScreen();
-    const archivedChip = await screen.findByRole('button', { name: /^Archived$/ });
-    await userEvent.click(archivedChip);
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((el) => el.textContent),
+    ).toEqual(['All', 'Archived', 'Deleted', 'Unsubscribes', 'Later', 'Kept', 'Follow-ups']);
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // Each verb carries its rows' colour as a dot; All has none.
+    expect(chips.querySelectorAll('[data-chip-dot]')).toHaveLength(6);
+    await userEvent.click(within(chips).getByRole('button', { name: /^Archived$/ }));
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('verb=archive'));
   });
 
@@ -1810,10 +2187,30 @@ describe('ActivityScreen — B8 verb filter', () => {
       },
     ]);
     renderScreen();
-    const archivedChip = await screen.findByRole('button', { name: /^Archived$/ });
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    const archivedChip = within(chips).getByRole('button', { name: /^Archived$/ });
     expect(archivedChip).toHaveAttribute('aria-pressed', 'true');
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
     await userEvent.click(archivedChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.not.stringContaining('verb='));
+  });
+
+  it('All clears every verb', async () => {
+    currentSearch = 'verb=archive,delete';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: { ...META_BASE, verbs: ['archive', 'delete'] } }),
+      },
+    ]);
+    renderScreen();
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    await userEvent.click(within(chips).getByRole('button', { name: 'All' }));
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity');
   });
 });
 
@@ -1846,40 +2243,15 @@ describe('ActivityScreen — B10 date range', () => {
       },
     ]);
     renderScreen();
-    const fromInput = (await screen.findByText('From')).parentElement!.querySelector(
-      'input[type="date"]',
-    ) as HTMLInputElement;
+    const filters = await openFilters();
+    const fromInput = within(filters)
+      .getByText('From')
+      .parentElement!.querySelector('input[type="date"]') as HTMLInputElement;
     expect(fromInput).toBeInTheDocument();
     await userEvent.type(fromInput, '2026-05-01');
     await waitFor(() =>
       expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('date_from=')),
     );
-  });
-});
-
-describe('ActivityScreen — B16 all-time totals', () => {
-  it('renders BOTH a window stats line AND an all-time stats line', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/activity',
-        respond: () =>
-          jsonOk({
-            data: [row({})],
-            meta: {
-              ...META_BASE,
-              stats: { ...STATS_BASE, archived: 5 },
-              allTimeStats: { ...STATS_BASE, archived: 42 },
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-    // The redesigned metrics block shows each verb tile with a window
-    // count above a "/ N all time" footnote. The window count 5 + the
-    // all-time count 42 both render; the footnote reads "/ 42 all time".
-    await waitFor(() => expect(screen.getByText(/\/ 42 all time/)).toBeInTheDocument());
-    expect(screen.getAllByText('5').length).toBeGreaterThan(0);
   });
 });
 
@@ -1987,11 +2359,34 @@ describe('ActivityScreen — B11 group by sender', () => {
       },
     ]);
     renderScreen();
-    // The toolbar "Group" chip toggles between "Group" (off) and
-    // "Grouped" (on). Match the off-state label.
-    const groupChip = await screen.findByRole('button', { name: /^Group$/ });
+    const filters = await openFilters();
+    const groupChip = within(filters).getByRole('button', { name: 'Group by sender' });
+    expect(groupChip).toHaveAttribute('aria-pressed', 'false');
     await userEvent.click(groupChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('group=sender'));
+  });
+
+  it('?group=sender folds rows under one expandable sender header', async () => {
+    currentSearch = 'group=sender';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ id: 'g-1', affectedCount: 3 }), row({ id: 'g-2', affectedCount: 4 })],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    const header = await screen.findByRole('button', { name: /Sender One/ });
+    expect(header).toHaveAttribute('aria-expanded', 'false');
+    expect(header).toHaveTextContent('2 actions · 7 emails');
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
+    await userEvent.click(header);
+    expect(header).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('checkbox', { name: /select activity row/i })).toHaveLength(2);
   });
 });
 
@@ -2067,7 +2462,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
     ]);
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByText('by Autopilot · Newsletter graveyard')).toBeInTheDocument(),
+      expect(screen.getByText('By Autopilot · Newsletter graveyard')).toBeInTheDocument(),
     );
   });
 
@@ -2081,7 +2476,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('By Autopilot')).toBeInTheDocument());
   });
 
   it('keeps the "via <source>" form for non-autopilot, non-manual rows', async () => {
@@ -2093,7 +2488,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('via Triage')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Via Triage')).toBeInTheDocument());
   });
 
   it('reads manual rows as "by you", not the raw source enum (QA-archive-20260828-06)', async () => {
@@ -2105,8 +2500,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
-    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('By you')).toBeInTheDocument());
+    expect(screen.queryByText(/via Manual/i)).not.toBeInTheDocument();
   });
 });
 
@@ -2277,7 +2672,7 @@ describe('ActivityScreen — B12 Open in Gmail', () => {
     );
     expect(link.getAttribute('href')).not.toContain('/u/0');
     expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
+    expect(link).toHaveAccessibleName('Open Sender One in Gmail');
   });
 });
 
@@ -2302,7 +2697,7 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('collapses the inline filter bands into a Filters trigger + opens the drawer', async () => {
+  it('opens the filters as a modal bottom sheet from the Filter trigger', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -2312,17 +2707,25 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
     ]);
     renderScreen();
 
-    // Trigger present; the inline source chips are NOT rendered directly
-    // (they live inside the closed drawer).
-    const trigger = await screen.findByRole('button', { name: /^filters/i });
+    const trigger = await screen.findByRole('button', { name: /^Filter/ });
+    expect(trigger).toHaveStyle({ minHeight: '44px' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await userEvent.click(trigger);
 
-    // Drawer is a modal dialog holding the bands + an explicit results button.
+    // The sheet is a modal dialog holding the fields + an explicit results button.
     const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
-    expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toHaveStyle({
+      minHeight: '44px',
+    });
+    // The action filter lives on the page as 44px chips, not in the sheet.
+    expect(within(dialog).queryByRole('button', { name: 'Archived' })).toBeNull();
+    expect(
+      within(screen.getByRole('group', { name: 'Action' })).getByRole('button', {
+        name: 'Archived',
+      }),
+    ).toHaveStyle({ minHeight: '44px' });
     expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
   });
 
@@ -2338,8 +2741,8 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
-    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('By you')).toBeInTheDocument());
+    expect(screen.queryByText(/via Manual/i)).not.toBeInTheDocument();
   });
 
   it('a source chip inside the drawer drives the filter URL', async () => {
@@ -2351,11 +2754,143 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
       },
     ]);
     renderScreen();
-    await userEvent.click(await screen.findByRole('button', { name: /^filters/i }));
-    const dialog = await screen.findByRole('dialog', { name: /activity filters/i });
+    const dialog = await openFilters();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await waitFor(() =>
       expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('source=autopilot')),
     );
+  });
+});
+
+describe('ActivityScreen — sender-first rows and coloured numbers', () => {
+  it('raises each row as a card, with a teal Undo capsule and a labelled Gmail pill', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'a-card',
+                undoState: {
+                  kind: 'available',
+                  token: 'tok-card',
+                  expiresAt: new Date(NOW + 86_400_000).toISOString(),
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByText('Sender One');
+    const card = container.querySelector<HTMLElement>('[data-activity-card]');
+    expect(card?.style.background).toBe('var(--dm-card)');
+    expect(card?.style.boxShadow).toBe('var(--dm-shadow-card)');
+    const undo = screen.getByRole('button', { name: /^Undo/ });
+    expect(undo).toHaveAttribute('data-undo-capsule');
+    expect(undo.textContent).toContain('↺');
+    expect(undo.style.color).toBe('var(--dm-primary)');
+    // The link says where it goes; its name still names the sender.
+    const gmail = screen.getByRole('link', { name: 'Open Sender One in Gmail' });
+    expect(gmail.textContent).toBe('Gmail↗');
+  });
+
+  it('leads each row with the sender name, the domain under it', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({ action: 'delete', affectedCount: 80 })], meta: META_BASE }),
+      },
+    ]);
+    const { container } = renderScreen();
+    const name = await screen.findByText('Sender One');
+    expect(name).toHaveAttribute('data-row-sender');
+    expect(name.nextElementSibling?.textContent).toBe('example.com');
+    // The name leads; the action and its count come after it.
+    const result = container.querySelector('[data-row-result]');
+    expect(result).not.toBeNull();
+    expect(name.compareDocumentPosition(result!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(name.closest('li')?.textContent).toMatch(/Sender One.*Deleted.*80 emails/);
+  });
+
+  it('colours the result line by outcome', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ id: 'a-1', action: 'delete' }),
+              row({ id: 'a-2', action: 'unsubscribe_unconfirmed' }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await waitFor(() => expect(container.querySelectorAll('[data-row-result]')).toHaveLength(2));
+    const colours = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-row-result]'),
+      (el) => el.style.color,
+    );
+    expect(colours).toEqual(['var(--dm-danger)', 'var(--dm-amber)']);
+  });
+
+  it('activityResultColor: failure danger, unsettled amber, settled unsubscribe primary', () => {
+    expect(activityResultColor(row({ action: 'unsubscribe_failed' }))).toBe('var(--dm-danger)');
+    expect(
+      activityResultColor(
+        row({
+          action: 'archive',
+          executionState: { kind: 'failed' } as ActivityRowWire['executionState'],
+        }),
+      ),
+    ).toBe('var(--dm-danger)');
+    expect(activityResultColor(row({ action: 'unsubscribe_action_required' }))).toBe(
+      'var(--dm-amber)',
+    );
+    expect(activityResultColor(row({ action: 'unsubscribe' }))).toBe('var(--dm-primary)');
+    expect(activityResultColor(row({ action: 'archive' }))).toBe('var(--dm-fg)');
+    expect(activityResultColor(row({ action: 'keep' }))).toBe('var(--dm-fg-muted)');
+  });
+
+  it('draws each window count in its verb’s colour', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    // STATS_BASE has no deletes: a zero is muted, not red.
+    expect(
+      container.querySelector<HTMLElement>('[data-summary-count="deleted"]')?.style.color,
+    ).toBe('var(--dm-fg-muted)');
+    cleanup();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({})], meta: { ...META_BASE, stats: { ...STATS_BASE, deleted: 2 } } }),
+      },
+    ]);
+    const second = renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    const tone = (key: string) =>
+      second.container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
+    expect(tone('archived')).toBe('var(--dm-fg)');
+    expect(tone('deleted')).toBe('var(--dm-danger)');
+    expect(tone('unsubscribed')).toBe('var(--dm-primary)');
+    expect(tone('later')).toBe('var(--dm-primary)');
+    expect(tone('kept')).toBe('var(--dm-fg-muted)');
   });
 });

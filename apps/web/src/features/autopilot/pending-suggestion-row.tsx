@@ -5,7 +5,44 @@ import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
 import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
 
-const { color, font } = tokens;
+const { color, font, motion, radius, text } = tokens;
+
+/** Flat list on desktop; a readable, stacked decision on narrow screens. */
+const SUGGESTION_ROW_CSS = `.dm-suggestion-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin: 0 -12px;
+  transition: background ${motion.fast} ${motion.ease};
+}
+.dm-suggestion-heading { align-items: baseline; }
+.dm-suggestion-metadata { align-items: center; }
+.dm-suggestion-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-suggestion-email { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-suggestion-row + .dm-suggestion-row::before { content: ''; position: absolute; top: 0; left: 42px; right: 12px; height: 1px; background: ${color.lineSoft}; }
+.dm-suggestion-row:hover { background: ${color.fill}; }
+.dm-suggestion-row[data-selected='true'] { background: ${color.primarySoft}; }
+.dm-suggestion-row:hover::before, .dm-suggestion-row:hover + .dm-suggestion-row::before,
+.dm-suggestion-row[data-selected='true']::before, .dm-suggestion-row[data-selected='true'] + .dm-suggestion-row::before { opacity: 0; }
+@media (max-width: 600px) {
+  .dm-suggestion-row { grid-template-columns: 18px minmax(0, 1fr); align-items: start; margin: 0; }
+  .dm-suggestion-content { min-width: 0; }
+  .dm-suggestion-heading, .dm-suggestion-metadata { flex-direction: column; align-items: flex-start; }
+  .dm-suggestion-name, .dm-suggestion-email {
+    min-width: 0;
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .dm-suggestion-email { width: 100%; }
+  .dm-suggestion-separator { display: none; }
+  .dm-suggestion-reason { overflow-wrap: anywhere; }
+  .dm-suggestion-skip { grid-column: 2; width: 100%; }
+  .dm-suggestion-skip button { width: 100%; }
+}`;
 
 /**
  * One row in a D104 "Pending Autopilot suggestions" group.
@@ -40,51 +77,47 @@ export function PendingSuggestionRow({
   isDismissing: boolean;
 }) {
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
-  const confidencePct = Math.round(match.confidence * 100);
   const identity = resolveSenderIdentity(match);
   const senderLabel = identity.label;
   const isIdentified = identity.source !== 'unknown';
 
   return (
     <li
+      className="dm-suggestion-row"
+      data-selected={selected ? 'true' : undefined}
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 12,
-        padding: '12px 14px',
-        background: color.card,
-        border: `1px solid ${selected ? color.primary : color.lineSoft}`,
-        borderRadius: 10,
+        position: 'relative',
+        minHeight: 68,
+        boxSizing: 'border-box',
+        padding: '12px',
+        borderRadius: radius.lg,
         fontFamily: font.sans,
       }}
     >
+      <style>{SUGGESTION_ROW_CSS}</style>
       <input
         type="checkbox"
         checked={selected}
         onChange={() => onToggleSelect(match.id)}
         aria-label={`Select suggestion for ${senderLabel}`}
-        style={{ accentColor: color.primary, width: 15, height: 15, flexShrink: 0 }}
+        style={{ accentColor: color.primary, width: 18, height: 18, flexShrink: 0, margin: 0 }}
       />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="dm-suggestion-content" style={{ minWidth: 0 }}>
         <div
+          className="dm-suggestion-heading"
           style={{
             display: 'flex',
-            alignItems: 'baseline',
             gap: 8,
             flexWrap: 'wrap',
           }}
         >
           {isIdentified ? (
             <span
+              className="dm-suggestion-name"
               style={{
-                fontSize: 13,
+                fontSize: text.md,
                 fontWeight: 600,
                 color: color.fg,
-                maxWidth: 320,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
               }}
               title={match.senderEmail ?? senderLabel}
             >
@@ -93,62 +126,60 @@ export function PendingSuggestionRow({
           ) : (
             <span
               style={{
-                fontFamily: font.mono,
-                fontSize: 11.5,
+                fontSize: text.xs,
                 fontWeight: 600,
-                color: color.fg,
-                padding: '2px 7px',
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: 5,
+                color: color.fgSoft,
+                padding: '2px 8px',
+                background: color.fill,
+                borderRadius: radius.pill,
               }}
               title={SENDER_SYNCING_LABEL}
             >
               {SENDER_SYNCING_LABEL}
             </span>
           )}
-          <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
+          <span style={{ fontSize: text.md, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
         </div>
         <div
+          className="dm-suggestion-metadata"
           style={{
             display: 'flex',
-            alignItems: 'center',
             gap: 8,
-            marginTop: 4,
-            fontSize: 11.5,
+            marginTop: 2,
+            fontSize: text.sm,
             color: color.fgMuted,
+            fontVariantNumeric: 'tabular-nums',
           }}
         >
           {identity.source === 'name' && match.senderEmail != null && (
             <>
               <span
+                className="dm-suggestion-email"
                 style={{
-                  fontFamily: font.mono,
-                  maxWidth: 280,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  fontFamily: font.sans,
                 }}
               >
                 {match.senderEmail}
               </span>
-              <span aria-hidden="true">·</span>
+              <span className="dm-suggestion-separator" aria-hidden="true">
+                ·
+              </span>
             </>
           )}
-          <span title="How closely this sender matched the rule">{confidencePct}% match</span>
-          <span aria-hidden="true">·</span>
-          <span>{match.reason}</span>
+          <span className="dm-suggestion-reason">Why suggested: {match.reason}</span>
         </div>
       </div>
-      <Button
-        tone="default"
-        size="sm"
-        onClick={() => onDismiss(match.id)}
-        disabled={isDismissing}
-        ariaLabel={`Skip suggestion for ${senderLabel} without changing Gmail`}
-      >
-        {isDismissing ? 'Skipping…' : 'Skip suggestion'}
-      </Button>
+      <div className="dm-suggestion-skip">
+        <Button
+          tone="ghost"
+          size="sm"
+          onClick={() => onDismiss(match.id)}
+          disabled={isDismissing}
+          ariaLabel={`Skip suggestion for ${senderLabel} without changing Gmail`}
+        >
+          {isDismissing ? 'Skipping…' : 'Skip suggestion'}
+        </Button>
+      </div>
     </li>
   );
 }

@@ -1,31 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type postgres from 'postgres';
 
+import { applyJourneySeed } from '../helpers/seed-journeys';
+
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect, getSenderPolicy, type SenderPolicyRow } from '../helpers/db';
 
-/**
- * The STANDING protection review — Settings → Protected senders (D245).
- *
- * Onboarding's step 5 reviews at most five weak protections once and is
- * then gone forever; a real mailbox carries dozens (460 strong / 55 weak
- * on the founder's account). This page is where the rest stay
- * reachable, so what it must do is:
- *
- *   1. Say WHY each sender is protected. Three of the four
- *      `protection_reason` values are AUTOMATIC, so a list that only
- *      shows names implies the user chose every row — the 2026-08-07
- *      finding, and what CLAUDE.md §2.6 / D245 forbid.
- *   2. Remove protection IN PLACE. It used to require a trip to
- *      /senders/:id per sender; 55 wrong protections meant 55 round
- *      trips, which is why nobody corrected them.
- *
- * The Unprotect is a SET-STATE policy write — non-destructive, no D226
- * preview, no undo token, nothing moves in Gmail. That is what makes it
- * safe to exercise against the live dev mailbox here. The spec restores
- * the exact `sender_policies` snapshot and drops the D43 audit row it
- * appends, so the shared dev DB is left as found.
- */
+/** Isolated synthetic API/UI journey. No Gmail credentials or worker. */
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -35,9 +16,10 @@ let testStart: Date;
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
-  test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
+  expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
+  await applyJourneySeed(sql);
   testStart = new Date();
 });
 
@@ -70,9 +52,12 @@ test('protected senders show the exact reason, and Unprotect works in place', as
 
   await expect(page.getByRole('heading', { name: 'Protected senders' })).toBeVisible();
 
-  const rows = page.getByRole('listitem');
+  await expect(page.getByRole('button', { name: 'Unprotect Meadow Lane Dispatch' })).toBeVisible();
+  const rows = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: /^Unprotect / }) });
   const rowCount = await rows.count();
-  test.skip(rowCount === 0, 'no protected senders on the dev mailbox');
+  expect(rowCount, 'seeded protected sender must render').toBeGreaterThan(0);
 
   // (1) EVERY row names its evidence. Not "some row somewhere shows a
   // reason" — a list that says why for only the rows we happened to
@@ -101,7 +86,7 @@ test('protected senders show the exact reason, and Unprotect works in place', as
     LIMIT 1
   `;
   const senderKey = senderKeyRows[0]?.sender_key;
-  test.skip(!senderKey, `could not resolve sender_key for ${senderName}`);
+  expect(senderKey).toBeTruthy();
   const prePolicy = await getSenderPolicy(sql, mailboxId, senderKey!);
   expect(prePolicy?.is_protected).toBe(true);
   restore = { senderKey: senderKey!, prePolicy: prePolicy! };

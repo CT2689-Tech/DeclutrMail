@@ -10,7 +10,7 @@ import { isTypingTarget } from '@/features/senders/keyboard';
 
 import { VERB_ORDER, VERB_SHORTCUT } from './types';
 
-const { color, font } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Triage keyboard-hint overlay — press `?` to reveal, Escape (or the
@@ -22,8 +22,11 @@ const { color, font } = tokens;
  * aspirational:
  *
  *   - K/A/U/L/D    → `resolveShortcut` in `action-toolbar.tsx` (bound
- *                     while a row is expanded; D29 + D227)
- *   - Enter/Space  → row header expand/collapse (`triage-row.tsx`)
+ *                     for the focus card, or the expanded list row;
+ *                     D29 + D227)
+ *   - →            → skip to the next sender (`focus-stack.tsx`)
+ *   - Enter/Space  → list row expand/collapse (`triage-row.tsx`)
+ *   - → ← ↑ swipes → Keep / Archive / Later on touch (`use-swipe-verb.ts`)
  *   - Z            → undo last decision (`triage-undo-tray.tsx`, D35)
  *   - Esc          → close the action sheet (`action-sheet.tsx`) or
  *                     dismiss an inline preview (`triage-screen.tsx`)
@@ -58,11 +61,11 @@ export function TriageKeyboardHelp() {
 
 /** Verb → what the shortcut does, in the user's terms (D227 verbs). */
 const VERB_HELP: Record<(typeof VERB_ORDER)[number], string> = {
-  Keep: 'Keep the expanded sender',
-  Archive: 'Archive the expanded sender',
-  Unsubscribe: 'Unsubscribe from the expanded sender',
-  Later: 'Move the expanded sender to Later',
-  Delete: 'Move the expanded sender’s inbox email to Gmail Trash',
+  Keep: 'Keep this sender',
+  Archive: 'Archive this sender',
+  Unsubscribe: 'Unsubscribe from this sender',
+  Later: 'Move this sender to Later',
+  Delete: 'Move this sender’s inbox email to Gmail Trash',
 };
 
 /**
@@ -74,36 +77,36 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 200,
-        }}
-      />
+    <div
+      className="dm-scrim dm-sheet-layer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        justifyContent: 'center',
+        padding: 16,
+        overflowY: 'auto',
+      }}
+    >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-triage-help-title"
+        className="dm-sheet dm-sheet-panel"
         style={{
-          position: 'fixed',
-          top: '14vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(440px, calc(100vw - 32px))',
-          maxHeight: '72vh',
-          overflow: 'auto',
+          width: '100%',
+          maxWidth: 460,
+          boxSizing: 'border-box',
+          padding: '28px 28px 20px',
           background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 201,
+          boxShadow: shadow.modal,
           fontFamily: font.sans,
+          color: color.fg,
         }}
       >
         <div
@@ -111,13 +114,13 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '16px 20px 12px',
-            borderBottom: `1px solid ${color.line}`,
+            gap: 12,
+            marginBottom: 4,
           }}
         >
           <h2
             id="dm-triage-help-title"
-            style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
+            style={{ fontSize: text.xl, fontWeight: 650, letterSpacing: '-0.02em', margin: 0 }}
           >
             Keyboard shortcuts
           </h2>
@@ -125,36 +128,66 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
             type="button"
             aria-label="Close shortcuts"
             onClick={onClose}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = color.fill;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
             style={{
-              all: 'unset',
-              cursor: 'pointer',
+              width: 36,
+              height: 36,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              background: 'transparent',
+              border: 'none',
+              borderRadius: radius.pill,
               color: color.fgMuted,
-              fontSize: 16,
-              lineHeight: 1,
-              padding: 2,
+              cursor: 'pointer',
             }}
           >
-            ✕
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
         </div>
 
-        <div style={{ padding: '8px 20px 16px' }}>
-          <SectionLabel>Decide (expanded row)</SectionLabel>
+        <div>
+          <SectionLabel>Decide</SectionLabel>
           {VERB_ORDER.map((verb) => (
             <ShortcutRow key={verb} keys={VERB_SHORTCUT[verb]} label={VERB_HELP[verb]} />
           ))}
 
           <SectionLabel>Navigate</SectionLabel>
-          <ShortcutRow keys="Enter / Space" label="Expand or collapse the focused row" />
+          <ShortcutRow keys="→" label="Skip to the next sender" />
+          <ShortcutRow keys="Enter / Space" label="Open or close a list row" />
           <ShortcutRow keys="Z" label="Undo the last decision" />
 
           <SectionLabel>In a preview</SectionLabel>
           <ShortcutRow keys="⌘⏎" label="Confirm the preview" />
           <ShortcutRow keys="Esc" label="Cancel the sheet / dismiss an inline preview" />
           <ShortcutRow keys="?" label="Toggle this overlay" />
+
+          {/* D37 — gestures are invisible without a legend; it lives
+              here rather than as a caption on every card. */}
+          <SectionLabel>On touch</SectionLabel>
+          <ShortcutRow keys="Swipe →" label="Keep" />
+          <ShortcutRow keys="Swipe ←" label="Archive" />
+          <ShortcutRow keys="Swipe ↑" label="Later" />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -162,13 +195,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontFamily: font.mono,
-        fontSize: 10,
+        fontSize: text.sm,
         fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
         color: color.fgMuted,
-        margin: '14px 0 6px',
+        margin: '20px 0 4px',
       }}
     >
       {children}
@@ -183,11 +213,11 @@ function ShortcutRow({ keys, label }: { keys: string; label: string }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '7px 0',
-        borderBottom: `1px solid ${color.lineSoft}`,
+        gap: 16,
+        minHeight: 40,
       }}
     >
-      <span style={{ fontSize: 13, color: color.fg }}>{label}</span>
+      <span style={{ fontSize: text.md, color: color.fg }}>{label}</span>
       <Kbd>{keys}</Kbd>
     </div>
   );

@@ -56,26 +56,10 @@ function stubClient(mock: ReturnType<typeof vi.fn>): Anthropic {
 }
 
 describe('narrativeWordBudget', () => {
-  // The budget scales with Reply length so that a genuinely heavy
-  // morning gets room to state its reasons, WITHOUT handing the model
-  // the decision. "Go longer when it matters" as a prompt rule is
-  // self-granting — the model finds something that matters most days,
-  // and the ceiling becomes the floor.
-  it('holds the base budget for a light morning', () => {
-    expect(narrativeWordBudget(0)).toBe(60);
-    expect(narrativeWordBudget(1)).toBe(60);
-    expect(narrativeWordBudget(2)).toBe(60);
-  });
-
-  it('buys ~one stated reason per Reply item past the second', () => {
-    expect(narrativeWordBudget(3)).toBe(85);
-    expect(narrativeWordBudget(4)).toBe(110);
-    expect(narrativeWordBudget(5)).toBe(135);
-  });
-
-  it('caps at 150 — reached exactly at a full Reply section (D63 caps it at 6)', () => {
-    expect(narrativeWordBudget(6)).toBe(150);
-    expect(narrativeWordBudget(20)).toBe(150);
+  it('stays short even when the candidate list is long', () => {
+    expect(narrativeWordBudget(0)).toBe(55);
+    expect(narrativeWordBudget(1)).toBe(55);
+    expect(narrativeWordBudget(6)).toBe(55);
   });
 });
 
@@ -95,8 +79,7 @@ describe('renderBriefUserPrompt', () => {
   });
 
   it("states the day's word budget to the model", () => {
-    // SAMPLE_INPUT has one Reply item, so the base budget applies.
-    expect(renderBriefUserPrompt(SAMPLE_INPUT)).toContain('Word budget: at most 60 words.');
+    expect(renderBriefUserPrompt(SAMPLE_INPUT)).toContain('Word budget: at most 55 words.');
 
     const heavy = {
       ...SAMPLE_INPUT,
@@ -107,7 +90,7 @@ describe('renderBriefUserPrompt', () => {
         snippet: `Snippet ${i}`,
       })),
     };
-    expect(renderBriefUserPrompt(heavy)).toContain('Word budget: at most 135 words.');
+    expect(renderBriefUserPrompt(heavy)).toContain('Word budget: at most 55 words.');
   });
 
   it('renders "(none)" for empty sections', () => {
@@ -201,7 +184,7 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     expect(result).toBe('Boss needs a reply about Q4. Nothing else urgent.');
   });
 
-  it('sends a request with model=claude-haiku-4-5, max_tokens=384, the system prompt, and the rendered user message', async () => {
+  it('sends a request with model=claude-haiku-4-5, max_tokens=192, the system prompt, and the rendered user message', async () => {
     const create = vi.fn().mockResolvedValue({
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: 'ok' }],
@@ -212,7 +195,7 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     expect(create).toHaveBeenCalledTimes(1);
     const callArg = create.mock.calls[0]![0];
     expect(callArg.model).toBe('claude-haiku-4-5');
-    expect(callArg.max_tokens).toBe(384);
+    expect(callArg.max_tokens).toBe(192);
     expect(typeof callArg.system).toBe('string');
     expect(callArg.system).toContain('executive assistant');
     expect(callArg.messages).toHaveLength(1);
@@ -242,14 +225,8 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     expect(system).toContain('Never state counts');
     expect(system).toContain('Never repeat figures from a snippet');
 
-    // The number of senders named is decided by how many have a REASON,
-    // never by a constant. An earlier draft capped it at "at most one
-    // sender", which under-served exactly the morning the narrative
-    // exists for — three real deadlines across three senders — and
-    // repeated the "6 OF 6" mistake of dressing a fixed cap as a fact
-    // about the day.
-    expect(system).toContain('Name every item that has such a reason');
-    expect(system).not.toContain('at most one sender');
+    expect(system).toContain('Name at most two senders');
+    expect(system).toContain('Do not infer a sign-in attempt');
   });
 
   it('trims leading/trailing whitespace on the returned text', async () => {
@@ -260,6 +237,15 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
     const result = await adapter.generateNarrative(SAMPLE_INPUT);
     expect(result).toBe('Trimmed.');
+  });
+
+  it('falls back instead of storing an overlong generated paragraph', async () => {
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: Array(56).fill('word').join(' ') }],
+    } satisfies MockMessage);
+    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
   it('returns null when stop_reason is "refusal"', async () => {

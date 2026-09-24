@@ -1,31 +1,32 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { color, font } from '../tokens/tokens';
+import { color, font, motion, radius, shadow, text } from '../tokens/tokens';
 
 export type ButtonTone = 'default' | 'primary' | 'dark' | 'warn' | 'ok' | 'danger' | 'ghost';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
 
-const TONES: Record<ButtonTone, { bg: string; fg: string; br: string; hover: string }> = {
+const TONES: Record<ButtonTone, { bg: string; fg: string; hover: string; filled: boolean }> = {
   // Filled tones use fgInverse (not literal white): the dark theme
   // BRIGHTENS these fills (fg → near-white; primary/amber/red lighten
   // one step), so their lettering must flip to near-black with them.
-  default: { bg: color.card, fg: color.fg, br: color.line, hover: color.lineSoft },
-  primary: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
-  dark: { bg: color.fg, fg: color.fgInverse, br: color.fg, hover: color.fgSoft },
-  warn: { bg: color.amber, fg: color.fgInverse, br: color.amber, hover: color.amberDeep },
-  ok: { bg: color.primary, fg: color.fgInverse, br: color.primary, hover: color.primaryDeep },
-  danger: { bg: color.danger, fg: color.fgInverse, br: color.danger, hover: color.dangerDeep },
-  ghost: { bg: 'transparent', fg: color.fgSoft, br: 'transparent', hover: color.lineSoft },
+  // `default` is a neutral fill, not an outlined box — an outline reads
+  // as a form field; a soft fill reads as something to press.
+  default: { bg: color.fill, fg: color.fg, hover: color.fillHover, filled: false },
+  primary: { bg: color.primary, fg: color.fgInverse, hover: color.primaryDeep, filled: true },
+  dark: { bg: color.fg, fg: color.fgInverse, hover: color.fgSoft, filled: true },
+  warn: { bg: color.amber, fg: color.fgInverse, hover: color.amberDeep, filled: true },
+  ok: { bg: color.primary, fg: color.fgInverse, hover: color.primaryDeep, filled: true },
+  danger: { bg: color.danger, fg: color.fgInverse, hover: color.dangerDeep, filled: true },
+  ghost: { bg: 'transparent', fg: color.fgSoft, hover: color.fill, filled: false },
 };
 
-const SIZES: Record<
-  ButtonSize,
-  { h: number; px: number; fs: number; gap: number; radius: number }
-> = {
-  sm: { h: 26, px: 10, fs: 11.5, gap: 5, radius: 6 },
-  md: { h: 32, px: 14, fs: 13, gap: 7, radius: 7 },
-  lg: { h: 38, px: 18, fs: 14, gap: 8, radius: 8 },
+const SIZES: Record<ButtonSize, { h: number; px: number; fs: number; gap: number }> = {
+  sm: { h: 30, px: 14, fs: text.sm, gap: 6 },
+  md: { h: 36, px: 16, fs: text.base, gap: 7 },
+  lg: { h: 44, px: 22, fs: text.md, gap: 8 },
+  /** The one action of a sheet — full-width capable, thumb-sized. */
+  xl: { h: 50, px: 28, fs: text.lg, gap: 10 },
 };
 
 export function Button({
@@ -78,6 +79,7 @@ export function Button({
     <button
       type={type}
       id={id}
+      data-dm-button=""
       onClick={inert ? undefined : onClick}
       disabled={disabled}
       aria-disabled={inert || undefined}
@@ -101,15 +103,17 @@ export function Button({
         padding: `0 ${s.px}px`,
         background: t.bg,
         color: t.fg,
-        border: `1px solid ${t.br}`,
-        borderRadius: s.radius,
+        border: 'none',
+        borderRadius: radius.md,
+        boxShadow: t.filled && !disabled && !inert ? shadow.button : 'none',
         fontFamily: font.sans,
         fontSize: s.fs,
         fontWeight: 600,
+        letterSpacing: '-0.006em',
         cursor: disabled || inert ? 'not-allowed' : 'pointer',
-        opacity: disabled || inert ? 0.5 : 1,
+        opacity: disabled || inert ? 0.45 : 1,
         whiteSpace: 'nowrap',
-        transition: 'background 0.12s',
+        transition: `background ${motion.fast} ${motion.ease}, transform ${motion.fast} ${motion.ease}`,
         ...style,
       }}
     >

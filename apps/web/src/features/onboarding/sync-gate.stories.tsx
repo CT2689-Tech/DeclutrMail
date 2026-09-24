@@ -109,7 +109,7 @@ export const Failed: Story<typeof SyncGate> = {
 
 /**
  * Syncing (secondary connect, D116) — same gate, plus the escape hatch:
- * "Stay here" keeps waiting; "Go back to <primary>" switches the active
+ * "Go back to <primary>" switches the active
  * mailbox back and leaves. Only renders when another active mailbox
  * exists; first-run has no escape (strict gate, D6).
  */

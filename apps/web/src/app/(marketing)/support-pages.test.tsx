@@ -37,7 +37,7 @@ const { trackSpy } = vi.hoisted(() => ({
 vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
 
 const PAGES = [
-  { name: '/help', Page: HelpPage, heading: 'Help & FAQ', page: 'help' },
+  { name: '/help', Page: HelpPage, heading: 'Help with your workspace', page: 'help' },
   { name: '/contact', Page: ContactPage, heading: 'Contact', page: 'contact' },
   { name: '/security', Page: SecurityPage, heading: 'Security', page: 'security' },
 ] as const;

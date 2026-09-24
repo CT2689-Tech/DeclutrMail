@@ -15,12 +15,14 @@ export default function BillingError({
 }) {
   return (
     <RouteErrorScreen
+      title="Billing"
+      kicker="Your workspace / Plan &amp; billing"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="billing"
-      eyebrow="Billing hit a snag"
       headline="We couldn't load your billing details."
-      body="Your plan and any subscription are unaffected — this is a display problem, not a payment one. Try again in a moment."
+      body="Your plan is unchanged. Try again in a moment."
       escape={{ href: '/settings', label: 'Back to Settings' }}
     />
   );

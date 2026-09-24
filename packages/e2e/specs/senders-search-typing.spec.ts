@@ -58,7 +58,7 @@ test('picking a suggestion mid-typing is not undone by the pending notify timer'
   const input = page.getByRole('combobox', { name: 'Search senders' });
   await expect(input).toBeVisible();
   await input.click();
-  await page.keyboard.type('githu', { delay: 45 });
+  await page.keyboard.type('Fresh', { delay: 45 });
 
   const option = page.getByRole('option').first();
   await expect(option).toBeVisible();
@@ -66,7 +66,7 @@ test('picking a suggestion mid-typing is not undone by the pending notify timer'
   await option.click();
 
   // The picked sender's name replaces the fragment…
-  await expect(input).not.toHaveValue('githu');
+  await expect(input).not.toHaveValue('Fresh');
   const picked = await input.inputValue();
   expect(picked.length).toBeGreaterThan(0);
   // …and STAYS replaced after every debounce window has elapsed.
@@ -80,10 +80,10 @@ test('backspacing to empty restores the unfiltered list', async ({ page }) => {
   const input = page.getByRole('combobox', { name: 'Search senders' });
   await expect(input).toBeVisible();
   await input.click();
-  await page.keyboard.type('github', { delay: 60 });
-  await expect(input).toHaveValue('github');
+  await page.keyboard.type('Fresh Finds', { delay: 60 });
+  await expect(input).toHaveValue('Fresh Finds');
 
-  for (let i = 0; i < 'github'.length; i++) {
+  for (let i = 0; i < 'Fresh Finds'.length; i++) {
     await page.keyboard.press('Backspace');
   }
   await expect(input).toHaveValue('');

@@ -14,19 +14,20 @@
 //   2. Organic navigation — same page, no event.
 //
 // Copy is calm and never apologetic (D209) and uses no banned verbs
-// (D227). Visual language mirrors `not-found.tsx`: token-only styling,
-// soft-teal label disc, the same CTA-link shape.
+// (D227). Token-only styling; the headline carries the beta state, and
+// the CTAs are the public site's capsules.
 
+import { ReadingLayout } from '@/features/marketing/learn/learn-shell';
 import type { Metadata } from 'next';
 import { OAUTH_SCOPE_DISCLOSURE, tokens } from '@declutrmail/shared';
 import { BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '@declutrmail/shared/contracts';
 
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { oauthStartUrl } from '@/features/marketing/landing/urls';
+import { permissionEntryUrl } from '@/features/marketing/landing/urls';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow } = tokens;
 
 // Open beta is the live signup funnel, so /beta is indexable — routed
 // through marketingPageMetadata for the same canonical + OG/Twitter block
@@ -45,10 +46,8 @@ export const metadata: Metadata = marketingPageMetadata({
 // (2026-07-04 launch audit).
 const FOUNDER_MAILTO = 'mailto:support@declutrmail.com?subject=DeclutrMail%20beta';
 
-// Plain <a>, same shape as not-found.tsx's CTA. Not next/link on
-// purpose: the primary href is the API's OAuth start endpoint (a
-// cross-origin hop Link would try to prefetch) and the secondary is a
-// mailto — neither benefits from client-side routing.
+// Plain anchors keep permission entry and founder contact available
+// without client-side navigation or an authenticated session.
 function CtaLink({
   href,
   tone,
@@ -66,16 +65,17 @@ function CtaLink({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        height: 32,
-        padding: '0 14px',
-        background: isPrimary ? color.primary : color.card,
-        // fgInverse, not a literal: primary is a deep teal on light and a
-        // bright teal on dark, so the readable lettering flips with it.
+        minHeight: 46,
+        padding: '0 24px',
+        background: isPrimary ? color.fg : color.fill,
+        // fgInverse, not a literal: fg is ink on light and paper on dark,
+        // so the readable lettering flips with it.
         color: isPrimary ? color.fgInverse : color.fg,
-        border: `1px solid ${isPrimary ? color.primary : color.line}`,
-        borderRadius: 7,
+        border: 'none',
+        borderRadius: radius.md,
+        boxShadow: isPrimary ? shadow.button : 'none',
         fontFamily: font.sans,
-        fontSize: 13,
+        fontSize: 15,
         fontWeight: 600,
         textDecoration: 'none',
         whiteSpace: 'nowrap',
@@ -95,106 +95,43 @@ export default async function BetaPage({
   const denied = params[BETA_DENIED_REASON_PARAM] === BETA_DENIED_REASON;
 
   return (
-    <div
-      style={{
-        minHeight: 'calc(100vh - 120px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 24,
-      }}
+    <ReadingLayout
+      centred
+      title={denied ? 'This email needs an invite right now.' : 'DeclutrMail is in open beta.'}
+      lede={
+        denied
+          ? 'Your Google sign-in worked, but this email is not on the invite list yet. No account was created.'
+          : 'Start reviewing senders without an invite or waitlist. It is still a beta: expect the occasional rough edge.'
+      }
     >
       <PageViewTracker page="beta" />
       {denied ? <BetaDeniedTracker /> : null}
-      <div
-        style={{
-          maxWidth: 480,
-          width: '100%',
-          textAlign: 'center',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 18,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: text.xs,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: color.primary,
-            background: color.primarySoft,
-            border: `1px solid ${color.primaryBorder}`,
-            borderRadius: 9999,
-            padding: '4px 10px',
-          }}
-        >
-          {denied ? 'Private beta' : 'Open beta'}
-        </span>
-        <h1
-          style={{
-            fontFamily: font.display,
-            fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
-            margin: 0,
-          }}
-        >
-          {denied ? 'This email needs an invite right now.' : 'DeclutrMail is in open beta.'}
-        </h1>
-        <p
-          style={{
-            fontSize: text.md,
-            color: color.fgSoft,
-            lineHeight: 1.6,
-            margin: 0,
-          }}
-        >
-          {denied
-            ? 'Your Google sign-in worked, but this email isn’t on the invite list yet. No account was created. Write to us and we’ll sort out your invite.'
-            : 'Anyone can sign in with Google and start reviewing senders — no invite or waitlist. It’s still a beta: expect the occasional rough edge. Manual email-moving actions show a preview and Activity undo; delivered unsubscribe requests are one-way.'}
-        </p>
-
-        <div
-          style={{
-            display: 'flex',
-            gap: 10,
-            marginTop: 6,
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-          }}
-        >
-          {denied ? (
-            <CtaLink href={FOUNDER_MAILTO} tone="primary">
-              Email the founder
-            </CtaLink>
-          ) : (
-            <>
-              <CtaLink href={oauthStartUrl()} tone="primary">
-                Sign in with Google
-              </CtaLink>
-              <CtaLink href={FOUNDER_MAILTO} tone="default">
-                Email the founder
-              </CtaLink>
-            </>
-          )}
-        </div>
-
-        {denied ? null : (
-          <p
-            style={{
-              fontFamily: tokens.font.mono,
-              fontSize: 11,
-              letterSpacing: '0.04em',
-              color: tokens.color.fgMuted,
-              margin: 0,
-            }}
-          >
-            {OAUTH_SCOPE_DISCLOSURE}
-          </p>
+      <p>
+        {denied
+          ? 'Write to us and we will help with your invite.'
+          : 'Manual email-moving actions show a preview and Activity Undo. Delivered unsubscribe requests are one-way. Gmail stays the place where you read and reply.'}
+      </p>
+      <div className="dm-read-cta-actions">
+        {!denied && (
+          <CtaLink href={permissionEntryUrl()} tone="primary">
+            Review Gmail permissions
+          </CtaLink>
         )}
+        <CtaLink href={FOUNDER_MAILTO} tone={denied ? 'primary' : 'default'}>
+          Email the founder
+        </CtaLink>
       </div>
-    </div>
+      {!denied && (
+        <>
+          <p>
+            <a href="/inbox-simulator">Try the daily review demo</a> before connecting.
+          </p>
+          <details>
+            <summary>What Google will ask you to allow</summary>
+            <p>{OAUTH_SCOPE_DISCLOSURE}</p>
+          </details>
+        </>
+      )}
+    </ReadingLayout>
   );
 }

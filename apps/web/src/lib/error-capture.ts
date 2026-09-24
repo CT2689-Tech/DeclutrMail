@@ -44,7 +44,8 @@ export type ErrorBoundary =
   | 'quiet'
   | 'snoozed'
   | 'admin-security'
-  | 'onboarding';
+  | 'onboarding'
+  | 'home';
 
 /** Closed set used both as the type union and the runtime allowlist. */
 const VALID_BOUNDARIES = new Set<ErrorBoundary>([
@@ -64,6 +65,7 @@ const VALID_BOUNDARIES = new Set<ErrorBoundary>([
   'snoozed',
   'admin-security',
   'onboarding',
+  'home',
 ]);
 
 /**

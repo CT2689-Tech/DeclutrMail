@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, font, radius } from '../tokens/tokens';
+import { color, font, radius, shadow, text } from '../tokens/tokens';
 
 /**
  * Accessible description tooltip (D38 — "tooltips on hover").
@@ -74,18 +74,17 @@ export function Tooltip({
                 zIndex: 30,
                 width: 'max-content',
                 maxWidth: 260,
-                padding: '7px 9px',
+                padding: '7px 11px',
                 background: color.fg,
                 color: color.fgInverse,
-                border: `1px solid ${color.fg}`,
-                borderRadius: radius.sm,
+                borderRadius: radius.md,
                 fontFamily: font.sans,
-                fontSize: 12,
-                fontWeight: 400,
+                fontSize: text.sm,
+                fontWeight: 500,
                 lineHeight: 1.45,
                 whiteSpace: 'normal',
                 textAlign: 'left',
-                boxShadow: '0 6px 18px rgba(14,20,19,0.22)',
+                boxShadow: shadow.pop,
                 // The bubble must never eat the pointer — a tooltip that
                 // sits under the cursor would fire the wrapper's
                 // mouseleave and flicker.

@@ -1,60 +1,55 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
-import { PRIVACY_STORAGE_ITEMS } from '../copy/privacy';
-import { color, font } from '../tokens/tokens';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { breakpoint, color, font, motion, radius, shadow, text } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
+import { useLabels, type LabelKey } from '../hooks/use-labels';
 import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
-import { Sidebar } from './sidebar';
-
-export const TRUST_CLAIMS = [
-  // D227 K/A/U/L/D — Delete IS a verb. The prior "Nothing deleted"
-  // claim was a flat lie once ADR-0019 landed Delete. Per CLAUDE.md
-  // §2.1, the canonical claim is the storage allowlist, not the
-  // mutation surface. Archive/Later/Delete share the plan Activity Undo
-  // window; Delete also has Gmail's separate Trash-retention fallback.
-  // The sentence below has TWO "30 days": the Activity window (ours —
-  // derived from UNIFORM_UNDO_WINDOW_DAYS) and Gmail's Trash retention
-  // (Google's, not ours — stays a literal; do not derive it).
-  {
-    label: 'Undo windows',
-    destination: 'activity',
-    title:
-      UNIFORM_UNDO_WINDOW_DAYS === null
-        ? "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and lasts up to 30 days. Delivered unsubscribe requests can't be recalled."
-        : `Archive, Later, and Delete can be undone from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days. Gmail Trash recovery is separate and lasts up to 30 days. Delivered unsubscribe requests can't be recalled.`,
-  },
-  {
-    label: 'Stored Gmail data',
-    destination: 'settings',
-    title: `Stored message data: ${PRIVACY_STORAGE_ITEMS.join(', ')}. Full message bodies and attachments are never fetched.`,
-  },
-] as const;
+import { HelpButton } from './help-button';
+import {
+  WORKSPACE_NAV,
+  workspaceSection,
+  SectionNavigation,
+  NavIcon,
+  Sidebar,
+  SIDEBAR_WIDTH,
+  type NavCount,
+} from './sidebar';
 
 /**
- * App chrome: sidebar + a topbar trust strip + a scrollable content
- * area. Responsive behaviour is **CSS-driven** (`tokens.css` media
- * queries on `dm-sidebar-desktop` / `dm-topbar-hamburger` /
- * `dm-trust-extra`) so the layout is correct at first paint — a JS
- * breakpoint hook would flash the desktop shell on mobile before
- * hydration. Below `sm` the sidebar hides and a hamburger opens it as
- * a drawer. Routing-agnostic — the host supplies `active`/`onNavigate`.
+ * App chrome: sidebar + a quiet top bar + a scrollable content area.
+ * Responsive behaviour is **CSS-driven** (`tokens.css` media queries on
+ * `dm-sidebar-desktop` / `dm-topbar-hamburger` / `dm-tabbar`) so the
+ * layout is correct at first paint — a JS breakpoint hook would flash
+ * the desktop shell on mobile before hydration. At 760px and below the sidebar
+ * becomes a horizontal row carrying the same five workspace groups.
+ * Section navigation and the hamburger drawer expose every feature route.
+ * Routing-agnostic — the host supplies `active`/`onNavigate`.
  */
 export function AppShell({
   active,
   onNavigate,
   onNavigateIntent,
   counts,
+  locks,
+  routeKey,
   topbarRight,
+  accountInitial,
   children,
 }: {
   active: string;
   onNavigate: (id: string) => void;
   /** Early signal used by framework hosts to prefetch nav destinations. */
   onNavigateIntent?: ((id: string) => void) | undefined;
-  /** Per-item badge slot — see `Sidebar`'s `counts` doc. */
-  counts?: Partial<Record<string, string | number | ReactNode>>;
+  /** Per-item count — see `Sidebar`'s `counts` doc. */
+  counts?: Partial<Record<string, NavCount>>;
+  /** Per-item lock marker — see `Sidebar`'s `locks` doc. */
+  locks?: Partial<Record<string, string>>;
+  /**
+   * Changes whenever the route does (the host passes its pathname).
+   * Drives the content fade; without it the shell never animates.
+   */
+  routeKey?: string | undefined;
   /**
    * Optional slot rendered at the right edge of the topbar. The web
    * app uses this for the account menu (switch mailbox, disconnect,
@@ -62,10 +57,37 @@ export function AppShell({
    * implementation.
    */
   topbarRight?: ReactNode;
+  accountInitial?: string | undefined;
   children: ReactNode;
 }) {
+  const labels = useLabels();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useFocusTrap<HTMLDivElement>(drawerOpen);
+
+  // The top bar is borderless at rest; a hairline appears only once
+  // content has scrolled under it.
+  const [scrolled, setScrolled] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Next resets the document on navigation, but this shell owns a nested
+  // scroller. Preserve position for query-only sender changes; start a new
+  // screen at its heading instead of carrying over the previous page's scroll.
+  useEffect(() => {
+    if (routeKey === undefined) return;
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+    setScrolled(false);
+  }, [routeKey]);
+
+  // Route fade. Flips between two identical keyframes on navigation
+  // (see tokens.css) — adjusting state during render is React's
+  // documented pattern for deriving from a changed prop. Unset until the
+  // first navigation so the initial page load never fades in.
+  const [seenRouteKey, setSeenRouteKey] = useState(routeKey);
+  const [routeFlip, setRouteFlip] = useState<'a' | 'b' | undefined>(undefined);
+  if (seenRouteKey !== routeKey) {
+    setSeenRouteKey(routeKey);
+    setRouteFlip((flip) => (flip === 'a' ? 'b' : 'a'));
+  }
 
   // Close the drawer whenever the route changes.
   useEffect(() => {
@@ -74,8 +96,8 @@ export function AppShell({
 
   // Close it when the viewport crosses INTO desktop. Responsive
   // behaviour here is CSS-only by design, which means `drawerOpen` has
-  // no idea the breakpoint moved: open the drawer at 800px, then widen
-  // or rotate past 900px, and the hamburger disappears while the dialog
+  // no idea the breakpoint moved: open the drawer on mobile, then widen
+  // or rotate past 760px, and the hamburger disappears while the dialog
   // stays mounted — a second <Sidebar> in an aria-modal dialog pinned
   // over the now-visible desktop one, focus trap and duplicate nav
   // landmarks included. That is precisely the state the inline-`display`
@@ -84,7 +106,7 @@ export function AppShell({
   // it only retires a state the layout can no longer host.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const desktop = window.matchMedia('(min-width: 901px)');
+    const desktop = window.matchMedia(`(min-width: ${breakpoint.shell + 1}px)`);
     const closeIfDesktop = () => {
       if (desktop.matches) setDrawerOpen(false);
     };
@@ -126,13 +148,16 @@ export function AppShell({
         overflow: 'hidden',
       }}
     >
-      {/* Desktop sidebar — CSS-hidden below the `sm` breakpoint. */}
+      {/* Desktop sidebar — CSS-hidden at 760px and below. */}
       <div className="dm-sidebar-desktop" style={{ flexShrink: 0 }}>
         <Sidebar
           active={active}
           onNavigate={onNavigate}
           onNavigateIntent={onNavigateIntent}
           counts={counts ?? {}}
+          locks={locks ?? {}}
+          collapsed
+          accountInitial={accountInitial}
         />
       </div>
 
@@ -143,12 +168,8 @@ export function AppShell({
           <div
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(14,20,19,0.34)',
-              zIndex: 80,
-            }}
+            className="dm-scrim"
+            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
           />
           <div
             ref={drawerRef}
@@ -162,20 +183,23 @@ export function AppShell({
               onClick={() => setDrawerOpen(false)}
               aria-label="Close navigation menu"
               style={{
-                // Sits on the scrim, clear of the 220px rail, rather
-                // than on top of it: the rail's top row is the brand
-                // lockup, and a button pinned inside `right: 12` lands
-                // on the tail of the wordmark (ADR-0036).
+                // Sits on the scrim, clear of the sidebar, rather than on
+                // top of it: the sidebar's top row is the brand lockup,
+                // and a button pinned inside `right: 12` lands on the
+                // tail of the wordmark (ADR-0036).
                 position: 'absolute',
                 top: 12,
-                left: 232,
+                left: SIDEBAR_WIDTH + 12,
                 zIndex: 1,
                 width: 44,
                 height: 44,
-                border: `1px solid ${color.border}`,
-                borderRadius: 8,
+                border: 'none',
+                borderRadius: radius.pill,
                 background: color.card,
+                boxShadow: shadow.card,
                 color: color.fg,
+                fontSize: text.xl,
+                lineHeight: 1,
                 cursor: 'pointer',
               }}
             >
@@ -186,6 +210,8 @@ export function AppShell({
               onNavigate={navigate}
               onNavigateIntent={onNavigateIntent}
               counts={counts ?? {}}
+              locks={locks ?? {}}
+              accountInitial={accountInitial}
             />
           </div>
         </>
@@ -200,16 +226,57 @@ export function AppShell({
           overflow: 'hidden',
         }}
       >
-        {/* Topbar — hamburger (mobile only) + trust strip. */}
+        {/* Mobile workspace groups — above the top bar in DOM and visual order,
+            matching the prototype. In flow, never over the content. */}
+        <nav
+          className="dm-tabbar"
+          aria-label="Primary"
+          style={{
+            flexShrink: 0,
+            alignItems: 'stretch',
+            order: -1,
+            gap: 2,
+            padding: '10px 8px',
+            background: 'var(--dm-nav-bg)',
+          }}
+        >
+          {WORKSPACE_NAV.map((item) => {
+            const { id } = item;
+            const on = workspaceSection(active)?.id === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onNavigate(id)}
+                onTouchStart={() => {
+                  if (!on) onNavigateIntent?.(id);
+                }}
+                aria-current={on ? 'page' : undefined}
+                aria-label={item.label}
+                style={tabStyle(on)}
+              >
+                <NavIcon d={item.icon} size={20} />
+                <span className="dm-tabbar-label">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Top bar — hamburger (mobile only), then help + the host's
+            controls on the right. Deliberately quiet: no fill, and a
+            hairline only while content is scrolled beneath it. */}
         <div
+          data-scrolled={scrolled ? 'true' : 'false'}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 10,
-            padding: '8px 14px',
-            borderBottom: `1px solid ${color.border}`,
-            background: color.card,
+            gap: 4,
+            minHeight: 56,
+            padding: '0 16px',
+            borderBottom: `1px solid ${scrolled ? color.lineSoft : 'transparent'}`,
+            background: 'transparent',
             flexShrink: 0,
+            transition: `border-color ${motion.fast} ${motion.ease}`,
           }}
         >
           <button
@@ -227,10 +294,10 @@ export function AppShell({
               width: 44,
               height: 44,
               padding: 0,
-              // NO `display` here — it lives in tokens.css, same rule as
-              // the trust strip below. An inline `display: inline-flex`
+              // NO `display` here — it lives in tokens.css. An inline
+              // `display: inline-flex`
               // outranks `.dm-topbar-hamburger { display: none }` and the
-              // ≤900px media query that re-enables it, so the button
+              // ≤760px media query that re-enables it, so the button
               // rendered at EVERY width. On desktop that let a click
               // mount the mobile drawer — a second <Sidebar> in an
               // aria-modal dialog pinned left:0, landing pixel-aligned on
@@ -263,74 +330,13 @@ export function AppShell({
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <div
-            // `display` lives in tokens.css, not here: an inline style
-            // would outrank the phone-width media query that drops the
-            // strip (same reason `dm-trust-extra` sets none inline).
-            className="dm-trust-strip"
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 12,
-              fontFamily: font.mono,
-              fontSize: 9.5,
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              color: color.fgMuted,
-              overflow: 'hidden',
-            }}
-          >
-            {TRUST_CLAIMS.map((claim, i) => (
-              <span
-                key={claim.label}
-                className={i > 0 ? 'dm-trust-extra' : undefined}
-                style={
-                  i > 0
-                    ? { alignItems: 'center', gap: 12 }
-                    : { display: 'inline-flex', alignItems: 'center', gap: 12 }
-                }
-              >
-                {i > 0 && <span style={{ opacity: 0.35 }}>·</span>}
-                <button
-                  type="button"
-                  onClick={() => onNavigate(claim.destination)}
-                  title={claim.title}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = color.primary;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = 'inherit';
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: 0,
-                    background: 'transparent',
-                    border: 'none',
-                    font: 'inherit',
-                    letterSpacing: 'inherit',
-                    color: 'inherit',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {i === 0 && (
-                    <span
-                      style={{
-                        width: 5,
-                        height: 5,
-                        borderRadius: 9999,
-                        background: color.emerald,
-                      }}
-                    />
-                  )}
-                  {claim.label}
-                </button>
-              </span>
-            ))}
+          <div className="dm-shell-location" style={{ flex: 1 }}>
+            <span>YOUR WORKSPACE /</span>
+            <strong>
+              {workspaceSection(active)?.label ?? labels[active as LabelKey] ?? active}
+            </strong>
           </div>
+          <HelpButton />
           {topbarRight ? (
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
               {topbarRight}
@@ -338,7 +344,24 @@ export function AppShell({
           ) : null}
         </div>
 
+        <SectionNavigation
+          active={active}
+          onNavigate={onNavigate}
+          onNavigateIntent={onNavigateIntent}
+          counts={counts ?? {}}
+          locks={locks ?? {}}
+        />
+
         <div
+          // `dm-main-scroll` centres each screen's column and carries the
+          // route fade (tokens.css). It must stay `display: block`.
+          className="dm-main-scroll"
+          ref={contentRef}
+          data-route-flip={routeFlip}
+          onScroll={(event) => {
+            const next = event.currentTarget.scrollTop > 0;
+            if (next !== scrolled) setScrolled(next);
+          }}
           style={{
             flex: 1,
             minHeight: 0,
@@ -349,8 +372,9 @@ export function AppShell({
             // this it occludes the content's last ~90px — and the content
             // cannot scroll past it, because this container is already at
             // its end. See UNDO_TRAY_INSET_VAR; resolves to 0px whenever no
-            // tray is mounted.
-            paddingBottom: `var(${UNDO_TRAY_INSET_VAR}, 0px)`,
+            // tray is mounted. The tray measures from the VIEWPORT bottom,
+            // with no bottom navigation inset in the editorial shell.
+            paddingBottom: `max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
           }}
         >
           {children}
@@ -358,4 +382,28 @@ export function AppShell({
       </main>
     </div>
   );
+}
+
+function tabStyle(on: boolean) {
+  return {
+    flex: 1,
+    minWidth: 44,
+    height: 52,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    padding: 0,
+    border: 'none',
+    borderRadius: 10,
+    background: on ? 'var(--dm-nav-active)' : 'transparent',
+    boxShadow: on ? 'inset 0 -3px var(--dm-nav-marker)' : undefined,
+    color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
+    fontFamily: font.sans,
+    fontSize: text.xs,
+    fontWeight: on ? 600 : 500,
+    cursor: 'pointer',
+    transition: `color ${motion.fast} ${motion.ease}`,
+  };
 }

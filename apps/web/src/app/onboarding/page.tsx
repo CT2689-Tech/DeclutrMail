@@ -29,7 +29,7 @@ import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
 import { track } from '@/lib/posthog';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Onboarding route — the D106 five-step machine.
@@ -37,9 +37,8 @@ const { color, font } = tokens;
  *   1 Promise (D107)  → 2 Connect (D108) → 3 Sync gate (D109/D224)
  *   → 4 First-review handoff (Free/Plus) or Starting rules (Pro+, D110)
  *   → 5 First triage (D112) → done (D113:
- *   `onboarded_at` write + redirect to /senders — first-triage IS the
- *   "land somewhere with real data" moment, and post-sync Senders has
- *   real data immediately, which is why /senders stays the exit).
+ *   `onboarded_at` write + redirect to /home, the app's landing
+ *   screen).
  *
  * AUTH BOUNDARY (D134 split, restructured here): steps 1+2 render
  * PRE-AUTH — a fresh visitor sees the promise before any Google
@@ -56,7 +55,7 @@ const { color, font } = tokens;
  * Two entry shapes, unchanged from before:
  *   - First-run / resumed onboarding → `/onboarding`.
  *   - Secondary connect → `/onboarding?mailbox=<id>` (D116): gates
- *     THAT mailbox with the escape hatch, then exits to /senders —
+ *     THAT mailbox with the escape hatch, then exits to /home —
  *     it is NOT part of the 5-step flow (the user already onboarded).
  *   - Target-bound reconnect → `/onboarding?mailbox=<id>&reconnect=1`:
  *     uses that same strict gate, then returns to the fixed Settings
@@ -81,7 +80,7 @@ function OnboardingFlow() {
   const secondaryMailboxId = params.get('mailbox');
   // Exact closed flag, honored only alongside the secondary-mailbox
   // target. Values such as `true`, `01`, or an attacker-supplied path
-  // remain ordinary secondary connects and retain the /senders exit.
+  // remain ordinary secondary connects and retain the /home exit.
   const isTargetedReconnect = secondaryMailboxId !== null && params.get('reconnect') === '1';
   const billingIntent = parseBillingIntentPath(params.get('returnTo'));
   const returnTo = billingIntent ? billingIntentPath(billingIntent) : null;
@@ -186,11 +185,11 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   useStepFunnel(stepToFunnelStage(step));
 
   // Exit: onboarding complete (or an already-onboarded user landed
-  // here) → the app. /senders has real data immediately post-sync.
+  // here) → the app's landing screen.
   const isDone = step.kind === 'done';
   useEffect(() => {
     if (isDone) {
-      router.replace(returnTo ?? '/senders');
+      router.replace(returnTo ?? '/home');
     }
   }, [isDone, returnTo, router]);
 
@@ -203,7 +202,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         {
           onSuccess: () => {
             void track('onboarding_step_completed', { step: 'finished', duration_ms: 0 });
-            router.replace(returnTo ?? '/senders');
+            router.replace(returnTo ?? '/home');
           },
           onError: (err) => {
             captureFeatureException(err, { surface: 'onboarding', reason: 'complete' });
@@ -225,7 +224,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         border: 'none',
         cursor: 'pointer',
         fontFamily: font.sans,
-        fontSize: 12,
+        fontSize: text.sm,
         color: color.fgMuted,
         textDecoration: 'underline',
         padding: 4,
@@ -251,7 +250,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
           />
         );
       case 'done':
-        return <FlowSkeleton label="Opening your senders…" />;
+        return <FlowSkeleton label="Opening DeclutrMail…" />;
       case 'connect':
         // Authed but no active mailbox (aborted OAuth / all disconnected).
         return <StepConnect variant="reconnect" />;
@@ -348,7 +347,7 @@ function SecondaryConnectGate({
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   const setActive = useSetActiveMailbox();
-  const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/senders';
+  const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/home';
 
   // Gate THAT mailbox explicitly so it survives the user switching
   // their active mailbox back to the primary mid-sync.
@@ -366,7 +365,7 @@ function SecondaryConnectGate({
         onReturn: () => {
           // Leaving a scan early is not evidence of a successful reconnect.
           setActive.mutate(other.id, {
-            onSuccess: () => router.replace(isTargetedReconnect ? '/settings' : '/senders'),
+            onSuccess: () => router.replace(isTargetedReconnect ? '/settings' : '/home'),
             onError: () => toast("Couldn't switch accounts. Please try again.", 'danger'),
           });
         },
@@ -378,7 +377,7 @@ function SecondaryConnectGate({
   // data in another tab) with no other active mailbox to escape to —
   // `retryTransientOnly` correctly refuses to retry a 4xx, so `sync.data`
   // stays `undefined` forever and the fallback below would otherwise fake
-  // a "Reading your inbox… 0%" scan that will never run. `/senders` is
+  // a "Reading your inbox… 0%" scan that will never run. `/home` is
   // under the app shell's own well-tested `NoActiveMailbox` gate (unlike
   // this route), so route there instead of inventing a second one.
   //
@@ -386,14 +385,14 @@ function SecondaryConnectGate({
   // `sync.isError` alone also covers an exhausted 5xx or a network
   // failure, which production explicitly keeps retryable — a transient
   // failure self-heals via a slow poll (`use-sync-status.ts`),
-  // and bailing to /senders on every such error would cut that recovery
+  // and bailing to /home on every such error would cut that recovery
   // short for a target mailbox that never actually went inactive.
   const trapped = !other && apiErrorCode(sync.error) === 'NO_ACTIVE_MAILBOX';
   useEffect(() => {
     if (ready) {
       router.replace(exitPath);
     } else if (trapped) {
-      router.replace('/senders');
+      router.replace('/home');
     }
   }, [exitPath, ready, router, trapped]);
 
@@ -414,10 +413,9 @@ function SecondaryConnectGate({
     is_ready_for_triage: false,
   };
 
-  // Not part of the 5-step flow — no step counter in the eyebrow.
   // `mailboxId` — this gate watches the ?mailbox= target, NOT the
   // active mailbox, so the retry has to name it explicitly.
-  return <SyncGate status={status} escape={escape} eyebrow="One-time scan" mailboxId={mailboxId} />;
+  return <SyncGate status={status} escape={escape} mailboxId={mailboxId} />;
 }
 
 /**
@@ -488,7 +486,7 @@ function FlowSkeleton({ label }: { label: string }) {
         fontFamily: font.sans,
       }}
     >
-      <span style={{ color: color.fgMuted, fontSize: 14 }}>{label}</span>
+      <span style={{ color: color.fgMuted, fontSize: text.md }}>{label}</span>
     </main>
   );
 }
@@ -517,8 +515,8 @@ function FlowError({
         textAlign: 'center',
       }}
     >
-      <h1 style={{ fontSize: 18, margin: 0 }}>Something went wrong.</h1>
-      <p style={{ color: color.fgMuted, fontSize: 14, margin: 0, maxWidth: 420 }}>{message}</p>
+      <h1 style={{ fontSize: text.xl, margin: 0 }}>Something went wrong.</h1>
+      <p style={{ color: color.fgMuted, fontSize: text.md, margin: 0, maxWidth: 420 }}>{message}</p>
       <button
         type="button"
         onClick={onRetry}
@@ -530,7 +528,7 @@ function FlowError({
           background: color.card,
           cursor: 'pointer',
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: text.md,
         }}
       >
         Try again

@@ -116,7 +116,9 @@ export function HeardFromPromptView({
       data-testid="heard-from-prompt"
       style={{
         position: 'fixed',
-        bottom: 16,
+        // Clears the app shell's mobile tab bar; the var is 0 on desktop
+        // and undefined (→ 0) on the onboarding layout, which has no bar.
+        bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
         left: 16,
         zIndex: 140,
         width: 'calc(100vw - 32px)',

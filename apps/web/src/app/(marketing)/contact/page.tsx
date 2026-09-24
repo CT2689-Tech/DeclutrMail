@@ -32,8 +32,18 @@ const TOC = [
 
 export default function ContactPage() {
   return (
-    <LegalPageLayout title="Contact" label="Support" lastUpdated={LAST_UPDATED} toc={TOC}>
+    <LegalPageLayout title="Contact" lastUpdated={LAST_UPDATED} toc={TOC} centred>
       <PageViewTracker page="contact" />
+      <nav className="dm-support-tasks" aria-label="Choose a contact">
+        <a href="mailto:support@declutrmail.com">
+          Product and account support
+          <small>Bugs, billing, refunds and feedback · reply within 2 business days</small>
+        </a>
+        <a href="mailto:privacy@declutrmail.com">
+          Privacy and security
+          <small>Data rights, deletion requests and vulnerability reports</small>
+        </a>
+      </nav>
       <LegalSection id="support" title="General questions and support">
         <p>
           Email <a href="mailto:support@declutrmail.com">support@declutrmail.com</a> for anything —

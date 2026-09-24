@@ -15,12 +15,14 @@ export default function ScreenerError({
 }) {
   return (
     <RouteErrorScreen
+      title="Screener"
+      kicker="Clean up / New senders"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="screener"
-      eyebrow="The Screener hit a snag"
       headline="We couldn't load the Screener."
-      body="New-sender decisions are safe and nothing was let through. Try again, or continue in Triage."
+      body="Your decisions are unchanged. Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

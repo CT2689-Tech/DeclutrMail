@@ -1,9 +1,43 @@
 # Contact-support form — design
 
 **Date:** 2026-09-01
-**Status:** Approved (design); implementation plan pending
+**Status:** Implemented; delivery design amended 2026-09-22 (see authoritative amendment below)
 **Tier:** 2 (new feature/copy — no D-number required per CLAUDE.md §2.0)
 **Privacy posture:** unchanged — no Gmail data touched; see §6
+
+---
+
+## 2026-09-22 delivery amendment (supersedes direct-send sections below)
+
+The API has no Resend API credential. It validates the bounded request, resolves
+Reply-To from the authenticated account and awaits durable enqueue on the dedicated
+`support-request` BullMQ queue. It returns HTTP 202 with `status: 'accepted'`,
+not a delivery receipt. No queue, enqueue failure, missing account email, or an
+already-failed retained request returns false success. The UI preserves entered
+text on failure and keeps a direct-email fallback after acceptance.
+
+`SupportRequestWorker` runs only in the existing worker process, reusing its
+`EmailDeliveryPort` and credential. Recipient is fixed to support@declutrmail.com.
+Transient failures retry three attempts with exponential backoff; terminal failures
+use the existing dead-letter observer/alert path, with message and Reply-To removed
+from the permanent dead-letter record. Provider exception text is not logged.
+Operators investigate metadata and retry the original failed queue job after fixing
+the cause; redacted database payloads cannot recreate the user's message.
+
+Queue IDs and provider idempotency keys hash authenticated identity, Reply-To and
+content. Rendered email text is stable across retries (no changing submission
+timestamp). Completed queue payloads are removed immediately after provider
+acceptance. Failed payloads use seven-day/1,000-job retention; BullMQ cleanup is
+lazy, on subsequent queue activity, not an exact TTL. Waiting/retrying requests
+remain queued until processed. This is user-authored support content, not Gmail
+body ingestion or an application support-ticket database. The privacy policy
+explicitly discloses queue processing and retention; correspondence delivered to
+the support inbox is separate. No API secret access was broadened.
+
+Verification uses fake queues/provider ports only; live delivery is a separate
+controlled release check. Tests cover end-to-end API-enqueued payload through the
+worker port, authenticated Reply-To, fixed recipient, durable acknowledgment,
+deduplication, transient retry, terminal refusal and log privacy.
 
 ---
 

@@ -7,6 +7,7 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 
 interface Row {
   mailboxAccountId: string;
+  readiness: 'ready' | 'failed';
   errorCode: string | null;
   lastIncrementalErrorCode: string | null;
   lastIncrementalErrorAt: Date | null;
@@ -30,6 +31,7 @@ describe('SyncService.getNeedsReconnectByMailbox', () => {
 
   function row(overrides: Partial<Row> & { mailboxAccountId: string }): Row {
     return {
+      readiness: 'ready',
       errorCode: null,
       lastIncrementalErrorCode: null,
       lastIncrementalErrorAt: null,
@@ -51,6 +53,28 @@ describe('SyncService.getNeedsReconnectByMailbox', () => {
     );
     return { svc, db };
   }
+
+  it('reads readiness and reconnect together in one bulk snapshot', async () => {
+    const { svc, db } = service([
+      row({ mailboxAccountId: 'a', readiness: 'failed', errorCode: 'InvalidGrantError' }),
+      row({
+        mailboxAccountId: 'b',
+        readiness: 'ready',
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastIncrementalErrorAt: T0,
+        lastSyncedAt: LATER,
+      }),
+    ]);
+    expect(await svc.getMailboxHealth(['a', 'b', 'missing'])).toEqual(
+      new Map([
+        ['a', { readiness: 'failed', needsReconnect: true }],
+        ['b', { readiness: 'ready', needsReconnect: false }],
+      ]),
+    );
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(await svc.getMailboxHealth([])).toEqual(new Map());
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
 
   it('short-circuits to an empty map without querying for an empty id list', async () => {
     const { svc, db } = service([]);

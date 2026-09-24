@@ -211,7 +211,7 @@ describe('ScreenerScreen — the acknowledgement reaches the wire', () => {
     fireEvent.keyDown(window, { key: 'd' });
     // Wait for the live count — confirming before it lands would make a
     // "no override" assertion pass because nothing was posted at all.
-    await screen.findByText(/in Inbox now/i);
+    await screen.findByText(/Inbox now.*rechecked/i);
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     return bodies[0]!;
@@ -265,7 +265,7 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
       screen.getByRole('button', { name: new RegExp(`${protectedRow.senderName} — expand`) }),
     );
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/in Inbox now/i);
+    await screen.findByText(/Inbox now.*rechecked/i);
     fireEvent.keyDown(window, { key: 'Enter' });
 
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
@@ -349,7 +349,7 @@ describe('ScreenerScreen — overdue release (2026-08-12 incident)', () => {
       );
       fireEvent.keyDown(window, { key: 'd' });
       await tick(100);
-      screen.getByText(/in Inbox now/i);
+      screen.getByText(/Inbox now.*rechecked/i);
       fireEvent.keyDown(window, { key: 'Enter' });
       await tick(100);
       expect(bodies).toHaveLength(1);

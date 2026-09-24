@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { TriageDecisionRow } from './data';
 import type { SheetableVerb } from './store';
 
-const { color } = tokens;
+const { color, text } = tokens;
 
 /**
  * What a Protected sender's protection is doing, said out loud — and
@@ -91,7 +91,7 @@ export function ProtectedActionNotice({
         // the token system.
         background: color.dangerBg,
         border: `1px solid ${color.dangerBorder}`,
-        fontSize: 12,
+        fontSize: text.sm,
         lineHeight: 1.5,
         color: color.danger,
         display: 'flex',

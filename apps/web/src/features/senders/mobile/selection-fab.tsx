@@ -13,7 +13,7 @@ import type { TierId } from '@declutrmail/shared/entitlements';
 import { SelectionBar, type SelectionBarVerb } from '../selection-bar';
 import type { Sender } from '../data';
 
-const { color, font, shadow } = tokens;
+const { color, font, shadow, text } = tokens;
 
 export function SelectionFab({
   senders,
@@ -54,7 +54,7 @@ export function SelectionFab({
           border: 'none',
           boxShadow: shadow.pop,
           fontFamily: font.sans,
-          fontSize: 14,
+          fontSize: text.md,
           fontWeight: 600,
           cursor: 'pointer',
         }}

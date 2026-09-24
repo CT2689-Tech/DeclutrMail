@@ -9,7 +9,7 @@ vi.mock('@sentry/nextjs', () => ({
 
 import { sendersListPath } from '@/lib/api/senders';
 import { makeQueryClient } from '@/lib/query-client';
-import { DEFAULT_COMPOSE } from './compose-strip';
+import { DEFAULT_COMPOSE } from './filters';
 import { sendersKeys } from './api/query-keys';
 import {
   DEFAULT_SENDERS_QUERY,
@@ -17,7 +17,6 @@ import {
   sendersQueryFromSearchParams,
 } from './api/query-options';
 import { useSenders } from './api/use-senders';
-import { useSendersSummary } from './api/use-senders-summary';
 import { ServerSendersBoundary } from './server-senders-boundary';
 
 function SendersScreenProbe() {
@@ -30,8 +29,7 @@ function SendersScreenProbe() {
       q: '',
     }),
   );
-  const summary = useSendersSummary({ q: '' });
-  return <div>{senders.isSuccess && summary.isSuccess ? 'Senders ready' : 'Senders loading'}</div>;
+  return <div>{senders.isSuccess ? 'Senders ready' : 'Senders loading'}</div>;
 }
 
 describe('ServerSendersBoundary', () => {
@@ -41,7 +39,7 @@ describe('ServerSendersBoundary', () => {
     vi.restoreAllMocks();
   });
 
-  it('hydrates the default first page and summary without duplicate client requests', async () => {
+  it('hydrates the default first page without duplicate client requests', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
@@ -59,9 +57,6 @@ describe('ServerSendersBoundary', () => {
           },
         });
       }
-      if (url.endsWith('/api/senders/summary')) {
-        return Response.json({ data: { totalSenders: 0 } });
-      }
       if (url.endsWith('/api/me/settings')) {
         return Response.json({ data: { senderViews: [] } });
       }
@@ -77,10 +72,9 @@ describe('ServerSendersBoundary', () => {
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
 
     expect(screen.getByText('Senders ready')).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
       'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&activity=active&current_mail_only=true',
-      'http://localhost:4000/api/senders/summary',
       'http://localhost:4000/api/me/settings',
     ]);
   });
@@ -131,7 +125,13 @@ describe('ServerSendersBoundary', () => {
     );
   });
 
-  it('hydrates the exact filtered deep-link list and matching search summary', async () => {
+  it('prefetches the same server-wide Inbox filter that the screen reads from a deep link', () => {
+    const query = sendersQueryFromSearchParams({ has_inbox_mail: 'true' });
+    expect(query.hasInboxMail).toBe(true);
+    expect(sendersListPath(query)).toContain('has_inbox_mail=true');
+  });
+
+  it('hydrates the exact filtered deep-link list', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const query = sendersQueryFromSearchParams({ q: 'amazon.com', activity: 'all' });
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
@@ -145,9 +145,6 @@ describe('ServerSendersBoundary', () => {
           },
         });
       }
-      if (url.includes('/api/senders/summary')) {
-        return Response.json({ data: { totalSenders: 0 } });
-      }
       if (url.endsWith('/api/me/settings')) {
         return Response.json({ data: { senderViews: [] } });
       }
@@ -157,17 +154,13 @@ describe('ServerSendersBoundary', () => {
 
     function FilteredProbe() {
       const list = useSenders(query);
-      const summary = useSendersSummary({ q: query.q });
-      return (
-        <div>{list.isSuccess && summary.isSuccess ? 'Filtered ready' : 'Filtered loading'}</div>
-      );
+      return <div>{list.isSuccess ? 'Filtered ready' : 'Filtered loading'}</div>;
     }
 
     const boundary = await ServerSendersBoundary({
       cookieHeader: 'dm_access=token',
       enabled: true,
       query,
-      summaryQ: query.q,
       children: <FilteredProbe />,
     });
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
@@ -175,7 +168,6 @@ describe('ServerSendersBoundary', () => {
     expect(screen.getByText('Filtered ready')).toBeInTheDocument();
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
       'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&q=amazon.com&current_mail_only=true',
-      'http://localhost:4000/api/senders/summary?q=amazon.com',
       'http://localhost:4000/api/me/settings',
     ]);
   });
@@ -197,6 +189,6 @@ describe('ServerSendersBoundary', () => {
       children: <div>Fallback</div>,
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

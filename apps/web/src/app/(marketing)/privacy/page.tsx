@@ -232,6 +232,14 @@ export default function PrivacyPolicyPage() {
       </LegalSection>
 
       <LegalSection id="retention-deletion" title="7. Data retention and deletion">
+        <p>
+          If you send a support request, we process the text you provide and your account email
+          address to reply. Requests wait in our delivery queue; successful jobs are removed after
+          our email provider accepts them. Failed jobs are kept for troubleshooting, with cleanup
+          configured for seven days or 1,000 failed jobs as queue activity continues. This is not an
+          exact deletion deadline. Delivered correspondence remains in our support mailbox. This
+          feature does not automatically attach Gmail messages or diagnostic bundles.
+        </p>
         <p>You can leave cleanly through three self-serve controls in Settings:</p>
         <ul>
           <li>

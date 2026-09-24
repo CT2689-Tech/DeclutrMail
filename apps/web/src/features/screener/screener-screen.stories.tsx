@@ -13,14 +13,12 @@
 //   • PreviewPending — the mandatory D226 preview (Archive, real count)
 //   • DeletePreview  — the red-toned Delete preview (30-day recovery)
 //   • DeleteReachPreview — ADR-0028 "Where it applies" chips on Delete
-//   • ProUpsell      — the D77 under-tier surface (D194-approved copy)
 
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 
 import { SCREENER_QUEUE } from './data';
-import { ScreenerUpsell } from './upsell';
 import { ScreenerRow } from './screener-row';
 import { ScreenerScreen } from './screener-screen';
 
@@ -135,7 +133,7 @@ export const RowExpanded: Story<typeof ScreenerRow> = {
     docs: {
       description: {
         story:
-          'D73 accordion body — K/A/U/L/D toolbar, first-seen, message count, engine reasoning, "Open sender →" link.',
+          'D73 accordion body — K/A/U/L/D toolbar, first-seen, message count, engine reasoning, "Open sender" link.',
       },
     },
   },
@@ -218,22 +216,6 @@ export const ProtectedOverridePreview: Story<typeof ScreenerRow> = {
       description: {
         story:
           'A sender protected while it sat in the queue (D42/D245). The preview names the protection and its exact reason, and the confirm reads "anyway" — D245 excludes Protected from BULK and AUTOMATIC actions, not from one deliberate decision.',
-      },
-    },
-  },
-};
-
-export const Upsell: Story<typeof ScreenerUpsell> = {
-  render: () => (
-    <Shell>
-      <ScreenerUpsell onSeePricing={noop} />
-    </Shell>
-  ),
-  parameters: {
-    docs: {
-      description: {
-        story:
-          'D77 under-tier state — Free/Plus see the upgrade surface. Copy honours D194: collected for review, nothing moves until you decide.',
       },
     },
   },

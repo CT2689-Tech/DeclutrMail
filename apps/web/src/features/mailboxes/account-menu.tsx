@@ -16,14 +16,15 @@ import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
 import { MailboxDataControlsDialog } from './mailbox-data-controls-dialog';
 
-const { color, font } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * Header account menu (D116 surface — partial).
  *
  * Lists connected mailbox accounts, lets the user pick the active one,
  * manage a mailbox's connection/data, connect another Google account,
- * or sign out.
+ * open Settings or Billing (account chores — they left the sidebar so
+ * the nav is only the daily surfaces), or sign out.
  *
  * Manage opens the D245 outcome dialog: disconnect and retain indexed
  * history, or disconnect and permanently delete that mailbox's indexed
@@ -92,14 +93,31 @@ export function AccountMenu() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* Trigger max-width is class-driven so it can narrow below the
-          shell's 900px sm breakpoint — on a phone the topbar row would
-          otherwise push this switcher's right edge off-screen (untappable).
-          CSS-driven (not a JS hook) so there is no post-hydration flash. */}
+      {/* The trigger is the avatar alone at every width — the menu it
+          opens states the address. Clipped, not display:none, so the
+          address stays the button's accessible name. */}
       <style>{`
-        .dm-account-trigger { max-width: 220px; }
+        .dm-account-label {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+          white-space: nowrap;
+        }
+        .dm-account-trigger { width: 36px; height: 36px; }
+        .dm-account-trigger:hover { background: var(--dm-fill); }
         @media (max-width: 900px) {
-          .dm-account-trigger { max-width: 44vw; }
+          .dm-account-trigger { width: 44px; height: 44px; }
+        }
+        .dm-account-menu { animation: dm-account-menu-in 120ms cubic-bezier(0.2, 0, 0, 1) both; }
+        @keyframes dm-account-menu-in {
+          from { opacity: 0; transform: scale(0.97); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dm-account-menu { animation: none; }
         }
       `}</style>
       <button
@@ -112,43 +130,38 @@ export function AccountMenu() {
         aria-controls="dm-account-menu"
         title={activeLabel}
         style={{
+          position: 'relative',
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '4px 10px',
-          height: 28,
-          background: 'transparent',
-          border: `1px solid ${color.border}`,
-          borderRadius: 14,
-          color: color.fg,
+          justifyContent: 'center',
+          padding: 0,
+          border: 'none',
+          borderRadius: radius.pill,
+          color: color.fgSoft,
           cursor: 'pointer',
           fontFamily: font.sans,
-          fontSize: 12,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          transition: `background ${motion.fast} ${motion.ease}`,
         }}
       >
         <span
           aria-hidden
           style={{
-            width: 18,
-            height: 18,
-            borderRadius: 9999,
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            borderRadius: radius.pill,
             background: color.primary,
-            color: '#fff',
+            color: color.fgInverse,
+            boxShadow: shadow.button,
             display: 'inline-grid',
             placeItems: 'center',
-            fontSize: 10,
+            fontSize: text.base,
             fontWeight: 600,
           }}
         >
           {activeLabel.slice(0, 1).toUpperCase()}
         </span>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeLabel}</span>
-        <span aria-hidden style={{ opacity: 0.6 }}>
-          ▾
-        </span>
+        <span className="dm-account-label">{activeLabel}</span>
       </button>
 
       {open && (
@@ -158,47 +171,36 @@ export function AccountMenu() {
           role="dialog"
           aria-label="Gmail accounts"
           tabIndex={-1}
+          className="dm-account-menu"
           style={{
             position: 'absolute',
-            top: 36,
+            top: 44,
             right: 0,
-            width: 300,
+            transformOrigin: 'top right',
+            width: 320,
             maxWidth: 'calc(100vw - 24px)',
             maxHeight: 'calc(100vh - 72px)',
             overflowY: 'auto',
             overscrollBehavior: 'contain',
             boxSizing: 'border-box',
             background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: 10,
-            boxShadow: '0 6px 22px rgba(0,0,0,0.08)',
+            borderRadius: radius.xl,
+            boxShadow: shadow.pop,
             padding: 8,
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             zIndex: 90,
+            outline: 'none',
           }}
         >
-          <div style={{ padding: '4px 8px' }}>
-            <div
-              style={{
-                fontFamily: font.mono,
-                fontSize: 9.5,
-                textTransform: 'uppercase',
-                letterSpacing: '0.14em',
-                color: color.fgMuted,
-              }}
-            >
-              Accounts
-            </div>
-            {/* -04: nothing else in this menu says switching rescopes every
-                screen, not just this pill — a first-timer switching by
-                accident had no way to know why their sender list changed. */}
-            <div style={{ fontSize: 11, color: color.fgMuted, marginTop: 2 }}>
-              Everything you see is scoped to the active account.
-            </div>
+          {/* -04: nothing else in this menu says switching rescopes every
+              screen, not just this pill — a first-timer switching by
+              accident had no way to know why their sender list changed. */}
+          <div style={{ padding: '8px 12px 10px', fontSize: text.sm, color: color.fgMuted }}>
+            Everything you see is scoped to the active account.
           </div>
           {me.mailboxes.length === 0 && (
-            <div style={{ padding: '6px 8px', color: color.fgMuted }}>No mailboxes connected.</div>
+            <div style={{ padding: '6px 12px', color: color.fgMuted }}>No mailboxes connected.</div>
           )}
           {me.mailboxes.map((m) => {
             const isSelected = m.id === activeMailbox?.id;
@@ -208,23 +210,22 @@ export function AccountMenu() {
             const reconnectBlocked = isMailboxDataDeletionInFlight(indexedDataState);
             const lifecycleLabel = mailboxDataLifecycleLabel(indexedDataState);
             return (
-              <div
-                key={m.id}
-                data-testid={`account-mailbox-${m.id}`}
-                style={{ borderTop: `1px dashed ${color.lineSoft}` }}
-              >
+              <div key={m.id} data-testid={`account-mailbox-${m.id}`} style={{ marginTop: 2 }}>
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 8,
-                    padding: '6px 8px',
+                    minHeight: 44,
+                    boxSizing: 'border-box',
+                    padding: '4px 8px',
+                    borderRadius: radius.md,
                     // Highlight the active mailbox so it reads as the
                     // current selection (not just a ✓) — the switch
                     // button is inert on the active row, which otherwise
                     // looked like "can't select it".
-                    background: isSelected ? color.primarySoft : 'transparent',
+                    background: isSelected ? color.fill : 'transparent',
                   }}
                 >
                   <button
@@ -259,7 +260,7 @@ export function AccountMenu() {
                       color: isDisconnected ? color.fgMuted : color.fg,
                       cursor: isDisconnected ? 'not-allowed' : 'pointer',
                       fontFamily: font.sans,
-                      fontSize: 13,
+                      fontSize: text.md,
                       textAlign: 'left',
                     }}
                   >
@@ -272,7 +273,7 @@ export function AccountMenu() {
                         minWidth: 0,
                         display: 'block',
                         overflow: 'hidden',
-                        fontWeight: isSelected ? 600 : 400,
+                        fontWeight: isSelected ? 600 : 500,
                       }}
                     >
                       <span
@@ -413,9 +414,9 @@ export function AccountMenu() {
           })}
           <div
             style={{
-              borderTop: `1px solid ${color.border}`,
-              marginTop: 6,
-              paddingTop: 6,
+              borderTop: `1px solid ${color.lineSoft}`,
+              marginTop: 8,
+              paddingTop: 8,
               display: 'flex',
               flexDirection: 'column',
               gap: 2,
@@ -430,11 +431,11 @@ export function AccountMenu() {
                 id="account-menu-inbox-limit-gate"
                 data-testid="inbox-limit-gate"
                 style={{
-                  padding: '6px 8px',
+                  padding: '6px 12px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
-                  fontSize: 12,
+                  fontSize: text.sm,
                   color: color.fgMuted,
                 }}
               >
@@ -458,12 +459,34 @@ export function AccountMenu() {
                 </Link>
               </div>
             ) : (
-              <button type="button" onClick={() => startMailboxConnect()} style={menuItemStyle()}>
-                + Connect another Gmail account
+              <button
+                type="button"
+                className="dm-nav-row"
+                onClick={() => startMailboxConnect()}
+                style={menuItemStyle()}
+              >
+                Add Gmail account
               </button>
             )}
+            <Link
+              href="/settings"
+              className="dm-nav-row"
+              onClick={() => setOpen(false)}
+              style={menuItemStyle()}
+            >
+              Settings
+            </Link>
+            <Link
+              href="/billing"
+              className="dm-nav-row"
+              onClick={() => setOpen(false)}
+              style={menuItemStyle()}
+            >
+              Billing
+            </Link>
             <button
               type="button"
+              className="dm-nav-row"
               disabled={logout.isPending}
               onClick={() => logout.mutate()}
               style={menuItemStyle()}
@@ -561,16 +584,15 @@ function MenuStatus({
   tone: 'primary' | 'muted' | 'danger';
   children: string;
 }) {
-  const fg = tone === 'primary' ? color.primary : tone === 'danger' ? color.red : color.fgMuted;
+  const fg = tone === 'primary' ? color.primary : tone === 'danger' ? color.danger : color.fgMuted;
   return (
     <span
       style={{
         flexShrink: 0,
-        fontSize: 10,
+        fontFamily: font.sans,
+        fontSize: text.xs,
         fontWeight: 600,
         color: fg,
-        letterSpacing: '0.04em',
-        textTransform: 'uppercase',
       }}
     >
       {children}
@@ -587,7 +609,7 @@ function mailboxActionStyle(tone: 'primary' | 'muted' | 'disabled') {
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.65 : 1,
     fontFamily: font.sans,
-    fontSize: 11,
+    fontSize: text.sm,
     fontWeight: tone === 'primary' ? 600 : 400,
     padding: '4px 6px',
     whiteSpace: 'nowrap' as const,
@@ -599,16 +621,24 @@ function tierLabel(tier: string): string {
   return tier === 'free' ? 'Free' : tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
+// No `background` here: `.dm-nav-row` (tokens.css) owns the resting and
+// hover fills, and an inline value would outrank its hover.
 function menuItemStyle() {
   return {
-    background: 'transparent',
+    display: 'flex',
+    alignItems: 'center',
+    boxSizing: 'border-box' as const,
     border: 'none',
     color: color.fg,
     cursor: 'pointer',
     fontFamily: font.sans,
-    fontSize: 13,
+    fontSize: text.md,
     textAlign: 'left' as const,
-    padding: '6px 8px',
-    borderRadius: 6,
+    textDecoration: 'none',
+    fontWeight: 500,
+    height: 44,
+    padding: '0 12px',
+    borderRadius: radius.md,
+    transition: `background ${motion.fast} ${motion.ease}`,
   };
 }

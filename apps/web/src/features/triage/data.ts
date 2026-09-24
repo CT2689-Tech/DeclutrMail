@@ -157,6 +157,12 @@ export interface TriageDecisionRow {
    */
   last90dMessages: number;
   /**
+   * Inbound messages currently in the Inbox. The API includes this live
+   * count; optional so illustrative fixtures and older API deployments do
+   * not make a claim about the current mailbox state.
+   */
+  inboxCount?: number;
+  /**
    * Read rate in `[0, 1]`, or `null` when the sender sent nothing in
    * the 90-day window — NOT 0.
    *
@@ -734,12 +740,13 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
 
   // ══ amazon.com — six contiguous senders for Plan 4's domain-batch
   // card (D133). `findDomainBatches` needs ≥3 consecutive same-domain
-  // rows with `protectionReason === null`; six with one Protected
-  // leaves five eligible, well past the threshold. The five deliberately
+  // rows with a confident cleanup recommendation; six with one Protected
+  // and one low-signal Later leaves four eligible, past the threshold.
+  // The five unprotected senders deliberately
   // carry THREE different verdicts (archive / unsubscribe / later) —
   // that mismatch is the point, not an oversight: it is what lets
-  // Plan 4 show one composite decision covering senders the engine
-  // itself disagrees about. Do not "tidy" the run into a single verdict.
+  // Plan 4 show one composite decision for the confident cleanup senders
+  // while leaving the low-signal sender for individual review.
   // All six use `gmailCategory: 'updates'` except Advertising
   // (Promotions) — realistic per-sender-address Gmail categorization,
   // and it happens to be what makes Advertising the Unsubscribe outlier

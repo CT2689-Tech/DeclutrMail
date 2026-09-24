@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 
 import {
   ok,
@@ -29,6 +29,7 @@ export class SupportRequestController {
   constructor(private readonly support: SupportRequestService) {}
 
   @Post()
+  @HttpCode(202)
   @UseGuards(CsrfGuard)
   @RateLimit({ bucket: 'default', limit: 5, windowSec: 300 })
   async submit(

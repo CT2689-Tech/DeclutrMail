@@ -164,6 +164,20 @@ function hasCurrentMail(
   )`;
 }
 
+/** Same live Inbox set as the per-row inboxCount and inbox-scoped actions.
+ * EXISTS can stop at the first match and uses the partial Inbox index;
+ * ranking every sender by a correlated COUNT before LIMIT cannot.
+ */
+function hasInboxMail(): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${mailMessages}
+    WHERE ${mailMessages.mailboxAccountId} = ${senders.mailboxAccountId}
+      AND ${mailMessages.senderKey} = ${senders.senderKey}
+      AND ${mailMessages.isOutbound} = false
+      AND 'INBOX' = ANY(${mailMessages.labelIds})
+  )`;
+}
+
 /**
  * Build the server-side search predicate for the senders list (#145).
  * Matches the query case-insensitively (substring) against the three
@@ -436,6 +450,8 @@ export class SendersReadService {
     mailboxAccountId: string;
     /** Cleanup lists exclude senders with no current inbound mail. */
     currentMailOnly?: boolean;
+    /** Require at least one inbound message currently in Inbox. */
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     /**
      * When `true`, return only senders with a standing Protect policy
@@ -635,6 +651,7 @@ export class SendersReadService {
     // never drifts between them.
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) conditions.push(hasCurrentMail());
+    if (args.hasInboxMail) conditions.push(hasInboxMail());
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
     }
@@ -941,6 +958,7 @@ export class SendersReadService {
   async getSenderListQueryMeta(args: {
     mailboxAccountId: string;
     currentMailOnly?: boolean;
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     isProtected?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
@@ -961,6 +979,7 @@ export class SendersReadService {
 
     const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) totalMatchingConditions.push(hasCurrentMail());
+    if (args.hasInboxMail) totalMatchingConditions.push(hasInboxMail());
     if (category) {
       totalMatchingConditions.push(eq(senders.gmailCategory, category));
     }
@@ -1507,6 +1526,19 @@ export class SendersReadService {
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
     } = buildRollingWindowSubqueries(mailboxAccountId);
+    // Detail-only current Archive count. Lifetime `totalReceived` cannot be
+    // used here: it includes mail now in Trash/Spam and is reconciled on a
+    // different cadence. Keep this predicate aligned with the archived
+    // messages scope and the Inbox + archived action preview.
+    const archivedCountSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND NOT ('INBOX' = ANY(${mailMessages.labelIds}))
+        AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
+    )`;
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
     // find them all when ratifying the ADR).
@@ -1598,6 +1630,7 @@ export class SendersReadService {
         last90dSweeperReadCount: last90dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
+        archivedCount: archivedCountSql,
         unreadInboxCount: unreadInboxCountSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
@@ -1674,6 +1707,7 @@ export class SendersReadService {
       // own recent-vs-baseline split.
       monthlyVolume: last90dMsgs,
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+      archivedCount: ensureSafeIntegerNumber(row.archivedCount, 'senders.archivedCount'),
       unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
       readRate: computeReadRate(last90dMsgs, last90dReadCount),
       readRateSweeperMarked: ensureSafeIntegerNumber(
@@ -1734,8 +1768,9 @@ export class SendersReadService {
     senderId: string;
     cursor: MessagesCursor | null;
     limit: number;
+    scope?: 'all_mail' | 'inbox' | 'archived';
   }): Promise<MailMessageRow[] | null> {
-    const { mailboxAccountId, senderId, cursor, limit } = args;
+    const { mailboxAccountId, senderId, cursor, limit, scope = 'all_mail' } = args;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
     if (senderKey === null) {
       return null;
@@ -1744,7 +1779,14 @@ export class SendersReadService {
     const conditions = [
       eq(mailMessages.mailboxAccountId, mailboxAccountId),
       eq(mailMessages.senderKey, senderKey),
+      eq(mailMessages.isOutbound, false),
+      sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
     ];
+    if (scope === 'inbox') {
+      conditions.push(sql`${mailMessages.labelIds} @> ARRAY['INBOX']::text[]`);
+    } else if (scope === 'archived') {
+      conditions.push(sql`NOT (${mailMessages.labelIds} @> ARRAY['INBOX']::text[])`);
+    }
     if (cursor) {
       conditions.push(
         or(
@@ -1763,6 +1805,7 @@ export class SendersReadService {
         snippet: mailMessages.snippet,
         internalDate: mailMessages.internalDate,
         isUnread: mailMessages.isUnread,
+        labelIds: mailMessages.labelIds,
         // ADR-0021 storage-allowlist amendment — surface Gmail's
         // `sizeEstimate` so Sender Detail can render real KB/MB on the
         // Recent Messages row size cell. NULL for pre-amendment rows.
@@ -1781,6 +1824,7 @@ export class SendersReadService {
       snippet: row.snippet,
       internalDate: row.internalDate.toISOString(),
       isUnread: row.isUnread,
+      location: row.labelIds.includes('INBOX') ? 'inbox' : 'archived',
       sizeBytes: row.sizeBytes,
     }));
   }

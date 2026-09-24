@@ -15,12 +15,19 @@
 // activity_log row carries no sender_key (followups are thread-scoped,
 // not sender-scoped) and an `affected_count` of 1.
 
+import { measureRequestOperation } from '../observability/request-performance.js';
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { activityLog, followupTracker, productFeedback, senderPolicies } from '@declutrmail/db';
+import {
+  activityLog,
+  followupTracker,
+  mailboxAccounts,
+  productFeedback,
+  senderPolicies,
+} from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Followup, FollowupDismissResult, FollowupPriority } from './followup.types.js';
@@ -65,7 +72,10 @@ export class FollowupReadService {
    * so a pathological mailbox (e.g. 1000s of archived recipients in the
    * oldest tail) cannot make this endpoint loop unbounded — past the
    * cap we return what we have. The default cap covers a worst case of
-   * 1000 awaiting rows scanned to surface 100 eligible.
+   * 1000 awaiting rows scanned to surface 100 eligible. Continue by
+   * (sent_at, id), so removals before the cursor cannot skip later rows.
+   * Policy exclusions are reused only inside this request; the next read
+   * checks policies again, including recipients previously found eligible.
    */
   async listAwaiting(mailboxAccountId: string, nowMs?: number): Promise<Followup[]>;
   async listAwaiting(mailboxAccountId: string, userId: string, nowMs?: number): Promise<Followup[]>;
@@ -76,76 +86,105 @@ export class FollowupReadService {
   ): Promise<Followup[]> {
     const userId = typeof userIdOrNowMs === 'string' ? userIdOrNowMs : null;
     const nowMs = typeof userIdOrNowMs === 'number' ? userIdOrNowMs : requestedNowMs;
-    const PAGE_SIZE = 100;
-    const MAX_PAGES = 10;
-    const eligible: Followup[] = [];
-    let offset = 0;
+    const cutoff = new Date(nowMs - 60 * 24 * 60 * 60 * 1000);
+    return measureRequestOperation('followups.scan', async () => {
+      const PAGE_SIZE = 100;
+      const MAX_PAGES = 10;
+      const eligible: Followup[] = [];
+      let cursor: { sentAt: Date; id: string } | null = null;
+      const policyByKey = new Map<string, boolean>();
 
-    for (let page = 0; page < MAX_PAGES && eligible.length < PAGE_SIZE; page += 1) {
-      const rows = await this.db
-        .select({ followup: followupTracker, feedbackRating: productFeedback.rating })
-        .from(followupTracker)
-        .leftJoin(
-          productFeedback,
-          userId
-            ? and(
-                eq(productFeedback.followupTrackerId, followupTracker.id),
-                eq(productFeedback.mailboxAccountId, mailboxAccountId),
-                eq(productFeedback.userId, userId),
-                eq(productFeedback.surface, 'followups'),
-              )
-            : sql<boolean>`false`,
-        )
-        .where(
-          and(
-            eq(followupTracker.mailboxAccountId, mailboxAccountId),
-            eq(followupTracker.status, 'awaiting'),
-          ),
-        )
-        .orderBy(asc(followupTracker.sentAt), asc(followupTracker.id))
-        .limit(PAGE_SIZE)
-        .offset(offset);
+      for (let page = 0; page < MAX_PAGES && eligible.length < PAGE_SIZE; page += 1) {
+        const rows: {
+          followup: typeof followupTracker.$inferSelect;
+          feedbackRating: typeof productFeedback.$inferSelect.rating | null;
+        }[] = await this.db
+          .select({ followup: followupTracker, feedbackRating: productFeedback.rating })
+          .from(followupTracker)
+          .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, followupTracker.mailboxAccountId))
+          .leftJoin(
+            productFeedback,
+            userId
+              ? and(
+                  eq(productFeedback.followupTrackerId, followupTracker.id),
+                  eq(productFeedback.mailboxAccountId, mailboxAccountId),
+                  eq(productFeedback.userId, userId),
+                  eq(productFeedback.surface, 'followups'),
+                )
+              : sql<boolean>`false`,
+          )
+          .where(
+            and(
+              eq(followupTracker.mailboxAccountId, mailboxAccountId),
+              eq(followupTracker.status, 'awaiting'),
+              gte(followupTracker.sentAt, cutoff),
+              ne(followupTracker.recipientEmail, mailboxAccounts.providerAccountId),
+              ...(cursor
+                ? [
+                    or(
+                      gt(followupTracker.sentAt, cursor.sentAt),
+                      and(
+                        eq(followupTracker.sentAt, cursor.sentAt),
+                        gt(followupTracker.id, cursor.id),
+                      ),
+                    )!,
+                  ]
+                : []),
+            ),
+          )
+          .orderBy(asc(followupTracker.sentAt), asc(followupTracker.id))
+          .limit(PAGE_SIZE);
 
-      if (rows.length === 0) break;
-      offset += rows.length;
+        if (rows.length === 0) break;
+        const last = rows[rows.length - 1]!.followup;
+        cursor = { sentAt: last.sentAt, id: last.id };
 
-      // D86 — filter rows whose recipient is currently marked Archive or
-      // Unsubscribe by the user. Derive the candidate sender_keys in TS
-      // (sha256 hashing happens here, not in SQL — see D12), then run
-      // ONE mailbox-scoped policy fetch and post-filter.
-      //
-      // Avoiding a correlated SQL subquery here is deliberate: Drizzle's
-      // `sql` template would emit bare column names on both sides of the
-      // join, silently collapsing the predicate to a tautology (see
-      // MISTAKES.md 2026-05-23). A round-trip-and-filter in TS is
-      // structurally immune.
-      const candidateSenderKeys = Array.from(
-        new Set(rows.map(({ followup }) => deriveSenderKey(followup.recipientEmail))),
-      );
-      const excludedPolicies = await this.db
-        .select({ senderKey: senderPolicies.senderKey })
-        .from(senderPolicies)
-        .where(
-          and(
-            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-            inArray(senderPolicies.senderKey, candidateSenderKeys),
-            inArray(senderPolicies.policyType, ['archive', 'unsubscribe']),
-          ),
+        // D86 — filter rows whose recipient is currently marked Archive or
+        // Unsubscribe by the user. Derive the candidate sender_keys in TS
+        // (sha256 hashing happens here, not in SQL — see D12), then run
+        // ONE mailbox-scoped policy fetch and post-filter.
+        //
+        // Avoiding a correlated SQL subquery here is deliberate: Drizzle's
+        // `sql` template would emit bare column names on both sides of the
+        // join, silently collapsing the predicate to a tautology (see
+        // MISTAKES.md 2026-05-23). A round-trip-and-filter in TS is
+        // structurally immune.
+        const keyedRows = rows.map((row) => ({
+          ...row,
+          senderKey: deriveSenderKey(row.followup.recipientEmail),
+        }));
+        const candidateSenderKeys = [...new Set(keyedRows.map((row) => row.senderKey))].filter(
+          (key) => !policyByKey.has(key),
         );
-      const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
+        const excludedPolicies =
+          candidateSenderKeys.length === 0
+            ? []
+            : await this.db
+                .select({ senderKey: senderPolicies.senderKey })
+                .from(senderPolicies)
+                .where(
+                  and(
+                    eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+                    inArray(senderPolicies.senderKey, candidateSenderKeys),
+                    inArray(senderPolicies.policyType, ['archive', 'unsubscribe']),
+                  ),
+                );
+        const excluded = new Set(excludedPolicies.map((p) => p.senderKey));
+        for (const key of candidateSenderKeys) policyByKey.set(key, excluded.has(key));
 
-      for (const row of rows) {
-        if (excluded.has(deriveSenderKey(row.followup.recipientEmail))) continue;
-        eligible.push(projectFollowup(row.followup, nowMs, row.feedbackRating));
-        if (eligible.length >= PAGE_SIZE) break;
+        for (const row of keyedRows) {
+          if (policyByKey.get(row.senderKey)) continue;
+          eligible.push(projectFollowup(row.followup, nowMs, row.feedbackRating));
+          if (eligible.length >= PAGE_SIZE) break;
+        }
+
+        // Underlying set exhausted — short-circuit so we don't issue a
+        // pointless extra query when the last page was a partial.
+        if (rows.length < PAGE_SIZE) break;
       }
 
-      // Underlying set exhausted — short-circuit so we don't issue a
-      // pointless extra query when the last page was a partial.
-      if (rows.length < PAGE_SIZE) break;
-    }
-
-    return eligible;
+      return eligible;
+    });
   }
 
   /**

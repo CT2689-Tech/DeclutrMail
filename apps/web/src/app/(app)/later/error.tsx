@@ -13,10 +13,13 @@ export default function LaterError({
 }) {
   return (
     <RouteErrorScreen
+      gap={32}
+      title="Later"
+      kicker="Catch up / Coming back to you"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="snoozed"
-      eyebrow="Later hit a snag"
       headline="We couldn't load your Later items."
       body="Nothing was moved or rescheduled. Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}

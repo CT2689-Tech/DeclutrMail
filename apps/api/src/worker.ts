@@ -1,5 +1,11 @@
 import 'reflect-metadata';
 
+import {
+  SupportRequestWorker,
+  SUPPORT_REQUEST_QUEUE,
+  type SupportRequestJobData,
+} from '@declutrmail/workers';
+
 import { writeWorkerHeartbeat } from '@declutrmail/workers';
 import {
   collectOperationalTelemetry,
@@ -58,6 +64,9 @@ import {
   enqueueFollowupCheckTick,
   enqueueOpsRetentionTick,
   enqueueSenderIndexSweepTick,
+  enqueueSenderIndexSweepContinuation,
+  workerRuntimeConfig,
+  measuredMailboxLock,
   enqueueSendersCounterReconciliationTick,
   enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
@@ -217,12 +226,23 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  */
 
 /**
- * Gmail quota throttle (D5). Gmail meters 15,000 quota units / user /
- * minute; we pace to 12,000 (20% headroom) — `messages.get` is 5 units,
- * so ~2,400 messages/min SUSTAINED. One limiter per mailbox (the quota
- * is per-user).
+ * Gmail quota throttle (D5). Newer projects get 6,000 units/user/minute;
+ * default to 4,800 (20% headroom). The production project retains a
+ * 15,000-unit legacy ceiling, so its deploy manifest sets this to 12,000.
+ * Each Gmail method still reserves its current published cost. One limiter
+ * per mailbox.
  */
-const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
+const configuredGmailQuotaUnits = process.env.GMAIL_QUOTA_UNITS_PER_MIN;
+const GMAIL_QUOTA_UNITS_PER_MIN = configuredGmailQuotaUnits
+  ? Number(configuredGmailQuotaUnits)
+  : 4_800;
+if (
+  !Number.isSafeInteger(GMAIL_QUOTA_UNITS_PER_MIN) ||
+  GMAIL_QUOTA_UNITS_PER_MIN < 1_200 ||
+  GMAIL_QUOTA_UNITS_PER_MIN > 12_000
+) {
+  throw new Error('GMAIL_QUOTA_UNITS_PER_MIN must be an integer from 1200 to 12000');
+}
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /**
@@ -231,20 +251,17 @@ const GMAIL_QUOTA_WINDOW_MS = 60_000;
  * root-cause). Both limiter implementations previously started a fresh
  * mailbox's bucket FULL, so `InitialSyncWorker`'s fetch loop could spend
  * the entire 12,000-unit sustained budget the instant it started —
- * ~2,400 `messages.get` calls with zero pacing before either limiter
- * ever introduced a delay.
+ * ~2,400 `messages.get` calls at the old 5-unit accounting, with zero
+ * pacing before either limiter ever introduced a delay.
  *
- * 1,000 units (200 calls — 10 `FETCH_CONCURRENCY` chunks) caps that
- * instant burst while the refill rate keeps the exact same long-run
- * throughput: a large mailbox's backfill takes the same total time, it
- * just can no longer open with a multi-thousand-call spike. Paired with
- * `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME 200-units/sec average as the
- * sustained pair above (1,000 / 5,000 = 12,000 / 60,000), so the
+ * A five-second share of the sustained budget caps that instant burst:
+ * 400 units by default or 1,000 for the production legacy quota. Paired
+ * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME average rate, so the
  * in-process `RateLimiter` fallback paces identically to the primary
  * Redis-backed bucket instead of reverting to the old full-burst
  * behavior the moment Redis degrades.
  */
-const GMAIL_QUOTA_BURST_CAPACITY = 1_000;
+const GMAIL_QUOTA_BURST_CAPACITY = Math.floor(GMAIL_QUOTA_UNITS_PER_MIN / 12);
 const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */
@@ -458,7 +475,9 @@ async function bootstrap(): Promise<void> {
   // multi-statement rebuilds (root cause of senders.total_received=0
   // shipping to prod 2026-06-08; ADR-0022). Setting prepare:false on
   // every `postgres()` call here forces simple-protocol queries.
-  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false });
+  const workerBudgets = workerRuntimeConfig(process.env);
+  bootStep('worker_resource_budgets', workerBudgets);
+  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false, max: workerBudgets.dbPoolMax });
   const db = drizzle(pg, { schema });
   bootStep('postgres_pool_done');
 
@@ -496,7 +515,7 @@ async function bootstrap(): Promise<void> {
    * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
    * would actually buy.
    */
-  const LOCK_POOL_MAX = LABEL_ACTION_CONCURRENCY;
+  const LOCK_POOL_MAX = workerBudgets.lockPoolMax;
   /**
    * DEDICATED connection pool for the per-mailbox advisory lock, sized to
    * the label-action concurrency. This is the deadlock fix: the lock
@@ -808,7 +827,15 @@ async function bootstrap(): Promise<void> {
   // lock bound (must stay below cronPolicy's 60s job cap), and the
   // unlock leak detector. Factored out so its failure paths are
   // unit-tested; the 2026-08-12 leak lived in an untested catch {}.
-  const mailboxLock = createMailboxActionLock(lockPg);
+  const lockTransport = createMailboxActionLock(lockPg);
+  const mailboxLock = {
+    ...lockTransport,
+    ...measuredMailboxLock(lockTransport, (timings) => {
+      console.log(
+        JSON.stringify({ level: 'info', kind: 'mailbox_lock.slow_operation', ...timings }),
+      );
+    }),
+  };
   // Prove SESSION semantics on the live pool at boot instead of
   // trusting the DSN's string shape: over a transaction-mode pooler
   // the probe's unlock lands on another backend and returns false —
@@ -1722,7 +1749,17 @@ async function bootstrap(): Promise<void> {
    * sweep and a sync never write each other's snapshot. concurrency 1 —
    * it is nightly and holds a lock per mailbox.
    */
-  const senderIndexSweepWorker = new SenderIndexSweepWorker({ db, lock: mailboxLock });
+  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    { connection },
+  );
+  const senderIndexSweepWorker = new SenderIndexSweepWorker({
+    db,
+    lock: mailboxLock,
+    enqueueContinuation: (payload) =>
+      enqueueSenderIndexSweepContinuation(senderIndexSweepSchedulerQueue, payload),
+    statementTimeoutMs: workerBudgets.sweepStatementTimeoutMs,
+  });
   senderIndexSweepWorker.setObserver(observer);
   senderIndexSweepWorker.setDeadLetterRecorder(deadLetterRecorder);
 
@@ -1742,11 +1779,6 @@ async function bootstrap(): Promise<void> {
       }),
     );
   });
-
-  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
-    SENDER_INDEX_SWEEP_QUEUE,
-    { connection },
-  );
 
   async function enqueueSenderIndexSweep(): Promise<void> {
     if (shuttingDown) return;
@@ -2042,6 +2074,22 @@ async function bootstrap(): Promise<void> {
    * boot crash). The same queue instance is the PRODUCER handed to the
    * sync-ready email trigger and the deletion purge worker.
    */
+  const supportRequestWorker = new SupportRequestWorker(
+    new EmailService(new EmailSuppressionService(db)),
+  );
+  supportRequestWorker.setObserver(observer);
+  supportRequestWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const supportRequestBullWorker = new Worker<SupportRequestJobData>(
+    SUPPORT_REQUEST_QUEUE,
+    (job) => supportRequestWorker.run(job),
+    { connection, concurrency: 2, ...userFacingTuning },
+  );
+  supportRequestBullWorker.on('error', () => {
+    console.error(
+      JSON.stringify({ level: 'error', kind: 'bullmq.error', queue: SUPPORT_REQUEST_QUEUE }),
+    );
+  });
+
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
   const emailSendWorker = new EmailSendWorker({
     db,
@@ -2971,6 +3019,7 @@ async function bootstrap(): Promise<void> {
       await gmailQuotaConnection.quit().catch(() => undefined);
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
+      await supportRequestBullWorker.close();
       await emailSendBullWorker.close();
       await emailSendQueue.close();
       await weeklyValueReceiptBullWorker.close();

@@ -9,15 +9,19 @@
 // story shapes do not change.
 //
 // Variants covered (D210 + D211/D212 + Storybook contract):
-//   • Default          — populated queue, 9 rows
+//   • Default          — focus mode, one sender on stage
+//   • FocusWhyOpen     — the "Why?" disclosure open
+//   • FocusProtected   — a Protected sender's card
+//   • FocusBatchOffer  — a batch offer as its own card in the stack
+//   • ListMode         — "See all": the hairline queue list
 //   • Empty            — factual stats summary + calm re-entry
 //   • EmptyFreeTier    — D33 with the upgrade nudge visible
 //   • EmptyQuiet       — D212 resting state (nothing decided today)
-//   • Loading          — skeleton stack
-//   • RowExpanded      — one row expanded with toolbar visible
+//   • Loading          — one card-sized skeleton
+//   • RowExpanded      — list mode, one row expanded with toolbar visible
 //   • ActionSheetOpen  — sheet mounted with embedded preview
-//   • InlinePreview    — D34 remember-preference path
-//   • KeyboardFocus    — focus-state guard for the row chrome
+//   • InlinePreview    — D34 remember-preference path, inside the card
+//   • KeyboardFocus    — focus-state guard for the list row chrome
 //   • UnsubNoChannel   — engine recommends U but no channel exists
 //                        (W2 — disabled pill states its reason)
 
@@ -32,6 +36,7 @@ import {
   TRIAGE_SESSION_STATS_QUIET,
 } from './data';
 import { resetTriageStore, useTriageStore } from './store';
+import { storeTriageMode } from './test-mode';
 import { TriageScreen } from './triage-screen';
 
 const { color } = tokens;
@@ -61,7 +66,7 @@ const meta: StoryMeta<typeof TriageScreen> = {
     docs: {
       description: {
         component:
-          'Triage screen — one decision per sender. The toolbar renders K/A/U/L/D; Delete is always explicit and always uses the full preview sheet. Other mail-moving actions show the same mandatory preview either in the sheet or inline. Each row expands for details, and protected senders stay out of bulk actions.',
+          'Triage screen — one decision per sender. Focus mode (the default) puts one sender on stage with the engine’s suggestion as the only filled verb; "See all" switches to the list. The toolbar renders K/A/U/L/D; Delete is always explicit and always uses the full preview sheet. Other mail-moving actions show the same mandatory preview either in the sheet or inline. Protected senders stay out of bulk actions.',
       },
     },
   },
@@ -72,7 +77,15 @@ export default meta;
 
 type PageArgs = ComponentProps<typeof TriageScreen>;
 
-function frame(children: React.ReactNode) {
+/** Three senders with no shared domain or verdict run — no batch offer leads the stack. */
+const SENDER_ROWS = TRIAGE_QUEUE.filter((r) =>
+  ['t-linkedin', 't-groupon', 't-sarah'].includes(r.id),
+);
+
+function frame(children: React.ReactNode, mode: 'focus' | 'list' = 'focus') {
+  // The view mode is a per-device preference, so a story picks it the
+  // way a device does.
+  storeTriageMode(mode);
   // Each story resets the store so they don't leak state across
   // the Storybook page transitions. The screen mounts TanStack hooks
   // (the D226 mutation wiring), so a fresh QueryClient wraps every
@@ -88,19 +101,47 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Default — 8 decisions across all verdict types. */
+/** Default — focus mode: one sender, the suggestion filled, "1 of 3". */
 export const Default: Story<typeof TriageScreen> = {
+  args: { state: { kind: 'ready', rows: SENDER_ROWS, stats: TRIAGE_SESSION_STATS } },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/** "Why?" open — reasoning, confidence band, stats and signals in the card. */
+export const FocusWhyOpen: Story<typeof TriageScreen> = {
+  args: { state: { kind: 'ready', rows: SENDER_ROWS, stats: TRIAGE_SESSION_STATS } },
+  render: (args: PageArgs) => {
+    const node = frame(<TriageScreen {...args} />);
+    useTriageStore.setState({ expandedRowId: SENDER_ROWS[0]!.id });
+    return node;
+  },
+};
+
+/** A Protected sender — the mark and the exact evidence replace the read rate. */
+export const FocusProtected: Story<typeof TriageScreen> = {
   args: {
     state: {
       kind: 'ready',
-      rows: [...TRIAGE_QUEUE],
+      rows: SENDER_ROWS.filter((r) => r.protectionReason !== null),
       stats: TRIAGE_SESSION_STATS,
     },
   },
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
 };
 
-/** Loading — skeleton stack on first paint. */
+/** The full fixture queue — a batch offer leads the stack as its own card. */
+export const FocusBatchOffer: Story<typeof TriageScreen> = {
+  args: { state: { kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS } },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+};
+
+/** "See all" — the hairline list, batch offers leading it quietly. */
+export const ListMode: Story<typeof TriageScreen> = {
+  args: { state: { kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS } },
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />, 'list'),
+};
+
+/** Loading — one card-sized skeleton on first paint. */
 export const Loading: Story<typeof TriageScreen> = {
   args: { state: { kind: 'loading' } },
   render: (args: PageArgs) => frame(<TriageScreen {...args} />),
@@ -161,7 +202,7 @@ export const EmptyQuiet: Story<typeof TriageScreen> = {
 };
 
 /**
- * Row expanded — exercises the D36 collapse/expand pattern and the
+ * Row expanded (list mode) — exercises the D36 collapse/expand pattern and the
  * D29/D227 toolbar visibility. The Storybook play hook expands the
  * first row before the story renders so the screenshot is stable.
  */
@@ -174,10 +215,10 @@ export const RowExpanded: Story<typeof TriageScreen> = {
     },
   },
   render: (args: PageArgs) => {
-    resetTriageStore();
+    const node = frame(<TriageScreen {...args} />, 'list');
     // Expand the first row (Groupon — high confidence Archive).
     useTriageStore.setState({ expandedRowId: TRIAGE_QUEUE[0]!.id });
-    return frame(<TriageScreen {...args} />);
+    return node;
   },
 };
 
@@ -195,7 +236,8 @@ export const ActionSheetOpen: Story<typeof TriageScreen> = {
     },
   },
   render: (args: PageArgs) => {
-    resetTriageStore();
+    // `frame` resets the store, so seed it AFTER.
+    const node = frame(<TriageScreen {...args} />);
     useTriageStore.setState({
       expandedRowId: TRIAGE_QUEUE[0]!.id,
       pendingAction: {
@@ -205,14 +247,14 @@ export const ActionSheetOpen: Story<typeof TriageScreen> = {
         wakeAt: null,
       },
     });
-    return frame(<TriageScreen {...args} />);
+    return node;
   },
 };
 
 /**
  * Inline preview — the D34 remember-preference path. The sheet is
- * skipped but D226's mandatory preview still renders as an inline
- * strip beneath the expanded row's toolbar.
+ * skipped but D226's mandatory preview still renders — inside the
+ * focus card, with its explicit Confirm.
  */
 export const InlinePreview: Story<typeof TriageScreen> = {
   args: {
@@ -223,7 +265,8 @@ export const InlinePreview: Story<typeof TriageScreen> = {
     },
   },
   render: (args: PageArgs) => {
-    resetTriageStore();
+    // `frame` resets the store, so seed it AFTER.
+    const node = frame(<TriageScreen {...args} />);
     useTriageStore.setState({
       expandedRowId: TRIAGE_QUEUE[1]!.id,
       pendingAction: {
@@ -234,7 +277,7 @@ export const InlinePreview: Story<typeof TriageScreen> = {
       },
       rememberPreference: { Archive: false, Unsubscribe: true, Later: false },
     });
-    return frame(<TriageScreen {...args} />);
+    return node;
   },
 };
 
@@ -253,7 +296,7 @@ export const KeyboardFocus: Story<typeof TriageScreen> = {
       stats: TRIAGE_SESSION_STATS,
     },
   },
-  render: (args: PageArgs) => frame(<TriageScreen {...args} />),
+  render: (args: PageArgs) => frame(<TriageScreen {...args} />, 'list'),
 };
 
 /**
@@ -273,8 +316,9 @@ export const UnsubNoChannel: Story<typeof TriageScreen> = {
     },
   },
   render: (args: PageArgs) => {
-    resetTriageStore();
+    // `frame` resets the store, so seed it AFTER.
+    const node = frame(<TriageScreen {...args} />, 'list');
     useTriageStore.setState({ expandedRowId: 't-shipping' });
-    return frame(<TriageScreen {...args} />);
+    return node;
   },
 };

@@ -15,8 +15,10 @@
 //   • Protected   — Protect-marked, recommendation suppressed
 //   • HighConfidence — verdict ≥0.85 — highlighted in the toolbar
 //   • MobileNarrow — phone-width reflow regression guard
+//   • Pane         — the same content at side-pane width
 
 import type { ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { buildSenderDetail } from '@/mocks/sender-detail-builder';
 import { SENDER_FIXTURES } from '@/mocks/sender-fixture-data';
@@ -46,7 +48,7 @@ const meta: StoryMeta<typeof SenderDetailPage> = {
     docs: {
       description: {
         component:
-          'Sender Detail page (D39-D46). Strict layout order: Header → Recommendation → Action toolbar (K/A/U/L per D227) → Recent messages (Gmail deep-link per D41) → Stats strip → Charts → Decision history. Mandatory action preview per D226. Never renders message bodies per D7.',
+          'Sender Detail (D39-D46). Order: identity + Protected switch → current inbox + 90-day count → the five verbs (K/A/U/L/D, fact-derived primary filled) + optional suggestion → compact evidence grid → Recent messages (Gmail deep-link per D41) → Decision timeline. Mandatory action preview per D226. Never renders message bodies per D7. `layout="pane"` is the same content inside the Senders list side pane.',
       },
     },
   },
@@ -68,8 +70,16 @@ if (linkedin == null || sarah == null || stripeSender == null || groupon == null
   );
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+});
+
 function frame(children: React.ReactNode) {
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 /** Default — a high-volume promotional sender with a recommendation. */
@@ -133,44 +143,6 @@ export const HighConfidenceVerdict: Story<typeof SenderDetailPage> = {
 };
 
 /**
- * Trend bucket coverage — kpi-strip "Trend" cell renders each
- * bucket with its glyph + tone. Founder-eyeball aid for the
- * vocabulary review before stories migrate to real Storybook.
- */
-export const TrendBucketUp: Story<typeof SenderDetailPage> = {
-  args: {
-    state: {
-      kind: 'ready',
-      detail: {
-        ...buildSenderDetail(linkedin),
-        stats: {
-          ...buildSenderDetail(linkedin).stats,
-          volumeTrend: 'up',
-        },
-      },
-    },
-  },
-  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
-};
-
-export const TrendBucketDormant: Story<typeof SenderDetailPage> = {
-  args: {
-    state: {
-      kind: 'ready',
-      detail: {
-        ...buildSenderDetail(groupon),
-        stats: {
-          ...buildSenderDetail(groupon).stats,
-          volumeTrend: 'dormant',
-          monthlyVolume: 0,
-        },
-      },
-    },
-  },
-  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
-};
-
-/**
  * Last-reviewed eyebrow — verdict + recency on the header. Surfaces
  * "Last reviewed Archive · 3d ago" for the recently-reviewed case,
  * and "Never reviewed" for the unreviewed case.
@@ -207,9 +179,9 @@ export const NeverReviewed: Story<typeof SenderDetailPage> = {
 };
 
 /**
- * Mobile-narrow — phone viewport. Verifies the stats strip reflows
- * to a single column, the charts stack vertically, and no fixed-width
- * column overflows the viewport (LEARNINGS 2026-05-19 regression guard).
+ * Mobile-narrow — phone viewport. Verifies the stats row and the verbs
+ * wrap, and no fixed-width column overflows the viewport (LEARNINGS
+ * 2026-05-19 regression guard).
  */
 export const MobileNarrow: Story<typeof SenderDetailPage> = {
   args: {
@@ -222,4 +194,51 @@ export const MobileNarrow: Story<typeof SenderDetailPage> = {
         <SenderDetailPage {...args} />
       </div>,
     ),
+};
+
+/** Pane — the content as the Senders list's side pane renders it. */
+const paneDetail = buildSenderDetail(linkedin);
+
+export const Pane: Story<typeof SenderDetailPage> = {
+  args: {
+    state: {
+      kind: 'ready',
+      detail: {
+        ...paneDetail,
+        archivedCount: 247,
+        sender: { ...paneDetail.sender, inboxCount: 128 },
+      },
+    },
+    layout: 'pane',
+  },
+  render: (args: PageArgs) =>
+    frame(
+      <div
+        style={{
+          width: 440,
+          maxWidth: '100%',
+          height: 'min(760px, calc(100vh - 24px))',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: color.card,
+          border: `1px solid ${color.line}`,
+          borderRadius: 12,
+        }}
+      >
+        <SenderDetailPage {...args} />
+      </div>,
+    ),
+};
+
+/** Explicit deploy-skew/unknown count variant; never invent an empty inbox. */
+export const PaneUnknownInbox: Story<typeof SenderDetailPage> = {
+  ...Pane,
+  args: {
+    state: {
+      kind: 'ready',
+      detail: { ...paneDetail, sender: { ...paneDetail.sender, inboxCount: null } },
+    },
+    layout: 'pane',
+  },
 };

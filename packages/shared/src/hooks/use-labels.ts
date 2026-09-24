@@ -3,6 +3,7 @@
 import { useLocalState } from './use-local-state';
 
 export type LabelKey =
+  | 'home'
   | 'senders'
   | 'triage'
   | 'brief'
@@ -20,6 +21,7 @@ export type LabelMode = 'plain' | 'power';
 
 const LABEL_SETS: Record<LabelMode, LabelSet> = {
   plain: {
+    home: 'Home',
     senders: 'People & lists',
     triage: 'Today',
     brief: 'Brief',
@@ -33,6 +35,7 @@ const LABEL_SETS: Record<LabelMode, LabelSet> = {
     billing: 'Billing',
   },
   power: {
+    home: 'Home',
     senders: 'Senders',
     triage: 'Triage',
     brief: 'Brief',

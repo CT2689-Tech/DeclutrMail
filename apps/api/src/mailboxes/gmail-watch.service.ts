@@ -21,10 +21,10 @@ export type GmailWatchOutcome =
  * Local per-call quota pacing for the API-side watch calls. These are
  * one-shot lifecycle calls (connect / disconnect / deletion purge), not
  * bulk loops, so each gets a fresh limiter — the same coarse per-call
- * accounting the worker uses (ADR-0005; `users.watch` is billed higher
- * server-side, but one call per connect cannot approach the window).
+ * accounting the worker uses (ADR-0005). The client reserves the actual
+ * `users.watch`/`users.stop` method cost before each call.
  */
-const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
+const GMAIL_QUOTA_UNITS_PER_MIN = 4_800;
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /**

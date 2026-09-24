@@ -95,26 +95,15 @@ describe('ActionToolbar — render (D29, D31)', () => {
     expect(html).toContain('>L<');
   });
 
-  it('the pre-selection hint never collides with the D226 preview eyebrow, and never promises Keep a preview it never gets (QA-archive-20260828-05)', () => {
-    // The toolbar's static hint renders BEFORE a verb is picked; the D226
-    // preview's "Preview · before anything changes" eyebrow renders AFTER,
-    // simultaneously, once a verb is selected. Byte-identical text between
-    // the two broke `triage-screen.actions.test.tsx` with a duplicate-text
-    // query error when this was tried — see docs/qa/qa-worklist.md's
-    // "attempted and reverted" note on this row. The hint also must not
-    // claim EVERY verb previews — Keep dispatches immediately, no preview,
-    // by design (D40) — so it asserts the actual replacement text is
-    // present, not just that the old one is gone; a vacuous or empty hint
-    // would fail this, not just pass it by accident.
+  it('carries no pre-selection hint — the D226 preview is where that is said (QA-archive-20260828-05)', () => {
+    // The toolbar used to print a static "Nothing moves until you
+    // confirm" hint beside the verbs. It collided with the preview's own
+    // eyebrow once, and it promised Keep a confirm it never gets (D40).
+    // The preview states it at the decision point; the toolbar is verbs.
     const row = rowById('t-groupon');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
-    // Exact node-boundary match — a loose substring check would still pass
-    // if something misleading were appended after the same opening words
-    // (e.g. "...preview first — nothing changes until you preview", which
-    // reintroduces the false-for-Keep promise this row exists to remove).
-    expect(html).toContain('>Nothing moves until you confirm</span>');
+    expect(html).not.toContain('Nothing moves until you confirm');
     expect(html).not.toContain('Preview · before anything changes');
-    expect(html).not.toContain('Preview before anything changes');
   });
 
   it('never renders an "S" shortcut chip — no "Screen" anywhere (D227)', () => {
@@ -133,15 +122,23 @@ describe('ActionToolbar — render (D29, D31)', () => {
     // remains available on the row". The client asserted the opposite,
     // and its gate was client-only — the server has no protected check on
     // the triage act path, so it blocked nothing a curl couldn't do.
+    // The opening tag of the <button> that carries the verb's label — a
+    // fixed-width slice broke whenever the Button's inline style grew.
+    const buttonTag = (label: string) => {
+      const at = html.indexOf(`>${label}<`);
+      return html.slice(html.lastIndexOf('<button', at), at);
+    };
     for (const verb of ['Archive', 'Later', 'Keep']) {
-      const section = html.slice(html.indexOf(`>${verb}<`) - 600, html.indexOf(`>${verb}<`));
-      expect(section, `${verb} must stay enabled`).not.toMatch(/disabled=""/);
+      const section = buttonTag(verb);
+      expect(section, `${verb} must stay enabled`).not.toMatch(/disabled=""|aria-disabled="true"/);
     }
     // Two-sided: Unsubscribe on this row is still disabled — but by the
     // CHANNEL fact (t-sarah has no List-Unsubscribe header), never by
     // protection. A fact about the sender survives; a policy gate does not.
-    const unsub = html.slice(html.indexOf('>Unsubscribe<') - 600, html.indexOf('>Unsubscribe<'));
-    expect(unsub).toMatch(/disabled/);
+    const unsub = buttonTag('Unsubscribe');
+    // Native `disabled`, or `aria-disabled` when the gated verb stays
+    // focusable so its reason tooltip can still be reached.
+    expect(unsub).toMatch(/disabled=""|aria-disabled="true"/);
   });
 });
 
@@ -180,23 +177,35 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     expect(verbDisabledReason('Unsubscribe', protectedRow)).toBe(NO_CHANNEL_COPY);
   });
 
-  it('the disabled Unsubscribe pill carries the reason as title + aria-label', () => {
+  it('the unavailable Unsubscribe pill carries the reason as title + tooltip description', () => {
     // The audit's dead end: chip says "Unsubscribe · 95% RECOMMENDED"
     // while the U pill is disabled with no explanation.
     const row = rowById('t-shipping');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     expect(html).toContain(`title="${NO_CHANNEL_COPY}"`);
-    expect(html).toContain(`aria-label="Unsubscribe (U) — ${NO_CHANNEL_COPY}"`);
-    // And the pill really is disabled (capability gate unchanged).
-    const uIdx = html.indexOf('>Unsubscribe<');
-    expect(html.slice(uIdx - 800, uIdx)).toMatch(/disabled/);
+    expect(html).toContain('aria-label="Unsubscribe (U)"');
+    // The reason is the tooltip the pill is DESCRIBED by — announced on
+    // focus, which works because the pill stays focusable (aria-disabled).
+    const button = html.slice(html.lastIndexOf('<button', html.indexOf('>Unsubscribe<')));
+    const describedBy = /aria-describedby="([^"]+)"/.exec(button)?.[1];
+    expect(describedBy).toBeTruthy();
+    expect(html).toMatch(
+      new RegExp(`id="${describedBy}" role="tooltip"[^>]*>${NO_CHANNEL_COPY.slice(0, 20)}`),
+    );
+    // And the pill really is unavailable (capability gate unchanged).
+    expect(button.slice(0, button.indexOf('>'))).toContain('aria-disabled="true"');
   });
 
   it('renders the reason as visible text — not hover-only (disabled buttons leave the tab order)', () => {
     const row = rowById('t-shipping');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     expect(html).toContain('role="note"');
-    // Twice: once in the title/aria attrs, once as the visible note.
+    // Visible where there is no hover to reveal the tooltip: phones and
+    // tablets, and any touch-only pointer.
+    expect(html).toMatch(
+      /@media \(max-width:900px\),\(hover:none\)\{\.dm-toolbar-reason\{display:block\}\}/,
+    );
+    // Title attr, tooltip bubble, and the visible note.
     expect(html.split('No unsubscribe channel found').length).toBeGreaterThanOrEqual(3);
   });
 
@@ -229,9 +238,7 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     // The recommended-verb highlight wraps the Kbd in white text on a
     // translucent overlay — the inline `color:var(--dm-fg-inverse)` is the
     // load-bearing signal.
-    expect(html).toContain(
-      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
-    );
+    expect(html).toContain('background:var(--dm-line-inverse);color:var(--dm-fg-inverse)');
   });
 
   it('does NOT highlight when confidence is far below threshold (0.66)', () => {
@@ -240,9 +247,7 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     const row = rowById('t-nextdoor');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
     // No white-text overlay means no highlighted verb chip.
-    expect(html).not.toContain(
-      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
-    );
+    expect(html).not.toContain('background:var(--dm-line-inverse);color:var(--dm-fg-inverse)');
   });
 
   // D31's "highlight only when confidence > 0.85" is applied per
@@ -255,8 +260,7 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     // dispatchable. Read the floor rather than restating it — a future
     // re-anchor moves the test with the product.
     const FLOOR = RECOMMEND_FLOOR.archive as number;
-    const HIGHLIGHT =
-      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none';
+    const HIGHLIGHT = 'background:var(--dm-line-inverse);color:var(--dm-fg-inverse)';
 
     function highlighted(c: number): boolean {
       const row: TriageDecisionRow = { ...rowById('t-groupon'), confidence: c };

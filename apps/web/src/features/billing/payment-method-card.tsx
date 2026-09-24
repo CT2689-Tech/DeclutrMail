@@ -21,12 +21,13 @@
 
 import { useState } from 'react';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { usePaymentMethodSession } from './api/use-payment-method';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow } = tokens;
+const { color, radius, text } = tokens;
 
 export function PaymentMethodCard({
   provider,
@@ -64,18 +65,21 @@ export function PaymentMethodCard({
       data-testid="payment-method-card"
       style={{
         background: color.card,
+        // Past due is said in amber lettering below; the ring only marks
+        // which surface needs attention.
         border: `1px solid ${isPastDue ? color.amber : color.border}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.card,
-        padding: '20px 22px',
+        flexDirection: isPastDue || showSupportPath ? 'column' : 'row',
+        flexWrap: 'wrap',
+        alignItems: isPastDue || showSupportPath ? undefined : 'center',
+        borderRadius: radius.md,
+        padding: isPastDue ? '20px' : '16px',
         display: 'flex',
-        flexDirection: 'column',
         gap: 10,
       }}
     >
-      <Eyebrow>Payment method</Eyebrow>
+      <GroupTitle as="div">Payment method</GroupTitle>
 
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: color.fgSoft }}>
+      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgMuted }}>
         {showSupportPath ? (
           mandateExplains ? (
             <>
@@ -99,15 +103,15 @@ export function PaymentMethodCard({
             </>
           )
         ) : (
-          <>
-            Your card is held by Paddle, our payment provider — we never see or store it. Updating
-            it opens Paddle&rsquo;s secure form, and you&rsquo;ll come back here afterwards.
-          </>
+          <>Managed securely by Paddle. Update your payment method in their secure form.</>
         )}
       </p>
 
       {isPastDue ? (
-        <p role="status" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.amber }}>
+        <p
+          role="status"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
+        >
           <strong style={{ fontWeight: 600 }}>Your last payment didn&rsquo;t go through.</strong>{' '}
           {showSupportPath
             ? 'Your plan stays active while we sort this out with you.'
@@ -137,17 +141,16 @@ export function PaymentMethodCard({
             </Button>
           </div>
           {disabled && disabledReason ? (
-            <p style={{ margin: 0, fontSize: 12, color: color.fgMuted }}>{disabledReason}</p>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{disabledReason}</p>
           ) : null}
           {session.error ? (
             <div
               role="alert"
               style={{
-                fontSize: 12,
-                color: color.red,
-                background: color.redBg,
-                border: `1px solid ${color.red}`,
-                borderRadius: 8,
+                fontSize: text.sm,
+                color: color.danger,
+                background: color.dangerBg,
+                borderRadius: radius.md,
                 padding: '8px 10px',
               }}
             >

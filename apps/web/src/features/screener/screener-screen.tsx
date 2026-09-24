@@ -1,8 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
@@ -14,10 +20,22 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 import { sendersKeys } from '@/features/senders/api/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
-import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
+import dynamic from 'next/dynamic';
+
+// This follow-up is only needed after an email-based unsubscribe intent.
+const UnsubMailtoCallout = dynamic(
+  () =>
+    import('@/features/senders/unsub-mailto-callout').then((module) => module.UnsubMailtoCallout),
+  { loading: () => <p role="status">Loading the remaining email unsubscribe step…</p> },
+);
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
+import {
+  isTerminalStatus,
+  UNSUB_AMBIGUOUS_ERROR_CODE,
+  type ActionReach,
+  type CompositeActionPreviewResult,
+} from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -39,11 +57,25 @@ import {
   type ScreenerQueueRow,
   type ScreenerScreenState,
 } from './data';
-import { ScreenerEmptyState, screenerEmptyTitle } from './empty-state';
+import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
+
+/** Select the exact server preview bucket the Delete choice will enqueue. */
+function deleteWindowCount(
+  counts: CompositeActionPreviewResult['counts'] | undefined,
+  days: number | null,
+): number | undefined {
+  if (!counts) return undefined;
+  if (days === null) return counts.all;
+  if (days === 30) return counts.olderThan30d;
+  if (days === 90) return counts.olderThan90d;
+  if (days === 180) return counts.olderThan180d;
+  if (days === 365) return counts.olderThan365d;
+  return undefined;
+}
 
 /**
  * D226 overdue release — how long the polled decision handle may stay
@@ -117,6 +149,23 @@ export function ScreenerScreen({
   const decide = useScreenerDecide();
 
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [queueFilter, setQueueFilter] = useState<'all' | 'multiple' | 'unsubscribe' | 'protected'>(
+    'all',
+  );
+  const [queueSort, setQueueSort] = useState<'queued' | 'most_mail' | 'first_seen'>('queued');
+  const visibleRows = useMemo(() => {
+    if (state.kind !== 'ready') return [];
+    const filtered = state.rows.filter((row) => {
+      if (queueFilter === 'multiple') return row.messageCount > 1;
+      if (queueFilter === 'unsubscribe') return canScreenerUnsubscribe(row);
+      if (queueFilter === 'protected') return row.isProtected;
+      return true;
+    });
+    if (queueSort === 'most_mail') return filtered.sort((a, b) => b.messageCount - a.messageCount);
+    if (queueSort === 'first_seen')
+      return filtered.sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt));
+    return filtered;
+  }, [state, queueFilter, queueSort]);
 
   // D25 `stale_refresh` — same attention-scoped refresh Triage and
   // Sender Detail use (founder decision 2026-08-19). It matters more
@@ -158,6 +207,8 @@ export function ScreenerScreen({
     wakeAt: string | null;
     /** ADR-0028 — Delete's reach. Reset to the safe default per verb click. */
     reach: ActionReach;
+    /** Delete defaults to the safe six-month window, then follows the user's choice. */
+    windowDays: number | null;
   } | null>(null);
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
@@ -188,6 +239,8 @@ export function ScreenerScreen({
     setPending(null);
     setExpandedRowId(null);
     setMailtoFollowup(null);
+    setQueueFilter('all');
+    setQueueSort('queued');
   }, []);
   useEffect(() => {
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
@@ -242,7 +295,7 @@ export function ScreenerScreen({
     (pending.verb === 'archive' || pending.verb === 'later' || pending.verb === 'delete')
       ? pendingRow.senderId
       : null;
-  const compositePreview = useCompositePreview(previewSenderId);
+  const compositePreview = useCompositePreview(previewSenderId, pending?.mailboxId);
   useEffect(() => {
     if (!compositePreview.isError || previewSenderId == null) return;
     captureFeatureException(compositePreview.error, {
@@ -250,12 +303,8 @@ export function ScreenerScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
-  // QA-delete-20260829-01 (2026-08-30) — Delete defaults to the same
-  // safer DEFAULT_DELETE_WINDOW_DAYS window the senders confirm modal
-  // applies; every other windowed verb keeps acting on the whole
-  // inbox. Screener offers no chip to widen it (unlike the modal) —
-  // narrower scope only, never a silent behavior change the reader
-  // cannot see (the title + notice below say so).
+  // Delete starts at the same safer six-month window as Senders. The
+  // reader can widen it here when newer mail would otherwise count zero.
   const isPendingDelete = pending?.verb === 'delete';
   // isFetching keeps a reopened preview in 'loading' while cached data
   // refetches — a cached count must never arm confirm (D226).
@@ -264,7 +313,8 @@ export function ScreenerScreen({
     : compositePreview.isFetching || compositePreview.data == null
       ? ('loading' as const)
       : isPendingDelete
-        ? compositePreview.data.counts.olderThan180d
+        ? (deleteWindowCount(compositePreview.data.counts, pending?.windowDays ?? null) ??
+          'unavailable')
         : compositePreview.data.counts.all;
   // The TRUE un-windowed inbox count, for the empty-window notice (the
   // same `inboxTotal` the senders confirm modal reconciles against).
@@ -276,7 +326,8 @@ export function ScreenerScreen({
   const previewAllMailCount =
     typeof previewInboxCount === 'number'
       ? isPendingDelete
-        ? (compositePreview.data?.allMail?.counts.olderThan180d ?? null)
+        ? (deleteWindowCount(compositePreview.data?.allMail?.counts, pending?.windowDays ?? null) ??
+          null)
         : (compositePreview.data?.allMail?.counts.all ?? null)
       : null;
   // Codex review 2026-09-03 (QA-delete-20260903-01, round 2): the TRUE
@@ -288,7 +339,12 @@ export function ScreenerScreen({
   const previewAllMailTotal = compositePreview.data?.allMail?.counts.all ?? null;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
-  const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';
+  const selectedPreviewCount =
+    isPendingDelete && pending?.reach === 'all_mail' && previewAllMailCount !== null
+      ? previewAllMailCount
+      : previewInboxCount;
+  const pendingPreviewBlocked =
+    pendingMovesMail && (typeof selectedPreviewCount !== 'number' || selectedPreviewCount === 0);
 
   // Drive the enqueued-action lifecycle off the polled status.
   useEffect(() => {
@@ -433,6 +489,7 @@ export function ScreenerScreen({
         verb,
         wakeAt: verb === 'later' ? defaultLaterWakeAtIso() : null,
         reach: 'inbox_only',
+        windowDays: verb === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null,
       });
       setExpandedRowId(row.id);
     },
@@ -467,7 +524,9 @@ export function ScreenerScreen({
           // the mutation exactly as it did in the preview that armed
           // this confirm; the two can never show one count and act on
           // another.
-          ...(verb === 'delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
+          ...(verb === 'delete' && pending.windowDays !== null
+            ? { olderThanDays: pending.windowDays }
+            : {}),
           // ADR-0028 — only the non-default reach travels, and only on
           // Delete (the one verb the chips render for; the server
           // rejects it anywhere else). Gated on the same all-mail block
@@ -620,45 +679,37 @@ export function ScreenerScreen({
   return (
     <div
       style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-        fontFamily: font.sans,
+        gap: 24,
       }}
     >
-      <div>
-        <Eyebrow>Screener · new senders</Eyebrow>
-        <h1
-          style={{
-            fontFamily: font.display,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
-            margin: '4px 0 0',
-          }}
-        >
-          {state.kind === 'ready'
-            ? // Only the count query knows the true total — the queue
-              // loads a working window (top N), so `rows.length` is a
-              // page size. Until the count resolves, claim no number
-              // rather than presenting the page size as the total.
-              totalPending !== null
-              ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} to decide`
-              : 'New senders to decide'
-            : state.kind === 'empty'
-              ? screenerEmptyTitle(activeMailbox?.readiness)
-              : state.kind === 'error'
-                ? "Couldn't load the Screener."
-                : 'Loading the Screener…'}
-        </h1>
+      <EditorialKicker>Clean up / First decisions</EditorialKicker>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+        <h1 style={editorialTitleStyle}>Screener</h1>
+        {/* Only the count query knows the true total — the queue loads a
+            working window (top N), so `rows.length` is a page size. Until
+            the count resolves, claim no number rather than presenting the
+            page size as the total. */}
+        {state.kind === 'ready' && totalPending !== null && (
+          <span style={{ fontSize: text.md, color: color.fgMuted }}>
+            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+              {totalPending.toLocaleString('en-US')}
+            </span>{' '}
+            sender{totalPending === 1 ? '' : 's'} awaiting a first review
+          </span>
+        )}
       </div>
 
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
+        These senders are waiting for your first decision. Some may have been in your inbox for a
+        while; their email keeps arriving in Gmail until you decide.
+      </p>
       <ScreenIntro
         id="screener"
         title="How the Screener works"
-        body="One decision per new sender. Their mail keeps arriving until you choose."
+        body="Review each undecided sender in context, then choose what should happen."
         learnMore={{
           href: '/methodology#action-method',
           label: 'How action previews protect you',
@@ -681,36 +732,119 @@ export function ScreenerScreen({
         <ScreenerEmptyState readiness={activeMailbox?.readiness} />
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (
-        <div
-          role="list"
-          aria-label="Senders waiting for your decision"
-          style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-        >
-          {state.rows.map((row) => (
-            <div key={row.id} role="listitem">
-              <ScreenerRow
-                row={row}
-                expanded={expandedRowId === row.id}
-                busy={busyRowId === row.id || parkedRowId === row.id}
-                pendingVerb={pending?.rowId === row.id ? pending.verb : null}
-                previewInboxCount={previewInboxCount}
-                previewInboxTotal={previewInboxTotal}
-                previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
-                previewAllMailCount={previewAllMailCount}
-                previewAllMailTotal={previewAllMailTotal}
-                pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
-                onReachChange={(reach) =>
-                  setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
-                }
-                wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
-                onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
-                onVerbClick={(verb) => onVerbClick(verb, row)}
-                onConfirm={() => onConfirm(row)}
-                onCancel={() => setPending(null)}
-              />
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                color: color.fgMuted,
+                fontSize: text.sm,
+              }}
+            >
+              Show
+              <select
+                aria-label="Filter loaded senders"
+                value={queueFilter}
+                onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
+                style={{
+                  minHeight: 38,
+                  padding: '6px 10px',
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 7,
+                  color: color.fg,
+                  background: color.card,
+                  font: 'inherit',
+                }}
+              >
+                <option value="all">All loaded</option>
+                <option value="multiple">More than one email</option>
+                <option value="unsubscribe">Can unsubscribe</option>
+                <option value="protected">Protected</option>
+              </select>
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                color: color.fgMuted,
+                fontSize: text.sm,
+              }}
+            >
+              Sort
+              <select
+                aria-label="Sort loaded senders"
+                value={queueSort}
+                onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
+                style={{
+                  minHeight: 38,
+                  padding: '6px 10px',
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 7,
+                  color: color.fg,
+                  background: color.card,
+                  font: 'inherit',
+                }}
+              >
+                <option value="queued">Recently queued</option>
+                <option value="most_mail">Most email received</option>
+                <option value="first_seen">First seen longest ago</option>
+              </select>
+            </label>
+            <span style={{ color: color.fgMuted, fontSize: text.sm }}>
+              Showing {visibleRows.length} of {state.rows.length} loaded senders
+              {totalPending != null && totalPending > state.rows.length
+                ? ` · ${totalPending.toLocaleString('en-US')} total awaiting review`
+                : ''}
+            </span>
+          </div>
+          {visibleRows.length === 0 && (
+            <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+              No loaded senders match this filter. Choose All loaded to see the queue.
+            </p>
+          )}
+          <div
+            role="list"
+            aria-label="Senders waiting for your decision"
+            className="dm-screener-list"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {visibleRows.map((row) => (
+              <div key={row.id} role="listitem">
+                <ScreenerRow
+                  row={row}
+                  expanded={expandedRowId === row.id}
+                  busy={busyRowId === row.id || parkedRowId === row.id}
+                  pendingVerb={pending?.rowId === row.id ? pending.verb : null}
+                  previewInboxCount={previewInboxCount}
+                  previewInboxTotal={previewInboxTotal}
+                  previewWindowDays={isPendingDelete ? pending?.windowDays : null}
+                  onWindowChange={(windowDays) =>
+                    setPending((cur) =>
+                      cur && cur.rowId === row.id ? { ...cur, windowDays } : cur,
+                    )
+                  }
+                  previewAllMailCount={previewAllMailCount}
+                  previewAllMailTotal={previewAllMailTotal}
+                  pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
+                  onReachChange={(reach) =>
+                    setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
+                  }
+                  wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
+                  onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
+                  onVerbClick={(verb) => onVerbClick(verb, row)}
+                  onConfirm={() => onConfirm(row)}
+                  onCancel={() => setPending(null)}
+                />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -730,23 +864,12 @@ function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () =>
 /** Skeleton stack — matches the row's vertical rhythm. */
 function LoadingState() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-    >
+    <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column' }}>
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          style={{
-            height: 68,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-            backgroundImage: `linear-gradient(90deg, ${color.lineSoft} 0%, rgba(14,20,19,0.03) 50%, ${color.lineSoft} 100%)`,
-            backgroundSize: '200% 100%',
-          }}
+          style={{ height: 72, borderTop: `1px solid ${color.lineSoft}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading the Screener queue</span>

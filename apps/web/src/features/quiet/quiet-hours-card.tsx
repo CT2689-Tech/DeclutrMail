@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Card, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
+import { SelectWell } from '@/features/settings/settings-list';
+import { Switch } from '@/features/settings/switch';
 import {
   parseTimeToMinutes,
   QuietHoursConfigSchema,
   type QuietHoursConfig,
 } from '@declutrmail/shared/contracts';
 
-const { color, font } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Per-mailbox quiet-hours config card (U18 — D92/D95).
@@ -69,14 +71,16 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
   const { mailboxEmail, mailboxStatus, state, saving, onSave, onRetry } = props;
 
   return (
-    <Card padding={20} style={{ display: 'grid', gap: 14 }}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
+      <header
+        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 16 }}
+      >
         <span
           style={{
             fontFamily: font.sans,
-            fontSize: 14,
+            fontSize: text.sm,
             fontWeight: 600,
-            color: color.fg,
+            color: color.fgMuted,
             overflowWrap: 'anywhere',
           }}
         >
@@ -87,7 +91,10 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
       </header>
 
       {state.kind === 'loading' && (
-        <div style={{ display: 'grid', gap: 10 }} data-testid="quiet-card-loading">
+        <div
+          style={{ ...groupSurface, display: 'grid', gap: 10, padding: 16 }}
+          data-testid="quiet-card-loading"
+        >
           <Skeleton width="40%" height={14} />
           <Skeleton width="70%" height={14} />
           <Skeleton width="55%" height={14} />
@@ -98,10 +105,12 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
         <div
           role="alert"
           style={{
+            ...groupSurface,
             display: 'grid',
             gap: 10,
+            padding: 16,
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fgSoft,
           }}
         >
@@ -125,7 +134,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
           onSave={onSave}
         />
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -185,66 +194,32 @@ function QuietHoursForm({
     onSave(parsed.data);
   };
 
-  const labelStyle = {
-    fontFamily: font.sans,
-    fontSize: 12,
-    fontWeight: 500,
-    color: color.fgSoft,
-    display: 'grid',
-    gap: 4,
-  } as const;
   const inputStyle = {
     fontFamily: font.sans,
-    fontSize: 13,
+    fontSize: text.md,
+    fontWeight: 500,
+    fontVariantNumeric: 'tabular-nums',
     color: color.fg,
-    background: color.card,
-    border: `1px solid ${color.line}`,
-    borderRadius: 7,
-    padding: '6px 8px',
-    height: isPhone ? 44 : 32,
+    background: color.fill,
+    border: 'none',
+    borderRadius: radius.sm,
+    padding: '0 14px',
+    height: isPhone ? 44 : 36,
     boxSizing: 'border-box',
   } as const;
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          fontFamily: font.sans,
-          fontSize: 13,
-          color: color.fg,
-          width: 'fit-content',
-          cursor: saving ? 'default' : 'pointer',
-          minHeight: isPhone ? 44 : undefined,
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={draft.enabled}
-          disabled={saving}
-          onChange={(e) => set({ enabled: e.target.checked })}
-          style={{
-            width: isPhone ? 20 : 16,
-            height: isPhone ? 20 : 16,
-            accentColor: color.primary,
-          }}
-        />
-        Quiet hours on
-      </label>
-
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isPhone ? 'column' : 'row',
-          gap: 12,
-          flexWrap: 'wrap',
-          alignItems: isPhone ? 'stretch' : 'end',
-        }}
-      >
-        <label style={labelStyle}>
-          Start
+      <div style={groupSurface}>
+        <Row label="Quiet hours">
+          <Switch
+            checked={draft.enabled}
+            disabled={saving}
+            ariaLabel="Quiet hours"
+            onChange={(next) => set({ enabled: next })}
+          />
+        </Row>
+        <Row label="Start" divider>
           <input
             type="time"
             value={draft.startLocal}
@@ -253,9 +228,8 @@ function QuietHoursForm({
             aria-label="Quiet window start"
             style={inputStyle}
           />
-        </label>
-        <label style={labelStyle}>
-          End
+        </Row>
+        <Row label="End" divider>
           <input
             type="time"
             value={draft.endLocal}
@@ -264,46 +238,107 @@ function QuietHoursForm({
             aria-label="Quiet window end"
             style={inputStyle}
           />
-        </label>
-        <label style={{ ...labelStyle, minWidth: 200, flex: '1 1 200px' }}>
-          Timezone
-          <select
+        </Row>
+        <Row label="Timezone" divider>
+          <SelectWell
             value={draft.timezone}
             disabled={saving}
             onFocus={() => setZones(timeZoneOptions(draft.timezone))}
             onChange={(e) => set({ timezone: e.target.value })}
             aria-label="Quiet window timezone"
-            style={{ ...inputStyle, width: '100%' }}
+            style={{ maxWidth: isPhone ? 190 : 260, height: isPhone ? 44 : 36 }}
           >
             {zones.map((z) => (
               <option key={z} value={z}>
                 {z}
               </option>
             ))}
-          </select>
-        </label>
+          </SelectWell>
+        </Row>
       </div>
 
       {crossesMidnight && (
-        <span style={{ fontFamily: font.sans, fontSize: 12, color: color.fgMuted }}>
+        <span
+          style={{
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            color: color.fgMuted,
+            padding: '0 16px',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
           Crosses midnight — quiet from {draft.startLocal} until {draft.endLocal} the next day.
         </span>
       )}
 
       {validationError && (
-        <span role="alert" style={{ fontFamily: font.sans, fontSize: 12, color: color.red }}>
+        <span
+          role="alert"
+          style={{
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            color: color.danger,
+            padding: '0 16px',
+          }}
+        >
           {validationError}
         </span>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px' }}>
         <Button tone="primary" size="md" onClick={submit} disabled={saving || !dirty}>
           {saving ? 'Saving…' : 'Save quiet hours'}
         </Button>
         {!dirty && !saving && (
-          <span style={{ fontFamily: font.sans, fontSize: 12, color: color.fgMuted }}>Saved</span>
+          <span style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}>
+            Saved
+          </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/** The raised group every mailbox's quiet settings sit in (Settings grammar). */
+const groupSurface = {
+  background: color.card,
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.xl,
+  overflow: 'hidden',
+} as const;
+
+/** One 56px settings row: label left, control right, inset hairline above. */
+function Row({
+  label,
+  divider = false,
+  children,
+}: {
+  label: string;
+  divider?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        minHeight: 56,
+        padding: '6px 16px',
+        boxSizing: 'border-box',
+        backgroundImage: divider
+          ? `linear-gradient(${color.lineSoft}, ${color.lineSoft})`
+          : undefined,
+        backgroundSize: 'calc(100% - 16px) 1px',
+        backgroundPosition: 'right top',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
+      <span style={{ fontFamily: font.sans, fontSize: text.md, fontWeight: 500, color: color.fg }}>
+        {label}
+      </span>
+      {children}
     </div>
   );
 }

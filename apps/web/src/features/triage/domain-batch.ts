@@ -11,6 +11,7 @@
  * composite decision through the same D226 preview → mutation path).
  */
 
+import { isRecommended } from '@declutrmail/shared/copy';
 import type { TriageDecisionRow } from './data';
 
 /** Minimum consecutive same-domain rows to offer a batch card. */
@@ -67,19 +68,27 @@ export interface DomainBatch {
   /** The FULL member run, in queue order — protected rows included. */
   rows: TriageDecisionRow[];
   /**
-   * The actionable subset (`protectionReason === null`) — the ONE
+   * The actionable subset — the ONE
    * predicate every batch surface reads: the card's count, the sheet's
    * title, the bulk preview's sender set, and the enqueue payload.
-   * D245 excludes Protected senders from bulk, so a batch is only
+   * D245 excludes Protected senders from bulk. Low-signal Later and Keep
+   * verdicts also need individual review, so a batch is only
    * constructed when this holds ≥{@link MIN_BATCH_RUN} rows — a card
    * for a set that cannot legally enter the bulk flow is never offered.
    */
   eligibleRows: TriageDecisionRow[];
 }
 
-/** The one bulk-eligibility predicate (D245 — Protected never bulks). */
+/** Bulk offers only include fresh, confident cleanup recommendations.
+ *  A Later verdict is an abstention, and Keep expresses engagement; neither
+ *  should get swept into a same-domain action because it shares a hostname. */
 export function isBatchEligible(row: TriageDecisionRow): boolean {
-  return row.protectionReason === null;
+  return (
+    row.protectionReason === null &&
+    row.stale !== true &&
+    (row.verdict === 'archive' || row.verdict === 'unsubscribe') &&
+    isRecommended(row.verdict, row.confidence)
+  );
 }
 
 /**
@@ -118,17 +127,17 @@ export function findDomainBatches(
 /**
  * Same-verdict batch (2026-07-10 founder dogfood — the "12× Unsubscribe
  * · 95%" wall): when ≥{@link MIN_BATCH_RUN} unprotected queue rows
- * share an Archive or Later recommendation, offer ONE composite
+ * share a fresh, confident Archive recommendation, offer ONE composite
  * decision for all of them — through the same D226 preview → mutation
  * → undo pipeline as the domain batch (D32's ratified exception,
  * extended from "same domain, consecutive" to "same recommendation,
  * whole queue").
  *
- * Deliberately Archive/Later only: Unsubscribe stays per-sender — its
- * execution depends on each sender's channel (RFC 8058 one-click vs
- * mailto, and mailto is user-sent by D230). Keep is a per-sender
- * policy intent. Archive is checked first (higher impact); one banner
- * at a time keeps the ritual calm.
+ * Later is the engine's ABSTENTION (new or inconclusive senders), not
+ * a recommendation to move their mail. Grouping it as "Later for all"
+ * turned a small mailbox full of uncertain transactional senders into
+ * a destructive-looking shortcut. Unsubscribe stays per-sender because
+ * execution depends on each sender's channel; Keep is a policy intent.
  *
  * Reuses the `DomainBatch` shape so the whole pendingBatch →
  * BatchActionSheet → composite-enqueue → poll path runs unchanged —
@@ -145,7 +154,7 @@ export function findVerdictBatch(
   dismissedDomains: readonly string[] = [],
 ): { batch: DomainBatch; verdict: 'archive' | 'later' } | null {
   const dismissed = new Set(dismissedDomains);
-  for (const verdict of ['archive', 'later'] as const) {
+  for (const verdict of ['archive'] as const) {
     const label = VERDICT_BATCH_LABELS[verdict];
     if (dismissed.has(label)) continue;
     const members = rows.filter((r) => r.verdict === verdict && isBatchEligible(r));

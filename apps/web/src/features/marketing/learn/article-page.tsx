@@ -1,24 +1,26 @@
 import Link from 'next/link';
+import { SenderWalkthrough } from '@/features/marketing/landing/sender-walkthrough';
+import { demoForTopic } from './journey-links';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
-import { LearnEyebrow, LearnShell } from './learn-shell';
+import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle, LearnCallout, SyntheticExample } from './types';
 
 function SyntheticPanel({ example }: { example: SyntheticExample }) {
   return (
-    <aside className="dm-learn-example" aria-label={example.label}>
-      <div className="dm-learn-example-head">
-        <div className="dm-learn-example-label">{example.label}</div>
+    <aside className="dm-read-example" aria-label={example.label}>
+      <div className="dm-read-example-head">
+        <p className="dm-read-example-label">{example.label}</p>
         <p>{example.caption}</p>
       </div>
       {example.rows.map((row) => (
-        <div className="dm-learn-example-row" key={`${row.sender}-${row.action}`}>
+        <div className="dm-read-example-row" key={`${row.sender}-${row.action}`}>
           <div>
             <strong>{row.sender}</strong>
             <small>{row.detail}</small>
           </div>
-          <div className="dm-learn-action">
-            <b>{row.action}</b>
+          <div>
+            <span className="dm-read-example-verb">{row.action}</span>
             <small>{row.result}</small>
           </div>
         </div>
@@ -28,9 +30,9 @@ function SyntheticPanel({ example }: { example: SyntheticExample }) {
 }
 
 function Callout({ callout }: { callout: LearnCallout }) {
-  const tone = callout.tone ?? 'info';
+  const tone = callout.tone === 'warning' ? ' dm-read-callout--warning' : '';
   return (
-    <aside className={`dm-learn-callout dm-learn-callout--${tone}`}>
+    <aside className={`dm-read-callout${tone}`}>
       <h3>{callout.title}</h3>
       <p>{callout.body}</p>
     </aside>
@@ -96,98 +98,113 @@ function faqJsonLd(article: LearnArticle) {
 export function ArticlePage({ article }: { article: LearnArticle }) {
   const faq = faqJsonLd(article);
   return (
-    <LearnShell>
+    <ReadingLayout
+      breadcrumb={
+        article.kind === 'How-to guide'
+          ? { href: '/how-to', label: 'Guides' }
+          : article.kind === 'Direct answer'
+            ? { href: '/answers', label: 'Answers' }
+            : { href: '/blog', label: 'Articles' }
+      }
+      title={article.title}
+      lede={article.intro}
+      meta={
+        <>
+          <span>{article.readingMinutes} minute read</span>
+          <span>
+            Updated <time dateTime={article.updatedAt}>{formatReadingDate(article.updatedAt)}</time>
+          </span>
+        </>
+      }
+      toc={article.sections.map(({ id, title }) => ({ id, label: title }))}
+      tocNarrow="hidden"
+    >
       <JsonLd data={articleJsonLd(article)} />
       {faq ? <JsonLd data={faq} /> : null}
-      <header className={`dm-learn-hero${article.example ? '' : ' dm-learn-hero--solo'}`}>
-        <div>
-          <LearnEyebrow>{article.eyebrow}</LearnEyebrow>
-          <h1 className="dm-learn-title">{article.title}</h1>
-          <p className="dm-learn-lead">{article.intro}</p>
-          <div className="dm-learn-meta">
-            <span>{article.kind}</span>
-            <span aria-hidden="true">·</span>
-            <span>{article.readingMinutes} minute read</span>
-          </div>
-        </div>
-        {article.example ? <SyntheticPanel example={article.example} /> : null}
-      </header>
 
-      <article className="dm-learn-prose">
-        {article.quickAnswer ? (
-          <section className="dm-learn-quick" aria-labelledby="quick-answer">
-            <LearnEyebrow>Short answer</LearnEyebrow>
-            <p id="quick-answer">{article.quickAnswer}</p>
-          </section>
-        ) : null}
+      {article.quickAnswer ? (
+        <section
+          className="dm-read-callout dm-read-callout--answer"
+          aria-labelledby="quick-answer-label"
+        >
+          <p className="dm-read-callout-label" id="quick-answer-label">
+            Short answer
+          </p>
+          <p id="quick-answer">{article.quickAnswer}</p>
+        </section>
+      ) : null}
 
-        {article.sections.map((section) => (
-          <section key={section.id} id={section.id}>
-            <h2>{section.title}</h2>
-            {section.paragraphs.map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
-            ))}
-            {section.bullets ? (
-              <ul>
-                {section.bullets.map((bullet) => (
-                  <li key={bullet}>{bullet}</li>
-                ))}
-              </ul>
-            ) : null}
-            {section.steps ? (
-              <ol className="dm-learn-steps">
-                {section.steps.map((step) => (
-                  <li key={step.name}>
-                    <div className="dm-learn-step-copy">
-                      <h3>{step.name}</h3>
-                      <p>{step.text}</p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
-            {section.callout ? <Callout callout={section.callout} /> : null}
-          </section>
-        ))}
+      {article.example ? <SyntheticPanel example={article.example} /> : null}
 
-        {article.sources?.length ? (
-          <section aria-labelledby="primary-sources">
-            <LearnEyebrow>Primary sources</LearnEyebrow>
-            <h2 id="primary-sources" style={{ marginTop: 12 }}>
-              Verify the native Gmail behavior
-            </h2>
-            <p>
-              Gmail controls and wording can change. These guides were checked against Google’s
-              current help documentation.
-            </p>
+      {[
+        'clean-gmail-by-sender',
+        'bulk-delete-emails-from-one-sender',
+        'gmail-storage-full',
+        'is-it-safe-to-connect-gmail-app',
+      ].includes(article.slug) ? (
+        <SenderWalkthrough id={`guide-${article.slug}`} />
+      ) : null}
+
+      {article.sections.map((section) => (
+        <section key={section.id} id={section.id}>
+          <h2>{section.title}</h2>
+          {section.paragraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
+          {section.bullets ? (
             <ul>
-              {article.sources.map((source) => (
-                <li key={source.href}>
-                  <a href={source.href} rel="noreferrer">
-                    {source.label}
-                  </a>{' '}
-                  — {source.description}
-                </li>
+              {section.bullets.map((bullet) => (
+                <li key={bullet}>{bullet}</li>
               ))}
             </ul>
-          </section>
-        ) : null}
-
-        <section aria-labelledby="continue-reading">
-          <LearnEyebrow>Continue reading</LearnEyebrow>
-          <h2 id="continue-reading" style={{ marginTop: 12 }}>
-            Make the next decision with context
-          </h2>
-          <div className="dm-learn-related">
-            {article.related.map((link) => (
-              <Link href={link.href} key={link.href}>
-                <strong>{link.label}</strong>
-                <span>{link.description}</span>
-              </Link>
-            ))}
-          </div>
+          ) : null}
+          {section.steps ? (
+            <ol className="dm-read-steps">
+              {section.steps.map((step) => (
+                <li key={step.name}>
+                  <h3>{step.name}</h3>
+                  <p>{step.text}</p>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {section.callout ? <Callout callout={section.callout} /> : null}
         </section>
-      </article>
-    </LearnShell>
+      ))}
+
+      {article.sources?.length ? (
+        <section aria-labelledby="primary-sources">
+          <h2 id="primary-sources">Verify the native Gmail behavior</h2>
+          <p>
+            Gmail controls and wording can change. These guides were checked against Google’s
+            current help documentation.
+          </p>
+          <ul>
+            {article.sources.map((source) => (
+              <li key={source.href}>
+                <a href={source.href} rel="noreferrer">
+                  {source.label}
+                </a>{' '}
+                — {source.description}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      <section aria-labelledby="continue-reading">
+        <h2 id="continue-reading">Keep reading</h2>
+        <ul className="dm-read-related">
+          {article.related.map((link) => (
+            <li key={link.href}>
+              <Link href={link.href}>{link.label}</Link>
+              <span>{link.description}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <ReadingCta demo={demoForTopic(article.slug)} />
+    </ReadingLayout>
   );
 }

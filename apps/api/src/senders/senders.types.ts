@@ -251,8 +251,9 @@ export interface SenderListRow {
    * Truthful unsubscribe lifecycle from `sender_policies.unsub_status`.
    * One-click endpoint acceptance, manual mailto progress, terminal
    * failure/uncertainty, and unavailable channels are distinct. Legacy
-   * DB values are normalized before they reach the wire. `null` means
-   * the sender has no recorded unsubscribe intent yet.
+   * DB values are normalized before they reach the wire. For an existing
+   * unsubscribe policy, `null` can also mean the intent predates outcome
+   * tracking; clients must not display it as a request in flight.
    */
   unsubStatus: UnsubExecutionStatus | null;
 }
@@ -328,6 +329,8 @@ export interface ProtectionFlags {
 export type SenderFacts = Omit<SenderListRow, 'brandMark'>;
 
 export interface SenderDetail extends SenderListRow {
+  /** Live inbound mail outside Inbox, excluding Trash, Spam, Drafts, and Chat. */
+  archivedCount: number;
   protectionFlags: ProtectionFlags;
   /**
    * Raw `mailto:` URL from the sender's List-Unsubscribe header —
@@ -613,6 +616,8 @@ export interface MailMessageRow {
   /** ISO-8601 received-at — Gmail's `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  /** Current Gmail location. Trash, spam, drafts, and sent mail are excluded. */
+  location: 'inbox' | 'archived';
   /**
    * Whole-message byte estimate from Gmail's `sizeEstimate` (D7
    * storage-allowlist amendment per ADR-0021). `null` for rows synced

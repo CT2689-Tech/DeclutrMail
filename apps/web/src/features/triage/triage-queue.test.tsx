@@ -51,22 +51,31 @@ describe('TriageQueue — wires the D245 row-strip Unprotect control for real', 
   });
 });
 
-describe('the shortcut legend tells the truth about when the keys work', () => {
+describe('the list at rest advertises no keys that do nothing', () => {
   beforeEach(() => {
     resetTriageStore();
   });
 
-  it('does not advertise live keys before a row is open', () => {
-    // The keys are bound by the EXPANDED row's action toolbar, so with the
-    // queue collapsed `K · A · U · L · D` promised five shortcuts that did
-    // nothing. A first-timer presses one, nothing happens, and the screen has
-    // taught them the app is broken.
+  it('mounts no verb toolbar — and so no K/A/U/L/D hint — before a row is open', () => {
+    // The keys are bound by the EXPANDED row's action toolbar. The list
+    // used to print a `K · A · U · L · D` legend above a collapsed queue:
+    // five shortcuts that did nothing. The legend is gone; the hints now
+    // exist only on the toolbar that binds them.
     render(
       <QueryWrapper client={createTestQueryClient()}>
         <TriageQueue rows={TRIAGE_QUEUE as readonly TriageDecisionRow[]} onAction={() => {}} />
       </QueryWrapper>,
     );
-    expect(screen.getByTitle('Open a row to use these keys')).toBeInTheDocument();
+    expect(screen.queryByRole('toolbar')).toBeNull();
     expect(screen.queryByText('K · A · U · L · D')).not.toBeInTheDocument();
+  });
+
+  it('states the queue count nowhere — the header owns the one count', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageQueue rows={TRIAGE_QUEUE as readonly TriageDecisionRow[]} onAction={() => {}} />
+      </QueryWrapper>,
+    );
+    expect(screen.queryByText(/decisions waiting/)).toBeNull();
   });
 });

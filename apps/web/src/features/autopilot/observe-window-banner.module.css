@@ -1,0 +1,40 @@
+.rule {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.copy {
+  /* Wrap the actions onto a new line before the explanation becomes a sliver. */
+  flex: 1 1 260px;
+  min-width: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.actions > a {
+  max-width: 100%;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .actions {
+    width: 100%;
+  }
+  .actions > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+  .actions > button {
+    min-height: 40px;
+  }
+}

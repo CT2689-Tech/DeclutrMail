@@ -42,12 +42,12 @@ export const undoWindowCaption =
     ? "Undo from Activity during your plan's Undo window."
     : `Undo from Activity during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window.`;
 
-const INK = '#0E1413';
-const PAPER = '#FAFAF7';
-const CARD = '#FFFFFF';
-const TEAL = '#006B5F';
-const MUTED = '#646D69';
-const LINE = 'rgba(14,20,19,0.14)';
+const INK = '#2D2630';
+const PAPER = '#F6F2EB';
+const CARD = '#FFFCF8';
+const PLUM = '#59415F';
+const MUTED = '#625A63';
+const LINE = 'rgba(45,38,48,0.14)';
 
 export default async function InboxSimulatorOpenGraphImage() {
   return new ImageResponse(
@@ -82,7 +82,7 @@ export default async function InboxSimulatorOpenGraphImage() {
           left: 0,
           right: 0,
           height: 2,
-          background: 'rgba(14,20,19,0.25)',
+          background: 'rgba(45,38,48,0.25)',
           display: 'flex',
         }}
       />
@@ -118,7 +118,7 @@ export default async function InboxSimulatorOpenGraphImage() {
             }}
           >
             <span style={{ color: INK }}>Declutr</span>
-            <span style={{ color: TEAL }}>Mail</span>
+            <span style={{ color: PLUM }}>Mail</span>
           </div>
         </div>
         <span style={{ fontSize: 24, color: MUTED, letterSpacing: 4 }}>
@@ -141,7 +141,7 @@ export default async function InboxSimulatorOpenGraphImage() {
       >
         <span>See exactly what moves</span>
         <span>
-          before <span style={{ color: TEAL, margin: '0 16px' }}>anything</span> moves.
+          before <span style={{ color: PLUM, margin: '0 16px' }}>anything</span> moves.
         </span>
       </div>
 

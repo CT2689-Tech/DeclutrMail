@@ -14,7 +14,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { parseSendersScope } from './api/senders-scope';
-import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './compose-strip';
+import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './filters';
 import { useSendersStore } from './store';
 
 interface SenderScope {
@@ -76,6 +76,7 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
     'window',
     'domain',
     'unsub_ignored',
+    'has_inbox_mail',
     'q',
     'sort',
     'direction',
@@ -101,6 +102,7 @@ function writeScope(params: URLSearchParams, scope: SenderScope): void {
   if (compose.windowDays !== null) params.set('window', String(compose.windowDays));
   if (compose.domain) params.set('domain', compose.domain);
   if (compose.unsubIgnored) params.set('unsub_ignored', 'true');
+  if (compose.hasInboxMail) params.set('has_inbox_mail', 'true');
 
   const trimmedQuery = scope.query.trim();
   if (trimmedQuery) params.set('q', trimmedQuery);

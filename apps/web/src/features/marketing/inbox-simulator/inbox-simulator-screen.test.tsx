@@ -16,7 +16,26 @@ import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { findDomainBatches } from '@/features/triage/domain-batch';
 import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
-import { syntheticInboxCount } from './synthetic-preview';
+import {
+  buildSyntheticRulePreview,
+  syntheticArchivedCount,
+  syntheticInboxCount,
+  SYNTHETIC_RULE,
+} from './synthetic-preview';
+
+/**
+ * The confirm sheet for one sender. A single-sender sheet is named by its
+ * question ("Archive 212 emails?", ADR-0042) and sits inside a region
+ * named for the sender — or, for the domain batch sheet, for the domain.
+ */
+function sheetFor(name: string): HTMLElement {
+  const byName = screen.queryByRole('dialog', { name });
+  if (byName !== null) return byName;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return within(
+    screen.getByRole('region', { name: new RegExp(`^Preview · \\w+ ${escaped}$`) }),
+  ).getByRole('dialog');
+}
 
 const STORAGE_KEY = 'dm.inbox-simulator.state.v4';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
@@ -52,7 +71,7 @@ describe('InboxSimulatorScreen', () => {
     track.mockClear();
     // Reset between tests — the deep-link test below mutates this via
     // `pushState` and jsdom's URL otherwise leaks across tests in this file.
-    window.history.pushState({}, '', '/inbox-simulator');
+    window.history.pushState({}, '', '/inbox-simulator?workspace=triage&tour=1');
   });
 
   it('has four guided steps in the documented order', () => {
@@ -67,15 +86,51 @@ describe('InboxSimulatorScreen', () => {
 
   it('identifies the sample as made up and local-only', () => {
     render(<InboxSimulatorScreen />);
-    expect(screen.getByText(/Follow four made-up examples/i)).toBeInTheDocument();
-    expect(screen.getByText('Local to this browser')).toBeInTheDocument();
+    expect(screen.getByText(/Explore Senders and a made-up Triage queue/i)).toBeInTheDocument();
+    expect(screen.getByText(/local to this browser/i)).toBeInTheDocument();
+  });
+
+  it('opens Daily Triage on the current list queue, with Focus as the alternate layout', () => {
+    window.history.pushState({}, '', '/inbox-simulator?workspace=triage');
+    render(<InboxSimulatorScreen />);
+
+    expect(screen.getByRole('heading', { name: 'Triage' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(`${TRIAGE_QUEUE.length} decisions remaining`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Groupon — expand triage detail/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByRole('heading', { name: 'Start with the biggest sweep.' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(screen.getByRole('button', { name: 'Focus' })).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('progressbar', { name: `Decision 1 of ${TRIAGE_QUEUE.length}` }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Current decision' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Skip (→)' }));
+    expect(
+      screen.getByRole('progressbar', { name: `Decision 2 of ${TRIAGE_QUEUE.length}` }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Take guided tour' }));
+    expect(screen.getByText(/Guided decision 1 of 4/i)).toBeInTheDocument();
+  });
+
+  it('offers a separate interactive Senders workspace without confusing it with Triage', () => {
+    render(<InboxSimulatorScreen />);
+    const senders = screen.getByRole('button', { name: /Senders workspace Inspector/ });
+    expect(senders).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(senders);
+    expect(senders).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('sets the Triage demo in explicit plan context', () => {
     render(<InboxSimulatorScreen />);
 
     const availability = screen.getByRole('complementary', { name: 'Plan availability' });
-    expect(availability).toHaveTextContent('Triage is included on every plan.');
+    expect(availability).toHaveTextContent('Senders and Triage are included on every plan.');
     expect(availability).toHaveTextContent(
       'Free includes 50 cleanup actions every month; paid plans are unlimited.',
     );
@@ -91,11 +146,13 @@ describe('InboxSimulatorScreen', () => {
       screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
     // The real ActionSheet (D133 Task 3) — not a hand-rolled copy — so
     // the dialog's own name is the sender, and its eyebrow names the verb.
-    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
-    expect(within(dialog).getByText(/Preview · Archive/i)).toBeInTheDocument();
+    const dialog = sheetFor(firstRow.senderName);
+    // The count lives in the question the sheet is named by (ADR-0042).
+    expect(dialog).toHaveAccessibleName(/^Archive \d[\d,]* emails?\?$/);
     expect(
       screen.getByText('What actually happened').parentElement?.parentElement,
     ).not.toHaveTextContent(/moved out of Inbox into All Mail/);
@@ -112,6 +169,7 @@ describe('InboxSimulatorScreen', () => {
       screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
     );
 
+    fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Keep \(K\)/ })[0]!);
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -127,7 +185,7 @@ describe('InboxSimulatorScreen', () => {
 
   it('restores a completed batch decision and resumes the guide at the next step', async () => {
     // A batch decision is stored as one ordinary DemoDecision per
-    // eligible row — restoring all five is what "step 1 is done" looks
+    // eligible row — restoring all four is what "step 1 is done" looks
     // like on disk, exercising `isScenarioComplete`'s batch branch.
     const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
     const amazonDecisions = amazonBatch.eligibleRows.map((row, index) => ({
@@ -151,7 +209,7 @@ describe('InboxSimulatorScreen', () => {
     // Found via browser smoke: `dismissedDomains` (the "Decide one by one"
     // choice) is never persisted, so a reload after deciding ONE amazon.com
     // sender individually used to forget the dismissal while keeping the
-    // decision — re-showing "5 senders from amazon.com" with the decided
+    // decision — re-showing "4 senders from amazon.com" with the decided
     // sender's count still folded into the aggregate total and its own
     // row gone missing from the one-by-one fallback. Restoring exactly one
     // individual decision reproduces that state without a real reload.
@@ -252,29 +310,35 @@ describe('InboxSimulatorScreen', () => {
     );
   });
 
-  it('offers the amazon.com batch, excluding the protected sender from the count', () => {
+  it('offers the amazon.com batch, excluding protected and low-signal senders', () => {
     render(<InboxSimulatorScreen />);
-    expect(screen.getByText(/6 senders from amazon\.com/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Archive all 5/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/6 senders share amazon\.com\. 4 can join this batch/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive all 4/i })).toBeInTheDocument();
   });
 
   it('confirms the amazon.com batch through the mandatory preview, then continues into the one-way step', () => {
     render(<InboxSimulatorScreen />);
 
     expect(
-      screen.getByRole('heading', { name: 'One decision covers thousands of messages.' }),
+      screen.getByRole('heading', { name: 'Review a group in one decision.' }),
     ).toBeInTheDocument();
 
-    // The engine visibly disagreeing with itself, and the visitor
-    // overruling all of it with one verb (D226-mandatory preview first).
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
-    const sheet = screen.getByRole('dialog', { name: 'amazon.com' });
-    expect(within(sheet).getByText(/Archive all inbox email from 5 senders/i)).toBeInTheDocument();
-    // Protection shown, not claimed: the sixth sender is named as skipped,
-    // never silently folded into the aggregated total (D245).
-    expect(within(sheet).getByText(/1 protected sender will be skipped/i)).toBeInTheDocument();
+    // The visitor checks eligibility and the mandatory preview before
+    // moving any email in the group.
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
+    const sheet = sheetFor('amazon.com');
+    expect(
+      within(sheet).getByRole('heading', { name: /^Archive [\d,]+ emails from 4 senders\?$/ }),
+    ).toBeInTheDocument();
+    // The real product previews only the eligible IDs selected by the
+    // batch card. Protected and low-signal senders are excluded before
+    // the preview, rather than counted as mail that might move.
+    expect(within(sheet).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(sheet).queryByText('Amazon Orders')).toBeNull();
 
-    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive all/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
 
@@ -284,16 +348,13 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+      within(sheetFor('LinkedIn')).getByRole('button', {
         name: /^Unsubscribe/,
       }),
     );
 
-    // Step 3 exists and is reachable; nothing can complete it yet — the
-    // Autopilot rule preview is Plan 4 Task 4, not this change.
-    expect(
-      screen.getByRole('heading', { name: 'A one-time decision does not repeat itself.' }),
-    ).toBeInTheDocument();
+    // Step 3 previews an existing preset, independently of this decision.
+    expect(screen.getByRole('heading', { name: 'A preset can keep watch.' })).toBeInTheDocument();
     expect(screen.getByText('2 of 4 decisions complete')).toBeInTheDocument();
   });
 
@@ -306,6 +367,7 @@ describe('InboxSimulatorScreen', () => {
     const header = screen.getByRole('button', {
       name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
     });
+    fireEvent.click(header);
     fireEvent.click(
       within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
     );
@@ -332,6 +394,7 @@ describe('InboxSimulatorScreen', () => {
     const header = screen.getByRole('button', {
       name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
     });
+    fireEvent.click(header);
     fireEvent.click(
       within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
     );
@@ -342,20 +405,27 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-checked', 'true');
 
-    const dialog = screen.getByRole('dialog', { name: unsubscribableRow.senderName });
+    const dialog = sheetFor(unsubscribableRow.senderName);
     fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
 
     const expectedCount = syntheticInboxCount(unsubscribableRow);
     expect(
       screen.getByText(new RegExp(`${expectedCount} sample messages already in the inbox`, 'i')),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo archived mail' }));
+    expect(
+      screen.getByText(
+        'Sample unsubscribe request recorded. A delivered request cannot be recalled.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo archived mail' })).not.toBeInTheDocument();
 
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!).decisions).toContainEqual(
         expect.objectContaining({
           rowId: unsubscribableRow.id,
           verb: 'Unsubscribe',
-          affectedCount: expectedCount,
+          affectedCount: 0,
         }),
       ),
     );
@@ -371,24 +441,41 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(
       screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
     );
+    fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
-    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
+    const dialog = sheetFor(firstRow.senderName);
     expect(within(dialog).getByRole('button', { name: /^Later/ })).toBeEnabled();
+  });
+
+  it('shows the real Triage Delete reach choice with matching sample counts', () => {
+    render(<InboxSimulatorScreen />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Go to guided decision 4: Free the space' }),
+    );
+    const groupon = TRIAGE_QUEUE.find((row) => row.id === 't-groupon')!;
+    fireEvent.click(screen.getByRole('button', { name: 'Groupon — expand triage detail' }));
+    fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
+    const dialog = sheetFor('Groupon');
+    const total = syntheticInboxCount(groupon) + syntheticArchivedCount(groupon);
+    fireEvent.click(
+      within(dialog).getByRole('radio', { name: new RegExp(`Inbox \\+ archived.*${total}`) }),
+    );
+    expect(dialog).toHaveAccessibleName(new RegExp(`Delete ${total} emails`));
   });
 
   /** Archives the amazon.com batch (step 1) then unsubscribes LinkedIn
    *  (step 2) — the exact journey the "confirms the amazon.com batch…"
    *  test above already exercises — to land on step 3, the rule step. */
   function reachRuleStep() {
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
-        name: /^Archive all/,
+      within(sheetFor('amazon.com')).getByRole('button', {
+        name: /^Archive( [\d,]+)?$/,
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+      within(sheetFor('LinkedIn')).getByRole('button', {
         name: /^Unsubscribe/,
       }),
     );
@@ -398,10 +485,10 @@ describe('InboxSimulatorScreen', () => {
    *  then deletes Groupon (step 4) — landing on `DemoCompletion`. */
   function finishFromRuleStep() {
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
     fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'Groupon' })).getByRole('button', {
+      within(sheetFor('Groupon')).getByRole('button', {
         name: /^Delete/,
       }),
     );
@@ -415,33 +502,56 @@ describe('InboxSimulatorScreen', () => {
     finishFromRuleStep();
   }
 
-  it('offers both turning the rule on and watching first, and names Plus', () => {
+  it('offers a review-only rule and names Plus', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
-    expect(
-      screen.getByRole('heading', { name: 'A one-time decision does not repeat itself.' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'A preset can keep watch.' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    // Real ActivateRuleModal copy — "Turn on and run" is the actual
-    // confirmLabel for an entitled enable (activate-rule-modal.tsx),
-    // not the brief's illustrative "Turn it on".
-    expect(screen.getByRole('button', { name: /Turn on and run/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Watch first/i })).toBeInTheDocument();
+    // Low-engagement signals can include important account mail, so this
+    // preset never offers an unattended acting path.
+    expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
+    expect(screen.getByText(/Nothing moves until you approve each match/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
     expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
   });
 
-  it('draws the rule preview from the senders step 1 just archived, and states Protected is skipped', () => {
+  it('previews only Inbox mail still actionable after the earlier batch', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
-    for (const row of amazonBatch.eligibleRows) {
+    const archivedBatch = findDomainBatches(TRIAGE_QUEUE, []).find(
+      (batch) => batch.domain === 'amazon.com',
+    )!;
+    const decisions = archivedBatch.eligibleRows.map((row) => ({
+      rowId: row.id,
+      affectedCount: syntheticInboxCount(row),
+    }));
+    const preview = buildSyntheticRulePreview(decisions);
+    expect(preview.status).toBe('ready');
+    if (preview.status !== 'ready') return;
+    const eligible = TRIAGE_QUEUE.filter(
+      (row) =>
+        row.verdict === 'archive' &&
+        row.confidence > SYNTHETIC_RULE.confidenceThreshold! &&
+        row.protectionReason === null,
+    );
+    expect(preview.result.wouldMatchCount).toBe(eligible.length);
+    const stillActionable = eligible.filter((row) => !decisions.some((d) => d.rowId === row.id));
+    expect(preview.result.actionableSenderCount).toBe(stillActionable.length);
+    expect(preview.result.actionableMessageCount).toBe(
+      stillActionable.reduce((sum, row) => sum + syntheticInboxCount(row), 0),
+    );
+    expect(preview.result.sample.map((row) => row.senderName)).toEqual(
+      stillActionable.map((row) => row.senderName),
+    );
+    for (const row of stillActionable) {
       expect(screen.getByText(row.senderName)).toBeInTheDocument();
     }
-    expect(screen.getByText(/Protected.*(are|is) always skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(`${stillActionable.length}`)).toBeInTheDocument();
+    expect(screen.getByText(/Protected senders? (are|is) skipped/i)).toBeInTheDocument();
   });
 
   it('turning the rule on advances the guide to step 4', () => {
@@ -449,7 +559,7 @@ describe('InboxSimulatorScreen', () => {
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -458,12 +568,13 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('watching first is also a complete decision for the step, not a dead end', () => {
+  it('turning on the review-only rule completes the step without an acting option', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Watch first/i }));
+    expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -476,12 +587,12 @@ describe('InboxSimulatorScreen', () => {
     const { unmount } = render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
         version: 4,
-        ruleDecision: 'active',
+        ruleDecision: 'observe',
       }),
     );
     unmount();
@@ -529,16 +640,16 @@ describe('InboxSimulatorScreen', () => {
       const t0 = new Date('2026-08-27T00:00:00.000Z').getTime();
 
       function completeGuideWithGap(gapMs: number) {
-        fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+        fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
         fireEvent.click(
-          within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
-            name: /^Archive all/,
+          within(sheetFor('amazon.com')).getByRole('button', {
+            name: /^Archive( [\d,]+)?$/,
           }),
         );
         vi.setSystemTime(Date.now() + gapMs);
         fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
         fireEvent.click(
-          within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+          within(sheetFor('LinkedIn')).getByRole('button', {
             name: /^Unsubscribe/,
           }),
         );
@@ -553,6 +664,7 @@ describe('InboxSimulatorScreen', () => {
       // Replay with a DIFFERENT gap through the completion screen's own
       // reset — a hardcoded string would show the same "12s" again.
       fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Take guided tour' }));
       vi.setSystemTime(t0);
       completeGuideWithGap(75_000);
       expect(screen.getByText(/Done in 1m 15s, start to finish\./)).toBeInTheDocument();
@@ -584,7 +696,7 @@ describe('InboxSimulatorScreen', () => {
   it('tracks the simulator OAuth exit through the shared public CTA event', () => {
     render(<InboxSimulatorScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /^Review my Gmail senders/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^Start free/ }));
 
     expect(track).toHaveBeenCalledWith('landing_cta_clicked', {
       cta: 'connect_gmail',
@@ -618,7 +730,7 @@ describe('InboxSimulatorScreen', () => {
   it('uses one label for the connect action', () => {
     render(<InboxSimulatorScreen />);
     expect(screen.queryByText(/^Connect Gmail/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Review my Gmail senders/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Start free/).length).toBeGreaterThan(0);
   });
 
   it('names the tier that grants Autopilot, derived from the manifest', () => {
@@ -639,33 +751,31 @@ describe('InboxSimulatorScreen', () => {
     render(<InboxSimulatorScreen />);
 
     // Step 1 (the Amazon batch) is on screen and undecided.
-    expect(screen.getByText('One decision covers thousands of messages.')).toBeInTheDocument();
+    expect(screen.getByText('Review a group in one decision.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 3: Make it stick' }));
 
     // Step 3's card is now on screen, and looking ahead did not fire
     // step 1's action — the progress count stays 0.
-    expect(screen.getByText('A one-time decision does not repeat itself.')).toBeInTheDocument();
+    expect(screen.getByText('A preset can keep watch.')).toBeInTheDocument();
     expect(screen.getByText('0 of 4 decisions complete')).toBeInTheDocument();
-    // Copy reads correctly for "step 1 not decided yet" — never claims a
-    // past action that hasn't happened.
-    expect(screen.getByText(/senders you archive get archived automatically/i)).toBeInTheDocument();
+    // The preset never claims the manual batch created a custom rule.
+    expect(screen.getByText(/independently of the manual batch/i)).toBeInTheDocument();
     expect(screen.queryByText(/senders you just archived/i)).not.toBeInTheDocument();
 
     // Jump back and actually decide step 1.
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 1: Scale' }));
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
-        name: /^Archive all/,
+      within(sheetFor('amazon.com')).getByRole('button', {
+        name: /^Archive( [\d,]+)?$/,
       }),
     );
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
 
-    // Jump forward to step 3 again — the copy now reflects the real,
-    // completed decision instead of the generic phrasing.
+    // Jump forward to step 3 again — it remains an independent preset.
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 3: Make it stick' }));
-    expect(screen.getByText(/senders you just archived/i)).toBeInTheDocument();
+    expect(screen.getByText(/independently of the manual batch/i)).toBeInTheDocument();
   });
 
   it('opens directly on a deep-linked step', async () => {

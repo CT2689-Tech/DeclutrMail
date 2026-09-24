@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
@@ -13,8 +13,9 @@ import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
+import { OnboardingPhase } from './onboarding-phase';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Step 5 — First Triage (D112).
@@ -103,7 +104,7 @@ export function StepFirstTriage({
   if (firstTriage.isLoading || !firstTriage.data) {
     return (
       <PanelShell corner={corner}>
-        <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
+        <p role="status" style={{ color: color.fgMuted, fontSize: text.md }}>
           Finding senders worth reviewing…
         </p>
       </PanelShell>
@@ -116,30 +117,44 @@ export function StepFirstTriage({
   if (done) {
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
+        {/* Title + one sentence, no moved-email number: the confirmed
+            per-action counts land on TriageScreen's status poll, which
+            unmounts with this panel, and an Undo from the tray below
+            would not take them back out — so no total here is provable. */}
         <h1
           style={{
-            fontFamily: font.display,
-            fontSize: 30,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            margin: '6px 0 4px',
+            fontFamily: font.sans,
+            fontSize: text['3xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.12,
+            color: color.fg,
+            margin: '0 0 12px',
           }}
         >
           {meta.pinned === 0 ? 'No decisions waiting.' : 'You’re done for today.'}
         </h1>
-        <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
+        <p
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '0 auto 28px',
+            maxWidth: 460,
+          }}
+        >
           {meta.pinned === 0
             ? "We didn't find enough repeated email to review here."
-            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later and Delete can be undone from Activity.`}
+            : `${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'} reviewed — Archive, Later and Delete can be undone from Activity.`}
         </p>
         <Button
           tone="primary"
+          size="xl"
           onClick={() => finish(meta.pinned === 0 ? 'empty' : 'completed')}
           disabled={completing}
-          style={{ minWidth: 220 }}
+          style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Continue to Senders →'}
+          {completing ? 'Finishing…' : 'Continue to Senders'}
         </Button>
         {/* The undo tray stays reachable on the completion panel — the
             decisions just made must remain reversible (D35/D58). */}
@@ -171,10 +186,31 @@ export function StepFirstTriage({
         }}
       >
         <div>
-          <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            {GOAL_FRAMING[goal]} Review {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}.
-            Each one shows what changes before you confirm.
+          <OnboardingPhase phase="review" />
+          <h1
+            style={{
+              margin: 0,
+              fontSize: text['2xl'],
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
+            }}
+          >
+            Review senders{' '}
+            <span
+              style={{
+                fontSize: text.md,
+                fontWeight: 500,
+                letterSpacing: 0,
+                color: color.fgMuted,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}
+            </span>
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: text.md, color: color.fgMuted, maxWidth: 560 }}>
+            {GOAL_FRAMING[goal]}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -222,7 +258,10 @@ function PanelShell({ corner, children }: { corner?: ReactNode; children: ReactN
       }}
     >
       {corner && <div style={{ position: 'absolute', top: 20, right: 24 }}>{corner}</div>}
-      <div style={{ width: '100%', maxWidth: 560 }}>{children}</div>
+      <div style={{ width: '100%', maxWidth: 560 }}>
+        <OnboardingPhase phase="review" />
+        {children}
+      </div>
     </main>
   );
 }

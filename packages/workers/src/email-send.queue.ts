@@ -1,6 +1,8 @@
 import type { JobsOptions, Queue } from 'bullmq';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { WORKER_POLICIES } from './worker-policies.js';
+import { COMMERCIAL_KINDS } from './email-send.worker.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
 /**
@@ -167,6 +169,13 @@ export async function enqueueEmailSend(
   data: EmailSendJobData,
   delayMs = 0,
 ): Promise<'added' | 'noop'> {
+  // Commercial mail is disabled at launch while no business postal
+  // address is configured. Do not schedule a job that can only be skipped;
+  // the consumer repeats this check for any already-queued work.
+  if (COMMERCIAL_KINDS.has(data.kind) && !hasPostalAddress()) {
+    return 'noop';
+  }
+
   const existing = await queue.getJob(data.idempotencyKey);
   if (existing) {
     const state = await existing.getState();

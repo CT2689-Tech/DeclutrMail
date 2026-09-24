@@ -15,7 +15,7 @@ import {
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ActivityReadService } from './activity.read-service.js';
 
@@ -290,6 +290,78 @@ describe('ActivityReadService', () => {
   });
 
   describe('action execution projection', () => {
+    it('filters before limiting hydration and counts failures beyond the current page', async () => {
+      const matching = 'bounded-target';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        matching,
+        'target@example.com',
+        'Target',
+      );
+      const otherId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'other',
+        'other@example.com',
+        'Other',
+      );
+      const ids: string[] = [];
+      for (let i = 0; i < 6; i++)
+        ids.push(
+          await seedExecutionAttempt(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderId,
+            senderKey: matching,
+            status: 'failed',
+            createdAt: new Date(NOW_MS - 60_000),
+          }),
+        );
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId: otherId,
+        senderKey: 'other',
+        status: 'failed',
+        createdAt: new Date(NOW_MS),
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: matching,
+        status: 'queued',
+        createdAt: new Date(NOW_MS),
+      });
+      const hydrate = vi.spyOn(
+        svc as unknown as {
+          hydrateCurrentExecutionLineages(id: string, attempts: unknown[]): Promise<unknown>;
+        },
+        'hydrateCurrentExecutionLineages',
+      );
+      const params = {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d' as const,
+        source: null,
+        cursor: null,
+        limit: 2,
+        nowMs: NOW_MS,
+        senderQuery: 'target',
+        outcomes: ['failed' as const],
+      };
+      const first = await svc.listActivity(params);
+      expect(first.rows.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(0, 3));
+      expect(first.stats.needsAttention).toBe(6);
+      expect(first.allTimeStats.needsAttention).toBe(6);
+      expect(hydrate.mock.calls[0]![1]).toHaveLength(3);
+      const last = first.rows[1]!;
+      const second = await svc.listActivity({
+        ...params,
+        cursor: { occurredAt: new Date(last.occurredAt), id: last.id },
+      });
+      expect(second.rows.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(2, 5));
+      expect(second.stats.needsAttention).toBe(6);
+      expect(hydrate.mock.calls[1]![1]).toHaveLength(3);
+    });
+
     it('merges an unresolved root action into chronological Activity with current sender facts', async () => {
       const senderKey = 'execution-sender-a';
       const senderId = await seedSender(
@@ -1011,6 +1083,107 @@ describe('ActivityReadService', () => {
         nowMs: Date.now(),
       });
       expect(after.stats.noisePreventedPerMonth).toBe(3);
+    });
+
+    it('counts sender volume once across repeated qualifying actions', async () => {
+      const now = Date.now();
+      const senderKey = 'repeated-deflection';
+      await seedSender(db, mailboxA.mailboxAccountId, senderKey, 'repeat@example.com', 'Repeated');
+      await db.insert(mailMessages).values(
+        Array.from({ length: 10 }, (_, i) => ({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          providerMessageId: `repeated-${i}`,
+          providerThreadId: `repeated-${i}`,
+          senderKey,
+          internalDate: new Date(now - (i === 9 ? 120 : 1) * ONE_DAY_MS),
+          labelIds: ['INBOX'],
+          isUnread: true,
+        })),
+      );
+      for (const action of ['archive', 'unsubscribe', 'later'] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(now),
+          source: 'manual',
+          action,
+          senderKey,
+        });
+      }
+      const result = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: now,
+        senderQuery: 'repeat',
+      });
+      expect(result.stats).toMatchObject({
+        archived: 1,
+        unsubscribed: 1,
+        later: 1,
+        noisePreventedPerMonth: 3,
+      });
+      expect(result.allTimeStats.noisePreventedPerMonth).toBe(3);
+    });
+
+    it('starts all three statistics reads before the grouped read completes', async () => {
+      let release!: (rows: { action: string; n: number }[]) => void;
+      const grouped = new Promise<{ action: string; n: number }[]>((resolve) => {
+        release = resolve;
+      });
+      const impactRead = vi.fn(() => Promise.resolve([{ deflectedSenders: 1, last90Total: 9 }]));
+      const select = vi
+        .fn()
+        .mockReturnValueOnce({ from: () => ({ where: () => ({ groupBy: () => grouped }) }) })
+        .mockReturnValueOnce({ from: () => ({ leftJoin: impactRead }) });
+      const fakeDb = {
+        select,
+        selectDistinct: () => ({
+          from: () => ({ where: () => ({ as: () => ({ senderKey: activityLog.senderKey }) }) }),
+        }),
+      };
+      const service = new ActivityReadService(fakeDb as never);
+      const internal = service as unknown as {
+        countFailedExecutions(args: unknown): Promise<number>;
+        aggregateStats(args: {
+          mailboxAccountId: string;
+          lowerBound: null;
+          upperBound: null;
+          senderQuery: string;
+        }): Promise<{ needsAttention: number; noisePreventedPerMonth: number | null }>;
+      };
+      const failures = vi.spyOn(internal, 'countFailedExecutions').mockResolvedValue(2);
+      const pending = internal.aggregateStats({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        lowerBound: null,
+        upperBound: null,
+        senderQuery: '',
+      });
+      try {
+        expect(impactRead).toHaveBeenCalledOnce();
+        expect(failures).toHaveBeenCalledOnce();
+      } finally {
+        release([{ action: 'archive', n: 1 }]);
+      }
+      expect(await pending).toMatchObject({ needsAttention: 2, noisePreventedPerMonth: 3 });
+    });
+
+    it('reuses statistics when the selected window and all-time bounds are identical', async () => {
+      const statsRead = vi.spyOn(
+        svc as unknown as { aggregateStats(args: unknown): Promise<unknown> },
+        'aggregateStats',
+      );
+      const result = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: 'all',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(statsRead).toHaveBeenCalledOnce();
+      expect(result.stats).toEqual(result.allTimeStats);
     });
 
     it('excludes a reverted row from the live byVerb tiles AND noisePreventedPerMonth (QA-undo-20260828-01)', async () => {
@@ -2330,6 +2503,7 @@ describe('ActivityReadService', () => {
         occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
         source: 'manual',
         action: 'archive',
+        affectedCount: 50,
         senderKey: 'sk-reverted',
         revertedAt: new Date(NOW_MS - 30 * 60 * 1000),
       });
@@ -2338,6 +2512,7 @@ describe('ActivityReadService', () => {
         occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
         source: 'manual',
         action: 'archive',
+        affectedCount: 4,
         senderKey: 'sk-standing',
       });
 
@@ -2347,6 +2522,7 @@ describe('ActivityReadService', () => {
         nowMs: NOW_MS,
       });
       expect(summary.byVerb.archive).toBe(1);
+      expect(summary.emailsByVerb.archive).toBe(4);
       expect(summary.decidedSenders).toBe(1);
     });
 
@@ -2386,6 +2562,13 @@ describe('ActivityReadService', () => {
       });
       expect(summary.byVerb).toEqual({ keep: 1, archive: 1, unsubscribe: 1, later: 1, delete: 1 });
       expect(summary.emailsHandled).toBe(25);
+      expect(summary.emailsByVerb).toEqual({
+        keep: 0,
+        archive: 12,
+        unsubscribe: 3,
+        later: 4,
+        delete: 6,
+      });
       expect(summary.decidedSenders).toBe(5);
       // `since` = earliest CANONICAL row (-5d delete), not the -20d
       // followup-dismiss row.
@@ -2512,6 +2695,7 @@ describe('ActivityReadService', () => {
         since: null,
         decidedSenders: 0,
         byVerb: { keep: 0, archive: 0, unsubscribe: 0, later: 0, delete: 0 },
+        emailsByVerb: { keep: 0, archive: 0, unsubscribe: 0, later: 0, delete: 0 },
         emailsHandled: 0,
         undoCount: 0,
       });

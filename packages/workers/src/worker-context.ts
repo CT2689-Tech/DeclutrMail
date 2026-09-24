@@ -11,6 +11,8 @@ import type { WorkerPolicy } from './worker-policies.js';
  * initial-sync path needs.
  */
 export interface WorkerContext {
+  /** Deadline cancellation; stop scheduling work and unwind before retry. */
+  signal?: AbortSignal;
   /** BullMQ job id. For `perMailboxPolicy` jobs this is the mailbox id. */
   jobId: string;
   /** Stable worker name — used in structured logs + failure capture. */

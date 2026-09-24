@@ -17,6 +17,7 @@ const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 /** The request init Gmail calls are issued with (the fields we assert on). */
 interface FetchInit {
+  signal?: AbortSignal;
   method?: string;
   headers?: Record<string, string>;
   body?: string;
@@ -91,6 +92,29 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     return JSON.parse(call[1].body ?? '{}') as Record<string, unknown>;
   }
 
+  it('does not fetch after a read is cancelled during quota acquisition', async () => {
+    const controller = new AbortController();
+    acquireSpy.mockImplementation(async () => {
+      controller.abort(new Error('stop'));
+    });
+    const client = new GmailClientService(oauth, limiter);
+    await expect(client.getProfile(controller.signal)).rejects.toThrow('stop');
+    expect(acquireSpy).toHaveBeenCalledWith(1, controller.signal);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts an in-flight Gmail read through the supplied signal', async () => {
+    const controller = new AbortController();
+    fetchMock.mockImplementation(async (_url, init) => {
+      controller.abort(new Error('stop'));
+      expect(init.signal?.aborted).toBe(true);
+      init.signal?.throwIfAborted();
+      return jsonOk({});
+    });
+    const client = new GmailClientService(oauth, limiter);
+    await expect(client.getMessageMetadata('fixture', controller.signal)).rejects.toThrow('stop');
+  });
+
   describe('modifyLabels', () => {
     it('POSTs the add/remove label change to /messages/:id/modify', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['STARRED'] }));
@@ -139,7 +163,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(acquireSpy).toHaveBeenCalledTimes(1);
-      expect(acquireSpy).toHaveBeenCalledWith(5);
+      expect(acquireSpy).toHaveBeenCalledWith(50);
       const [url, init] = fetchMock.mock.calls[0]!;
       expect(url).toBe(`${API}/messages/batchModify`);
       expect(init.method).toBe('POST');
@@ -193,6 +217,36 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       expect(fetchMock).not.toHaveBeenCalled();
       expect(acquireSpy).not.toHaveBeenCalled();
     });
+  });
+
+  it('reserves each Gmail method’s actual quota cost before making its request', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonOk({ messages: [] }))
+      .mockResolvedValueOnce(jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }))
+      .mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['INBOX'] }))
+      .mockResolvedValueOnce(jsonOk({ historyId: '123' }))
+      .mockResolvedValueOnce(jsonOk({ historyId: '124' }))
+      .mockResolvedValueOnce(jsonOk({ labels: [] }))
+      .mockResolvedValueOnce(jsonOk({ labels: [] }))
+      .mockResolvedValueOnce(jsonOk({ id: 'Label_1' }))
+      .mockResolvedValueOnce(jsonOk({ historyId: '125', expiration: '1900000000000' }))
+      .mockResolvedValueOnce(jsonOk({}));
+    const client = new GmailClientService(oauth, limiter);
+
+    await client.listMessageIds();
+    await client.getMessageMetadata('m1');
+    await client.getMessageLabelIds('m1');
+    await client.getProfile();
+    await client.listHistory('123');
+    await client.listLabels();
+    await client.ensureLabelId('DeclutrMail/Test');
+    await client.watch('projects/test/topics/gmail');
+    await client.stopWatch();
+
+    expect(acquireSpy.mock.calls.map(([units]) => units)).toEqual([
+      5, 20, 20, 1, 2, 1, 1, 5, 100, 50,
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
   });
 
   describe('getMessageLabelIds', () => {
@@ -359,7 +413,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       expect(url).toBe(`${API}/labels`);
       // Read-only: this must never create or modify a label.
       expect(init?.method).not.toBe('POST');
-      expect(acquireSpy).toHaveBeenCalledWith(5);
+      expect(acquireSpy).toHaveBeenCalledWith(1);
     });
 
     it('listLabels drops a half-formed entry rather than storing a blank name', async () => {
@@ -411,7 +465,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
       expect(id).toBe('Label_42');
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(acquireSpy).toHaveBeenCalledWith(5);
+      expect(acquireSpy).toHaveBeenCalledWith(1);
       const [url] = fetchMock.mock.calls[0]!;
       expect(url).toBe(`${API}/labels`);
     });

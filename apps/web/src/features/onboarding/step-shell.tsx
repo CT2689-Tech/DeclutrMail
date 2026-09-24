@@ -1,26 +1,31 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { Eyebrow, tokens } from '@declutrmail/shared';
+import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
 
-const { color, font } = tokens;
+import type { ReactNode } from 'react';
+import { OnboardingPhase, type OnboardingPhaseName } from './onboarding-phase';
+import { tokens } from '@declutrmail/shared';
+
+const { color, font, text } = tokens;
 
 /**
  * Shared chrome for the onboarding steps that are NOT the sync gate
  * (D106). Mirrors the sync gate's centered single-column shell so the
- * five steps read as one flow. The gate keeps its own internal shell
+ * five steps read as one flow: a title, at most one sentence, the
+ * control. The gate keeps its own internal shell
  * (untouched — D109).
  */
 export function StepShell({
-  eyebrow,
   title,
+  phase,
   sub,
   maxWidth = 520,
   corner,
   children,
 }: {
-  eyebrow: string;
   title: string;
+  phase: OnboardingPhaseName;
+  /** At most one sentence. */
   sub?: string;
   maxWidth?: number;
   /** D106 — the top-right skip affordance slot. */
@@ -36,7 +41,7 @@ export function StepShell({
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '40px 24px',
+        padding: '56px 20px',
         background: color.bg,
         fontFamily: font.sans,
         position: 'relative',
@@ -46,26 +51,29 @@ export function StepShell({
       <div
         style={{
           width: '100%',
-          maxWidth,
+          maxWidth: maxWidth + 48,
+          padding: 'clamp(24px, 4vw, 40px)',
+          background: color.card,
+          border: `1px solid ${color.border}`,
+          borderRadius: 12,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}
       >
-        <Eyebrow>{eyebrow}</Eyebrow>
-        <h1
-          style={{
-            fontFamily: font.display,
-            fontSize: 30,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            margin: '6px 0 4px',
-          }}
-        >
-          {title}
-        </h1>
+        <OnboardingPhase phase={phase} />
+        <EditorialKicker>A clearer inbox starts here</EditorialKicker>
+        <h1 style={{ ...editorialTitleStyle, margin: '20px 0 14px' }}>{title}</h1>
         {sub && (
-          <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
+          <p
+            style={{
+              color: color.fgMuted,
+              fontSize: text.lg,
+              lineHeight: 1.45,
+              margin: '0 0 28px',
+              maxWidth: 460,
+            }}
+          >
             {sub}
           </p>
         )}

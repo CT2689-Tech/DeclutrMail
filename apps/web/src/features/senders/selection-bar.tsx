@@ -19,7 +19,7 @@ import {
   type Sender,
 } from './data';
 
-const { color, font } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /** The bulk verbs the bar offers (D52 + ADR-0019 K/A/U/L/D order). */
 export type SelectionBarVerb = Extract<
@@ -82,7 +82,7 @@ export function SelectionBar({
         alignItems: 'center',
         gap: 8,
         color: color.fgInverseSoft,
-        fontSize: 12,
+        fontSize: text.sm,
       }}
     >
       Multi-sender actions require {multiSenderPlanName()}.
@@ -106,7 +106,10 @@ export function SelectionBar({
   const allProtected = senders.every(isStandingProtected);
   const protectedLockNote = (dark: boolean) =>
     allProtected ? (
-      <span role="note" style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: 12 }}>
+      <span
+        role="note"
+        style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: text.sm }}
+      >
         {senders.length === 1
           ? `${senders[0]!.name} is protected — unprotect it first`
           : `All ${senders.length} are protected — unprotect to include them`}
@@ -132,10 +135,14 @@ export function SelectionBar({
     // visible instead of reading like a different count of the same
     // thing.
     const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
+    const exclusionReason =
+      verb === 'Unsubscribe'
+        ? 'protected senders and senders without an unsubscribe option are excluded'
+        : 'protected senders are excluded from bulk actions';
     const unitTitle =
       n === senders.length
         ? `${label} ${n} sender${n === 1 ? '' : 's'}`
-        : `${label} ${n} of ${senders.length} selected senders (protected senders are excluded from bulk actions)`;
+        : `${label} ${n} of ${senders.length} selected senders (${exclusionReason})`;
     return (
       <button
         key={verb}
@@ -160,17 +167,23 @@ export function SelectionBar({
           width: stretch ? '100%' : undefined,
           background: danger ? color.danger : primary ? color.amber : color.lineInverse,
           color: color.fgInverse,
-          border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
-          borderRadius: stretch ? 10 : 7,
+          border: 'none',
+          borderRadius: radius.pill,
           fontFamily: font.sans,
-          fontSize: stretch ? 14 : 12.5,
+          fontSize: stretch ? text.md : text.sm,
           fontWeight: 600,
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.4 : 1,
         }}
       >
         {label}
-        <span style={{ fontFamily: font.mono, fontSize: stretch ? 12 : 11, opacity: 0.8 }}>
+        <span
+          style={{
+            fontSize: stretch ? text.sm : text.xs,
+            fontVariantNumeric: 'tabular-nums',
+            opacity: 0.8,
+          }}
+        >
           {countLabel}
         </span>
       </button>
@@ -186,30 +199,28 @@ export function SelectionBar({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <strong
             style={{
-              fontFamily: font.mono,
-              fontSize: 16,
-              fontWeight: 700,
+              fontSize: text.lg,
+              fontWeight: 600,
               color: color.fg,
               fontVariantNumeric: 'tabular-nums',
             }}
           >
             {senders.length}
           </strong>
-          <span style={{ fontSize: 13.5, color: color.fgSoft, flex: 1 }}>
+          <span style={{ fontSize: text.base, color: color.fgSoft, flex: 1 }}>
             sender{senders.length === 1 ? '' : 's'} selected
           </span>
           <button
             onClick={onClear}
             style={{
-              background: 'transparent',
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
-              padding: '6px 12px',
+              background: color.fill,
+              border: 'none',
+              borderRadius: radius.pill,
+              height: 32,
+              padding: '0 14px',
               color: color.fgSoft,
-              fontFamily: font.mono,
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              fontFamily: font.sans,
+              fontSize: text.sm,
               cursor: 'pointer',
             }}
           >
@@ -240,10 +251,10 @@ export function SelectionBar({
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        padding: '10px 12px 10px 18px',
+        padding: '8px 8px 8px 22px',
         background: color.fg,
-        borderRadius: 12,
-        boxShadow: '0 14px 34px -10px rgba(0,0,0,0.45)',
+        borderRadius: radius.pill,
+        boxShadow: shadow.pop,
       }}
     >
       <span
@@ -251,15 +262,14 @@ export function SelectionBar({
       >
         <strong
           style={{
-            fontFamily: font.mono,
-            fontSize: 13,
-            fontWeight: 700,
+            fontSize: text.base,
+            fontWeight: 600,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
           {senders.length}
         </strong>
-        <span style={{ fontSize: 12.5, color: color.fgInverseSoft }}>
+        <span style={{ fontSize: text.sm, color: color.fgInverseSoft }}>
           sender{senders.length === 1 ? '' : 's'} selected
         </span>
         <button
@@ -268,10 +278,8 @@ export function SelectionBar({
             background: 'transparent',
             border: 'none',
             color: color.fgInverseMuted,
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
+            fontFamily: font.sans,
+            fontSize: text.sm,
             cursor: 'pointer',
           }}
         >

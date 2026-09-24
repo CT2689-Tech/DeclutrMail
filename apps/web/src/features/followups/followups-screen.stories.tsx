@@ -35,7 +35,7 @@ type Story<C extends (props: never) => unknown> = {
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
-const NOW = new Date('2026-05-25T08:00:00Z').getTime();
+const NOW = Date.now();
 
 function isoDaysAgo(days: number): string {
   return new Date(NOW - days * 24 * 60 * 60 * 1000).toISOString();
@@ -160,4 +160,19 @@ export const AllOverdue: Story<typeof FollowupsScreen> = {
 export const Mobile: Story<typeof FollowupsScreen> = {
   globals: { viewport: 'mobile1' },
   render: (_args: ComponentProps<typeof FollowupsScreen>) => frame(makeClient(FIXTURES)),
+};
+
+/** Synthetic long subject: verify two-line clamp and touch/keyboard expansion. */
+export const LongSubjects: Story<typeof FollowupsScreen> = {
+  globals: { viewport: 'mobile1' },
+  render: (_args: ComponentProps<typeof FollowupsScreen>) =>
+    frame(
+      makeClient(
+        FIXTURES.slice(0, 1).map((row) => ({
+          ...row,
+          subject:
+            'Planning our autumn community workshop: please review the proposed agenda, accessibility arrangements, volunteer schedule, and remaining questions before we confirm the venue next week',
+        })),
+      ),
+    ),
 };

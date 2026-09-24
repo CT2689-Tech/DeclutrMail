@@ -11,7 +11,7 @@ import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useNow } from '@/lib/use-now';
 import { useSyncNow } from './api/use-sync-now';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Passive incremental-sync failure banner (D224; FOUNDER-FOLLOWUPS
@@ -169,8 +169,9 @@ function SyncBannerFrame({ testId, children }: { testId: string; children: React
         flexWrap: 'wrap',
         gap: 16,
         padding: '10px 20px',
+        minHeight: 52,
+        boxSizing: 'border-box',
         background: color.dangerBg,
-        borderBottom: `1px solid ${color.dangerBorder}`,
         fontFamily: font.sans,
       }}
     >
@@ -184,7 +185,7 @@ function SyncBannerMessage({ children }: { children: ReactNode }) {
     <span
       style={{
         flex: '1 1 260px',
-        fontSize: 13,
+        fontSize: text.md,
         fontWeight: 600,
         color: color.danger,
         minWidth: 0,

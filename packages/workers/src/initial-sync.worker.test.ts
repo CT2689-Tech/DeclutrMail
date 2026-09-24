@@ -174,6 +174,29 @@ describe('InitialSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it('drains active metadata requests on cancellation without persisting the interrupted batch', async () => {
+    const client = new FakeGmailClient(makeMessages(30, 6));
+    const original = client.getMessageMetadata.bind(client);
+    const controller = new AbortController();
+    let started = 0;
+    let finished = 0;
+    client.getMessageMetadata = async (id) => {
+      started++;
+      await Promise.resolve();
+      controller.abort(new Error('fixture deadline'));
+      const value = await original(id);
+      finished++;
+      return value;
+    };
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+    await expect(
+      worker.processJob({ mailboxAccountId }, { ...CTX, signal: controller.signal }),
+    ).rejects.toThrow('fixture deadline');
+    expect(started).toBe(20);
+    expect(finished).toBe(started);
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it('no-ops a disconnected mailbox before Gmail access or sync-state writes', async () => {
     await db
       .update(mailboxAccounts)

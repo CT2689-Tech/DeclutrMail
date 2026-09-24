@@ -2,10 +2,17 @@ import { mailboxAccounts, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import type { Queue } from 'bullmq';
 import type { EmailSendJobData } from '@declutrmail/workers';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
+import type * as SharedCopy from '@declutrmail/shared/copy';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildSyncReadyEmailHandler } from './sync-ready-email.trigger.js';
 import type { DrizzleDb } from '../db/db.module.js';
+
+vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
+  ...(await importOriginal<typeof SharedCopy>()),
+  hasPostalAddress: vi.fn(() => true),
+}));
 
 /**
  * Sync-ready email trigger tests (D6, D162) — real PGlite for the
@@ -59,6 +66,7 @@ describe('buildSyncReadyEmailHandler', () => {
   let userId: string;
 
   beforeEach(async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(true);
     db = await freshDb();
     const [w] = await db.insert(workspaces).values({ name: 'W' }).returning({ id: workspaces.id });
     const [u] = await db
@@ -135,6 +143,22 @@ describe('buildSyncReadyEmailHandler', () => {
     // Multipart (D162): the rendered HTML twin rides the job.
     expect(completeData.html).toContain('https://app.declutrmail.com/triage');
     expect(reminderData.html).toContain('/triage');
+  });
+
+  it('keeps the transactional completion notice while commercial reminders are disabled', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const queue = fakeQueue();
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler(payload(), 'ev-1');
+
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect((queue.add.mock.calls[0] as [string, EmailSendJobData])[1].kind).toBe('sync-complete');
   });
 
   it('attaches RFC 8058 headers to both sync emails', async () => {

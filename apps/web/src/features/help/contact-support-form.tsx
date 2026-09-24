@@ -2,19 +2,21 @@
 
 import { useState, type FormEvent } from 'react';
 
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
+
+import { SettingsGroup } from '@/features/settings/settings-list';
 
 import { postSupportRequest } from '@/lib/api/support-request';
 import { track } from '@/lib/posthog';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 type Status = 'idle' | 'submitting' | 'confirmed' | 'error';
 
 /**
  * "Contact support" — Settings → Help & glossary, below the product
- * glossary. Authed users only; sends one email to support@ via
- * `POST /api/support-request`. No attachment, no ticket persistence —
+ * glossary. Authed users only; queues a request to support@ via
+ * `POST /api/support-request`. No attachment or ticket table —
  * see docs/superpowers/specs/2026-09-01-contact-support-form-design.md.
  */
 export function ContactSupportForm() {
@@ -39,39 +41,38 @@ export function ContactSupportForm() {
 
   if (status === 'confirmed') {
     return (
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-          <p
-            role="status"
-            style={{ margin: 0, fontSize: 13, fontWeight: 600, color: color.primary }}
-          >
-            Message sent — we reply within 2 business days.
-          </p>
-        </div>
-      </Card>
+      <SettingsGroup title="Contact support">
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: '17px 16px',
+            fontSize: text.md,
+            color: color.fg,
+          }}
+        >
+          Request received — we reply within 2 business days. You can also email{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>
+          .
+        </p>
+      </SettingsGroup>
     );
   }
 
   return (
-    <Card padding={0}>
+    <SettingsGroup title="Contact support">
       <form
         onSubmit={(e) => void submit(e)}
-        style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}
+        style={{
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
       >
-        <h3
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            margin: 0,
-            color: color.fg,
-            fontFamily: font.sans,
-          }}
-        >
-          Contact support
-        </h3>
-        <p style={{ fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
-          Send a message straight to our team — we reply within 2 business days.
-        </p>
+        <style>{`.dm-support-field:focus-visible { box-shadow: 0 0 0 2px ${color.primary}; }`}</style>
         <input
           type="text"
           required
@@ -84,15 +85,16 @@ export function ContactSupportForm() {
           aria-label="Subject"
           maxLength={150}
           disabled={status === 'submitting'}
+          className="dm-support-field"
           style={{
-            height: 34,
-            padding: '0 10px',
+            height: 44,
+            padding: '0 14px',
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fg,
-            background: color.card,
-            border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
-            borderRadius: radius.sm,
+            background: color.fill,
+            border: `1px solid ${status === 'error' ? color.dangerBorder : 'transparent'}`,
+            borderRadius: radius.md,
             outline: 'none',
           }}
         />
@@ -109,14 +111,15 @@ export function ContactSupportForm() {
           placeholder="What's going on?"
           aria-label="Message"
           disabled={status === 'submitting'}
+          className="dm-support-field"
           style={{
-            padding: '8px 10px',
+            padding: '12px 14px',
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fg,
-            background: color.card,
-            border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
-            borderRadius: radius.sm,
+            background: color.fill,
+            border: `1px solid ${status === 'error' ? color.dangerBorder : 'transparent'}`,
+            borderRadius: radius.md,
             outline: 'none',
             resize: 'vertical',
           }}
@@ -126,7 +129,7 @@ export function ContactSupportForm() {
             {status === 'submitting' ? 'Sending…' : 'Send message'}
           </Button>
           {status === 'error' ? (
-            <span role="alert" style={{ fontSize: 12.5, color: color.danger }}>
+            <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
               Couldn't send that — try again, or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.danger }}>
                 support@declutrmail.com
@@ -136,6 +139,6 @@ export function ContactSupportForm() {
           ) : null}
         </div>
       </form>
-    </Card>
+    </SettingsGroup>
   );
 }

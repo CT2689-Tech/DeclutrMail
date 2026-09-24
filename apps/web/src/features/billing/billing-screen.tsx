@@ -1,11 +1,19 @@
 'use client';
 
+import linkStyles from './billing-links.module.css';
+
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import { useEffect, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Button,
-  Eyebrow,
   ErrorState as RecoverableErrorState,
   ScreenIntro,
   tokens,
@@ -48,7 +56,6 @@ import {
   type BillingPlanView,
   type NonBackingRecord,
 } from './billing-model';
-import { CancelModal } from './cancel-modal';
 import { InvoiceHistory } from './invoice-history';
 import { PaymentMethodCard } from './payment-method-card';
 import { usePauseSubscription } from './api/use-pause-subscription';
@@ -63,9 +70,18 @@ import {
   type PendingCheckout,
   type PendingKind,
 } from './pending-checkout';
+import { PlanCoverage } from './plan-coverage';
 import { PlanPicker } from './plan-picker';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius, shadow } = tokens;
+// Opens only after "Cancel plan" is pressed, and carries the shared
+// confirm sheet — loading it on demand keeps /billing inside its
+// first-load bundle budget. It renders nothing while closed.
+const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelModal), {
+  ssr: false,
+});
+
+const { color, font, radius, text } = tokens;
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -526,27 +542,13 @@ export function BillingScreen({
   // the derived view: a cancelled row still owes its owner receipts.
   const hasBillingHistory = plan.backing.state !== 'none' || plan.nonBacking !== null;
 
-  return (
-    <div
-      style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 18,
-        maxWidth: 1180,
-        fontFamily: font.sans,
-      }}
-    >
-      <ScreenIntro
-        id="billing"
-        title="Plan & billing"
-        body="Your plan, what it includes, and how it renews. Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
-        tip="Every paid plan includes a 30-day money-back guarantee, subject to the published Refund Policy and fair-use terms."
-      />
-
-      {billingDark ? <BillingDisabledNotice /> : null}
-
-      {pending !== null ? (
+  // ONE notice slot. Highest priority first; the rest wait behind "+N".
+  // A pending money action always leads — it is never the collapsed one.
+  const notices: NoticeEntry[] = [];
+  if (pending !== null) {
+    notices.push({
+      key: 'payment-processing',
+      node: (
         <PaymentProcessingNotice
           phase={processingPhase}
           kind={pending.kind}
@@ -600,9 +602,76 @@ export function BillingScreen({
                 : undefined
           }
         />
-      ) : null}
+      ),
+    });
+  }
+  if (nonBacking) {
+    notices.push({
+      key: 'non-backing',
+      node: (
+        <NonBackingSubscriptionNotice
+          record={nonBacking}
+          entitlementTier={plan.entitlementTier}
+          onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
+          onRequestCancel={() => setCancelOpen(true)}
+        />
+      ),
+    });
+  }
+  if (plan.scheduledChange && backingSub) {
+    notices.push({
+      key: 'scheduled-change',
+      node: (
+        <ScheduledPlanChangeNotice
+          currentTier={backingSub.tier}
+          currentCycle={backingSub.cycle}
+          scheduledChange={plan.scheduledChange}
+          backingIsActive={plan.backing.state === 'active'}
+          onCanceled={(next) => {
+            queryClient.setQueryData(billingKeys.subscription(), next);
+            toast('Keeping your current plan — confirming with Paddle.', 'success');
+          }}
+        />
+      ),
+    });
+  }
+  if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
+  if (plan.foundingMember && backingSub) {
+    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
+  }
 
-      {plan.foundingMember && backingSub ? <FoundingBanner provider={backingSub.provider} /> : null}
+  return (
+    <div
+      style={{
+        ...editorialColumnStyle,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+      }}
+    >
+      <EditorialKicker>Your workspace / Plan & billing</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Plan &amp; billing</h1>
+      <p style={{ margin: 0, color: color.fgSoft }}>
+        Applies to this workspace and its connected inboxes.
+      </p>
+      <ScreenIntro
+        id="billing"
+        title="Plan & billing"
+        body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
+      />
+
+      <NoticeSlot notices={notices} />
+
+      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
+        <PaymentMethodCard
+          provider={paymentMethodSub.provider}
+          isPastDue={paymentMethodSub.status === 'past_due'}
+          disabled={pending !== null}
+          disabledReason={
+            pending !== null ? 'Available once the payment above finishes confirming.' : null
+          }
+        />
+      ) : null}
 
       <CurrentPlanCard
         plan={plan}
@@ -610,6 +679,7 @@ export function BillingScreen({
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
         pauseConfirming={pauseConfirming}
+        paymentPending={pending !== null || data?.pendingCheckout != null}
         onCancel={() => setCancelOpen(true)}
         onResumeCancellation={() =>
           resumeCancellation.mutate(undefined, {
@@ -636,10 +706,12 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      {!billingDark && paymentMethodSub ? (
+      <PlanCoverage tier={plan.entitlementTier} />
+
+      {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
         <PaymentMethodCard
           provider={paymentMethodSub.provider}
-          isPastDue={paymentMethodSub.status === 'past_due'}
+          isPastDue={false}
           disabled={pending !== null}
           disabledReason={
             pending !== null ? 'Available once the payment above finishes confirming.' : null
@@ -647,28 +719,14 @@ export function BillingScreen({
         />
       ) : null}
 
-      {plan.scheduledChange && backingSub ? (
-        <ScheduledPlanChangeNotice
-          currentTier={backingSub.tier}
-          currentCycle={backingSub.cycle}
-          scheduledChange={plan.scheduledChange}
-          backingIsActive={plan.backing.state === 'active'}
-          onCanceled={(next) => {
-            queryClient.setQueryData(billingKeys.subscription(), next);
-            toast('Keeping your current plan — confirming with Paddle.', 'success');
-          }}
-        />
-      ) : null}
+      {/* Renders for anyone who has EVER paid, including a workspace
+          now back on Free: the tax need outlives the subscription, and
+          fetching last year's receipts is the commonest reason to open
+          this page after leaving. Billing-dark carries no rows to read
+          and never fetches. */}
+      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
 
-      {nonBacking ? (
-        <NonBackingSubscriptionNotice
-          record={nonBacking}
-          entitlementTier={plan.entitlementTier}
-          onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
-          onRequestCancel={() => setCancelOpen(true)}
-        />
-      ) : null}
-
+      <div id="change-plan" style={{ scrollMarginTop: 80 }} />
       <PlanPicker
         currentTier={plan.entitlementTier}
         grantingSub={grantingBackingSub}
@@ -725,13 +783,15 @@ export function BillingScreen({
         }
       />
 
-      {/* Renders for anyone who has EVER paid, including a workspace
-          now back on Free: the tax need outlives the subscription, and
-          fetching last year's receipts is the commonest reason to open
-          this page after leaving. Billing-dark carries no rows to read
-          and never fetches. */}
-      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
-
+      <p style={{ fontSize: text.sm }}>
+        <a className={linkStyles.link} href="/settings/help">
+          Billing help
+        </a>{' '}
+        ·{' '}
+        <a className={linkStyles.link} href="/refunds">
+          Refund policy
+        </a>
+      </p>
       <CancelModal
         open={cancelOpen}
         variant={isPhone ? 'sheet' : 'modal'}
@@ -766,6 +826,46 @@ export function BillingScreen({
         isPausing={pause.isPending}
         pauseError={pause.error ? pauseErrorMessage(pause.error) : null}
       />
+    </div>
+  );
+}
+
+type NoticeEntry = { key: string; node: ReactNode };
+
+/**
+ * One slot for every standing notice. The first entry (the caller orders
+ * by priority) is always visible; the rest sit behind a "+N" toggle so a
+ * workspace with three true things to say does not open on three banners.
+ */
+function NoticeSlot({ notices }: { notices: readonly NoticeEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [first, ...rest] = notices;
+  if (!first) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div key={first.key}>{first.node}</div>
+      {expanded ? rest.map((n) => <div key={n.key}>{n.node}</div>) : null}
+      {rest.length > 0 ? (
+        <button
+          type="button"
+          data-testid="notice-slot-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            alignSelf: 'flex-start',
+            minHeight: 28,
+            padding: '0 4px',
+            background: 'transparent',
+            border: 'none',
+            color: color.fgMuted,
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            cursor: 'pointer',
+          }}
+        >
+          {expanded ? 'Show less' : `+${rest.length} more`}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -909,7 +1009,7 @@ export function PaymentProcessingNotice({
   // was lost, so every claim below stays outcome-neutral for it.
   const acted =
     kind === 'checkout'
-      ? 'Payment received'
+      ? 'Checkout reported completion'
       : kind === 'checkout_intent'
         ? 'Checkout started'
         : kind === 'change'
@@ -925,6 +1025,16 @@ export function PaymentProcessingNotice({
       : kind === 'resume'
         ? 'resume'
         : 'plan upgrade';
+  const recoveryButtonStyle = {
+    maxWidth: '100%',
+    minWidth: 0,
+    height: 'auto',
+    minHeight: 36,
+    padding: '8px 16px',
+    boxSizing: 'border-box',
+    whiteSpace: 'normal',
+    lineHeight: 1.4,
+  } as const;
   return (
     <div
       role="status"
@@ -934,75 +1044,65 @@ export function PaymentProcessingNotice({
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        padding: '12px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
-        fontSize: 13,
+        borderRadius: radius.lg,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span aria-hidden>⏳</span>
-        {phase === 'unconfirmed' ? (
-          <span>
-            <strong style={{ fontWeight: 600 }}>
-              {acted} — your {awaited} hasn&rsquo;t come through yet.
-            </strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so further billing
-              changes stay paused — starting another could charge you twice. Waiting is always safe:
-              this page keeps checking, and your plan updates the moment the confirmation arrives.
-              Email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>{' '}
-              and we&rsquo;ll sort it out.
-            </span>
-          </span>
-        ) : phase === 'slow' ? (
-          <span>
-            <strong style={{ fontWeight: 600 }}>
-              Still confirming — this is taking longer than usual.
-            </strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              {kind === 'checkout'
-                ? 'Your payment went through and is safe; this page keeps checking automatically.'
-                : kind === 'change_unconfirmed' || kind === 'checkout_intent'
-                  ? 'The outcome is unconfirmed; this page keeps checking automatically.'
-                  : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
-              If your plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>
-              .
-            </span>
-          </span>
-        ) : (
-          <span>
-            <strong style={{ fontWeight: 600 }}>{acted} — confirming your plan.</strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              {kind === 'resume'
-                ? 'No charge was started; your existing paid period continues.'
+      <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600 }}>
+        {phase === 'unconfirmed'
+          ? `${acted} — your ${awaited} hasn’t come through yet.`
+          : phase === 'slow'
+            ? 'Still confirming — this is taking longer than usual.'
+            : `${acted} — confirming your plan.`}
+      </h2>
+      <dl style={{ display: 'grid', gap: 10, margin: 0 }}>
+        <div>
+          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
+          <dd style={{ margin: 0, color: color.fgSoft }}>
+            {kind === 'checkout'
+              ? 'Checkout reported completion. Our server has not yet confirmed your new plan.'
+              : kind === 'checkout_intent'
+                ? 'Checkout started, but we do not yet know whether a payment completed.'
                 : kind === 'change_unconfirmed'
-                  ? 'The payment provider didn’t confirm your upgrade — it may or may not have gone through. If it did, your plan updates here and nothing further is needed.'
-                  : kind === 'checkout_intent'
-                    ? 'A checkout was started here but its outcome wasn’t observed — if you paid, your plan updates here and nothing further is needed.'
-                    : 'The payment provider is finalizing your subscription.'}{' '}
-              This page updates automatically, usually within a minute.
-            </span>
-          </span>
-        )}
-      </span>
+                  ? 'The provider has not confirmed whether your plan change applied.'
+                  : kind === 'resume'
+                    ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
+                    : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
+          </dd>
+        </div>
+        <div>
+          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What happens next</dt>
+          <dd style={{ margin: 0, color: color.fgSoft }}>
+            This page keeps checking automatically. Billing changes stay paused to avoid charging
+            you twice.
+            {phase === 'fresh'
+              ? ' Confirmation usually arrives within a minute.'
+              : ' You can wait here or return later.'}
+          </dd>
+        </div>
+      </dl>
+      {phase !== 'fresh' ? (
+        <p style={{ margin: 0, fontSize: text.sm }}>
+          Need help?{' '}
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+            Contact billing support
+          </a>
+          .
+        </p>
+      ) : null}
       {reconcilable && providerCheck !== 'idle' ? (
         // D249 — the server's own answer, stated before any customer
         // question. Each line asserts only what the check verified.
         <p
           data-testid="provider-check"
-          style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}
+          style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
+          <strong>Latest provider check: </strong>
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
@@ -1062,7 +1162,7 @@ export function PaymentProcessingNotice({
         // independent of the release, which `payment_in_progress`
         // rightly keeps locked while still needing a way to re-ask.
         <div>
-          <Button tone="default" onClick={recheckProvider}>
+          <Button style={recoveryButtonStyle} tone="default" onClick={recheckProvider}>
             Check again
           </Button>
         </div>
@@ -1084,7 +1184,7 @@ export function PaymentProcessingNotice({
               data-testid="release-confirm"
               style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
             >
-              <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fg }}>
                 {kind === 'checkout' || kind === 'checkout_intent' ? (
                   <>
                     <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong>{' '}
@@ -1104,10 +1204,14 @@ export function PaymentProcessingNotice({
                 )}
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button tone="default" onClick={() => setConfirmingRelease(false)}>
+                <Button
+                  style={recoveryButtonStyle}
+                  tone="default"
+                  onClick={() => setConfirmingRelease(false)}
+                >
                   Keep waiting
                 </Button>
-                <Button tone="danger" onClick={onRelease}>
+                <Button style={recoveryButtonStyle} tone="danger" onClick={onRelease}>
                   {kind === 'checkout' || kind === 'checkout_intent'
                     ? 'I checked — no charge. Resume checkout'
                     : 'I checked — nothing applied. Let me retry'}
@@ -1116,13 +1220,17 @@ export function PaymentProcessingNotice({
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button tone="default" onClick={() => setConfirmingRelease(true)}>
+              <Button
+                style={recoveryButtonStyle}
+                tone="default"
+                onClick={() => setConfirmingRelease(true)}
+              >
                 {kind === 'checkout' || kind === 'checkout_intent'
                   ? providerCheck === 'none_found'
                     ? 'No payment found — resume checkout'
                     : providerCheck === 'no_pending'
                       ? 'Nothing in flight — resume checkout'
-                      : 'No charge went through — resume checkout'
+                      : 'Review before resuming checkout'
                   : 'The change didn’t apply — let me retry'}
               </Button>
             </div>
@@ -1132,7 +1240,7 @@ export function PaymentProcessingNotice({
           // re-applying the same change is a provider no-op — so a
           // single explicit release is enough.
           <div>
-            <Button tone="default" onClick={onRelease}>
+            <Button style={recoveryButtonStyle} tone="default" onClick={onRelease}>
               Stop waiting — let me try again
             </Button>
           </div>
@@ -1150,6 +1258,7 @@ function CurrentPlanCard({
   cleanupResetsAt,
   billingDark,
   pauseConfirming,
+  paymentPending,
   onCancel,
   onResumeCancellation,
   isResumingCancellation,
@@ -1159,6 +1268,8 @@ function CurrentPlanCard({
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
+  /** A pending checkout may already hold card details or a payment. */
+  paymentPending: boolean;
   /** QA-billing-20260901-03 — a pause was requested but the webhook that
    *  actually changes `status` hasn't landed yet. The plan is still
    *  active and billing at its current price until that confirms, so
@@ -1217,32 +1328,49 @@ function CurrentPlanCard({
       style={{
         background: color.card,
         border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.card,
-        padding: '20px 22px',
+        borderRadius: radius.md,
+        padding: 'clamp(16px, 3vw, 22px)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 14,
       }}
     >
-      <Eyebrow>Current plan</Eyebrow>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <span
-          style={{
-            fontFamily: font.display,
-            fontSize: 24,
-            fontWeight: 650,
-            letterSpacing: '-0.015em',
-            color: color.fg,
-          }}
-        >
-          {manifest.name}
-        </span>
-        <span style={{ fontSize: 14, color: color.fgSoft, fontVariantNumeric: 'tabular-nums' }}>
-          {priceLabel}
-        </span>
+      <GroupTitle as="div">Current plan</GroupTitle>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -4 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontFamily: font.sans,
+              fontSize: text['2xl'],
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
+            }}
+          >
+            {manifest.name}
+          </span>
+          <span
+            style={{
+              fontSize: text.lg,
+              fontWeight: 600,
+              color: color.fg,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {plan.backing.state === 'active' ||
+            plan.backing.state === 'past_due' ||
+            plan.backing.state === 'cancel_scheduled' ? (
+              <span style={{ fontWeight: 400 }}>Plan price: </span>
+            ) : null}
+            <span>{priceLabel}</span>
+          </span>
+        </div>
         {renewal ? (
-          <span style={{ fontSize: 13, color: color.fgMuted }}>· Next renewal {renewal}</span>
+          <span
+            style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
+          >
+            Next renewal {renewal}
+          </span>
         ) : null}
       </div>
 
@@ -1250,7 +1378,7 @@ function CurrentPlanCard({
         <p
           role="status"
           data-testid="complimentary-note"
-          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgMuted }}
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
         >
           {compNote}
         </p>
@@ -1258,11 +1386,12 @@ function CurrentPlanCard({
 
       {plan.entitlementTier === 'free' &&
       (plan.nonBacking === null || cleanupRemaining !== null) ? (
-        <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           {/* "No card on file" is a claim about the PROVIDER — with a
               paused or ended subscription record the provider may well
-              hold one, so the line renders only when no record exists. */}
-          {plan.nonBacking === null ? 'Free forever — no card on file.' : null}
+              hold one. A pending checkout may also have collected payment details,
+              so reassurance requires no history AND no unresolved payment. */}
+          {plan.nonBacking === null && !paymentPending ? 'Free forever — no card on file.' : null}
           {cleanupRemaining !== null ? (
             <>
               {' '}
@@ -1288,7 +1417,7 @@ function CurrentPlanCard({
           role="status"
           style={{
             margin: 0,
-            fontSize: 12.5,
+            fontSize: text.sm,
             lineHeight: 1.5,
             color: note.tone === 'warn' ? color.amber : color.fgMuted,
           }}
@@ -1301,7 +1430,7 @@ function CurrentPlanCard({
         <p
           role="status"
           data-testid="pause-confirming-note"
-          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.amber }}
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
         >
           Confirming your pause with the payment provider — this page updates automatically, usually
           within a minute.
@@ -1311,7 +1440,10 @@ function CurrentPlanCard({
       {!billingDark &&
       !pauseConfirming &&
       (backing.state === 'active' || backing.state === 'past_due') ? (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <a className={linkStyles.link} href="#change-plan">
+            Manage plan
+          </a>
           {/* QA-billing-20260901-06: this opens the preview; the modal's
               own destructive confirm keeps "Cancel subscription" so the
               two clicks read as two different things — matching the
@@ -1346,13 +1478,12 @@ function CurrentPlanCard({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
-                padding: '12px 14px',
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: radius.md,
+                padding: '14px 16px',
+                background: color.fill,
+                borderRadius: radius.lg,
               }}
             >
-              <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5 }}>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
                 <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
                 cancellation is called off and {manifest.name} keeps renewing
                 {formatBillingDate(backing.sub.currentPeriodEnd)
@@ -1381,11 +1512,10 @@ function CurrentPlanCard({
                 <div
                   role="alert"
                   style={{
-                    fontSize: 12,
-                    color: color.red,
-                    background: 'rgba(239,68,68,0.08)',
-                    border: `1px solid ${color.red}`,
-                    borderRadius: 8,
+                    fontSize: text.sm,
+                    color: color.danger,
+                    background: color.dangerBg,
+                    borderRadius: radius.md,
                     padding: '8px 10px',
                   }}
                 >
@@ -1437,11 +1567,10 @@ function ScheduledPlanChangeNotice({
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        padding: '12px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
-        fontSize: 13,
+        borderRadius: radius.lg,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
       }}
@@ -1475,7 +1604,7 @@ function ScheduledPlanChangeNotice({
         )}
       </span>
       {confirming ? (
-        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
             : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
@@ -1506,7 +1635,7 @@ function ScheduledPlanChangeNotice({
           </Button>
         </div>
       ) : (
-        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           Plan changes aren&rsquo;t available on this subscription right now. Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -1515,7 +1644,7 @@ function ScheduledPlanChangeNotice({
         </span>
       )}
       {changePlan.error ? (
-        <span role="alert" style={{ color: color.red, fontSize: 12 }}>
+        <span role="alert" style={{ color: color.danger, fontSize: text.sm }}>
           {scheduledChangeErrorMessage(changePlan.error)}
         </span>
       ) : null}
@@ -1577,11 +1706,10 @@ function NonBackingSubscriptionNotice({
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
-    padding: '12px 14px',
-    background: color.paper,
-    border: `1px solid ${color.line}`,
-    borderRadius: radius.md,
-    fontSize: 13,
+    padding: '14px 16px',
+    background: color.fill,
+    borderRadius: radius.lg,
+    fontSize: text.md,
     lineHeight: 1.55,
     color: color.fg,
   } as const;
@@ -1762,7 +1890,7 @@ function NonBackingSubscriptionNotice({
         // the one that is failing. The old copy ("update your payment
         // method with the provider") named no destination at all; this
         // names the only one that is certainly correct (ADR-0035).
-        <p style={{ margin: 0, fontSize: 12.5, color: color.amber }}>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           Payment past due on this subscription. It isn&rsquo;t the one granting your current plan,
           so email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
@@ -1772,7 +1900,7 @@ function NonBackingSubscriptionNotice({
         </p>
       ) : null}
       {isPaused && !canSelfServeResume ? (
-        <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
             ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
@@ -1786,11 +1914,10 @@ function NonBackingSubscriptionNotice({
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: 'rgba(239,68,68,0.08)',
-            border: `1px solid ${color.red}`,
-            borderRadius: 8,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >
@@ -1807,9 +1934,8 @@ function NonBackingSubscriptionNotice({
             flexDirection: 'column',
             gap: 8,
             padding: '10px 12px',
-            background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: radius.md,
+            background: color.fill,
+            borderRadius: radius.lg,
           }}
         >
           <strong style={{ fontWeight: 600 }}>Resume without starting a new billing period</strong>
@@ -1881,11 +2007,10 @@ function FoundingBanner({ provider }: { provider: BillingProviderId }) {
         display: 'flex',
         alignItems: 'baseline',
         gap: 8,
-        padding: '10px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
-        fontSize: 13,
+        borderRadius: radius.lg,
+        fontSize: text.md,
         color: color.fg,
       }}
     >
@@ -1906,11 +2031,10 @@ function BillingDisabledNotice() {
       role="status"
       data-testid="billing-disabled-notice"
       style={{
-        padding: '12px 14px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        fontSize: 13,
+        padding: '14px 16px',
+        background: color.fill,
+        borderRadius: radius.lg,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fgSoft,
       }}
@@ -1943,9 +2067,8 @@ function LoadingState() {
           aria-hidden="true"
           style={{
             height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
+            background: color.fill,
+            borderRadius: radius.xl,
           }}
         />
       ))}

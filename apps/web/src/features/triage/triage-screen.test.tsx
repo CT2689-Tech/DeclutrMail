@@ -26,7 +26,6 @@ import {
   TRIAGE_SESSION_STATS_QUIET,
   type TriageScreenState,
 } from './data';
-import { findDomainBatches } from './domain-batch';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
@@ -76,80 +75,44 @@ function renderState(state: TriageScreenState): string {
 }
 
 describe('TriageScreen — populated queue', () => {
-  it('renders every fixture row by sender name, or via its batch card', () => {
+  // A static render is the FIRST render, which is focus mode: the
+  // per-device list preference is read after mount. The list's own
+  // render-shape lives in `triage-focus.test.tsx` (client render).
+  it('waits for the saved layout instead of flashing the wrong decision view', () => {
     const html = renderState({
       kind: 'ready',
       rows: [...TRIAGE_QUEUE],
       stats: TRIAGE_SESSION_STATS,
     });
-    // D133: the amazon.com run is >= MIN_BATCH_RUN, so `TriageQueue`
-    // (allowBatching defaults true, matching `journey: 'daily'`) folds
-    // it into one `DomainBatchCard`. This is a static render — there is
-    // no click to expand it — so a batched sender's name is not a
-    // literal substring; the card's own collapsed summary names the
-    // domain and both counts instead of each sender.
-    const batches = findDomainBatches(TRIAGE_QUEUE);
-    const batchedIds = new Set(batches.flatMap((b) => b.rows.map((r) => r.id)));
-    for (const row of TRIAGE_QUEUE) {
-      if (batchedIds.has(row.id)) continue;
-      expect(html).toContain(row.senderName);
-    }
-    for (const batch of batches) {
-      expect(html).toContain(`${batch.eligibleRows.length} senders from ${batch.domain}`);
-    }
-    // Coverage floor: this exemption must not silently swallow the
-    // whole queue if `findDomainBatches` ever regressed to over-matching.
-    expect(batchedIds.size).toBeGreaterThan(0);
-    expect(batchedIds.size).toBeLessThan(TRIAGE_QUEUE.length);
+    expect(html).toContain('aria-label="Loading your review layout"');
+    expect(html).not.toContain('aria-label="Current decision"');
+    expect(html).not.toContain('aria-label="Triage queue"');
+    expect(html).toContain('>List<');
+    expect(html).toContain('>Focus<');
   });
 
-  it('surfaces the queue length in the header copy', () => {
+  it('titles the screen "Triage" and distinguishes decided senders from the rolling queue', () => {
     const html = renderState({
       kind: 'ready',
       rows: [...TRIAGE_QUEUE],
       stats: TRIAGE_SESSION_STATS,
     });
-    expect(html).toContain(`${TRIAGE_QUEUE.length} decisions, one at a time.`);
+    expect(html).toContain('>Triage</h1>');
+    expect(html).not.toContain('decisions, one at a time.');
+    expect(html).toContain('>0 decided<');
+    expect(html).toContain(`>Reviewing 1 of ${TRIAGE_QUEUE.length}<`);
+    expect(html).not.toContain('decisions waiting');
   });
 
-  it('offers the sample demo and names the supporting help destination', () => {
-    const html = renderState({
-      kind: 'ready',
-      rows: [...TRIAGE_QUEUE],
-      stats: TRIAGE_SESSION_STATS,
-    });
-    expect(html).toContain('Practice with sample data.');
-    expect(html).toContain('href="/inbox-simulator"');
-    expect(html).toContain('What each action does →');
-    expect(html).toContain('href="/help#actions-in-gmail-terms"');
-    expect(html).not.toContain('Learn more');
-  });
-
-  it('renders K, A, U, L, D shortcut chips somewhere in the toolbar (per row)', () => {
-    // When the screen renders with rows the toolbars only mount under
-    // expanded rows — and the row is collapsed by default. So the
-    // shortcut chips appear in the queue legend (K · A · U · L · D)
-    // even when no row is expanded. That legend is the screen's
-    // global cue.
-    const html = renderState({
-      kind: 'ready',
-      rows: [...TRIAGE_QUEUE],
-      stats: TRIAGE_SESSION_STATS,
-    });
-    expect(html).toContain('K · A · U · L · D');
-  });
-});
-
-describe('TriageScreen — the intro does not claim Keep gets a preview (QA-triage-20260827-08)', () => {
-  it('states the preview applies to actions that change mail, not to Keep', () => {
-    const html = renderState({
-      kind: 'ready',
-      rows: [...TRIAGE_QUEUE],
-      stats: TRIAGE_SESSION_STATS,
-    });
-    expect(html).toContain('Every action that changes your mail shows the affected email first');
-    expect(html).toContain('Keep never');
-    expect(html).not.toContain('You’ll see the affected email before anything changes');
+  it('carries no eyebrow, mailbox address or Today strip above the queue', () => {
+    authCell.me = meWithMailboxReadiness('ready');
+    const html = render(
+      <TriageScreen
+        state={{ kind: 'ready', rows: [...TRIAGE_QUEUE], stats: TRIAGE_SESSION_STATS }}
+      />,
+    );
+    expect(html).not.toContain('me@example.com');
+    expect(html).not.toContain('Today at a glance');
   });
 });
 
@@ -159,11 +122,11 @@ describe('TriageScreen — empty / loading branches', () => {
     // Calm completion copy markers
     expect(html).toContain('You’re done for now.');
     expect(html).toContain('New decisions appear');
-    // Stats tile labels
-    expect(html).toContain('Decided');
-    expect(html).toContain('Archived');
-    expect(html).toContain('Unsubscribes');
-    expect(html).toContain('To Later');
+    // The tally — one quiet line, not four tiles.
+    expect(html).toContain(' decided');
+    expect(html).toContain(' archived');
+    expect(html).toContain(' unsubscribes');
+    expect(html).toContain(' to Later');
     // The actual values appear
     expect(html).toContain(String(TRIAGE_SESSION_STATS.decidedToday));
   });
@@ -173,30 +136,31 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).toContain('New decisions appear');
   });
 
-  it('does not contradict the sync-failed body with a "Nothing waiting." header (Codex adversarial review of QA-sync-20260831-01)', () => {
-    // The negative control: reverting the header ternary's `mailboxSyncFailed`
-    // branch makes this fail — `empty-state.test.tsx` only exercises
-    // `TriageEmptyState` in isolation and can't see this: the PARENT
-    // header rendered a confident "Nothing waiting." right above the
-    // child's "This mailbox's last scan didn't finish." — the exact
-    // self-contradiction QA-sync-20260831-01 was supposed to remove.
+  it('says the scan failed once, in the body — the header makes no claim to contradict it (QA-sync-20260831-01)', () => {
+    // The header used to compose a state sentence ("Nothing waiting.")
+    // that could sit above the child's "last scan didn't finish". The h1
+    // is now just the screen name, so the body is the only voice.
     authCell.me = meWithMailboxReadiness('failed');
     const html = render(
       <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET }} />,
     );
-    // `renderToStaticMarkup` HTML-escapes the straight apostrophe.
-    expect(html).toContain('Last scan didn&#x27;t finish.');
+    expect(html).toContain('>Triage</h1>');
     expect(html).not.toContain('Nothing waiting.');
+    // `renderToStaticMarkup` HTML-escapes the straight apostrophe.
     expect(html).toContain('This mailbox&#x27;s last scan didn&#x27;t finish.');
+    expect(html).not.toContain('Nothing needs a decision');
   });
 
-  it('keeps the ordinary "Nothing waiting." header when the mailbox synced fine', () => {
+  it('renders the resting state when the mailbox synced fine', () => {
     authCell.me = meWithMailboxReadiness('ready');
     const html = render(
       <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET }} />,
     );
-    expect(html).toContain('Nothing waiting.');
-    expect(html).not.toContain('Last scan didn&#x27;t finish.');
+    expect(html).toContain('Nothing needs a decision right now.');
+    expect(html).not.toContain('last scan didn&#x27;t finish');
+    // No session count and no mode toggle over an empty queue.
+    expect(html).not.toContain('decided this session');
+    expect(html).not.toContain('>See all<');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
@@ -205,7 +169,6 @@ describe('TriageScreen — empty / loading branches', () => {
     // D19 — freeRemaining is the LIFETIME cleanup remainder (5 total),
     // not a daily counter; the copy must say so.
     expect(free).toContain('free cleanup actions left');
-    expect(free).toContain('Plus removes the cap');
 
     const paid = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(paid).not.toContain('See Plus');
@@ -298,15 +261,18 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(html).toContain('Your queue didn');
     expect(html).toContain('Try again');
     expect(html).toContain('role="alert"');
-    expect(html).toContain('border:1px solid var(--dm-amber)');
-    expect(html).not.toContain('border:1px dashed');
+    // The error's visual signature is the shared ErrorState's amber mark
+    // (the amber/dashed borders are gone by design — ADR-0042).
+    expect(html).toContain('data-dm-error-mark');
     // Never the skeleton alongside the error.
     expect(html).not.toContain('Loading triage queue');
   });
 
   it('keeps the successful resting state visually distinct from a failed fetch', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
-    expect(html).toContain('border:1px dashed');
+    // Distinct by construction: no alert role and no error mark.
+    expect(html).toContain('Nothing needs a decision right now.');
+    expect(html).not.toContain('data-dm-error-mark');
     expect(html).not.toContain('role="alert"');
     expect(html).not.toContain('Needs attention');
   });

@@ -88,15 +88,18 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(screen.getByTestId('autopilot-observe-preview')).toBeInTheDocument();
     expect(screen.getByText(/previews are read-only/i)).toBeInTheDocument();
     await waitFor(() => expect(rulesReads).toBe(1));
-    expect(await screen.findByText('Auto-archive low-engagement')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Review low-engagement senders for Archive'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview current matches' }));
     await waitFor(() => expect(previewReads).toBe(1));
     expect(await screen.findByText('Weekly Deals')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /current match preview/i })).toHaveTextContent(
-      /2\s*senders would match if this rule were active now/i,
+      /2 of 14 senders checked match/i,
     );
-    expect(screen.getByText(/this check is read-only/i)).toBeInTheDocument();
+    // Stated once, on the surface, rather than per panel.
+    expect(screen.getByText(/Previews are read-only/i)).toBeInTheDocument();
 
     // D251 — the CTA names the cheapest plan that unlocks THIS screen
     // (autopilot → Plus at $9), not Pro. Derived from the manifest.

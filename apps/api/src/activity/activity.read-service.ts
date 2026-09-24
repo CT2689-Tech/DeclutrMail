@@ -16,6 +16,7 @@
 //     `'brief'` value on `activity_source`; would need an enum migration
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
+import { measureRequestOperation } from '../observability/request-performance.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { engagementWindowStart } from '@declutrmail/shared/contracts';
 import {
@@ -221,7 +222,11 @@ export class ActivityReadService {
     const useCustomRange = dateFrom !== null || dateTo !== null;
     const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
 
-    const executionLineages = await this.loadExecutionLineages(mailboxAccountId);
+    const executionLineages = await this.loadPagedExecutionLineages(
+      params,
+      useCustomRange ? dateFrom : windowStart,
+      useCustomRange ? dateTo : null,
+    );
     const rows = await this.loadActivityRows(params, executionLineages);
 
     // Stats follow the same window/date bound as the rows query and
@@ -237,21 +242,22 @@ export class ActivityReadService {
     // as a contradiction (founder screenshot 2026-08-19).
     const statsLowerBound = useCustomRange ? dateFrom : windowStart;
     const statsUpperBound = useCustomRange ? dateTo : null;
+    const statsPromise = this.aggregateStats({
+      mailboxAccountId,
+      lowerBound: statsLowerBound,
+      upperBound: statsUpperBound,
+      senderQuery: params.senderQuery ?? '',
+    });
     const [stats, allTimeStats] = await Promise.all([
-      this.aggregateStats({
-        mailboxAccountId,
-        lowerBound: statsLowerBound,
-        upperBound: statsUpperBound,
-        senderQuery: params.senderQuery ?? '',
-        executionLineages,
-      }),
-      this.aggregateStats({
-        mailboxAccountId,
-        lowerBound: null,
-        upperBound: null,
-        senderQuery: params.senderQuery ?? '',
-        executionLineages,
-      }),
+      statsPromise,
+      statsLowerBound === null && statsUpperBound === null
+        ? statsPromise
+        : this.aggregateStats({
+            mailboxAccountId,
+            lowerBound: null,
+            upperBound: null,
+            senderQuery: params.senderQuery ?? '',
+          }),
     ]);
 
     return { rows, stats, allTimeStats };
@@ -854,117 +860,135 @@ export class ActivityReadService {
     };
   }
 
-  /**
-   * Load each unresolved forward label-action lineage once. Root rows own
-   * the original intent; recovery rows point back through `root_action_id`.
-   * A successful recovery resolves the lineage and removes it from Activity,
-   * while the latest non-successful attempt supplies the visible state.
+  /** Shared SQL scope: exactly one unresolved latest attempt per eligible root.
+   * Successful recovery suppresses the entire lineage, even if another
+   * attempt was subsequently recorded. Match the existing projection before
+   * LIMIT so sender/outcome filters cannot starve a page.
    */
-  private async loadExecutionLineages(mailboxAccountId: string): Promise<ExecutionLineage[]> {
-    const roots = await this.db
-      .select({
-        id: actionJobs.id,
-        rootActionId: actionJobs.rootActionId,
-        verb: actionJobs.verb,
-        status: actionJobs.status,
-        selector: actionJobs.selector,
-        requestedCount: actionJobs.requestedCount,
-        errorCode: actionJobs.errorCode,
-        createdAt: actionJobs.createdAt,
-        updatedAt: actionJobs.updatedAt,
-        recoveryAttempt: actionJobs.recoveryAttempt,
-      })
-      .from(actionJobs)
-      .where(
-        and(
-          eq(actionJobs.mailboxAccountId, mailboxAccountId),
-          isNull(actionJobs.rootActionId),
-          eq(actionJobs.direction, 'forward'),
-          inArray(actionJobs.verb, EXECUTION_VERBS),
-          inArray(actionJobs.status, ['queued', 'executing', 'failed']),
-        ),
-      );
-    if (roots.length === 0) return [];
-
-    const rootIds = roots.map((root) => root.id);
-    const senderKeys = roots.flatMap((root) =>
-      root.selector.type === 'sender' ? [root.selector.senderKey] : [],
-    );
-    const [recoveries, senderRows] = await Promise.all([
-      this.db
-        .select({
-          id: actionJobs.id,
-          rootActionId: actionJobs.rootActionId,
-          verb: actionJobs.verb,
-          status: actionJobs.status,
-          selector: actionJobs.selector,
-          requestedCount: actionJobs.requestedCount,
-          errorCode: actionJobs.errorCode,
-          createdAt: actionJobs.createdAt,
-          updatedAt: actionJobs.updatedAt,
-          recoveryAttempt: actionJobs.recoveryAttempt,
-        })
-        .from(actionJobs)
-        .where(
-          and(
-            eq(actionJobs.mailboxAccountId, mailboxAccountId),
-            eq(actionJobs.direction, 'forward'),
-            inArray(actionJobs.rootActionId, rootIds),
-          ),
-        ),
-      senderKeys.length === 0
-        ? Promise.resolve([])
-        : this.db
-            .select({
-              senderKey: senders.senderKey,
-              displayName: senders.displayName,
-              email: senders.email,
-            })
-            .from(senders)
-            .where(
-              and(
-                eq(senders.mailboxAccountId, mailboxAccountId),
-                inArray(senders.senderKey, senderKeys),
+  private executionScope(args: {
+    mailboxAccountId: string;
+    lowerBound: Date | null;
+    upperBound: Date | null;
+    senderQuery: string;
+    verbs?: ActivityVerbFilter[];
+    failedOnly?: boolean;
+    cursor?: { occurredAt: Date; id: string } | null;
+  }) {
+    const root = alias(actionJobs, 'activity_root');
+    const current = alias(actionJobs, 'activity_current');
+    const recovery = alias(actionJobs, 'activity_recovery');
+    const outcomeTime = sql<Date>`case when ${current.status} = 'failed' then ${current.updatedAt} else ${current.createdAt} end`;
+    const scope = [
+      eq(root.mailboxAccountId, args.mailboxAccountId),
+      isNull(root.rootActionId),
+      eq(root.direction, 'forward' as const),
+      inArray(root.verb, EXECUTION_VERBS),
+      inArray(root.status, ['queued', 'executing', 'failed'] as const),
+      eq(current.mailboxAccountId, args.mailboxAccountId),
+      eq(current.direction, 'forward' as const),
+      inArray(current.status, args.failedOnly ? ['failed'] : ['queued', 'executing', 'failed']),
+      notExists(
+        this.db
+          .select({ id: recovery.id })
+          .from(recovery)
+          .where(
+            and(
+              eq(recovery.mailboxAccountId, args.mailboxAccountId),
+              eq(recovery.rootActionId, root.id),
+              eq(recovery.direction, 'forward' as const),
+              or(
+                eq(recovery.status, 'done'),
+                sql`(${recovery.recoveryAttempt}, ${recovery.createdAt}, ${recovery.id}) > (${current.recoveryAttempt}, ${current.createdAt}, ${current.id})`,
               ),
             ),
-    ]);
-
-    const recoveriesByRoot = new Map<string, ExecutionAttempt[]>();
-    for (const recovery of recoveries) {
-      if (!recovery.rootActionId) continue;
-      const attempts = recoveriesByRoot.get(recovery.rootActionId) ?? [];
-      attempts.push(recovery);
-      recoveriesByRoot.set(recovery.rootActionId, attempts);
-    }
-    const senderByKey = new Map(
-      senderRows.map((sender) => [
-        sender.senderKey,
-        {
-          senderKey: sender.senderKey,
-          displayName: sender.displayName ?? sender.email,
-          email: sender.email,
-          domain: domainOf(sender.email),
-        },
-      ]),
+          ),
+      ),
+      // A malformed/older recovery cannot outrank its own original intent.
+      sql`(${current.recoveryAttempt}, ${current.createdAt}, ${current.id}) >= (${root.recoveryAttempt}, ${root.createdAt}, ${root.id})`,
+    ];
+    const senderScope = this.senderScopeFilter(
+      args.mailboxAccountId,
+      args.senderQuery,
+      sql`case when ${root.selector}->>'type' = 'sender' then ${root.selector}->>'senderKey' end`,
     );
-
-    const lineages: ExecutionLineage[] = [];
-    for (const root of roots) {
-      const attempts = recoveriesByRoot.get(root.id) ?? [];
-      if (attempts.some((attempt) => attempt.status === 'done')) continue;
-      const current = attempts.reduce<ExecutionAttempt>(
-        (latest, attempt) => (compareExecutionAttempts(attempt, latest) > 0 ? attempt : latest),
-        root,
+    if (senderScope) scope.push(senderScope);
+    if (args.verbs?.length)
+      scope.push(
+        inArray(
+          root.verb,
+          args.verbs.filter((verb): verb is ExecutionVerb =>
+            EXECUTION_VERBS.includes(verb as ExecutionVerb),
+          ),
+        ),
       );
-      if (!isUnresolvedExecutionStatus(current.status)) continue;
-      const senderKey = root.selector.type === 'sender' ? root.selector.senderKey : null;
-      lineages.push({
-        root,
-        current,
-        sender: senderKey ? (senderByKey.get(senderKey) ?? null) : null,
+    if (args.lowerBound) scope.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
+    if (args.upperBound) scope.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
+    if (args.cursor)
+      scope.push(
+        sql`(${outcomeTime}, ${current.id}) < (${timestamptzParam(args.cursor.occurredAt)}, ${args.cursor.id})`,
+      );
+    return {
+      root,
+      current,
+      outcomeTime,
+      where: and(...scope),
+      join: sql`coalesce(${current.rootActionId}, ${current.id}) = ${root.id}`,
+    };
+  }
+
+  private async loadPagedExecutionLineages(
+    params: ListActivityParams,
+    lowerBound: Date | null,
+    upperBound: Date | null,
+  ): Promise<ExecutionLineage[]> {
+    return measureRequestOperation('activity.lineages', async () => {
+      if (params.source !== null && params.source !== 'manual') return [];
+      if (params.outcomes?.length && !params.outcomes.includes('failed')) return [];
+      const { root, current, outcomeTime, where, join } = this.executionScope({
+        mailboxAccountId: params.mailboxAccountId,
+        lowerBound,
+        upperBound,
+        senderQuery: params.senderQuery ?? '',
+        verbs: params.verbs ?? [],
+        failedOnly: Boolean(params.outcomes?.length),
+        cursor: params.cursor,
       });
-    }
-    return lineages;
+      const attempts = await this.db
+        .select({
+          id: current.id,
+          rootActionId: current.rootActionId,
+          verb: current.verb,
+          status: current.status,
+          selector: current.selector,
+          requestedCount: current.requestedCount,
+          errorCode: current.errorCode,
+          createdAt: current.createdAt,
+          updatedAt: current.updatedAt,
+          recoveryAttempt: current.recoveryAttempt,
+        })
+        .from(current)
+        .innerJoin(root, join)
+        .where(where)
+        .orderBy(desc(outcomeTime), desc(current.id))
+        .limit(params.limit + 1);
+      if (!attempts.length) return [];
+      return this.hydrateCurrentExecutionLineages(params.mailboxAccountId, attempts);
+    });
+  }
+
+  private async countFailedExecutions(args: {
+    mailboxAccountId: string;
+    lowerBound: Date | null;
+    upperBound: Date | null;
+    senderQuery: string;
+  }): Promise<number> {
+    const { root, current, where, join } = this.executionScope({ ...args, failedOnly: true });
+    const [row] = await this.db
+      .select({ n: count(current.id) })
+      .from(current)
+      .innerJoin(root, join)
+      .where(where);
+    return Number(row?.n ?? 0);
   }
 
   /**
@@ -1013,103 +1037,108 @@ export class ActivityReadService {
     lowerBound: Date | null;
     upperBound: Date | null;
     senderQuery: string;
-    executionLineages: ExecutionLineage[];
   }): Promise<ActivityStats> {
-    // Non-correlated subquery, deliberately not a join: the counts are
-    // GROUP BY-ed over activity_log alone, and a correlated `sql`
-    // template would emit bare column names that resolve against the
-    // inner table (see [[drizzle-correlated-subquery-pitfall]]).
-    const senderScope = this.senderScopeFilter(args.mailboxAccountId, args.senderQuery);
-    // `reverted_at` is the durable reversal fact (same transaction as the
-    // undo-journal flip) — `persistedReviewOutcomeExpression` already
-    // excludes a reverted row from every per-row outcome badge. This is
-    // the aggregate the LIVE `/activity` metrics header actually reads
-    // (`listActivity` → `aggregateStats`), so a reverted archive/delete/
-    // etc. still counting here is the defect QA-undo-20260828-01 was
-    // filed against — codex review caught that the earlier fix to the
-    // separate `summarizeActivity` DQ16 endpoint — real, API-called, but
-    // with no web caller — left this one (the one the screen renders)
-    // untouched.
-    const whereParts = [
-      eq(activityLog.mailboxAccountId, args.mailboxAccountId),
-      isNull(activityLog.revertedAt),
-    ];
-    if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
-    if (args.upperBound) whereParts.push(lt(activityLog.occurredAt, args.upperBound));
-    if (senderScope) whereParts.push(senderScope);
+    return measureRequestOperation('activity.stats', async () => {
+      // Non-correlated subquery, deliberately not a join: the counts are
+      // GROUP BY-ed over activity_log alone, and a correlated `sql`
+      // template would emit bare column names that resolve against the
+      // inner table (see [[drizzle-correlated-subquery-pitfall]]).
+      const senderScope = this.senderScopeFilter(args.mailboxAccountId, args.senderQuery);
+      // `reverted_at` is the durable reversal fact (same transaction as the
+      // undo-journal flip) — `persistedReviewOutcomeExpression` already
+      // excludes a reverted row from every per-row outcome badge. This is
+      // the aggregate the LIVE `/activity` metrics header actually reads
+      // (`listActivity` → `aggregateStats`), so a reverted archive/delete/
+      // etc. still counting here is the defect QA-undo-20260828-01 was
+      // filed against — codex review caught that the earlier fix to the
+      // separate `summarizeActivity` DQ16 endpoint — real, API-called, but
+      // with no web caller — left this one (the one the screen renders)
+      // untouched.
+      const whereParts = [
+        eq(activityLog.mailboxAccountId, args.mailboxAccountId),
+        isNull(activityLog.revertedAt),
+      ];
+      if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
+      if (args.upperBound) whereParts.push(lt(activityLog.occurredAt, args.upperBound));
+      if (senderScope) whereParts.push(senderScope);
 
-    const rows = await this.db
-      .select({
-        action: activityLog.action,
-        n: count(activityLog.id),
-      })
-      .from(activityLog)
-      .where(and(...whereParts))
-      .groupBy(activityLog.action);
+      const countsQuery = this.db
+        .select({
+          action: activityLog.action,
+          n: count(activityLog.id),
+        })
+        .from(activityLog)
+        .where(and(...whereParts))
+        .groupBy(activityLog.action);
 
-    // D33 payoff — summed last-90d volume of the window's deflected
-    // senders, projected to per-month. Same join + formula as
-    // Historical message-volume context, windowed to THIS stats range.
-    const ninetyDaysAgoIso = engagementWindowStart().toISOString();
-    // Same reverted-row omission as `whereParts` above, one join over —
-    // a sender's full 90-day volume kept projecting into "noise
-    // prevented" after the user undid the archive that would have
-    // deflected it (ledger sibling, QA-undo-20260828-01).
-    const deflectWhere = [
-      eq(activityLog.mailboxAccountId, args.mailboxAccountId),
-      isNull(activityLog.revertedAt),
-      sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
-    ];
-    if (args.lowerBound) deflectWhere.push(gte(activityLog.occurredAt, args.lowerBound));
-    if (args.upperBound) deflectWhere.push(lt(activityLog.occurredAt, args.upperBound));
-    if (senderScope) deflectWhere.push(senderScope);
-    const [impact] = await this.db
-      .select({
-        deflectedSenders: sql<number>`COUNT(DISTINCT ${activityLog.senderKey})`,
-        last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END), 0)`,
-      })
-      .from(activityLog)
-      .leftJoin(
-        mailMessages,
-        and(
-          eq(mailMessages.mailboxAccountId, activityLog.mailboxAccountId),
-          eq(mailMessages.senderKey, activityLog.senderKey),
-        ),
-      )
-      .where(and(...deflectWhere));
-    const noisePreventedPerMonth =
-      Number(impact?.deflectedSenders ?? 0) > 0
-        ? Math.round(Number(impact?.last90Total ?? 0) / 3)
-        : null;
+      // D33 payoff — summed last-90d volume of the window's deflected
+      // senders, projected to per-month. Same join + formula as
+      // Historical message-volume context, windowed to THIS stats range.
+      const ninetyDaysAgoIso = engagementWindowStart().toISOString();
+      // Same reverted-row omission as `whereParts` above, one join over —
+      // a sender's full 90-day volume kept projecting into "noise
+      // prevented" after the user undid the archive that would have
+      // deflected it (ledger sibling, QA-undo-20260828-01).
+      const deflectWhere = [
+        eq(activityLog.mailboxAccountId, args.mailboxAccountId),
+        isNull(activityLog.revertedAt),
+        sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
+      ];
+      if (args.lowerBound) deflectWhere.push(gte(activityLog.occurredAt, args.lowerBound));
+      if (args.upperBound) deflectWhere.push(lt(activityLog.occurredAt, args.upperBound));
+      if (senderScope) deflectWhere.push(senderScope);
+      const deflected = this.db
+        .selectDistinct({ senderKey: activityLog.senderKey })
+        .from(activityLog)
+        .where(and(...deflectWhere))
+        .as('deflected_senders');
+      const impactQuery = this.db
+        .select({
+          deflectedSenders: sql<number>`COUNT(DISTINCT ${deflected.senderKey})`,
+          last90Total: sql<number>`COALESCE(SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END), 0)`,
+        })
+        .from(deflected)
+        .leftJoin(
+          mailMessages,
+          and(
+            eq(mailMessages.mailboxAccountId, args.mailboxAccountId),
+            eq(mailMessages.senderKey, deflected.senderKey),
+          ),
+        );
+      const [rows, [impact], failedExecutions] = await Promise.all([
+        countsQuery,
+        impactQuery,
+        this.countFailedExecutions(args),
+      ]);
+      const noisePreventedPerMonth =
+        Number(impact?.deflectedSenders ?? 0) > 0
+          ? Math.round(Number(impact?.last90Total ?? 0) / 3)
+          : null;
 
-    const byVerb = new Map<ActivityLogEntry['action'], number>(
-      rows.map((r) => [r.action, Number(r.n)]),
-    );
-    return {
-      archived: byVerb.get('archive') ?? 0,
-      // D227 K/A/U/L/D — Delete verb count (ADR-0019).
-      deleted: byVerb.get('delete') ?? 0,
-      unsubscribed: byVerb.get('unsubscribe') ?? 0,
-      kept: byVerb.get('keep') ?? 0,
-      later: byVerb.get('later') ?? 0,
-      followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
-      // The same three actions `persistedReviewOutcomeExpression` maps to
-      // 'failed'. `unsubscribe_unavailable` was in that arm but not here,
-      // so the header count linked to a list larger than its own number
-      // once the count became a link to `outcome=failed`
-      // (QA-activity-20260918-08).
-      needsAttention:
-        (byVerb.get('unsubscribe_failed') ?? 0) +
-        (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
-        (byVerb.get('unsubscribe_unavailable') ?? 0) +
-        countFailedExecutionLineages(
-          args.executionLineages,
-          args.lowerBound,
-          args.upperBound,
-          args.senderQuery,
-        ),
-      noisePreventedPerMonth,
-    };
+      const byVerb = new Map<ActivityLogEntry['action'], number>(
+        rows.map((r) => [r.action, Number(r.n)]),
+      );
+      return {
+        archived: byVerb.get('archive') ?? 0,
+        // D227 K/A/U/L/D — Delete verb count (ADR-0019).
+        deleted: byVerb.get('delete') ?? 0,
+        unsubscribed: byVerb.get('unsubscribe') ?? 0,
+        kept: byVerb.get('keep') ?? 0,
+        later: byVerb.get('later') ?? 0,
+        followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
+        // The same three actions `persistedReviewOutcomeExpression` maps to
+        // 'failed'. `unsubscribe_unavailable` was in that arm but not here,
+        // so the header count linked to a list larger than its own number
+        // once the count became a link to `outcome=failed`
+        // (QA-activity-20260918-08).
+        needsAttention:
+          (byVerb.get('unsubscribe_failed') ?? 0) +
+          (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
+          (byVerb.get('unsubscribe_unavailable') ?? 0) +
+          failedExecutions,
+        noisePreventedPerMonth,
+      };
+    });
   }
 
   /**
@@ -1188,12 +1217,14 @@ export class ActivityReadService {
       later: 0,
       delete: 0,
     };
+    const emailsByVerb: Record<CanonicalVerb, number> = { ...byVerb };
     let emailsHandled = 0;
     let since: Date | null = null;
     for (const row of verbRows) {
       // The WHERE clause restricts `action` to SUMMARY_VERBS — the
       // narrowing cast cannot observe a non-canonical value.
       byVerb[row.action as CanonicalVerb] = Number(row.n);
+      emailsByVerb[row.action as CanonicalVerb] = Number(row.handled ?? 0);
       emailsHandled += Number(row.handled ?? 0);
       if (row.earliest && (since === null || row.earliest < since)) since = row.earliest;
     }
@@ -1203,6 +1234,7 @@ export class ActivityReadService {
       since: since ? since.toISOString() : null,
       decidedSenders: Number(senderRows[0]?.n ?? 0),
       byVerb,
+      emailsByVerb,
       emailsHandled,
       undoCount: Number(undoRows[0]?.n ?? 0),
     };
@@ -1367,36 +1399,6 @@ function matchesSenderNeedle(
     sender.displayName.toLocaleLowerCase().includes(needle) ||
     sender.email.toLocaleLowerCase().includes(needle)
   );
-}
-
-function countFailedExecutionLineages(
-  lineages: ExecutionLineage[],
-  lowerBound: Date | null,
-  upperBound: Date | null,
-  senderQuery: string,
-): number {
-  const needle = senderQuery.toLocaleLowerCase();
-  return lineages.filter(({ current, sender }) => {
-    if (current.status !== 'failed') return false;
-    if (lowerBound && current.updatedAt < lowerBound) return false;
-    if (upperBound && current.updatedAt >= upperBound) return false;
-    return matchesSenderNeedle(sender, needle);
-  }).length;
-}
-
-function compareExecutionAttempts(left: ExecutionAttempt, right: ExecutionAttempt): number {
-  if (left.recoveryAttempt !== right.recoveryAttempt) {
-    return left.recoveryAttempt - right.recoveryAttempt;
-  }
-  const timeDelta = left.createdAt.getTime() - right.createdAt.getTime();
-  if (timeDelta !== 0) return timeDelta;
-  return left.id > right.id ? 1 : left.id < right.id ? -1 : 0;
-}
-
-function isUnresolvedExecutionStatus(
-  status: (typeof actionJobs.$inferSelect)['status'],
-): status is 'queued' | 'executing' | 'failed' {
-  return status === 'queued' || status === 'executing' || status === 'failed';
 }
 
 function isStrictlyAfterCursor(

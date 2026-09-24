@@ -64,8 +64,8 @@ afterEach(() => {
   window.matchMedia = originalMatchMedia;
 });
 
-const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
-const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
+const NARROW_TEMPLATE = '44px minmax(0, 1fr) 18px';
+const WIDE_TEMPLATE = '44px minmax(0, 1fr) auto 18px';
 
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
   return render(
@@ -91,6 +91,16 @@ function daysAgoIso(days: number): string {
   d.setDate(d.getDate() - days);
   d.setHours(9, 0, 0, 0);
   return d.toISOString();
+}
+
+// The inline preview's confirm button, scoped to the preview region — the
+// verb toolbar beside it carries buttons whose names also start with the
+// verb ("Archive (A)"). The label is verb + live count ("Archive 2"),
+// the bare verb while the count is unknown or zero, "<verb> anyway" on a
+// Protected row.
+function inlineConfirm(name: RegExp) {
+  const region = screen.getByRole('region', { name: /^Preview · / });
+  return within(region).getByRole('button', { name });
 }
 
 describe('lastSeenLabel — "today" is a calendar day, not 24 hours', () => {
@@ -149,7 +159,7 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     expect(screen.getByRole('toolbar')).toBeInTheDocument();
   });
 
-  it('shows the same badge at 375px as on desktop — the narrow layout reflows, it does not drop information', () => {
+  it('shows the same verdict at 375px as on desktop, and keeps the band for the expanded body', () => {
     setViewportWidth(375);
     // LinkedIn, not Shipping (D133): Shipping's real cascade signals now
     // land on Later, which `confidenceBand` always maps to `null` (an
@@ -159,10 +169,17 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     // exercises the same "verdict pill carries a band at every width"
     // invariant this test is actually about.
     const row = rowById('t-linkedin'); // confidence 0.89 → recommended
-    renderRow(row);
-    // The verdict pill carries the recommendation at every width:
-    // "Unsubscribe · strong".
-    expect(header(row).textContent).toContain('strong');
+    const { unmount } = renderRow(row);
+    // At rest the pill names the verdict at every width; the band is
+    // detail, so it is NOT on the row…
+    expect(header(row).textContent).toContain('Unsubscribe');
+    expect(header(row).textContent).not.toContain('strong');
+    unmount();
+    // …and lives in the expanded body: "Suggested: Unsubscribe · strong".
+    renderRow(row, { expanded: true });
+    expect(document.querySelector('[data-dm-verdict-band]')?.textContent).toBe(
+      'Suggested: Unsubscribe · strong',
+    );
   });
 
   // The pill used to print `Math.round(confidence * 100)`. The cascade
@@ -177,13 +194,15 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     expect(header(row).textContent).not.toMatch(/\d+%/);
   });
 
-  // `strong` is DEFINED as "recommended", so the one badge the row
-  // renders always agrees with the engine's own gate.
+  // `strong` is DEFINED as "recommended", so the one band the expanded
+  // body renders always agrees with the engine's own gate.
   it('shows the band `strong` exactly when the engine recommends the verdict', () => {
     setViewportWidth(1280);
     for (const row of TRIAGE_QUEUE.filter((r) => r.protectionReason === null)) {
-      const { unmount } = renderRow(row);
-      const isStrong = header(row).textContent?.includes('· strong') ?? false;
+      const { unmount } = renderRow(row, { expanded: true });
+      const isStrong =
+        document.querySelector('[data-dm-verdict-band]')?.textContent?.includes('· strong') ??
+        false;
       const isRecommended = recommendedVerb(row.verdict, row.confidence) !== null;
       expect(isStrong).toBe(isRecommended);
       unmount();
@@ -353,7 +372,7 @@ describe('TriageRow — the volume tile discloses its 90-day derivation (QA-arch
     const row = rowById('t-oldnavy'); // monthlyVolume: 48
     renderRow(row, { expanded: true });
 
-    expect(screen.getByText('per month 90d avg')).toBeInTheDocument();
+    expect(screen.getByText('Per month, 90d avg')).toBeInTheDocument();
     expect(screen.getByText('48')).toBeInTheDocument();
   });
 });
@@ -363,7 +382,7 @@ describe('TriageRow — the stat grid reflows instead of orphaning a window word
     const row = rowById('t-oldnavy');
     renderRow(row, { expanded: true });
 
-    const grid = screen.getByText('marked read 90d').parentElement!.parentElement!;
+    const grid = screen.getByText('Marked read, 90d').parentElement!.parentElement!;
     expect(grid.style.gridTemplateColumns).toContain('auto-fit');
   });
 
@@ -371,7 +390,7 @@ describe('TriageRow — the stat grid reflows instead of orphaning a window word
     const row = rowById('t-oldnavy');
     renderRow(row, { expanded: true });
 
-    expect(screen.getByText('received all time')).toBeInTheDocument();
+    expect(screen.getByText('Received all time')).toBeInTheDocument();
   });
 });
 
@@ -386,7 +405,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBeNull();
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('marked read 90d').parentElement!;
+    const stats = screen.getByText('Marked read, 90d').parentElement!;
     expect(stats.textContent).toContain('—');
     expect(stats.textContent).not.toContain('0%');
   });
@@ -400,7 +419,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('marked read 90d').parentElement!;
+    const stats = screen.getByText('Marked read, 90d').parentElement!;
     expect(stats.textContent).toContain('0%');
   });
 
@@ -497,7 +516,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     // exist on BOTH paths — otherwise skipping the sheet silently skips
     // the acknowledgement while `override: true` still goes on the wire.
     renderInline(rowById('t-sarah')); // protectionReason: 'manual' (the wire's user-set spelling)
-    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive anyway$/)).toBeInTheDocument();
   });
 
   it('states that the protection SURVIVES the action, and offers Unprotect', () => {
@@ -516,7 +535,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
   it('says nothing about protection on an unprotected row', () => {
     const { container } = renderInline(rowById('t-groupon'));
     expect(container.textContent).not.toMatch(/stays Protected/);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive 2$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
@@ -611,7 +630,7 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
     expect(
       screen.getByRole('region', { name: `Preview · Archive ${rowById('t-sarah').senderName}` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive anyway$/)).toBeInTheDocument();
   });
 
   it('renders no preview when no action is pending, collapsed or expanded', () => {
@@ -654,7 +673,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
 
   it('EXPANDED: offers the verb shortcut, because the toolbar keydown is live', () => {
     const { container } = renderPreview(true);
-    expect(container.textContent).toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Press A again to confirm/);
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 
@@ -674,15 +693,17 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
         inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
       />,
     );
-    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).not.toMatch(/Press A again/i);
     expect(container.textContent).toMatch(/Esc cancels/);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeDisabled();
+    expect(inlineConfirm(/^Archive$/)).toBeDisabled();
+    // …and says why, or a dead button reads as a broken one.
+    expect(container.textContent).toMatch(/Counting the inbox/);
   });
 
   it('EXPANDED with a resolved count: confirm is enabled', () => {
     // Two-sided: a disabled state only ever observed disabled proves nothing.
     renderPreview(true);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeEnabled();
+    expect(inlineConfirm(/^Archive 2$/)).toBeEnabled();
   });
 
   it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
@@ -691,7 +712,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     // Escape is a window listener on the pending inline surface, so it
     // survives the collapse and stays honest.
     const { container } = renderPreview(false);
-    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).not.toMatch(/Press A again/i);
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 });
@@ -709,7 +730,7 @@ describe('TriageRow — inline zero-count no-op gate', () => {
   });
 
   it.each(['Archive', 'Later', 'Delete'] as const)(
-    'disables Confirm %s and says why at a resolved count of zero',
+    'disables the %s confirm and says why at a resolved count of zero',
     (verb) => {
       const row = rowById('t-groupon');
       const { rerender } = render(
@@ -722,8 +743,8 @@ describe('TriageRow — inline zero-count no-op gate', () => {
         />,
       );
 
-      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeDisabled();
-      expect(screen.getByText(/Nothing to act on/i)).toBeInTheDocument();
+      expect(inlineConfirm(new RegExp(`^${verb}$`))).toBeDisabled();
+      expect(screen.getByText(/Nothing in your inbox from/i)).toBeInTheDocument();
       // The shortcut hint must not advertise a key the screen refuses.
       expect(screen.queryByText(/press .* again/i)).toBeNull();
 
@@ -736,12 +757,12 @@ describe('TriageRow — inline zero-count no-op gate', () => {
           inlinePreview={inline(verb, 1)}
         />,
       );
-      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeEnabled();
-      expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+      expect(inlineConfirm(new RegExp(`^${verb} 1$`))).toBeEnabled();
+      expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
     },
   );
 
-  it('leaves Confirm Unsubscribe armed at zero — it cuts future mail', () => {
+  it('leaves the Unsubscribe confirm armed at zero — it cuts future mail', () => {
     const row = rowById('t-groupon');
     render(
       <TriageRow
@@ -753,8 +774,8 @@ describe('TriageRow — inline zero-count no-op gate', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /^Confirm Unsubscribe$/ })).toBeEnabled();
-    expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+    expect(inlineConfirm(/^Unsubscribe$/)).toBeEnabled();
+    expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
   });
 
   it('keeps the verb toolbar live so a zero count does not trap the row', () => {

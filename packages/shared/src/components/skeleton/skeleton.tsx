@@ -33,7 +33,8 @@ import { color, radius } from '../../tokens/tokens';
  * in this directory). A skeleton in isolation has no useful content
  * for AT users.
  */
-export type SkeletonVariant = 'text' | 'circle' | 'rect';
+/** `pill` stands in for a capsule button. */
+export type SkeletonVariant = 'text' | 'circle' | 'rect' | 'pill';
 
 export interface SkeletonProps {
   /** Visual shape. Default `text`. */
@@ -136,6 +137,7 @@ const DEFAULTS: Record<
   text: { width: '100%', height: '12px', borderRadius: 4 },
   circle: { width: '32px', height: '32px', borderRadius: '50%' },
   rect: { width: '100%', height: '80px', borderRadius: radius.md },
+  pill: { width: '120px', height: '36px', borderRadius: radius.pill },
 };
 
 function toCss(value: number | string | undefined): string | undefined {

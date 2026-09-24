@@ -977,9 +977,9 @@ export class PaddleAdapter implements BillingProvider {
         };
       }
       case 'adjustment.created': {
-        // Refund / chargeback → entitlement ends (documented in
-        // billing.module.ts). Adjustments without a subscription link
-        // (one-off transactions — we sell none) are ignored.
+        // A refund request starts the pending grace; a chargeback ends
+        // entitlement immediately. Adjustments without a subscription
+        // link (one-off transactions — we sell none) are ignored.
         const data = body.data as PaddleAdjustment | undefined;
         const action = data?.action;
         // The dispute was WON: Paddle clawed the money back from the bank
@@ -1010,6 +1010,33 @@ export class PaddleAdapter implements BillingProvider {
             eventType,
             providerSubscriptionId: data.subscription_id,
             reason: action,
+          };
+        }
+        return { kind: 'ignored', providerEventId: eventId, eventType };
+      }
+      case 'adjustment.updated': {
+        // A pending refund becomes final here. Keep pending and partial
+        // adjustments inert; the reconciliation sweep remains the backup
+        // when this event is delayed or the destination omits it.
+        const data = body.data as PaddleAdjustment | undefined;
+        if (data?.action !== 'refund' || !data.subscription_id || !endsSubscription(data)) {
+          return { kind: 'ignored', providerEventId: eventId, eventType };
+        }
+        if (data.status === 'approved') {
+          return {
+            kind: 'refund_settled',
+            providerEventId: eventId,
+            eventType,
+            providerSubscriptionId: data.subscription_id,
+          };
+        }
+        if (data.status === 'rejected') {
+          return {
+            kind: 'cancellation_revoked',
+            providerEventId: eventId,
+            eventType,
+            providerSubscriptionId: data.subscription_id,
+            reason: 'refund_rejected',
           };
         }
         return { kind: 'ignored', providerEventId: eventId, eventType };

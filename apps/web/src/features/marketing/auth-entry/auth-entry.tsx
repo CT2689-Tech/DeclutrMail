@@ -1,112 +1,110 @@
 import {
   ACTION_PREVIEW_CLAIM,
+  Logo,
   OAUTH_SCOPE_DISCLOSURE,
-  PrivacyBadge,
   PRIVACY_NEVER_ITEMS,
+  PRIVACY_NEVER_LABEL,
   PRIVACY_STORAGE_ITEMS,
+  PRIVACY_STORAGE_LABEL,
 } from '@declutrmail/shared';
 
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl } from '../landing/urls';
 
-export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
+// The preview promise, first sentence only — the rest of the shared claim
+// (a re-check when the action runs) belongs to the preview itself.
+const PREVIEW_PROMISE = ACTION_PREVIEW_CLAIM.split(/(?<=\.)\s+/)[0];
+
+/**
+ * /sign-in — the OAuth decision point. One centred card: the headline,
+ * the Google button, and the full scope disclosure beside it; the storage
+ * list one click away; the demo as the quiet alternative.
+ */
+export function AuthEntry({
+  authResult,
+  returnTo,
+}: {
+  authResult?: 'inbox_limit';
+  returnTo?: string;
+}) {
   return (
     <div className="dm-auth-entry">
-      <section className="dm-auth-entry-card">
-        <div className="dm-auth-entry-copy">
-          <p className="dm-auth-entry-eyebrow">Sign in with Google</p>
-          <h1>Know what you are sharing before you connect.</h1>
-          <p className="dm-auth-entry-lede">
-            Gmail remains where you read, reply, search, and compose. DeclutrMail stores only the
-            Gmail details listed here so you can review and act by sender.
-          </p>
+      <section className="dm-auth-entry-card" aria-labelledby="dm-auth-entry-title">
+        <Logo variant="mark" size={40} />
+        <h1 id="dm-auth-entry-title">Know what you are sharing before you connect.</h1>
+        <p className="dm-auth-entry-lede">
+          Gmail remains where you read, reply, search, and compose.
+        </p>
 
-          {authResult === 'inbox_limit' ? (
-            <div className="dm-auth-entry-alert" role="alert">
-              <strong>This Gmail can’t reconnect yet.</strong>
-              <p>
-                Every Gmail connection your plan allows is already in use. Sign in with any
-                connected Gmail to disconnect it, or upgrade to connect more.
-              </p>
-              <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
-                Compare plans →
-              </TrackedCta>
-            </div>
-          ) : null}
-
-          <div className="dm-auth-entry-steps">
-            <div>
-              <span>1</span>
-              <p>
-                <strong>Google shows the consent screen.</strong>
-                {OAUTH_SCOPE_DISCLOSURE}
-              </p>
-            </div>
-            <div>
-              <span>2</span>
-              <p>
-                <strong>DeclutrMail groups your email by sender.</strong>
-                The first scan runs on its own — we email you when your inbox is ready.
-              </p>
-            </div>
-            <div>
-              <span>3</span>
-              <p>
-                <strong>You review senders before email moves.</strong>
-                {ACTION_PREVIEW_CLAIM}
-              </p>
-            </div>
+        {authResult === 'inbox_limit' ? (
+          <div className="dm-auth-entry-alert" role="alert">
+            <strong>This Gmail can’t reconnect yet.</strong>
+            <p>
+              Every Gmail connection your plan allows is already in use. Sign in with any connected
+              Gmail to disconnect it, or upgrade to connect more.
+            </p>
+            <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
+              Compare plans
+            </TrackedCta>
           </div>
+        ) : null}
 
-          <TrackedCta
-            className="dm-auth-entry-google"
-            href={oauthStartUrl()}
-            cta="connect_gmail"
-            placement="hero"
-          >
-            <GoogleMark />
-            Continue with Google
-          </TrackedCta>
-          <p className="dm-auth-entry-fine">
-            No card required for Free. Disconnect from Settings or your Google Account at any time.
-          </p>
-        </div>
+        <TrackedCta
+          className="dm-auth-entry-google"
+          href={oauthStartUrl(returnTo)}
+          cta="connect_gmail"
+          placement="hero"
+        >
+          <GoogleMark />
+          Continue with Google
+        </TrackedCta>
 
-        <aside className="dm-auth-entry-boundary" aria-label="Gmail data DeclutrMail stores">
-          <PrivacyBadge variant="card" />
+        <p className="dm-auth-entry-scope">{OAUTH_SCOPE_DISCLOSURE}</p>
+
+        <details className="dm-auth-entry-storage">
+          <summary>See what DeclutrMail stores</summary>
           <div>
-            <p>Gmail details DeclutrMail stores</p>
+            <p>{PRIVACY_STORAGE_LABEL}</p>
             <ul>
               {PRIVACY_STORAGE_ITEMS.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
-          </div>
-          <p className="dm-auth-entry-boundary-note">
-            Account, preference, action, service-provider, and billing records are described in the{' '}
-            <a href="/privacy">privacy policy</a>.
-          </p>
-          <div>
-            <p>Not fetched or stored</p>
+            <p>{PRIVACY_NEVER_LABEL}</p>
             <ul>
               {PRIVACY_NEVER_ITEMS.map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
+            <p className="dm-auth-entry-storage-note">
+              Account, preference, action, service-provider, and billing records are described in
+              the <a href="/privacy#what-we-store">privacy policy</a>. See{' '}
+              <a href="/security">how access is protected</a>.
+            </p>
           </div>
-          <a href="/security">See how access is protected →</a>
-        </aside>
+        </details>
+
+        <ol className="dm-auth-entry-next" aria-label="After you connect">
+          <li>
+            <strong>DeclutrMail groups your email by sender.</strong> The first scan runs on its own
+            — we email you when your inbox is ready.
+          </li>
+          <li>
+            <strong>You review senders before email moves.</strong> {PREVIEW_PROMISE}
+          </li>
+        </ol>
+
+        <p className="dm-auth-entry-fine">
+          No card required for Free. Disconnect from Settings or your Google Account at any time.
+        </p>
       </section>
 
-      <section className="dm-auth-entry-alt">
-        <div>
-          <p>Not ready to connect?</p>
-          <h2>Try the same steps with made-up senders first.</h2>
-        </div>
+      <p className="dm-auth-entry-alt">
+        Not ready to connect?{' '}
         <TrackedCta href="/inbox-simulator" cta="try_demo" placement="final">
-          Try the demo →
+          Try the demo
         </TrackedCta>
-      </section>
+      </p>
     </div>
   );
 }

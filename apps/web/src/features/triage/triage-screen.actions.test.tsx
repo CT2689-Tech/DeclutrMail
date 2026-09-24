@@ -36,6 +36,7 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
@@ -109,6 +110,15 @@ function renderScreen(client: QueryClient) {
   );
 }
 
+/**
+ * The live count, as the preview states it: "Archive 47 emails?" (title)
+ * or "Also archive the 47 emails already in the inbox" (Unsubscribe's
+ * backlog toggle). Pins the digit AND that it counts email.
+ */
+function liveCount(n: string) {
+  return screen.getByText(new RegExp(`\\b${n} emails?\\b`));
+}
+
 function expandRow(senderName: string) {
   fireEvent.click(screen.getByRole('button', { name: `${senderName} — expand triage detail` }));
 }
@@ -119,12 +129,16 @@ async function confirmOpenSheet(
 ) {
   const dialog = await screen.findByRole('dialog');
   if (waitForPreview) {
-    await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+    await waitFor(() => expect(liveCount('47')).toBeDefined());
   }
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
+
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
 
 describe('TriageScreen — D226 mutation wiring', () => {
   beforeEach(() => {
@@ -142,6 +156,101 @@ describe('TriageScreen — D226 mutation wiring', () => {
   });
   afterEach(() => {
     resetFetchStub();
+  });
+
+  it('counts confirmed decisions when the queue backfills, then resets on mailbox switch', async () => {
+    const backfill = TRIAGE_QUEUE[2]!;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: GROUPON.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '66666666-6666-4666-8666-666666666666',
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = renderScreen(client);
+    expect(
+      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+    await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(1));
+
+    // The server replaces the decided row, leaving the queue at the
+    // same length. Its size alone cannot measure decisions this session.
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [LINKEDIN, backfill], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    expect(
+      screen.getByRole('status', { name: '1 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(
+      screen.getByRole('status', {
+        name: '1 decided this session; 2 in queue; reviewing 1 of 2',
+      }),
+    ).toBeInTheDocument();
+
+    h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('status', {
+          name: '0 decided this session; 2 in queue; reviewing 1 of 2',
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+  });
+
+  it('does not carry a decided count across a mailbox switch while Triage is unmounted', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: GROUPON.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '66666666-6666-4666-8666-666666666666',
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const first = renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+    await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(1));
+    first.unmount();
+
+    h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    renderScreen(client);
+    expect(
+      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(useTriageStore.getState().sessionMailboxId).toBe(h.mailbox));
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
   });
 
   it('keeps a delayed action on its original mailbox after the user switches', async () => {
@@ -290,7 +399,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'a' });
 
     const dialog = await screen.findByRole('dialog');
-    await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+    await waitFor(() => expect(liveCount('47')).toBeDefined());
     const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
     await waitFor(() => expect(confirm).not.toBeDisabled());
 
@@ -363,7 +472,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
         screen.getByRole('region', { name: `Preview · Archive ${GROUPON.senderName}` }),
       ).toBeDefined(),
     );
-    await waitFor(() => expect(screen.getByText('47')).toBeDefined());
+    await waitFor(() => expect(liveCount('47')).toBeDefined());
 
     // ⌘⏎ confirms.
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -517,18 +626,19 @@ describe('TriageScreen — D226 mutation wiring', () => {
         'aria-checked',
         'true',
       );
-      expect(within(dialog).getByText(/in Inbox now/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox now, rechecked/)).toBeDefined();
 
       fireEvent.click(archived);
       expect(
-        within(dialog).getByText(
-          `Move inbox + archived email from ${GROUPON.senderName} to Gmail Trash`,
-        ),
+        within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
       ).toBeDefined();
-      expect(within(dialog).getByText(/across inbox \+ archived now/)).toBeDefined();
-      expect(within(dialog).getByText(/in Inbox or archived moves to Gmail Trash/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox \+ archived now, rechecked/)).toBeDefined();
       // '412' = the chip AND the armed headline figure.
-      expect(within(dialog).getAllByText('412')).toHaveLength(2);
+      expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
+      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
 
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -544,7 +654,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
       // '47' is on the Inbox-only chip AND the armed headline figure.
-      await waitFor(() => expect(screen.getAllByText('47')).toHaveLength(2));
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: 'Delete 47 emails?' })).toBeDefined(),
+      );
+      expect(screen.getByRole('radio', { name: /Inbox only 47/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
@@ -577,14 +693,15 @@ describe('TriageScreen — D226 mutation wiring', () => {
       const dialog = await screen.findByRole('dialog');
       const inboxOnly = await within(dialog).findByRole('radio', { name: /Inbox only/ });
       expect(inboxOnly).toHaveAttribute('aria-checked', 'true');
-      expect(within(dialog).getByText(/to reach 412 archived emails/)).toBeDefined();
+      expect(within(dialog).getByText(/Switch to Inbox \+ archived/)).toBeDefined();
+      expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toBeDefined();
       const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
       expect(confirm).toBeDisabled();
 
       // The wider delete is a deliberate click — and only then arms confirm.
       fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
       await waitFor(() => expect(confirm).not.toBeDisabled());
-      expect(within(dialog).queryByText(/to reach 412 archived emails/)).toBeNull();
+      expect(within(dialog).queryByText(/Switch to Inbox \+ archived/)).toBeNull();
     });
 
     it('offers no reach choice on Archive', async () => {
@@ -593,7 +710,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'a' });
       const dialog = await screen.findByRole('dialog');
-      await waitFor(() => expect(within(dialog).getByText('47')).toBeDefined());
+      await waitFor(() =>
+        expect(within(dialog).getByRole('heading', { name: / 47 emails\?$/ })).toBeDefined(),
+      );
       expect(reachRow()).toBeNull();
     });
 
@@ -610,7 +729,9 @@ describe('TriageScreen — D226 mutation wiring', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
       const dialog = await screen.findByRole('dialog');
-      await waitFor(() => expect(within(dialog).getByText('47')).toBeDefined());
+      await waitFor(() =>
+        expect(within(dialog).getByRole('heading', { name: / 47 emails\?$/ })).toBeDefined(),
+      );
       expect(reachRow()).toBeNull();
     });
   });
@@ -1179,7 +1300,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    expect(screen.getByText("The unsubscribe request can't be undone.")).toBeDefined();
+    expect(screen.getByText(/A sent unsubscribe can’t be recalled/)).toBeDefined();
   });
 
   it('one_click → done: execution polled and endpoint acceptance is stated precisely', async () => {
@@ -1328,7 +1449,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     fireEvent.keyDown(window, { key: 'a' });
 
     // Inline preview banner renders (no dialog — the sheet was skipped).
-    await screen.findByText('Preview · Archive');
+    await screen.findByRole('region', { name: /^Preview · Archive / });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(useTriageStore.getState().pendingAction).toMatchObject({
       verb: 'Archive',
@@ -1338,7 +1459,9 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    await waitFor(() => expect(screen.queryByText('Preview · Archive')).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: /^Preview · Archive / })).toBeNull(),
+    );
     expect(useTriageStore.getState().pendingAction).toBeNull();
     // The row stays expanded — only the pending decision is discarded.
     expect(useTriageStore.getState().expandedRowId).toBe(GROUPON.id);
@@ -1352,7 +1475,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     renderScreen(client);
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText('Preview · Archive');
+    await screen.findByRole('region', { name: /^Preview · Archive / });
 
     const input = document.createElement('input');
     document.body.appendChild(input);
@@ -1361,7 +1484,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
 
     // Pending action survives — Escape belonged to the input.
     expect(useTriageStore.getState().pendingAction).not.toBeNull();
-    expect(screen.getByText('Preview · Archive')).toBeDefined();
+    expect(screen.getByRole('region', { name: /^Preview · Archive / })).toBeDefined();
     input.remove();
   });
 
@@ -1387,7 +1510,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Couldn't load the preview/i);
+    await screen.findByText(/Couldn.t load the preview/i);
     const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
     expect(archive).toBeDisabled();
     fireEvent.click(archive);
@@ -1424,7 +1547,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByText(/Inbox now, rechecked when it runs/i);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 
@@ -1465,10 +1588,14 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     fireEvent.keyDown(window, { key: 'a' });
 
     // The preview resolved — this is the zero case, not the loading one.
-    await screen.findByText(/Nothing to act on/i);
+    await screen.findByText(/Nothing in your inbox from/i);
 
     fireEvent.keyDown(window, { key: 'a' });
-    fireEvent.click(screen.getByRole('button', { name: /^Confirm Archive$/i }));
+    fireEvent.click(
+      within(screen.getByRole('region', { name: /^Preview · Archive / })).getByRole('button', {
+        name: /^Archive$/,
+      }),
+    );
     await Promise.resolve();
 
     expect(enqueues).toHaveLength(0);
@@ -1616,7 +1743,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     expandRow(senderName);
     fireEvent.keyDown(window, { key: 'a' });
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Skip this dialog for Archive' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Don’t ask again for Archive' }));
     const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -1912,7 +2039,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       // Confirm the verdict batch through its D226 sheet.
       fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
       const batchSheet = await screen.findByRole('dialog');
-      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive all/ });
+      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
       await waitFor(() => expect(batchConfirm).not.toBeDisabled());
       fireEvent.click(batchConfirm);
       await waitFor(() => expect(bulkEnqueues).toHaveLength(1));

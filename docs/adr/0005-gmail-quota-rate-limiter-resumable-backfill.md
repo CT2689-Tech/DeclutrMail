@@ -153,6 +153,19 @@ mid-window interruption never restarts from zero and re-burns quota.
 
 ## References
 
+### 2026-09-23 quota update
+
+The 15,000-unit ceiling and 5-unit `messages.get` cost above record the
+original implementation and May 2026 project observation. Google's
+[current quota reference](https://developers.google.com/workspace/gmail/api/reference/quota)
+lists 6,000 units/user/minute for newer projects and a 20-unit
+`messages.get` cost. Runtime accounting now reserves each method's
+published cost and defaults to a conservative 4,800-unit/minute target
+with a 400-unit burst ceiling. The authenticated production quota page
+on 2026-09-23 confirmed this project's 15,000-unit legacy ceiling, so
+the production deploy sets a 12,000-unit target with a 1,000-unit
+five-second burst; see `docs/ops/sync-infra-setup.md`.
+
 - `docs/execution/Implementation-Plan.md` — D5, D157, D203, D224, D225
 - `docs/ops/sync-infra-setup.md` — Gmail quota for `declutrmail-ai-prod`
   (15,000 units/min/user, 1,200,000/min/project; empirical ceiling

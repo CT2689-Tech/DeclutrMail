@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 import { TRIAGE_QUEUE } from './data';
@@ -56,7 +56,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: /^Archive all/ });
+      const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -96,14 +96,20 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^Archive all/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
-    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
-    expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
+    // The count is the title and the button; its scope sits in Details.
+    expect(
+      screen.getByRole('heading', { name: /Archive 3 emails from 3 senders\?/ }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive 3' })).toBeEnabled();
+    expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
+    expect(screen.getByText(/From example\.com\./)).toBeInTheDocument();
+    expect(screen.getByText(/One undo reverses the whole batch/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
   });
 
   it('requires an exact future return time for Later', () => {
@@ -119,7 +125,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.getByRole('button', { name: /later for all/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Later( [\d,]+)?$/ })).toBeDisabled();
 
     rerender(
       <BatchActionSheet
@@ -132,7 +138,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.getByRole('button', { name: /later for all/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Later( [\d,]+)?$/ })).not.toBeDisabled();
   });
 
   // Codex review 2026-09-03, round 2: the live preview can legitimately
@@ -156,7 +162,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -186,12 +192,12 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
     // A no-op that would still spend cleanup actions on Free.
-    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/nothing in inbox to act on/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Nothing in your inbox/ })).toBeInTheDocument();
   });
 
   // The footer used to say "close and refresh" with no control that did
@@ -245,7 +251,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -257,24 +263,6 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
 // action per eligible sender — and stated no cost at all. Its own
 // `onError` catches 402 FREE_CAP_REACHED, so the cap was known to be
 // reachable from here; the preview just never said so before the click.
-describe('BatchActionSheet — the confirm footer stays reachable on a short viewport (sibling of QA-triage-20260827-11)', () => {
-  it('sticks the Cancel/Confirm footer to the bottom of the scrolling dialog', () => {
-    render(
-      <BatchActionSheet
-        open
-        verb="Archive"
-        batch={batch}
-        preview={readyPreview}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-      />,
-    );
-    const cancel = screen.getByRole('button', { name: 'Cancel' });
-    const footer = cancel.parentElement!.parentElement!;
-    expect(footer).toHaveStyle({ position: 'sticky', bottom: '0px' });
-  });
-});
-
 describe('BatchActionSheet — states what the batch costs (D226)', () => {
   it('counts one cleanup action per eligible sender', () => {
     render(
@@ -326,10 +314,10 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
   });
 });
 
-// QA-archive-20260901-01: the eyebrow named a vague "multiple senders"
+// QA-archive-20260901-01: the sheet named a vague "multiple senders"
 // instead of the real, actionable count — the same count `unitsNeeded`
-// charges and the confirm button itself states ("Archive all N senders").
-describe('BatchActionSheet — preview eyebrow names the real count (QA-archive-20260901-01)', () => {
+// charges.
+describe('BatchActionSheet — the title names the real count (QA-archive-20260901-01)', () => {
   it('names the verb and the real eligible-sender count, not a vague "multiple"', () => {
     render(
       <BatchActionSheet
@@ -341,13 +329,13 @@ describe('BatchActionSheet — preview eyebrow names the real count (QA-archive-
         onConfirm={() => {}}
       />,
     );
-    expect(screen.getByText('Preview · Archive · 3 senders')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /from 3 senders/ })).toBeInTheDocument();
     expect(screen.queryByText(/multiple senders/)).toBeNull();
   });
 
   // Codex review 2026-09-03: `eligible` is the queue snapshot taken before
   // the bulk preview ran. If the live preview newly flags one of those
-  // senders Protected, the eyebrow/title/quota must all drop to the count
+  // senders Protected, the title/quota must all drop to the count
   // the confirm click actually commits to (`enqueueBulkComposite` skips
   // Protected rows) — never the stale queue count.
   it('drops the count to the live actionable total when the preview newly flags a sender Protected', () => {
@@ -367,11 +355,62 @@ describe('BatchActionSheet — preview eyebrow names the real count (QA-archive-
         onConfirm={() => {}}
       />,
     );
-    expect(screen.getByText('Preview · Archive · 2 senders')).toBeInTheDocument();
-    expect(screen.getByText('Archive all inbox email from 2 senders')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /from 2 senders\?/ })).toBeInTheDocument();
+    // Said once, in the note.
+    expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
+    expect(screen.getByText('Protected')).toBeInTheDocument();
     expect(
       screen.getByText(/Uses 2 of your 34 cleanup actions left this month/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/3 senders/)).toBeNull();
+  });
+});
+
+describe('BatchActionSheet — PreviewSheet grammar', () => {
+  it('names the senders but no count while the preview is still counting', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview="loading"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Archive email from 3 senders?' })).toBeVisible();
+    expect(screen.getByText(/Counting the inbox/)).toBeInTheDocument();
+  });
+
+  it('lists every sender with its own count in Details', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    const list = screen.getByRole('list', { name: 'Current per-sender matches' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(3);
+    expect(within(list).getByText('Sender 2')).toBeInTheDocument();
+  });
+
+  it('Escape cancels', () => {
+    const onCancel = vi.fn();
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        onCancel={onCancel}
+        onConfirm={() => {}}
+      />,
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

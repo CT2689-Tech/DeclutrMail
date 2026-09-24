@@ -1,9 +1,5 @@
-// /activity — Activity feed surface (D55-D60, tracer-bullet).
-//
-// Backend ActivityModule shipped in this PR; the screen reads from
-// `GET /api/activity?window=&source=&cursor=`. D57 row expansion + D60
-// mobile-specific layout + per-sender feed + D58 undo wire-up land in
-// follow-up PRs — see PR body for the deferred scope.
+// /activity — Activity feed surface (D55-D60). The screen reads from
+// `GET /api/activity`; this route prefetches its first page.
 
 import { Suspense } from 'react';
 import { headers } from 'next/headers';
@@ -63,8 +59,8 @@ export default async function ActivityPage({
         const queries: Array<Promise<unknown>> = [
           // The sender filter has to be threaded here as well as into the
           // fetch: the client's query key is partitioned by it, so a
-          // prefetch under the bare key hydrates nothing and the card
-          // renders "Loading weekly outcomes…" on every filtered load.
+          // prefetch under the bare key hydrates nothing and the strip
+          // pops in after hydration on every filtered load.
           queryClient.fetchQuery(
             activityWeeklyReviewQueryOptions(
               (signal) =>

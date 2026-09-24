@@ -24,7 +24,8 @@ const { color, font, shadow } = tokens;
  * default), but the un-dismissable card floated over interactive UI
  * forever. Closing now persists 'essential' — the same
  * privacy-preserving outcome, without the permanent occlusion. The
- * choice remains changeable any time at /cookies and in Settings.
+ * choice remains changeable any time at /cookies and in Settings →
+ * Privacy & data.
  *
  * Mounted once per surface group: the (marketing) layout, the (app)
  * layout, and the onboarding layout. Renders nothing server-side and
@@ -39,7 +40,7 @@ export function CookieConsentBanner() {
     const sync = () => setVisible(readStoredConsent() === null);
     sync();
     // A choice can also arrive from the D147 cookie-preferences card
-    // mounted on the same page (/cookies, Settings) — retire the ask
+    // mounted on the same page (/cookies, Settings → Privacy & data) — retire the ask
     // the moment ANY surface stores one.
     window.addEventListener(CONSENT_CHANGE_EVENT, sync);
     return () => window.removeEventListener(CONSENT_CHANGE_EVENT, sync);

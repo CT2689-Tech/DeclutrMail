@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EMPTY_COMPOSE } from './compose-strip';
+import { EMPTY_COMPOSE } from './filters';
 import { useComposeState } from './use-compose-state';
 import { useSendersStore } from './store';
 

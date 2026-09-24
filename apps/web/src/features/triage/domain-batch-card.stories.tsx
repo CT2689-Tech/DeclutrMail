@@ -9,7 +9,7 @@
 // The card is the ONE scoped exception to D32's "no bulk in Triage":
 // when ≥3 CONSECUTIVE rows share a registrable DOMAIN (D222 — literal
 // sender domain, never a predicted category), the run collapses into a
-// single "decide together?" card. A verb routes through the same
+// single batch offer. A verb routes through the same
 // D226-mandatory preview → mutation path as every destructive action.
 //
 // Variants:
@@ -18,6 +18,8 @@
 //   • Busy           — this batch's decision is confirming server-side
 //   • Disabled       — another decision is confirming (single-slot latch)
 //   • MinimumRun     — the 3-row floor (`MIN_BATCH_RUN`)
+//   • FocusCard      — the offer as its own card in the focus stack
+//   • FocusVerdictOffer — the same-verdict offer: a headline, one verb
 
 import { tokens } from '@declutrmail/shared';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
@@ -47,7 +49,7 @@ const meta: StoryMeta<typeof DomainBatchCard> = {
     docs: {
       description: {
         component:
-          'Domain-batch card — "{n} senders from {domain} — decide together?". Offered when ≥3 consecutive rows share a registrable domain (D222 — literal domain grouping, never a predicted category). Strictly additive: "Decide one by one" dismisses it back to normal rows. Archive/Later route through the D226-mandatory batch preview before one composite mutation; Keep/Unsubscribe stay per-sender.',
+          'Batch offer — "{n} senders from {domain}". A quiet row in the list, its own centred card in focus mode. Offered when ≥3 consecutive rows share a registrable domain (D222 — literal domain grouping, never a predicted category). Strictly additive: "Decide one by one" dismisses it back to normal rows. Archive/Later route through the D226-mandatory batch preview before one composite mutation; Keep/Unsubscribe stay per-sender.',
       },
     },
   },
@@ -145,6 +147,25 @@ export const MinimumRun: Story<typeof DomainBatchCard> = {
       { name: 'Old Navy Deals' },
       { name: 'Old Navy Rewards' },
     ]),
+    onVerb: () => {},
+    onDismiss: () => {},
+  },
+  render: (args: Args) => frame(<DomainBatchCard {...args} />),
+};
+
+/** Focus mode — the offer is a card in the stack, the count its one big number. */
+export const FocusCard: Story<typeof DomainBatchCard> = {
+  args: { batch: AMAZON_BATCH, variant: 'focus', onVerb: () => {}, onDismiss: () => {} },
+  render: (args: Args) => frame(<DomainBatchCard {...args} />),
+};
+
+/** The same-verdict offer — grouped by recommendation, so a headline and a single verb. */
+export const FocusVerdictOffer: Story<typeof DomainBatchCard> = {
+  args: {
+    batch: { ...AMAZON_BATCH, domain: 'Archive-recommended' },
+    variant: 'focus',
+    headline: 'senders suggested for Archive',
+    verbs: ['Archive'],
     onVerb: () => {},
     onDismiss: () => {},
   },

@@ -115,12 +115,13 @@ describe('<EmptyState /> — D212 primitive', () => {
     expect(html).toContain('★');
   });
 
-  it('uses a dashed border so it never looks like an error state (D212)', () => {
-    // Error boundaries use solid borders in red/amber; empty states use
-    // a dashed border in the neutral border colour. Lock the dashed
-    // treatment here so a future style refactor cannot collapse the
-    // visual distinction.
-    const html = renderToStaticMarkup(<EmptyState title="No senders yet" />);
-    expect(html).toContain('border:1px dashed');
+  it('never looks like an error state (D212)', () => {
+    // ErrorState owns the amber mark and the alert role; an empty state
+    // is neutral and unboxed. Lock the distinction so a style refactor
+    // cannot collapse it.
+    const html = renderToStaticMarkup(<EmptyState icon="★" title="No senders yet" />);
+    expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain('--dm-amber');
+    expect(html).not.toContain('border:1px');
   });
 });

@@ -24,6 +24,7 @@
 // The rule's `conditions` + `action_payload` jsonb reference engine
 // signals, never message body content.
 
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   BadRequestException,
   Inject,
@@ -429,49 +430,70 @@ export class AutopilotReadService {
     mailboxAccountId: string,
     ruleId?: string,
   ): Promise<Map<string, AutopilotObserveDigest>> {
-    const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
-    const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
-    const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
-    const rows = await this.db
-      .select({
-        ruleId: ruleMatchLog.ruleId,
-        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`,
-        senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
-        inboxMessagesNow: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
-      })
-      .from(ruleMatchLog)
-      .leftJoin(
-        mailMessages,
-        and(
-          eq(mailMessages.mailboxAccountId, ruleMatchLog.mailboxAccountId),
-          eq(mailMessages.senderKey, ruleMatchLog.senderKey),
-          // `is_outbound = false` — this preview counts what an observe-
-          // mode rule WOULD move, and the executor resolves that set
-          // through `senderInboxActionWhere`, which excludes the user's
-          // own sent mail. Without it the number promised more than the
-          // action could deliver.
-          eq(mailMessages.isOutbound, false),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
-      )
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.modeAtMatch, 'observe'),
-          ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
-        ),
-      )
-      .groupBy(ruleMatchLog.ruleId);
-    return new Map(
-      rows.map((r) => [
-        r.ruleId,
-        {
-          pendingTotal: r.pendingTotal,
-          senders7d: r.senders7d,
-          inboxMessagesNow: r.inboxMessagesNow,
-        },
-      ]),
-    );
+    return measureRequestOperation('autopilot.observe', async () => {
+      const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
+      const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
+      const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
+      const scope = and(
+        eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+        eq(ruleMatchLog.modeAtMatch, 'observe'),
+        ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
+      );
+      // Historical resolved matches cannot contribute to any digest. Count
+      // matches without a message join, then join each recent sender once.
+      const recentSenders = this.db
+        .selectDistinct({
+          ruleId: ruleMatchLog.ruleId,
+          senderKey: ruleMatchLog.senderKey,
+        })
+        .from(ruleMatchLog)
+        .where(and(scope, recent))
+        .as('recent_observe_senders');
+      const counts = this.db
+        .select({
+          ruleId: ruleMatchLog.ruleId,
+          pendingTotal:
+            sql<number>`count(*) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`.as(
+              'pending_total',
+            ),
+          senders7d:
+            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`.as(
+              'senders_7d',
+            ),
+        })
+        .from(ruleMatchLog)
+        .where(and(scope, sql`(${pending} or ${recent})`))
+        .groupBy(ruleMatchLog.ruleId)
+        .as('observe_counts');
+      const inboxCounts = this.db
+        .select({
+          ruleId: recentSenders.ruleId,
+          inboxMessagesNow: sql<number>`count(${mailMessages.id})::int`.as('inbox_messages_now'),
+        })
+        .from(recentSenders)
+        .innerJoin(
+          mailMessages,
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            eq(mailMessages.senderKey, recentSenders.senderKey),
+            eq(mailMessages.isOutbound, false),
+            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+          ),
+        )
+        .groupBy(recentSenders.ruleId)
+        .as('observe_inbox_counts');
+      // One statement also keeps counts and inbox evidence on one snapshot.
+      const rows = await this.db
+        .select({
+          ruleId: counts.ruleId,
+          pendingTotal: counts.pendingTotal,
+          senders7d: counts.senders7d,
+          inboxMessagesNow: sql<number>`coalesce(${inboxCounts.inboxMessagesNow}, 0)::int`,
+        })
+        .from(counts)
+        .leftJoin(inboxCounts, eq(inboxCounts.ruleId, counts.ruleId));
+      return new Map(rows.map(({ ruleId: id, ...digest }) => [id, digest]));
+    });
   }
 
   /**
@@ -509,6 +531,29 @@ export class AutopilotReadService {
       const c = patch.confidenceThreshold;
       if (!Number.isFinite(c) || c < 0 || c > 1) {
         throw new BadRequestException('confidenceThreshold must be a finite number in [0, 1].');
+      }
+    }
+    if (patch.mode === 'active') {
+      const [target] = await this.db
+        .select({ presetKey: automationRules.presetKey })
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.mailboxAccountId, mailboxAccountId),
+            eq(automationRules.id, id),
+            eq(automationRules.isPreset, true),
+          ),
+        )
+        .limit(1);
+      if (target?.presetKey === 'auto_screen_new_senders') {
+        throw new BadRequestException(
+          'New-sender matches require review before moving mail to Later.',
+        );
+      }
+      if (target?.presetKey === 'auto_archive_low_engagement') {
+        throw new BadRequestException(
+          'Low-engagement archive matches require review before moving mail.',
+        );
       }
     }
 
@@ -1365,7 +1410,13 @@ function projectRule(
   // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
   // No auto-promotion happens at elapse (locked safe variant) — the FE
   // day-7 banner (U15) prompts the user off `observeWindowElapsed`.
-  const inObserve = row.mode === 'observe';
+  // Older mailboxes may retain either of these presets in Active mode. The apply
+  // worker treats them as review-only, so the API must show the effective
+  // behavior rather than promise unattended moves that cannot happen.
+  const reviewOnly =
+    row.presetKey === 'auto_screen_new_senders' || row.presetKey === 'auto_archive_low_engagement';
+  const mode = reviewOnly && row.mode === 'active' ? 'observe' : row.mode;
+  const inObserve = mode === 'observe';
   const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;
   return {
     id: row.id,
@@ -1373,10 +1424,11 @@ function projectRule(
     isPreset: row.isPreset,
     name: row.name,
     enabled: row.enabled,
-    mode: row.mode as AutopilotRuleMode,
+    mode: mode as AutopilotRuleMode,
     modeChangedAt: row.modeChangedAt.toISOString(),
-    observeWindowEndsAt: inObserve ? new Date(observeWindowEndsAtMs).toISOString() : null,
-    observeWindowElapsed: inObserve && Date.now() >= observeWindowEndsAtMs,
+    observeWindowEndsAt:
+      inObserve && !reviewOnly ? new Date(observeWindowEndsAtMs).toISOString() : null,
+    observeWindowElapsed: inObserve && !reviewOnly && Date.now() >= observeWindowEndsAtMs,
     observePromptDismissedAt: row.observePromptDismissedAt?.toISOString() ?? null,
     // Digest is an Observe-mode surface — Active/Paused rules keep the
     // wire field null even when stale pending rows exist for them

@@ -62,13 +62,15 @@ describe('PrivacyDataView', () => {
     expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);
   });
 
-  it('explains the difference between Google access and stored data in context', () => {
-    renderView();
+  it('states the storage boundary once — the badge owns it', () => {
+    const { container } = renderView();
+    const text = container.textContent ?? '';
+    expect(text.split(PRIVACY_BADGE_HEADLINE)).toHaveLength(2);
+  });
 
-    expect(
-      screen.getByText('How is Google access different from stored data?'),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/separates what is fetched.*what stays/i)).toBeInTheDocument();
+  it('holds the cookie choice (D147 change / withdrawal surface)', () => {
+    renderView();
+    expect(screen.getByRole('radio', { name: /essential only/i })).toBeChecked();
   });
 
   it('lists mailboxes in DeclutrMail, marking disconnected ones', () => {
@@ -142,7 +144,7 @@ describe('PrivacyDataView', () => {
 
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
-    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('li');
+    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('div');
     expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
     expect(screen.queryByText(/we don't store them/i)).not.toBeInTheDocument();
   });

@@ -3,7 +3,7 @@
    Source of truth for CSS-side values; the typed mirror lives in
    src/tokens/tokens.ts (whose color/shadow entries are var()
    REFERENCES into this file, so inline styles re-theme with the
-   active [data-theme]). Warm-newsprint palette, deep-teal accent.
+   active [data-theme]). Warm-paper palette, muted-plum accent.
    Type/spacing scales are normalised — not the prototype's ad-hoc
    sizes.
 
@@ -11,8 +11,7 @@
    - `:root` carries the light palette (the D2 default).
    - `[data-theme='dark']` overrides the same custom properties.
    - `[data-theme='light']` re-asserts light so a subtree can pin
-     itself (the public (marketing) group stays light regardless of
-     the app preference).
+     itself independently of the surrounding theme.
    - The resolver script in apps/web/src/app/layout.tsx sets
      `data-theme` on <html> BEFORE first paint (localStorage
      'dm-theme', falling back to prefers-color-scheme).
@@ -29,30 +28,36 @@
 :root,
 [data-theme='light'] {
   color-scheme: light;
+  --dm-nav-bg: #2b2230;
+  --dm-nav-fg: #faf4ed;
+  --dm-nav-muted: #d3c4d2;
+  --dm-nav-active: #ffffff20;
+  --dm-nav-marker: #d8a975;
 
   /* Warm-newsprint surface stack */
-  --dm-bg: #fafaf7;
-  --dm-paper: #f4f4f0;
-  --dm-card: #ffffff;
+  --dm-bg: #f6f2eb;
+  --dm-paper: #efe8ed;
+  --dm-card: #fffcf8;
 
   /* Ink */
-  --dm-fg: #0e1413;
-  --dm-fg-soft: #4b5552;
-  --dm-fg-muted: #646d69;
+  --dm-fg: #2d2630;
+  --dm-fg-soft: #625a63;
+  --dm-fg-muted: #685f6b;
 
   /* Lines / borders */
-  --dm-border: rgba(14, 20, 19, 0.14);
-  --dm-line: rgba(14, 20, 19, 0.1);
-  --dm-line-soft: rgba(14, 20, 19, 0.06);
-  --dm-muted-bg: #eff2f5;
+  --dm-border: rgba(45, 38, 48, 0.15);
+  --dm-line: rgba(45, 38, 48, 0.11);
+  --dm-line-soft: rgba(45, 38, 48, 0.07);
+  --dm-muted-bg: #efe8ed;
 
-  /* Deep-teal accent */
-  --dm-primary: #006b5f;
-  --dm-primary-deep: #00463f;
-  --dm-primary-soft: rgba(0, 107, 95, 0.08);
-  --dm-primary-border: rgba(0, 107, 95, 0.35);
-  --dm-primary-wash: hsl(174 60% 96%);
-  --dm-mint: #79e6dc;
+  /* Brand plum; green is reserved for semantic success/protection. */
+  --dm-primary: #59415f;
+  --dm-primary-deep: #3f2e46;
+  --dm-primary-soft: rgba(89, 65, 95, 0.09);
+  --dm-primary-border: rgba(89, 65, 95, 0.36);
+  --dm-primary-wash: #efe6ed;
+  --dm-lilac: #d1b8d6;
+  --dm-mint: var(--dm-lilac);
 
   /* Semantic hues */
   --dm-amber: #b45309;
@@ -78,9 +83,9 @@
   --dm-line-inverse: rgba(255, 255, 255, 0.16);
 
   /* Dashboard accent (ADR-0009 scope) */
-  --dm-dash-accent: #7c3aed;
-  --dm-dash-accent-soft: rgba(124, 58, 237, 0.1);
-  --dm-dash-accent-border: rgba(124, 58, 237, 0.2);
+  --dm-dash-accent: #745879;
+  --dm-dash-accent-soft: rgba(116, 88, 121, 0.1);
+  --dm-dash-accent-border: rgba(116, 88, 121, 0.26);
 
   /* Avatar tonal tile (ADR-0024). Generated color can be mistaken for
      brand identity, so both themes are achromatic; verified logos are
@@ -96,45 +101,68 @@
   --dm-avatar-depth-a: 0.08;
 
   /* Elevation */
-  --dm-shadow-card: 0 1px 2px rgba(20, 30, 50, 0.04), 0 0 0 1px rgba(20, 30, 50, 0.012);
-  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.14);
-  --dm-shadow-lift: 0 8px 24px -8px rgba(20, 30, 50, 0.1), 0 2px 6px -2px rgba(20, 30, 50, 0.05);
+  /* Layered, never one grey blur: a hairline ring for the edge, a tight
+     contact shadow, and a wide soft one for the height. */
+  --dm-shadow-card:
+    0 0 0 1px rgba(14, 20, 19, 0.05), 0 1px 2px rgba(14, 20, 19, 0.04),
+    0 6px 16px -8px rgba(14, 20, 19, 0.08);
+  --dm-shadow-pop:
+    0 0 0 1px rgba(14, 20, 19, 0.06), 0 4px 10px -4px rgba(14, 20, 19, 0.1),
+    0 16px 36px -10px rgba(14, 20, 19, 0.2);
+  --dm-shadow-lift:
+    0 0 0 1px rgba(14, 20, 19, 0.05), 0 2px 6px -2px rgba(14, 20, 19, 0.06),
+    0 12px 28px -10px rgba(14, 20, 19, 0.14);
+  --dm-shadow-modal:
+    0 0 0 1px rgba(14, 20, 19, 0.06), 0 12px 24px -12px rgba(14, 20, 19, 0.18),
+    0 40px 96px -20px rgba(14, 20, 19, 0.38);
+  /* A filled button sits ON the page: top highlight + contact shadow. */
+  --dm-shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(14, 20, 19, 0.18);
+
+  /* Neutral fill — quiet buttons, segmented controls, input wells. */
+  --dm-fill: rgba(14, 20, 19, 0.05);
+  --dm-fill-hover: rgba(14, 20, 19, 0.085);
 
   /* Scrollbar + scrim */
   --dm-scrollbar: rgba(14, 20, 19, 0.14);
   --dm-scrollbar-hover: rgba(14, 20, 19, 0.24);
-  --dm-scrim: rgba(14, 20, 19, 0.34);
+  --dm-scrim: rgba(14, 20, 19, 0.26);
 
   /* Focus ring */
-  --dm-ring: #006b5f;
+  --dm-ring: #59415f;
 }
 
 /* Dark theme — same ink-forward editorial restraint, inverted. The
-   surface stack keeps the faint warm-green cast of the light ink so
+   surface stack keeps the faint warm-plum cast of the light ink so
    the paper metaphor survives the flip. Accents brighten one step for
    AA contrast on dark surfaces. */
 [data-theme='dark'] {
   color-scheme: dark;
+  --dm-nav-bg: #17131a;
+  --dm-nav-fg: #f5eef3;
+  --dm-nav-muted: #cbbdca;
+  --dm-nav-active: #ffffff20;
+  --dm-nav-marker: #e4b987;
 
-  --dm-bg: #0f1211;
-  --dm-paper: #141817;
-  --dm-card: #1a1f1e;
+  --dm-bg: #1e1a21;
+  --dm-paper: #262029;
+  --dm-card: #302a32;
 
-  --dm-fg: #f1f4f3;
-  --dm-fg-soft: #b6bfbb;
-  --dm-fg-muted: #8b948f;
+  --dm-fg: #f4edf1;
+  --dm-fg-soft: #c8bbc5;
+  --dm-fg-muted: #b8aab6;
 
-  --dm-border: rgba(238, 246, 243, 0.18);
-  --dm-line: rgba(238, 246, 243, 0.12);
-  --dm-line-soft: rgba(238, 246, 243, 0.07);
-  --dm-muted-bg: #222826;
+  --dm-border: rgba(244, 237, 241, 0.19);
+  --dm-line: rgba(244, 237, 241, 0.13);
+  --dm-line-soft: rgba(244, 237, 241, 0.08);
+  --dm-muted-bg: #39303b;
 
-  --dm-primary: #2fb5a0;
-  --dm-primary-deep: #52c9b6;
-  --dm-primary-soft: rgba(47, 181, 160, 0.14);
-  --dm-primary-border: rgba(47, 181, 160, 0.42);
-  --dm-primary-wash: hsl(174 40% 11%);
-  --dm-mint: #79e6dc;
+  --dm-primary: #d1b8d6;
+  --dm-primary-deep: #e0c8e4;
+  --dm-primary-soft: rgba(209, 184, 214, 0.13);
+  --dm-primary-border: rgba(209, 184, 214, 0.4);
+  --dm-primary-wash: #39303b;
+  --dm-lilac: #d1b8d6;
+  --dm-mint: var(--dm-lilac);
 
   --dm-amber: #e3a75c;
   /* "Deep" = hover state of filled buttons. On dark those fills carry
@@ -156,14 +184,14 @@
 
   /* On dark, "inverse" surfaces (built on --dm-fg) are LIGHT, so
      inverse ink flips to near-black. */
-  --dm-fg-inverse: #10201d;
-  --dm-fg-inverse-soft: rgba(16, 32, 29, 0.72);
-  --dm-fg-inverse-muted: rgba(16, 32, 29, 0.56);
-  --dm-line-inverse: rgba(16, 32, 29, 0.18);
+  --dm-fg-inverse: #261d29;
+  --dm-fg-inverse-soft: rgba(38, 29, 41, 0.72);
+  --dm-fg-inverse-muted: rgba(38, 29, 41, 0.56);
+  --dm-line-inverse: rgba(38, 29, 41, 0.18);
 
-  --dm-dash-accent: #a78bfa;
-  --dm-dash-accent-soft: rgba(167, 139, 250, 0.16);
-  --dm-dash-accent-border: rgba(167, 139, 250, 0.3);
+  --dm-dash-accent: #d6badd;
+  --dm-dash-accent-soft: rgba(214, 186, 221, 0.14);
+  --dm-dash-accent-border: rgba(214, 186, 221, 0.33);
 
   /* Dark counterpart of the same neutral monogram surface. */
   --dm-avatar-highlight-l: 30%;
@@ -176,15 +204,28 @@
   --dm-avatar-shine-a: 0.13;
   --dm-avatar-depth-a: 0.22;
 
-  --dm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
-  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --dm-shadow-lift: 0 8px 24px -8px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
+  --dm-shadow-card:
+    0 0 0 1px rgba(238, 246, 243, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  --dm-shadow-pop:
+    0 0 0 1px rgba(238, 246, 243, 0.08), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    0 16px 36px -10px rgba(0, 0, 0, 0.7);
+  --dm-shadow-lift:
+    0 0 0 1px rgba(238, 246, 243, 0.07), 0 2px 6px -2px rgba(0, 0, 0, 0.45),
+    0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --dm-shadow-modal:
+    0 0 0 1px rgba(238, 246, 243, 0.1), 0 12px 24px -12px rgba(0, 0, 0, 0.6),
+    0 40px 96px -20px rgba(0, 0, 0, 0.8);
+  --dm-shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.5);
+
+  --dm-fill: rgba(238, 246, 243, 0.07);
+  --dm-fill-hover: rgba(238, 246, 243, 0.12);
 
   --dm-scrollbar: rgba(238, 246, 243, 0.16);
   --dm-scrollbar-hover: rgba(238, 246, 243, 0.28);
   --dm-scrim: rgba(0, 0, 0, 0.55);
 
-  --dm-ring: #2fb5a0;
+  --dm-ring: #d1b8d6;
 }
 
 /* Back-compat aliases — a handful of call sites reached for
@@ -234,7 +275,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
   color: var(--dm-fg);
   font-family: var(--dm-font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -316,27 +357,6 @@ button {
   background-clip: padding-box;
 }
 
-/* Peek affordance — an identity block that opens a dialog reveals its
-   clickability on hover: name underlines, glyph brightens (opt-in via
-   data-dm-peek on the trigger; data-dm-peek-name / data-dm-peek-glyph
-   on the parts). Cursor alone was invisible (2026-07-16 smoke); a
-   hover-only glyph was invisible on touch — the default view's only
-   path to per-sender analytics had zero affordance on phones
-   (launch-audit grid pass, 2026-07-28). Rest state is now dimmed, not
-   hidden. */
-[data-dm-peek]:hover [data-dm-peek-name] {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-[data-dm-peek] [data-dm-peek-glyph] {
-  opacity: 0.55;
-  transition: opacity 0.12s ease;
-}
-[data-dm-peek]:hover [data-dm-peek-glyph],
-[data-dm-peek]:focus-visible [data-dm-peek-glyph] {
-  opacity: 1;
-}
-
 /* Premium hover-lift for cards (opt-in via data-dm-lift). */
 [data-dm-lift] {
   transition:
@@ -402,7 +422,7 @@ button {
    Responsive shell — CSS-driven so the layout is correct at first
    paint. A JS breakpoint hook resolves only after hydration, which
    flashes the desktop shell on mobile; these media queries do not.
-   900px = the `sm` breakpoint.
+   Navigation switches at 760px; feature-content `sm` remains 900px.
    ───────────────────────────────────────────────────────────── */
 .dm-sidebar-desktop {
   display: block;
@@ -410,33 +430,111 @@ button {
 .dm-topbar-hamburger {
   display: none;
 }
-.dm-trust-strip {
-  display: flex;
+.dm-tabbar {
+  display: none;
 }
-.dm-trust-extra {
-  display: inline-flex;
+:root {
+  /* Workspace groups now sit at the top on mobile. Bottom-anchored
+     floating surfaces do not need a navigation offset. */
+  --dm-tabbar-inset: 0px;
 }
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .dm-sidebar-desktop {
     display: none;
   }
   .dm-topbar-hamburger {
     display: inline-flex;
   }
-  .dm-trust-extra {
+  .dm-tabbar {
+    display: flex;
+  }
+}
+@media (max-width: 360px) {
+  .dm-tabbar-label {
     display: none;
   }
 }
-/* Phone widths — the topbar's fixed chrome (hamburger + theme toggle +
-   Sync now + account pill) leaves under ~40px between them, and the
-   strip clips `overflow: hidden` MID-WORD, painting a slice of "UNDO
-   WINDOWS" as garbage ("o wir") on every authed screen. Drop the whole
-   strip instead: both claims are buttons that route to Activity and
-   Settings, and both routes are one tap away in the drawer nav. */
-@media (max-width: 600px) {
-  .dm-trust-strip {
-    display: none;
+
+/* Top-bar icon buttons: compact with a pointer, 44px touch targets
+   below the 760px navigation threshold. */
+.dm-topbar-icon {
+  width: 32px;
+  height: 32px;
+}
+@media (max-width: 760px) {
+  .dm-topbar-icon {
+    width: 44px;
+    height: 44px;
   }
+}
+
+/* Nav rows — hover lives here so it needs no JS and follows the theme.
+   The active row sets its own inline background, which outranks this. */
+.dm-nav-row {
+  background: transparent;
+}
+.dm-nav-row:hover {
+  background: var(--dm-line-soft);
+}
+/* The drawer is touch-first: rows grow from 36px to a 44px target.
+   `min-height` beats the inline `height`. */
+@media (max-width: 760px) {
+  .dm-nav-row {
+    min-height: 44px;
+  }
+}
+/* Plan/lock chips stay out of the resting sidebar; they surface on the
+   row the user is pointing at or has focused. `opacity` (not `display`)
+   keeps them in the accessibility tree the whole time. */
+.dm-nav-lock {
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dm-nav-row:hover .dm-nav-lock,
+.dm-nav-row:focus-visible .dm-nav-lock {
+  opacity: 1;
+}
+
+/* Every screen sets its own max-width; most forget to centre it. Block
+   children with `width: auto` and no max-width resolve auto margins to
+   0, so full-bleed screens are unaffected. The scroller must stay
+   `display: block` — in a flex container an auto margin would
+   shrink-wrap the child instead. */
+.dm-main-scroll > * {
+  margin-inline: auto;
+}
+
+/* Route change — a short fade of the content region. Two identical
+   keyframes: the shell alternates between them on navigation, because
+   changing `animation-name` restarts the animation without remounting
+   the page. Opacity only: a transform here would become the containing
+   block for every `position: fixed` sheet and modal inside a screen. */
+@keyframes dm-route-in-a {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-route-in-b {
+  from {
+    opacity: 0;
+  }
+}
+.dm-main-scroll[data-route-flip='a'] {
+  animation: dm-route-in-a 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dm-main-scroll[data-route-flip='b'] {
+  animation: dm-route-in-b 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* One banner slot. Until the user expands it, everything after the
+   first banner that actually rendered is hidden — in CSS so the rule
+   already holds on the server-rendered first paint. */
+.dm-banner-item:empty {
+  display: none;
+}
+.dm-banner-slot[data-expanded='false'] .dm-banner-item:not(:empty) ~ .dm-banner-item {
+  display: none;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -454,4 +552,167 @@ button {
   [data-dm-lift]:hover {
     transform: none;
   }
+}
+
+/* ── Interaction feel ───────────────────────────────────────────
+   Press: every button gives a little under the finger. Scrim: the page
+   behind a sheet recedes (blur + dim) instead of going grey. Sheet: it
+   arrives from slightly below and slightly small. All three are
+   zeroed by the reduced-motion block above. */
+[data-dm-button]:not(:disabled):not([aria-disabled='true']):active {
+  transform: scale(0.97);
+}
+.dm-scrim {
+  background: var(--dm-scrim);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  animation: dm-scrim-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.dm-sheet {
+  animation: dm-sheet-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+@keyframes dm-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+
+/* The preview sheet: a centred dialog on desktop, a bottom sheet on
+   phones — CSS-driven so there is no post-hydration jump. */
+.dm-sheet-layer {
+  align-items: center;
+}
+.dm-sheet-panel {
+  border-radius: 28px;
+  margin: auto;
+}
+.dm-sheet-details > summary::-webkit-details-marker {
+  display: none;
+}
+.dm-sheet-details > summary:hover {
+  background: var(--dm-fill);
+}
+.dm-sheet-details[open] .dm-sheet-details-chevron {
+  transform: rotate(180deg);
+}
+@media (max-width: 520px) {
+  .dm-sheet-layer {
+    align-items: flex-end;
+    padding: 0 !important;
+  }
+  .dm-sheet-panel {
+    max-width: none !important;
+    margin: auto 0 0;
+    border-radius: 28px 28px 0 0;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* Approved Editorial shell. Feature screens share these foundations instead
+   of restating a palette. The mobile drawer keeps the complete route list. */
+.dm-editorial-sidebar {
+  --dm-ring: #d9b591;
+}
+.dm-editorial-sidebar .dm-nav-row:hover {
+  background: #ffffff0f;
+}
+.dm-editorial-sidebar .dm-nav-row:focus-visible,
+.dm-rail-brand:focus-visible,
+.dm-rail-account:focus-visible {
+  outline: 2px solid var(--dm-nav-marker);
+  outline-offset: -2px;
+}
+.dm-rail-brand:hover,
+.dm-rail-account:hover {
+  color: #fffef1;
+}
+.dm-section-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 0 20px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.dm-section-navigation > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dm-fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dm-section-navigation > button:hover,
+.dm-section-navigation > button[aria-current='page'] {
+  color: var(--dm-fg);
+}
+.dm-section-navigation > button[aria-current='page'] {
+  border-bottom-color: var(--dm-primary);
+}
+.dm-section-navigation > button:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: -2px;
+}
+.dm-section-count,
+.dm-section-lock {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dm-fg-muted);
+}
+.dm-section-count {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--dm-line-soft);
+}
+@media (max-width: 760px) {
+  .dm-section-navigation {
+    padding-inline: 16px;
+  }
+}
+.dm-shell-location {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 0;
+}
+.dm-shell-location strong {
+  font-weight: 600;
+  color: var(--dm-fg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .dm-shell-location > span {
+    display: none;
+  }
+}
+
+.dm-nav-hint {
+  position: fixed;
+  z-index: 90;
+  padding: 9px 12px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  border: 1px solid var(--dm-border);
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: var(--dm-shadow-pop);
+  pointer-events: none;
 }

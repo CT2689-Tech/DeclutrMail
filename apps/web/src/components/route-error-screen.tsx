@@ -15,28 +15,42 @@
  */
 
 import Link from 'next/link';
+import styles from '@/app/(app)/route-loading.module.css';
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
 import { useEffect } from 'react';
-import { TechnicalDetails, tokens } from '@declutrmail/shared';
+import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
 import { initSentryBrowser } from '@/lib/sentry';
 import { captureErrorBoundaryException, type ErrorBoundary } from '@/lib/error-capture';
 
-const { color, font, text } = tokens;
+const { color, font, motion, radius, text } = tokens;
 
 export function RouteErrorScreen({
   error,
+  title,
+  kicker,
+  maxWidth,
+  triageMode,
+  gap = 24,
   reset,
   boundary,
-  eyebrow,
   headline,
   body,
   escape,
 }: {
   error: Error & { digest?: string | undefined };
+  /** Route identity remains visible when its body fails. Omit for root errors. */
+  title?: string;
+  kicker?: string;
+  maxWidth?: number;
+  triageMode?: 'focus' | 'list';
+  gap?: number;
   reset: () => void;
   /** Sentry boundary tag — closed union, matches the route segment. */
   boundary: ErrorBoundary;
-  /** Short amber pill copy, e.g. "Settings hit a snag". */
-  eyebrow: string;
   /** e.g. "We couldn't load your settings." */
   headline: string;
   /** One reassuring sentence — what is safe + what to do next. */
@@ -54,8 +68,15 @@ export function RouteErrorScreen({
     })();
   }, [error, boundary]);
 
+  const ErrorHeading = title ? 'h2' : 'h1';
+
+  // The shared ErrorState composition (amber disc, title, one muted
+  // sentence, one capsule) — kept inline only so the headline stays this
+  // error heading and the escape link + support reference can sit beneath.
   return (
     <main
+      className={triageMode ? styles.triage : undefined}
+      data-triage-mode={triageMode}
       style={{
         minHeight: '60vh',
         background: color.bg,
@@ -64,110 +85,106 @@ export function RouteErrorScreen({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: '56px 24px',
+        ...(title
+          ? {
+              ...editorialColumnStyle,
+              ...(maxWidth ? { maxWidth } : {}),
+              minHeight: undefined,
+              alignItems: 'stretch',
+              justifyContent: 'flex-start',
+              flexDirection: 'column',
+              gap,
+            }
+          : {}),
       }}
     >
+      {title && (
+        <>
+          {kicker && <EditorialKicker>{kicker}</EditorialKicker>}
+          <h1 style={editorialTitleStyle}>{title}</h1>
+        </>
+      )}
+      <style>{`.dm-route-escape { transition: background ${motion.fast} ${motion.ease}; }
+.dm-route-escape:hover { background: ${color.fill}; }`}</style>
       <div
         style={{
           maxWidth: 480,
+          ...(title ? { margin: '0 auto', padding: '24px 0' } : {}),
           width: '100%',
           textAlign: 'center',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 18,
         }}
       >
         <span
+          aria-hidden="true"
           style={{
-            fontFamily: font.mono,
-            fontSize: text.xs,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: color.amber,
+            width: 56,
+            height: 56,
+            borderRadius: radius.pill,
             background: color.amberBg,
-            border: `1px solid ${color.amber}`,
-            borderRadius: 9999,
-            padding: '4px 10px',
+            color: color.amber,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            lineHeight: 1,
+            marginBottom: 20,
           }}
         >
-          {eyebrow}
+          !
         </span>
-        <h1
+        <ErrorHeading
           style={{
-            fontFamily: font.display,
-            fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
+            fontFamily: font.sans,
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             margin: 0,
           }}
         >
           {headline}
-        </h1>
+        </ErrorHeading>
         <p
           style={{
             fontSize: text.md,
-            color: color.fgSoft,
-            lineHeight: 1.6,
-            margin: 0,
+            color: color.fgMuted,
+            lineHeight: 1.5,
+            margin: '8px 0 0',
+            maxWidth: 400,
           }}
         >
           {body}
         </p>
 
-        {error.digest != null && (
-          <TechnicalDetails summary="Show support reference">
-            <code style={{ fontFamily: font.mono, fontSize: text.xs }}>
-              Reference: {error.digest}
-            </code>
-          </TechnicalDetails>
-        )}
-
         <div
           style={{
             display: 'flex',
-            gap: 10,
-            marginTop: 6,
-            flexWrap: 'wrap',
-            justifyContent: 'center',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+            marginTop: 24,
           }}
         >
-          <button
-            type="button"
-            onClick={() => reset()}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.primary,
-              color: color.fgInverse,
-              border: `1px solid ${color.primary}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <Button tone="primary" size="lg" onClick={() => reset()} style={{ minWidth: 200 }}>
             Try again
-          </button>
+          </Button>
           <Link
             href={escape.href}
+            className="dm-route-escape"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.card,
-              color: color.fg,
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
+              height: 44,
+              padding: '0 18px',
+              borderRadius: radius.pill,
+              color: color.fgSoft,
               fontFamily: font.sans,
-              fontSize: 13,
+              fontSize: text.md,
               fontWeight: 600,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -176,6 +193,16 @@ export function RouteErrorScreen({
             {escape.label}
           </Link>
         </div>
+
+        {error.digest != null && (
+          <div style={{ marginTop: 16 }}>
+            <TechnicalDetails summary="Show support reference">
+              <span style={{ fontSize: text.xs, fontVariantNumeric: 'tabular-nums' }}>
+                Reference: {error.digest}
+              </span>
+            </TechnicalDetails>
+          </div>
+        )}
       </div>
     </main>
   );

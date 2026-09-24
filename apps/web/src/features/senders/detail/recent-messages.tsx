@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { EmptyState, tokens } from '@declutrmail/shared';
-import { GMAIL_PREVIEW_FIELD_LABEL } from '@declutrmail/shared/copy';
+import { adaptMailMessageRow } from '../api/adapters';
+import { useSenderMessages } from '../api/use-sender-messages';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
@@ -9,7 +11,7 @@ import { addBreadcrumb } from '@/lib/sentry';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useNow } from '@/lib/use-now';
 
-const { color, font, radius } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Recent messages list (D39 #4, D41).
@@ -28,23 +30,36 @@ export function RecentMessages({
   messages,
   mailboxEmail,
   senderEmail,
+  senderId,
 }: {
   messages: RecentMessage[];
   mailboxEmail: string | null;
   senderEmail: string;
+  senderId?: string;
 }) {
+  const [scope, setScope] = useState<'all_mail' | 'inbox' | 'archived'>('all_mail');
+  const scopedQuery = useSenderMessages(senderId ?? '', {
+    scope,
+    enabled: scope !== 'all_mail',
+  });
+  const visibleMessages =
+    scope === 'all_mail'
+      ? messages
+      : (scopedQuery.data?.pages.flatMap((page) => page.data.map(adaptMailMessageRow)) ?? []);
+  const scopeLabels = [
+    { value: 'all_mail', label: 'Inbox + archived' },
+    { value: 'inbox', label: 'Inbox' },
+    { value: 'archived', label: 'Archived' },
+  ] as const;
+
   return (
     <section
       aria-label="Recent messages"
       style={{
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.lg,
-        padding: '16px 20px',
         fontFamily: font.sans,
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 8,
       }}
     >
       <style>{`@media (max-width: 600px) {
@@ -56,51 +71,69 @@ export function RecentMessages({
           justify-self: end;
         }
       }`}</style>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        {/* QA-sender-detail-20260902-11: the eyebrow and the heading said
-            the same thing ("Recent messages" / "Last N from this sender"),
-            and the heading's count was just how many rows happened to
-            load — it grew as the list paginated. One heading, no count. */}
-        <h2
-          style={{
-            margin: 0,
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-            color: color.fg,
-          }}
-        >
-          Recent messages
-        </h2>
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {/* QA-sender-detail-20260902-02: "we never render bodies" sat
-              directly above each row's `message.snippet` line — real
-              Gmail body-derived text (confirmed live: transaction
-              amounts, account digits, merchant names). Name what's
-              actually shown instead of a claim the row beneath it
-              contradicts. */}
-          Opens in Gmail · subject and the {GMAIL_PREVIEW_FIELD_LABEL} only
-        </span>
-      </div>
+      {/* QA-sender-detail-20260902-11: one heading, no count — a count
+          here was just how many rows happened to load. The old caption
+          beside it ("subject and the Gmail preview only") restated what
+          the rows already show; trust copy belongs at a decision point. */}
+      <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>
+        Recent messages
+      </h2>
 
-      {messages.length === 0 ? (
-        <EmptyState title="No recent messages" body="New email from this sender shows up here." />
+      {senderId && (
+        <div
+          role="group"
+          aria-label="Message location"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+        >
+          {scopeLabels.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={scope === option.value}
+              onClick={() => setScope(option.value)}
+              style={{
+                border: `1px solid ${scope === option.value ? color.primary : color.lineSoft}`,
+                background: scope === option.value ? color.primary : 'transparent',
+                color: scope === option.value ? color.fgInverse : color.fgMuted,
+                borderRadius: 999,
+                padding: '6px 10px',
+                fontFamily: font.sans,
+                fontSize: text.xs,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {scope !== 'all_mail' && scopedQuery.isPending ? (
+        <p role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Loading messages…
+        </p>
+      ) : scope !== 'all_mail' && scopedQuery.isError && !scopedQuery.data ? (
+        <button type="button" onClick={() => void scopedQuery.refetch()}>
+          Could not load messages. Try again.
+        </button>
+      ) : visibleMessages.length === 0 ? (
+        <EmptyState
+          title={
+            scope === 'inbox'
+              ? 'No Inbox messages'
+              : scope === 'archived'
+                ? 'No archived messages'
+                : 'No recent messages'
+          }
+          body={
+            scope === 'inbox'
+              ? 'Try Inbox + archived to see earlier mail from this sender.'
+              : scope === 'archived'
+                ? 'Messages outside your Inbox will show up here.'
+                : 'No current Inbox or archived mail from this sender.'
+          }
+        />
       ) : (
         <ol
           style={{
@@ -112,18 +145,38 @@ export function RecentMessages({
             gap: 1,
           }}
         >
-          {messages.map((m, idx) => (
+          {visibleMessages.map((m, idx) => (
             <li
               key={m.id}
               style={{
                 borderTop: idx === 0 ? 'none' : `1px solid ${color.lineSoft}`,
-                padding: '10px 0',
+                padding: '12px 0',
               }}
             >
               <MessageRow message={m} mailboxEmail={mailboxEmail} senderEmail={senderEmail} />
             </li>
           ))}
         </ol>
+      )}
+      {senderId && scopedQuery.hasNextPage && (
+        <button
+          type="button"
+          disabled={scopedQuery.isFetchingNextPage}
+          onClick={() => void scopedQuery.fetchNextPage()}
+          style={{
+            alignSelf: 'flex-start',
+            border: 0,
+            padding: '6px 0',
+            background: 'transparent',
+            color: color.primary,
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {scopedQuery.isFetchingNextPage ? 'Loading more…' : 'Show more messages'}
+        </button>
       )}
     </section>
   );
@@ -207,10 +260,11 @@ function MessageRow({
             }}
             style={{
               display: 'block',
-              fontSize: 13.5,
+              fontSize: text.md,
               fontWeight: message.unread ? 600 : 500,
               color: color.fg,
               textDecoration: 'none',
+              lineHeight: 1.35,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -222,7 +276,7 @@ function MessageRow({
           <span
             style={{
               display: 'block',
-              fontSize: 13.5,
+              fontSize: text.md,
               fontWeight: message.unread ? 600 : 500,
               color: color.fg,
               overflow: 'hidden',
@@ -236,7 +290,7 @@ function MessageRow({
         <span
           style={{
             display: 'block',
-            fontSize: 12,
+            fontSize: text.sm,
             color: color.fgMuted,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -246,6 +300,18 @@ function MessageRow({
         >
           {message.snippet}
         </span>
+        {message.location && (
+          <span
+            style={{
+              display: 'inline-block',
+              marginTop: 4,
+              fontSize: text.xs,
+              color: color.fgMuted,
+            }}
+          >
+            {message.location === 'inbox' ? 'Inbox' : 'Archived'}
+          </span>
+        )}
       </div>
       {/* D41 keeps the RELATIVE label visible; the exact instant rides
           along in `title` + a machine-readable `dateTime`, so nothing
@@ -257,9 +323,8 @@ function MessageRow({
         // `title=""` on the server render.
         {...(absolute ? { title: absolute } : {})}
         style={{
-          fontFamily: font.mono,
-          fontSize: 11,
-          color: color.fgSoft,
+          fontSize: text.xs,
+          color: color.fgMuted,
           whiteSpace: 'nowrap',
           fontVariantNumeric: 'tabular-nums',
         }}
@@ -272,8 +337,8 @@ function MessageRow({
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          fontFamily: font.mono,
-          fontSize: 11,
+          fontSize: text.xs,
+          fontVariantNumeric: 'tabular-nums',
           color: color.fgMuted,
           whiteSpace: 'nowrap',
         }}

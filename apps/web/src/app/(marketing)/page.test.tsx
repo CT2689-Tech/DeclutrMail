@@ -8,11 +8,13 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
+import { FinalCta } from '@/features/marketing/landing/footer';
 import { Hero } from '@/features/marketing/landing/hero';
 
 // No edge geo outside Vercel — the header is genuinely absent locally,
@@ -40,24 +42,23 @@ describe('landing page — D134', () => {
   it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Clear years of clutter. One sender at a time.');
+    expect(h1.textContent).toBe('Clear Gmail clutter. See what moves first.');
+    expect(h1.querySelector('em')?.textContent).toBe('See what moves first.');
   });
 
-  it('mounts the D228 trust copy from the locked module (trust strip + privacy section)', async () => {
+  it('states the D228 trust copy once: the badge, plus the collapsed scope disclosures', async () => {
     const { container } = await renderLanding();
-    // The claim appears in BOTH the hero trust strip and the privacy
-    // section, and `getAllByText` matches the full text of an element, so
-    // every occurrence has to be the locked string verbatim — a
-    // paraphrase in either place drops the count and fails here.
-    expect(screen.getAllByText(PRIVACY_BADGE_HEADLINE).length).toBeGreaterThanOrEqual(2);
-    // The badge itself is mounted ONCE, in the privacy section. It used to
-    // mount twice, with the hero restating the whole generated storage
-    // list inline — ~8 lines of the mobile viewport spent repeating a list
-    // that renders in full further down. The hero now carries the headline
-    // and links to it. So the count below is 1 by design; what actually
-    // needs guarding is that the generated list still reaches the page,
-    // which the loop asserts directly rather than via a mount count.
-    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(1);
+    // The locked headline used to appear seven times on this page. It now
+    // is VISIBLE once, in the PrivacyBadge card. The only other copies sit
+    // inside the collapsed OAuth scope disclosures (which quote it
+    // verbatim) — one beside each CTA that starts Google OAuth.
+    const visible = container.cloneNode(true) as HTMLElement;
+    visible.querySelectorAll('details').forEach((d) => d.remove());
+    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-dm-privacy-badge="card"]')).toHaveLength(1);
+    // What actually needs guarding is that the generated list reaches the
+    // page, so assert it directly rather than via a mount count.
     for (const item of PRIVACY_STORAGE_ITEMS) {
       expect(container.textContent).toContain(item);
     }
@@ -78,76 +79,91 @@ describe('landing page — D134', () => {
     expect(text).not.toContain('Pending confirmation');
   });
 
-  it('states the canonical refund terms in the FAQ: 30-day guarantee + full-terms link (D121)', async () => {
+  it('includes the product journey alongside hero, workflow, privacy, pricing and final CTA', async () => {
     const { container } = await renderLanding();
-    const faqAnswers = Array.from(container.querySelectorAll('.dm-mkt-faq-a'));
-    const refundAnswer = faqAnswers.find((el) =>
-      el.textContent?.includes('30-day money-back guarantee'),
-    );
-    expect(refundAnswer).toBeDefined();
-    expect(refundAnswer?.textContent).toContain('every paid plan');
-    const link = refundAnswer?.querySelector('a[href="/refunds"]');
-    expect(link?.textContent).toContain('See the refund policy for full terms');
+    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(7);
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(6);
+    expect(
+      screen.getByRole('heading', { name: 'A clearer inbox is only the beginning.' }),
+    ).toBeInTheDocument();
+    // No mono "№ 02 — …" eyebrows, and no FAQ block — so no FAQPage
+    // JSON-LD either: Google only allows FAQ markup for answers the page
+    // visibly renders. /faq and /help carry it.
+    expect(container.textContent).not.toContain('№');
+    expect(container.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
-  it('explains all five user actions (D227 + ADR-0019)', async () => {
+  it('explains why the workspace sits beside Gmail', async () => {
     const { container } = await renderLanding();
     const workflow = container.querySelector('#how-it-works');
-    expect(workflow).not.toBeNull();
-    const ritualVerbs = Array.from(container.querySelectorAll('.dm-mkt-ritual-verb')).map(
-      (el) => el.textContent,
-    );
-    expect(ritualVerbs).toEqual(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']);
-    expect(workflow?.querySelectorAll('.dm-mkt-ritual-verb')).toHaveLength(5);
-    expect(container.querySelector('.dm-mkt-product-tour')).toBeNull();
-    expect(container.querySelector('.dm-mkt-gmail-map')).toBeNull();
-    // The hero demo card carries the same five, from the same registry.
-    const demoVerbs = Array.from(container.querySelectorAll('.dm-mkt-ledger-verb kbd')).map(
-      (el) => el.textContent,
-    );
-    expect(demoVerbs).toEqual(['K', 'A', 'U', 'L', 'D']);
+    expect(workflow?.textContent).toContain('Gmail stays where you read and reply');
+    expect(workflow?.textContent).toContain('live action preview');
+    expect(workflow?.textContent).toContain('recorded result');
   });
 
-  it('leaves the one-shot hero demo on an informative completed state', async () => {
+  it('states the canonical refund terms beside the prices (D121)', async () => {
     const { container } = await renderLanding();
-    const receipt = container.querySelector('.dm-mkt-ledger-receipt');
-    expect(receipt?.textContent).toContain('412 messages archived from Inbox');
-    expect(receipt?.textContent).toContain('Still searchable in All Mail');
-    expect(receipt?.textContent).toContain('existing email only');
+    const foot = container.querySelector('.dm-mkt-pricing-foot');
+    expect(foot?.textContent).toContain('30-day money-back guarantee');
+    expect(foot?.textContent).toContain('every paid plan');
+  });
+
+  it('keeps the complete data list available without making it the first trust message', async () => {
+    const { container } = await renderLanding();
+    expect(container.querySelector('.dm-mkt-privacy-inventory')).not.toHaveAttribute('open');
+    expect(container.querySelector('.dm-mkt-privacy-inventory summary')?.textContent).toBe(
+      'See the full data list',
+    );
+  });
+
+  it('states the recovery window in the walkthrough and the external request boundary', async () => {
+    const { container } = await renderLanding();
+    const text = container.textContent ?? '';
+    expect(text).toContain(`${MIN_UNDO_WINDOW_DAYS} days`);
+    expect(text).toMatch(/delivered unsubscribe requests cannot be recalled/i);
+  });
+
+  it('shows the sender list and right-hand details in a clearly illustrative hero', async () => {
+    const { container } = await renderLanding();
+    const figure = container.querySelector('.dm-mkt-hero-workspace-figure') as HTMLElement;
+    expect(figure.querySelector('figcaption')?.textContent).toMatch(/fictional sample/i);
+    expect(figure.querySelector('.dm-mkt-hero-workspace-list')?.textContent).toContain(
+      'Fieldnotes',
+    );
+    expect(figure.querySelector('.dm-mkt-hero-workspace-detail')?.textContent).toContain('128');
     expect(
       screen.getByRole('img', {
-        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing email only/i,
+        name: /Illustrative DeclutrMail workspace.*right-hand detail inspector/i,
       }),
     ).toBeInTheDocument();
+    // Decorative UI, not controls: nothing in the figure is focusable.
+    expect(figure.querySelector('button, a, [tabindex]')).toBeNull();
   });
 
-  it('lets a visitor pause, replay, or enter the interactive decision', async () => {
+  it('offers exactly one primary button and one quiet demo link in the hero', async () => {
     const { container } = await renderLanding();
-    const ledger = container.querySelector('.dm-mkt-ledger');
-    expect(ledger).toHaveAttribute('data-run', '0');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Pause demo' }));
-    expect(screen.getByRole('button', { name: 'Resume demo' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
+    const hero = container.querySelector('.dm-mkt-hero') as HTMLElement;
+    expect(hero.querySelectorAll('.dm-mkt-cta')).toHaveLength(1);
+    expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe(
+      '/sign-in',
     );
-    expect(ledger).toHaveAttribute('data-paused', 'true');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Replay' }));
-    expect(container.querySelector('.dm-mkt-ledger')).toHaveAttribute('data-run', '1');
-    expect(screen.getByRole('link', { name: 'Try this decision →' })).toHaveAttribute(
+    expect(within(hero).getByRole('link', { name: /Explore the demo/ })).toHaveAttribute(
       'href',
-      '/inbox-simulator',
+      '/inbox-simulator?workspace=senders',
     );
+    // "Start free" opens the permission checkpoint. The concise scope
+    // disclosure also stays beside the CTA — collapsed.
+    const disclosure = hero.querySelector('details.dm-mkt-scope');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute('open');
   });
 
-  it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', async () => {
+  it('points the primary CTA at the permission checkpoint and exposes demo, pricing, and privacy routes', async () => {
     const { container } = await renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
-    expect(ctas.filter((href) => href?.endsWith('/api/auth/google/start')).length).toBeGreaterThan(
-      0,
-    );
-    for (const route of ['/inbox-simulator', '/pricing', '/privacy']) {
+    expect(ctas).toContain('/sign-in');
+    expect(ctas.some((href) => href?.includes('/api/auth/google/start'))).toBe(false);
+    for (const route of ['/inbox-simulator?workspace=senders', '/pricing', '/privacy']) {
       expect(ctas).toContain(route);
     }
   });
@@ -157,7 +173,7 @@ describe('landing page — D134', () => {
     expect(JSON.stringify(metadata.title)).toContain('Clean up Gmail, one sender at a time');
   });
 
-  describe('D138 trust strip — the verification item the visitor can check', () => {
+  describe('D138 verification claim — the item the visitor can check', () => {
     it('links the CASA claim to the page that substantiates it', async () => {
       const { container } = await renderLanding();
       const link = Array.from(container.querySelectorAll('a')).find((a) =>
@@ -169,11 +185,10 @@ describe('landing page — D134', () => {
 
     it('claims only an APPROVED OAuth verification, never a certification', async () => {
       const { container } = await renderLanding();
-      const strip = container.querySelector('.dm-mkt-trust');
-      const text = strip?.textContent ?? '';
+      const text = container.querySelector('#privacy')?.textContent ?? '';
       expect(text).toContain('Google OAuth verification approved');
       // Google approved a verification for one restricted scope. It did
-      // not certify or audit the product, and the strip must never say
+      // not certify or audit the product, and the page must never say
       // it did — /security#verification is the bound on this wording.
       for (const overstatement of ['certified', 'audited', 'Certified', 'Audited']) {
         expect(text).not.toContain(overstatement);
@@ -181,35 +196,12 @@ describe('landing page — D134', () => {
     });
   });
 
-  it('emits FAQPage JSON-LD mirroring the rendered FAQ verbatim (D132 SEO batch)', async () => {
+  it('uses one label for both primary permission-entry CTAs', async () => {
     const { container } = await renderLanding();
-    const scripts = Array.from(container.querySelectorAll('script[type="application/ld+json"]'));
-    const faq = scripts
-      .map((s) => JSON.parse(s.textContent ?? '') as Record<string, unknown>)
-      .find((data) => data['@type'] === 'FAQPage') as {
-      '@context': string;
-      mainEntity: Array<{
-        '@type': string;
-        name: string;
-        acceptedAnswer: { '@type': string; text: string };
-      }>;
-    };
-    expect(faq).toBeDefined();
-    expect(faq['@context']).toBe('https://schema.org');
-
-    // Google requires marked-up Q&A to appear on the page: every
-    // Question must match a rendered <details> pair, in order.
-    const rendered = Array.from(container.querySelectorAll('.dm-mkt-faq details'));
-    expect(faq.mainEntity).toHaveLength(rendered.length);
-    faq.mainEntity.forEach((question, i) => {
-      expect(question['@type']).toBe('Question');
-      expect(question.acceptedAnswer['@type']).toBe('Answer');
-      expect(question.name).toBe(rendered[i]?.querySelector('summary')?.textContent);
-      // The answer text (minus the optional trailing <a> markup) must
-      // be the rendered answer copy.
-      const plain = question.acceptedAnswer.text.replace(/ <a href=[^>]*>.*<\/a>$/, '');
-      expect(rendered[i]?.querySelector('.dm-mkt-faq-a')?.textContent).toContain(plain);
-    });
+    const labels = Array.from(container.querySelectorAll('a.dm-mkt-cta[href="/sign-in"]')).map(
+      (a) => a.textContent,
+    );
+    expect(labels).toEqual(['Start free', 'Start free']);
   });
 });
 
@@ -221,9 +213,9 @@ describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
   });
 });
 
-describe('Hero — links to the pre-consent explanation page (QA-sign-in-06)', () => {
+describe('Final CTA — links to the pre-consent explanation page (QA-sign-in-06)', () => {
   it('offers a low-key link to /sign-in beside the OAuth disclosure', () => {
-    render(<Hero />);
+    render(<FinalCta />);
     const link = screen.getByRole('link', { name: /what DeclutrMail can and can.t access/i });
     expect(link).toHaveAttribute('href', '/sign-in');
   });

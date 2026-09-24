@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import '@/features/marketing/landing/landing.css';
+import '@/features/marketing/product-story/product-story.css';
 import '@/features/marketing/comparison/comparison.css';
 
 import { COMPARISONS, comparisonBySlug } from '@/features/marketing/comparison/comparison-data';

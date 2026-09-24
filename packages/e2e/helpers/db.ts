@@ -1,20 +1,13 @@
 import postgres from 'postgres';
 
-/**
- * Direct Postgres handle for spec setup/teardown ONLY.
- *
- * The specs run against the SHARED dev database — every row a spec
- * creates must be deleted (or restored to its pre-test value) in
- * teardown, and target senders are chosen so the restore is a clean
- * delete (e.g. triage-keep picks a sender with NO existing
- * `sender_policies` row). Assertions still go through the real UI/api;
- * this handle exists so the harness can verify durable writes and
- * leave no trace afterwards.
- */
+import { assertIsolatedEnvironment } from './isolation';
+
+/** Fixture access is restricted to an explicitly isolated local database. */
 export function dbConnect(): postgres.Sql {
+  assertIsolatedEnvironment(process.env);
   const url = process.env.DATABASE_URL;
   if (!url) {
-    throw new Error('DATABASE_URL not set — expected repo-root .env.local to provide it.');
+    throw new Error('DATABASE_URL not set — provide the isolated E2E database explicitly.');
   }
   return postgres(url, { max: 1, onnotice: () => {} });
 }

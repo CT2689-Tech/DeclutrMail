@@ -32,8 +32,9 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 import { TriageUndoTray } from './triage-undo-tray';
-import TriagePage from '@/app/(app)/triage/page';
+import { TriageRoute } from '@/app/(app)/triage/triage-route';
 
 const h = vi.hoisted(() => ({
   track: vi.fn().mockResolvedValue(undefined),
@@ -151,11 +152,15 @@ function expandRow(senderName: string) {
 
 async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
   const dialog = await screen.findByRole('dialog');
-  await screen.findByText(/emails in Inbox now/i);
+  await screen.findByText(/Inbox now, rechecked when it runs/i);
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
+
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
 
 beforeEach(() => {
   resetTriageStore();
@@ -182,7 +187,7 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByText(/Inbox now, rechecked when it runs/i);
 
     expect(h.track).toHaveBeenCalledWith('action_preview_viewed', {
       journey: 'first_relief',
@@ -204,7 +209,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByText(/Inbox now, rechecked when it runs/i);
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
@@ -234,8 +239,8 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText('Preview · Archive');
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByRole('region', { name: /^Preview · Archive / });
+    await screen.findByText(/Inbox now, rechecked when it runs/i);
     expect(actionTakenCalls()).toHaveLength(0);
 
     // Second press of the same verb confirms the inline preview.
@@ -480,7 +485,7 @@ describe('page_viewed (D159)', () => {
     const client = createTestQueryClient();
     render(
       <QueryWrapper client={client}>
-        <TriagePage />
+        <TriageRoute />
       </QueryWrapper>,
     );
 

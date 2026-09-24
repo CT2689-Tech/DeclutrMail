@@ -1,16 +1,15 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
+import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useNow } from '@/lib/use-now';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useIsFetching, useIsMutating, useMutationState } from '@tanstack/react-query';
 
@@ -19,8 +18,10 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  Pill,
   ScreenIntro,
   TechnicalDetails,
+  Tooltip,
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
@@ -29,15 +30,16 @@ import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel as sharedActivityActionLabel,
+  verbById,
+  type VerbId,
+  type VerbTone,
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
-import { ContextualHelp } from '@/features/help/contextual-help';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
-import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
-  ActivityActionWire,
   ActivityExecutionStateWire,
   ActivityFilters,
   ActivityRowWire,
@@ -47,7 +49,7 @@ import type {
   ActivityVerbFilterWire,
   ActivityWindowWire,
 } from '@/lib/api/activity';
-import { newIdempotencyKey, type ActionRecoveryPreviewResult } from '@/lib/api/actions';
+import { newIdempotencyKey } from '@/lib/api/actions';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
@@ -56,46 +58,72 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import {
   useActionRecoveryPreview,
   useActivity,
-  useActivityWeeklyReview,
   useConfirmActionRecovery,
   useCreateActionRecoveryPreview,
+  useActivityWeeklyReview,
   useRevertActivity,
 } from './api/use-activity';
-import { useActivitySupportBundle } from './api/use-activity-support-bundle';
+import { WeeklyReviewStrip } from './weekly-review-strip';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
-import { WeeklyReviewCard } from './weekly-review-card';
 import {
   readActivityDateFilters,
   readActivityFilters,
   readActivityOutcomeFilters,
 } from './activity-route-filters';
+import {
+  FilterFields,
+  OUTCOME_CHIPS,
+  SOURCE_CHIPS,
+  SenderSearchInput,
+  VERB_CHIPS,
+  numeralStyle,
+  textButtonStyle,
+  toggled,
+  type FilterFieldsProps,
+  type GroupMode,
+} from './activity-filter-fields';
 
-const { color, font, shadow } = tokens;
+// Click-only dialogs: loaded on first open so their code stays out of the
+// /activity first-load bundle (180 kB budget).
+const ActivitySupportBundleDialog = dynamic(
+  () => import('./support-bundle-dialog').then((m) => m.ActivitySupportBundleDialog),
+  { ssr: false },
+);
+const ActionRecoveryDialog = dynamic(
+  () => import('./action-recovery-dialog').then((m) => m.ActionRecoveryDialog),
+  { ssr: false },
+);
+
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * D245: same derive-or-hedge shape as every other undo-window site.
- * Pulled out of the JSX below so it is a plain importable string the
- * regression guard can read without rendering this screen.
+ * A disclosure, not help text — what Undo cannot take back. Pulled out of
+ * the JSX below so it is a plain importable string the regression guard
+ * can read without rendering this screen.
  */
 export const activityUndoRecoveryHelp =
   (UNIFORM_UNDO_WINDOW_DAYS === null
-    ? "Activity Undo uses your DeclutrMail plan's window for Archive, Later, and Delete."
-    : `Activity Undo uses a ${UNIFORM_UNDO_WINDOW_DAYS}-day window for Archive, Later, and Delete.`) +
-  " Deleted mail also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
+    ? "Archive, Later, and Delete can be undone within your plan's Undo window"
+    : `Archive, Later, and Delete have a ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`) +
+  "; deleted email also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
  *
  * Layout (top → bottom):
- *   1. ScreenIntro
- *   2. Stats — D59 window stats + B16 all-time totals (separate line)
- *   3. Source chips (D56)
- *   4. Verb chips (B8 — Archived / Deleted / Unsub / Later / Kept)
- *   5. Window picker (D55) + Custom date range (B10)
- *   6. Sender search (B9) + Group-by-sender toggle (B11) + support bundle export
- *   7. Bulk action bar (B7 — only visible when ≥1 row selected)
- *   8. Row list — flat (D57) OR sender-grouped (B11)
+ *   1. Header — h1 + sender search (B9) + Filter + support bundle export
+ *   2. Active filters — removable chips + Clear (only when any is set)
+ *   3. Summary — D59 window counts in a raised panel (each with its
+ *      all-time total) + the failed-actions link; zeros stay, muted
+ *   4. Action chips — the B8 verb filter, on the page
+ *   5. Last 7 days — D246 outcome tiles in a raised panel
+ *   6. Bulk action bar (B7 — only visible when ≥1 row selected)
+ *   7. Timeline — row cards under day labels (D57) OR sender-grouped (B11)
+ *
+ * The Filter popover (bottom sheet below `sm`, D60) holds source (D56),
+ * outcome (D246), window (D55), date range (B10) and group-by-sender (B11).
  *
  * D58 undo affordance is fully wired (B7 + B13):
  *   - per-row Undo button POSTs `/api/undo/:token` and the row's
@@ -218,6 +246,24 @@ export function ActivityScreen() {
     },
     [writeUrl],
   );
+  const setOutcomes = useCallback(
+    (next: readonly ActivityReviewOutcomeWire[]) => {
+      writeUrl({ outcome: next.length === 0 ? null : next.join(',') });
+    },
+    [writeUrl],
+  );
+  // Sender search and grouping stay: the search box shows its own state,
+  // and grouping is a view, not a filter.
+  const clearFilters = useCallback(() => {
+    writeUrl({
+      source: null,
+      verb: null,
+      outcome: null,
+      window: null,
+      date_from: null,
+      date_to: null,
+    });
+  }, [writeUrl]);
   // ── Multi-select state (local, NOT URL-persisted) ──────────────────
   // Selection lives in component state because:
   //   - selections rarely outlive a tab (close = drop)
@@ -320,86 +366,93 @@ export function ActivityScreen() {
   // to a filter they've already navigated away from. Restores the
   // interaction guard the full-screen <LoadingState/> used to provide.
   const showingStaleRows = query.isPlaceholderData;
+  const hasAnyActivity = rows.length > 0 || hasAnyCount(stats) || hasAnyCount(allTimeStats);
+
+  const weeklyStrip = (
+    <WeeklyReviewStrip
+      review={weeklyQuery.data ?? null}
+      hasAnyActivity={hasAnyActivity}
+      error={weeklyQuery.isError}
+      onRetry={() => void weeklyQuery.refetch()}
+      activeOutcome={filters.outcomes?.[0] ?? null}
+      clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
+      senderQuery={filters.senderQuery ?? ''}
+    />
+  );
+
+  const filterProps: FilterFieldsProps = {
+    source: filters.source ?? 'all',
+    onSource: setSource,
+    verbs: filters.verbs ?? [],
+    onVerbs: setVerbs,
+    outcomes: filters.outcomes ?? [],
+    onOutcomes: setOutcomes,
+    window: filters.window ?? '30d',
+    dateFrom: filters.dateFrom ?? null,
+    dateTo: filters.dateTo ?? null,
+    onWindow: setWindow,
+    onRange: setDateRange,
+    groupMode,
+    onGroupMode: setGroupMode,
+  };
 
   return (
-    <div
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-        maxWidth: 1180,
-        fontFamily: font.sans,
-      }}
-    >
-      <ScreenIntro
-        id="activity"
-        title="Activity"
-        body="A record of actions by you, Autopilot, and your rules."
-      />
+    <div style={screenColumnStyle}>
+      <EditorialKicker>Your history / Every outcome in view</EditorialKicker>
+      <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
-      <ContextualHelp question="Which Undo or recovery option applies?">
-        {activityUndoRecoveryHelp}
-      </ContextualHelp>
+      <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <h1 style={{ ...editorialTitleStyle, marginRight: 'auto' }}>Activity</h1>
+        <div style={isMobile ? { order: 3, flexBasis: '100%' } : undefined}>
+          <SenderSearchInput
+            value={filters.senderQuery ?? ''}
+            onChange={setSenderQuery}
+            fullWidth={isMobile}
+          />
+        </div>
+        <FilterButton {...filterProps} isMobile={isMobile} />
+      </header>
 
-      <WeeklyReviewCard
-        review={weeklyQuery.data ?? null}
-        loading={weeklyQuery.isLoading}
-        error={weeklyQuery.isError}
-        onRetry={() => void weeklyQuery.refetch()}
-        activeOutcome={filters.outcomes?.[0] ?? null}
-        clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
-        senderQuery={filters.senderQuery ?? ''}
-      />
-
-      {!invalidActiveFilters && (
-        <MetricsHeader
-          windowLabel={windowToLabel(
-            filters.window ?? '30d',
-            filters.dateFrom ?? null,
-            filters.dateTo ?? null,
-          )}
-          stats={stats ?? null}
-          allTimeStats={allTimeStats ?? null}
-          isWindowAllTime={
-            (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
-          }
-          failedHref={failedOutcomeHref(filters)}
-          isMobile={isMobile}
-        />
-      )}
-
-      <FilterToolbar
-        source={filters.source ?? 'all'}
-        onSource={setSource}
-        verbs={filters.verbs ?? []}
-        onVerbs={setVerbs}
-        window={filters.window ?? '30d'}
-        dateFrom={filters.dateFrom ?? null}
-        dateTo={filters.dateTo ?? null}
-        onWindow={setWindow}
-        onRange={setDateRange}
-        senderQuery={filters.senderQuery ?? ''}
-        onSenderQuery={setSenderQuery}
-        groupMode={groupMode}
-        onGroupMode={setGroupMode}
-        filters={filters}
-        activeMailboxEmail={activeMailboxEmail}
-        activeMailboxId={activeMailboxId}
-        exportDisabled={invalidActiveFilters}
-        isMobile={isMobile}
-      />
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+        History ·{' '}
+        {windowToLabel(filters.window ?? '30d', filters.dateFrom ?? null, filters.dateTo ?? null)} ·
+        Active mailbox
+      </p>
+      <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
       {invalidActiveFilters ? (
-        <ActivityErrorState
-          error={query.error}
-          onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
-          recoveryLabel="Reset filters"
-          isFilterError
-          embedded
-        />
+        <>
+          {weeklyStrip}
+          <ActivityErrorState
+            error={query.error}
+            onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
+            recoveryLabel="Reset filters"
+            isFilterError
+            embedded
+          />
+        </>
       ) : (
         <>
+          <SummaryRow
+            windowLabel={windowToLabel(
+              filters.window ?? '30d',
+              filters.dateFrom ?? null,
+              filters.dateTo ?? null,
+            )}
+            stats={stats ?? null}
+            allTimeStats={allTimeStats ?? null}
+            isWindowAllTime={
+              (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
+            }
+            hasUndoneRows={rows.some((r) => r.undoState.kind === 'executed')}
+            verbs={filters.verbs ?? []}
+            onVerbs={setVerbs}
+            failedHref={failedOutcomeHref(filters)}
+          />
+
+          {/* Chips filter the list, so they sit directly above it. */}
+          <ActionChips verbs={filters.verbs ?? []} onVerbs={setVerbs} />
+
           <BulkActionBar
             rows={rows}
             selectedIds={selectedIds}
@@ -419,7 +472,7 @@ export function ActivityScreen() {
             style={{
               opacity: showingStaleRows ? 0.55 : 1,
               pointerEvents: showingStaleRows ? 'none' : undefined,
-              transition: 'opacity 120ms ease',
+              transition: `opacity ${motion.fast} ${motion.ease}`,
             }}
           >
             {rows.length === 0 ? (
@@ -435,29 +488,15 @@ export function ActivityScreen() {
                 mailboxId={activeMailboxId}
               />
             ) : (
-              <ul
-                style={{
-                  listStyle: 'none',
-                  margin: 0,
-                  padding: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                }}
-              >
-                {rows.map((row) => (
-                  <ActivityRow
-                    key={row.id}
-                    row={row}
-                    isSelected={selectedIds.has(row.id)}
-                    onToggleSelect={() => toggleRow(row.id)}
-                    failedTokens={failedTokens}
-                    isMobile={isMobile}
-                    mailboxEmail={activeMailboxEmail}
-                    mailboxId={activeMailboxId}
-                  />
-                ))}
-              </ul>
+              <Timeline
+                rows={rows}
+                selectedIds={selectedIds}
+                onToggle={toggleRow}
+                failedTokens={failedTokens}
+                isMobile={isMobile}
+                mailboxEmail={activeMailboxEmail}
+                mailboxId={activeMailboxId}
+              />
             )}
           </div>
 
@@ -481,6 +520,178 @@ export function ActivityScreen() {
           )}
         </>
       )}
+      {!invalidActiveFilters && (
+        <section
+          aria-label="Separate weekly overview"
+          style={{ borderTop: `1px solid ${color.line}`, paddingTop: 20 }}
+        >
+          <p style={{ color: color.fgMuted, fontSize: text.sm, margin: '0 0 12px' }}>
+            Weekly overview · Separate from the selected date window
+          </p>
+          {weeklyStrip}
+        </section>
+      )}
+      <div
+        style={{
+          borderTop: `1px solid ${color.line}`,
+          paddingTop: 16,
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Need help investigating an outcome?
+        </span>{' '}
+        <ExportSupportBundleButton
+          filters={filters}
+          mailboxEmail={activeMailboxEmail}
+          mailboxId={activeMailboxId}
+          disabled={invalidActiveFilters}
+          touch={isMobile}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The content column. Horizontal padding is a CSS clamp, not the
+ * `isMobile` flag: that flag is false until hydration, and the column is
+ * server-rendered.
+ */
+const screenColumnStyle: CSSProperties = {
+  ...editorialColumnStyle,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 20,
+};
+
+// ── Timeline (D57) ────────────────────────────────────────────────────
+
+interface RowListProps {
+  rows: readonly ActivityRowWire[];
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  failedTokens?: Set<string> | undefined;
+  isMobile: boolean;
+  mailboxEmail: string | null;
+  mailboxId: string | null;
+}
+
+/**
+ * `YYYY-MM-DD` of an instant in the user's zone — the key rows share a day
+ * header under. The user zone, never the machine's: the timeline is
+ * server-rendered, and the two would disagree about where midnight falls.
+ */
+function dayKey(ms: number, timeZone: string): string {
+  if (!Number.isFinite(ms)) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(ms);
+}
+
+/**
+ * "Today" / "Yesterday" / "Mon, Sep 15". `nowMs` is null on the server and
+ * the first client render (`useNow`), where the absolute form is the only
+ * one both can agree on; the relative words arrive after mount. Exported
+ * for the exact-string unit test.
+ */
+export function activityDayLabel(iso: string, nowMs: number | null, timeZone: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'Unknown date';
+  const key = dayKey(then, timeZone);
+  if (nowMs !== null) {
+    if (key === dayKey(nowMs, timeZone)) return 'Today';
+    if (key === dayKey(nowMs - 24 * 60 * 60 * 1000, timeZone)) return 'Yesterday';
+  }
+  const sameYear = nowMs === null || key.slice(0, 4) === dayKey(nowMs, timeZone).slice(0, 4);
+  return new Date(then).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone,
+  });
+}
+
+/** Consecutive rows that share a calendar day, in the order they arrived. */
+function groupByDay(
+  rows: readonly ActivityRowWire[],
+  timeZone: string,
+): Array<{ key: string; rows: ActivityRowWire[] }> {
+  const days: Array<{ key: string; rows: ActivityRowWire[] }> = [];
+  for (const row of rows) {
+    const key = dayKey(new Date(row.occurredAt).getTime(), timeZone);
+    const last = days[days.length - 1];
+    if (last && last.key === key) last.rows.push(row);
+    else days.push({ key, rows: [row] });
+  }
+  return days;
+}
+
+function Timeline({
+  rows,
+  selectedIds,
+  onToggle,
+  failedTokens,
+  isMobile,
+  mailboxEmail,
+  mailboxId,
+}: RowListProps) {
+  const timeZone = useUserTimeZone();
+  const now = useNow();
+  const days = useMemo(() => groupByDay(rows, timeZone), [rows, timeZone]);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+      {days.map((day, index) => {
+        const label = activityDayLabel(day.rows[0]!.occurredAt, now, timeZone);
+        return (
+          // A day can repeat across a page seam only if the server order
+          // breaks; the index keeps keys unique even then.
+          <section key={`${day.key}:${index}`} aria-label={label}>
+            <h2
+              style={{
+                margin: '0 0 10px',
+                padding: '0 4px',
+                fontSize: text.sm,
+                fontWeight: 600,
+                color: color.fgMuted,
+              }}
+            >
+              {label}
+            </h2>
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              {day.rows.map((row) => (
+                <ActivityRow
+                  key={row.id}
+                  row={row}
+                  isSelected={selectedIds.has(row.id)}
+                  selectionActive={selectedIds.size > 0}
+                  onToggleSelect={() => onToggle(row.id)}
+                  failedTokens={failedTokens}
+                  isMobile={isMobile}
+                  mailboxEmail={mailboxEmail}
+                  mailboxId={mailboxId}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -494,7 +705,7 @@ export function ActivityScreen() {
  *                        fallback; "Loading more…" while in flight.
  *   - next-page failed → amber inline retry (partial-error — the
  *                        loaded rows stay on screen).
- *   - end of list      → quiet mono end-marker with the loaded count.
+ *   - end of list      → quiet end-marker with the loaded count.
  */
 function LoadMoreRegion({
   hasNextPage,
@@ -526,23 +737,31 @@ function LoadMoreRegion({
     return () => observer.disconnect();
   }, [hasNextPage, nextPageFailed, onLoadMore]);
 
-  const mono: CSSProperties = {
-    fontFamily: font.mono,
-    fontSize: 11,
-    letterSpacing: '0.08em',
-    color: color.fgMuted,
-  };
-
   if (!hasNextPage) {
     return (
       <div
         role="status"
-        style={{ ...mono, textAlign: 'center', padding: '10px 0 2px', textTransform: 'uppercase' }}
+        style={{
+          textAlign: 'center',
+          padding: '10px 0 2px',
+          fontSize: text.sm,
+          color: color.fgMuted,
+        }}
       >
         End of activity · {loadedCount} action{loadedCount === 1 ? '' : 's'} shown
       </div>
     );
   }
+
+  const pill: CSSProperties = {
+    fontFamily: font.sans,
+    fontSize: text.sm,
+    background: color.fill,
+    border: 'none',
+    borderRadius: radius.pill,
+    minHeight: 36,
+    padding: '0 18px',
+  };
 
   return (
     <div
@@ -554,14 +773,9 @@ function LoadMoreRegion({
           type="button"
           onClick={onLoadMore}
           style={{
-            fontFamily: font.sans,
-            fontSize: 12.5,
+            ...pill,
             fontWeight: 600,
             color: color.amber,
-            background: 'transparent',
-            border: `1px solid ${color.amber}`,
-            borderRadius: 999,
-            padding: '6px 16px',
             cursor: 'pointer',
           }}
         >
@@ -573,14 +787,9 @@ function LoadMoreRegion({
           onClick={onLoadMore}
           disabled={isFetchingNextPage}
           style={{
-            fontFamily: font.sans,
-            fontSize: 12.5,
-            fontWeight: 500,
+            ...pill,
+            fontWeight: 600,
             color: isFetchingNextPage ? color.fgMuted : color.fg,
-            background: 'transparent',
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 999,
-            padding: '6px 16px',
             cursor: isFetchingNextPage ? 'wait' : 'pointer',
           }}
         >
@@ -591,622 +800,441 @@ function LoadMoreRegion({
   );
 }
 
-// ── Metrics header (D59 + B16) ────────────────────────────────────────
+// ── Summary (D59) ─────────────────────────────────────────────────────
+
+const SUMMARY_VERBS: ReadonlyArray<{
+  key: 'archived' | 'deleted' | 'unsubscribed' | 'later' | 'kept';
+  verb: ActivityVerbFilterWire;
+  label: string;
+  /** Lower-case form for the one-line all-time total. */
+  allTimeWord: string;
+  /** The number's colour — the verb's, as on the rows' rails. */
+  tone: string;
+}> = [
+  { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived', tone: color.fg },
+  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted', tone: color.danger },
+  // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
+  // intent rows), which for one-click include attempts that may fail
+  // and mailto that we never confirm. "Unsubscribes" (a count of the
+  // actions taken) makes no completion claim; "Unsubscribed" would
+  // overclaim success. Confirmed outcomes render per-row as
+  // "Request accepted" (never aggregated as verified compliance —
+  // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
+  // metric-definition options if an exact confirmed count is wanted.
+  {
+    key: 'unsubscribed',
+    verb: 'unsubscribe',
+    label: 'Unsubscribes',
+    allTimeWord: 'unsubscribes',
+    tone: color.primary,
+  },
+  { key: 'later', verb: 'later', label: 'Later', allTimeWord: 'later', tone: color.primary },
+  { key: 'kept', verb: 'keep', label: 'Kept', allTimeWord: 'kept', tone: color.fgMuted },
+];
+
+/** Thousands separators pinned to one locale — server-rendered (React #418). */
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+/** Any counted action in these stats. */
+function hasAnyCount(stats: ActivityStatsWire | null | undefined): boolean {
+  return Boolean(
+    stats && (SUMMARY_VERBS.some(({ key }) => stats[key] > 0) || stats.needsAttention > 0),
+  );
+}
 
 /**
- * Editorial metrics block — replaces the two stacked mono lines.
- *
- * Five tiles in a horizontal strip: ARCHIVED · DELETED · UNSUB · KEPT ·
- * LATER. Each tile shows the window count as a display-font numeral and
- * the all-time count as a small mono footnote below — so the user gets
- * BOTH numbers per verb at a glance, without two competing rows.
- *
- * When the window equals "all time" (no upper bound + no custom range),
- * the window stat IS the all-time stat — we suppress the footnote to
- * avoid the duplicate-stats bug the original two-line layout shipped
- * with.
+ * A raised surface — `shadow.card` is a soft drop in light and carries a
+ * hairline ring in dark, so one token holds both themes.
  */
-function MetricsHeader({
+const panelStyle: CSSProperties = {
+  background: color.card,
+  borderRadius: radius.lg,
+  boxShadow: shadow.card,
+};
+
+/**
+ * The window's counts in one raised panel. Each column toggles its verb
+ * filter — the same URL state the action chips write — and carries its
+ * all-time total underneath (both from `aggregateStats`, same filters
+ * minus the window). A zero stays on screen, muted, so the five columns
+ * never reflow.
+ */
+function SummaryRow({
   windowLabel,
   stats,
   allTimeStats,
   isWindowAllTime,
+  hasUndoneRows,
+  verbs,
+  onVerbs,
   failedHref,
-  isMobile,
 }: {
   windowLabel: string;
   stats: ActivityStatsWire | null;
   allTimeStats: ActivityStatsWire | null;
+  /** The window IS all time — the second number would repeat the first. */
   isWindowAllTime: boolean;
+  /** A loaded row in this window was undone — the counts leave it out. */
+  hasUndoneRows: boolean;
+  verbs: readonly ActivityVerbFilterWire[];
+  onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
   /** The same window, narrowed to the failed records this count names. */
   failedHref: string;
-  isMobile: boolean;
 }) {
-  if (!stats) return null;
-  const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
-    { key: 'archived', label: 'Archived', accent: color.fg },
-    { key: 'deleted', label: 'Deleted', accent: color.amber },
-    // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
-    // intent rows), which for one-click include attempts that may fail
-    // and mailto that we never confirm. "Unsubscribes" (a count of the
-    // actions taken) makes no completion claim; "Unsubscribed" would
-    // overclaim success. Confirmed outcomes render per-row as
-    // "Request accepted" (never aggregated as verified compliance —
-    // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
-    // metric-definition options if an exact confirmed count is wanted.
-    { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
-    { key: 'kept', label: 'Kept', accent: color.emerald },
-    { key: 'later', label: 'Later', accent: color.fgSoft },
-  ];
+  // A mailbox with nothing counted, ever, gets the list's empty state
+  // alone — a panel of zeros would say nothing it doesn't.
+  if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
+  const showAllTime = !isWindowAllTime && allTimeStats !== null;
+  // `aggregateStats` counts activity_log ROWS, drops reverted ones, and
+  // ignores the source chips — none of which the numbers can say for
+  // themselves (QA-activity-20260918-05).
+  const caption = [
+    'Actions, not emails, from every source.',
+    hasUndoneRows ? 'Undone actions aren’t counted.' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <section
-      role="status"
       aria-live="polite"
-      aria-label="Activity metrics"
-      style={{
-        border: `1px solid ${color.line}`,
-        borderRadius: 14,
-        background: color.card,
-        padding: '14px 18px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
+      aria-label="Activity summary"
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: color.fgMuted,
-        }}
-      >
-        <span>
-          <span style={{ color: color.fg, fontWeight: 600 }}>{windowLabel}</span>
-          <span style={{ marginLeft: 8, color: color.fgMuted }}>· all sources</span>
-        </span>
-        {/* The one number naming a problem was the one number that could
-            not be clicked, and outside the 7-day card no visible control
-            reached those records (QA-activity-20260918-08). */}
-        {stats.needsAttention > 0 && (
-          <Link href={failedHref} style={{ color: color.amber, fontWeight: 600 }}>
-            {stats.needsAttention} failed · Review
-          </Link>
-        )}
-      </header>
-      {/* CSS-driven restack, not the `isMobile` JS flag below: this grid
-          is server-rendered, and `useIsAtMost`'s `useState(false)` default
-          shipped the desktop 5-column track at every width until the
-          client effect fired — a ~390ms window where UNSUBSCRIBES and
-          KEPT collided (QA-undo-20260828-02). `!important` is required —
-          without it the media query loses to this element's own inline
-          `style`. Breakpoint matches `useIsAtMost('sm')` (900px, tokens.ts)
-          so this and the `isMobile`-driven per-tile dividers below agree
-          post-hydration. */}
-      <style>{`@media (max-width: 900px) {
-        .dm-activity-metrics-grid {
-          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-          gap: 12px 8px !important;
-        }
-        .dm-activity-metric-label {
-          font-size: 9px !important;
-          letter-spacing: 0.04em !important;
-        }
-      }`}</style>
       <div
-        className="dm-activity-metrics-grid"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-          gap: 0,
-          borderTop: `1px solid ${color.lineSoft}`,
-          paddingTop: 12,
+          ...panelStyle,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          padding: '14px 8px 8px',
         }}
       >
-        {tiles.map((tile, idx) => {
-          const windowValue = (stats[tile.key] as number | undefined) ?? 0;
-          const allTimeValue = allTimeStats
-            ? ((allTimeStats[tile.key] as number | undefined) ?? 0)
-            : null;
-          return (
-            <div
-              key={tile.key}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: '0 12px',
+          }}
+        >
+          <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fg }}>{windowLabel}</span>
+          {/* The one number naming a problem has to reach those records
+              (QA-activity-20260918-08). */}
+          {stats.needsAttention > 0 && (
+            <Link
+              href={failedHref}
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                paddingLeft: isMobile || idx === 0 ? 0 : 16,
-                paddingRight: isMobile || idx === tiles.length - 1 ? 0 : 16,
-                borderRight:
-                  isMobile || idx === tiles.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
-                minWidth: 0,
+                fontSize: text.sm,
+                fontWeight: 600,
+                color: color.amber,
+                textDecoration: 'none',
               }}
             >
-              <span
-                className="dm-activity-metric-label"
+              {stats.needsAttention} failed · Review
+            </Link>
+          )}
+        </div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+            gap: 2,
+          }}
+        >
+          {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
+            const isActive = verbs.includes(verb);
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => onVerbs(toggled(verbs, verb))}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.background = color.fill;
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
+                }}
                 style={{
-                  fontFamily: font.mono,
-                  // `body { overflow-wrap: break-word }` split "UNSUBSCRIBES"
-                  // mid-word in the narrow 3-column grid. Forbidding the
-                  // break alone makes it spill into the next tile at 320px,
-                  // so the label is tightened below 900px until it fits —
-                  // in the CSS block above, with the grid restack, because
-                  // the `isMobile` JS flag is false until hydration.
-                  fontSize: 10,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  color: color.fgMuted,
-                  overflowWrap: 'normal',
-                  wordBreak: 'keep-all',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: 4,
+                  minHeight: 56,
+                  padding: '8px 12px 10px',
+                  background: isActive ? color.primarySoft : 'transparent',
+                  border: 'none',
+                  borderRadius: radius.md,
+                  fontFamily: font.sans,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: `background ${motion.fast} ${motion.ease}`,
                 }}
               >
-                {tile.label}
-              </span>
-              <span
-                style={{
-                  fontFamily: font.display,
-                  fontSize: isMobile ? 24 : 30,
-                  lineHeight: 1.05,
-                  fontWeight: 600,
-                  letterSpacing: '-0.02em',
-                  fontVariantNumeric: 'tabular-nums',
-                  color: tile.accent,
-                }}
-              >
-                {windowValue}
-              </span>
-              {!isWindowAllTime && allTimeValue !== null && (
                 <span
                   style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgMuted,
-                    fontVariantNumeric: 'tabular-nums',
-                    marginTop: 2,
+                    fontSize: text.sm,
+                    fontWeight: isActive ? 600 : 500,
+                    color: isActive ? color.primary : color.fgMuted,
                   }}
-                  title={`${allTimeValue} ${tile.label.toLowerCase()} all time`}
                 >
-                  / {allTimeValue} all time
+                  {label}
                 </span>
-              )}
-            </div>
-          );
-        })}
+                <span
+                  data-summary-count={key}
+                  style={{
+                    ...numeralStyle,
+                    fontFamily: font.display,
+                    fontSize: text['3xl'],
+                    fontWeight: 500,
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.05,
+                    color: stats[key] === 0 ? color.fgMuted : tone,
+                  }}
+                >
+                  {formatCount(stats[key])}
+                </span>
+                {showAllTime && allTimeStats && (
+                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
+                    {formatCount(allTimeStats[key])} all time
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      {/* `aggregateStats` counts activity_log ROWS, drops reverted ones,
-          and deliberately ignores the source and action chips — none of
-          which the numbers can say for themselves
-          (QA-activity-20260918-05). */}
-      <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
-        Counts actions, not emails. Undone actions are not counted. Sender and date filters apply;
-        source, action, and outcome filters do not.
-      </p>
+      <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>
     </section>
   );
 }
 
-// ── Filter toolbar (D56 + B8 + B9 + B10 + B11) ───────────────────────
-
-type GroupMode = 'none' | 'sender';
-
-const SOURCE_CHIPS: ReadonlyArray<{ value: ActivitySourceFilterWire; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'triage', label: 'Triage' },
-  { value: 'autopilot', label: 'Autopilot' },
-  { value: 'screener', label: 'Screener' },
-  { value: 'manual', label: 'Manual' },
-];
+/** A chip's dot — the colour the verb's rows carry on their rail. */
+function verbChipDot(verb: ActivityVerbFilterWire): string {
+  return verb === 'unsubscribe' ? color.primary : activityActionDot(verb).color;
+}
 
 /**
- * Semantic verb palette — each verb carries its own accent so the row
- * left-edge dot + the matching filter chip read at a glance:
- *   archive  → neutral fgSoft (no signal, baseline housekeeping)
- *   delete   → amber          (destructive)
- *   unsub    → primary green  (brand + emancipation)
- *   later    → violet         (parking)
- *   keep     → emerald        (affirmative)
- *   followup → fgMuted        (administrative)
+ * The action filter, on the page: All plus one chip per action. The same
+ * `verb` URL state the summary columns toggle — the Filter popover keeps
+ * source, outcome, time and view.
  */
-const VERB_CHIPS: ReadonlyArray<{
-  value: ActivityVerbFilterWire;
-  label: string;
-  dot: string;
-}> = [
-  { value: 'archive', label: 'Archived', dot: color.fgSoft },
-  { value: 'delete', label: 'Deleted', dot: color.amber },
-  // D9 — filters the `unsubscribe` intent rows; label matches the tile
-  // ("Unsubscribes", not the success-claiming "Unsubscribed").
-  { value: 'unsubscribe', label: 'Unsubscribes', dot: color.primary },
-  { value: 'later', label: 'Later', dot: color.dashboard.accent },
-  { value: 'keep', label: 'Kept', dot: color.emerald },
-  { value: 'followup-dismiss', label: 'Follow-ups', dot: color.fgMuted },
-];
-
-const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-  { value: '90d', label: '90 days' },
-  { value: 'all', label: 'All' },
-];
-
-interface FilterToolbarProps {
-  source: ActivitySourceFilterWire;
-  onSource: (next: ActivitySourceFilterWire) => void;
+function ActionChips({
+  verbs,
+  onVerbs,
+}: {
   verbs: readonly ActivityVerbFilterWire[];
   onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
-  window: ActivityWindowWire;
-  dateFrom: string | null;
-  dateTo: string | null;
-  onWindow: (next: ActivityWindowWire) => void;
-  onRange: (from: string | null, to: string | null) => void;
-  senderQuery: string;
-  onSenderQuery: (next: string) => void;
-  groupMode: GroupMode;
-  onGroupMode: (next: GroupMode) => void;
-  filters: ActivityFilters;
-  activeMailboxEmail: string | null;
-  activeMailboxId: string | null;
-  exportDisabled: boolean;
-  isMobile: boolean;
-}
-
-/** Count of filters set away from their defaults — surfaced on the
- *  mobile "Filters" trigger so a collapsed drawer still signals that a
- *  slice is active (source + each verb + non-default window + custom
- *  range + sender search). */
-function activeFilterCount(p: FilterToolbarProps): number {
-  let n = 0;
-  if (p.source !== 'all') n += 1;
-  n += p.verbs.length;
-  const isCustomRange = p.dateFrom !== null || p.dateTo !== null;
-  if (isCustomRange) n += 1;
-  else if (p.window !== '30d') n += 1;
-  if (p.senderQuery.trim().length > 0) n += 1;
-  return n;
-}
-
-/**
- * Filter surface — composes SOURCE·VERB and RANGE·SEARCH bands.
- *
- * Desktop (≥ sm): the two bands render inline inside a bordered card
- * (D56 + B8-B13), Group + support export in the band-2 right cluster.
- *
- * Mobile (< sm, D60): the bands can't fit the inline layout, so the card
- * collapses to a compact trigger row — a "Filters (n)" button that opens
- * a bottom-sheet drawer holding the same bands, plus Group + Export kept
- * on the bar for one-tap access.
- */
-function FilterToolbar(props: FilterToolbarProps) {
-  const {
-    groupMode,
-    onGroupMode,
-    filters,
-    activeMailboxEmail,
-    activeMailboxId,
-    exportDisabled,
-    isMobile,
-  } = props;
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  // Close the drawer whenever we cross back to the desktop breakpoint so
-  // it can't linger as an orphaned modal after a rotate / resize.
-  useEffect(() => {
-    if (!isMobile) setDrawerOpen(false);
-  }, [isMobile]);
-
-  const groupChip = (
-    <Chip
-      label={groupMode === 'sender' ? 'Grouped' : 'Group'}
-      isActive={groupMode === 'sender'}
-      onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
-      tone="muted"
-      compact
-    />
-  );
-
-  if (isMobile) {
-    const count = activeFilterCount(props);
-    return (
-      <>
-        <div
-          role="region"
-          aria-label="Filters"
-          style={{
-            border: `1px solid ${color.line}`,
-            borderRadius: 12,
-            background: color.card,
-            padding: '8px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={drawerOpen}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              fontSize: 12.5,
-              fontFamily: font.sans,
-              fontWeight: 600,
-              border: `1px solid ${count > 0 ? color.primary : color.lineSoft}`,
-              background: count > 0 ? color.primarySoft : 'transparent',
-              color: count > 0 ? color.primary : color.fg,
-              borderRadius: 999,
-              cursor: 'pointer',
-            }}
-          >
-            Filters
-            {count > 0 && (
-              <span
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  minWidth: 18,
-                  textAlign: 'center',
-                  padding: '0 5px',
-                  borderRadius: 999,
-                  background: color.primary,
-                  color: color.fgInverse,
-                }}
-              >
-                {count}
-              </span>
-            )}
-          </button>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            {groupChip}
-            <ExportSupportBundleButton
-              filters={filters}
-              mailboxEmail={activeMailboxEmail}
-              mailboxId={activeMailboxId}
-              disabled={exportDisabled}
-            />
-          </div>
-        </div>
-        <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} {...props} />
-      </>
-    );
-  }
-
+}) {
   return (
     <div
-      role="region"
-      aria-label="Filters"
+      role="group"
+      aria-label="Action"
       style={{
-        border: `1px solid ${color.line}`,
-        borderRadius: 12,
-        background: color.card,
-        padding: '10px 12px',
         display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
+        gap: 6,
+        overflowX: 'auto',
+        margin: '0 calc(-1 * clamp(16px, 4vw, 24px))',
+        padding: '2px clamp(16px, 4vw, 24px)',
+        scrollbarWidth: 'none',
       }}
     >
-      <FilterBands
-        {...props}
-        trailing={
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            {groupChip}
-            <ExportSupportBundleButton
-              filters={filters}
-              mailboxEmail={activeMailboxEmail}
-              mailboxId={activeMailboxId}
-              disabled={exportDisabled}
-            />
-          </div>
-        }
-      />
+      <ActionChip label="All" isActive={verbs.length === 0} onClick={() => onVerbs([])} />
+      {VERB_CHIPS.map((chip) => (
+        <ActionChip
+          key={chip.value}
+          label={chip.label}
+          dot={verbChipDot(chip.value)}
+          isActive={verbs.includes(chip.value)}
+          onClick={() => onVerbs(toggled(verbs, chip.value))}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ActionChip({
+  label,
+  dot,
+  isActive,
+  onClick,
+}: {
+  label: string;
+  dot?: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isActive}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        flexShrink: 0,
+        minHeight: 44,
+        padding: '0 16px',
+        fontFamily: font.sans,
+        fontSize: text.sm,
+        fontWeight: isActive ? 600 : 500,
+        whiteSpace: 'nowrap',
+        border: 'none',
+        borderRadius: radius.pill,
+        background: isActive ? color.primarySoft : color.fill,
+        color: isActive ? color.primary : color.fg,
+        cursor: 'pointer',
+        transition: `background ${motion.fast} ${motion.ease}`,
+      }}
+    >
+      {dot && (
+        <span
+          aria-hidden="true"
+          data-chip-dot
+          style={{ width: 8, height: 8, borderRadius: radius.pill, background: dot }}
+        />
+      )}
+      {label}
+    </button>
+  );
+}
+
+// ── Filters (D55 + D56 + B8 + B9 + B10 + B11 + D246) ─────────────────
+
+/** Filters set away from their defaults — the count on the Filter button
+ *  and the chips in the active row name the same set. */
+function activeFilterCount(p: FilterFieldsProps): number {
+  const isCustomRange = p.dateFrom !== null || p.dateTo !== null;
+  return (
+    (p.source !== 'all' ? 1 : 0) +
+    p.verbs.length +
+    (p.outcomes?.length ?? 0) +
+    (isCustomRange || p.window !== '30d' ? 1 : 0)
+  );
+}
+
+/** Filter / Export — quiet neutral capsules, the shared Button's `default`. */
+const headerButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  minHeight: 40,
+  padding: '0 16px',
+  fontFamily: font.sans,
+  fontSize: text.base,
+  fontWeight: 600,
+  border: 'none',
+  borderRadius: radius.pill,
+  background: color.fill,
+  color: color.fg,
+  cursor: 'pointer',
+};
+
+/**
+ * The one entry to every filter. Desktop opens an anchored popover; below
+ * `sm` (D60) the same fields open as a bottom sheet.
+ */
+function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: boolean }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const count = activeFilterCount(fields);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    // The sheet has its own backdrop; only the popover needs this.
+    const onPointer = (event: MouseEvent) => {
+      if (isMobile) return;
+      if (anchorRef.current && !anchorRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+    };
+  }, [open, isMobile, close]);
+
+  return (
+    <div ref={anchorRef} style={{ position: 'relative' }}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        style={{
+          ...headerButtonStyle,
+          ...(isMobile ? { minHeight: 44 } : {}),
+          ...(count > 0 ? { background: color.primarySoft, color: color.primary } : {}),
+        }}
+      >
+        Filter
+        {count > 0 && <span style={numeralStyle}>{count}</span>}
+      </button>
+      {open && !isMobile && (
+        <div
+          role="dialog"
+          aria-label="Activity filters"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            zIndex: 20,
+            width: 380,
+            padding: 20,
+            background: color.card,
+            borderRadius: radius.xl,
+            boxShadow: shadow.pop,
+            transformOrigin: 'top right',
+            animation: `dm-activity-pop-in ${motion.fast} ${motion.ease} both`,
+          }}
+        >
+          <style>{`@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
+          <FilterFields {...fields} showVerbs={false} />
+        </div>
+      )}
+      {open && isMobile && <FilterSheet onClose={close} {...fields} />}
     </div>
   );
 }
 
 /**
- * The two filter bands (SOURCE·VERB, then RANGE·SEARCH), shared verbatim
- * between the desktop inline card and the mobile drawer. `trailing`
- * injects the Group + Export cluster into band 2 on desktop; the mobile
- * drawer omits it (those live on the trigger bar).
+ * D60 bottom-sheet filters (mobile only). Slides up from the bottom edge
+ * and dismisses on backdrop tap, Escape, or the button. Focus is trapped
+ * while open — mirrors the triage action-sheet modal contract.
  */
-type FilterBandsProps = Pick<
-  FilterToolbarProps,
-  | 'source'
-  | 'onSource'
-  | 'verbs'
-  | 'onVerbs'
-  | 'window'
-  | 'dateFrom'
-  | 'dateTo'
-  | 'onWindow'
-  | 'onRange'
-  | 'senderQuery'
-  | 'onSenderQuery'
-> & { senderSearchDebounceMs?: number };
-
-function FilterBands({
-  source,
-  onSource,
-  verbs,
-  onVerbs,
-  window,
-  dateFrom,
-  dateTo,
-  onWindow,
-  onRange,
-  senderQuery,
-  onSenderQuery,
-  senderSearchDebounceMs,
-  trailing,
-}: FilterBandsProps & { trailing?: ReactNode }) {
-  const verbSet = useMemo(() => new Set(verbs), [verbs]);
-  const toggleVerb = (verb: ActivityVerbFilterWire) => {
-    const next = new Set(verbSet);
-    if (next.has(verb)) next.delete(verb);
-    else next.add(verb);
-    onVerbs([...next]);
-  };
-  const isCustomRange = dateFrom !== null || dateTo !== null;
-  return (
-    <>
-      {/* Band 1 — SOURCE │ VERB */}
-      <div
-        role="group"
-        aria-label="Filter by what happened"
-        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
-      >
-        {SOURCE_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            isActive={source === chip.value}
-            onClick={() => onSource(chip.value)}
-          />
-        ))}
-        <Divider />
-        {VERB_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            isActive={verbSet.has(chip.value)}
-            onClick={() => toggleVerb(chip.value)}
-            tone="muted"
-            dot={chip.dot}
-          />
-        ))}
-        {verbs.length > 0 && (
-          <button
-            type="button"
-            onClick={() => onVerbs([])}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 11,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              padding: '4px 4px',
-            }}
-          >
-            clear
-          </button>
-        )}
-      </div>
-
-      {/* Band 2 — RANGE │ SEARCH                       GROUP   EXPORT */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 8,
-          paddingTop: 8,
-          borderTop: `1px solid ${color.lineSoft}`,
-        }}
-      >
-        {WINDOWS.map((opt) => (
-          <Chip
-            key={opt.value}
-            label={opt.label}
-            isActive={!isCustomRange && window === opt.value}
-            onClick={() => onWindow(opt.value)}
-            tone="muted"
-            compact
-          />
-        ))}
-        <DateInput
-          label="From"
-          value={isoDateOnly(dateFrom)}
-          onChange={(v) => onRange(safeIsoFromDateInput(v), dateTo)}
-        />
-        <DateInput
-          label="To"
-          value={isoDateOnly(dateTo)}
-          onChange={(v) => onRange(dateFrom, safeIsoFromDateInput(v))}
-        />
-        {isCustomRange && (
-          <button
-            type="button"
-            onClick={() => onRange(null, null)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: '4px 4px',
-            }}
-          >
-            clear range
-          </button>
-        )}
-        <Divider />
-        <SenderSearchInput
-          value={senderQuery}
-          onChange={onSenderQuery}
-          debounceMs={senderSearchDebounceMs}
-        />
-        {trailing}
-      </div>
-    </>
-  );
-}
-
-/**
- * D60 bottom-sheet filter drawer (mobile only). Slides up from the
- * bottom edge, holds the full FilterBands, and dismisses on backdrop
- * tap, Escape, or the Done button. Focus is trapped while open —
- * mirrors the triage action-sheet modal contract.
- */
-function FilterDrawer({
-  open,
-  onClose,
-  ...bands
-}: FilterToolbarProps & { open: boolean; onClose: () => void }) {
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
+function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () => void }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <>
       <div
+        className="dm-scrim"
         onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 150 }}
       />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Activity filters"
+        className="dm-sheet"
         style={{
           position: 'fixed',
           left: 0,
@@ -1215,13 +1243,12 @@ function FilterDrawer({
           maxHeight: '82vh',
           overflow: 'auto',
           background: color.card,
-          borderTopLeftRadius: 18,
-          borderTopRightRadius: 18,
-          borderTop: `1px solid ${color.border}`,
-          boxShadow: '0 -18px 50px rgba(14,20,19,0.30)',
+          borderTopLeftRadius: radius['2xl'],
+          borderTopRightRadius: radius['2xl'],
+          boxShadow: shadow.modal,
           zIndex: 151,
           fontFamily: font.sans,
-          padding: '10px 16px 20px',
+          padding: '10px 20px calc(20px + env(safe-area-inset-bottom))',
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
@@ -1233,8 +1260,8 @@ function FilterDrawer({
           style={{
             width: 36,
             height: 4,
-            borderRadius: 999,
-            background: color.line,
+            borderRadius: radius.pill,
+            background: color.fillHover,
             margin: '2px auto 4px',
           }}
         />
@@ -1248,34 +1275,25 @@ function FilterDrawer({
         >
           <span
             style={{
-              fontFamily: font.mono,
-              fontSize: 10.5,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
+              fontSize: text.xl,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
             }}
           >
-            Filters
+            Filter
           </span>
           <button
             type="button"
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 12,
-              cursor: 'pointer',
-              padding: 4,
-            }}
             aria-label="Close filters"
+            style={{ ...iconButtonStyle, width: 44, height: 44 }}
           >
-            ✕
+            <CloseGlyph />
           </button>
         </div>
-        <FilterBands {...bands} />
-        <Button tone="primary" onClick={onClose}>
+        <FilterFields {...fields} touch showVerbs={false} />
+        <Button tone="primary" size="lg" onClick={onClose}>
           View results
         </Button>
       </div>
@@ -1283,171 +1301,114 @@ function FilterDrawer({
   );
 }
 
-function Divider() {
+/**
+ * What is narrowing the list right now, one removable chip each. Renders
+ * nothing at the defaults, so an unfiltered screen carries no filter UI
+ * beyond the button.
+ */
+function ActiveFilterChips({
+  source,
+  onSource,
+  verbs,
+  onVerbs,
+  outcomes = [],
+  onOutcomes,
+  window,
+  dateFrom,
+  dateTo,
+  onWindow,
+  onRange,
+  onClear,
+}: FilterFieldsProps & { onClear: () => void }) {
+  const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+  if (source !== 'all') {
+    chips.push({
+      key: `source:${source}`,
+      label: SOURCE_CHIPS.find((chip) => chip.value === source)?.label ?? source,
+      onRemove: () => onSource('all'),
+    });
+  }
+  for (const verb of verbs) {
+    chips.push({
+      key: `verb:${verb}`,
+      label: VERB_CHIPS.find((chip) => chip.value === verb)?.label ?? verb,
+      onRemove: () => onVerbs(verbs.filter((item) => item !== verb)),
+    });
+  }
+  for (const outcome of outcomes) {
+    chips.push({
+      key: `outcome:${outcome}`,
+      label: OUTCOME_CHIPS.find((chip) => chip.value === outcome)?.label ?? outcome,
+      onRemove: () => onOutcomes?.(outcomes.filter((item) => item !== outcome)),
+    });
+  }
+  if (dateFrom !== null || dateTo !== null) {
+    chips.push({
+      key: 'range',
+      label: windowToLabel(window, dateFrom, dateTo),
+      onRemove: () => onRange(null, null),
+    });
+  } else if (window !== '30d') {
+    chips.push({
+      key: 'window',
+      label: windowToLabel(window, null, null),
+      onRemove: () => onWindow('30d'),
+    });
+  }
+  if (chips.length === 0) return null;
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: 'inline-block',
-        width: 1,
-        height: 16,
-        background: color.line,
-        margin: '0 4px',
-      }}
-    />
-  );
-}
-
-function DateInput({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <label
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '2px 10px 2px 10px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
-      }}
+    <div
+      role="group"
+      aria-label="Active filters"
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
     >
-      <span
-        style={{
-          fontSize: 10,
-          fontFamily: font.mono,
-          textTransform: 'uppercase',
-          letterSpacing: '0.12em',
-          color: color.fgMuted,
-        }}
-      >
-        {label}
-      </span>
-      <input
-        type="date"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          fontSize: 12,
-          fontFamily: font.mono,
-          padding: '2px 0',
-          border: 'none',
-          background: 'transparent',
-          color: color.fg,
-          outline: 'none',
-        }}
-      />
-    </label>
-  );
-}
-
-function SenderSearchInput({
-  value,
-  onChange,
-  debounceMs = 250,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  debounceMs?: number | undefined;
-}) {
-  // Debounced local state — onChange fires 250ms after the user
-  // stops typing so we don't push a URL update + re-fetch per keystroke.
-  const [draft, setDraft] = useState(value);
-  const lastPushed = useRef(value);
-  useEffect(() => {
-    // Reset local draft when the URL changes from elsewhere (back button,
-    // clear button, etc.).
-    if (value !== lastPushed.current) {
-      setDraft(value);
-      lastPushed.current = value;
-    }
-  }, [value]);
-  useEffect(() => {
-    if (debounceMs === 0) return;
-    const handle = setTimeout(() => {
-      if (draft !== lastPushed.current) {
-        lastPushed.current = draft;
-        onChange(draft);
-      }
-    }, debounceMs);
-    return () => clearTimeout(handle);
-  }, [debounceMs, draft, onChange]);
-  return (
-    <label
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '4px 10px 4px 10px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
-        minWidth: 220,
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}
-      >
-        ⌕
-      </span>
-      <input
-        type="search"
-        placeholder="Search sender…"
-        value={draft}
-        onChange={(event) => {
-          const next = event.target.value;
-          setDraft(next);
-          if (debounceMs === 0) {
-            lastPushed.current = next;
-            onChange(next);
-          }
-        }}
-        aria-label="Search sender"
-        style={{
-          fontSize: 12.5,
-          fontFamily: font.sans,
-          padding: '2px 0',
-          border: 'none',
-          background: 'transparent',
-          color: color.fg,
-          outline: 'none',
-          flex: 1,
-        }}
-      />
-    </label>
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          type="button"
+          onClick={chip.onRemove}
+          aria-label={`Remove filter: ${chip.label}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 28,
+            padding: '0 10px',
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            color: color.primary,
+            background: color.primarySoft,
+            border: 'none',
+            borderRadius: radius.pill,
+            cursor: 'pointer',
+          }}
+        >
+          {chip.label}
+          <span aria-hidden="true">✕</span>
+        </button>
+      ))}
+      <button type="button" onClick={onClear} style={textButtonStyle}>
+        Clear
+      </button>
+    </div>
   );
 }
 
 // ── Activity support bundle export ───────────────────────────────────
-
-interface EditableActivityFilters {
-  window: ActivityWindowWire;
-  source: ActivitySourceFilterWire;
-  verbs: ActivityVerbFilterWire[];
-  senderQuery: string;
-  dateFrom: string | null;
-  dateTo: string | null;
-  outcomes: ActivityReviewOutcomeWire[];
-}
 
 function ExportSupportBundleButton({
   filters,
   mailboxEmail,
   mailboxId,
   disabled,
+  touch,
 }: {
   filters: ActivityFilters;
   mailboxEmail: string | null;
   mailboxId: string | null;
   disabled: boolean;
+  /** 44px target in the mobile header. */
+  touch: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1464,12 +1425,8 @@ function ExportSupportBundleButton({
             : 'Review filters and create a support bundle.'
         }
         style={{
-          fontSize: 12.5,
-          fontFamily: font.sans,
-          padding: '6px 12px',
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 999,
-          background: 'transparent',
+          ...headerButtonStyle,
+          ...(touch ? { minHeight: 44 } : {}),
           color: disabled ? color.fgMuted : color.fg,
           cursor: disabled ? 'not-allowed' : 'pointer',
         }}
@@ -1487,298 +1444,6 @@ function ExportSupportBundleButton({
     </>
   );
 }
-
-function ActivitySupportBundleDialog({
-  initialFilters,
-  mailboxEmail,
-  mailboxId,
-  onClose,
-}: {
-  initialFilters: ActivityFilters;
-  mailboxEmail: string | null;
-  mailboxId: string | null;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<EditableActivityFilters>(() => ({
-    window: initialFilters.window ?? '30d',
-    source: initialFilters.source ?? 'all',
-    verbs: [...(initialFilters.verbs ?? [])],
-    senderQuery: initialFilters.senderQuery ?? '',
-    dateFrom: initialFilters.dateFrom ?? null,
-    dateTo: initialFilters.dateTo ?? null,
-    outcomes: [...(initialFilters.outcomes ?? [])],
-  }));
-  const [includeFullSenderAddresses, setIncludeFullSenderAddresses] = useState(false);
-  const [includeTechnicalDetails, setIncludeTechnicalDetails] = useState(false);
-  const exportBundle = useActivitySupportBundle();
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
-  const invalidRange =
-    draft.dateFrom !== null &&
-    draft.dateTo !== null &&
-    Date.parse(draft.dateFrom) >= Date.parse(draft.dateTo);
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !exportBundle.isPending) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [exportBundle.isPending, onClose]);
-
-  const submit = async () => {
-    if (invalidRange || exportBundle.isPending) return;
-    try {
-      await exportBundle.mutateAsync({
-        filters: draft,
-        mailboxId,
-        includeFullSenderAddresses,
-        includeTechnicalDetails,
-      });
-      onClose();
-    } catch {
-      // Mutation state renders the recoverable error without closing the review dialog.
-    }
-  };
-
-  return (
-    <>
-      <div
-        data-testid="activity-support-bundle-backdrop"
-        onClick={exportBundle.isPending ? undefined : onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.48)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 180,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="activity-support-bundle-title"
-        aria-describedby="activity-support-bundle-lead"
-        style={{
-          position: 'fixed',
-          top: '6vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(720px, calc(100vw - 28px))',
-          maxHeight: '88vh',
-          overflow: 'auto',
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
-          zIndex: 181,
-          fontFamily: font.sans,
-        }}
-      >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <h2
-            id="activity-support-bundle-title"
-            style={{ margin: 0, color: color.fg, fontSize: 19, fontWeight: 600 }}
-          >
-            Export Activity support bundle
-          </h2>
-          <p
-            id="activity-support-bundle-lead"
-            style={{ margin: '7px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}
-          >
-            Review which Activity records to include. The ZIP contains a readable summary and CSV
-            for all matching records, not only rows currently loaded on screen.
-          </p>
-          <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
-            mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
-          </p>
-        </div>
-
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <section aria-labelledby="activity-support-bundle-filters">
-            <h3
-              id="activity-support-bundle-filters"
-              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
-            >
-              Records to include
-            </h3>
-            <div
-              style={{
-                padding: 12,
-                border: `1px solid ${color.lineSoft}`,
-                borderRadius: 10,
-                background: color.paper,
-              }}
-            >
-              <FilterBands
-                source={draft.source}
-                onSource={(source) => setDraft((current) => ({ ...current, source }))}
-                verbs={draft.verbs}
-                onVerbs={(verbs) => setDraft((current) => ({ ...current, verbs: [...verbs] }))}
-                window={draft.window}
-                dateFrom={draft.dateFrom}
-                dateTo={draft.dateTo}
-                onWindow={(window) =>
-                  setDraft((current) => ({
-                    ...current,
-                    window,
-                    dateFrom: null,
-                    dateTo: null,
-                  }))
-                }
-                onRange={(dateFrom, dateTo) =>
-                  setDraft((current) => ({ ...current, dateFrom, dateTo }))
-                }
-                senderQuery={draft.senderQuery}
-                onSenderQuery={(senderQuery) =>
-                  setDraft((current) => ({ ...current, senderQuery }))
-                }
-                senderSearchDebounceMs={0}
-              />
-              {draft.outcomes.length > 0 && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    marginTop: 10,
-                    color: color.fgSoft,
-                    fontSize: 12,
-                  }}
-                >
-                  <span>Review outcome: {draft.outcomes.join(', ')}</span>
-                  <button
-                    type="button"
-                    onClick={() => setDraft((current) => ({ ...current, outcomes: [] }))}
-                    style={{
-                      color: color.primary,
-                      background: 'none',
-                      border: 0,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Include all outcomes
-                  </button>
-                </div>
-              )}
-            </div>
-            {invalidRange && (
-              <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: 12 }}>
-                The From date must be earlier than the To date.
-              </div>
-            )}
-          </section>
-
-          <section aria-labelledby="activity-support-bundle-privacy">
-            <h3
-              id="activity-support-bundle-privacy"
-              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
-            >
-              Privacy options
-            </h3>
-            <label style={supportBundleOptionStyle}>
-              <input
-                type="checkbox"
-                checked={includeFullSenderAddresses}
-                onChange={(event) => setIncludeFullSenderAddresses(event.target.checked)}
-              />
-              <span>
-                <strong style={{ color: color.fg }}>Include full sender addresses</strong>
-                <span style={supportBundleOptionHelpStyle}>
-                  Off by default. Otherwise addresses are masked, such as j***@example.com.
-                </span>
-              </span>
-            </label>
-            <label style={{ ...supportBundleOptionStyle, marginTop: 8 }}>
-              <input
-                type="checkbox"
-                checked={includeTechnicalDetails}
-                onChange={(event) => setIncludeTechnicalDetails(event.target.checked)}
-              />
-              <span>
-                <strong style={{ color: color.fg }}>Include technical details</strong>
-                <span style={supportBundleOptionHelpStyle}>
-                  Adds a separate JSON appendix for support correlation.
-                </span>
-              </span>
-            </label>
-            <TechnicalDetails
-              summary="What technical details can be included?"
-              style={{ marginTop: 10 }}
-            >
-              The optional appendix contains the bundle version, internal mailbox and Activity
-              identifiers, action-attempt identifiers, machine action/source values, execution
-              status, classified error codes, and filter dates. No tokens, idempotency keys, message
-              bodies, or raw provider responses.
-            </TechnicalDetails>
-          </section>
-
-          {exportBundle.error && (
-            <div
-              role="alert"
-              style={{
-                padding: '10px 11px',
-                borderRadius: 8,
-                color: color.danger,
-                background: color.dangerBg,
-                border: `1px solid ${color.dangerBorder}`,
-                fontSize: 12.5,
-              }}
-            >
-              We couldn&apos;t create the support bundle. Your Activity is unchanged. Review the
-              options and try again.
-              <TechnicalDetails summary="Show error details" style={{ marginTop: 8 }}>
-                {technicalErrorDetails(exportBundle.error)}
-              </TechnicalDetails>
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '13px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <Button tone="default" onClick={onClose} disabled={exportBundle.isPending}>
-            Cancel
-          </Button>
-          <Button
-            tone="primary"
-            onClick={() => void submit()}
-            disabled={invalidRange || exportBundle.isPending}
-          >
-            {exportBundle.isPending ? 'Creating bundle…' : 'Download bundle'}
-          </Button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-const supportBundleOptionStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: 9,
-  padding: '10px 11px',
-  border: `1px solid ${color.lineSoft}`,
-  borderRadius: 9,
-  background: color.paper,
-  color: color.fgSoft,
-  fontSize: 12.5,
-  lineHeight: 1.45,
-};
-
-const supportBundleOptionHelpStyle: CSSProperties = {
-  display: 'block',
-  marginTop: 2,
-  color: color.fgMuted,
-  fontSize: 12,
-};
 
 // ── Bulk action bar (B7) ──────────────────────────────────────────────
 
@@ -1880,90 +1545,50 @@ function BulkActionBar({
       aria-label="Bulk actions"
       style={{
         position: 'sticky',
-        top: 8,
+        top: 12,
         zIndex: 5,
+        alignSelf: 'center',
+        width: 'fit-content',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 14,
-        padding: '12px 16px',
-        background: color.fg,
-        color: color.fgInverse,
-        border: `1px solid ${color.fg}`,
-        borderRadius: 12,
-        boxShadow: shadow.lift,
+        gap: 8,
+        padding: '6px 6px 6px 20px',
+        background: color.card,
+        color: color.fg,
+        borderRadius: bulkError ? radius.xl : radius.pill,
+        boxShadow: shadow.pop,
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: color.fgInverseMuted,
-        }}
-      >
-        Selection
-      </span>
-      <span
-        style={{
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: color.fgInverse,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
+      <span style={{ ...numeralStyle, fontSize: text.md, fontWeight: 600, marginRight: 8 }}>
         {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
         {revertableCount < selectedIds.size && (
-          <span style={{ fontWeight: 400, color: color.fgInverseSoft, marginLeft: 8 }}>
-            · {revertableCount} undoable
+          <span style={{ fontWeight: 500, fontSize: text.sm, color: color.fgMuted, marginLeft: 8 }}>
+            {revertableCount} undoable
           </span>
         )}
       </span>
-      <span style={{ flex: 1 }} />
-      <button
-        type="button"
+      <Button
+        tone="primary"
+        size="md"
         onClick={runBulkUndo}
         disabled={revertableCount === 0 || bulkBusy}
-        style={{
-          fontFamily: font.sans,
-          fontSize: 13,
-          fontWeight: 600,
-          color: color.fg,
-          background: color.card,
-          border: 'none',
-          padding: '8px 16px',
-          borderRadius: 999,
-          cursor: revertableCount === 0 || bulkBusy ? 'not-allowed' : 'pointer',
-          opacity: revertableCount === 0 || bulkBusy ? 0.55 : 1,
-        }}
       >
         {bulkBusy ? 'Undoing…' : `Undo ${revertableCount}`}
-      </button>
-      <button
-        type="button"
-        onClick={onClear}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: color.fgInverseSoft,
-          fontFamily: font.mono,
-          fontSize: 11,
-          letterSpacing: '0.04em',
-          cursor: 'pointer',
-        }}
-      >
-        clear
-      </button>
+      </Button>
+      <Button tone="ghost" size="md" onClick={onClear}>
+        Clear
+      </Button>
       {bulkError && (
         <span
+          role="alert"
           style={{
             flexBasis: '100%',
-            fontSize: 12,
-            color: '#F4B860',
-            fontFamily: font.mono,
-            marginTop: 2,
+            padding: '2px 14px 8px 0',
+            fontSize: text.sm,
+            color: color.fgSoft,
           }}
         >
           {bulkError}
@@ -2022,15 +1647,7 @@ function GroupedList({
   isMobile,
   mailboxEmail,
   mailboxId,
-}: {
-  rows: readonly ActivityRowWire[];
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-  failedTokens?: Set<string> | undefined;
-  isMobile: boolean;
-  mailboxEmail: string | null;
-  mailboxId: string | null;
-}) {
+}: RowListProps) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleGroup = (key: string) => {
@@ -2049,119 +1666,124 @@ function GroupedList({
         padding: 0,
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 8,
       }}
     >
       {groups.map((group) => {
         const isOpen = expanded.has(group.key);
         const totalAffected = group.rows.reduce((sum, r) => sum + r.affectedCount, 0);
         return (
-          <li
-            key={group.key}
-            style={{
-              background: color.card,
-              border: `1px solid ${color.lineSoft}`,
-              borderRadius: 10,
-              overflow: 'hidden',
-            }}
-          >
+          <li key={group.key} style={{ ...panelStyle, padding: '0 12px' }}>
             <button
               type="button"
               onClick={() => toggleGroup(group.key)}
               aria-expanded={isOpen}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = color.fill;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
               style={{
-                display: 'grid',
-                // Mobile drops the dedicated count column (it overflowed
-                // 375px against the 180px name min); the count moves under
-                // the name instead. Desktop keeps the 4-column layout.
-                gridTemplateColumns: isMobile
-                  ? 'auto minmax(0, 1fr) auto'
-                  : 'auto minmax(180px, 1.2fr) auto auto',
+                display: 'flex',
                 alignItems: 'center',
-                gap: isMobile ? 10 : 14,
-                padding: '12px 14px',
-                width: '100%',
+                gap: 14,
+                minHeight: 68,
+                margin: '0 -12px',
+                padding: '12px 16px',
+                width: 'calc(100% + 24px)',
                 background: 'transparent',
                 border: 'none',
+                borderRadius: radius.lg,
                 cursor: 'pointer',
                 fontFamily: font.sans,
                 textAlign: 'left',
+                transition: `background ${motion.fast} ${motion.ease}`,
               }}
             >
               <Avatar
-                size={32}
+                size={40}
                 name={group.displayName}
                 domain={group.email}
                 hasMark={group.brandMark}
               />
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
-                    fontSize: 13.5,
-                    fontWeight: 600,
-                    color: color.fg,
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 8,
+                    minWidth: 0,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: text.md,
+                      fontWeight: 500,
+                      color: color.fg,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      minWidth: 0,
+                    }}
+                  >
+                    {group.displayName}
+                  </span>
+                  {group.domain && (
+                    <span
+                      style={{
+                        fontSize: text.sm,
+                        color: color.fgMuted,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0,
+                        flexShrink: 1000,
+                      }}
+                    >
+                      {group.domain}
+                    </span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: text.sm,
+                    color: color.fgMuted,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {group.displayName}
-                </div>
-                {group.domain && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: color.fgMuted,
-                      fontFamily: font.mono,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {group.domain}
-                  </div>
-                )}
-                {isMobile && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: color.fgMuted,
-                      fontFamily: font.mono,
-                      marginTop: 2,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
-                    email{totalAffected === 1 ? '' : 's'}
-                  </div>
-                )}
-              </div>
-              {!isMobile && (
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: color.fgMuted,
-                    fontFamily: font.mono,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
                   {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
                   email{totalAffected === 1 ? '' : 's'}
-                </span>
-              )}
-              <span aria-hidden="true" style={{ color: color.fgMuted }}>
-                {isOpen ? '▾' : '▸'}
-              </span>
+                </div>
+              </div>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                style={{
+                  color: color.fgMuted,
+                  flexShrink: 0,
+                  transform: isOpen ? 'rotate(90deg)' : 'none',
+                  transition: `transform ${motion.fast} ${motion.ease}`,
+                }}
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
             </button>
             {isOpen && (
               <ul
                 style={{
                   listStyle: 'none',
                   margin: 0,
-                  padding: '0 12px 12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
+                  padding: '0 0 8px',
+                  borderTop: `1px solid ${color.lineSoft}`,
                 }}
               >
                 {group.rows.map((row) => (
@@ -2169,6 +1791,7 @@ function GroupedList({
                     key={row.id}
                     row={row}
                     isSelected={selectedIds.has(row.id)}
+                    selectionActive={selectedIds.size > 0}
                     onToggleSelect={() => onToggle(row.id)}
                     variant="grouped"
                     failedTokens={failedTokens}
@@ -2188,35 +1811,80 @@ function GroupedList({
 
 // ── Row ───────────────────────────────────────────────────────────────
 
-/** Semantic verb → accent colour. Mirrors the FilterToolbar palette so the
- *  left-edge dot reads the same in chip and row. */
-const VERB_DOT: Record<ActivityActionWire, string> = {
-  archive: color.fgSoft,
-  delete: color.amber,
-  unsubscribe: color.primary,
-  // D56 — the confirmed outcome reads as a completion; emerald (the
-  // "done/kept" accent) sets it apart from the primary-accent intent row.
-  unsubscribe_confirmed: color.emerald,
-  unsubscribe_endpoint_accepted: color.emerald,
-  unsubscribe_failed: color.red,
-  unsubscribe_unconfirmed: color.amber,
-  unsubscribe_action_required: color.amber,
-  unsubscribe_draft_opened: color.primary,
-  unsubscribe_user_marked_sent: color.emerald,
-  unsubscribe_unavailable: color.fgMuted,
-  later: color.dashboard.accent,
-  keep: color.emerald,
-  'followup-dismiss': color.fgMuted,
-  // Protect toggle audit rows — quiet (muted) accents: these
-  // are standing-policy flips, not mail-moving verbs, so they read as
-  // secondary entries alongside the K/A/U/L/D rows.
-  marked_protected: color.fgMuted,
-  unmarked_protected: color.fgMuted,
+/**
+ * Colour is reserved for rows that need a second look: a failure reads as
+ * an error, an unsettled unsubscribe as a warning. A completed action is
+ * the record's normal state and stays neutral.
+ */
+const VERB_TONE_COLOR: Record<VerbTone, string> = {
+  dark: color.fg,
+  amber: color.amber,
+  danger: color.danger,
+  primary: color.emerald,
+  neutral: color.fgMuted,
 };
+
+/**
+ * The verb's colour for a row's 8px dot. Canonical verbs read their tone
+ * from the verb registry (ADR-0019); every unsubscribe outcome row is an
+ * unsubscribe. Later has no registry colour of its own (`neutral`, same as
+ * Keep), so it takes primary to stay distinguishable; protection toggles
+ * are an outlined primary dot — a standing setting, not a mail move.
+ */
+export function activityActionDot(action: ActivityRowWire['action']): {
+  color: string;
+  outline: boolean;
+} {
+  if (action === 'marked_protected' || action === 'unmarked_protected') {
+    return { color: color.primary, outline: true };
+  }
+  if (action === 'later') return { color: color.primary, outline: false };
+  const verb: string = action.startsWith('unsubscribe') ? 'unsubscribe' : action;
+  if (verb === 'keep' || verb === 'archive' || verb === 'unsubscribe' || verb === 'delete') {
+    return { color: VERB_TONE_COLOR[verbById(verb as VerbId).tone], outline: false };
+  }
+  return { color: color.fgMuted, outline: false };
+}
+
+/**
+ * The colour of a row's result line and its left rail. A failure reads as
+ * an error and an unsettled unsubscribe as a warning; otherwise the verb's
+ * own colour (`activityActionDot`), except that a settled unsubscribe
+ * takes primary — the registry's amber would read as a warning on a row
+ * that needs none.
+ */
+export function activityResultColor(row: ActivityRowWire): string {
+  if (row.executionState?.kind === 'failed' || row.action === 'unsubscribe_failed') {
+    return color.danger;
+  }
+  if (row.action === 'unsubscribe_unconfirmed' || row.action === 'unsubscribe_action_required') {
+    return color.amber;
+  }
+  if (row.action.startsWith('unsubscribe')) return color.primary;
+  return activityActionDot(row.action).color;
+}
+
+/**
+ * Clock time for a row under a day header; date + time inside a sender
+ * group, where rows from many days share one list. Locale + user zone
+ * pinned — this is server-rendered (React #418). Exported for the
+ * exact-string unit test.
+ */
+export function activityRowTime(iso: string, timeZone: string, withDate: boolean): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString('en-US', {
+    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  });
+}
 
 function ActivityRow({
   row,
   isSelected,
+  selectionActive = false,
   onToggleSelect,
   variant = 'flat',
   failedTokens,
@@ -2226,14 +1894,16 @@ function ActivityRow({
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
+  /** Any row selected — every row's checkbox shows, not just the hovered one. */
+  selectionActive?: boolean;
   onToggleSelect: () => void;
   variant?: 'flat' | 'grouped';
   /** Set of undo tokens that just failed in a bulk-undo burst. Each
    *  matching row renders the per-row "Try again" pill in amber so
    *  the bar's instruction ("act on the row") has a visible affordance. */
   failedTokens?: Set<string> | undefined;
-  /** Below `sm` the row restacks into a card so its 7 grid columns stop
-   *  clipping under ~375px. Resolved once at the screen root. */
+  /** Below `sm` the action cluster drops to its own line so the text
+   *  stops clipping under ~375px. Resolved once at the screen root. */
   isMobile?: boolean;
   /** Active Gmail account. Null in isolated stories, where links fail closed. */
   mailboxEmail: string | null;
@@ -2242,429 +1912,344 @@ function ActivityRow({
 }) {
   const senderName = row.sender?.displayName ?? 'Your whole account';
   const senderEmail = row.sender?.email ?? '';
-  const senderDomain = row.sender?.domain ?? '';
   const verbLabel = activityRowActionLabel(row);
-  const sourceLabel = SOURCE_LABEL[row.source];
   const now = useNow();
-  const relative = now === null ? '' : relativeTime(row.occurredAt, now);
+  const timeZone = useUserTimeZone();
   const absolute = now === null ? '' : absoluteTime(row.occurredAt);
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
-  const dotColor =
-    row.reviewOutcome === 'protected'
-      ? color.emerald
-      : row.reviewOutcome === 'skipped'
-        ? color.fgMuted
-        : VERB_DOT[row.action];
   const [hovered, setHovered] = useState(false);
+  const [checkFocused, setCheckFocused] = useState(false);
+  // The checkbox sits ON the logo, not in a gutter of its own: it shows
+  // while the row is hovered, focused or selected, while any selection
+  // is live, and as a corner badge on touch (no hover there). Inside a
+  // sender group there is no logo, so it always shows in the logo's slot.
+  const showCheck =
+    variant === 'grouped' || isMobile || isSelected || selectionActive || hovered || checkFocused;
 
+  // D57 rule attribution — Autopilot rows name the rule that fired
+  // ("by Autopilot · Newsletter graveyard"); a deleted rule degrades to
+  // plain "by Autopilot". Triage/Screener keep the "via <source>" form;
+  // Manual reads as "by you" instead of the raw enum voice "via Manual"
+  // (QA-archive-20260828-06). Sentence case — it is a line of its own.
   const sourceAttribution =
     row.source === 'autopilot'
-      ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
+      ? `By Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
       : row.source === 'manual'
-        ? 'by you'
-        : `via ${sourceLabel}`;
+        ? 'By you'
+        : `Via ${SOURCE_LABEL[row.source]}`;
 
-  // ── Mobile card (< sm) ──────────────────────────────────────────────
-  // The desktop 7-column grid clips hard on a phone. Below `sm` the same
-  // data restacks: a top line (select · sender · time), a verb/meta line,
-  // and the action cluster — with the verb-accent rail as an absolute
-  // left strip. Grouped rows drop the sender identity (it lives in the
-  // group header) exactly as the desktop grouped variant does.
-  if (isMobile) {
-    return (
-      <li
+  const showFeedback =
+    !isSyntheticReviewEvidence &&
+    row.reviewOutcome !== null &&
+    row.source === 'autopilot' &&
+    row.executionState === null;
+
+  const actions = (
+    <RowActions
+      row={row}
+      failedTokens={failedTokens}
+      mailboxEmail={mailboxEmail}
+      mailboxId={mailboxId}
+      touch={isMobile}
+    />
+  );
+
+  const resultColor = activityResultColor(row);
+  const senderSecondary = row.sender?.domain || senderEmail;
+  const ellipsis: CSSProperties = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+
+  // Who, first — the row is scanned by sender, so the name leads.
+  const identity = (
+    <div style={{ minWidth: 0, flex: 1 }}>
+      <div
+        data-row-sender
+        title={senderEmail || undefined}
+        style={{ ...ellipsis, fontSize: text.md, fontWeight: 600, color: color.fg }}
+      >
+        {senderName}
+      </div>
+      {senderSecondary && (
+        <div style={{ ...ellipsis, marginTop: 2, fontSize: text.sm, color: color.fgMuted }}>
+          {senderSecondary}
+        </div>
+      )}
+    </div>
+  );
+
+  // What happened, in the action's colour, with how many and by whom.
+  const result = (align: 'left' | 'right') => (
+    <div
+      style={{
+        minWidth: 0,
+        flex: align === 'left' ? 1 : '0 1 auto',
+        maxWidth: align === 'right' ? 360 : undefined,
+        textAlign: align,
+      }}
+    >
+      <div
         style={{
-          position: 'relative',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          padding: '12px 14px 12px 18px',
-          background: variant === 'grouped' ? 'transparent' : color.card,
-          // Flat rows are standalone cards (full border + radius); grouped
-          // rows sit inside a group card, so only a bottom hairline divides
-          // them. Longhands only — mixing the `border` shorthand with
-          // `borderBottom` fires React's conflicting-style dev warning.
-          borderTop: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderRight: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderLeft: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderBottom: `1px solid ${color.lineSoft}`,
-          borderRadius: variant === 'grouped' ? 0 : 10,
-          fontFamily: font.sans,
+          // A phone wraps the count under the result instead of cutting it.
+          ...(isMobile ? {} : ellipsis),
+          fontSize: text.sm,
+          fontWeight: 600,
         }}
       >
-        <span
-          aria-hidden="true"
+        <span data-row-result style={{ color: resultColor }}>
+          {verbLabel}
+        </span>
+        {row.affectedCount > 0 && (
+          <span
+            style={{
+              ...numeralStyle,
+              marginLeft: 8,
+              whiteSpace: 'nowrap',
+              fontWeight: 500,
+              color: color.fgSoft,
+            }}
+          >
+            {formatCount(row.affectedCount)} email{row.affectedCount === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+      <div
+        title={
+          row.source === 'autopilot' && row.rule
+            ? `By Autopilot rule “${row.rule.name}”`
+            : undefined
+        }
+        style={{ ...ellipsis, marginTop: 2, fontSize: text.sm, color: color.fgMuted }}
+      >
+        {sourceAttribution}
+      </div>
+    </div>
+  );
+
+  const tinted = (hovered && !isMobile) || isSelected;
+  return (
+    <li
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      data-activity-card={variant === 'flat' ? '' : undefined}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        gap: 8,
+        minHeight: 68,
+        boxSizing: 'border-box',
+        fontFamily: font.sans,
+        transition: `background ${motion.fast} ${motion.ease}, box-shadow ${motion.fast} ${motion.ease}`,
+        ...(variant === 'flat'
+          ? {
+              // Each action is its own raised card; the fill layers over
+              // the card colour so hover and selection read on both themes.
+              padding: '14px 16px 14px 22px',
+              borderRadius: radius.lg,
+              background: tinted
+                ? `linear-gradient(${color.fill}, ${color.fill}), ${color.card}`
+                : color.card,
+              boxShadow: hovered && !isMobile ? shadow.lift : shadow.card,
+            }
+          : {
+              // Inside a sender card: flat, bled to the card's edges.
+              margin: '0 -12px',
+              padding: '10px 16px 10px 22px',
+              borderRadius: radius.lg,
+              background: tinted ? color.fill : 'transparent',
+            }),
+      }}
+    >
+      {/* The action's colour as a rail inside the card's left edge — scans
+          down the list without competing with the sender name. */}
+      <span
+        aria-hidden="true"
+        data-action-rail={row.action}
+        style={{
+          position: 'absolute',
+          left: 8,
+          top: 14,
+          bottom: 14,
+          width: 4,
+          borderRadius: radius.pill,
+          background: resultColor,
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+        <label
           style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 4,
-            background: dotColor,
+            position: 'relative',
+            flexShrink: 0,
+            width: 40,
+            height: 40,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
           }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggleSelect}
-            aria-label={`Select activity row from ${senderName}`}
-            style={{ cursor: 'pointer', accentColor: color.fg, flexShrink: 0 }}
-          />
+        >
+          {/* Inside a sender group the header already carries the identity. */}
           {variant === 'flat' && (
             <Avatar
-              size={30}
+              size={40}
               name={senderName}
               domain={senderEmail}
               hasMark={row.sender?.brandMark ?? false}
             />
           )}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {variant === 'flat' && (
-              <div
-                style={{
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: color.fg,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {senderName}
-              </div>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 600, color: dotColor }}>{verbLabel}</span>
-              {row.affectedCount > 0 && (
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 12,
-                    color: color.fgMuted,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-                </span>
-              )}
-            </div>
-          </div>
-          <time
-            dateTime={row.occurredAt}
-            title={absolute}
+          <span
             style={{
-              fontSize: 11.5,
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              whiteSpace: 'nowrap',
-              fontVariantNumeric: 'tabular-nums',
-              flexShrink: 0,
-              alignSelf: 'flex-start',
+              position: 'absolute',
+              ...(variant === 'flat' && isMobile && !isSelected && !selectionActive
+                ? // Touch at rest: a small badge on the logo's corner, so
+                  // the logo stays readable and selection stays findable.
+                  { right: -4, bottom: -4, width: 22, height: 22 }
+                : { inset: variant === 'flat' ? 0 : 6 }),
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: variant === 'flat' ? 11 : radius.pill,
+              background: variant === 'flat' ? color.card : 'transparent',
+              boxShadow: variant === 'flat' ? shadow.card : 'none',
+              opacity: showCheck ? 1 : 0,
+              transition: `opacity ${motion.fast} ${motion.ease}`,
             }}
           >
-            {relative}
-          </time>
-        </div>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              onFocus={() => setCheckFocused(true)}
+              onBlur={() => setCheckFocused(false)}
+              aria-label={`Select activity row from ${senderName}`}
+              style={{
+                width: 18,
+                height: 18,
+                margin: 0,
+                cursor: 'pointer',
+                accentColor: color.primary,
+              }}
+            />
+          </span>
+        </label>
+        {variant === 'flat' ? identity : result('left')}
+        {variant === 'flat' && !isMobile && result('right')}
+        {!isMobile && (
+          // A fixed column, so result lines align whether or not a row
+          // has an Undo.
+          <div style={{ display: 'flex', justifyContent: 'flex-end', minWidth: 120 }}>
+            {actions}
+          </div>
+        )}
+        <time
+          dateTime={row.occurredAt}
+          title={absolute}
+          style={{
+            ...numeralStyle,
+            fontSize: text.sm,
+            color: color.fgMuted,
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+            minWidth: variant === 'flat' ? 64 : undefined,
+            textAlign: 'right',
+            alignSelf: isMobile ? 'flex-start' : undefined,
+          }}
+        >
+          {activityRowTime(row.occurredAt, timeZone, variant === 'grouped')}
+        </time>
+      </div>
+      {isMobile && (
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            flexDirection: 'column',
+            alignItems: 'stretch',
             gap: 8,
+            // Under the name, past the logo.
+            paddingLeft: variant === 'flat' ? 54 : 0,
           }}
         >
-          <span
-            title={
-              row.source === 'autopilot' && row.rule
-                ? `By Autopilot rule “${row.rule.name}”`
-                : undefined
-            }
-            style={{
-              fontSize: 10,
-              fontFamily: font.mono,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              minWidth: 0,
-            }}
-          >
-            {sourceAttribution}
-          </span>
-          <RowActions
-            row={row}
-            failedTokens={failedTokens}
-            mailboxEmail={mailboxEmail}
-            mailboxId={mailboxId}
+          {variant === 'flat' && result('left')}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{actions}</div>
+        </div>
+      )}
+      {showFeedback && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <InlineFeedback
+            surface="activity"
+            referenceId={row.id}
+            initialRating={row.feedbackRating}
           />
         </div>
-        {!isSyntheticReviewEvidence &&
-          row.reviewOutcome !== null &&
-          row.source === 'autopilot' &&
-          row.executionState === null && (
-            <InlineFeedback
-              surface="activity"
-              referenceId={row.id}
-              initialRating={row.feedbackRating}
-            />
-          )}
-      </li>
-    );
-  }
-
-  return (
-    <li
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'grid',
-        // dot · checkbox · avatar · sender · verb+meta · actions · time
-        gridTemplateColumns:
-          variant === 'grouped'
-            ? '4px auto auto minmax(140px, 1fr) auto auto auto'
-            : '4px auto auto minmax(200px, 1.4fr) minmax(160px, 1fr) auto auto',
-        alignItems: 'center',
-        columnGap: 14,
-        padding: '12px 16px 12px 0',
-        background:
-          variant === 'grouped'
-            ? hovered
-              ? color.mutedBg
-              : 'transparent'
-            : hovered
-              ? color.bg
-              : color.card,
-        border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
-        fontFamily: font.sans,
-        transition: 'background 120ms ease',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Verb-accent left rail */}
-      <span
-        aria-hidden="true"
-        style={{
-          alignSelf: 'stretch',
-          background: dotColor,
-          width: 4,
-        }}
-      />
-      <input
-        type="checkbox"
-        checked={isSelected}
-        onChange={onToggleSelect}
-        aria-label={`Select activity row from ${senderName}`}
-        style={{ cursor: 'pointer', marginLeft: 4, accentColor: color.fg }}
-      />
-      <Avatar
-        size={32}
-        name={senderName}
-        domain={senderEmail}
-        hasMark={row.sender?.brandMark ?? false}
-      />
-      {variant === 'flat' ? (
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: color.fg,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              letterSpacing: '-0.005em',
-            }}
-          >
-            {senderName}
-          </div>
-          {senderDomain && (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: color.fgMuted,
-                fontFamily: font.mono,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {senderDomain}
-            </div>
-          )}
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          minWidth: 0,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: dotColor,
-              letterSpacing: '-0.005em',
-            }}
-          >
-            {verbLabel}
-          </span>
-          {row.affectedCount > 0 && (
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 12,
-                color: color.fgMuted,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
-        <span
-          style={{
-            fontSize: 10,
-            fontFamily: font.mono,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: color.fgMuted,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          // D57 rule attribution — Autopilot rows name the rule that
-          // fired ("by Autopilot · Newsletter graveyard"); a deleted
-          // rule degrades to plain "by Autopilot". Triage/Screener keep
-          // the "via <source>" form; Manual reads as "by you" instead of
-          // the raw enum voice "via Manual" (QA-archive-20260828-06).
-          title={
-            row.source === 'autopilot' && row.rule
-              ? `By Autopilot rule “${row.rule.name}”`
-              : undefined
-          }
-        >
-          {row.source === 'autopilot'
-            ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
-            : row.source === 'manual'
-              ? 'by you'
-              : `via ${sourceLabel}`}
-        </span>
-      </div>
-      <RowActions
-        row={row}
-        failedTokens={failedTokens}
-        mailboxEmail={mailboxEmail}
-        mailboxId={mailboxId}
-        includeFeedback
-      />
-      <time
-        dateTime={row.occurredAt}
-        title={absolute}
-        style={{
-          fontSize: 11.5,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          whiteSpace: 'nowrap',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {relative}
-      </time>
+      )}
     </li>
   );
 }
 
 /**
- * Right-aligned action cluster — Undo + Open-in-Gmail rendered as a
- * single horizontal group with a 1px hairline between them. Replaces
- * the three separate floating pills the tracer shipped with.
+ * Right-aligned controls for one row — recovery, Undo, then the quiet
+ * Open-in-Gmail link.
  */
 function RowActions({
   row,
   failedTokens,
   mailboxEmail,
   mailboxId,
-  includeFeedback = false,
+  touch,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
   mailboxEmail: string | null;
   mailboxId: string | null;
-  includeFeedback?: boolean;
+  /** 44px targets on the mobile row. */
+  touch: boolean;
 }) {
-  // The pill is a frame around controls. A sender-less row with nothing to
-  // undo and no recovery state has none, and an empty bordered capsule is
-  // the same defect as the empty segment (QA-activity-20260918-09).
-  // Built once and handed to the link, so the frame and the link decide
-  // from the same value instead of two copies of the same condition.
+  // A sender-less row with nothing to undo and no recovery state has no
+  // control, and an empty frame is the same defect as an empty segment
+  // (QA-activity-20260918-09). Built once and handed to the link, so the
+  // frame and the link decide from the same value instead of two copies
+  // of the same condition.
   const gmailHref =
     row.sender && mailboxEmail
       ? GmailOpenLinkService.buildFromSearchLink({ mailboxEmail, from: row.sender.email })
       : null;
   const hasControl =
     row.executionState !== null || row.undoState.kind !== 'unavailable' || Boolean(gmailHref);
+  if (!hasControl) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-      {hasControl && (
-        <div
-          data-row-actions-frame
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 0,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 999,
-            background: color.bg,
-            padding: '0 2px',
-            overflow: 'hidden',
-          }}
-        >
-          {row.executionState && (
-            <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
-          )}
-          <UndoCell row={row} bulkFailedTokens={failedTokens} />
-          <OpenInGmailLink
-            row={row}
-            href={gmailHref}
-            // The divider separates the link from a control before it. With
-            // no recovery cell and nothing to undo there is no such control.
-            showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
-          />
-        </div>
-      )}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: 4,
+        flexShrink: 0,
+      }}
+    >
+      <div
+        data-row-actions-frame
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: touch ? 44 : 0 }}
+      >
+        {row.executionState && (
+          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+        )}
+        <UndoCell row={row} bulkFailedTokens={failedTokens} />
+        <OpenInGmailLink row={row} href={gmailHref} touch={touch} />
+      </div>
       {/* The reason a retry is unsafe used to live only in a `title`,
           which does not exist on touch — on the one row a worried user is
           reading (QA-activity-20260918-08). */}
-      {row.executionState?.kind === 'failed' && unsafeRetryReason(row) !== null && (
+      {unsafeRetryReason(row) !== null && (
         <span
           style={{
             maxWidth: 260,
             textAlign: 'right',
-            fontSize: 11.5,
+            fontSize: text.xs,
             lineHeight: 1.4,
             color: color.fgMuted,
           }}
@@ -2672,19 +2257,56 @@ function RowActions({
           {unsafeRetryReason(row)}
         </span>
       )}
-      {includeFeedback &&
-        row.reviewOutcome !== null &&
-        row.reviewOutcome !== 'skipped' &&
-        row.reviewOutcome !== 'protected' &&
-        row.source === 'autopilot' &&
-        row.executionState === null && (
-          <InlineFeedback
-            surface="activity"
-            referenceId={row.id}
-            initialRating={row.feedbackRating}
-          />
-        )}
     </div>
+  );
+}
+
+/** One shape for every control and status in a row's action cluster. */
+const rowControlStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  height: 30,
+  padding: '0 14px',
+  fontFamily: font.sans,
+  fontSize: text.sm,
+  fontWeight: 500,
+  background: 'transparent',
+  border: 'none',
+  borderRadius: radius.pill,
+  whiteSpace: 'nowrap',
+};
+
+/** 32px ghost circle — the row's icon-only controls. */
+const iconButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 32,
+  height: 32,
+  padding: 0,
+  border: 'none',
+  borderRadius: radius.pill,
+  background: 'transparent',
+  color: color.fgMuted,
+  cursor: 'pointer',
+  transition: `background ${motion.fast} ${motion.ease}`,
+};
+
+function CloseGlyph() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
   );
 }
 
@@ -2789,25 +2411,9 @@ function RecoveryCell({
     }
   };
 
-  const baseStyle: CSSProperties = {
-    fontSize: 12,
-    fontFamily: font.sans,
-    fontWeight: 500,
-    padding: '6px 12px',
-    background: 'transparent',
-    border: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    whiteSpace: 'nowrap',
-  };
-
   if (execution.kind === 'in_progress') {
     return (
-      <span
-        role="status"
-        style={{ ...baseStyle, color: color.fgMuted, fontFamily: font.mono, fontSize: 10.5 }}
-      >
+      <span role="status" style={{ ...rowControlStyle, color: color.fgMuted }}>
         {execution.isRecovery ? 'Retrying…' : 'Running…'}
       </span>
     );
@@ -2818,7 +2424,10 @@ function RecoveryCell({
       // A link, not a hover-only reason: `title` does not exist on touch,
       // and this is the row a worried user is reading
       // (QA-activity-20260918-08).
-      <a href="/settings/help" style={{ ...baseStyle, color: color.amber, textDecoration: 'none' }}>
+      <a
+        href="/settings/help"
+        style={{ ...rowControlStyle, color: color.amber, textDecoration: 'none' }}
+      >
         Contact support
       </a>
     );
@@ -2831,7 +2440,7 @@ function RecoveryCell({
         onClick={() => void startReview()}
         disabled={createPreview.isPending}
         style={{
-          ...baseStyle,
+          ...rowControlStyle,
           color: color.amber,
           cursor: createPreview.isPending ? 'wait' : 'pointer',
           fontWeight: 600,
@@ -2860,419 +2469,6 @@ function RecoveryCell({
   );
 }
 
-function ActionRecoveryDialog({
-  row,
-  preview,
-  isStarting,
-  startError,
-  confirmError,
-  isConfirming,
-  onRetryVerification,
-  onConfirm,
-  onReconnect,
-  onClose,
-}: {
-  row: ActivityRowWire;
-  preview: ActionRecoveryPreviewResult | undefined;
-  isStarting: boolean;
-  startError: Error | null;
-  confirmError: Error | null;
-  isConfirming: boolean;
-  onRetryVerification: () => void;
-  onConfirm: (wakeAt?: string) => void;
-  onReconnect: () => void;
-  onClose: () => void;
-}) {
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
-  const [wakeAtLocal, setWakeAtLocal] = useState('');
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !isConfirming) onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isConfirming, onClose]);
-
-  useEffect(() => {
-    if (!preview?.requiresNewWakeAt) {
-      setWakeAtLocal('');
-      return;
-    }
-    const defaultWake = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    setWakeAtLocal(toLocalDateTimeInput(defaultWake));
-  }, [preview?.previewId, preview?.requiresNewWakeAt]);
-
-  const wakeAt = wakeAtLocal ? new Date(wakeAtLocal) : null;
-  const wakeAtValid =
-    !preview?.requiresNewWakeAt ||
-    (wakeAt !== null && Number.isFinite(wakeAt.getTime()) && wakeAt.getTime() > Date.now());
-  const ready = preview?.status === 'ready';
-  const confirmNeedsRecheck = confirmError ? recoveryConfirmNeedsRecheck(confirmError) : false;
-  const canConfirm = ready && wakeAtValid && !isConfirming && !confirmNeedsRecheck;
-
-  return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 170,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="action-recovery-title"
-        data-testid="action-recovery-dialog"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(520px, calc(100vw - 32px))',
-          maxHeight: '78vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 171,
-          fontFamily: font.sans,
-        }}
-      >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <div
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10.5,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-            }}
-          >
-            Verify first · nothing changes yet
-          </div>
-          <h2
-            id="action-recovery-title"
-            style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
-          >
-            Review this failed {failedActionNoun(row.action)}
-          </h2>
-          <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
-            We check Gmail first, so nothing changes until you confirm.
-          </p>
-        </div>
-
-        <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <RecoveryPreviewBody
-            preview={preview}
-            isStarting={isStarting}
-            startError={startError}
-            onRetryVerification={onRetryVerification}
-            onReconnect={onReconnect}
-          />
-
-          {ready && preview && (
-            <>
-              <RecoveryConsequence preview={preview} />
-              {preview.requiresNewWakeAt ? (
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
-                  <span style={{ color: color.fgMuted }}>New return time</span>
-                  <input
-                    type="datetime-local"
-                    value={wakeAtLocal}
-                    min={toLocalDateTimeInput(new Date(Date.now() + 60_000))}
-                    onChange={(event) => setWakeAtLocal(event.target.value)}
-                    style={{
-                      border: `1px solid ${color.border}`,
-                      borderRadius: 8,
-                      background: color.bg,
-                      color: color.fg,
-                      fontFamily: font.sans,
-                      fontSize: 13,
-                      padding: '8px 10px',
-                    }}
-                  />
-                  {!wakeAtValid && (
-                    <span role="alert" style={{ color: color.red, fontSize: 12 }}>
-                      Choose a future return time.
-                    </span>
-                  )}
-                </label>
-              ) : preview.verb === 'later' && preview.wakeAt ? (
-                <p style={{ margin: 0, color: color.fgMuted, fontSize: 12.5 }}>
-                  Return time: {formatRecoveryDate(preview.wakeAt)}
-                </p>
-              ) : null}
-            </>
-          )}
-
-          {confirmError && (
-            <div
-              role="alert"
-              style={{
-                border: `1px solid ${color.red}`,
-                borderRadius: 8,
-                background: 'rgba(239,68,68,0.07)',
-                color: color.red,
-                fontSize: 12.5,
-                lineHeight: 1.45,
-                padding: '9px 11px',
-              }}
-            >
-              {recoveryConfirmErrorMessage(confirmError)}
-              {confirmNeedsRecheck && (
-                <div style={{ marginTop: 8 }}>
-                  <Button tone="default" onClick={onRetryVerification}>
-                    Check Gmail again
-                  </Button>
-                </div>
-              )}
-              <TechnicalDetails summary="Show support details" style={{ marginTop: 6 }}>
-                {technicalErrorDetails(confirmError)}
-              </TechnicalDetails>
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <Button tone="default" onClick={onClose} disabled={isConfirming}>
-            Close
-          </Button>
-          {ready && preview && (
-            <Button
-              tone="primary"
-              onClick={() =>
-                onConfirm(preview.requiresNewWakeAt && wakeAt ? wakeAt.toISOString() : undefined)
-              }
-              disabled={!canConfirm}
-            >
-              {isConfirming
-                ? 'Starting…'
-                : preview.outcome === 'already_applied'
-                  ? 'Update this record'
-                  : 'Try this action again'}
-            </Button>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function RecoveryPreviewBody({
-  preview,
-  isStarting,
-  startError,
-  onRetryVerification,
-  onReconnect,
-}: {
-  preview: ActionRecoveryPreviewResult | undefined;
-  isStarting: boolean;
-  startError: Error | null;
-  onRetryVerification: () => void;
-  onReconnect: () => void;
-}) {
-  if (startError) {
-    return <RecoveryVerificationFailure error={startError} onRetry={onRetryVerification} />;
-  }
-
-  if (isStarting || preview?.status === 'verifying') {
-    return (
-      <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: 13 }}>
-        Checking Gmail&apos;s current state…
-      </div>
-    );
-  }
-
-  if (!preview) {
-    return <RecoveryVerificationFailure error={null} onRetry={onRetryVerification} />;
-  }
-
-  if (preview.status === 'consumed' && preview.outcome === 'no_change_needed') {
-    return (
-      <div role="status" style={{ color: color.emerald, fontSize: 13, lineHeight: 1.5 }}>
-        <strong>Nothing is left to retry.</strong> Gmail no longer has a message this action applies
-        to, so nothing new was started.
-      </div>
-    );
-  }
-
-  if (preview.status === 'failed') {
-    if (preview.outcome === 'reconnect_required') {
-      return (
-        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-          DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
-          wait for its sync to finish, then return to Activity and choose Check and retry.
-          <div style={{ marginTop: 10 }}>
-            <Button tone="primary" onClick={onReconnect}>
-              Reconnect Gmail
-            </Button>
-          </div>
-        </div>
-      );
-    }
-    if (preview.outcome === 'blocked') {
-      return (
-        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-          This action cannot be safely retried from Activity. Nothing new was started.
-        </div>
-      );
-    }
-    return <RecoveryVerificationFailure error={null} onRetry={onRetryVerification} />;
-  }
-
-  if (preview.status === 'consumed') {
-    return (
-      <div role="status" style={{ color: color.emerald, fontSize: 13 }}>
-        This review has already been used.
-      </div>
-    );
-  }
-
-  const applied = preview.alreadyAppliedCount;
-  return (
-    <div
-      style={{
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
-        background: color.bg,
-        padding: '12px 14px',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-        gap: 10,
-      }}
-    >
-      <RecoveryCount label="Still to do" value={preview.remainingCount} />
-      <RecoveryCount label="Already done in Gmail" value={applied} />
-      <RecoveryCount label="Gone from Gmail" value={preview.unavailableCount} />
-      <RecoveryCount label="Checked" value={preview.targetCount} />
-    </div>
-  );
-}
-
-function RecoveryVerificationFailure({
-  error,
-  onRetry,
-}: {
-  error: Error | null;
-  onRetry: () => void;
-}) {
-  return (
-    <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-      We couldn&apos;t check Gmail&apos;s current state.
-      <div style={{ marginTop: 10 }}>
-        <Button tone="default" onClick={onRetry}>
-          Check again
-        </Button>
-      </div>
-      {error && (
-        <TechnicalDetails summary="Show support details" style={{ marginTop: 8 }}>
-          {technicalErrorDetails(error)}
-        </TechnicalDetails>
-      )}
-    </div>
-  );
-}
-
-function RecoveryCount({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div style={{ fontFamily: font.mono, fontSize: 18, color: color.fg }}>{value}</div>
-      <div style={{ color: color.fgMuted, fontSize: 11.5 }}>{label}</div>
-    </div>
-  );
-}
-
-function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult }) {
-  const actionCopy =
-    preview.verb === 'archive'
-      ? 'Archive takes these emails out of the Inbox. It does not delete them.'
-      : preview.verb === 'delete'
-        ? 'Delete moves these emails to Gmail Trash. Gmail Trash recovery remains separate.'
-        : 'Later takes these emails out of the Inbox now and returns them at the confirmed time.';
-  const outcomeCopy =
-    preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming updates your Activity and Undo record without a duplicate effect in Gmail.'
-      : preview.outcome === 'partial'
-        ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
-        : 'Gmail does not yet reflect the failed action.';
-  return (
-    <div
-      style={{
-        borderLeft: `3px solid ${color.amber}`,
-        background: color.paper,
-        padding: '10px 12px',
-        color: color.fgSoft,
-        fontSize: 12.5,
-        lineHeight: 1.5,
-      }}
-    >
-      <div>{outcomeCopy}</div>
-      <div style={{ marginTop: 4 }}>{actionCopy}</div>
-      {preview.unavailableCount > 0 && (
-        <div style={{ marginTop: 4 }}>
-          {preview.unavailableCount} unavailable message
-          {preview.unavailableCount === 1 ? '' : 's'} will not be changed.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function toLocalDateTimeInput(date: Date): string {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function formatRecoveryDate(iso: string): string {
-  const date = new Date(iso);
-  // Locale pinned for consistency (post-intent modal copy — never in
-  // server HTML); the zone stays the browser's.
-  return Number.isFinite(date.getTime())
-    ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
-    : // An unparseable wire date must not leak the raw ISO string into copy.
-      'an unknown time';
-}
-
-function recoveryConfirmErrorMessage(error: Error): string {
-  const code = apiErrorCode(error);
-  if (code === 'RECOVERY_PREVIEW_EXPIRED') {
-    return 'This review expired. Check Gmail again before trying the action.';
-  }
-  if (code === 'LATER_TIMER_SUPERSEDED') {
-    return 'This sender already has a newer Later schedule. The failed schedule was not replayed.';
-  }
-  if (code === 'LATER_WAKE_TIME_REQUIRED') {
-    return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
-  }
-  if (code === 'ACTION_NO_LONGER_FAILED') {
-    return 'This action no longer needs recovery. Refresh Activity to see its current state.';
-  }
-  if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
-    return 'This recovery review was already used. Refresh Activity to see the current attempt.';
-  }
-  return "We couldn't confirm the retry. Try again — it won't create a duplicate.";
-}
-
-function recoveryConfirmNeedsRecheck(error: Error): boolean {
-  const code = apiErrorCode(error);
-  return code === 'RECOVERY_PREVIEW_EXPIRED' || code === 'LATER_WAKE_TIME_REQUIRED';
-}
-
 /**
  * B12 — "Open in Gmail" per row. The Gmail web UI accepts a Message-Id
  * search via `#search/rfc822msgid:<id>` (works for INBOX AND Trash);
@@ -3285,48 +2481,52 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
 function OpenInGmailLink({
   row,
   href,
-  showDivider,
+  touch = false,
 }: {
   row: ActivityRowWire;
   /** Built by the caller; null when there is no sender or no mailbox to link into. */
   href: string | null;
-  showDivider: boolean;
+  touch?: boolean;
 }) {
   if (!href || !row.sender) return null;
+  const name = `Open ${row.sender.displayName} in Gmail`;
   return (
-    <>
-      {showDivider && (
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: 1,
-            alignSelf: 'stretch',
-            background: color.line,
+    <Tooltip content="Open in Gmail">
+      {({ describedBy }) => (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={name}
+          aria-describedby={describedBy}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = color.fillHover;
           }}
-        />
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            height: touch ? 36 : 26,
+            padding: '0 10px',
+            fontFamily: font.sans,
+            fontSize: text.xs,
+            fontWeight: 600,
+            color: color.fgSoft,
+            background: color.fill,
+            borderRadius: radius.pill,
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+            transition: `background ${motion.fast} ${motion.ease}`,
+          }}
+        >
+          Gmail
+          <span aria-hidden="true">↗</span>
+        </a>
       )}
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`Open ${row.sender.displayName} in Gmail`}
-        style={{
-          fontSize: 11,
-          fontFamily: font.mono,
-          textTransform: 'uppercase',
-          letterSpacing: '0.10em',
-          color: color.fgMuted,
-          textDecoration: 'none',
-          padding: '6px 10px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-        }}
-      >
-        Gmail <span aria-hidden="true">↗</span>
-      </a>
-    </>
+    </Tooltip>
   );
 }
 
@@ -3365,19 +2565,6 @@ function UndoCell({
   const tokenIsBulkFailed =
     undo.kind === 'available' && (bulkFailedTokens?.has(undo.token) ?? false);
 
-  const baseStyle: CSSProperties = {
-    fontSize: 12,
-    fontFamily: font.sans,
-    fontWeight: 500,
-    padding: '6px 12px',
-    background: 'transparent',
-    border: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    cursor: 'pointer',
-  };
-
   if (undo.kind === 'available') {
     const failed = (revert.isError && revert.variables === undo.token) || tokenIsBulkFailed;
     return (
@@ -3395,18 +2582,33 @@ function UndoCell({
               ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
               : 'Revert this action.'
           }
+          onMouseEnter={(e) => {
+            if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+          data-dm-button=""
+          data-undo-capsule=""
           style={{
-            ...baseStyle,
+            ...rowControlStyle,
+            gap: 6,
+            // Outlined in the action colour, not filled: a fill vanishes
+            // into the card's own hover tint.
+            background: 'transparent',
+            boxShadow: `inset 0 0 0 1px ${failed ? color.amber : color.primary}`,
             color: failed ? color.amber : color.primary,
             cursor: isPendingHere ? 'wait' : 'pointer',
-            fontWeight: failed ? 600 : 500,
+            fontWeight: 600,
+            opacity: isPendingHere ? 0.6 : 1,
+            transition: `background ${motion.fast} ${motion.ease}`,
           }}
         >
           {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
           <span aria-hidden="true">↺</span>
         </button>
         {failed && (
-          <span role="status" style={{ color: color.amber, fontSize: 12, maxWidth: 260 }}>
+          <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>
             {revert.error?.message ?? 'Could not confirm Undo. Try again.'}
           </span>
         )}
@@ -3415,19 +2617,8 @@ function UndoCell({
   }
   if (undo.kind === 'executed') {
     return (
-      <span
-        role="status"
-        style={{
-          ...baseStyle,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          cursor: 'default',
-        }}
-      >
-        Undone
+      <span role="status" style={{ display: 'inline-flex', alignItems: 'center', height: 30 }}>
+        <Pill>Undone</Pill>
       </span>
     );
   }
@@ -3435,15 +2626,7 @@ function UndoCell({
     return (
       <span
         title={`Undo window closed on ${formatExpiry(undo.expiredAt, timeZone)}.`}
-        style={{
-          ...baseStyle,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          cursor: 'help',
-        }}
+        style={{ ...rowControlStyle, color: color.fgMuted, cursor: 'help' }}
       >
         Expired
       </span>
@@ -3465,27 +2648,13 @@ function lastToken(undo: ActivityRowWire['undoState']): string | null {
 
 function LoadingState() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 1180,
-      }}
-    >
-      {[48, 56, 56, 56, 56, 56].map((h, i) => (
+    <div role="status" aria-live="polite" style={screenColumnStyle}>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-          }}
+          className="dm-skeleton"
+          style={{ height: 56, marginBottom: 8, background: color.fill, borderRadius: radius.lg }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading activity</span>
@@ -3516,14 +2685,7 @@ function ActivityErrorState({
     ? 'Activity could not load this filter. Use a valid outcome and a From date earlier than To, or reset the filters.'
     : 'Try again in a moment.';
   return (
-    <div
-      style={{
-        ...(embedded ? {} : { padding: '20px 24px 28px' }),
-        width: '100%',
-        maxWidth: 720,
-        fontFamily: font.sans,
-      }}
-    >
+    <div style={embedded ? { width: '100%', fontFamily: font.sans } : screenColumnStyle}>
       <RecoverableErrorState
         title={title}
         description={message}
@@ -3565,87 +2727,7 @@ function isActivityFilterValidationError(error: unknown): error is ApiError {
   );
 }
 
-// ── Generic chip ──────────────────────────────────────────────────────
-
-function Chip({
-  label,
-  isActive,
-  onClick,
-  tone = 'accent',
-  dot,
-  compact = false,
-}: {
-  label: string;
-  isActive: boolean;
-  onClick: () => void;
-  tone?: 'accent' | 'muted';
-  /** Optional leading colour-dot — used by the verb chips to surface the
-   *  semantic per-verb palette in both the chip and the matching row. */
-  dot?: string;
-  /** Tighter padding + size for dense toolbar bands. */
-  compact?: boolean;
-}) {
-  const activeBg = tone === 'accent' ? color.primary : color.fg;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={isActive}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: dot ? 6 : 0,
-        padding: compact ? '3px 10px' : '4px 12px',
-        fontSize: compact ? 11.5 : 12,
-        fontFamily: font.sans,
-        border: `1px solid ${isActive ? activeBg : color.lineSoft}`,
-        background: isActive ? activeBg : 'transparent',
-        color: isActive ? color.fgInverse : color.fg,
-        borderRadius: 999,
-        cursor: 'pointer',
-        transition: 'background 120ms ease, border-color 120ms ease',
-      }}
-    >
-      {dot && (
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: isActive ? color.fgInverse : dot,
-            // Faint ring so the dot reads on hover even when fill matches bg
-            boxShadow: isActive ? 'none' : `0 0 0 1px ${dot}33`,
-          }}
-        />
-      )}
-      {label}
-    </button>
-  );
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────
-
-/**
- * The verb as a noun for "Review this failed …". The result label is a
- * past-tense phrase ("Deleted to Gmail Trash"); lowercasing it into a
- * title produced "Review failed archived" and un-capitalised Gmail.
- */
-function failedActionNoun(action: ActivityRowWire['action']): string {
-  switch (action) {
-    case 'archive':
-      return 'Archive';
-    case 'later':
-      return 'Later';
-    case 'delete':
-      return 'Delete';
-    case 'unsubscribe':
-      return 'Unsubscribe';
-    default:
-      return 'action';
-  }
-}
 
 /**
  * What an empty list can honestly claim, decided by WHICH list came back
@@ -3724,6 +2806,11 @@ function unsafeRetryReason(row: ActivityRowWire): string | null {
     : null;
 }
 
+/**
+ * Where the active weekly chip goes: the current window, minus the
+ * outcome. Dates the strip stamped travel out with it; a range the user
+ * picked stays.
+ */
 function clearOutcomeHref(
   filters: {
     window?: ActivityWindowWire;
@@ -3734,8 +2821,8 @@ function clearOutcomeHref(
   cardRange: { from: string; to: string } | null,
 ): string {
   const params = new URLSearchParams({ window: filters.window ?? '30d' });
-  // The 7-day card stamps its own from/to onto its links. Dates that ARE
-  // the card's go with the outcome; a range the user picked stays. Checked,
+  // The 7-day strip stamps its own from/to onto its links. Dates that ARE
+  // the strip's go with the outcome; a range the user picked stays. Checked,
   // not inferred from the window — a custom range can sit under `7d` too.
   const datesAreTheCards =
     cardRange !== null && filters.dateFrom === cardRange.from && filters.dateTo === cardRange.to;
@@ -3823,16 +2910,11 @@ export function windowToLabel(
 }
 
 /**
- * Coarse "N days/hours/min ago" formatter for the row meta. Bounded to
- * the buckets the screen displays — proper l10n is a follow-up.
- */
-/**
- * The exact local timestamp behind a relative label, for the row's
- * `title` tooltip. The coarse `Nh ago` bucket is right for scanning but
- * useless the moment you are triaging a failure or lining a row up
- * against Gmail — and three rows of one composite all read `1h ago`,
- * which hides that they were one action. Seconds are included for
- * exactly that case.
+ * The exact local timestamp behind a row's clock time, for its `title`
+ * tooltip. The minute is right for scanning but useless the moment you
+ * are triaging a failure or lining a row up against Gmail — and three
+ * rows of one composite all read the same minute, which hides that they
+ * were one action. Seconds are included for exactly that case.
  */
 export function absoluteTime(iso: string, timeZone?: string): string {
   const d = new Date(iso);
@@ -3848,19 +2930,6 @@ export function absoluteTime(iso: string, timeZone?: string): string {
   });
 }
 
-export function relativeTime(iso: string, nowMs: number = Date.now()): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-  const diffMs = Math.max(0, nowMs - then);
-  const minutes = Math.floor(diffMs / 60_000);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  if (days >= 1) return `${days}d ago`;
-  if (hours >= 1) return `${hours}h ago`;
-  if (minutes >= 1) return `${minutes}m ago`;
-  return 'just now';
-}
-
 /**
  * Locale + zone pinned: the expired-undo tooltip is server-rendered
  * into hydrated HTML (React #418; e2e hydration-smoke). The user zone
@@ -3870,32 +2939,4 @@ export function formatExpiry(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return iso;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
-}
-
-function isoDateOnly(iso: string | null): string {
-  if (!iso) return '';
-  // Truncate to YYYY-MM-DD so `<input type="date">` round-trips.
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-/**
- * Parse a `<input type="date">` value into an ISO timestamp safely.
- * The native picker normalises to `YYYY-MM-DD` in compliant browsers,
- * but a future regression to `<input type="text">`, a Firefox quirk,
- * or a paste of garbage can yield an unparseable string. Returning null
- * on parse failure keeps the filter state honest (the URL clears
- * rather than getting `Invalid Date.toISOString()` throwing through a
- * React event handler and leaving the filter in a stuck state — the
- * silent-failure pattern flagged 2026-06-05 silent-failure-hunter).
- */
-function safeIsoFromDateInput(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString();
 }

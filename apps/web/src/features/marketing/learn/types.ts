@@ -56,7 +56,6 @@ export interface LearnArticle {
   readonly kind: 'How-to guide' | 'Direct answer' | 'Launch essay';
   readonly title: string;
   readonly description: string;
-  readonly eyebrow: string;
   readonly intro: string;
   readonly quickAnswer?: string;
   readonly readingMinutes: number;

@@ -1,19 +1,21 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
+import { verdictToVerb } from './types';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
- * Expanded content for a triage row (D36).
+ * The detail behind a triage decision (D36) — the expanded list row
+ * and the focus card's "Why?" disclosure render the same block.
  *
- * The collapsed row shows the critical info — sender identity,
- * verdict pill, a one-line "why". This expanded panel adds the full
- * stats grid (volume, read, last-seen, indexed received count), the engine's full
- * reasoning copy, and the bullet list of supporting signals.
+ * At rest a sender shows identity, the verdict and a one-line "why".
+ * This adds the engine's full reasoning with its confidence band and
+ * age, the stats (volume, read, last-seen, received) and the
+ * supporting signals.
  *
  * Privacy (D7 / D228): every field here is metadata. No body, no
  * snippet (the snippet belongs to messages, not to the sender-level
@@ -37,29 +39,67 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
   // have measured nothing about, which is the strongest possible signal
   // under every low-engagement ranking we show.
   const readPct = row.readRate === null ? null : Math.round(row.readRate * 100);
+  // The engine's confidence, as one word beside the verdict. A protected
+  // row's recommendation is Keep BECAUSE of the protection — the raw
+  // confidence belongs to the suppressed verdict, so printing it here
+  // would mislead (2026-07-10: "Keep · 95%" where 95% was the
+  // unsubscribe confidence).
+  const band =
+    row.protectionReason !== null ? 'protected' : confidenceBand(row.verdict, row.confidence);
   return (
     <div
       style={{
-        padding: '14px 18px 18px',
-        background: 'rgba(14,20,19,0.018)',
-        borderTop: `1px solid ${color.lineSoft}`,
+        padding: '16px 0 4px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 16,
         fontFamily: font.sans,
+        textAlign: 'left',
       }}
     >
-      {/* Stats grid — 4 numbers, mono tabular figures so they line up.
-          `auto-fit`/`minmax` (matching senders/uplift-d/kpi-strip/kpi-strip.tsx)
-          instead of a fixed 4-column track: a fixed track left a label
-          like "MARKED READ 90D" with too little width at 375px and its
-          window word orphaned onto its own line (QA-triage-20260827-10).
-          Reflows to 2 columns below ~300px of grid width with no JS/media
-          hook, so there's no hydration-flash risk either. */}
+      {/* Full reasoning copy (D24) — the same string the engine writes
+          to `triage_decisions.reasoning`. */}
+      <div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 8,
+            marginBottom: 6,
+            fontSize: text.sm,
+            color: color.fgMuted,
+          }}
+        >
+          <span data-dm-verdict-band>
+            Suggested: {verdictToVerb(row.verdict)}
+            {band !== null && <> · {band}</>}
+          </span>
+          {/* The sentence below and the STATISTICS come from different
+              moments: reasoning is stored at score time, the stats are
+              recomputed on every request. Stating the age is what stops
+              the two from reading as one measurement that contradicts
+              itself (D25, founder 2026-08-19). Omitted entirely when
+              unknown — the demo fixtures have no engine run behind them,
+              and "Scored today" on a hand-written row is the same
+              untruth. */}
+          {ageLabel !== null && <span style={{ whiteSpace: 'nowrap' }}>{ageLabel}</span>}
+        </div>
+        <p style={{ fontSize: text.md, color: color.fg, margin: 0, lineHeight: 1.55 }}>
+          {row.reasoning}
+        </p>
+      </div>
+
+      {/* Stats — 4 numbers, tabular figures so they line up.
+          `auto-fit`/`minmax` instead of a fixed 4-column track: a fixed
+          track left a label like "Marked read 90d" with too little width
+          at 375px and its window word orphaned onto its own line
+          (QA-triage-20260827-10). Reflows with no JS/media hook, so
+          there's no hydration-flash risk either. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
           gap: 12,
         }}
       >
@@ -67,111 +107,33 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             `round(last90dMessages / 3)` (data.ts), a 90-day-derived
             average, not a measured monthly count — a bare "per month"
             reads as one (QA-archive-20260828-01, Codex review). */}
-        <Stat label="per month 90d avg" value={row.monthlyVolume.toLocaleString('en-US')} />
+        <Stat label="Per month, 90d avg" value={row.monthlyVolume.toLocaleString('en-US')} />
+        {/* Names the window: this cell sits beside lifetime figures, so
+            a bare rate reads as lifetime. "marked read", not "read
+            rate" — matches the why-line's deliberate wording
+            (QA-triage-20260827-07). */}
         <Stat
-          // Names the window: this cell sits in a grid beside
-          // lifetime figures, so a bare rate reads as lifetime.
-          // "marked read", not "read rate" — matches the collapsed
-          // row's deliberate wording (QA-triage-20260827-07).
-          label="marked read 90d"
+          label="Marked read, 90d"
           value={readPct === null ? '—' : `${readPct}%`}
-          valueColor={
-            row.readRate === null
-              ? color.fgMuted
-              : row.readRate >= 0.5
-                ? color.primary
-                : row.readRate >= 0.2
-                  ? color.fg
-                  : color.amber
-          }
+          muted={readPct === null}
         />
-        {/* Derived via `lastSeenLabel` so this card can never
-            contradict the collapsed row's quiet-90d copy (audit W3). */}
-        <Stat label="last seen" value={lastSeenLabel(row)} />
+        {/* Derived via `lastSeenLabel` so this can never contradict the
+            why-line's quiet-90d copy (audit W3). */}
+        <Stat label="Last seen" value={lastSeenLabel(row)} />
         {/* `totalAllTime` is a lifetime count sitting beside two 90d
             figures — label it so it doesn't read as sharing their window
             (QA-triage-20260827-10). */}
-        <Stat label="received all time" value={fmtCompact(row.totalAllTime)} />
+        <Stat label="Received all time" value={fmtCompact(row.totalAllTime)} />
       </div>
 
-      {/* Full reasoning copy (D24) — the same string the engine writes
-          to `triage_decisions.reasoning`. */}
-      <div
-        style={{
-          padding: '10px 12px',
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: 9,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            gap: 8,
-            marginBottom: 4,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: font.mono,
-              fontSize: 9.5,
-              fontWeight: 600,
-              color: color.fgMuted,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Why this is suggested
-          </div>
-          {/* The sentence above and the STATISTICS on the collapsed row
-              come from different moments: reasoning is stored at score
-              time, the stats are recomputed on every request. Stating
-              the age is what stops the two from reading as one
-              measurement that contradicts itself (D25, founder
-              2026-08-19). Omitted entirely when unknown — the demo
-              fixtures have no engine run behind them, and "Scored
-              today" on a hand-written row is the same untruth. */}
-          {ageLabel !== null && (
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 9.5,
-                color: color.fgMuted,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {ageLabel}
-            </span>
-          )}
-        </div>
-        <p style={{ fontSize: 12.5, color: color.fg, margin: 0, lineHeight: 1.55 }}>
-          {row.reasoning}
-        </p>
-      </div>
-
-      {/* Signals — bullet list. */}
-      <div>
-        <div
-          style={{
-            fontFamily: font.mono,
-            fontSize: 9.5,
-            fontWeight: 600,
-            color: color.fgMuted,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
-            marginBottom: 6,
-          }}
-        >
-          What we noticed
-        </div>
+      {row.signals.length > 0 && (
         <ul
+          aria-label="What we noticed"
           style={{
             margin: 0,
             padding: '0 0 0 16px',
             color: color.fgSoft,
-            fontSize: 12,
+            fontSize: text.sm,
             lineHeight: 1.6,
           }}
         >
@@ -179,53 +141,26 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             <li key={i}>{s}</li>
           ))}
         </ul>
-      </div>
+      )}
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  valueColor = color.fg,
-}: {
-  label: string;
-  value: string;
-  valueColor?: string;
-}) {
+function Stat({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
-    <div
-      style={{
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: 9,
-        padding: '8px 10px',
-      }}
-    >
+    <div>
       <div
         style={{
-          fontFamily: font.mono,
-          fontWeight: 700,
-          fontSize: 15,
-          letterSpacing: '-0.012em',
-          color: valueColor,
+          fontWeight: 600,
+          fontSize: text.lg,
+          letterSpacing: '-0.01em',
+          color: muted ? color.fgMuted : color.fg,
           fontVariantNumeric: 'tabular-nums',
         }}
       >
         {value}
       </div>
-      <div
-        style={{
-          fontFamily: font.sans,
-          fontSize: 9.5,
-          color: color.fgMuted,
-          marginTop: 2,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {label}
-      </div>
+      <div style={{ fontSize: text.xs, color: color.fgMuted, marginTop: 4 }}>{label}</div>
     </div>
   );
 }

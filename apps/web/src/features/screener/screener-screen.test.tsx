@@ -13,17 +13,18 @@
 //   - §2.2 copy rule: the verb "Screen" NEVER appears in rendered
 //     copy on ANY state — "Screener" (the feature name) is the only
 //     allowed form.
-//   - The Pro upsell (D77) uses only D194-approved framing.
+//   - The paywall copy uses only D194-approved framing.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render as renderDom, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ApiError } from '@/lib/api/client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SCREENER_QUEUE, type ScreenerScreenState } from './data';
 import { ScreenerEmptyState } from './empty-state';
-import { ScreenerUpsell } from './upsell';
+import { SCREENER_GATE_COPY } from './screener-route';
 import { ScreenerRow } from './screener-row';
 import { ScreenerScreen } from './screener-screen';
 import { resolveScreenerShortcut, VERB_KEY_HINT, VERB_LABEL, VERB_ORDER } from './verbs';
@@ -72,6 +73,31 @@ describe('ScreenerScreen — ready state', () => {
     }
   });
 
+  it('filters and sorts only the loaded queue while stating the true pending total', () => {
+    renderDom(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen state={state} totalPending={3259} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByText(/3,259 total awaiting review/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter loaded senders' }), {
+      target: { value: 'protected' },
+    });
+    const list = screen.getByRole('list', { name: 'Senders waiting for your decision' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('Dr. Mehta Clinic')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter loaded senders' }), {
+      target: { value: 'all' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort loaded senders' }), {
+      target: { value: 'most_mail' },
+    });
+    const names = within(list)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '');
+    expect(names[0]).toContain('Dr. Mehta Clinic');
+  });
+
   it('surfaces the resolved pending count in the header copy', () => {
     const html = render(
       <ScreenerScreen
@@ -79,7 +105,7 @@ describe('ScreenerScreen — ready state', () => {
         totalPending={SCREENER_QUEUE.length}
       />,
     );
-    expect(html).toContain(`${SCREENER_QUEUE.length} new senders to decide`);
+    expect(html).toContain(`>${SCREENER_QUEUE.length}</span> senders awaiting a first review`);
   });
 
   it('states the TRUE pending count in the heading, not the loaded page size', () => {
@@ -90,8 +116,8 @@ describe('ScreenerScreen — ready state', () => {
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={3259} />,
     );
-    expect(html).toContain('3259 new senders to decide');
-    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders to decide`);
+    expect(html).toContain('>3,259</span> senders awaiting a first review');
+    expect(html).not.toContain(`>${SCREENER_QUEUE.length}</span> senders awaiting a first review`);
   });
 
   it('claims NO number while the count has not resolved (finding 5.2)', () => {
@@ -102,15 +128,8 @@ describe('ScreenerScreen — ready state', () => {
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={null} />,
     );
-    expect(html).toContain('New senders to decide');
-    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders to decide`);
-  });
-
-  it('states the D72 soft-quarantine truth in the intro (mail still arrives)', () => {
-    const html = renderState(state);
-    expect(html).toContain('Their mail keeps arriving until you choose');
-    expect(html).toContain('How action previews protect you →');
-    expect(html).toContain('href="/methodology#action-method"');
+    expect(html).toContain('Screener</h1>');
+    expect(html).not.toMatch(/new senders?</);
   });
 
   it('never uses the verb "Screen" in rendered copy (§2.2 / D227)', () => {
@@ -124,23 +143,22 @@ describe('ScreenerScreen — empty / loading / error states', () => {
     (readiness) => {
       authState.readiness = readiness;
       const html = renderState({ kind: 'empty' });
-      expect(html).toContain('Your Gmail account is still syncing.');
-      expect(html).not.toContain('No unknown senders.');
+      expect(html).toContain('Still syncing your Gmail');
+      expect(html).not.toContain('No senders awaiting review');
     },
   );
 
   it('does not claim the queue is clear when the scan failed', () => {
     authState.readiness = 'failed';
     const html = renderState({ kind: 'empty' });
-    expect(html).toContain('Your Gmail scan needs attention.');
+    expect(html).toContain('Your Gmail scan needs attention');
     expect(html).toContain('href="/settings"');
-    expect(html).not.toContain('No unknown senders.');
+    expect(html).not.toContain('No senders awaiting review');
   });
 
-  it('empty state is the D76-locked copy, verbatim', () => {
+  it('empty state names the clear queue once', () => {
     const html = renderState({ kind: 'empty' });
-    expect(html).toContain('No unknown senders.');
-    expect(html).toContain('let you know when one shows up.');
+    expect(html.match(/No senders awaiting review/g)).toHaveLength(1);
     assertNoScreenVerb(html);
   });
 
@@ -152,7 +170,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
   it('error state offers an explicit retry', () => {
     const html = renderState({ kind: 'error', error: new Error('boom'), retry: () => {} });
     expect(html).toContain('role="alert"');
-    expect(html).toContain('Needs attention');
+    expect(html).toContain('didn&#x27;t load');
     expect(html).toContain('Try again');
     assertNoScreenVerb(html);
   });
@@ -227,7 +245,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
     expect(html).toContain('1 in inbox');
     expect(html).toContain(row.recommendation!.reasoning);
     expect(html).toContain(`/senders/${row.senderId}`);
-    expect(html).toContain('Open sender →');
+    expect(html).toContain('Open sender');
   });
 
   it('states the received · in-inbox split for a spam/archived-only sender (ADR-0028)', () => {
@@ -284,7 +302,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
       />,
     );
     expect(html).toContain('Email is unchanged');
-    expect(html).toContain('emails move — everything in the inbox stays where it is.');
+    expect(html).toContain('No email moves.');
     assertNoScreenVerb(html);
   });
 
@@ -308,27 +326,17 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
   });
 });
 
-describe('ScreenerUpsell — D77 (reversed by D251) + D194 marketing-copy rule', () => {
-  it('names the manifest granting plan (Plus), never a hand-rolled Pro', () => {
-    const html = render(<ScreenerUpsell onSeePricing={() => {}} />);
-    expect(html).toContain('A queue of new senders, ready when you are.');
-    expect(html).toContain('Their mail keeps arriving until you choose');
-    // D251 — the plan name derives from the manifest, so this pin moves
-    // with the ladder. The pre-fix copy quoted Pro/$19 for a $9 capability.
-    expect(html).toContain('Screener · Plus');
-    expect(html).toContain('See Plus plans');
-    expect(html).not.toContain('Pro plan');
-    assertNoScreenVerb(html);
-  });
-
+describe('Screener paywall copy — D194 marketing-copy rule', () => {
   it('never uses a D194-forbidden framing', () => {
-    const text = render(<ScreenerUpsell onSeePricing={() => {}} />).replace(/<[^>]*>/g, ' ');
+    const text = Object.values(SCREENER_GATE_COPY).join(' ');
+    expect(text).toMatch(/keeps arriving until you choose/);
     expect(text).not.toMatch(/won't surprise you/i);
     expect(text).not.toMatch(/block/i);
     expect(text).not.toMatch(/intercept/i);
     expect(text).not.toMatch(/quarantine/i);
     expect(text).not.toMatch(/out of sight/i);
     expect(text).not.toMatch(/keeps? unknown senders out/i);
+    assertNoScreenVerb(text);
   });
 });
 

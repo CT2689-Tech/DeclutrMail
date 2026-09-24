@@ -23,6 +23,19 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
+**Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
+**Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:
+1. **Confirm in place (inline confirm instead of the modal).** Not built. It changes the D226 preview surface, and the dev DB is connected to a real Gmail account, so a confirm path cannot be smoked safely without a sandbox mailbox.
+2. **"Biggest senders by size" sort.** `mail_messages.size_bytes` is stored but there is no per-sender aggregate; a sort needs a new column/index on the senders aggregate = a production migration (Tier 1).
+3. **"Recommended" sort.** `SenderListSort` names `'recommended'` but the API returns 400 for it, so it was not added to the menu. Either implement it server-side or delete the type member.
+4. **Sender Detail keyboard shortcuts.** The full page showed K/A/U/L/D key hints that were bound to nothing. They are now bound: `K` applies Keep immediately (D40, no mail moves), the other four open the preview. Off in the split-view pane. Remove the `shortcuts` prop in `detail/action-toolbar.tsx` to revert.
+5. **One name for the sync.** The product says "sync", "scan" and "reading your inbox" for the same operation (pre-existing; Home added the third). Pick one.
+6. **Senders vs Triage disagree on the suggested verb** for the same sender (e.g. Bank of America: Senders leads with Keep, Triage suggests Archive). Pre-existing — two engines; now more visible because both screens show one primary verb.
+**How:** Reply per item; each is its own small PR.
+**Verifies by:** Items move to Done with the PR number or the decision.
+**Status:** Open
+
 ### 2026-09-21 — Confirm the five historical checkouts in Paddle / Razorpay dashboards
 **Source:** session 2026-09-21 (checkout funnel investigation)
 **Why:** PostHog has five `checkout_started` events (last 2026-08-15) and zero PostHog `billing_event`s. The API cannot emit to PostHog. Empty `pending_checkouts` is expected after the 7-day sweep. Only the provider dashboards can say whether an overlay/subscription was created or paid for those attempts.

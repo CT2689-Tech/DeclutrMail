@@ -119,7 +119,15 @@ const OVERRIDES_KB = {
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
   '/(app)/senders/[id]/page': 204,
-  '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
+  // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
+  // for billing / screener / admin. The public theme and refreshed shared
+  // tokens also reach billing's shell. Allow its measured 0.2 kB increase
+  // while keeping the general 180 kB ratchet and other routes unchanged.
+  '/(app)/billing/page': 187, // checkout + invoices + plan controls + editorial shell
+  '/(app)/screener/page': 181, // queue + decision controls + editorial shell
+  // The scannable Brief and optional generated-note view measure 180.2 kB.
+  // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
+  '/(app)/brief/page': 184,
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -147,14 +155,16 @@ const OVERRIDES_KB = {
   '/(app)/quiet/page': 165, // 161.7 — schedule controls + explainer
   '/(app)/later/page': 150, // 145.2 — return queue + explainer
   '/(app)/followups/page': 150, // 145.2 — follow-up queue + explainer
-  '/(app)/admin/security/page': 125, // 120.4
+  '/(app)/admin/security/page': 126, // 125.0 — operator log + editorial shell
   // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
   // new "Contact support" form (subject/message fields, submit handler,
   // the postSupportRequest API wrapper, and its own track() call) landed
   // entirely in this route's own chunk — confirmed no OTHER route's
   // budget moved in the same CI run, so nothing leaked into a shared
   // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
-  '/(app)/settings/help/page': 120, // 118.2
+  // Rechecked after the shared editorial shell and brand update: 120.4 kB.
+  // The support form remains on this route; keep a narrow 0.6 kB margin.
+  '/(app)/settings/help/page': 121, // 120.4
 };
 
 let manifest;

@@ -1,9 +1,13 @@
 'use client';
 
+import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
+
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
-import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
+import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 
@@ -47,10 +51,8 @@ import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
-import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
-import { BatchActionSheet } from './batch-action-sheet';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
@@ -58,17 +60,37 @@ import {
   type TriageScreenState,
 } from './data';
 import { findVerdictBatch, type DomainBatch } from './domain-batch';
-import { VerdictBatchBanner } from './verdict-batch-banner';
-import type { BatchVerb } from './domain-batch-card';
+import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
+import {
+  focusItemKey,
+  heldFocusItem,
+  focusPosition,
+  planFocusItems,
+  skipFocusItem,
+  type FocusItem,
+} from './focus-plan';
+import { TriageFocusStack } from './focus-stack';
 import { TriageKeyboardHelp } from './keyboard-help';
 import { SessionProgress } from './session-progress';
 import { useTriageStore, type RememberableVerb, type SheetableVerb } from './store';
-import { TodayStrip } from './today-strip';
+import { TodayHandledLine } from './today-handled-line';
 import { TriageQueue } from './triage-queue';
 import type { ActionVerb } from './types';
+import type { ConfirmDetails } from './action-sheet';
 
-const { color, font } = tokens;
+// The two confirm sheets open only after a verb is chosen, and they carry
+// the shared modal — loading them after first paint keeps /triage inside
+// its first-load bundle budget. Both render nothing while closed.
+const ActionSheet = dynamic(() => import('./action-sheet').then((m) => m.ActionSheet), {
+  ssr: false,
+});
+const BatchActionSheet = dynamic(
+  () => import('./batch-action-sheet').then((m) => m.BatchActionSheet),
+  { ssr: false },
+);
+
+const { color, font, radius, text } = tokens;
 
 /**
  * Default state — fixtures, used by Storybook variants and the
@@ -123,6 +145,12 @@ export const DEFAULT_TRIAGE_STATE: TriageScreenState = {
  * undo tray + the row leaving the queue ARE the feedback. Failures DO
  * toast (there is no other failure surface).
  */
+/** `useLocalState` key for the per-device focus/list preference. */
+export const TRIAGE_MODE_STORAGE_KEY = 'triage.mode';
+
+/** Stable empty default — a fresh `[]` per render would re-plan the focus stack every time. */
+const NO_ROWS: readonly TriageDecisionRow[] = [];
+
 /**
  * Hard navigation to /pricing — it lives in the (marketing) route
  * group, outside the (app) shell, so a full document load is correct
@@ -230,11 +258,12 @@ export function TriageScreen({
   const clearPending = useTriageStore((s) => s.clearPending);
   const setRememberPreference = useTriageStore((s) => s.setRememberPreference);
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
-  const sessionDecidedCount = useTriageStore((s) => s.sessionDecidedCount);
   const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
+  const sessionDecidedCount = useTriageStore((s) => s.sessionDecidedCount);
+  const sessionMailboxId = useTriageStore((s) => s.sessionMailboxId);
+  const resetSessionCounts = useTriageStore((s) => s.resetSessionCounts);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
-  const sessionMessagesMoved = useTriageStore((s) => s.sessionMessagesMoved);
   const addSessionMessagesMoved = useTriageStore((s) => s.addSessionMessagesMoved);
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
 
@@ -333,13 +362,36 @@ export function TriageScreen({
   const [overdueBatch, setOverdueBatch] = useState<BatchHandle | null>(null);
   const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null, overdueBatch?.mailboxId);
 
+  // Focus mode is the default; the list is one tap away. A per-device
+  // view preference (D200) — and the daily ritual's only: the guided
+  // onboarding journeys fix their own finite list.
+  const [storedMode, setStoredMode] = useLocalState<'focus' | 'list'>(
+    TRIAGE_MODE_STORAGE_KEY,
+    'focus',
+  );
+  const [modeReady, setModeReady] = useState(false);
+  useEffect(() => setModeReady(true), []);
+  const mode: 'focus' | 'list' = journey === 'daily' && storedMode !== 'list' ? 'focus' : 'list';
+  const showDecisionLayout = journey !== 'daily' || modeReady;
+  /** Focus-stack items passed over this session — a view state, never a decision. */
+  const [skipped, setSkipped] = useState<string[]>([]);
+  /** The card kept on stage across refetches within this mailbox. */
+  const [heldKey, setHeldKey] = useState<string | null>(null);
   const resetPendingScope = useCallback(() => {
     clearPending();
     setPendingBatch(null);
     setExpandedRow(null);
     setMailtoFollowup(null);
-  }, [clearPending, setExpandedRow]);
+    setSkipped([]);
+    setHeldKey(null);
+    resetSessionCounts(actionMailboxId);
+  }, [actionMailboxId, clearPending, resetSessionCounts, setExpandedRow]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
+  // The mailbox may have changed while Triage was unmounted. Hide the
+  // previous mailbox's count immediately, then start this one's session.
+  useEffect(() => {
+    if (sessionMailboxId !== actionMailboxId) resetSessionCounts(actionMailboxId);
+  }, [actionMailboxId, resetSessionCounts, sessionMailboxId]);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -348,7 +400,7 @@ export function TriageScreen({
   const pendingBatchSenderIds = pendingBatch
     ? pendingBatch.batch.eligibleRows.map((r) => r.senderId)
     : null;
-  const bulkPreview = useBulkActionPreview(pendingBatchSenderIds);
+  const bulkPreview = useBulkActionPreview(pendingBatchSenderIds, actionMailboxId);
   const batchSheetOpen = pendingBatch != null;
   useEffect(() => {
     if (!bulkPreview.isError || !batchSheetOpen) return;
@@ -478,7 +530,7 @@ export function TriageScreen({
     pendingAction != null && pendingAction.verb !== 'Keep' && pendingRow != null
       ? pendingRow.senderId
       : null;
-  const compositePreview = useCompositePreview(previewSenderId);
+  const compositePreview = useCompositePreview(previewSenderId, actionMailboxId);
   useEffect(() => {
     if (!compositePreview.isError || previewSenderId == null) return;
     // The preview is D226-mandatory — a sustained failure must be
@@ -1368,80 +1420,117 @@ export function TriageScreen({
     return () => window.removeEventListener('keydown', onKey);
   }, [pendingAction, clearPending]);
 
+  // ── Focus stack ───────────────────────────────────────────────────
+  const readyRows = state.kind === 'ready' ? state.rows : NO_ROWS;
+  const focusItems = useMemo(
+    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily'),
+    [readyRows, dismissedBatchDomains, journey],
+  );
+  // A sender with an open preview stays on stage. The stack re-plans on
+  // every refetch (a batch offer can appear, the order can change), and
+  // a D226 preview must never be left pending behind a different card.
+  const focusItem: FocusItem | null =
+    pendingRow != null
+      ? { kind: 'row', row: pendingRow }
+      : heldFocusItem(focusItems, skipped, heldKey);
+  // Hold whichever card is on stage, so a background refetch or a failed
+  // decision re-planning the stack cannot swap it for a different sender.
+  const onStageKey = focusItem == null ? null : focusItemKey(focusItem);
+  if (onStageKey !== heldKey) setHeldKey(onStageKey);
+  const onSkip = useCallback(() => {
+    if (focusItem == null) return;
+    // Skipping past an open inline preview cancels it — the preview
+    // leaves with its card rather than surviving unseen.
+    clearPending();
+    setExpandedRow(null);
+    setSkipped((prev) => skipFocusItem(focusItems, prev, focusItemKey(focusItem)));
+    setHeldKey(null);
+  }, [focusItem, focusItems, clearPending, setExpandedRow]);
+
+  const isNarrow = useIsAtMost('xs');
+  const hasQueue = readyRows.length > 0;
+  const batchBusyDomain = batchAction?.domain ?? overdueBatch?.domain ?? null;
+  // Same-verdict batch offer — mounts when ≥3 unprotected rows share a
+  // fresh, confident Archive recommendation. Uncertain Later rows stay
+  // individual decisions. Routes through the SAME
+  // pendingBatch → BatchActionSheet → composite pipeline as the domain
+  // batch (D226 preview + one cascade undo). Dismiss is session-scoped
+  // via the shared dismissal list (the label is the key). In focus mode
+  // it is a card in the stack (`planFocusItems`); here it leads the list.
+  const verdictBatch =
+    mode === 'list' && journey === 'daily' && hasQueue
+      ? findVerdictBatch(readyRows, dismissedBatchDomains)
+      : null;
+  const resting = state.kind === 'empty' || (state.kind === 'ready' && !hasQueue);
+
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        boxSizing: 'border-box',
+        width: '100%',
+        // Content column + gutters: a 640 card in focus mode (the five verbs fit
+        // one row), an 880 list.
+        maxWidth: (mode === 'focus' ? 640 : 880) + 2 * (isNarrow ? 16 : 24),
+        margin: '0 auto',
+        // Bottom room clears the fixed undo pill.
+        padding: isNarrow ? '24px 16px 96px' : '28px 24px 96px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
+        gap: 20,
         fontFamily: font.sans,
       }}
     >
-      {/* Header — matches Senders screen typography. The session
-          burn-down sits opposite the title (renders only after the
-          first confirmed decision). */}
+      {journey === 'daily' && <EditorialKicker>Clean up / A considered decision</EditorialKicker>}
       {journey === 'daily' && (
         <div
           style={{
             display: 'flex',
-            alignItems: 'flex-end',
+            alignItems: 'center',
             justifyContent: 'space-between',
-            gap: 16,
             flexWrap: 'wrap',
+            gap: 16,
+            minHeight: 44,
           }}
         >
           <div>
-            <Eyebrow>Triage · {activeEmail ?? 'active Gmail account'}</Eyebrow>
-            <h1
-              style={{
-                fontFamily: font.display,
-                fontSize: 26,
-                fontWeight: 600,
-                letterSpacing: '-0.018em',
-                margin: '4px 0 0',
-              }}
-            >
-              {state.kind === 'ready'
-                ? `${state.rows.length} decisions, one at a time.`
-                : state.kind === 'empty'
-                  ? mailboxSyncFailed && state.stats.decidedToday === 0
-                    ? "Last scan didn't finish."
-                    : 'Nothing waiting.'
-                  : state.kind === 'error'
-                    ? "Couldn't load your decisions."
-                    : 'Loading your decisions…'}
-            </h1>
+            <h1 style={editorialTitleStyle}>Triage</h1>
+            <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+              Today’s review queue · One decision per sender
+            </p>
           </div>
-          {(state.kind === 'ready' || state.kind === 'empty') && (
-            <SessionProgress
-              messagesMoved={sessionMessagesMoved}
-              decided={sessionDecidedCount}
-              remaining={state.kind === 'ready' ? state.rows.length : 0}
-            />
+          {state.kind === 'ready' && hasQueue && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {/* The screen's one count. */}
+              <SessionProgress
+                decided={sessionMailboxId === actionMailboxId ? sessionDecidedCount : 0}
+                queued={readyRows.length}
+                {...(mode === 'focus' && focusItem != null
+                  ? { focusPosition: focusPosition(readyRows, focusItem) }
+                  : {})}
+              />
+              <div role="group" aria-label="Review layout" style={{ display: 'flex', gap: 4 }}>
+                {(['focus', 'list'] as const).map((view) => (
+                  <Button
+                    key={view}
+                    tone={mode === view ? 'default' : 'ghost'}
+                    size={isNarrow ? 'lg' : 'md'}
+                    ariaPressed={mode === view}
+                    onClick={() => setStoredMode(view)}
+                  >
+                    {view === 'focus' ? 'Focus' : 'List'}
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       )}
-
-      {/* D214 — the "Today" strip: situational awareness above the
-          decision queue. Self-fetching; renders nothing while loading
-          or when the mailbox has no signal yet. */}
-      {journey === 'daily' && <TodayStrip />}
 
       {journey === 'daily' && (
         <ScreenIntro
           id="triage"
           title="How Triage works"
-          body={
-            <>
-              Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete.
-              Every action that changes your mail shows the affected email first — Keep never does.{' '}
-              <a href="/inbox-simulator" style={{ color: color.primary, fontWeight: 600 }}>
-                Practice with sample data.
-              </a>
-            </>
-          }
+          body="Choose Keep, Archive, Unsubscribe, Later or Delete for each sender — anything that moves email shows a preview first."
           learnMore={{
             href: '/help#actions-in-gmail-terms',
             label: 'What each action does',
@@ -1460,57 +1549,46 @@ export function TriageScreen({
         />
       )}
 
-      {state.kind === 'loading' && <TriageLoadingState />}
+      {state.kind === 'loading' && <TriageLoadingState variant={mode} />}
       {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
       {/* "See Plus" routes to the real pricing page (D19) — a hard
           navigation since /pricing lives in the (marketing) route
           group; the modal checkout flow lands with the billing FE
-          (U13). Replaces the prior "Upgrade flow opens here" stub. */}
-      {state.kind === 'empty' && (
-        <TriageEmptyState
-          stats={state.stats}
-          onOpenUpgrade={openPricing}
-          syncFailed={mailboxSyncFailed}
-        />
+          (U13). */}
+      {resting && (state.kind === 'empty' || state.kind === 'ready') && (
+        <section aria-label="Nothing to decide">
+          <TriageEmptyState
+            stats={state.stats}
+            onOpenUpgrade={openPricing}
+            syncFailed={mailboxSyncFailed}
+            footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
+          />
+        </section>
       )}
-      {state.kind === 'ready' && state.rows.length === 0 && (
-        <TriageEmptyState
-          stats={state.stats}
-          onOpenUpgrade={openPricing}
-          syncFailed={mailboxSyncFailed}
-        />
+      {state.kind === 'ready' && hasQueue && !showDecisionLayout && (
+        <div role="status" aria-label="Loading your review layout">
+          <TriageLoadingState variant="list" />
+        </div>
       )}
-      {state.kind === 'ready' &&
-        state.rows.length > 0 &&
-        journey === 'daily' &&
-        (() => {
-          // Same-verdict batch banner (2026-07-10) — mounts when ≥3
-          // unprotected rows share an Archive/Later recommendation.
-          // Routes through the SAME pendingBatch → BatchActionSheet →
-          // composite pipeline as the domain card (D226 preview + one
-          // cascade undo). Dismiss is session-scoped via the shared
-          // dismissal list (the label is the key).
-          const verdictBatch = findVerdictBatch(state.rows, dismissedBatchDomains);
-          if (!verdictBatch) return null;
-          return (
-            <VerdictBatchBanner
-              batch={verdictBatch.batch}
-              verdict={verdictBatch.verdict}
-              busy={
-                batchAction?.domain === verdictBatch.batch.domain ||
-                overdueBatch?.domain === verdictBatch.batch.domain
-              }
-              onApply={() =>
-                onBatchVerb(
-                  verdictBatch.verdict === 'archive' ? 'Archive' : 'Later',
-                  verdictBatch.batch,
-                )
-              }
-              onDismiss={() => dismissBatchDomain(verdictBatch.batch.domain)}
-            />
-          );
-        })()}
-      {state.kind === 'ready' && state.rows.length > 0 && (
+      {showDecisionLayout &&
+        state.kind === 'ready' &&
+        hasQueue &&
+        mode === 'focus' &&
+        focusItem != null && (
+          <TriageFocusStack
+            item={focusItem}
+            canSkip={focusItems.length > 1}
+            onSkip={onSkip}
+            onAction={onRowActionWithInlineConfirm}
+            busyRowIds={busyRowIds}
+            previewInboxCount={previewInboxCount}
+            previewDetail={previewDetail}
+            previewQuotaRemaining={cleanupRemaining}
+            onBatchVerb={onBatchVerb}
+            batchBusyDomain={batchBusyDomain}
+          />
+        )}
+      {showDecisionLayout && state.kind === 'ready' && hasQueue && mode === 'list' && (
         <TriageQueue
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}
@@ -1521,7 +1599,19 @@ export function TriageScreen({
           allowBatching={journey === 'daily'}
           offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
-          batchBusyDomain={batchAction?.domain ?? overdueBatch?.domain ?? null}
+          batchBusyDomain={batchBusyDomain}
+          leading={
+            verdictBatch == null ? undefined : (
+              <DomainBatchCard
+                batch={verdictBatch.batch}
+                headline={`senders suggested for ${verdictBatch.verdict === 'archive' ? 'Archive' : 'Later'}`}
+                verbs={[verdictBatch.verdict === 'archive' ? 'Archive' : 'Later']}
+                busy={batchBusyDomain === verdictBatch.batch.domain}
+                onVerb={(verb) => onBatchVerb(verb, verdictBatch.batch)}
+                onDismiss={() => dismissBatchDomain(verdictBatch.batch.domain)}
+              />
+            )
+          }
         />
       )}
 
@@ -1630,25 +1720,24 @@ function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
   );
 }
 
-/** Skeleton stack — matches the row's vertical rhythm. */
-export function TriageLoadingState() {
+/** Skeleton — one card in focus mode, a stack of rows in the list. */
+export function TriageLoadingState({ variant = 'list' }: { variant?: 'focus' | 'list' }) {
+  const blocks = variant === 'focus' ? [440] : [72, 72, 72, 72, 72];
   return (
     <div
       role="status"
       aria-live="polite"
       style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      {[0, 1, 2, 3, 4].map((i) => (
+      {blocks.map((height, i) => (
         <div
           key={i}
           aria-hidden="true"
+          className="dm-skeleton"
           style={{
-            height: 68,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-            backgroundImage: `linear-gradient(90deg, ${color.lineSoft} 0%, rgba(14,20,19,0.03) 50%, ${color.lineSoft} 100%)`,
-            backgroundSize: '200% 100%',
+            height,
+            background: color.fill,
+            borderRadius: variant === 'focus' ? radius['2xl'] : radius.lg,
           }}
         />
       ))}

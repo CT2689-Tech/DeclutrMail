@@ -22,7 +22,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import {
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_STORAGE_ITEMS,
@@ -165,10 +165,9 @@ describe('/privacy content — D7 + D228 posture', () => {
 
   it('§6 links the /cookies withdrawal surface (GDPR Art. 7(3), D147)', () => {
     render(<PrivacyPolicyPage />);
-    expect(screen.getByRole('link', { name: 'Cookie preferences' })).toHaveAttribute(
-      'href',
-      '/cookies',
-    );
+    expect(
+      within(document.getElementById('cookies')!).getByRole('link', { name: 'Cookie preferences' }),
+    ).toHaveAttribute('href', '/cookies');
   });
 
   it('carries the Google Limited Use disclosure with the official policy link', () => {

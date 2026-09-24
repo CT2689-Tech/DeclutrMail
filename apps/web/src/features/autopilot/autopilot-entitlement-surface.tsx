@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -12,6 +12,7 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
@@ -21,7 +22,7 @@ import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font, radius, shadow } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Entitlement-aware Autopilot entry.
@@ -65,56 +66,52 @@ export function AutopilotObservePreview() {
     <div
       data-testid="autopilot-observe-preview"
       style={{
-        padding: '20px 24px 28px',
-        maxWidth: 820,
+        padding: '20px clamp(16px, 4vw, 24px) 28px',
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 880,
         margin: '0 auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
+        gap: 32,
         fontFamily: font.sans,
       }}
     >
       <div>
-        <Eyebrow>Autopilot preview</Eyebrow>
         <h1
           style={{
-            margin: '6px 0 4px',
-            fontFamily: font.display,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
-          }}
-        >
-          See your preset rules before activating them.
-        </h1>
-        <p
-          style={{
             margin: 0,
-            maxWidth: 650,
-            color: color.fgMuted,
-            fontSize: 13.5,
-            lineHeight: 1.6,
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
+            color: color.fg,
           }}
         >
-          See what each preset rule would match in your mailbox right now. Previews are read-only.
+          Autopilot
+        </h1>
+        <p style={{ margin: '6px 0 0', color: color.fgMuted, fontSize: text.md, lineHeight: 1.5 }}>
+          See what each preset rule would match right now. Previews are read-only.
         </p>
       </div>
 
       <section
         aria-labelledby="autopilot-preview-rules"
-        style={{
-          padding: 18,
-          border: `1px solid ${color.border}`,
-          borderRadius: radius.lg,
-          background: color.card,
-          boxShadow: shadow.card,
-        }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
       >
-        <h2 id="autopilot-preview-rules" style={{ margin: '0 0 12px', fontSize: 14 }}>
-          Preset rules in your mailbox
+        <h2
+          id="autopilot-preview-rules"
+          style={{
+            margin: 0,
+            paddingLeft: 16,
+            fontSize: text.sm,
+            fontWeight: 600,
+            color: color.fgMuted,
+          }}
+        >
+          Rules
         </h2>
         {rules.isLoading && (
-          <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
+          <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.md }}>
             Loading your preset rules…
           </p>
         )}
@@ -125,13 +122,23 @@ export function AutopilotObservePreview() {
           />
         )}
         {rules.data && rules.data.length === 0 && (
-          <p style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
-            No preset rules are installed yet. They appear after the first mailbox sync.
+          <p style={{ margin: 0, color: color.fgMuted, fontSize: text.md }}>
+            Rules appear after the first mailbox sync.
           </p>
         )}
         {rules.data && rules.data.length > 0 && (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
-            {rules.data.map((rule) => (
+          <ul
+            style={{
+              listStyle: 'none',
+              padding: 0,
+              margin: 0,
+              background: color.card,
+              boxShadow: shadow.card,
+              borderRadius: radius.xl,
+              overflow: 'hidden',
+            }}
+          >
+            {rules.data.map((rule, index) => (
               <li
                 key={rule.id}
                 style={{
@@ -139,33 +146,41 @@ export function AutopilotObservePreview() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: 12,
-                  padding: '10px 12px',
-                  border: `1px solid ${color.lineSoft}`,
-                  borderRadius: radius.md,
+                  flexWrap: 'wrap',
+                  minHeight: 56,
+                  boxSizing: 'border-box',
+                  padding: '10px 16px',
+                  // Inset hairline between rows; none against the group's edge.
+                  backgroundImage:
+                    index === 0
+                      ? undefined
+                      : `linear-gradient(${color.lineSoft}, ${color.lineSoft})`,
+                  backgroundSize: 'calc(100% - 16px) 1px',
+                  backgroundPosition: 'right top',
+                  backgroundRepeat: 'no-repeat',
                 }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600 }}>
-                  {presetDisplayName(rule.presetKey, rule.name)}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+                  <span style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>
+                    {presetDisplayName(rule.presetKey, rule.name)}
+                  </span>
                   {/* Descriptive label (which verb the preset applies), never a
-                      control on any tier — a Pill here read as clickable next
-                      to the real preview Button. */}
-                  <span style={{ fontSize: 12, color: color.fgMuted, whiteSpace: 'nowrap' }}>
+                      control on any tier. */}
+                  <span style={{ fontSize: text.sm, color: color.fgMuted, whiteSpace: 'nowrap' }}>
                     {actionLabel(rule.actionKind)}
                   </span>
-                  <Button
-                    size="sm"
-                    tone="default"
-                    disabled={preview.isPending}
-                    onClick={() => {
-                      setPreviewRuleId(rule.id);
-                      preview.mutate(rule.id);
-                    }}
-                  >
-                    Preview current matches
-                  </Button>
-                </div>
+                </span>
+                <Button
+                  size="sm"
+                  tone="default"
+                  disabled={preview.isPending}
+                  onClick={() => {
+                    setPreviewRuleId(rule.id);
+                    preview.mutate(rule.id);
+                  }}
+                >
+                  Preview current matches
+                </Button>
               </li>
             ))}
           </ul>
@@ -184,51 +199,53 @@ export function AutopilotObservePreview() {
         )}
       </section>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
-          padding: '14px 16px',
-          border: `1px solid ${color.primaryBorder}`,
-          borderRadius: radius.lg,
-          background: color.primarySoft,
-        }}
-      >
-        <div>
-          <strong style={{ display: 'block', fontSize: 13.5 }}>
-            Rule matching and batch approval are part of {grantingName}.
-          </strong>
-          <span style={{ color: color.fgMuted, fontSize: 12.5 }}>
-            Rules that act without asking are part of {actName}. Preset rules only — custom rules
-            are not available.
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Link
-            href="/pricing"
-            style={{ color: color.primary, fontSize: 12.5, textDecoration: 'none' }}
-          >
-            Compare plans
-          </Link>
+      {/* Same shape as the shared paywall: one sentence, one priced
+          button, a quiet compare link, the money-back note once. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted, lineHeight: 1.5 }}>
+          Matching and batch approval are part of {grantingName}
+          {actName === grantingName ? ', and so are' : `; ${actName} adds`} rules that act without
+          asking.
+        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Link
             href={billingIntentPath({ plan: grantingPlan, cycle: 'monthly' })}
             style={{
-              padding: '9px 14px',
-              borderRadius: radius.md,
+              display: 'inline-flex',
+              alignItems: 'center',
+              minHeight: 44,
+              padding: '0 22px',
+              borderRadius: radius.pill,
               background: color.primary,
-              color: '#fff',
-              fontSize: 13,
+              boxShadow: shadow.button,
+              color: color.fgInverse,
+              fontSize: text.md,
               fontWeight: 600,
               textDecoration: 'none',
+              whiteSpace: 'nowrap',
             }}
           >
             Upgrade to {grantingName}
             {price ? ` · ${price}` : ''}
           </Link>
+          <Link
+            href="/pricing"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              minHeight: 44,
+              padding: '0 16px',
+              borderRadius: radius.pill,
+              color: color.fgSoft,
+              fontSize: text.md,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Compare plans
+          </Link>
         </div>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
       </div>
     </div>
   );

@@ -75,14 +75,14 @@ describe('QuietHoursCard — form contract', () => {
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('06:00');
     expect(screen.getByLabelText('Quiet window timezone')).toHaveValue('Asia/Kolkata');
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeChecked();
   });
 
   it('Save is disabled until the form is dirty', async () => {
     renderCard();
     const save = screen.getByRole('button', { name: 'Save quiet hours' });
     expect(save).toBeDisabled();
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Quiet hours on' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
     expect(save).toBeEnabled();
   });
 
@@ -123,14 +123,14 @@ describe('QuietHoursCard — form contract', () => {
 
   it('disables the whole form while saving', () => {
     renderCard({ saving: true });
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeDisabled();
     expect(screen.getByLabelText('Quiet window start')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
   });
 
   it('unconfigured mailbox gets the disabled-by-default draft', () => {
     renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
   });

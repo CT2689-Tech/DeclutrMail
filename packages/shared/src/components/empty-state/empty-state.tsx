@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { color, font, radius } from '../../tokens/tokens';
+import { color, font, radius, text } from '../../tokens/tokens';
 
 /**
  * Promoted shared empty-state primitive (D212).
@@ -17,10 +17,9 @@ import { color, font, radius } from '../../tokens/tokens';
  *     forbidden words automatically; the consumer supplies the copy
  *     and `check-microcopy.sh` (D209) catches forbidden words at PR
  *     time.
- *   - **Distinct from error states.** A dashed border + soft surface
- *     keeps empty visually separate from the error boundaries
- *     (`apps/web/src/app/error.tsx`), which use a solid border and the
- *     amber/red tones.
+ *   - **Distinct from error states.** Neutral and unboxed: a quiet grey
+ *     icon disc, no alert role. `ErrorState` owns the amber disc and
+ *     `role="alert"`; an empty state never borrows either.
  *   - **Tier-aware.** When `tier='free'` and a `tierNudge` prop is
  *     supplied, the component renders the D33-style upgrade nudge
  *     beneath the action row. This is the generalization of the Triage
@@ -29,8 +28,8 @@ import { color, font, radius } from '../../tokens/tokens';
  *
  * Props:
  *
- *   - `icon`          — optional leading icon (rendered inside a soft
- *                       teal disc).
+ *   - `icon`          — optional leading icon (rendered inside a 56px
+ *                       neutral disc).
  *   - `title`         — short headline. Required.
  *   - `description`   — body copy that reinforces the mental model.
  *                       Optional; aliased as `body` for backwards
@@ -83,15 +82,12 @@ export function EmptyState({
   return (
     <div
       style={{
-        padding: '48px 24px',
-        background: color.card,
-        border: `1px dashed ${color.border}`,
-        borderRadius: radius.lg,
+        padding: '56px 24px',
         textAlign: 'center',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 12,
+        gap: 20,
         fontFamily: font.sans,
       }}
     >
@@ -99,11 +95,11 @@ export function EmptyState({
         <span
           aria-hidden="true"
           style={{
-            width: 44,
-            height: 44,
+            width: 56,
+            height: 56,
             borderRadius: radius.pill,
-            background: color.primarySoft,
-            color: color.primary,
+            background: color.fill,
+            color: color.fgSoft,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -115,10 +111,11 @@ export function EmptyState({
       <div>
         <h3
           style={{
-            fontSize: 15,
-            fontWeight: 600,
+            fontSize: text.xl,
+            fontWeight: 650,
             margin: 0,
-            letterSpacing: '-0.01em',
+            letterSpacing: '-0.02em',
+            color: color.fg,
           }}
         >
           {title}
@@ -126,11 +123,11 @@ export function EmptyState({
         {copy != null && (
           <p
             style={{
-              fontSize: 13,
+              fontSize: text.md,
               color: color.fgMuted,
-              margin: '6px 0 0',
+              margin: '8px auto 0',
               lineHeight: 1.5,
-              maxWidth: 360,
+              maxWidth: 380,
             }}
           >
             {copy}
@@ -144,11 +141,10 @@ export function EmptyState({
           // can render the same pattern (Senders bulk-apply, Autopilot
           // rule cap, etc.) without duplicating the chrome.
           style={{
-            marginTop: 6,
-            padding: '14px 16px',
+            marginTop: 8,
+            padding: '14px 18px',
             background: color.primaryWash,
-            border: `1px solid ${color.primaryBorder}`,
-            borderRadius: 10,
+            borderRadius: radius.lg,
             display: 'flex',
             alignItems: 'center',
             gap: 12,
@@ -157,7 +153,7 @@ export function EmptyState({
             maxWidth: 520,
           }}
         >
-          <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
+          <span style={{ fontSize: text.base, color: color.fg, textAlign: 'left' }}>
             <strong style={{ fontWeight: 600 }}>{tierNudge.headline}</strong>{' '}
             <span style={{ color: color.fgSoft }}>{tierNudge.body}</span>
           </span>

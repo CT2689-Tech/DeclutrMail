@@ -8,6 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 
 import { E2E_ENV } from '../helpers/env';
+import { requirePrecondition } from '../helpers/preconditions';
 import { ANALYTICS_PRIVACY_CLAIM } from '@declutrmail/shared/copy';
 
 /**
@@ -65,22 +66,27 @@ test.beforeEach(async ({ page }) => {
 test.beforeAll(async () => {
   let webUp = true;
   try {
-    await fetch(E2E_ENV.webUrl, { signal: AbortSignal.timeout(5_000) });
+    // The shared CI Next dev server may be compiling another route here;
+    // five seconds can report a live server as down under that load.
+    await fetch(E2E_ENV.webUrl, { signal: AbortSignal.timeout(30_000) });
   } catch {
     webUp = false;
   }
-  test.skip(!webUp, `web not reachable at ${E2E_ENV.webUrl} — boot it per playwright.config.ts`);
+  requirePrecondition(
+    !webUp,
+    `web not reachable at ${E2E_ENV.webUrl} — boot it per playwright.config.ts`,
+  );
 });
 
 /**
- * Decode a posthog-js capture body. The SDK gzips by default
- * (`compression=gzip-js` in the query string); older/fallback paths
- * send form-encoded `data=<base64>` or plain JSON. Return SOMETHING
- * text-searchable in all three cases.
+ * Decode a posthog-js capture body. Current SDKs gzip the payload
+ * without a compression query parameter; older/fallback paths send
+ * form-encoded `data=<base64>` or plain JSON. Detect gzip from its
+ * magic bytes so the assertion reads the event actually sent.
  */
-function decodePosthogBody(buf: Buffer | null, url: string): string {
+function decodePosthogBody(buf: Buffer | null): string {
   if (!buf) return '';
-  if (url.includes('compression=gzip-js')) {
+  if (buf[0] === 0x1f && buf[1] === 0x8b) {
     try {
       return gunzipSync(buf).toString('utf8');
     } catch {
@@ -107,13 +113,17 @@ function decodePosthogBody(buf: Buffer | null, url: string): string {
 async function interceptPosthog(page: Page): Promise<{ url: string; body: string }[]> {
   const collected: { url: string; body: string }[] = [];
   const customHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+  const customOrigin = customHost ? new URL(customHost).origin : undefined;
   await page.route(
-    (url) => url.href.includes('posthog.com') || (!!customHost && url.href.startsWith(customHost)),
+    (url) =>
+      url.hostname === 'posthog.com' ||
+      url.hostname.endsWith('.posthog.com') ||
+      (customOrigin !== undefined && url.origin === customOrigin),
     async (route) => {
       const req = route.request();
       collected.push({
         url: req.url(),
-        body: decodePosthogBody(req.postDataBuffer() ?? null, req.url()),
+        body: decodePosthogBody(req.postDataBuffer() ?? null),
       });
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     },
@@ -164,7 +174,7 @@ test('decline is the default: "Essential only" persists and PostHog stays fully 
 });
 
 test('"Accept all" initializes PostHog and page_viewed reaches the wire', async ({ page }) => {
-  test.skip(
+  requirePrecondition(
     process.env.E2E_POSTHOG !== '1',
     'needs the web server booted with NEXT_PUBLIC_POSTHOG_KEY — set E2E_POSTHOG=1 (recipe in the header)',
   );

@@ -40,12 +40,7 @@ function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
     return <div data-testid="gated-child">Brief content</div>;
   }
   const result = render(
-    <TierGate
-      capability={capability}
-      title="Your Morning Brief"
-      pitch="A daily summary."
-      bullets={['REPLY — what actually needs you']}
-    >
+    <TierGate capability={capability} title="Your Morning Brief" pitch="A daily summary.">
       <Child />
     </TierGate>,
   );
@@ -59,13 +54,15 @@ describe('TierGate', () => {
 
     expect(screen.getByTestId('tier-gate-placeholder')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Your Morning Brief' })).toBeInTheDocument();
-    expect(screen.getByText('REPLY — what actually needs you')).toBeInTheDocument();
+    expect(screen.getByText('A daily summary.')).toBeInTheDocument();
     // D19 manifest price + D121 note, no hardcoded dollars in the gate.
-    expect(screen.getByRole('link', { name: 'Upgrade to Pro → $19/mo' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
     );
-    expect(screen.getByText('30-day money-back guarantee')).toBeInTheDocument();
+    // The money-back note appears exactly once.
+    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
     expect(screen.queryByTestId('gated-child')).not.toBeInTheDocument();
     expect(childMounted()).toBe(false);
   });
@@ -90,7 +87,7 @@ describe('TierGate', () => {
     // D251 — Screener is granted by Plus, so the gate must route to Plus at
     // $9. Before D251 this said Pro/$19. The price and plan are derived from
     // the manifest, so this assertion moves with the ladder by construction.
-    expect(screen.getByRole('link', { name: 'Upgrade to Plus → $9/mo' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=plus&cycle=monthly',
     );

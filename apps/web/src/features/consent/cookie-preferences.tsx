@@ -16,8 +16,8 @@ const { color, font, radius } = tokens;
  * Cookie preferences — the D147 banner's change/withdrawal counterpart
  * (GDPR Art. 7(3): withdrawing consent must be as easy as giving it).
  * The banner shows once and never returns after a choice; this card is
- * the standing surface to revisit that choice. Mounted in Settings and
- * on the public /cookies page.
+ * the standing surface to revisit that choice. Mounted in Settings →
+ * Privacy & data and on the public /cookies page.
  *
  * Apply-on-select (same interaction as the settings toggles — no Save
  * button): picking "Essential only" calls `withdrawAnalyticsConsent()`
