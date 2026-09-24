@@ -159,8 +159,21 @@ const HISTORY_ROW = {
   affectedCount: 12,
 };
 
-function installHappyPath(message = MESSAGE, messageResponse?: (url: URL) => (typeof MESSAGE)[]) {
+function installHappyPath(
+  message = MESSAGE,
+  messageResponse?: (url: URL) => (typeof MESSAGE)[],
+  delayed?: { endpoint: string; response: () => Response | Promise<Response> },
+) {
   installFetchStub([
+    ...(delayed
+      ? [
+          {
+            method: 'GET' as const,
+            path: `/api/senders/linkedin/${delayed.endpoint}`,
+            respond: delayed.response,
+          },
+        ]
+      : []),
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+$/,
@@ -213,6 +226,114 @@ describe('SenderDetailRoute', () => {
     addBreadcrumbMock.mockClear();
   });
   afterEach(() => resetFetchStub());
+
+  it.each(['messages', 'timeseries', 'history'])(
+    'shows counts before a slow %s endpoint finishes',
+    async (endpoint) => {
+      let release!: (response: Response) => void;
+      const pending = new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+      installHappyPath(MESSAGE, undefined, { endpoint, response: () => pending });
+      renderDetail();
+      await screen.findByRole('heading', { name: 'LinkedIn' });
+      expect(screen.getByTestId('sender-detail-archived-count')).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          `Loading ${endpoint === 'timeseries' ? 'monthly trend' : endpoint === 'history' ? 'decision history' : 'recent messages'}…`,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText('Nothing decided yet')).not.toBeInTheDocument();
+      release(
+        jsonOk(
+          endpoint === 'timeseries'
+            ? { data: TIMESERIES }
+            : {
+                data: endpoint === 'messages' ? [MESSAGE] : [HISTORY_ROW],
+                meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+              },
+        ),
+      );
+      await waitFor(() =>
+        expect(
+          screen.queryByText(/^Loading (recent messages|monthly trend|decision history)…$/),
+        ).not.toBeInTheDocument(),
+      );
+    },
+  );
+
+  it('keeps identity usable after a history error and retries only history', async () => {
+    let attempts = 0;
+    installHappyPath(MESSAGE, undefined, {
+      endpoint: 'history',
+      response: () => {
+        attempts += 1;
+        return attempts <= 4
+          ? jsonServerError()
+          : jsonOk({
+              data: [HISTORY_ROW],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            });
+      },
+    });
+    renderDetail();
+    await screen.findByRole('button', { name: 'Retry decision history' }, { timeout: 10000 });
+    expect(screen.getByRole('heading', { name: 'LinkedIn' })).toBeInTheDocument();
+    expect(screen.queryByText('Nothing decided yet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry decision history' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Retry decision history' }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(attempts).toBe(5);
+  });
+
+  it('does not reveal cached history when identity refreshes first after mailbox reset', async () => {
+    let calls = 0;
+    let release!: (response: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    installHappyPath(MESSAGE, undefined, {
+      endpoint: 'history',
+      response: () => {
+        calls += 1;
+        return calls === 1
+          ? jsonOk({
+              data: [HISTORY_ROW],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            })
+          : pending;
+      },
+    });
+    renderDetail();
+    await screen.findByRole('heading', { name: 'LinkedIn' });
+    await waitFor(() =>
+      expect(screen.queryByText('Loading decision history…')).not.toBeInTheDocument(),
+    );
+    // A later reset generation must hide old history even after identity succeeds.
+    await act(async () => {
+      lastClient.setQueryData(
+        sendersKeys.history('linkedin'),
+        lastClient.getQueryData(sendersKeys.history('linkedin')),
+        { updatedAt: 1 },
+      );
+      window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+      lastClient.setQueryData(
+        sendersKeys.detail('linkedin'),
+        { data: DETAIL },
+        { updatedAt: Date.now() + 1 },
+      );
+      void lastClient.invalidateQueries({ queryKey: sendersKeys.history('linkedin') });
+    });
+    expect(await screen.findByText('Loading decision history…')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing decided yet')).not.toBeInTheDocument();
+    release(
+      jsonOk({ data: [], meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } } }),
+    );
+    await screen.findByText('Nothing decided yet');
+  });
 
   it('renders the page once all four queries resolve', async () => {
     installHappyPath();
