@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_COMPOSE } from './filters';
 import { useComposeState } from './use-compose-state';
@@ -16,16 +16,25 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => navigation.params,
 }));
 
+function setParams(value = '') {
+  navigation.params = new URLSearchParams(value);
+  window.history.replaceState(null, '', `/senders${value ? `?${value}` : ''}`);
+}
+
 function lastReplacement(): URL {
-  const href = navigation.replace.mock.calls.at(-1)?.[0];
+  const href = vi.mocked(window.history.replaceState).mock.calls.at(-1)?.[2];
+  expect(navigation.replace).not.toHaveBeenCalled();
   expect(typeof href).toBe('string');
   return new URL(href as string, 'https://declutr.test');
 }
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('useComposeState — shareable Senders scope', () => {
   beforeEach(() => {
-    navigation.params = new URLSearchParams();
+    setParams();
     navigation.replace.mockReset();
+    vi.spyOn(window.history, 'replaceState');
     useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
 
@@ -46,13 +55,13 @@ describe('useComposeState — shareable Senders scope', () => {
     const url = lastReplacement();
     expect(url.searchParams.get('activity')).toBe('all');
 
-    navigation.params = new URLSearchParams('activity=all');
+    setParams('activity=all');
     const { result: reparsed } = renderHook(() => useComposeState());
     expect(reparsed.current.compose).toMatchObject({ activity: null, activityNegate: false });
   });
 
   it('restores search, temporary filters, and sorting from the URL', () => {
-    navigation.params = new URLSearchParams(
+    setParams(
       'q=renewals&activity=not-quiet&wrote-to=true&domain=example.com&sort=name&direction=asc',
     );
 
@@ -71,7 +80,7 @@ describe('useComposeState — shareable Senders scope', () => {
   });
 
   it('keeps the complete scope when search and sort change in quick succession', () => {
-    navigation.params = new URLSearchParams('activity=dormant&ref=brief');
+    setParams('activity=dormant&ref=brief');
     const { result } = renderHook(() => useComposeState());
 
     act(() => result.current.setQuery('  billing  '));
@@ -86,7 +95,7 @@ describe('useComposeState — shareable Senders scope', () => {
   });
 
   it('preserves table-only sorts in the shareable URL', () => {
-    navigation.params = new URLSearchParams('sort=read&direction=desc');
+    setParams('sort=read&direction=desc');
     const { result } = renderHook(() => useComposeState());
 
     expect(result.current.sort).toBe('read');
@@ -99,9 +108,7 @@ describe('useComposeState — shareable Senders scope', () => {
   });
 
   it('applies a saved view atomically and clears the transient search', () => {
-    navigation.params = new URLSearchParams(
-      'q=hidden-query&activity=active&sort=first_seen&direction=desc',
-    );
+    setParams('q=hidden-query&activity=active&sort=first_seen&direction=desc');
     const { result } = renderHook(() => useComposeState());
 
     act(() =>
@@ -125,10 +132,10 @@ describe('useComposeState — shareable Senders scope', () => {
   });
 
   it('responds to browser history changes and keeps zero-result recovery atomic', async () => {
-    navigation.params = new URLSearchParams('q=first&activity=quiet');
+    setParams('q=first&activity=quiet');
     const { result, rerender } = renderHook(() => useComposeState());
 
-    navigation.params = new URLSearchParams('q=second&protected=true&sort=name&direction=asc');
+    setParams('q=second&protected=true&sort=name&direction=asc');
     rerender();
 
     await waitFor(() => expect(result.current.query).toBe('second'));

@@ -145,7 +145,6 @@ export function useComposeState(): {
   const initial = appRouter ? parseScope(new URLSearchParams(paramsSnapshot ?? '')) : fallback;
   const [scope, setScope] = useState<SenderScope>(initial);
   const scopeRef = useRef(scope);
-  const urlRef = useRef(new URLSearchParams(paramsSnapshot ?? ''));
 
   // A browser Back/Forward navigation is an external scope change. Pull
   // it into the controlled input and sort store without creating another
@@ -153,7 +152,6 @@ export function useComposeState(): {
   useEffect(() => {
     if (paramsSnapshot === null) return;
     const params = new URLSearchParams(paramsSnapshot);
-    urlRef.current = params;
     const next = parseScope(params);
     scopeRef.current = next;
     setScope((current) => (scopesEqual(current, next) ? current : next));
@@ -172,13 +170,19 @@ export function useComposeState(): {
         store.setSort({ sort: next.sort, direction: next.direction });
       }
       if (!appRouter) return;
-      const out = new URLSearchParams(urlRef.current.toString());
+      // Pane selection also writes history synchronously. Read the actual URL
+      // so a filter edit in the same event cannot drop/reopen that pane.
+      const out = new URLSearchParams(window.location.search);
       writeScope(out, next);
-      urlRef.current = out;
       const queryString = out.toString();
-      appRouter.router.replace(`${appRouter.pathname}${queryString ? `?${queryString}` : ''}`, {
-        scroll: false,
-      });
+      // Client queries already own this filter change (including debounce and
+      // cancellation). A router navigation duplicated those reads on the
+      // server and could replace newer typing with an older response.
+      window.history.replaceState(
+        null,
+        '',
+        `${appRouter.pathname}${queryString ? `?${queryString}` : ''}${window.location.hash}`,
+      );
     },
     [appRouter],
   );
