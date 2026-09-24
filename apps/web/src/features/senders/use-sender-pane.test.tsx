@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSenderPane } from './use-sender-pane';
+import { useComposeState } from './use-compose-state';
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock('next/navigation', () => ({
@@ -35,6 +36,30 @@ describe('sender pane navigation', () => {
     expect(window.location.hash).toBe('#list');
     expect(router.push).not.toHaveBeenCalled();
     expect(router.replace).not.toHaveBeenCalled();
+  });
+
+  it('preserves pane selection when a filter changes before search params render', () => {
+    const { result } = renderHook(() => ({ pane: useSenderPane(), scope: useComposeState() }));
+    act(() => {
+      result.current.pane.open('selected');
+      result.current.scope.setQuery('alerts');
+    });
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('sender')).toBe('selected');
+    expect(params.get('q')).toBe('alerts');
+  });
+
+  it('does not restore a closed pane when a filter changes in the same event', () => {
+    window.history.replaceState(null, '', '/senders?sender=selected&q=bank');
+    const { result } = renderHook(() => ({ pane: useSenderPane(), scope: useComposeState() }));
+    act(() => {
+      result.current.pane.close();
+      result.current.scope.setSort({ sort: 'name', direction: 'asc' });
+    });
+    const params = new URLSearchParams(window.location.search);
+    expect(params.has('sender')).toBe(false);
+    expect(params.get('sort')).toBe('name');
+    expect(params.get('q')).toBe('bank');
   });
 
   it('reads restored history and still routes full-page navigation', () => {
