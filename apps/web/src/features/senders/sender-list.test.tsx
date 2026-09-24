@@ -70,6 +70,25 @@ describe('<SenderList /> — j/k/↑/↓ follow the rows', () => {
     expect(onOpen).toHaveBeenLastCalledWith('a');
   });
 
+  it('scrolls the matching row inside this list, including selector punctuation', () => {
+    const id = 'sender:with-punctuation';
+    const unrelated = document.createElement('div');
+    unrelated.dataset.senderId = id;
+    unrelated.scrollIntoView = vi.fn();
+    document.body.prepend(unrelated);
+    try {
+      const { container, onOpen } = renderList({}, [makeSender({ id })]);
+      const row = container.querySelector<HTMLElement>('[data-sender-id]')!;
+      row.scrollIntoView = vi.fn();
+      fireEvent.keyDown(window, { key: 'j' });
+      expect(onOpen).toHaveBeenCalledWith(id);
+      expect(row.scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(unrelated.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      unrelated.remove();
+    }
+  });
+
   it('moves from the open row and stops at the ends', () => {
     const { onOpen } = renderList({ activeId: 'b' });
     fireEvent.keyDown(window, { key: 'ArrowDown' });
