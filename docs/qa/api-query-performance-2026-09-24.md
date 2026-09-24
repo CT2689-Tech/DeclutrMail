@@ -47,3 +47,9 @@ The final plan has four mail-message scan nodes (rolling aggregate, Inbox, unrea
 - Added regression holds row hydration open and proves counter work starts before release and an unbounded counter is requested once.
 - The opt-in 40-case actual-query plan benchmark passes against the migrated synthetic database.
 - API typecheck and changed-file lint passed.
+
+### Real PostgreSQL driver parity
+
+A separate smoke exercised the changed service methods using the actual `postgres-js` driver against `localhost:5432/declutrmail`, with synthetic fixtures enclosed in a transaction that was deliberately rolled back. The existing port-4000 API and its owning worktree were not changed. This was a direct service/driver harness, not an HTTP endpoint smoke.
+
+Verified all four list sorts, detail Inbox **1**, archived **2**, rolling volume **3**, user read rate **2/3**, decimal confidence **0.87**, exact normalized ISO decision timestamp, non-stale future expiry, null missing decision, and foreign-mailbox isolation. Activity returned the expected `rows`, `stats`, and `allTimeStats` service envelopes for both `all` and `7d`; the empty synthetic mailbox had equal counter objects. A post-rollback query verified that no synthetic workspace row remained. This confirms JSON scalar decoding and timestamp/numeric handling with the production driver as well as PGlite.
