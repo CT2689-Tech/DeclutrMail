@@ -1753,8 +1753,9 @@ export class SendersReadService {
     senderId: string;
     cursor: MessagesCursor | null;
     limit: number;
+    scope?: 'all_mail' | 'inbox' | 'archived';
   }): Promise<MailMessageRow[] | null> {
-    const { mailboxAccountId, senderId, cursor, limit } = args;
+    const { mailboxAccountId, senderId, cursor, limit, scope = 'all_mail' } = args;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
     if (senderKey === null) {
       return null;
@@ -1763,7 +1764,14 @@ export class SendersReadService {
     const conditions = [
       eq(mailMessages.mailboxAccountId, mailboxAccountId),
       eq(mailMessages.senderKey, senderKey),
+      eq(mailMessages.isOutbound, false),
+      sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
     ];
+    if (scope === 'inbox') {
+      conditions.push(sql`${mailMessages.labelIds} @> ARRAY['INBOX']::text[]`);
+    } else if (scope === 'archived') {
+      conditions.push(sql`NOT (${mailMessages.labelIds} @> ARRAY['INBOX']::text[])`);
+    }
     if (cursor) {
       conditions.push(
         or(
@@ -1782,6 +1790,7 @@ export class SendersReadService {
         snippet: mailMessages.snippet,
         internalDate: mailMessages.internalDate,
         isUnread: mailMessages.isUnread,
+        labelIds: mailMessages.labelIds,
         // ADR-0021 storage-allowlist amendment — surface Gmail's
         // `sizeEstimate` so Sender Detail can render real KB/MB on the
         // Recent Messages row size cell. NULL for pre-amendment rows.
@@ -1800,6 +1809,7 @@ export class SendersReadService {
       snippet: row.snippet,
       internalDate: row.internalDate.toISOString(),
       isUnread: row.isUnread,
+      location: row.labelIds.includes('INBOX') ? 'inbox' : 'archived',
       sizeBytes: row.sizeBytes,
     }));
   }

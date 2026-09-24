@@ -289,6 +289,7 @@ export interface MailMessageRow {
   /** ISO-8601 — Gmail `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  location: 'inbox' | 'archived';
   /**
    * Whole-message byte estimate from Gmail `sizeEstimate` (D7
    * amendment per ADR-0021). `null` for rows synced before the
@@ -719,6 +720,7 @@ export function patchSenderPolicy(
 export interface ListSenderMessagesParams {
   limit?: number | undefined;
   cursor?: string | undefined;
+  scope?: 'all_mail' | 'inbox' | 'archived' | undefined;
 }
 
 /** GET /api/senders/:id/messages — paginated recent messages (D41, D46). */
@@ -728,7 +730,7 @@ export function fetchSenderMessages(
   signal?: AbortSignal,
 ): Promise<PaginatedEnvelope<MailMessageRow>> {
   return apiGet<MailMessageRow[]>(`/api/senders/${encodeURIComponent(id)}/messages`, {
-    query: { limit: params.limit, cursor: params.cursor },
+    query: { limit: params.limit, cursor: params.cursor, scope: params.scope },
     signal,
   }) as Promise<PaginatedEnvelope<MailMessageRow>>;
 }

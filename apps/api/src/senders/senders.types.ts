@@ -614,6 +614,8 @@ export interface MailMessageRow {
   /** ISO-8601 received-at — Gmail's `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  /** Current Gmail location. Trash, spam, drafts, and sent mail are excluded. */
+  location: 'inbox' | 'archived';
   /**
    * Whole-message byte estimate from Gmail's `sizeEstimate` (D7
    * storage-allowlist amendment per ADR-0021). `null` for rows synced

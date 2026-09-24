@@ -75,7 +75,11 @@ export interface DecisionTimelineProps {
  */
 export function DecisionTimeline({ heading, action, items, empty }: DecisionTimelineProps) {
   return (
-    <section className="dm-decision-timeline" style={{ fontFamily: font.sans }}>
+    <section
+      {...(typeof heading === 'string' ? { 'aria-label': heading } : {})}
+      className="dm-decision-timeline"
+      style={{ fontFamily: font.sans }}
+    >
       {(heading != null || action != null) && (
         <div
           style={{

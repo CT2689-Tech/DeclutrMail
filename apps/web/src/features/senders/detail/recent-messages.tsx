@@ -1,6 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { EmptyState, tokens } from '@declutrmail/shared';
+import { adaptMailMessageRow } from '../api/adapters';
+import { useSenderMessages } from '../api/use-sender-messages';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
@@ -27,11 +30,28 @@ export function RecentMessages({
   messages,
   mailboxEmail,
   senderEmail,
+  senderId,
 }: {
   messages: RecentMessage[];
   mailboxEmail: string | null;
   senderEmail: string;
+  senderId?: string;
 }) {
+  const [scope, setScope] = useState<'all_mail' | 'inbox' | 'archived'>('all_mail');
+  const scopedQuery = useSenderMessages(senderId ?? '', {
+    scope,
+    enabled: scope !== 'all_mail',
+  });
+  const visibleMessages =
+    scope === 'all_mail'
+      ? messages
+      : (scopedQuery.data?.pages.flatMap((page) => page.data.map(adaptMailMessageRow)) ?? []);
+  const scopeLabels = [
+    { value: 'all_mail', label: 'Inbox + archived' },
+    { value: 'inbox', label: 'Inbox' },
+    { value: 'archived', label: 'Archived' },
+  ] as const;
+
   return (
     <section
       aria-label="Recent messages"
@@ -59,8 +79,61 @@ export function RecentMessages({
         Recent messages
       </h2>
 
-      {messages.length === 0 ? (
-        <EmptyState title="No recent messages" body="New email from this sender shows up here." />
+      {senderId && (
+        <div
+          role="group"
+          aria-label="Message location"
+          style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+        >
+          {scopeLabels.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={scope === option.value}
+              onClick={() => setScope(option.value)}
+              style={{
+                border: `1px solid ${scope === option.value ? color.primary : color.lineSoft}`,
+                background: scope === option.value ? color.primary : 'transparent',
+                color: scope === option.value ? color.fgInverse : color.fgMuted,
+                borderRadius: 999,
+                padding: '6px 10px',
+                fontFamily: font.sans,
+                fontSize: text.xs,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {scope !== 'all_mail' && scopedQuery.isPending ? (
+        <p role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Loading messages…
+        </p>
+      ) : scope !== 'all_mail' && scopedQuery.isError && !scopedQuery.data ? (
+        <button type="button" onClick={() => void scopedQuery.refetch()}>
+          Could not load messages. Try again.
+        </button>
+      ) : visibleMessages.length === 0 ? (
+        <EmptyState
+          title={
+            scope === 'inbox'
+              ? 'No Inbox messages'
+              : scope === 'archived'
+                ? 'No archived messages'
+                : 'No recent messages'
+          }
+          body={
+            scope === 'inbox'
+              ? 'Try Inbox + archived to see earlier mail from this sender.'
+              : scope === 'archived'
+                ? 'Messages outside your Inbox will show up here.'
+                : 'No current Inbox or archived mail from this sender.'
+          }
+        />
       ) : (
         <ol
           style={{
@@ -72,7 +145,7 @@ export function RecentMessages({
             gap: 1,
           }}
         >
-          {messages.map((m, idx) => (
+          {visibleMessages.map((m, idx) => (
             <li
               key={m.id}
               style={{
@@ -84,6 +157,26 @@ export function RecentMessages({
             </li>
           ))}
         </ol>
+      )}
+      {senderId && scopedQuery.hasNextPage && (
+        <button
+          type="button"
+          disabled={scopedQuery.isFetchingNextPage}
+          onClick={() => void scopedQuery.fetchNextPage()}
+          style={{
+            alignSelf: 'flex-start',
+            border: 0,
+            padding: '6px 0',
+            background: 'transparent',
+            color: color.primary,
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          {scopedQuery.isFetchingNextPage ? 'Loading more…' : 'Show more messages'}
+        </button>
       )}
     </section>
   );
@@ -207,6 +300,18 @@ function MessageRow({
         >
           {message.snippet}
         </span>
+        {message.location && (
+          <span
+            style={{
+              display: 'inline-block',
+              marginTop: 4,
+              fontSize: text.xs,
+              color: color.fgMuted,
+            }}
+          >
+            {message.location === 'inbox' ? 'Inbox' : 'Archived'}
+          </span>
+        )}
       </div>
       {/* D41 keeps the RELATIVE label visible; the exact instant rides
           along in `title` + a machine-readable `dateTime`, so nothing

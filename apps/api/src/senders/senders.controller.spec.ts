@@ -1,4 +1,4 @@
-import { HttpException } from '@nestjs/common';
+import { BadRequestException, HttpException } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -73,6 +73,7 @@ function makeMessageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow
     snippet: 'A snippet (allowlisted by D7)',
     internalDate: '2026-05-01T00:00:00.000Z',
     isUnread: false,
+    location: 'inbox',
     sizeBytes: null,
     ...overrides,
   };
@@ -693,6 +694,17 @@ describe('SendersController', () => {
   });
 
   describe('messages', () => {
+    it('forwards an archived scope and rejects unknown scopes', async () => {
+      reads.listMessagesForSender.mockResolvedValue([]);
+      await ctrl.messages(MAILBOX, SENDER_ID, undefined, undefined, 'archived');
+      expect(reads.listMessagesForSender).toHaveBeenCalledWith(
+        expect.objectContaining({ scope: 'archived' }),
+      );
+      await expect(
+        ctrl.messages(MAILBOX, SENDER_ID, undefined, undefined, 'unknown'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('returns 404 when the sender is not in this mailbox', async () => {
       reads.listMessagesForSender.mockResolvedValue(null);
       try {

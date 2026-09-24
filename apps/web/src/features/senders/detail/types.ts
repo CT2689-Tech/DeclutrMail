@@ -131,6 +131,7 @@ export interface RecentMessage {
   sizeBytes: number | null;
   hasAttachment: boolean;
   unread: boolean;
+  location?: 'inbox' | 'archived';
 }
 
 /** A single (year, month) data point for the volume + open-rate charts. */

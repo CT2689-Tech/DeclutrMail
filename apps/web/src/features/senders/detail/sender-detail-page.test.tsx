@@ -159,7 +159,7 @@ const HISTORY_ROW = {
   affectedCount: 12,
 };
 
-function installHappyPath(message = MESSAGE) {
+function installHappyPath(message = MESSAGE, messageResponse?: (url: URL) => (typeof MESSAGE)[]) {
   installFetchStub([
     {
       method: 'GET',
@@ -169,9 +169,9 @@ function installHappyPath(message = MESSAGE) {
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+\/messages$/,
-      respond: () =>
+      respond: (_req, url) =>
         jsonOk({
-          data: [message],
+          data: messageResponse ? messageResponse(url) : [message],
           meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
         }),
     },
@@ -231,6 +231,30 @@ describe('SenderDetailRoute', () => {
     // The Gmail category eyebrow is gone from this surface.
     expect(screen.queryByText('Gmail: Social')).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
+  });
+
+  it('shows archived-only senders by default and lets the reader switch location', async () => {
+    const archived = { ...MESSAGE, location: 'archived' as const };
+    installHappyPath(archived, (url) =>
+      url.searchParams.get('scope') === 'inbox' ? [] : [archived],
+    );
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
+    );
+    expect(screen.getAllByText('Archived').length).toBeGreaterThan(1);
+    expect(screen.getByRole('button', { name: 'Inbox + archived' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^Inbox$/ }));
+    await waitFor(() => expect(screen.getByText('No Inbox messages')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /^Archived$/ }));
+    await waitFor(() =>
+      expect(screen.getByText('Top notifications this week')).toBeInTheDocument(),
+    );
   });
 
   /**
@@ -461,7 +485,11 @@ describe('SenderDetailRoute', () => {
     installHappyPath();
     renderDetail();
 
-    await waitFor(() => expect(screen.getByText('Archived')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Decision timeline' })).getByText('Archived'),
+      ).toBeInTheDocument(),
+    );
     expect(screen.getByText('You')).toBeInTheDocument();
     expect(screen.getByText(/12 messages/)).toBeInTheDocument();
   });
@@ -576,7 +604,9 @@ describe('SenderDetailRoute', () => {
       'Unsubscribe request recorded',
       'Moved to Later',
     ]) {
-      expect(screen.queryByText(claim)).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('region', { name: 'Decision timeline' })).queryByText(claim),
+      ).not.toBeInTheDocument();
     }
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
   });

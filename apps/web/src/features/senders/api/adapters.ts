@@ -194,6 +194,7 @@ export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
     // Wire omits attachment indicator — default false. Separate decision.
     hasAttachment: false,
     unread: row.isUnread,
+    location: row.location,
   };
 }
 

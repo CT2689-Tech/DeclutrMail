@@ -2197,6 +2197,46 @@ describe('SendersReadService', () => {
   });
 
   describe('listMessagesForSender', () => {
+    it('shows current inbox and archived mail separately, excluding trash, spam, drafts, and sent mail', async () => {
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'location@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      for (const [subject, labelIds, isOutbound] of [
+        ['inbox', ['INBOX'], false],
+        ['archived', ['CATEGORY_UPDATES'], false],
+        ['trash', ['TRASH'], false],
+        ['spam', ['SPAM'], false],
+        ['draft', ['DRAFT'], false],
+        ['chat', ['CHAT'], false],
+        ['sent', ['SENT'], true],
+      ] as const) {
+        await seedMessage(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: sender.senderKey,
+          internalDate: new Date('2026-05-01T00:00:00Z'),
+          subject,
+          labelIds: [...labelIds],
+          isOutbound,
+        });
+      }
+      const base = { mailboxAccountId: mailboxId, senderId: sender.id, cursor: null, limit: 10 };
+      const all = await svc.listMessagesForSender({ ...base, scope: 'all_mail' });
+      expect(all?.map((row) => [row.subject, row.location]).sort()).toEqual([
+        ['archived', 'archived'],
+        ['inbox', 'inbox'],
+      ]);
+      expect(
+        (await svc.listMessagesForSender({ ...base, scope: 'inbox' }))?.map((row) => row.subject),
+      ).toEqual(['inbox']);
+      expect(
+        (await svc.listMessagesForSender({ ...base, scope: 'archived' }))?.map(
+          (row) => row.subject,
+        ),
+      ).toEqual(['archived']);
+    });
+
     it('orders by internal_date DESC and respects the +1 sentinel', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,

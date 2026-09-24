@@ -116,9 +116,10 @@ export function senderMessagesQueryOptions(
     cursor: string | undefined,
     signal: AbortSignal,
   ) => Promise<PaginatedEnvelope<MailMessageRow>>,
+  scope: 'all_mail' | 'inbox' | 'archived' = 'all_mail',
 ) {
   return infiniteQueryOptions({
-    queryKey: sendersKeys.messages(id),
+    queryKey: sendersKeys.messages(id, scope),
     queryFn: ({ pageParam, signal }) => reader(pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,

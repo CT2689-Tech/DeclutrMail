@@ -75,7 +75,10 @@ export const sendersKeys = {
   /** Single sender — the umbrella the per-id child queries hang off. */
   detail: (id: string) => ['senders', 'detail', id] as const,
   /** Recent-messages for one sender. */
-  messages: (id: string) => ['senders', 'detail', id, 'messages'] as const,
+  messages: (id: string, scope: 'all_mail' | 'inbox' | 'archived' = 'all_mail') =>
+    scope === 'all_mail'
+      ? (['senders', 'detail', id, 'messages'] as const)
+      : (['senders', 'detail', id, 'messages', scope] as const),
   /** 12-month timeseries for one sender. */
   timeseries: (id: string) => ['senders', 'detail', id, 'timeseries'] as const,
   /** Decision history for one sender. */

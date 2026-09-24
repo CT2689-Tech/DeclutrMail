@@ -1427,6 +1427,8 @@ function ReadyState({
 
         {/* 5. Recent messages */}
         <RecentMessages
+          key={sender.id}
+          senderId={sender.id}
           messages={recentMessages}
           mailboxEmail={activeMailboxEmail}
           senderEmail={detail.email}

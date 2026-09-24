@@ -459,12 +459,17 @@ export class SendersController {
     @Param('id') id: string,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
+    @Query('scope') rawScope?: string,
   ): Promise<PaginatedEnvelope<MailMessageRow>> {
     const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Sender id must be a UUID.');
     }
     const limit = clampLimit(rawLimit, MESSAGES_LIMIT);
+    if (rawScope && !['all_mail', 'inbox', 'archived'].includes(rawScope)) {
+      throw new BadRequestException('Invalid message scope.');
+    }
+    const scope = (rawScope ?? 'all_mail') as 'all_mail' | 'inbox' | 'archived';
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -480,6 +485,7 @@ export class SendersController {
       senderId: id,
       cursor,
       limit,
+      scope,
     });
     if (rows === null) {
       throw notFound('Sender not found.');
