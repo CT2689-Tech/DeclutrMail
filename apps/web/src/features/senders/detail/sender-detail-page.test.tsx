@@ -290,6 +290,7 @@ describe('SenderDetailRoute', () => {
   });
 
   it('does not reveal cached history when identity refreshes first after mailbox reset', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
     let calls = 0;
     let release!: (response: Response) => void;
     const pending = new Promise<Response>((resolve) => {
@@ -317,13 +318,13 @@ describe('SenderDetailRoute', () => {
       lastClient.setQueryData(
         sendersKeys.history('linkedin'),
         lastClient.getQueryData(sendersKeys.history('linkedin')),
-        { updatedAt: 1 },
+        { updatedAt: Date.now() },
       );
       window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
       lastClient.setQueryData(
         sendersKeys.detail('linkedin'),
         { data: DETAIL },
-        { updatedAt: Date.now() + 1 },
+        { updatedAt: Date.now() },
       );
       void lastClient.invalidateQueries({ queryKey: sendersKeys.history('linkedin') });
     });
@@ -333,6 +334,7 @@ describe('SenderDetailRoute', () => {
       jsonOk({ data: [], meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } } }),
     );
     await screen.findByText('Nothing decided yet');
+    vi.mocked(Date.now).mockRestore();
   });
 
   it('renders the page once all four queries resolve', async () => {

@@ -198,16 +198,39 @@ export function SenderDetailRoute({
   // non-null with the WRONG mailbox's sender. Track the reset event
   // locally and refuse to trust `adapted` for the error-bypass until a
   // fetch has genuinely SUCCEEDED since the last reset.
-  const [mailboxResetAt, setMailboxResetAt] = useState<number | null>(null);
+  const routeQueryClient = useQueryClient();
+  const [resetVersions, setResetVersions] = useState<Record<
+    string,
+    { data: number; error: number }
+  > | null>(null);
   useEffect(() => {
     const onReset = () => {
-      setMailboxResetAt(Date.now());
+      const versions: Record<string, { data: number; error: number }> = {};
+      for (const key of [
+        sendersKeys.detail(id),
+        sendersKeys.messages(id),
+        sendersKeys.timeseries(id),
+        sendersKeys.history(id),
+      ]) {
+        const state = routeQueryClient.getQueryState(key);
+        versions[JSON.stringify(key)] = {
+          data: state?.dataUpdateCount ?? 0,
+          error: state?.errorUpdateCount ?? 0,
+        };
+      }
+      setResetVersions(versions);
     };
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
-  }, []);
-  const cachedDataIsTrustworthy =
-    mailboxResetAt == null || (detail.dataUpdatedAt > 0 && detail.dataUpdatedAt >= mailboxResetAt);
+  }, [id, routeQueryClient]);
+  const freshSinceReset = (key: readonly unknown[], kind: 'data' | 'error') => {
+    const previous = resetVersions?.[JSON.stringify(key)];
+    if (!previous) return true;
+    const state = routeQueryClient.getQueryState(key);
+    const version = kind === 'data' ? state?.dataUpdateCount : state?.errorUpdateCount;
+    return (version ?? 0) > previous[kind];
+  };
+  const cachedDataIsTrustworthy = freshSinceReset(sendersKeys.detail(id), 'data');
   // Opening a sender whose read has aged out asks for a fresh one
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
@@ -250,11 +273,15 @@ export function SenderDetailRoute({
 
   // Each section must independently cross the mailbox reset boundary. A fresh
   // identity response cannot make a previous mailbox's cached history safe.
-  const resetAt = mailboxResetAt;
-  const messagesReady = !!messages.data && (resetAt == null || messages.dataUpdatedAt >= resetAt);
-  const timeseriesReady =
-    !!timeseries.data && (resetAt == null || timeseries.dataUpdatedAt >= resetAt);
-  const historyReady = !!history.data && (resetAt == null || history.dataUpdatedAt >= resetAt);
+  // Track fetch completion even when the response is structurally equal and
+  // Date.now() has not advanced; cache update counters still advance then.
+  void detail.isFetching;
+  void messages.isFetching;
+  void timeseries.isFetching;
+  void history.isFetching;
+  const messagesReady = !!messages.data && freshSinceReset(sendersKeys.messages(id), 'data');
+  const timeseriesReady = !!timeseries.data && freshSinceReset(sendersKeys.timeseries(id), 'data');
+  const historyReady = !!history.data && freshSinceReset(sendersKeys.history(id), 'data');
 
   const adapted = useMemo(() => {
     if (!detail.data || !cachedDataIsTrustworthy) {
@@ -297,15 +324,22 @@ export function SenderDetailRoute({
   // sitting on it while it refetches in the background after a switch
   // back. Checking four queries instead of one widens that same
   // pre-existing exposure (any one of the four can carry a stale 404
-  // instead of just `detail`). Reuse the identical `mailboxResetAtRef`
+  // instead of just `detail`). Reuse the identical cache-version
   // generation guard the `cachedDataIsTrustworthy` check below already
   // uses for stale DATA — an error is only authoritative if it was set at
   // or after the last mailbox-scope reset.
-  const notFound = [detail, messages, timeseries, history].some(
-    (q) =>
+  const queryResults = [detail, messages, timeseries, history];
+  const queryKeys = [
+    sendersKeys.detail(id),
+    sendersKeys.messages(id),
+    sendersKeys.timeseries(id),
+    sendersKeys.history(id),
+  ];
+  const notFound = queryResults.some(
+    (q, index) =>
       q.error instanceof ApiError &&
       q.error.status === 404 &&
-      (mailboxResetAt == null || q.errorUpdatedAt >= mailboxResetAt),
+      freshSinceReset(queryKeys[index]!, 'error'),
   );
   if (notFound) {
     return <NotFoundState layout={layout} {...(onClose ? { onClose } : {})} />;
@@ -349,21 +383,21 @@ export function SenderDetailRoute({
       sections={{
         messages: {
           ready: messagesReady,
-          failed: messages.isError && (resetAt == null || messages.errorUpdatedAt >= resetAt),
+          failed: messages.isError && freshSinceReset(sendersKeys.messages(id), 'error'),
           retry: () => {
             void messages.refetch();
           },
         },
         timeseries: {
           ready: timeseriesReady,
-          failed: timeseries.isError && (resetAt == null || timeseries.errorUpdatedAt >= resetAt),
+          failed: timeseries.isError && freshSinceReset(sendersKeys.timeseries(id), 'error'),
           retry: () => {
             void timeseries.refetch();
           },
         },
         history: {
           ready: historyReady,
-          failed: history.isError && (resetAt == null || history.errorUpdatedAt >= resetAt),
+          failed: history.isError && freshSinceReset(sendersKeys.history(id), 'error'),
           retry: () => {
             void history.refetch();
           },
