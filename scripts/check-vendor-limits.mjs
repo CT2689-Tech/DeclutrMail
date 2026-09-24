@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { budgetStatus } from './gcp-budget-status.mjs';
 /**
  * check-vendor-limits.mjs
  *
@@ -212,11 +213,6 @@ async function checkSupabaseDbSize() {
 }
 
 async function checkGcpBudgets() {
-  // No GCP REST endpoint returns current spend — budgets carry config
-  // only; spend flows via the budget's Pub/Sub topic. This check
-  // asserts a budget EXISTS (i.e. Google's own threshold emails are
-  // armed) — zero budgets means zero spend alerting, which is the
-  // failure worth surfacing daily.
   const account = process.env.GCP_BILLING_ACCOUNT_ID;
   const stdout = await new Promise((resolve, reject) => {
     execFile(
@@ -233,15 +229,8 @@ async function checkGcpBudgets() {
   });
   if (stdout === null) return { status: 'UNCONFIGURED', detail: 'gcloud not on PATH' };
   const budgets = JSON.parse(stdout || '[]');
-  if (budgets.length === 0) {
-    return { status: 'WARN', detail: 'no budgets configured — GCP spend has no alerting net' };
-  }
-  const parts = budgets.map((b) => {
-    const amt = b.amount?.specifiedAmount;
-    const usd = amt ? `${amt.units ?? 0} ${amt.currencyCode ?? 'USD'}` : 'last-period amount';
-    return `${b.displayName ?? 'budget'}: ${usd}`;
-  });
-  return { status: 'OK', detail: `budgets armed — ${parts.join('; ')}` };
+  const spend = await gcpSpend();
+  return budgetStatus(budgets, spend);
 }
 
 async function checkUpstash() {
@@ -640,11 +629,16 @@ async function checkGithubActions() {
 
 // -------------------------------------------------------------- registry
 
+let gcpSpendPromise;
+function gcpSpend() {
+  return (gcpSpendPromise ??= checkGcpBillingExport(process.env.GCP_BILLING_EXPORT_TABLE));
+}
+
 const VENDORS = [
   {
     name: 'Google Cloud (project charges)',
     requires: ['GOOGLE_APPLICATION_CREDENTIALS', 'GCP_BILLING_EXPORT_TABLE'],
-    check: () => checkGcpBillingExport(process.env.GCP_BILLING_EXPORT_TABLE),
+    check: gcpSpend,
   },
   { name: 'Supabase (DB size)', requires: ['SUPABASE_SESSION_DSN'], check: checkSupabaseDbSize },
   {

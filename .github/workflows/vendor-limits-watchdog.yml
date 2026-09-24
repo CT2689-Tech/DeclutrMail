@@ -32,10 +32,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Daily vendor snapshot or encrypted Sentry-only triage'
+        description: 'Collect vendors, triage Sentry, or refresh finance from an existing snapshot'
         type: choice
-        options: [vendor-limits, sentry-triage]
+        options: [vendor-limits, sentry-triage, finance-refresh]
         default: vendor-limits
+      snapshot_run_id:
+        description: 'Existing same-repository vendor snapshot run ID (finance-refresh only)'
+        type: string
+        required: false
       sentry_public_key:
         description: 'RSA PUBLIC key PEM only (triage mode); keep private key locally'
         type: string
@@ -52,7 +56,7 @@ concurrency:
 
 jobs:
   check:
-    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'sentry-triage'
+    if: github.event_name != 'workflow_dispatch' || inputs.mode == 'vendor-limits'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -120,6 +124,15 @@ jobs:
         if: always() && steps.collect.outcome != 'skipped' && env.GCP_WIF_PROVIDER != ''
         run: node scripts/infra-observability.mjs "$RUNNER_TEMP/infra-snapshot.json" declutrmail-ai-prod
 
+      # Private source documents and reports never enter GitHub artifacts/summaries.
+      # Opt-in only after a private bucket and read/write-scoped identity are ready.
+      - name: Update private finance report
+        if: always() && steps.collect.outcome != 'skipped' && vars.PRIVATE_FINANCE_BUCKET != '' && env.GCP_WIF_PROVIDER != ''
+        env:
+          PRIVATE_FINANCE_BUCKET: ${{ vars.PRIVATE_FINANCE_BUCKET }}
+          INFRA_SNAPSHOT_PATH: ${{ runner.temp }}/infra-snapshot.json
+        run: node scripts/private-finance-report.mjs
+
       - name: Retain daily snapshot even when a vendor fails
         if: always()
         uses: actions/upload-artifact@v4
@@ -156,3 +169,41 @@ jobs:
           path: ${{ runner.temp }}/sentry-triage.encrypted.json
           retention-days: 1
           if-no-files-found: error
+
+  finance-refresh:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'finance-refresh' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Verify existing snapshot provenance
+        env:
+          SNAPSHOT_RUN_ID: ${{ inputs.snapshot_run_id }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/validate-finance-snapshot-source.mjs
+      - name: Download existing operational snapshot only
+        uses: actions/download-artifact@v4
+        with:
+          name: infra-snapshot-${{ inputs.snapshot_run_id }}
+          run-id: ${{ inputs.snapshot_run_id }}
+          repository: CT2689-Tech/DeclutrMail
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/finance-snapshot
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Refresh private report without vendor calls
+        env:
+          PRIVATE_FINANCE_BUCKET: ${{ vars.PRIVATE_FINANCE_BUCKET }}
+          INFRA_SNAPSHOT_PATH: ${{ runner.temp }}/finance-snapshot/infra-snapshot.json
+        run: node scripts/private-finance-report.mjs

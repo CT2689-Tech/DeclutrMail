@@ -104,10 +104,10 @@ export class GmailWebhookService {
    * the enqueue of the incremental-sync job.
    *
    * Returns a discriminated outcome. The controller maps each kind
-   * to an HTTP status: all return 200 except `unknown_mailbox`
-   * which returns 404 so Pub/Sub stops retrying (per Pub/Sub's
-   * retry semantics, 4xx is a permanent failure; 5xx triggers
-   * redelivery — exactly what we want for stale unknown mailboxes).
+   * to HTTP 200, including `unknown_mailbox`: stale watches for
+   * disconnected/deleted mailboxes are terminal no-ops. Pub/Sub retries
+   * 4xx as well as 5xx responses. Database errors still throw; they must
+   * never be converted to a successful no-op.
    *
    * Note: D229's contract says ALL OIDC failures map to 401. This
    * method is only called AFTER OIDC verify succeeds, so it never

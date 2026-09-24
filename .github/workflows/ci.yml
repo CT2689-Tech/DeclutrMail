@@ -248,11 +248,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
-        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs
+        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs
       - name: PR-body D-citation matcher
         run: node --test scripts/check-pr-body-d-ref.test.mjs
       - name: Performance probes and release contract

@@ -120,7 +120,17 @@ export function infrastructurePolicies({ runtime = false } = {}) {
   queue.documentation = documentation(
     'Oldest unacknowledged Gmail push exceeds 300 seconds for 5 minutes. Inspect subscription delivery failures, API readiness, auth failures and worker queue throughput. Never purge the subscription or acknowledge messages to make the chart green. This covers Pub/Sub delivery, not internal BullMQ job age.',
   );
-  policies.push(latency, memory, queue);
+  const deadLetter = thresholdPolicy(
+    'DeclutrMail Gmail push dead-letter backlog',
+    'metric.type="pubsub.googleapis.com/subscription/num_undelivered_messages" AND resource.type="pubsub_subscription" AND resource.labels.subscription_id="gmail-push-dead-letter-sub"',
+    0,
+    '60s',
+    'ALIGN_MAX',
+  );
+  deadLetter.documentation = documentation(
+    'Gmail notifications exhausted bounded delivery attempts and require investigation. The pull-only dead-letter subscription retains messages for seven days. Diagnose authentication, permanent mailbox deletion and transient dependencies before deciding whether to replay through the authenticated ingestion path. Never purge or acknowledge the backlog merely to clear this alert; do not automatically replay malformed or unauthenticated payloads.',
+  );
+  policies.push(latency, memory, queue, deadLetter);
   if (runtime) {
     const logFilter = (name) =>
       `metric.type="logging.googleapis.com/user/${name}" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"`;

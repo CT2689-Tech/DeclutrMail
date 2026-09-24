@@ -101,3 +101,33 @@ retention. Do not lower logging thresholds or suspend production to reduce noise
 
 Definitions: `scripts/infra-runtime-metrics.mjs`,
 `scripts/setup-infra-alerts.mjs`, `scripts/setup-infra-dashboard.mjs`.
+
+## Gmail push dead-letter recovery
+
+The production `gmail-push-sub` retries with 10–600 second backoff and forwards
+persistent failures to `gmail-push-dead-letter` after approximately 100 delivery
+attempts. The pull-only `gmail-push-dead-letter-sub` retains messages for seven days
+and never expires. The primary subscription also never expires. A separate backlog
+alert fires when the dead-letter subscription has undelivered messages.
+
+1. Inspect endpoint status/error classes, authenticated request handling and
+   queue/database health before reading message payloads. Preserve OIDC rejection;
+   authenticated disconnected-mailbox notifications are terminal no-ops.
+2. Inspect a bounded sample without auto-acknowledging it. Treat notification
+   payloads as private mailbox metadata; never paste them into logs or issues.
+3. Repair the cause and verify the deployed handler and downstream queue. A replay
+   must preserve the original notification identity and existing deduplication and
+   history ordering. Do not publish the wrapped dead-letter envelope directly to
+   the primary topic. Review selected messages before any replay or acknowledgement.
+4. Verify enqueue/processing outcomes before acknowledging selected dead letters.
+   Never purge the subscription to clear an alert. Seven-day retention is a recovery
+   deadline, not indefinite storage; escalate before it expires.
+
+Configuration readback verifies the controls, not end-to-end dead-letter delivery
+or inbox notification receipt. Those rehearsals need their own evidence.
+
+Rollback: clear the primary subscription's dead-letter and retry policies to return
+to the previous delivery configuration; retain the dead-letter topic/subscription
+and its messages for investigation. Restore expiration only if intentionally
+accepting idle-subscription deletion. Disable the specific dead-letter alert only
+when its replacement monitoring is established.

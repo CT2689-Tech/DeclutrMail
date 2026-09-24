@@ -7,10 +7,12 @@ export function billingQuery(table) {
     service.description AS service, currency,
     SUM(CAST(cost AS NUMERIC)) AS gross,
     SUM(IFNULL((SELECT SUM(CAST(c.amount AS NUMERIC)) FROM UNNEST(credits) c), 0)) AS credits,
-    MAX(export_time) AS exported_at
+    MAX(export_time) AS exported_at,
+    UNIX_SECONDS(TIMESTAMP(DATE_TRUNC(CURRENT_DATE('America/Los_Angeles'), MONTH), 'America/Los_Angeles')) AS budget_period_start,
+    UNIX_SECONDS(TIMESTAMP(DATE_ADD(DATE_TRUNC(CURRENT_DATE('America/Los_Angeles'), MONTH), INTERVAL 1 MONTH), 'America/Los_Angeles')) AS budget_period_end
     FROM \`${table}\`
     WHERE project.id = @project
-      AND usage_start_time >= TIMESTAMP(DATE_TRUNC(CURRENT_DATE('UTC'), MONTH))
+      AND usage_start_time >= TIMESTAMP(DATE_TRUNC(CURRENT_DATE('America/Los_Angeles'), MONTH), 'America/Los_Angeles')
       AND usage_start_time < CURRENT_TIMESTAMP()
       AND _PARTITIONTIME >= TIMESTAMP(DATE_SUB(CURRENT_DATE('UTC'), INTERVAL 40 DAY))
     GROUP BY day, service, currency ORDER BY day, service`;
@@ -61,6 +63,14 @@ export function summarizeBilling(rows, now = Date.now()) {
   return {
     status: 'OK',
     costMtdUsd: gross + credits,
+    budgetPeriodStart:
+      rows[0].budget_period_start == null
+        ? null
+        : finiteNumber(rows[0].budget_period_start, 'budget period start') * 1000,
+    budgetPeriodEnd:
+      rows[0].budget_period_end == null
+        ? null
+        : finiteNumber(rows[0].budget_period_end, 'budget period end') * 1000,
     usage,
     detail: `Exported project usage charges $${(gross + credits).toFixed(2)} MTD after credits; export age ${age.toFixed(1)}h. Not a paid invoice.`,
   };
