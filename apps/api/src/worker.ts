@@ -226,12 +226,23 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  */
 
 /**
- * Gmail quota throttle (D5). The current quota table gives newer projects
- * 6,000 units/user/minute and charges 20 units for `messages.get`; pace
- * to 4,800 (20% headroom). Older projects may retain their old ceilings,
- * but the lower budget is safe for either tier. One limiter per mailbox.
+ * Gmail quota throttle (D5). Newer projects get 6,000 units/user/minute;
+ * default to 4,800 (20% headroom). The production project retains a
+ * 15,000-unit legacy ceiling, so its deploy manifest sets this to 12,000.
+ * Each Gmail method still reserves its current published cost. One limiter
+ * per mailbox.
  */
-const GMAIL_QUOTA_UNITS_PER_MIN = 4_800;
+const configuredGmailQuotaUnits = process.env.GMAIL_QUOTA_UNITS_PER_MIN;
+const GMAIL_QUOTA_UNITS_PER_MIN = configuredGmailQuotaUnits
+  ? Number(configuredGmailQuotaUnits)
+  : 4_800;
+if (
+  !Number.isSafeInteger(GMAIL_QUOTA_UNITS_PER_MIN) ||
+  GMAIL_QUOTA_UNITS_PER_MIN < 1_200 ||
+  GMAIL_QUOTA_UNITS_PER_MIN > 12_000
+) {
+  throw new Error('GMAIL_QUOTA_UNITS_PER_MIN must be an integer from 1200 to 12000');
+}
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /**
@@ -240,17 +251,17 @@ const GMAIL_QUOTA_WINDOW_MS = 60_000;
  * root-cause). Both limiter implementations previously started a fresh
  * mailbox's bucket FULL, so `InitialSyncWorker`'s fetch loop could spend
  * the entire 12,000-unit sustained budget the instant it started —
- * ~2,400 `messages.get` calls with zero pacing before either limiter
- * ever introduced a delay.
+ * ~2,400 `messages.get` calls at the old 5-unit accounting, with zero
+ * pacing before either limiter ever introduced a delay.
  *
- * 400 units (20 `messages.get` calls) caps that instant burst. Paired
- * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME 80-units/sec average as
- * the sustained pair above (400 / 5,000 = 4,800 / 60,000), so the
+ * A five-second share of the sustained budget caps that instant burst:
+ * 400 units by default or 1,000 for the production legacy quota. Paired
+ * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME average rate, so the
  * in-process `RateLimiter` fallback paces identically to the primary
  * Redis-backed bucket instead of reverting to the old full-burst
  * behavior the moment Redis degrades.
  */
-const GMAIL_QUOTA_BURST_CAPACITY = 400;
+const GMAIL_QUOTA_BURST_CAPACITY = Math.floor(GMAIL_QUOTA_UNITS_PER_MIN / 12);
 const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */
