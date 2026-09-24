@@ -4,7 +4,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 
 // Exercise connected acquisition paths without a Gmail account or provider writes.
 async function follow(page: Page, path: string) {
-  await page.locator(`a[href="${path}"]:visible`).first().click();
+  await page.locator(`a[href="${path}"]:visible`).first().click({ noWaitAfter: true });
   await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), {
     timeout: 60_000,
   });
@@ -17,8 +17,10 @@ async function consent(page: Page) {
 
 async function assertSignupRef(page: Page, ref: string) {
   if (new URL(page.url()).pathname !== '/sign-in') {
-    await page.locator('a[href^="/sign-in"]:visible').last().click();
-    await expect(page).toHaveURL(/\/sign-in(?:\?|$)/);
+    // A cold Next route can exceed Playwright's 15-second click-navigation
+    // wait even after the click succeeds. Assert the destination separately.
+    await page.locator('a[href^="/sign-in"]:visible').last().click({ noWaitAfter: true });
+    await expect(page).toHaveURL(/\/sign-in(?:\?|$)/, { timeout: 60_000 });
   }
   await expect(page.locator('main')).toContainText('Gmail');
   // Observe the real click destination, stopping before OAuth or any account creation.

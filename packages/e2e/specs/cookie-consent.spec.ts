@@ -66,7 +66,9 @@ test.beforeEach(async ({ page }) => {
 test.beforeAll(async () => {
   let webUp = true;
   try {
-    await fetch(E2E_ENV.webUrl, { signal: AbortSignal.timeout(5_000) });
+    // The shared CI Next dev server may be compiling another route here;
+    // five seconds can report a live server as down under that load.
+    await fetch(E2E_ENV.webUrl, { signal: AbortSignal.timeout(30_000) });
   } catch {
     webUp = false;
   }
