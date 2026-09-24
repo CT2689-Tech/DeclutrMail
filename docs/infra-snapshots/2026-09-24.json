@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-09-24",
-  "snapshot_ts": "2026-09-24T06:15:33Z",
+  "snapshot_ts": "2026-09-24T06:16:58Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -374,7 +374,10 @@
       "createTime": "2026-07-28T07:16:08.457533Z"
     }
   ],
-  "gmail_api_quota": null,
+  "gmail_api_quota": {
+    "available": false,
+    "reason": "query_failed"
+  },
   "atlas_migration": {
     "raw": "  -- Current Version: 0078\n  -- Next Version:    Already at latest version"
   },
