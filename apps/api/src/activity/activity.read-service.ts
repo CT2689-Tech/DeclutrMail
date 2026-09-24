@@ -222,13 +222,6 @@ export class ActivityReadService {
     const useCustomRange = dateFrom !== null || dateTo !== null;
     const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
 
-    const executionLineages = await this.loadPagedExecutionLineages(
-      params,
-      useCustomRange ? dateFrom : windowStart,
-      useCustomRange ? dateTo : null,
-    );
-    const rows = await this.loadActivityRows(params, executionLineages);
-
     // Stats follow the same window/date bound as the rows query and
     // IGNORE the source/verb chips, so the line stays stable as chips
     // toggle (the chip group narrows the rows; the stats line answers
@@ -248,7 +241,16 @@ export class ActivityReadService {
       upperBound: statsUpperBound,
       senderQuery: params.senderQuery ?? '',
     });
-    const [stats, allTimeStats] = await Promise.all([
+    // Rows and both aggregates are independent. Keep their database reads
+    // in flight together; polling must not pay the row hydration waterfall
+    // before starting the counters. The unbounded aggregate is still reused.
+    const rowsPromise = this.loadPagedExecutionLineages(
+      params,
+      statsLowerBound,
+      statsUpperBound,
+    ).then((lineages) => this.loadActivityRows(params, lineages));
+    const [rows, stats, allTimeStats] = await Promise.all([
+      rowsPromise,
       statsPromise,
       statsLowerBound === null && statsUpperBound === null
         ? statsPromise
