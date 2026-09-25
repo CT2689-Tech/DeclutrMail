@@ -194,9 +194,12 @@ export class GmailWatchService {
     }
     const oauth = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
     oauth.setCredentials({ refresh_token: refreshToken });
+    // 4,800 is the newer metric's budget (80% of 6,000), so it is priced
+    // on that metric. Watch and stop cost the same on both anyway.
     return new GmailClientService(
       oauth,
       new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS),
+      'gmail.googleapis.com/total_query_cost',
     );
   }
 }

@@ -290,12 +290,17 @@ when `apps/api` first ships to Cloud Run.
 Google meters every Gmail call on **two quota metrics at once**, and a
 budget is only meaningful against the metric that prices it:
 
-| Metric                                  | `messages.get` | Per-user limit on `declutrmail-ai-prod` |
-| --------------------------------------- | -------------- | --------------------------------------- |
-| `gmail.googleapis.com/default`          | 5 units        | **15,000 / minute** (enforced)          |
-| `gmail.googleapis.com/total_query_cost` | 20 units       | unlimited (grandfathered override)      |
+| Metric                                  | `messages.get` | Per-user limit                     | Per-project limit                  |
+| --------------------------------------- | -------------- | ---------------------------------- | ---------------------------------- |
+| `gmail.googleapis.com/default`          | 5 units        | **15,000 / minute** (enforced)     | 1,200,000 / minute                 |
+| `gmail.googleapis.com/total_query_cost` | 20 units       | unlimited (grandfathered override) | unlimited (grandfathered override) |
 
-On the days both metrics were metered (2026-09-04 to 2026-09-25), every
+Limits are for `declutrmail-ai-prod`. The per-project limit bounds how
+many mailboxes can sync at once: each first sync at full pace draws
+12,000 `default` units a minute, so 1,200,000 allows about 100 at the
+same moment.
+
+On the days both metrics were metered (2026-09-04 to 2026-09-25 UTC), every
 other method production called cost the same on both (profile 1,
 history.list 2, labels.list 1, labels.create 5, messages.list 5,
 batchModify 50, watch 100); `messages.modify` and `stop` were not called
@@ -307,7 +312,7 @@ after 2026-05-01. Projects that used the API between November 2025 and
 April 2026 keep their earlier limit, which on this project lives on
 `default`.
 
-**Measured 2026-09-25** during a 40,898-message first sync: Cloud
+**Measured 2026-09-25 (UTC)** during a 40,898-message first sync: Cloud
 Monitoring `serviceruntime.googleapis.com/quota/rate/net_usage` showed
 6,000 `GetMessage` calls per 10 minutes drawing 30,000 units on
 `default` and 120,000 on `total_query_cost`, and the Service Usage API
@@ -322,7 +327,7 @@ The worker's budget and prices must come from the same metric. The
 production deploy manifest sets `GMAIL_QUOTA_METRIC=gmail.googleapis.com/default`
 and `GMAIL_QUOTA_UNITS_PER_MIN=12000` (80% of the 15,000 limit), giving a
 1,000-unit five-second burst and approximately 2,400 metadata
-reads/minute. From 2026-09-24 until this correction the worker charged
+reads/minute. From 2026-09-24 (UTC) until this correction the worker charged
 the `total_query_cost` price against the `default` budget, which ran
 first syncs at a quarter of that (600 reads/minute; a 40,898-message
 sync took 68 minutes instead of about 17).

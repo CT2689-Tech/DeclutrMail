@@ -83,7 +83,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  *     2026-05-01 get 6,000 units/user/minute here. On a grandfathered
  *     project this metric's limit is unlimited.
  *
- * Measured on `declutrmail-ai-prod` 2026-09-25 from Cloud Monitoring
+ * Measured on `declutrmail-ai-prod` 2026-09-25 (UTC) from Cloud Monitoring
  * `serviceruntime.googleapis.com/quota/rate/net_usage`: 6,000
  * `GetMessage` calls per 10 minutes drew 30,000 units on `default` and
  * 120,000 on `total_query_cost`, and the Service Usage API reported the
@@ -101,13 +101,13 @@ export const GMAIL_QUOTA_METRICS: readonly GmailQuotaMetric[] = [
 
 /**
  * Units each method draws from `metric`. Only `messages.get` differs.
- * The same Cloud Monitoring data (2026-09-04 to 2026-09-25, the days both
+ * The same Cloud Monitoring data (2026-09-04 to 2026-09-25 UTC, the days both
  * metrics were metered) shows profile, history.list, labels.list,
  * labels.create, messages.list, batchModify and watch cost the same on
  * both. `messages.modify` and `stop` were not called in that window; they
  * keep their published cost on both.
  */
-function quotaUnitsFor(metric: GmailQuotaMetric) {
+export function quotaUnitsFor(metric: GmailQuotaMetric) {
   return {
     profile: 1,
     historyList: 2,
@@ -299,8 +299,11 @@ export class GmailClientService
     // budget is shared across worker instances (D5/D156). This class
     // never cared about anything except `acquire(units)`.
     private readonly limiter: GmailQuotaLimiter,
+    // REQUIRED, and it must be the metric the limiter's budget is measured
+    // on. An optional default here let a caller drop it and silently price
+    // reads 4x off with every check green (architecture review, D5).
+    quotaMetric: GmailQuotaMetric,
     onRefreshFailed?: OauthRefreshFailureRecorder,
-    quotaMetric: GmailQuotaMetric = 'gmail.googleapis.com/total_query_cost',
   ) {
     this.onRefreshFailed = onRefreshFailed;
     this.quotaUnits = quotaUnitsFor(quotaMetric);
