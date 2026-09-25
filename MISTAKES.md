@@ -4771,3 +4771,19 @@ I then reversed to "leave it alone" before reading the post-scan hook. That hook
 **Correct approach:** Coalesce per mailbox (BullMQ `deduplication.keepLastIfActive`: one queued + one running, a follow-up guaranteed for pushes that land mid-run), start a follow-up from the stored cursor instead of its stale payload, and apply label/tombstone runs set-based, 1,000 messages per statement: the same burst held the lock 1.6s in 26 statements. The post-pass Gmail `labels.list` call moved out of the transaction and the lock (MISTAKES 2026-08-23, open until now). Chunking the apply with lock release between chunks was rejected after listing its readers: a purge could run between chunks and the next chunk would resurrect rows, and protection/read-rate would lag the rows destructive readers act on.
 **Rule:** A per-item statement loop inside the mailbox lock costs 2 RTT x items in production — batch it; a producer fired per external event coalesces per mailbox, never per event.
 **Enforcement update:** tests (each negative-controlled): statements under the lock bounded for a 5,000-record burst (old code: 5,008), folded batch lands where per-record application does (seeded stream; fails on a deliberately broken fold), real-Redis coalescing suite with a Redis service added to the Workers CI job so it stops skipping (plus an always-running reachability test that fails when TEST_REDIS_URL is set but Redis is not). Gate review (architecture-guardian) added a liveness bound: a job ACTIVE past 30 min stops absorbing enqueues, so a stuck sync cannot silently swallow a mailbox's pushes and drift retries. Same coalescing applied to Autopilot action sweeps. No hook.
+
+## 2026-09-25 — Fixed stale comments with new unverified claims, then widened a PR to "fix the class"
+**PR:** #775 (https://github.com/CT2689-Tech/DeclutrMail/pull/775)
+**Caught by:** schema-migration-reviewer (two rounds)
+**What happened:** Rewriting comments that promised a re-score cron that does not exist, I also rewrote two claims without reading their producer:
+- `score_run_completed`'s trigger list: it fires after every score job, not only sweeps.
+- `decision_recomputed`: I left it described as emitted, but nothing publishes it.
+
+Following a gate suggestion, I declared four migration-only indexes "so a generated migration can never drop them". The next round showed two things:
+- the repo's generator, with its snapshot frozen at 0015, cannot drop them;
+- the four were one slice of a much larger Drizzle-vs-migration gap.
+
+The declarations came back out.
+**Correct approach:** Treat a comment correction as a claim: read the producer and consumers before rewriting what they do. Before folding a class into an unrelated PR, check the size of the class and whether the harm you name is real. Tidying with no user-visible effect goes to the deferred effort.
+**Rule:** Verify a class's harm and size before widening a PR for it; verify each rewritten comment against the code it describes.
+**Enforcement update:** none.
