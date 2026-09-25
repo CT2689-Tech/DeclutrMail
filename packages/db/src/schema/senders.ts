@@ -225,6 +225,15 @@ export const senders = pgTable(
       'senders_unsub_method_url_aligned_chk',
       sql`CASE ${table.unsubscribeMethod} WHEN 'one_click' THEN ${table.unsubscribeUrl} LIKE 'https://%' WHEN 'mailto' THEN ${table.unsubscribeUrl} LIKE 'mailto:%' ELSE ${table.unsubscribeUrl} IS NULL END`,
     ),
+    /**
+     * Migration 0063: recipient attribution matches senders by normalized
+     * address (`dm_normalize_email`, defined in that migration). Declared
+     * here so a generated migration can never drop it.
+     */
+    accountNormalizedEmailIdx: index('senders_account_normalized_email_idx').on(
+      table.mailboxAccountId,
+      sql`dm_normalize_email(${table.email}::text)`,
+    ),
   }),
 );
 

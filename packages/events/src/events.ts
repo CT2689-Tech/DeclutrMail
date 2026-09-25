@@ -45,8 +45,9 @@ const ConfidenceSchema = z.number().min(0).max(1);
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Emitted by the score worker after a per-mailbox sweep finishes
- * (`ScoreTrigger='sync_complete' | 'cron_sweep'`). Drives the
+ * Emitted by the score worker after a per-mailbox sweep finishes (a
+ * `sync_complete` sweep over every sender; `cron_sweep` is a declared
+ * trigger with no producer). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */

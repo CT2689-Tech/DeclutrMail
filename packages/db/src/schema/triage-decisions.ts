@@ -48,8 +48,8 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `expires_at` is the re-score TTL (D25): a read past it is stale.
  * Nothing sweeps expired rows — the founder chose lazy refresh on
  * attention (`stale_refresh`, 2026-08-19) over D25's weekly sweep.
- * Trigger-based re-scores (sync-complete, signal-change, stale-refresh,
- * manual) overwrite the row regardless of TTL.
+ * Trigger-based re-scores (`sync_complete`, `signal_change`,
+ * `stale_refresh`, `manual_rescore`) overwrite the row regardless of TTL.
  *
  * `(mailbox_account_id, sender_key)` is unique — one current verdict per
  * sender per mailbox. The worker upserts; the engine never keeps a verdict
@@ -127,16 +127,22 @@ export const triageDecisions = pgTable(
     /**
      * Built for D25's weekly `WHERE expires_at < now()` sweep across
      * mailboxes, which was never produced (lazy `stale_refresh` instead,
-     * 2026-08-19) — composite covers that predicate without scanning the
-     * table. `expires_at` is the LEADING
-     * column so the cron sweep can range-scan once and then filter to a
-     * mailbox; per-mailbox lookups also use the index via mailbox-id
-     * equality on the trailing column.
+     * 2026-08-19). `expires_at` leads so that sweep could have
+     * range-scanned it; no query filters on it today. Per-mailbox reads
+     * use `triage_decisions_account_sender_uniq`.
      */
     expiresAtIdx: index('triage_decisions_expires_at_idx').on(
       table.expiresAt,
       table.mailboxAccountId,
     ),
+    /**
+     * Migration 0066: the needs-review join in `getSenderSummary` only
+     * wants actionable verdicts. Declared here so a generated migration
+     * can never drop it.
+     */
+    actionableIdx: index('triage_decisions_actionable_idx')
+      .on(table.mailboxAccountId, table.senderKey)
+      .where(sql`${table.verdict} IN ('unsubscribe', 'archive')`),
   }),
 );
 

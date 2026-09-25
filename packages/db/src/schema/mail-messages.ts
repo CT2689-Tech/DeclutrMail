@@ -242,6 +242,13 @@ export const mailMessages = pgTable(
       'mail_messages_recipient_emails_outbound_chk',
       sql`${table.recipientEmails} IS NULL OR ${table.isOutbound} = true`,
     ),
+    /**
+     * Migration 0070: the Senders list's two INBOX counts. Declared here
+     * so a generated migration can never drop it.
+     */
+    accountSenderInboxIdx: index('mail_messages_account_sender_inbox_idx')
+      .on(table.mailboxAccountId, table.senderKey, table.isUnread)
+      .where(sql`${table.isOutbound} = false AND 'INBOX' = ANY(${table.labelIds})`),
   }),
 );
 
