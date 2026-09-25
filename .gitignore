@@ -43,7 +43,7 @@ yarn-debug.log*
 
 # Third-party agent skills — install locally (`npx skills add JuliusBrussee/caveman`)
 # Whole `.claude/skills/` tree is per-machine: third-party symlinks
-# (cavecrew, caveman*) AND personal local skills (e.g. post-pr-validate).
+# (cavecrew, caveman*) AND personal local skills (e.g. ct-pr).
 # Nothing under here should be tracked.
 .agents/skills/cavecrew/
 .agents/skills/caveman/
