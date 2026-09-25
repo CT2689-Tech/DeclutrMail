@@ -56,11 +56,14 @@ function frame(children: React.ReactNode) {
   return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
 }
 
+// `last_synced_at: null` — a first scan, the only kind the ready email
+// goes for.
 const QUEUED: SyncStatus = {
   readiness_status: 'queued',
   current_stage: 'queued',
   progress_pct: 0,
   is_ready_for_triage: false,
+  last_synced_at: null,
 };
 
 const SYNCING: SyncStatus = {
@@ -68,6 +71,7 @@ const SYNCING: SyncStatus = {
   current_stage: 'building_sender_index',
   progress_pct: 45,
   is_ready_for_triage: false,
+  last_synced_at: null,
 };
 
 const READY: SyncStatus = {
@@ -103,6 +107,19 @@ export const Syncing: Story<typeof SyncGate> = {
 /** Syncing, ready email switched off — the leave line makes no email promise. */
 export const SyncingReadyEmailOff: Story<typeof SyncGate> = {
   args: { status: SYNCING, readyEmail: false },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Re-scan of a mailbox that finished before (a retry after a failed
+ * re-scan, a reconnect) — no ready email goes, so none is promised even
+ * with the setting on.
+ */
+export const RescanNoReadyEmail: Story<typeof SyncGate> = {
+  args: {
+    status: { ...SYNCING, last_synced_at: '2026-09-01T10:00:00.000Z' },
+    readyEmail: true,
+  },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 

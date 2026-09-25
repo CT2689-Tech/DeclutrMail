@@ -31,6 +31,8 @@ const SYNCING: SyncStatus = {
   current_stage: 'building_sender_index',
   progress_pct: 45,
   is_ready_for_triage: false,
+  // A first scan: nothing has finished yet.
+  last_synced_at: null,
 };
 
 const READY: SyncStatus = {
@@ -135,6 +137,18 @@ describe('SyncGate render', () => {
       renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail={false} />),
       renderToStaticMarkup(<SyncGate status={SYNCING} />),
     ]) {
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
+    }
+  });
+
+  it('promises no ready email on a re-scan — it goes only for a first scan', () => {
+    // A retry after a failed re-scan, or a reconnect, re-runs the scan of
+    // a mailbox that finished before; the sync-ready trigger sends
+    // nothing for it. A missing field is unknown, and promises nothing.
+    const { last_synced_at: _drop, ...unknown } = SYNCING;
+    for (const status of [{ ...SYNCING, last_synced_at: '2026-09-01T10:00:00.000Z' }, unknown]) {
+      const html = renderToStaticMarkup(<SyncGate status={status} readyEmail />);
       expect(html).toContain('You can close this tab');
       expect(html).not.toMatch(/email you/i);
     }

@@ -139,7 +139,10 @@ export interface SyncGateEscape {
  * The D109 reassurance line: the scan runs without this tab, so the user
  * may leave. The email clause is stated only when the "Your inbox is
  * ready" email will actually go — `emailPrefs.syncComplete` is the
- * send-time switch, and unsubscribing from all mail turns it off too.
+ * send-time switch (unsubscribing from all mail turns it off too), and
+ * the email goes only for a mailbox's FIRST finished scan
+ * (`sync-ready-email.trigger.ts`). A re-scan of a mailbox that finished
+ * before — a retry after a failed re-scan, a reconnect — sends none.
  * (D109's "This is a one-time scan." is gone: a reconnect or a retry
  * re-runs the scan, and nobody acts on the sentence.)
  */
@@ -195,6 +198,9 @@ function SyncProgress({
   // over a finished scan, and no "close this tab" once there is nothing
   // left to wait for.
   const ready = status.readiness_status === 'ready';
+  // Strictly null: the API always sends the field, so a missing one is
+  // unknown, and unknown promises nothing.
+  const emailOnReady = readyEmail && status.last_synced_at === null;
 
   return (
     <Shell>
@@ -211,7 +217,7 @@ function SyncProgress({
             margin: '14px 0 0',
           }}
         >
-          {leaveSentence(readyEmail)}
+          {leaveSentence(emailOnReady)}
         </p>
       )}
 

@@ -107,6 +107,8 @@ const syncStatus = (ready: boolean): FetchStubHandler => ({
         current_stage: ready ? 'ready' : 'fetching_metadata',
         progress_pct: ready ? 100 : 40,
         is_ready_for_triage: ready,
+        // As the API sends it: null until a first scan finishes.
+        last_synced_at: ready ? '2026-09-01T10:00:00.000Z' : null,
       },
     }),
 });
