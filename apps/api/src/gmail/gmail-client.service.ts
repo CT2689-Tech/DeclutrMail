@@ -51,18 +51,20 @@ import type {
  * a generic fault.
  */
 
-/** Gmail message-format value — `metadata` ONLY (D7). Never `full`/`raw`. */
-const METADATA_FORMAT = 'metadata';
 /**
- * Headers fetched alongside metadata — the D7 allowlist for sync.
+ * Gmail message-format value — `metadata` ONLY (D7). Never `full`/`raw`.
  *
- * Amended 2026-05-22 (ADR-0004) — see the schema docs on `mail_messages`
- * for the per-field rationale:
+ * The headers fetched alongside it are `GMAIL_METADATA_HEADERS`, the D7
+ * allowlist generated from the D245 registry
+ * (`packages/shared/src/contracts/gmail-data-inventory.ts`). Amended
+ * 2026-05-22 (ADR-0004) — see the schema docs on `mail_messages` for the
+ * per-field rationale:
  *   - `To`, `Cc` — recipient capture (used on outbound for the future
  *     Sent-sync / reply-attribution engine).
  *   - `List-Unsubscribe`, `List-Unsubscribe-Post` — RFC 8058 unsubscribe
  *     capability (D9 auto-unsubscribe).
  */
+const METADATA_FORMAT = 'metadata';
 const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const GOOGLE_OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const PAGE_SIZE = 500;
@@ -98,10 +100,12 @@ export const GMAIL_QUOTA_METRICS: readonly GmailQuotaMetric[] = [
 ];
 
 /**
- * Units each method draws from `metric`. Every other method costs the
- * same on both metrics — verified for the ones production calls
- * (profile, history, labels, messages.list, batchModify, watch) from
- * 30 days of the same Cloud Monitoring data.
+ * Units each method draws from `metric`. Only `messages.get` differs.
+ * The same Cloud Monitoring data (2026-09-04 to 2026-09-25, the days both
+ * metrics were metered) shows profile, history.list, labels.list,
+ * labels.create, messages.list, batchModify and watch cost the same on
+ * both. `messages.modify` and `stop` were not called in that window; they
+ * keep their published cost on both.
  */
 function quotaUnitsFor(metric: GmailQuotaMetric) {
   return {

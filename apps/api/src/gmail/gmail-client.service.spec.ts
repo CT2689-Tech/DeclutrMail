@@ -1,4 +1,5 @@
 import type { OAuth2Client } from 'google-auth-library';
+import { GMAIL_METADATA_HEADERS } from '@declutrmail/shared/contracts';
 import {
   AuthExpiredError,
   InvalidGrantError,
@@ -263,6 +264,27 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
     },
   );
+
+  describe('getMessageMetadata', () => {
+    // D7: the "never fetch full email contents" guarantee on the sync path
+    // is this one request — format=metadata plus exactly the registry's
+    // header allowlist, never full/raw.
+    it('asks Gmail for metadata and exactly the D7 header allowlist', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      await client.getMessageMetadata('a/b id');
+
+      const url = new URL(fetchMock.mock.calls[0]![0]);
+      expect(`${url.origin}${url.pathname}`).toBe(`${API}/messages/a%2Fb%20id`);
+      expect(url.searchParams.getAll('format')).toEqual(['metadata']);
+      expect(url.searchParams.getAll('metadataHeaders')).toEqual([...GMAIL_METADATA_HEADERS]);
+      // Nothing else rides along (no `fields`, no second format).
+      expect(new Set(url.searchParams.keys())).toEqual(new Set(['format', 'metadataHeaders']));
+    });
+  });
 
   describe('getMessageLabelIds', () => {
     it('requests only a minimal id + labelIds response', async () => {

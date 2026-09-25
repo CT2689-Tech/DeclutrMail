@@ -295,9 +295,11 @@ budget is only meaningful against the metric that prices it:
 | `gmail.googleapis.com/default`          | 5 units        | **15,000 / minute** (enforced)          |
 | `gmail.googleapis.com/total_query_cost` | 20 units       | unlimited (grandfathered override)      |
 
-Every other method production calls costs the same on both (profile 1,
+On the days both metrics were metered (2026-09-04 to 2026-09-25), every
+other method production called cost the same on both (profile 1,
 history.list 2, labels.list 1, labels.create 5, messages.list 5,
-batchModify 50, watch 100). Google's
+batchModify 50, watch 100); `messages.modify` and `stop` were not called
+in that window. Google's
 [current quota table](https://developers.google.com/workspace/gmail/api/reference/quota)
 (updated 2026-09-10) documents `total_query_cost`: 20 units for
 `messages.get` and 6,000 units/user/minute for projects created on or
