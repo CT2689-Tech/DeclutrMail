@@ -20,7 +20,10 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
  * surface; using a type alias instead of structural duck-typing keeps
  * callers honest.
  */
-type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+type DrizzleExecutor = DrizzleDb | DrizzleTransaction;
+
+/** A transaction-bound client — for writes whose row locks must span the caller's unit of work. */
+type DrizzleTransaction = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
 /**
  * Result of {@link SyncService.planHistorySyncWithExecutor}.
@@ -187,10 +190,11 @@ export class SyncService {
    * reconnected, and an initial sync that is queued, running or failed.
    *
    * FOR UPDATE: a ready or queued write landing between this check and
-   * the caller's commit would otherwise decide against a stale row.
+   * the caller's commit would otherwise decide against a stale row — which
+   * is why this takes the connect's transaction, never the pool.
    */
   async markConnected(
-    executor: DrizzleExecutor,
+    executor: DrizzleTransaction,
     mailboxAccountId: string,
     opts: { wasActive: boolean },
   ): Promise<'kept_ready' | 'queued'> {
@@ -481,9 +485,6 @@ export class SyncService {
    *
    * Surfaces:
    *   - `POST /api/v1/sync/incremental` (the user-facing "Sync now" button).
-   *   - The 5-min reconciliation cron in `apps/api/src/worker.ts`
-   *     (catch-up path while Pub/Sub is still being wired in prod, and
-   *     drift safety net even after Pub/Sub lands).
    *   - A sign-in or connect that kept the mailbox ready
    *     ({@link scheduleCatchUp}, trigger `connect`).
    *

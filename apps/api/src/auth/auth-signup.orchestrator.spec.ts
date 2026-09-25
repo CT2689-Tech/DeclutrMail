@@ -409,7 +409,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
     });
 
-    it('sign-in that needs a scan (revoked grant, failed first scan): full scan, no catch-up', async () => {
+    it('sign-in when markConnected decides queued: full scan, no catch-up', async () => {
       users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
       mailboxes.upsertConnect.mockResolvedValue({ id: 'mailbox-new', wasActive: true });
       sync.markConnected.mockResolvedValue('queued');
@@ -445,6 +445,11 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
         refreshToken: 'rt2',
       });
 
+      // The prior status reaches the decision: hard-coding `false` here
+      // would quietly bring back a full re-scan on every re-auth.
+      expect(sync.markConnected).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        wasActive: true,
+      });
       expect(sync.schedule).not.toHaveBeenCalled();
       expect(sync.scheduleCatchUp).toHaveBeenCalledWith('mailbox-new');
       expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');

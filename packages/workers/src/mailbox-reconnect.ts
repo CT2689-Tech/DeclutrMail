@@ -85,11 +85,23 @@ export async function isAwaitingReconnect(
   return row !== undefined;
 }
 
-/** Persist the incident and notification atomically for every producer of reconnect state. */
+/**
+ * Persist the incident and notification atomically for every producer of reconnect state.
+ *
+ * `attemptStartedAt` — when the failing attempt began, taken before it
+ * read the mailbox's credential. An `InvalidGrantError` from an attempt
+ * that began before the mailbox was last connected belongs to the grant
+ * that connect replaced, and is ignored: a sign-in keeps a synced mailbox
+ * `ready` (no re-scan stamps `last_synced_at` over the error), so
+ * recording it would put a just-reconnected mailbox straight back behind
+ * the reconnect gate and send the reconnect email. Callers without an
+ * attempt start keep the old behaviour.
+ */
 export async function recordMailboxSyncFailure(
   db: WorkerDb,
   mailboxAccountId: string,
   errorCode: string,
+  opts: { attemptStartedAt?: Date } = {},
 ): Promise<void> {
   await db.transaction(async (tx) => {
     let [state] = await tx
@@ -112,6 +124,24 @@ export async function recordMailboxSyncFailure(
         .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
         .for('update');
       if (!state) return;
+    }
+    // After the row lock above, so a connect that committed while this
+    // transaction waited on it is visible here.
+    if (errorCode === INVALID_GRANT_ERROR && opts.attemptStartedAt) {
+      const [mailbox] = await tx
+        .select({ connectedAt: mailboxAccounts.connectedAt })
+        .from(mailboxAccounts)
+        .where(eq(mailboxAccounts.id, mailboxAccountId));
+      if (mailbox?.connectedAt && mailbox.connectedAt > opts.attemptStartedAt) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'sync.superseded_grant_failure_ignored',
+            mailboxAccountId,
+          }),
+        );
+        return;
+      }
     }
     const alreadyAwaiting =
       state.lastIncrementalErrorCode === 'InvalidGrantError' &&

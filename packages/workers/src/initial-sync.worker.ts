@@ -84,9 +84,10 @@ export interface InitialSyncDeps {
    * first sync — without it a freshly-synced mailbox has senders but
    * an empty Triage queue.
    *
-   * Best-effort: a failure here is logged and swallowed (the cron
-   * re-score sweep is the safety net), so a Redis blip at score-enqueue
-   * time never fails an otherwise-successful sync.
+   * Best-effort: a failure here is logged and swallowed, so a Redis blip
+   * at score-enqueue time never fails an otherwise-successful sync.
+   * Nothing retries it — `cron_sweep` has no producer — so the logged
+   * `sync.score_enqueue_failed` is the only trace.
    */
   onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
   /**
@@ -441,8 +442,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Stage 3 — computing_recommendations. The sender index is built,
     // so fire the `sync_complete` score trigger (D25): the score sweep
     // runs the cascade over every sender and writes `triage_decisions`.
-    // Best-effort — a score-enqueue failure must not fail the sync; the
-    // cron re-score sweep is the safety net.
+    // Best-effort — a score-enqueue failure must not fail the sync
+    // (nothing retries it: `cron_sweep` has no producer).
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
     if (this.deps.onSenderIndexBuilt) {
       try {

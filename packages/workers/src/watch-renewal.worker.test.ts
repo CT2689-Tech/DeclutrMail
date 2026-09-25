@@ -281,6 +281,55 @@ describe('WatchRenewalWorker', () => {
     expect(notices[0]).toMatchObject({ topic: 'mailbox.reconnect_required', aggregateId: bad });
   });
 
+  it('a reconnect that commits mid-renewal does not mark the fresh grant revoked', async () => {
+    // The sweep read the old, already-dead grant; the user reconnected
+    // (connected_at moves) before Google refused it. A sign-in keeps the
+    // mailbox ready now, so nothing would clear a stray record.
+    const db = await freshDb();
+    const reconnected = await seedMailbox(db, { email: 'mid-reconnect@x.com' });
+    const good = await seedMailbox(db, { email: 'steady@x.com' });
+    const access: GmailWatchAccess = {
+      getClient: async (mailboxAccountId: string): Promise<GmailWatchClient> => {
+        if (mailboxAccountId === reconnected) {
+          // start < connected_at < failure — see the test title.
+          await new Promise((r) => setTimeout(r, 5));
+          await db
+            .update(mailboxAccounts)
+            .set({ connectedAt: new Date() })
+            .where(eq(mailboxAccounts.id, reconnected));
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        return {
+          watch: () =>
+            mailboxAccountId === reconnected
+              ? Promise.reject(new InvalidGrantError('old grant'))
+              : Promise.resolve({ historyId: '424242', expirationMs: 1_765_000_000_000 }),
+          stopWatch: () => Promise.resolve(),
+        };
+      },
+    };
+    const worker = new WatchRenewalWorker({
+      db: db as never,
+      gmailWatch: access,
+      topicName: TOPIC,
+      observer: {
+        captureFailure: () => {},
+        captureBackgroundFailure: () => {},
+        recordBackgroundNotice: () => {},
+      },
+    });
+
+    await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, reconnected));
+    expect(state?.lastIncrementalErrorCode).toBeNull();
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect(good).toBeTruthy();
+  });
+
   it('persists and deduplicates a first revoked grant even before sync state exists', async () => {
     const db = await freshDb();
     const mailbox = await seedMailbox(db, { email: 'before-sync@x.com' });

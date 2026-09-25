@@ -76,6 +76,11 @@ describe('SyncService.markConnected', () => {
     });
   }
 
+  /** As the orchestrator calls it: inside the connect's transaction. */
+  function connect(opts: { wasActive: boolean }) {
+    return db.transaction((tx) => service.markConnected(tx, mailboxId, opts));
+  }
+
   async function readState() {
     const [row] = await db
       .select()
@@ -88,9 +93,7 @@ describe('SyncService.markConnected', () => {
     await seed();
     const before = await readState();
 
-    await expect(service.markConnected(db, mailboxId, { wasActive: true })).resolves.toBe(
-      'kept_ready',
-    );
+    await expect(connect({ wasActive: true })).resolves.toBe('kept_ready');
 
     // Not one column moved: still ready, cursor still applied — so
     // incremental sync carries on and no scan or re-score runs.
@@ -103,9 +106,7 @@ describe('SyncService.markConnected', () => {
       lastIncrementalErrorAt: new Date('2026-09-10T10:00:00Z'),
     });
 
-    await expect(service.markConnected(db, mailboxId, { wasActive: true })).resolves.toBe(
-      'kept_ready',
-    );
+    await expect(connect({ wasActive: true })).resolves.toBe('kept_ready');
   });
 
   it('keeps it through a non-grant error — only a revoked grant needs a reconnect scan', async () => {
@@ -114,13 +115,12 @@ describe('SyncService.markConnected', () => {
       lastIncrementalErrorAt: new Date('2026-09-21T10:00:00Z'),
     });
 
-    await expect(service.markConnected(db, mailboxId, { wasActive: true })).resolves.toBe(
-      'kept_ready',
-    );
+    await expect(connect({ wasActive: true })).resolves.toBe('kept_ready');
   });
 
   it.each([
-    ['a first connect (no sync row)', null, true],
+    ['a first connect (new mailbox, no sync row)', null, false],
+    ['an active mailbox with no sync row', null, true],
     ['a mailbox that was disconnected', {}, false],
     [
       'a revoked grant being reconnected',
@@ -149,7 +149,7 @@ describe('SyncService.markConnected', () => {
   ] as const)('gives %s a full scan', async (_case, overrides, wasActive) => {
     if (overrides !== null) await seed(overrides as Partial<typeof providerSyncState.$inferInsert>);
 
-    await expect(service.markConnected(db, mailboxId, { wasActive })).resolves.toBe('queued');
+    await expect(connect({ wasActive })).resolves.toBe('queued');
 
     const row = await readState();
     expect(row?.readinessStatus).toBe('queued');
@@ -162,7 +162,7 @@ describe('SyncService.markConnected', () => {
       lastIncrementalErrorAt: new Date('2026-09-22T10:00:00Z'),
     });
 
-    await service.markConnected(db, mailboxId, { wasActive: true });
+    await connect({ wasActive: true });
 
     const row = await readState();
     expect(row?.lastIncrementalErrorCode).toBeNull();

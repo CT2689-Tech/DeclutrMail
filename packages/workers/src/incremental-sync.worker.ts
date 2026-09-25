@@ -356,11 +356,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   protected override async onTerminalFailure(
     payload: IncrementalSyncJobData,
     error: Error,
+    ctx: WorkerContext,
   ): Promise<void> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) return;
     const errorCode = error.name || 'UnknownError';
-    await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, errorCode);
+    await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, errorCode, {
+      attemptStartedAt: ctx.startedAt,
+    });
     console.error(
       JSON.stringify({
         level: 'error',
