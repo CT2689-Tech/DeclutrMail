@@ -58,9 +58,11 @@ describe('recordMailboxSyncFailure — a failure against a replaced grant', () =
     const mailbox = await seed(db);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
-      attemptStartedAt: BEFORE,
-    });
+    await expect(
+      recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
+        attemptStartedAt: BEFORE,
+      }),
+    ).resolves.toBe('superseded');
 
     expect(await isAwaitingReconnect(db as never, mailbox)).toBe(false);
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
@@ -72,9 +74,11 @@ describe('recordMailboxSyncFailure — a failure against a replaced grant', () =
     const db = await freshTestDb();
     const mailbox = await seed(db);
 
-    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
-      attemptStartedAt: AFTER,
-    });
+    await expect(
+      recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
+        attemptStartedAt: AFTER,
+      }),
+    ).resolves.toBe('recorded');
 
     expect(await isAwaitingReconnect(db as never, mailbox)).toBe(true);
     const notices = await db.select().from(outboxEvents);
@@ -82,11 +86,15 @@ describe('recordMailboxSyncFailure — a failure against a replaced grant', () =
     expect(notices[0]).toMatchObject({ topic: 'mailbox.reconnect_required', aggregateId: mailbox });
   });
 
-  it('records it as before when the caller has no attempt start', async () => {
+  it('records it when the attempt start is unknown', async () => {
     const db = await freshTestDb();
     const mailbox = await seed(db);
 
-    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    await expect(
+      recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
+        attemptStartedAt: null,
+      }),
+    ).resolves.toBe('recorded');
 
     expect(await isAwaitingReconnect(db as never, mailbox)).toBe(true);
   });

@@ -99,9 +99,10 @@ adding the inserted-row signal the counter needs.
 
 - Full rebuilds are the primary reconciliation — they restore authoritative
   counts atomically. Since 2026-09-25 (#775) they run only on a first
-  connect, a reconnect after a disconnect or a revoked grant, a failed-scan
-  retry, and the cursor-too-old recovery — a routine sign-in keeps the
-  mailbox synced. `senders.gmail_category` and display name are recomputed
+  connect, a sign-in before the first scan finished, a reconnect after a
+  disconnect or a revoked grant, a failed-scan retry, and the
+  cursor-too-old recovery — a sign-in of a synced mailbox no longer
+  re-scans. `senders.gmail_category` and display name are recomputed
   only by a full rebuild.
 - Between rebuilds, a periodic recount job emits a `senders.counter_drift` metric
   (count of corrected senders + max delta) to the D159 observability seam, so

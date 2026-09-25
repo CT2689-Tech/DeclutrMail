@@ -377,19 +377,28 @@ describe('SnoozeWakeWorker — targeted wake', () => {
     await seedSnooze(db, mailboxId, SENDER_KEY_A, PAST);
     await seedMessage(db, mailboxId, SENDER_KEY_A, 'm1', ['Label_7']);
     gmail.shouldThrow = new InvalidGrantError('old grant');
-    // This attempt began a minute before the user reconnected.
-    await db
-      .update(mailboxAccounts)
-      .set({ connectedAt: new Date() })
-      .where(eq(mailboxAccounts.id, mailboxId));
+    worker = makeWorker(
+      db,
+      {
+        getClient: async () => {
+          // The user reconnects after this wake started, and Google refuses
+          // the old grant after that: start < connected_at < failure.
+          await new Promise((r) => setTimeout(r, 5));
+          await db
+            .update(mailboxAccounts)
+            .set({ connectedAt: new Date() })
+            .where(eq(mailboxAccounts.id, mailboxId));
+          await new Promise((r) => setTimeout(r, 5));
+          return gmail;
+        },
+      },
+      labelMap,
+    );
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await expect(
-        worker.processJob(targetedWakeJob(mailboxId, PAST), {
-          ...CTX,
-          startedAt: new Date(Date.now() - 60_000),
-        }),
-      ).rejects.toBeInstanceOf(InvalidGrantError);
+      await expect(worker.processJob(targetedWakeJob(mailboxId, PAST), CTX)).rejects.toBeInstanceOf(
+        InvalidGrantError,
+      );
     } finally {
       info.mockRestore();
     }
@@ -399,6 +408,12 @@ describe('SnoozeWakeWorker — targeted wake', () => {
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
     expect(state?.lastIncrementalErrorCode ?? null).toBeNull();
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    // The Later timer is not told to ask for a reconnect either.
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozeWakeFailureKind).toBe('temporary');
   });
 });
 
@@ -442,18 +457,29 @@ describe('SnoozeWakeWorker — sweep', () => {
     );
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let result: Awaited<ReturnType<typeof worker.processJob>>;
     try {
-      await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' }, CTX);
+      result = await worker.processJob(
+        { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' },
+        CTX,
+      );
     } finally {
       err.mockRestore();
       info.mockRestore();
     }
+    // The wake really reached Gmail and really failed.
+    expect(result).toMatchObject({ failed: 1 });
     const [state] = await db
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxId));
     expect(state?.lastIncrementalErrorCode ?? null).toBeNull();
     expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(policy!.snoozeWakeFailureKind).toBe('temporary');
   });
 
   it('wakes due senders, leaves future timers untouched', async () => {
@@ -662,6 +688,8 @@ describe('SnoozeWakeWorker — sweep', () => {
     const info = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' }, CTX);
+      // The refresh really asked for the (old) credential.
+      expect(getClient).toHaveBeenCalledTimes(1);
       const [state] = await db.select().from(providerSyncState);
       expect(state?.lastIncrementalErrorCode).toBeNull();
       expect(await db.select().from(outboxEvents)).toHaveLength(0);

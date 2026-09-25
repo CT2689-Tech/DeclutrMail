@@ -85,25 +85,48 @@ export async function isAwaitingReconnect(
   return row !== undefined;
 }
 
+/** What {@link recordMailboxSyncFailure} did with a failure. */
+export type MailboxSyncFailureOutcome =
+  /** Evidence written (and, for a revoked grant, the reconnect notice). */
+  | 'recorded'
+  /** A revoked grant from an attempt that began before the last connect. */
+  | 'superseded'
+  /** The same revoked grant is already on record; nothing re-notified. */
+  | 'already_awaiting'
+  /** No live mailbox to record against. */
+  | 'skipped';
+
 /**
  * Persist the incident and notification atomically for every producer of reconnect state.
  *
  * `attemptStartedAt` — when the failing attempt began, taken before it
- * read the mailbox's credential. An `InvalidGrantError` from an attempt
- * that began before the mailbox was last connected belongs to the grant
- * that connect replaced, and is ignored: a sign-in keeps a synced mailbox
- * `ready` (no re-scan stamps `last_synced_at` over the error), so
- * recording it would put a just-reconnected mailbox straight back behind
- * the reconnect gate and send the reconnect email. Callers without an
- * attempt start keep the old behaviour.
+ * read the mailbox's credential; `null` when unknown (then it records, as
+ * before). A revoked grant from an attempt that began before the mailbox
+ * was last connected is treated as the grant that connect replaced and
+ * ignored (`superseded`): a sign-in keeps a synced mailbox `ready`, so
+ * no re-scan stamps `last_synced_at` over the error, and recording it
+ * would put a just-reconnected mailbox straight back behind the
+ * reconnect gate and send the reconnect email.
+ *
+ * What this relies on, and what it leaves open:
+ * - READ COMMITTED: the `connected_at` read runs after the sync-row lock,
+ *   as its own statement, so a connect that committed while this waited
+ *   is visible.
+ * - `connected_at` is stamped when the connect's upsert is built, before
+ *   its commit. An attempt that starts inside that short tail still reads
+ *   the old credential, fails after the commit, and is recorded — the
+ *   mailbox is re-gated until the user reconnects again. Worker/API clock
+ *   skew moves the boundary by the skew. The exact fix compares grant
+ *   identity (the `connected_at` the credential was read with) instead of
+ *   time, which needs the Gmail client to carry it on its errors.
  */
 export async function recordMailboxSyncFailure(
   db: WorkerDb,
   mailboxAccountId: string,
   errorCode: string,
-  opts: { attemptStartedAt?: Date } = {},
-): Promise<void> {
-  await db.transaction(async (tx) => {
+  opts: { attemptStartedAt: Date | null },
+): Promise<MailboxSyncFailureOutcome> {
+  return db.transaction(async (tx): Promise<MailboxSyncFailureOutcome> => {
     let [state] = await tx
       .select()
       .from(providerSyncState)
@@ -116,14 +139,14 @@ export async function recordMailboxSyncFailure(
         .select({ id: mailboxAccounts.id })
         .from(mailboxAccounts)
         .where(and(eq(mailboxAccounts.id, mailboxAccountId), eq(mailboxAccounts.status, 'active')));
-      if (!active) return;
+      if (!active) return 'skipped';
       await tx.insert(providerSyncState).values({ mailboxAccountId }).onConflictDoNothing();
       [state] = await tx
         .select()
         .from(providerSyncState)
         .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
         .for('update');
-      if (!state) return;
+      if (!state) return 'skipped';
     }
     // After the row lock above, so a connect that committed while this
     // transaction waited on it is visible here.
@@ -140,7 +163,7 @@ export async function recordMailboxSyncFailure(
             mailboxAccountId,
           }),
         );
-        return;
+        return 'superseded';
       }
     }
     const alreadyAwaiting =
@@ -148,7 +171,7 @@ export async function recordMailboxSyncFailure(
       state.lastIncrementalErrorAt !== null &&
       (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
     // Duplicate terminal callbacks must not shift the incident timestamp or notify twice.
-    if (alreadyAwaiting) return;
+    if (alreadyAwaiting) return 'already_awaiting';
     const unresolved =
       state.lastIncrementalErrorAt !== null &&
       (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
@@ -181,5 +204,6 @@ export async function recordMailboxSyncFailure(
           },
         });
     }
+    return 'recorded';
   });
 }

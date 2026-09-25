@@ -275,7 +275,9 @@ describe('WatchRenewalWorker', () => {
     expect(watchCalls.filter((id) => id === good)).toHaveLength(2);
     expect(captured).toHaveLength(1);
     // A later terminal callback from incremental sync must share this incident, not notify twice.
-    await recordMailboxSyncFailure(db as never, bad, 'InvalidGrantError');
+    await recordMailboxSyncFailure(db as never, bad, 'InvalidGrantError', {
+      attemptStartedAt: null,
+    });
     const notices = await db.select().from(outboxEvents);
     expect(notices).toHaveLength(1);
     expect(notices[0]).toMatchObject({ topic: 'mailbox.reconnect_required', aggregateId: bad });
@@ -319,8 +321,10 @@ describe('WatchRenewalWorker', () => {
       },
     });
 
-    await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
+    const result = await worker.processJob({ scheduledAtMinute: MINUTE }, CTX);
 
+    // The Gmail call really ran and really failed for the reconnected one.
+    expect(result).toMatchObject({ watched: 1, failed: 1 });
     const [state] = await db
       .select()
       .from(providerSyncState)
@@ -334,8 +338,12 @@ describe('WatchRenewalWorker', () => {
     const db = await freshDb();
     const mailbox = await seedMailbox(db, { email: 'before-sync@x.com' });
     await db.delete(providerSyncState).where(eq(providerSyncState.mailboxAccountId, mailbox));
-    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
-    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
+      attemptStartedAt: null,
+    });
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError', {
+      attemptStartedAt: null,
+    });
     const [state] = await db
       .select()
       .from(providerSyncState)

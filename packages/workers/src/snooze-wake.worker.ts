@@ -183,6 +183,10 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
   ): Promise<SnoozeWakeResult> {
     const startedAt = Date.now();
     return this.deps.lock.run(payload.mailboxAccountId, async () => {
+      // Inside the lock, before the credential read — the lock wait
+      // (up to its 45s timeout) must not widen the superseded-grant
+      // window (see `recordMailboxSyncFailure`).
+      const attemptStartedAt = new Date();
       const version = timerVersionFromJob(payload);
 
       try {
@@ -210,7 +214,7 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
             payload.senderKey,
             version,
             error,
-            ctx.startedAt,
+            attemptStartedAt,
           );
         }
         throw error;
@@ -561,19 +565,24 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     error: unknown,
     attemptStartedAt: Date,
   ): Promise<void> {
-    if (error instanceof InvalidGrantError) {
-      await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, 'InvalidGrantError', {
-        attemptStartedAt,
-      });
-    }
+    const grantOutcome =
+      error instanceof InvalidGrantError
+        ? await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, 'InvalidGrantError', {
+            attemptStartedAt,
+          })
+        : null;
     const failedAt = (this.deps.now ?? (() => new Date()))();
     const errorName = error instanceof Error ? error.name : 'UnknownError';
+    // A grant the user already replaced is not a reason to ask them to
+    // reconnect: the next attempt uses the fresh one.
     const failureKind =
-      errorName === 'InvalidGrantError'
-        ? 'reauthorize'
-        : errorName === 'PermanentError' || errorName === 'ValidationError'
-          ? 'needs_attention'
-          : 'temporary';
+      grantOutcome === 'superseded'
+        ? 'temporary'
+        : errorName === 'InvalidGrantError'
+          ? 'reauthorize'
+          : errorName === 'PermanentError' || errorName === 'ValidationError'
+            ? 'needs_attention'
+            : 'temporary';
 
     await this.deps.db
       .update(senderPolicies)

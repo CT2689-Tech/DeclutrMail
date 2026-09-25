@@ -497,7 +497,7 @@ export class SyncService {
    *      run covers it; once it finishes, the next click is `enqueued`,
    *      even at an unchanged cursor.
    *   3. Failure to enqueue propagates as a thrown error — the controller
-   *      maps it to 500; the reconciler swallows + logs.
+   *      maps it to 500; `scheduleCatchUp` swallows + logs.
    *
    * No body data, no PII, no message-derived state — this method only
    * speaks to BullMQ + `provider_sync_state` (privacy posture §2.1).
@@ -527,9 +527,9 @@ export class SyncService {
       endHistoryId: cursor,
     });
 
-    // Structured log so the cron path is observable in Cloud Logging
-    // without a separate metrics surface. `trigger` lets us distinguish
-    // user clicks from drift recovery.
+    // Structured log so every enqueue is observable in Cloud Logging
+    // without a separate metrics surface. `trigger` tells a "Sync now"
+    // click (`manual`) from a sign-in catch-up (`connect`).
     this.logger.log(
       JSON.stringify({
         kind: 'sync.manual_enqueue',
@@ -546,10 +546,11 @@ export class SyncService {
   }
 
   /**
-   * Drift sweep — for the cron in `apps/api/src/worker.ts`. Returns the
-   * list of mailbox ids that have a `last_history_id` AND haven't been
-   * advanced in `staleAfterMs`. The cron then walks each one through
-   * `enqueueManualIncrementalSync` with `trigger='cron'`.
+   * Drift sweep candidates: mailbox ids that have a `last_history_id` AND
+   * haven't been advanced in `staleAfterMs`. Has no caller today — the
+   * drift cron in `apps/api/src/worker.ts` selects and enqueues directly
+   * (`ensureIncrementalSyncJob`), so nothing passes `trigger='cron'`
+   * either. Left in place for the founder's dead-code sweep.
    *
    * Predicate (Drizzle SQL, see `provider_sync_state.history_id_updated_at`
    * idx D229): `last_history_id IS NOT NULL AND history_id_updated_at < now() - staleAfterMs`.

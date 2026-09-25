@@ -23,9 +23,10 @@ export const SENDERS_COUNTER_RECONCILIATION_JOB = 'senders-counter-reconciliatio
  * ADR-0014 §"Reconciliation & drift": "Frequency: nightly is the
  * default; tighter if drift trends above a TBD threshold." A nightly
  * cadence is the right tradeoff today: Path A (full rebuild) ALSO
- * closes drift on every full scan — a first connect, a reconnect after a
- * disconnect or a revoked grant, a failed-scan retry, and the
- * cursor-too-old recovery (a routine sign-in no longer re-scans) — so the
+ * closes drift on every full scan — a first connect, a sign-in before the
+ * first scan finished, a reconnect after a disconnect or a revoked grant,
+ * a failed-scan retry, and the cursor-too-old recovery (a sign-in of a
+ * synced mailbox no longer re-scans) — so the
  * reconciliation worker is the steady-state safety net rather than the
  * primary source of truth. Tighten via this constant if drift trends
  * surface a problem.
