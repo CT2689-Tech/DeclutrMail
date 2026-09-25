@@ -43,8 +43,6 @@ export async function syncFailedEmail(input: SyncFailedEmailInput): Promise<Rend
     'to reconnect Gmail or try the scan again:',
     retryUrl,
     '',
-    'If it fails again, reply to this email and a human will look.',
-    '',
     '— DeclutrMail',
     '',
     FOOTER,
@@ -67,12 +65,12 @@ export async function syncFailedEmail(input: SyncFailedEmailInput): Promise<Rend
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
         We will not retry on our own. When you are ready:
       </Text>
+      {/* No "reply to this email" line: sends carry no Reply-To until
+          EMAIL_REPLY_TO names a mailbox verified to receive, so a reply
+          would reach the sending domain's bounce handler, not a person. */}
       <Button href={retryUrl} style={CTA_BUTTON}>
         Resume your scan
       </Button>
-      <Text style={{ ...BODY_TEXT, margin: '26px 0 0' }}>
-        If it fails again, reply to this email and a human will look.
-      </Text>
     </Shell>,
   );
 
