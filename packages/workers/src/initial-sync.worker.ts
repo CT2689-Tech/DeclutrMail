@@ -1688,7 +1688,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
     await this.deps.db.transaction(async (tx) => {
       // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
-      // clears it — `markQueued` (a returning Google sign-in, a reconnect),
+      // clears it — `markQueued` (any connect that needs a scan, e.g. a reconnect),
       // the failed-scan retry and the cursor-too-old recovery all keep it —
       // so null means no scan has finished since this row was created: the
       // one case the "Your inbox is ready" email is for. The incremental

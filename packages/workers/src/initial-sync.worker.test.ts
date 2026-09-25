@@ -1774,8 +1774,8 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       (e) => e.topic === TOPICS.MAILBOX_SYNC_READY,
     );
     expect(readyEvents).toHaveLength(2); // legit re-sync re-publishes
-    // …but only the first says so: a returning sign-in's re-scan must not
-    // send a second "Your inbox is ready" (the email trigger reads this).
+    // …but only the first says so: a re-scan (a reconnect, a retry) must
+    // not send a second "Your inbox is ready" (the email trigger reads this).
     const flagOf = (e: (typeof readyEvents)[number]) =>
       (e.payload as { firstReady?: boolean }).firstReady;
     const [first] = readyEvents.filter((e) => firstRunEventIds.has(e.id));

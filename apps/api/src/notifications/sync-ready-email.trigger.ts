@@ -55,11 +55,12 @@ export type SyncReadyEmailHandler = (
 export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): SyncReadyEmailHandler {
   const appUrl = deps.appUrl.replace(/\/$/, '');
   return async function handleSyncReadyEmail(payload, eventId) {
-    // Once per mailbox. A returning Google sign-in re-queues a ready
-    // mailbox and its re-scan fires this event again; each one used to
-    // send another "Your inbox is ready" about an inbox the user already
-    // had — the kind of repeat notice recipients mark as spam. Absent
-    // flag = an event published before it existed: keep old behaviour.
+    // Once per mailbox. A re-scan of a mailbox that already finished one
+    // — a reconnect, a failed-scan retry, a cursor-too-old recovery —
+    // fires this event again; each used to send another "Your inbox is
+    // ready" about an inbox the user already had, the kind of repeat
+    // notice recipients mark as spam. Absent flag = an event published
+    // before it existed: keep old behaviour.
     if (payload.firstReady === false) {
       console.log(
         JSON.stringify({
