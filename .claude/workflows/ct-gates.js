@@ -1,4 +1,4 @@
-// gate-network — fan out the CLAUDE.md §7 gate agents across a diff.
+// ct-gates — fan out the CLAUDE.md §7 gate agents across a diff.
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
 // merge recommendation. Routing mirrors the §7 table exactly and each gate
@@ -15,12 +15,12 @@
 // findings, writes nothing, and posts nothing to GitHub.
 //
 // Usage:
-//   Workflow({ name: 'gate-network' })                        // origin/main...HEAD
-//   Workflow({ name: 'gate-network', args: { diffRef: 'abc123^..abc123' } })
-//   Workflow({ name: 'gate-network', args: { files: ['apps/api/src/...'] } })
+//   Workflow({ name: 'ct-gates' })                        // origin/main...HEAD
+//   Workflow({ name: 'ct-gates', args: { diffRef: 'abc123^..abc123' } })
+//   Workflow({ name: 'ct-gates', args: { files: ['apps/api/src/...'] } })
 
 export const meta = {
-  name: 'gate-network',
+  name: 'ct-gates',
   description: 'Run the applicable DeclutrMail gate agents over a diff, then adversarially verify every BLOCKING finding',
   whenToUse: 'Before recommending merge on a PR that touches more than one workspace package, or any PR touching Gmail data, migrations, or webhooks.',
   phases: [
@@ -110,7 +110,7 @@ if (typeof input === 'string') {
   try {
     input = JSON.parse(input)
   } catch {
-    throw new Error(`gate-network: args was an unparseable string: ${input.slice(0, 120)}`)
+    throw new Error(`ct-gates: args was an unparseable string: ${input.slice(0, 120)}`)
   }
 }
 
