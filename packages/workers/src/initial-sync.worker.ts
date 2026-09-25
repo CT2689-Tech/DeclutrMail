@@ -1581,7 +1581,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * exists iff the ready state committed). The consumer router seeds
    * the D101 Autopilot presets + enqueues the apply sweep off it. A
    * RESUMED sync that re-reaches ready publishes again — consumers are
-   * idempotent (seeder ON CONFLICT; apply job deduped per trigger).
+   * idempotent (seeder ON CONFLICT; apply job deduped per trigger). The
+   * one consumer that is NOT idempotent across events, the "Your inbox
+   * is ready" email, reads the event's `firstReady` flag instead.
    */
   private async markReady(
     mailboxAccountId: string,
@@ -1631,6 +1633,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           progressPct: 100,
           lastHistoryId,
           historyIdUpdatedAt: sql`now()`,
+          // Ready means stamped on both branches: the stamp is what tells
+          // the next ready that this is not the mailbox's first.
+          lastSyncedAt: sql`now()`,
         })
         .onConflictDoUpdate({
           target: providerSyncState.mailboxAccountId,
@@ -1682,14 +1687,21 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
-      // Read BEFORE the ready upsert stamps `last_synced_at`. `markQueued`
-      // (a returning Google sign-in) re-queues a ready mailbox but never
-      // clears it, so null here means no scan of this mailbox has ever
-      // finished — the one case the "Your inbox is ready" email is for.
+      // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
+      // clears it — `markQueued` (a returning Google sign-in, a reconnect),
+      // the failed-scan retry and the cursor-too-old recovery all keep it —
+      // so null means no scan has finished since this row was created: the
+      // one case the "Your inbox is ready" email is for. The incremental
+      // writer cannot stamp it first; its producers require `ready`.
+      //
+      // FOR UPDATE: two runs of one mailbox can overlap after a stall
+      // reclaim. Without the lock both read null and both send. The upsert
+      // takes this same row lock one statement later anyway.
       const [prior] = await tx
         .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
         .from(providerSyncState)
         .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update')
         .limit(1);
       const firstReady = (prior?.lastSyncedAt ?? null) === null;
       await readyUpsert(tx);

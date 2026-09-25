@@ -35,9 +35,12 @@ export const SYNC_REMINDER_DELAY_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * Sync-complete send — keyed on the OUTBOX EVENT id, not the mailbox:
- * the logical event is "this sync_ready event happened". A redelivered
- * event dedups; a genuinely new sync_ready for the same mailbox (e.g.
- * reconnect → fresh initial sync) sends again, which is correct.
+ * the logical event is "this sync_ready event happened", so a
+ * redelivered event dedups. Whether a NEW sync_ready for the same
+ * mailbox sends at all is decided upstream: only its first ready does
+ * (`firstReady`, see the sync-ready trigger). A reconnect, a sign-in
+ * re-scan, a failed-scan retry and a cursor-too-old recovery are all
+ * re-scans of an inbox the user already has, and send nothing.
  */
 export function syncCompleteEmailJobId(eventId: string): string {
   return `email__sync-complete__${eventId}`;
