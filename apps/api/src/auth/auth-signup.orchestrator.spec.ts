@@ -36,7 +36,11 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     findByProviderEmail: ReturnType<typeof vi.fn>;
     upsertConnect: ReturnType<typeof vi.fn>;
   };
-  let sync: { markQueued: ReturnType<typeof vi.fn>; schedule: ReturnType<typeof vi.fn> };
+  let sync: {
+    markConnected: ReturnType<typeof vi.fn>;
+    schedule: ReturnType<typeof vi.fn>;
+    scheduleCatchUp: ReturnType<typeof vi.fn>;
+  };
   let gmailWatch: { watchMailbox: ReturnType<typeof vi.fn> };
   let tokenCrypto: { encrypt: ReturnType<typeof vi.fn> };
   let sessions: { issue: ReturnType<typeof vi.fn> };
@@ -52,11 +56,12 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     };
     mailboxes = {
       findByProviderEmail: vi.fn(),
-      upsertConnect: vi.fn().mockResolvedValue({ id: 'mailbox-new' }),
+      upsertConnect: vi.fn().mockResolvedValue({ id: 'mailbox-new', wasActive: false }),
     };
     sync = {
-      markQueued: vi.fn().mockResolvedValue(undefined),
+      markConnected: vi.fn().mockResolvedValue('queued'),
       schedule: vi.fn().mockResolvedValue(undefined),
+      scheduleCatchUp: vi.fn().mockResolvedValue(undefined),
     };
     gmailWatch = { watchMailbox: vi.fn().mockResolvedValue('watched') };
     tokenCrypto = {
@@ -109,9 +114,10 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: 'w1', userId: 'u1' }),
     );
-    expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
-      freshCredentials: true,
+    expect(sync.markConnected).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+      wasActive: false,
     });
+    expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
     // Active mailbox set to the just-connected mailbox.
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
     // `users.watch` fires on connect/reconnect (D8/D225/D229).
@@ -378,6 +384,73 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     });
   });
 
+  /**
+   * A returning Google sign-in used to re-queue an already-synced mailbox
+   * and force a full scan — which re-scored every sender (6,022 Haiku
+   * calls for one mailbox on 2026-09-24). `markConnected` now decides;
+   * the orchestrator only schedules what it decided.
+   */
+  describe('sync after connect — a synced mailbox stays synced', () => {
+    it('sign-in to an already-synced mailbox: catch-up only, no scan', async () => {
+      users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+      mailboxes.upsertConnect.mockResolvedValue({ id: 'mailbox-new', wasActive: true });
+      sync.markConnected.mockResolvedValue('kept_ready');
+
+      await orchestrator.connect(INPUT);
+
+      expect(sync.markConnected).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        wasActive: true,
+      });
+      expect(sync.schedule).not.toHaveBeenCalled();
+      expect(sync.scheduleCatchUp).toHaveBeenCalledWith('mailbox-new');
+      // The fresh token still renews the Gmail watch and the session lands
+      // on this mailbox.
+      expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
+      expect(users.patchPreferences).toHaveBeenCalledWith('u1', { activeMailboxId: 'mailbox-new' });
+    });
+
+    it('sign-in that needs a scan (revoked grant, failed first scan): full scan, no catch-up', async () => {
+      users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+      mailboxes.upsertConnect.mockResolvedValue({ id: 'mailbox-new', wasActive: true });
+      sync.markConnected.mockResolvedValue('queued');
+
+      await orchestrator.connect(INPUT);
+
+      expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
+      expect(sync.scheduleCatchUp).not.toHaveBeenCalled();
+    });
+
+    it('a brand-new signup goes through the same decision and gets its scan', async () => {
+      users.findByEmail.mockResolvedValue(null);
+      mailboxes.findByProviderEmail.mockResolvedValue(null);
+      users.insertWorkspaceAndUser.mockResolvedValue({ userId: 'u-new', workspaceId: 'w-new' });
+
+      await orchestrator.connect(INPUT);
+
+      expect(sync.markConnected).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        wasActive: false,
+      });
+      expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
+      expect(sync.scheduleCatchUp).not.toHaveBeenCalled();
+    });
+
+    it('connect-mailbox for an already-synced mailbox: catch-up only, no scan', async () => {
+      mailboxes.upsertConnect.mockResolvedValue({ id: 'mailbox-new', wasActive: true });
+      sync.markConnected.mockResolvedValue('kept_ready');
+
+      await orchestrator.addMailbox({
+        currentUserId: 'u-owner',
+        currentWorkspaceId: 'w-home',
+        email: 'second@example.com',
+        refreshToken: 'rt2',
+      });
+
+      expect(sync.schedule).not.toHaveBeenCalled();
+      expect(sync.scheduleCatchUp).toHaveBeenCalledWith('mailbox-new');
+      expect(gmailWatch.watchMailbox).toHaveBeenCalledWith('mailbox-new');
+    });
+  });
+
   describe('addMailbox — connect a secondary mailbox to the current workspace', () => {
     const ADD_INPUT = {
       currentUserId: 'u-owner',
@@ -394,8 +467,8 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
         expect.anything(),
         expect.objectContaining({ workspaceId: 'w-home', userId: 'u-owner' }),
       );
-      expect(sync.markQueued).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
-        freshCredentials: true,
+      expect(sync.markConnected).toHaveBeenCalledWith(expect.anything(), 'mailbox-new', {
+        wasActive: false,
       });
       // force-replace any stale pre-reconnect job (fresh token just stored).
       expect(sync.schedule).toHaveBeenCalledWith('mailbox-new', { force: true });
