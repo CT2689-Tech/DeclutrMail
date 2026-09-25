@@ -74,7 +74,7 @@ import type {
 import { createKmsProvider } from '../src/adapters/gcp-kms/kms-provider.factory.js';
 import { toSessionPoolUrl } from '../src/db/session-pool-url.js';
 import { TokenCryptoService } from '../src/auth/token-crypto.service.js';
-import { GmailClientService } from '../src/gmail/gmail-client.service.js';
+import { GmailClientService, parseGmailQuotaMetric } from '../src/gmail/gmail-client.service.js';
 import { buildOutboxConsumer } from '../src/outbox/outbox-consumer-router.js';
 
 const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
@@ -186,8 +186,13 @@ async function main(): Promise<void> {
       limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
-    return new GmailClientService(oauth, limiter, ({ reason }) =>
-      log('oauth_refresh_failed', { reason, mailboxAccountId }),
+    return new GmailClientService(
+      oauth,
+      limiter,
+      ({ reason }) => log('oauth_refresh_failed', { reason, mailboxAccountId }),
+      // Same pairing rule as worker.ts: price reads on the metric the
+      // budget above is measured against.
+      parseGmailQuotaMetric(process.env.GMAIL_QUOTA_METRIC),
     );
   };
   const gmailMutationAccess: GmailMutationAccess = { getClient: getGmailClient };

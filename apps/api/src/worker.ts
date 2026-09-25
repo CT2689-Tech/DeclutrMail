@@ -189,7 +189,7 @@ import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
-import { GmailClientService } from './gmail/gmail-client.service.js';
+import { GmailClientService, parseGmailQuotaMetric } from './gmail/gmail-client.service.js';
 import {
   deletionReceiptEmail,
   lapseReengagementEmail,
@@ -229,9 +229,14 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  * Gmail quota throttle (D5). Newer projects get 6,000 units/user/minute;
  * default to 4,800 (20% headroom). The production project retains a
  * 15,000-unit legacy ceiling, so its deploy manifest sets this to 12,000.
- * Each Gmail method still reserves its current published cost. One limiter
- * per mailbox.
+ * One limiter per mailbox.
+ *
+ * The budget and the per-method costs must come from the SAME quota
+ * metric: `GMAIL_QUOTA_METRIC` names the one that enforces this project's
+ * per-user limit (see `GmailQuotaMetric`). The production manifest sets
+ * `gmail.googleapis.com/default`, where `messages.get` costs 5 units.
  */
+const GMAIL_QUOTA_METRIC = parseGmailQuotaMetric(process.env.GMAIL_QUOTA_METRIC);
 const configuredGmailQuotaUnits = process.env.GMAIL_QUOTA_UNITS_PER_MIN;
 const GMAIL_QUOTA_UNITS_PER_MIN = configuredGmailQuotaUnits
   ? Number(configuredGmailQuotaUnits)
@@ -798,22 +803,27 @@ async function bootstrap(): Promise<void> {
     // D181: close over the mailbox row's workspace/user so the audit
     // emit carries the operator-useful identifiers. Fire-and-forget —
     // a failed insert never alters the original token-swap throw.
-    return new GmailClientService(oauth, limiter, ({ reason }) => {
-      void securityEvents.record({
-        eventType: 'oauth.refresh_failed',
-        // `invalid_grant` means the mailbox needs reconnect (a real
-        // operator signal); transient failures are routine retries and
-        // stay at `info`.
-        severity: reason === 'invalid_grant' ? 'warning' : 'info',
-        workspaceId: account.workspaceId,
-        userId: account.userId,
-        payload: {
-          provider: 'google',
-          reason,
-          mailboxAccountId,
-        },
-      });
-    });
+    return new GmailClientService(
+      oauth,
+      limiter,
+      ({ reason }) => {
+        void securityEvents.record({
+          eventType: 'oauth.refresh_failed',
+          // `invalid_grant` means the mailbox needs reconnect (a real
+          // operator signal); transient failures are routine retries and
+          // stay at `info`.
+          severity: reason === 'invalid_grant' ? 'warning' : 'info',
+          workspaceId: account.workspaceId,
+          userId: account.userId,
+          payload: {
+            provider: 'google',
+            reason,
+            mailboxAccountId,
+          },
+        });
+      },
+      GMAIL_QUOTA_METRIC,
+    );
   };
   const gmailAccess: GmailAccess = { getClient: getGmailClient };
   const gmailMutationAccess: GmailMutationAccess = { getClient: getGmailClient };

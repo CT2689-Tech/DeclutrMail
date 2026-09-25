@@ -41,10 +41,11 @@ import type {
  * never read the response body, so they are body-free by construction.
  * Enforced by `privacy-auditor`.
  *
- * QUOTA — D5. Reserve the documented cost of each Gmail API method before
- * calling it. In particular, messages.get now costs 20 units, and
- * messages.batchModify costs 50; charging every request 5 units makes a
- * large mailbox outpace Google's per-user budget. A 403 "Quota exceeded" (Gmail's
+ * QUOTA — D5. Reserve each Gmail API method's cost on the quota metric
+ * that enforces this project's per-user limit (`GmailQuotaMetric`) before
+ * calling it. messages.batchModify costs 50 on both metrics; charging
+ * every request 5 units makes a large mailbox outpace Google's per-user
+ * budget. A 403 "Quota exceeded" (Gmail's
  * rate-limit signal — it is NOT always a 429) is classified as
  * `RateLimitError` so the worker treats it as retryable throttling, not
  * a generic fault.
@@ -66,19 +67,73 @@ const GMAIL_API_BASE = 'https://gmail.googleapis.com/gmail/v1/users/me';
 const GOOGLE_OAUTH_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 const PAGE_SIZE = 500;
 const REQUEST_TIMEOUT_MS = 30_000;
-/** Gmail API method costs (2026-09-10 quota table, D5). */
-const QUOTA_UNITS = {
-  profile: 1,
-  historyList: 2,
-  labelsList: 1,
-  labelsCreate: 5,
-  messagesList: 5,
-  messagesGet: 20,
-  messagesModify: 5,
-  messagesBatchModify: 50,
-  watch: 100,
-  stop: 50,
-} as const;
+/**
+ * The quota metric that enforces this project's per-user Gmail limit (D5).
+ *
+ * Google meters every Gmail call on two metrics at once, and they price
+ * `messages.get` differently:
+ *   - `gmail.googleapis.com/default` — the original metric; `messages.get`
+ *     costs 5 units. Projects that used the Gmail API between November
+ *     2025 and April 2026 keep their per-user limit here
+ *     (`declutrmail-ai-prod`: 15,000 units/user/minute).
+ *   - `gmail.googleapis.com/total_query_cost` — the 2026-09-10 quota
+ *     table; `messages.get` costs 20 units. Projects created on or after
+ *     2026-05-01 get 6,000 units/user/minute here. On a grandfathered
+ *     project this metric's limit is unlimited.
+ *
+ * Measured on `declutrmail-ai-prod` 2026-09-25 from Cloud Monitoring
+ * `serviceruntime.googleapis.com/quota/rate/net_usage`: 6,000
+ * `GetMessage` calls per 10 minutes drew 30,000 units on `default` and
+ * 120,000 on `total_query_cost`, and the Service Usage API reported the
+ * per-user limits as 15,000 and unlimited respectively. Charging the
+ * newer metric's 20 units against the older metric's budget throttled
+ * production sync to a quarter of its real ceiling.
+ */
+export type GmailQuotaMetric =
+  'gmail.googleapis.com/default' | 'gmail.googleapis.com/total_query_cost';
+
+export const GMAIL_QUOTA_METRICS: readonly GmailQuotaMetric[] = [
+  'gmail.googleapis.com/default',
+  'gmail.googleapis.com/total_query_cost',
+];
+
+/**
+ * Units each method draws from `metric`. Every other method costs the
+ * same on both metrics — verified for the ones production calls
+ * (profile, history, labels, messages.list, batchModify, watch) from
+ * 30 days of the same Cloud Monitoring data.
+ */
+function quotaUnitsFor(metric: GmailQuotaMetric) {
+  return {
+    profile: 1,
+    historyList: 2,
+    labelsList: 1,
+    labelsCreate: 5,
+    messagesList: 5,
+    messagesGet: metric === 'gmail.googleapis.com/default' ? 5 : 20,
+    messagesModify: 5,
+    messagesBatchModify: 50,
+    watch: 100,
+    stop: 50,
+  } as const;
+}
+type QuotaUnits = ReturnType<typeof quotaUnitsFor>;
+
+/**
+ * Parse `GMAIL_QUOTA_METRIC`. Unset means the newer metric — the correct
+ * pricing for any project created on or after 2026-05-01, and the slower,
+ * safe choice where the project is unknown. Anything else throws, so a
+ * typo fails the boot instead of silently picking a pace.
+ */
+export function parseGmailQuotaMetric(raw: string | undefined): GmailQuotaMetric {
+  if (raw === undefined || raw === '') return 'gmail.googleapis.com/total_query_cost';
+  const match = GMAIL_QUOTA_METRICS.find((metric) => metric === raw);
+  if (!match) {
+    throw new Error(`GMAIL_QUOTA_METRIC must be one of ${GMAIL_QUOTA_METRICS.join(', ')}`);
+  }
+  return match;
+}
+
 /** Gmail caps `messages.batchModify` at 1000 ids per request. */
 const BATCH_MODIFY_MAX_IDS = 1000;
 
@@ -229,6 +284,9 @@ export class GmailClientService
     return this.unreadableMessageIds.size;
   }
 
+  /** Per-method units drawn from the limiter, priced on the enforcing metric. */
+  private readonly quotaUnits: QuotaUnits;
+
   constructor(
     private readonly oauth: OAuth2Client,
     // The INTERFACE, not the class. `RateLimiter` satisfies it
@@ -238,8 +296,10 @@ export class GmailClientService
     // never cared about anything except `acquire(units)`.
     private readonly limiter: GmailQuotaLimiter,
     onRefreshFailed?: OauthRefreshFailureRecorder,
+    quotaMetric: GmailQuotaMetric = 'gmail.googleapis.com/total_query_cost',
   ) {
     this.onRefreshFailed = onRefreshFailed;
+    this.quotaUnits = quotaUnitsFor(quotaMetric);
   }
 
   /** Page through every message id in the mailbox (ids only — no bodies). */
@@ -251,7 +311,7 @@ export class GmailClientService
     const json = await this.get<GmailListResponse>(
       `/messages?${params.toString()}`,
       false,
-      QUOTA_UNITS.messagesList,
+      this.quotaUnits.messagesList,
       signal,
     );
     const ids = (json?.messages ?? [])
@@ -279,7 +339,7 @@ export class GmailClientService
       json = await this.get<GmailGetResponse>(
         `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
         true,
-        QUOTA_UNITS.messagesGet,
+        this.quotaUnits.messagesGet,
         signal,
       );
     } catch (err) {
@@ -367,7 +427,7 @@ export class GmailClientService
     const json = await this.get<GmailGetResponse>(
       `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
       true,
-      QUOTA_UNITS.messagesGet,
+      this.quotaUnits.messagesGet,
       signal,
     );
     if (json === null) return null;
@@ -383,7 +443,7 @@ export class GmailClientService
     const json = await this.get<GmailProfileResponse>(
       '/profile',
       false,
-      QUOTA_UNITS.profile,
+      this.quotaUnits.profile,
       signal,
     );
     if (!json?.historyId) {
@@ -420,7 +480,7 @@ export class GmailClientService
     const json = await this.get<GmailHistoryResponse>(
       `/history?${params.toString()}`,
       true,
-      QUOTA_UNITS.historyList,
+      this.quotaUnits.historyList,
       signal,
     );
     if (json === null) {
@@ -657,7 +717,7 @@ export class GmailClientService
         addLabelIds: change.addLabelIds ?? [],
         removeLabelIds: change.removeLabelIds ?? [],
       },
-      QUOTA_UNITS.messagesModify,
+      this.quotaUnits.messagesModify,
     );
   }
 
@@ -676,7 +736,7 @@ export class GmailClientService
       await this.post(
         '/messages/batchModify',
         { ids, addLabelIds, removeLabelIds },
-        QUOTA_UNITS.messagesBatchModify,
+        this.quotaUnits.messagesBatchModify,
       );
     }
   }
@@ -700,7 +760,7 @@ export class GmailClientService
     const listed = await this.get<GmailLabelsListResponse>(
       '/labels',
       false,
-      QUOTA_UNITS.labelsList,
+      this.quotaUnits.labelsList,
     );
     return (listed?.labels ?? []).flatMap((label) =>
       label.id && label.name ? [{ id: label.id, name: label.name }] : [],
@@ -717,7 +777,7 @@ export class GmailClientService
     const listed = await this.get<GmailLabelsListResponse>(
       '/labels',
       false,
-      QUOTA_UNITS.labelsList,
+      this.quotaUnits.labelsList,
     );
     const match = (listed?.labels ?? []).find((label) => label.name === name);
     if (!match?.id) return null;
@@ -746,7 +806,7 @@ export class GmailClientService
         labelListVisibility: 'labelShow',
         messageListVisibility: 'show',
       },
-      QUOTA_UNITS.labelsCreate,
+      this.quotaUnits.labelsCreate,
     );
     if (!created.id) {
       throw new TransientError('Gmail labels.create response missing id');
@@ -785,7 +845,7 @@ export class GmailClientService
         labelIds: ['INBOX'],
         labelFilterBehavior: 'include',
       },
-      QUOTA_UNITS.watch,
+      this.quotaUnits.watch,
     );
     if (!json.historyId || !json.expiration) {
       throw new TransientError('Gmail watch response missing historyId/expiration');
@@ -804,7 +864,7 @@ export class GmailClientService
    * with no active watch is a 204 no-op at Gmail.
    */
   async stopWatch(): Promise<void> {
-    await this.post('/stop', {}, QUOTA_UNITS.stop);
+    await this.post('/stop', {}, this.quotaUnits.stop);
   }
 
   /**

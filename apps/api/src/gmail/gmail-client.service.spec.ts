@@ -219,35 +219,50 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 
-  it('reserves each Gmail method’s actual quota cost before making its request', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonOk({ messages: [] }))
-      .mockResolvedValueOnce(jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }))
-      .mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['INBOX'] }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '123' }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '124' }))
-      .mockResolvedValueOnce(jsonOk({ labels: [] }))
-      .mockResolvedValueOnce(jsonOk({ labels: [] }))
-      .mockResolvedValueOnce(jsonOk({ id: 'Label_1' }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '125', expiration: '1900000000000' }))
-      .mockResolvedValueOnce(jsonOk({}));
-    const client = new GmailClientService(oauth, limiter);
+  // Only `messages.get` (the two get* calls) is priced differently: 5 units
+  // on the grandfathered `default` metric, 20 on `total_query_cost`.
+  it.each([
+    ['unset (total_query_cost)', undefined, [5, 20, 20, 1, 2, 1, 1, 5, 100, 50]],
+    [
+      'gmail.googleapis.com/total_query_cost',
+      'gmail.googleapis.com/total_query_cost' as const,
+      [5, 20, 20, 1, 2, 1, 1, 5, 100, 50],
+    ],
+    [
+      'gmail.googleapis.com/default',
+      'gmail.googleapis.com/default' as const,
+      [5, 5, 5, 1, 2, 1, 1, 5, 100, 50],
+    ],
+  ])(
+    'reserves each method’s cost on the %s metric before making its request',
+    async (_label, metric, expectedUnits) => {
+      fetchMock
+        .mockResolvedValueOnce(jsonOk({ messages: [] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }))
+        .mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['INBOX'] }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '123' }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '124' }))
+        .mockResolvedValueOnce(jsonOk({ labels: [] }))
+        .mockResolvedValueOnce(jsonOk({ labels: [] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'Label_1' }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '125', expiration: '1900000000000' }))
+        .mockResolvedValueOnce(jsonOk({}));
+      const client = new GmailClientService(oauth, limiter, undefined, metric);
 
-    await client.listMessageIds();
-    await client.getMessageMetadata('m1');
-    await client.getMessageLabelIds('m1');
-    await client.getProfile();
-    await client.listHistory('123');
-    await client.listLabels();
-    await client.ensureLabelId('DeclutrMail/Test');
-    await client.watch('projects/test/topics/gmail');
-    await client.stopWatch();
+      await client.listMessageIds();
+      await client.getMessageMetadata('m1');
+      await client.getMessageLabelIds('m1');
+      await client.getProfile();
+      await client.listHistory('123');
+      await client.listLabels();
+      await client.ensureLabelId('DeclutrMail/Test');
+      await client.watch('projects/test/topics/gmail');
+      await client.stopWatch();
 
-    expect(acquireSpy.mock.calls.map(([units]) => units)).toEqual([
-      5, 20, 20, 1, 2, 1, 1, 5, 100, 50,
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
-  });
+      expect(acquireSpy.mock.calls.map(([units]) => units)).toEqual(expectedUnits);
+      expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
+    },
+  );
 
   describe('getMessageLabelIds', () => {
     it('requests only a minimal id + labelIds response', async () => {
