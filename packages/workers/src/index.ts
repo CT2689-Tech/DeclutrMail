@@ -43,6 +43,7 @@ export {
   perMailboxWorkerSettings,
 } from './rate-limit-backoff.js';
 export {
+  addCoalescedJob,
   createRedisConnection,
   createRedisProducerConnection,
   ensureIncrementalSyncJob,
@@ -55,7 +56,7 @@ export {
   initialSyncJobOptions,
   workerTuningOptions,
 } from './queue.js';
-export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
+export type { CoalescedJobOptions, IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {
   GmailAccess,
   GmailGrantClient,
@@ -235,6 +236,7 @@ export {
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   autopilotActionJobOptions,
+  autopilotActionSweepJobOptions,
   AutopilotActionWorker,
   isQuietStateActive,
 } from './autopilot-action.worker.js';
