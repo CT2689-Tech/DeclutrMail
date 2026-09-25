@@ -617,11 +617,14 @@ describe('ScoreWorker — LLM port', () => {
     // Run 2 (re-score, same signals → same verdict, row unexpired) —
     // the reasoning is reused, no second bill; the row still refreshes
     // (produced_at advances via the monotonic upsert).
-    await worker.processJob(
+    const second = await worker.processJob(
       { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: T0 + 60_000 },
       FAKE_CTX,
     );
     expect(calls).toBe(1);
+    // What the run bought vs what the user sees: reused prose is still
+    // LLM prose, but it cost nothing.
+    expect(second).toMatchObject({ llmExplanations: 1, llmCalls: 0, llmReused: 1 });
 
     const [row] = await db
       .select()
@@ -630,6 +633,42 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.reasoning).toBe('LLM prose #1');
     expect(row?.generatedBy).toBe('llm_haiku');
     expect(Number(row?.producedAt)).toBe(T0 + 60_000);
+  });
+
+  it('reports llmCalls and llmReused on worker.succeeded — the allowlist drops silently', async () => {
+    // `SAFE_WORKER_RESULT_KEYS` is a denylist by omission: a counter missing
+    // from it vanishes from the ops line with no error anywhere, and these
+    // two are how a re-scan's Haiku spend is read back from the logs.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'logged@test.test', {
+      gmailCategory: 'primary',
+    });
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Stays in Primary and gets marked read.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await worker.run({
+        id: 'job-1',
+        data: {
+          mailboxAccountId,
+          senderKey,
+          trigger: 'sync_complete',
+          producedAtMs: Date.parse('2026-05-22T00:00:00Z'),
+        },
+        attemptsMade: 0,
+        queueName: 'score',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind: string; result?: unknown })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ llmCalls: 1, llmReused: 0, llmExplanations: 1 });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('does NOT reuse stored LLM reasoning that runs past the word ceiling', async () => {
