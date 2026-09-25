@@ -100,8 +100,10 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
-    // No time promise (D109 hard rule).
-    expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    // No time promise (D109 hard rule) — in either leave-line variant.
+    for (const variant of [html, renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />)]) {
+      expect(variant).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    }
   });
 
   it('a non-finite percentage renders an empty bar, never NaN', () => {
@@ -136,6 +138,14 @@ describe('SyncGate render', () => {
       expect(html).toContain('You can close this tab');
       expect(html).not.toMatch(/email you/i);
     }
+  });
+
+  it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
+    const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
+    expect(html).toContain('Your inbox is ready.');
+    expect(html).not.toContain('Reading your inbox');
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
   });
 
   it('failed: the leave line gives way to cause + next action', () => {
@@ -203,8 +213,13 @@ describe('SyncGate render', () => {
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
-    const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    expect(html).not.toMatch(/\bScreen\b/);
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />),
+      renderToStaticMarkup(<SyncGate status={READY} readyEmail />),
+    ]) {
+      expect(html).not.toMatch(/\bScreen\b/);
+    }
   });
 });
 

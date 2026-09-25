@@ -6,10 +6,12 @@
 // the real imports when the seed lands; the story shapes don't change.
 //
 // Variants (D210 + D211/D212 edge-state coverage):
-//   • Queued   — sync just enqueued, 0%
-//   • Syncing  — mid-scan, progress bar + active stage
-//   • Ready    — all stages complete (the route auto-advances here)
-//   • Failed   — terminal error with a known error_code
+//   • Queued               — sync just enqueued, 0%
+//   • Syncing              — mid-scan; the "we'll email you" leave line
+//   • SyncingReadyEmailOff — mid-scan; leave line without the email promise
+//   • Ready                — scan done, shown until the route navigates away
+//   • Failed               — terminal error with a known error_code
+//   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -39,7 +41,7 @@ const meta: StoryMeta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. Progress bar + 6-stage indicator are driven by real backend state (no fake ticking). The shared PrivacyBadge and explicit storage list are always present.',
+          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email is switched on), one progress bar and one stage sentence, both from real backend state. No privacy badge on this screen — it sits on the promise step, at the decision point.',
       },
     },
   },
@@ -85,7 +87,7 @@ const FAILED: SyncStatus = {
 
 /** Queued — scan enqueued, progress at 0. */
 export const Queued: Story<typeof SyncGate> = {
-  args: { status: QUEUED },
+  args: { status: QUEUED, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
@@ -104,9 +106,9 @@ export const SyncingReadyEmailOff: Story<typeof SyncGate> = {
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
-/** Ready — every stage complete (the route auto-advances to /triage). */
+/** Ready — shown only until the route navigates to the next step. */
 export const Ready: Story<typeof SyncGate> = {
-  args: { status: READY },
+  args: { status: READY, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
@@ -125,6 +127,7 @@ export const Failed: Story<typeof SyncGate> = {
 export const SyncingSecondary: Story<typeof SyncGate> = {
   args: {
     status: SYNCING,
+    readyEmail: true,
     escape: { returnToEmail: 'primary@example.com', onReturn: () => {} },
   },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),

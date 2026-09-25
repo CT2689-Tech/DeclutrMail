@@ -6,7 +6,11 @@ import { Button, ToastHost, toast, tokens } from '@declutrmail/shared';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
-import { SyncGate, type SyncGateEscape } from '@/features/onboarding/sync-gate';
+import {
+  ESCAPE_BUTTON_STYLE,
+  SyncGate,
+  type SyncGateEscape,
+} from '@/features/onboarding/sync-gate';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useSyncReadyEmail } from '@/features/onboarding/api/use-sync-ready-email';
 import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
@@ -139,7 +143,9 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
     if (me.isPending) return <FlowSkeleton label="Checking your session…" />;
     return (
       <FlowError
-        message="We couldn't load your account. This is usually a brief connection problem — we're retrying automatically."
+        title="We couldn't load your account."
+        // True: useMe keeps polling while the read is in error.
+        detail="We're retrying automatically."
         onRetry={() => void me.refetch()}
       />
     );
@@ -243,7 +249,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       case 'error':
         return (
           <FlowError
-            message={
+            title={
               step.error instanceof ApiError
                 ? `We couldn't load your onboarding state (${step.error.status}).`
                 : "We couldn't load your onboarding state."
@@ -260,7 +266,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         if (sync.isError) {
           return (
             <FlowError
-              message="We couldn't check your inbox scan. Try checking again."
+              title="We couldn't check your inbox scan."
               onRetry={() => void sync.refetch()}
             />
           );
@@ -402,7 +408,7 @@ function SecondaryConnectGate({
   if (sync.isError && !trapped) {
     return (
       <FlowError
-        message="We couldn't check your inbox scan. Try checking again."
+        title="We couldn't check your inbox scan."
         onRetry={() => void sync.refetch()}
         escape={escape}
       />
@@ -494,12 +500,19 @@ function FlowSkeleton({ label }: { label: string }) {
   );
 }
 
+/**
+ * The cause as the title, an optional detail, "Try again" as the next
+ * action. (It used to title every failure "Something went wrong." over a
+ * body that repeated the button.)
+ */
 function FlowError({
-  message,
+  title,
+  detail,
   onRetry,
   escape,
 }: {
-  message: string;
+  title: string;
+  detail?: string | undefined;
   onRetry: () => void;
   escape?: SyncGateEscape | undefined;
 }) {
@@ -518,8 +531,12 @@ function FlowError({
         textAlign: 'center',
       }}
     >
-      <h1 style={{ fontSize: text.xl, margin: 0 }}>Something went wrong.</h1>
-      <p style={{ color: color.fgMuted, fontSize: text.md, margin: 0, maxWidth: 420 }}>{message}</p>
+      <h1 style={{ fontSize: text.xl, margin: 0, maxWidth: 420 }}>{title}</h1>
+      {detail && (
+        <p style={{ color: color.fgMuted, fontSize: text.md, margin: 0, maxWidth: 420 }}>
+          {detail}
+        </p>
+      )}
       <button
         type="button"
         onClick={onRetry}
@@ -537,8 +554,13 @@ function FlowError({
         Try again
       </button>
       {escape && (
-        <Button tone="ghost" disabled={escape.returning ?? false} onClick={escape.onReturn}>
-          Return to {escape.returnToEmail}
+        <Button
+          tone="ghost"
+          disabled={escape.returning ?? false}
+          onClick={escape.onReturn}
+          style={ESCAPE_BUTTON_STYLE}
+        >
+          Go back to {escape.returnToEmail}
         </Button>
       )}
     </main>

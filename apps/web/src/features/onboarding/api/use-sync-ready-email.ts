@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import type { MeSettings } from '@declutrmail/shared/contracts';
 
-import { apiGet } from '@/lib/api/client';
+import { readMeSettings } from '@/features/settings/api/me-settings-reader';
 import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
 
 /**
@@ -13,12 +12,12 @@ import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
  * Unknown (loading or failed) reads as false, so the gate falls back to a
  * sentence that is true without the email.
  *
- * Reads through the shared query options rather than `useMeSettings`, which
- * imports the Triage store and would ship it in the onboarding bundle.
+ * Reads through the shared query options and reader rather than
+ * `useMeSettings`, which imports the Triage store and would ship it in the
+ * onboarding bundle. The onboarding server boundary seeds the same query,
+ * so the gate's first render already knows the answer.
  */
 export function useSyncReadyEmail(): boolean {
-  const settings = useQuery(
-    meSettingsQueryOptions(async () => (await apiGet<MeSettings>('/api/me/settings')).data),
-  );
+  const settings = useQuery(meSettingsQueryOptions(readMeSettings));
   return settings.data?.emailPrefs?.syncComplete === true;
 }

@@ -103,6 +103,21 @@ const ERROR_COPY: Record<string, string> = {
 };
 
 /**
+ * "Go back to <address>" can run past a phone-width card: Button is
+ * nowrap at a fixed height, and an address has no spaces to break on.
+ * Let this one label wrap, anywhere, at the default button's height.
+ */
+export const ESCAPE_BUTTON_STYLE = {
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+  height: 'auto',
+  minHeight: 36,
+  paddingBlock: 8,
+  maxWidth: '100%',
+  textAlign: 'center',
+} as const;
+
+/**
  * Escape-hatch wiring for a SECONDARY-mailbox sync (D116). The route
  * passes this only when there's another active mailbox to return to;
  * the first-run gate omits it, preserving the strict single-mailbox
@@ -122,11 +137,13 @@ export interface SyncGateEscape {
  * may leave. The email clause is stated only when the "Your inbox is
  * ready" email will actually go — `emailPrefs.syncComplete` is the
  * send-time switch, and unsubscribing from all mail turns it off too.
+ * (D109's "This is a one-time scan." is gone: a reconnect or a retry
+ * re-runs the scan, and nobody acts on the sentence.)
  */
 function leaveSentence(readyEmail: boolean): string {
   return readyEmail
-    ? 'This is a one-time scan. You can close this tab — we’ll email you when your inbox is ready.'
-    : 'This is a one-time scan. You can close this tab and come back later.';
+    ? 'You can close this tab — we’ll email you when your inbox is ready.'
+    : 'You can close this tab and come back later.';
 }
 
 export function SyncGate({
@@ -170,22 +187,30 @@ function SyncProgress({
   const pct = Number.isFinite(status.progress_pct)
     ? Math.min(100, Math.max(0, status.progress_pct))
     : 0;
+  // `ready` renders only until the route navigates away (the secondary
+  // gate's effect-driven replace). Say so plainly — no "Reading…" title
+  // over a finished scan, and no "close this tab" once there is nothing
+  // left to wait for.
+  const ready = status.readiness_status === 'ready';
 
   return (
     <Shell>
-      <h1 style={titleStyle}>Reading your inbox…</h1>
-      <p
-        data-testid="sync-leave"
-        style={{
-          color: color.fgMuted,
-          fontSize: text.base,
-          lineHeight: 1.5,
-          maxWidth: 400,
-          margin: '10px 0 0',
-        }}
-      >
-        {leaveSentence(readyEmail)}
-      </p>
+      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your inbox…'}</h1>
+      {!ready && (
+        // Same sub-line treatment as StepShell on the sibling steps.
+        <p
+          data-testid="sync-leave"
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            maxWidth: 460,
+            margin: '14px 0 0',
+          }}
+        >
+          {leaveSentence(readyEmail)}
+        </p>
+      )}
 
       {/* Progress bar — width is the real progress_pct. */}
       <div
@@ -215,26 +240,33 @@ function SyncProgress({
         />
       </div>
 
-      {/* The real current_stage, as one sentence. */}
-      <p
-        role="status"
-        data-testid="sync-stage"
-        style={{
-          color: color.fgMuted,
-          fontSize: text.lg,
-          lineHeight: 1.45,
-          margin: '16px 0 0',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {stageSentence(status)}
-      </p>
+      {/* The real current_stage, as one sentence. Ready says it in the title. */}
+      {!ready && (
+        <p
+          role="status"
+          data-testid="sync-stage"
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '16px 0 0',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {stageSentence(status)}
+        </p>
+      )}
 
       {/* The secondary keeps syncing in the background after the hop; the
           account-switcher badge + ready-toast (D116) announce completion. */}
       {escape && (
         <div style={{ marginTop: 24 }}>
-          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+          <Button
+            tone="ghost"
+            onClick={escape.onReturn}
+            disabled={escape.returning ?? false}
+            style={ESCAPE_BUTTON_STYLE}
+          >
             {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
           </Button>
         </div>
@@ -313,7 +345,12 @@ function SyncFailed({
         {/* Don't strand a secondary connect on a failed gate — let them
             hop back to their (working) primary mailbox (D116). */}
         {escape && (
-          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+          <Button
+            tone="ghost"
+            onClick={escape.onReturn}
+            disabled={escape.returning ?? false}
+            style={ESCAPE_BUTTON_STYLE}
+          >
             {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
           </Button>
         )}

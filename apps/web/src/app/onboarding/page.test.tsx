@@ -419,6 +419,29 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
 
+  it('the secondary gate passes the ready-email setting through too (D109)', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    installFetchStub([
+      secondaryMe(),
+      syncStatus(false),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () =>
+          jsonOk({
+            data: { emailPrefs: { syncComplete: true, reminders: true, weeklyReceipt: false } },
+          }),
+      },
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /You can close this tab — we’ll email you when your inbox is ready\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the normal secondary-connect ready exit on /home', async () => {
     searchParams = new URLSearchParams({ mailbox: 'mb2' });
     installFetchStub([secondaryMe(), syncStatus(true)]);
@@ -510,7 +533,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check your inbox scan. Try checking again.");
+      await screen.findByText("We couldn't check your inbox scan.");
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -539,7 +562,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check your inbox scan. Try checking again.");
+    await screen.findByText("We couldn't check your inbox scan.");
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });
