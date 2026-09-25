@@ -89,9 +89,18 @@ export const Queued: Story<typeof SyncGate> = {
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
-/** Syncing — mid-scan with the active stage highlighted. */
+/**
+ * Syncing — mid-scan. The user has the "Your inbox is ready" email on, so
+ * the line under the title says they may leave and will get it (D109).
+ */
 export const Syncing: Story<typeof SyncGate> = {
-  args: { status: SYNCING },
+  args: { status: SYNCING, readyEmail: true },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Syncing, ready email switched off — the leave line makes no email promise. */
+export const SyncingReadyEmailOff: Story<typeof SyncGate> = {
+  args: { status: SYNCING, readyEmail: false },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 

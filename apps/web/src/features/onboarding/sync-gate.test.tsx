@@ -124,6 +124,26 @@ describe('SyncGate render', () => {
     vi.unstubAllGlobals();
   });
 
+  it('says the user may leave, and promises the ready email only when it will send (D109)', () => {
+    const withEmail = renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />);
+    expect(withEmail).toContain('You can close this tab');
+    expect(withEmail).toContain('we’ll email you when your inbox is ready');
+
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail={false} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+    ]) {
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
+    }
+  });
+
+  it('failed: the leave line gives way to cause + next action', () => {
+    const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} readyEmail />));
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html).not.toMatch(/email you/i);
+  });
+
   it('failed: cause + next action, with a real retry', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).toContain('scan stopped');

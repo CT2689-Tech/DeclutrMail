@@ -18,9 +18,10 @@ const { color, font, text, radius, motion } = tokens;
  * Onboarding sync gate (D109, D224).
  *
  * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
- * connect, before the app opens. ONE progress bar bound to the real
- * `progress_pct` and ONE sentence naming the real `current_stage` —
- * no fake ticking (D109 hard rule), no aspirational stage list.
+ * connect, before the app opens. D109's one line saying the user may
+ * leave, ONE progress bar bound to the real `progress_pct` and ONE
+ * sentence naming the real `current_stage` — no fake ticking (D109 hard
+ * rule), no aspirational stage list.
  *
  * This file is the PRESENTATIONAL view: it takes a `SyncStatus` and
  * renders. Polling + the ready→advance redirect live in the route
@@ -116,10 +117,23 @@ export interface SyncGateEscape {
   returning?: boolean;
 }
 
+/**
+ * The D109 reassurance line: the scan runs without this tab, so the user
+ * may leave. The email clause is stated only when the "Your inbox is
+ * ready" email will actually go — `emailPrefs.syncComplete` is the
+ * send-time switch, and unsubscribing from all mail turns it off too.
+ */
+function leaveSentence(readyEmail: boolean): string {
+  return readyEmail
+    ? 'This is a one-time scan. You can close this tab — we’ll email you when your inbox is ready.'
+    : 'This is a one-time scan. You can close this tab and come back later.';
+}
+
 export function SyncGate({
   status,
   escape,
   mailboxId,
+  readyEmail = false,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
@@ -132,19 +146,23 @@ export function SyncGate({
    * rather than aimed at whatever happens to be active.
    */
   mailboxId?: string | null | undefined;
+  /** True only when the sync-complete email is switched on for this user. */
+  readyEmail?: boolean | undefined;
 }) {
   if (status.readiness_status === 'failed') {
     return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
   }
-  return <SyncProgress status={status} escape={escape} />;
+  return <SyncProgress status={status} escape={escape} readyEmail={readyEmail} />;
 }
 
 function SyncProgress({
   status,
   escape,
+  readyEmail,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  readyEmail: boolean;
 }) {
   // A non-finite percentage must not defeat the clamp: every comparison
   // against NaN is false, so Math.min/max would propagate it into the
@@ -156,6 +174,18 @@ function SyncProgress({
   return (
     <Shell>
       <h1 style={titleStyle}>Reading your inbox…</h1>
+      <p
+        data-testid="sync-leave"
+        style={{
+          color: color.fgMuted,
+          fontSize: text.base,
+          lineHeight: 1.5,
+          maxWidth: 400,
+          margin: '10px 0 0',
+        }}
+      >
+        {leaveSentence(readyEmail)}
+      </p>
 
       {/* Progress bar — width is the real progress_pct. */}
       <div

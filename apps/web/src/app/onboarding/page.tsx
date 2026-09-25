@@ -8,6 +8,7 @@ import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
 import { SyncGate, type SyncGateEscape } from '@/features/onboarding/sync-gate';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { useSyncReadyEmail } from '@/features/onboarding/api/use-sync-ready-email';
 import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
 import {
   useCompleteOnboarding,
@@ -159,6 +160,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
+  const readyEmail = useSyncReadyEmail();
 
   const activeMailboxId = me.activeMailboxId;
   const sync = useSyncStatus(activeMailboxId ?? undefined, {
@@ -276,7 +278,7 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         // this cached `me.activeMailboxId` (another tab switched, a
         // disconnect auto-selected another) — the button would then act
         // on a mailbox other than the one this gate is describing.
-        return <SyncGate status={status} mailboxId={activeMailboxId} />;
+        return <SyncGate status={status} mailboxId={activeMailboxId} readyEmail={readyEmail} />;
       }
       case 'preset-pick':
         return hasCapability(me.tier, 'autopilot') ? (
@@ -347,6 +349,7 @@ function SecondaryConnectGate({
   const { me } = useAuth();
   useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   const setActive = useSetActiveMailbox();
+  const readyEmail = useSyncReadyEmail();
   const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/home';
 
   // Gate THAT mailbox explicitly so it survives the user switching
@@ -415,7 +418,7 @@ function SecondaryConnectGate({
 
   // `mailboxId` — this gate watches the ?mailbox= target, NOT the
   // active mailbox, so the retry has to name it explicitly.
-  return <SyncGate status={status} escape={escape} mailboxId={mailboxId} />;
+  return <SyncGate status={status} escape={escape} mailboxId={mailboxId} readyEmail={readyEmail} />;
 }
 
 /**

@@ -19,7 +19,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, type FetchStubHandler } from '@/test/fetch-stub';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
@@ -294,6 +294,31 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  // Asserted at the page: the gate renders the promise correctly on its own,
+  // so the join to worry about is whether the route passes the setting in.
+  it('the first-run gate promises the ready email when the user will get it (D109)', async () => {
+    installFetchStub([
+      meAuthed('syncing'),
+      onboardingState(),
+      syncStatus(false),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () =>
+          jsonOk({
+            data: { emailPrefs: { syncComplete: true, reminders: true, weeklyReceipt: false } },
+          }),
+      },
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /You can close this tab — we’ll email you when your inbox is ready\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   // The skip affordance was briefly dropped from step 5 only. It is the
