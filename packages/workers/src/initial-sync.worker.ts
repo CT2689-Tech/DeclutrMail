@@ -29,7 +29,7 @@ import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
-import { syncMailboxLabels } from './mailbox-label-sync.js';
+import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -1030,6 +1030,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // threshold (two-way: >=3 addressed outbound AND >=1 inbound).
     // Both run inside the rebuild tx so a partial pass rolls back
     // with the rest.
+    // Gmail is read BEFORE the rebuild transaction opens: no network call
+    // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
+    const labels = await listMailboxLabels(client);
     await this.deps.db.transaction(async (tx) => {
       signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
@@ -1175,7 +1178,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // (mig 0064, F012), so a stale label set would reconcile the
       // counters against the wrong exclusion. `null` = the client could
       // not list; the existing rows stand rather than being emptied.
-      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, labels);
       if (labelSync) {
         console.log(
           JSON.stringify({

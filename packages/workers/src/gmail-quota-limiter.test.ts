@@ -37,9 +37,9 @@ const REDIS_URL = process.env['TEST_REDIS_URL'] ?? 'redis://127.0.0.1:6379';
  * guards, committed in the guard itself. Top-level await resolves before
  * collection, so the flag is true when it is read.
  */
-const { redis, live } = await connect();
+const { redis, live, reason } = await connect();
 
-async function connect(): Promise<{ redis: Redis | null; live: boolean }> {
+async function connect(): Promise<{ redis: Redis | null; live: boolean; reason: string }> {
   try {
     const client = new Redis(REDIS_URL, {
       maxRetriesPerRequest: 0,
@@ -49,9 +49,11 @@ async function connect(): Promise<{ redis: Redis | null; live: boolean }> {
     });
     await client.connect();
     await client.ping();
-    return { redis: client, live: true };
-  } catch {
-    return { redis: null, live: false };
+    return { redis: client, live: true, reason: 'reachable' };
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    console.warn(`gmail-quota-limiter.test: Redis at ${REDIS_URL} unreachable (${why})`);
+    return { redis: null, live: false, reason: why };
   }
 }
 
@@ -87,6 +89,13 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
     mailbox = `test-mb-${Math.abs(Date.now() % 1e9)}-${Math.floor(performance.now() * 1000) % 1000}`;
     key = gmailQuotaKey(mailbox);
     await redis!.del(key);
+  });
+
+  // ALWAYS runs — the test below is `runIf(live)` too, so on its own it can
+  // only pass or skip. CI sets TEST_REDIS_URL (the Workers job has a Redis
+  // service), so there an unreachable Redis must fail, by name.
+  it('reaches Redis whenever TEST_REDIS_URL is set', () => {
+    if (process.env['TEST_REDIS_URL']) expect(reason).toBe('reachable');
   });
 
   it.runIf(live)('is reachable — blind case for every assertion below', async () => {

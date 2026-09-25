@@ -34,9 +34,9 @@ import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.
  *
  * `POST /incremental` is the user-facing "Sync now" surface. It does
  * NOT touch Gmail directly; it enqueues an incremental-sync job from
- * the current `provider_sync_state.last_history_id` cursor. BullMQ
- * dedups by `${mailbox}:${cursor}` so consecutive clicks for the same
- * cursor return `noop`. A separate 5-min cron in `apps/api/src/worker.ts`
+ * the current `provider_sync_state.last_history_id` cursor. Enqueues
+ * coalesce per mailbox, so a click while a sync is queued or running
+ * returns `noop` and is covered by that run. A separate 5-min cron in `apps/api/src/worker.ts`
  * sweeps mailboxes whose cursor hasn't advanced in 10+ min (drift
  * recovery while Pub/Sub registration finishes rolling out).
  *

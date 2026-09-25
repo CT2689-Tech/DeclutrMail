@@ -80,7 +80,10 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // present at call time. A bare stub with both methods returning
     // resolved promises is enough — the webhook test asserts on the
     // dedup + cursor side of `processVerifiedPush`, not the enqueue.
-    incrementalQueueAdd = vi.fn().mockResolvedValue(undefined);
+    // BullMQ's `add` returns the job it created, whose id is the one requested.
+    incrementalQueueAdd = vi.fn(
+      async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({ id: opts?.jobId }),
+    );
     const incrementalQueueStub = {
       getJob: async () => null,
       add: incrementalQueueAdd,
@@ -102,6 +105,8 @@ describe('GmailWebhookService.processVerifiedPush', () => {
       expect(outcome.mailboxAccountId).toBe(mailboxId);
       expect(outcome.historyId).toBe(1500n);
       expect(outcome.previousHistoryId).toBe(1000n);
+      // A job was actually created — the log line reports what happened.
+      expect(outcome.queue).toBe('added');
     }
 
     // Dedup row exists + carries mailbox_account_id back-fill.
@@ -300,7 +305,9 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     }
     const incrementalQueueStub = {
       getJob: async () => null,
-      add: async () => undefined,
+      add: async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }),
     } as unknown as Queue<IncrementalSyncJobData>;
     const crashingService = new GmailWebhookService(
       db,
@@ -406,9 +413,9 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     let addCalled = false;
     const trackingQueue = {
       getJob: async () => null,
-      add: async () => {
+      add: async (_name: string, _data: unknown, opts?: { jobId?: string }) => {
         addCalled = true;
-        return undefined;
+        return { id: opts?.jobId };
       },
     } as unknown as Queue<IncrementalSyncJobData>;
     const skipService = new GmailWebhookService(
@@ -491,9 +498,9 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     const enqueuedJobs: IncrementalSyncJobData[] = [];
     const recordingQueue = {
       getJob: async () => null,
-      add: async (_name: string, data: IncrementalSyncJobData) => {
+      add: async (_name: string, data: IncrementalSyncJobData, opts?: { jobId?: string }) => {
         enqueuedJobs.push(data);
-        return undefined;
+        return { id: opts?.jobId };
       },
     } as unknown as Queue<IncrementalSyncJobData>;
     const raceService = new GmailWebhookService(
@@ -571,7 +578,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     let cursorAtEnqueue: bigint | null = null;
     const observingQueue = {
       getJob: async () => null,
-      add: async () => {
+      add: async (_name: string, _data: unknown, opts?: { jobId?: string }) => {
         const dedup = await db
           .select()
           .from(webhookDedup)
@@ -582,7 +589,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
           .from(providerSyncState)
           .where(eq(providerSyncState.mailboxAccountId, mailboxId));
         cursorAtEnqueue = state[0]?.lastHistoryId ?? null;
-        return undefined;
+        return { id: opts?.jobId };
       },
     } as unknown as Queue<IncrementalSyncJobData>;
     const orderingService = new GmailWebhookService(
@@ -599,6 +606,31 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     // the complete range the worker must process.
     expect(dedupVisibleAtEnqueue).toBe(true);
     expect(cursorAtEnqueue).toBe(1000n);
+  });
+
+  // 2026-09-25: a bulk Delete's burst of pushes. Most are absorbed by the
+  // mailbox's running sync, and the outcome says so rather than claiming
+  // an enqueue per push.
+  it("reports a push absorbed by the mailbox's running sync as coalesced", async () => {
+    await seedMailbox(db, 'alice@example.com', 1000n);
+    const queueStub = {} as Queue<InitialSyncJobData>;
+    const busyQueue = {
+      // BullMQ hands back the absorbing job's id, not the one requested.
+      add: async () => ({ id: 'running-sync' }),
+      getJob: async () => ({ getState: async () => 'active' }),
+    } as unknown as Queue<IncrementalSyncJobData>;
+    const busyService = new GmailWebhookService(
+      db,
+      new SyncService(queueStub, {} as Queue<IncrementalSyncJobData>, db),
+      busyQueue,
+    );
+
+    const outcome = await busyService.processVerifiedPush({
+      messageId: 'msg-burst',
+      payload: { emailAddress: 'alice@example.com', historyId: '1500' },
+    });
+
+    expect(outcome).toMatchObject({ kind: 'enqueued', queue: 'coalesced' });
   });
 
   it('enqueue failure keeps the applied cursor unchanged for drift recovery', async () => {
@@ -621,6 +653,7 @@ describe('GmailWebhookService.processVerifiedPush', () => {
     });
     // Webhook contract: 200 to Pub/Sub regardless of Redis health.
     expect(outcome.kind).toBe('enqueued');
+    expect(outcome.kind === 'enqueued' && outcome.queue).toBe('failed');
     // Dedup row durable — Pub/Sub redelivery will skip via step 7.
     const dedup = await db
       .select()

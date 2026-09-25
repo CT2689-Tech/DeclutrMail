@@ -68,9 +68,10 @@ export const INCREMENTAL_SYNC_QUEUE_TOKEN = 'INCREMENTAL_SYNC_QUEUE';
  * Result of {@link SyncService.enqueueManualIncrementalSync}.
  *
  *   - `enqueued`   — new job added; reconciler will pick up + advance cursor.
- *   - `noop`       — a job for the same cursor is already in-flight (BullMQ
- *                    dedups by `${mailbox}:${historyId}`). The button still
- *                    feels "successful" but it does not double-enqueue.
+ *   - `noop`       — the mailbox already has a queued sync, or a running one
+ *                    that one more run will follow (per-mailbox coalescing).
+ *                    The button still feels "successful" and the click is
+ *                    covered, without a second job.
  *   - `not_ready`  — initial sync has not completed for this mailbox yet, so
  *                    there is no `last_history_id` to advance from. The
  *                    controller maps this to a 409 with `code: 'SYNC_NOT_READY'`.
@@ -415,10 +416,11 @@ export class SyncService {
    * Contract:
    *   1. Look up the mailbox's current cursor (`provider_sync_state.last_history_id`).
    *      Null cursor → `{ kind: 'not_ready' }`; initial sync hasn't completed.
-   *   2. Use the cursor as BOTH `startHistoryId` and `endHistoryId` so the
-   *      BullMQ `jobId = ${mailbox}:${cursor}` dedups consecutive clicks
-   *      against the same cursor (returns `noop`). Once the worker advances
-   *      the cursor, a new click yields a fresh `jobId` → `enqueued`.
+   *   2. Use the cursor as BOTH `startHistoryId` and `endHistoryId`.
+   *      Enqueues coalesce per mailbox (`incrementalSyncJobOptions`): a
+   *      click while a sync is queued or running returns `noop` and that
+   *      run covers it; once it finishes, the next click is `enqueued`,
+   *      even at an unchanged cursor.
    *   3. Failure to enqueue propagates as a thrown error — the controller
    *      maps it to 500; the reconciler swallows + logs.
    *

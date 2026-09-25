@@ -203,9 +203,11 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
   abstract processJob(payload: TPayload, ctx: WorkerContext): Promise<TResult>;
 
   /**
-   * Optional raw idempotency key (D203). For `perMailboxPolicy` the
-   * BullMQ `jobId` already dedups concurrent enqueues; subclasses expose
-   * the key only so the lifecycle log can record its opaque reference.
+   * Optional raw idempotency key (D203). For `perMailboxPolicy`, enqueue
+   * dedup lives at the producer — the `jobId` for initial sync, a
+   * per-mailbox dedup key for coalesced queues (`addCoalescedJob`);
+   * subclasses expose the key only so the lifecycle log can record its
+   * opaque reference.
    */
   protected getIdempotencyKey?(payload: TPayload): string;
 

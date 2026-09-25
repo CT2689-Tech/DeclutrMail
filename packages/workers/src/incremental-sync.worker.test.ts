@@ -4,14 +4,16 @@ import {
   mailMessages,
   outboxEvents,
   providerSyncState,
+  schema,
   senderPolicies,
   senders,
   senderTimeseries,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { freshTestDb } from '@declutrmail/db/testing';
+import { freshTestDb, freshTestPglite } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -800,6 +802,218 @@ describe('IncrementalSyncWorker', () => {
       .where(eq(mailMessages.providerMessageId, 'm-read'));
     expect(row!.labelIds).toEqual(['INBOX']);
     expect(row!.isUnread).toBe(false);
+  });
+
+  // 2026-09-25: one bulk Delete of 8,799 messages came back as 8,692 label
+  // records, applied one UPDATE each under the mailbox lock — 482s of lock
+  // hold in production, ~55ms per statement to a cross-region database.
+  // The count of statements under the lock is what the user waits on, so
+  // that is what this pins, not wall time.
+  it('applies a bulk-action burst in a bounded number of statements under the lock', async () => {
+    let locked = false;
+    let statementsUnderLock = 0;
+    const countingDb = drizzle(await freshTestPglite(), {
+      schema,
+      logger: {
+        logQuery: () => {
+          if (locked) statementsUnderLock += 1;
+        },
+      },
+    }) as unknown as IncrementalSyncDeps['db'];
+    const mailbox = await seedMailbox(countingDb);
+    const ids = Array.from({ length: 2_500 }, (_, i) => `bulk-${i}`);
+    await countingDb.insert(mailMessages).values(
+      ids.map((id, i) => ({
+        mailboxAccountId: mailbox,
+        providerMessageId: id,
+        providerThreadId: id,
+        senderKey: deriveSenderKey(`sender${i % 21}@promo.example`),
+        internalDate: new Date(Date.UTC(2026, 5, 1)),
+        labelIds: ['INBOX'],
+        isUnread: false,
+      })),
+    );
+    // What Gmail reports for a Delete: +TRASH and -INBOX per message.
+    const records: GmailHistoryRecord[] = ids.flatMap((id): GmailHistoryRecord[] => [
+      { kind: 'labels_added', messageId: id, labelIds: ['TRASH'] },
+      { kind: 'labels_removed', messageId: id, labelIds: ['INBOX'] },
+    ]);
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db: countingDb,
+      gmailAccess: accessFor(client),
+      lock: {
+        run: async (_, fn) => {
+          locked = true;
+          try {
+            return await fn();
+          } finally {
+            locked = false;
+          }
+        },
+      },
+    }).processJob({ mailboxAccountId: mailbox, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.recordsProcessed).toBe(5_000);
+    expect(result.labelChanges).toBe(5_000);
+    // Per record this was 5,000+. Batched it is a handful per 1,000
+    // messages plus the fixed post-pass, whatever the burst size.
+    expect(statementsUnderLock).toBeLessThan(40);
+    const rows = await countingDb
+      .select({ labelIds: mailMessages.labelIds })
+      .from(mailMessages)
+      .where(eq(mailMessages.mailboxAccountId, mailbox));
+    expect(rows).toHaveLength(2_500);
+    for (const row of rows) expect(row.labelIds).toEqual(['TRASH']);
+  });
+
+  // The batch folds each message's records into one net change. That is
+  // only safe if it lands exactly where applying the records one by one
+  // would. The reference below IS the per-record semantics (union on add,
+  // difference on remove, UNREAD drives `is_unread`, a record counts when
+  // its message has a row) run over a seeded random stream that mixes
+  // repeated and contradictory records on one message, empty label sets,
+  // unknown messages, and tombstones that split label runs.
+  it('lands a folded batch exactly where per-record application would', async () => {
+    const LABELS = ['INBOX', 'UNREAD', 'STARRED', 'IMPORTANT', 'TRASH', 'Label_7'];
+    // mulberry32. A plain LCG's low bit alternates, which made `rand(2)`
+    // walk in lockstep with the other draws and never produce the
+    // contradictory records this test exists for — it passed against a
+    // deliberately broken fold.
+    let state = 0x2025_0925;
+    const rand = (n: number): number => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return Math.floor((((t ^ (t >>> 14)) >>> 0) / 4_294_967_296) * n);
+    };
+    const pick = (): string[] =>
+      rand(8) === 0 ? [] : [...new Set([LABELS[rand(6)]!, LABELS[rand(6)]!])].slice(0, 1 + rand(2));
+
+    const model = new Map<string, { labels: Set<string>; isUnread: boolean }>();
+    for (let i = 0; i < 30; i += 1) {
+      const labels = new Set(pick().concat('INBOX'));
+      model.set(`m-${i}`, { labels, isUnread: labels.has('UNREAD') });
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `m-${i}`,
+        providerThreadId: `t-${i}`,
+        senderKey: deriveSenderKey(`s${i % 4}@example.com`),
+        internalDate: new Date(Date.UTC(2026, 5, 1)),
+        labelIds: [...labels],
+        isUnread: labels.has('UNREAD'),
+      });
+    }
+
+    const records: GmailHistoryRecord[] = [];
+    let expectedLabelChanges = 0;
+    let expectedDeleted = 0;
+    // Records in the current run that reverse an earlier record on the
+    // same message + label — the case a wrong fold gets wrong.
+    let reversals = 0;
+    let runDirection = new Map<string, boolean>();
+    for (let n = 0; n < 600; n += 1) {
+      const messageId = `m-${rand(34)}`; // m-30..m-33 have no row
+      const row = model.get(messageId);
+      if (rand(40) === 0) {
+        records.push({ kind: 'deleted', messageId, threadId: 't' });
+        if (row) expectedDeleted += 1;
+        model.delete(messageId);
+        runDirection = new Map();
+        continue;
+      }
+      const labelIds = pick();
+      const added = rand(2) === 0;
+      records.push({ kind: added ? 'labels_added' : 'labels_removed', messageId, labelIds });
+      for (const label of labelIds) {
+        const key = `${messageId}/${label}`;
+        if (runDirection.get(key) === !added) reversals += 1;
+        runDirection.set(key, added);
+      }
+      if (!row || labelIds.length === 0) continue;
+      expectedLabelChanges += 1;
+      for (const label of labelIds) {
+        if (added) row.labels.add(label);
+        else row.labels.delete(label);
+      }
+      if (labelIds.includes('UNREAD')) row.isUnread = added;
+    }
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    // Blind-case checks on the stream itself: it split label runs, and it
+    // reversed labels inside a run.
+    expect(expectedDeleted).toBeGreaterThan(0);
+    expect(reversals).toBeGreaterThan(20);
+    expect(result.labelChanges).toBe(expectedLabelChanges);
+    expect(result.deleted).toBe(expectedDeleted);
+    const stored = await db
+      .select({
+        id: mailMessages.providerMessageId,
+        labelIds: mailMessages.labelIds,
+        isUnread: mailMessages.isUnread,
+      })
+      .from(mailMessages);
+    expect(
+      Object.fromEntries(
+        stored.map((r) => [r.id, { labels: [...r.labelIds].sort(), isUnread: r.isUnread }]),
+      ),
+    ).toEqual(
+      Object.fromEntries(
+        [...model].map(([id, r]) => [id, { labels: [...r.labels].sort(), isUnread: r.isUnread }]),
+      ),
+    );
+  });
+
+  it('keeps source order across kinds: a label after an add lands on the new row, one before a tombstone still counts', async () => {
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'm-old',
+      providerThreadId: 't-old',
+      senderKey: deriveSenderKey('old@example.com'),
+      internalDate: new Date(Date.UTC(2026, 5, 1)),
+      labelIds: ['INBOX'],
+      isUnread: false,
+    });
+    const records: GmailHistoryRecord[] = [
+      { kind: 'labels_added', messageId: 'm-old', labelIds: ['STARRED'] },
+      { kind: 'deleted', messageId: 'm-old', threadId: 't-old' },
+      { kind: 'added', messageId: 'm-new', threadId: 't-new', labelIds: ['INBOX'] },
+      { kind: 'labels_added', messageId: 'm-new', labelIds: ['STARRED'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([
+        [
+          'm-new',
+          makeMetadata('m-new', 't-new', 'new@example.com', ['INBOX'], Date.UTC(2026, 5, 2)),
+        ],
+      ]),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result).toMatchObject({ added: 1, deleted: 1, labelChanges: 2 });
+    const stored = await db
+      .select({ id: mailMessages.providerMessageId, labelIds: mailMessages.labelIds })
+      .from(mailMessages);
+    expect(stored).toEqual([{ id: 'm-new', labelIds: ['INBOX', 'STARRED'] }]);
   });
 
   it('does NOT recompute wrote_to_count on a label-only push, and does not blank it', async () => {
