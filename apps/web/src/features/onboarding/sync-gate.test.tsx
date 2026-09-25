@@ -162,6 +162,16 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('Full bodies fetched: 0');
   });
 
+  it('failed: a "reach us" step carries the address — the first-run gate has no route to Help', () => {
+    for (const error_code of ['PermanentError', 'ValidationError']) {
+      const html = renderToStaticMarkup(
+        withClient(<SyncGate status={{ ...FAILED, error_code }} />),
+      );
+      expect(html, error_code).toContain('support@declutrmail.com');
+      expect(html, error_code).not.toMatch(/contact support/i);
+    }
+  });
+
   it('never promises an automatic retry it cannot deliver', () => {
     // The old copy said "We'll retry automatically — check back
     // shortly". After maxAttempts the state is TERMINAL: the

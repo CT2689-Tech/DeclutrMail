@@ -97,9 +97,12 @@ const ERROR_COPY: Record<string, string> = {
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
-  PermanentError: 'Gmail refused part of the scan. Try again — if it fails twice, contact support.',
+  // The address, not "contact support": on a first run the onboarding
+  // guard bounces every in-app route back here, so Help is unreachable.
+  PermanentError:
+    'Gmail refused part of the scan. Try again — if it fails twice, email support@declutrmail.com.',
   ValidationError:
-    'The scan stopped on something we could not process. Try again — if it fails twice, contact support.',
+    'The scan stopped on something we could not process. Try again — if it fails twice, email support@declutrmail.com.',
 };
 
 /**

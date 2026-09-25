@@ -117,13 +117,18 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByTestId('app')).toBeTruthy());
   });
 
-  it('never renders the raw error text', async () => {
+  it('never renders the raw error text, or a cause it did not check', async () => {
     apiGet.mockRejectedValue(new Error(`Missing queryFn: '["auth","me"]'`));
     mount();
 
     await screen.findByRole('alert', {}, { timeout: 8000 });
     expect(document.body.textContent).not.toContain('Missing queryFn');
     expect(document.body.textContent).not.toContain('Auth check failed');
+    // Nothing here knows why the read failed — this very test fails it
+    // with a missing queryFn — so "usually a brief connection problem"
+    // was a guess. The screen states what it IS doing instead.
+    expect(document.body.textContent).not.toMatch(/usually|connection problem/i);
+    expect(document.body.textContent).toContain('retrying automatically');
   });
 
   it('shows the skeleton, not a failure, while the first read is in flight', () => {
