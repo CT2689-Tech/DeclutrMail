@@ -1,10 +1,11 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
 import {
   ensureIncrementalSyncJob,
   ensureInitialSyncJob,
+  notNeedingReconnect,
   type IncrementalSyncJobData,
 } from '@declutrmail/workers';
 import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
@@ -19,7 +20,10 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
  * surface; using a type alias instead of structural duck-typing keeps
  * callers honest.
  */
-type DrizzleExecutor = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+type DrizzleExecutor = DrizzleDb | DrizzleTransaction;
+
+/** A transaction-bound client — for writes whose row locks must span the caller's unit of work. */
+type DrizzleTransaction = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 
 /**
  * Result of {@link SyncService.planHistorySyncWithExecutor}.
@@ -85,9 +89,10 @@ export type ManualIncrementalSyncResult =
  * SyncService — the sync feature's facade (D201/D204).
  *
  * It owns `provider_sync_state` (its own table) and the initial-sync
- * queue producer. The auth feature triggers a backfill by importing
- * `SyncModule` and calling `enqueueInitialSync` — it never touches the
- * queue or `provider_sync_state` directly.
+ * queue producer. The auth feature records a connect's sync intent by
+ * importing `SyncModule` and calling `markConnected`, then `schedule` or
+ * `scheduleCatchUp` after commit — it never touches the queue or
+ * `provider_sync_state` directly.
  */
 @Injectable()
 export class SyncService {
@@ -166,6 +171,54 @@ export class SyncService {
   }
 
   /**
+   * Sync intent for a Google sign-in or a connect-mailbox callback. Both
+   * store a fresh OAuth credential in the same transaction and land here.
+   *
+   * A mailbox whose scan already finished KEEPS its state: it was
+   * `active` before this connect, its row is `ready` with an applied
+   * cursor, and no revoked grant is waiting on this reconnect
+   * (`notNeedingReconnect`). Incremental sync picks up whatever changed —
+   * webhook pushes, the drift sweep, and the catch-up the caller enqueues
+   * after commit ({@link scheduleCatchUp}) — and an expired cursor falls
+   * back to a full resync on its own (cursor-too-old recovery).
+   * Re-queuing it instead re-ran the whole scan on every sign-in and
+   * re-scored every sender: 6,022 Haiku calls for one mailbox on
+   * 2026-09-24.
+   *
+   * Everything else gets a full scan, as before: a first connect (no
+   * row), a mailbox that was disconnected, a revoked grant being
+   * reconnected, and an initial sync that is queued, running or failed.
+   *
+   * FOR UPDATE: a ready or queued write landing between this check and
+   * the caller's commit would otherwise decide against a stale row — which
+   * is why this takes the connect's transaction, never the pool.
+   */
+  async markConnected(
+    executor: DrizzleTransaction,
+    mailboxAccountId: string,
+    opts: { wasActive: boolean },
+  ): Promise<'kept_ready' | 'queued'> {
+    if (opts.wasActive) {
+      const [ready] = await executor
+        .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+        .from(providerSyncState)
+        .where(
+          and(
+            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+            eq(providerSyncState.readinessStatus, 'ready'),
+            isNotNull(providerSyncState.lastHistoryId),
+            notNeedingReconnect,
+          ),
+        )
+        .for('update')
+        .limit(1);
+      if (ready) return 'kept_ready';
+    }
+    await this.markQueued(executor, mailboxAccountId, { freshCredentials: true });
+    return 'queued';
+  }
+
+  /**
    * Best-effort BullMQ enqueue (D157). Delegates to
    * `ensureInitialSyncJob` — the SINGLE scheduling implementation
    * shared with the worker's periodic reconciler. Failure here MUST
@@ -180,6 +233,29 @@ export class SyncService {
         JSON.stringify({
           level: 'error',
           kind: 'sync.enqueue_failed',
+          mailboxAccountId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Best-effort incremental catch-up after a connect that kept the
+   * mailbox ready ({@link markConnected}) — the same coalesced job as
+   * "Sync now". Logged, never thrown: webhooks and the drift sweep still
+   * cover the mailbox, and a failed enqueue must not fail a sign-in.
+   */
+  async scheduleCatchUp(mailboxAccountId: string): Promise<void> {
+    try {
+      await this.enqueueManualIncrementalSync(mailboxAccountId, 'connect');
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sync.enqueue_failed',
+          queue: 'incremental',
+          trigger: 'connect',
           mailboxAccountId,
           message: err instanceof Error ? err.message : String(err),
         }),
@@ -409,9 +485,8 @@ export class SyncService {
    *
    * Surfaces:
    *   - `POST /api/v1/sync/incremental` (the user-facing "Sync now" button).
-   *   - The 5-min reconciliation cron in `apps/api/src/worker.ts`
-   *     (catch-up path while Pub/Sub is still being wired in prod, and
-   *     drift safety net even after Pub/Sub lands).
+   *   - A sign-in or connect that kept the mailbox ready
+   *     ({@link scheduleCatchUp}, trigger `connect`).
    *
    * Contract:
    *   1. Look up the mailbox's current cursor (`provider_sync_state.last_history_id`).
@@ -422,14 +497,14 @@ export class SyncService {
    *      run covers it; once it finishes, the next click is `enqueued`,
    *      even at an unchanged cursor.
    *   3. Failure to enqueue propagates as a thrown error — the controller
-   *      maps it to 500; the reconciler swallows + logs.
+   *      maps it to 500; `scheduleCatchUp` swallows + logs.
    *
    * No body data, no PII, no message-derived state — this method only
    * speaks to BullMQ + `provider_sync_state` (privacy posture §2.1).
    */
   async enqueueManualIncrementalSync(
     mailboxAccountId: string,
-    trigger: 'manual' | 'cron',
+    trigger: 'manual' | 'cron' | 'connect',
   ): Promise<ManualIncrementalSyncResult> {
     const rows = await this.db
       .select({
@@ -452,9 +527,9 @@ export class SyncService {
       endHistoryId: cursor,
     });
 
-    // Structured log so the cron path is observable in Cloud Logging
-    // without a separate metrics surface. `trigger` lets us distinguish
-    // user clicks from drift recovery.
+    // Structured log so every enqueue is observable in Cloud Logging
+    // without a separate metrics surface. `trigger` tells a "Sync now"
+    // click (`manual`) from a sign-in catch-up (`connect`).
     this.logger.log(
       JSON.stringify({
         kind: 'sync.manual_enqueue',
@@ -471,10 +546,11 @@ export class SyncService {
   }
 
   /**
-   * Drift sweep — for the cron in `apps/api/src/worker.ts`. Returns the
-   * list of mailbox ids that have a `last_history_id` AND haven't been
-   * advanced in `staleAfterMs`. The cron then walks each one through
-   * `enqueueManualIncrementalSync` with `trigger='cron'`.
+   * Drift sweep candidates: mailbox ids that have a `last_history_id` AND
+   * haven't been advanced in `staleAfterMs`. Has no caller today — the
+   * drift cron in `apps/api/src/worker.ts` selects and enqueues directly
+   * (`ensureIncrementalSyncJob`), so nothing passes `trigger='cron'`
+   * either. Left in place for the founder's dead-code sweep.
    *
    * Predicate (Drizzle SQL, see `provider_sync_state.history_id_updated_at`
    * idx D229): `last_history_id IS NOT NULL AND history_id_updated_at < now() - staleAfterMs`.

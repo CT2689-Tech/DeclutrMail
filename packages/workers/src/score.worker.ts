@@ -108,8 +108,13 @@ interface SignalBatch {
 
 /**
  * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`;
- * the weekly safety-net cron re-computes any row past `expires_at`.
- * Seven days matches D25's stated "weekly safety-net rebuild" cadence.
+ * a read past it counts as stale. Nothing re-scores on a timer: the
+ * founder chose lazy refresh on attention (`stale_refresh`, 2026-08-19)
+ * over D25's weekly sweep, and `cron_sweep` has no producer. Scoring runs
+ * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
+ * longer re-scans),
+ * `signal_change` (first-seen senders), `stale_refresh` and
+ * `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
