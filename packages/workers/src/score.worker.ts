@@ -107,12 +107,9 @@ interface SignalBatch {
 }
 
 /**
- * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`.
- * D25 planned a weekly safety-net cron to re-compute rows past it, but
- * `cron_sweep` has no producer: rows are re-scored only by a re-scan's
- * `sync_complete` sweep or a per-sender trigger. The TTL therefore decides
- * whether stored reasoning may be reused (below) and when Sender Detail
- * calls a read stale — not how often anything runs.
+ * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`;
+ * the weekly safety-net cron re-computes any row past `expires_at`.
+ * Seven days matches D25's stated "weekly safety-net rebuild" cadence.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
