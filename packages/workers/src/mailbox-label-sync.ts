@@ -15,14 +15,46 @@ export interface MailboxLabelSyncResult {
   pruned: number;
 }
 
+/** One Gmail label, id → name (`users.labels.list`). */
+export type MailboxLabel = { id: string; name: string };
+
 /**
- * Refresh `mailbox_labels` from `users.labels.list` (mig 0064, F012).
+ * Read the mailbox's labels from Gmail for `syncMailboxLabels`.
  *
- * One call per sync, 5 quota units. It exists so a manufactured read
- * signal can be NAMED: we store `label_ids`, so a sweeper's label reads
- * as `Label_117` and is indistinguishable from any other. On the
- * founder's mailbox that one label carries 27.5% of the messages we
- * count as read.
+ * One call per sync, 5 quota units. Split from the write so the caller
+ * makes it BEFORE opening its transaction — and before taking the
+ * mailbox lock. It used to run as the first statement inside the
+ * post-pass transaction, holding row locks and a pooled connection
+ * across a Gmail quota wait + OAuth refresh (MISTAKES 2026-08-23), with
+ * every user action on the mailbox queued behind it.
+ *
+ * ## An absent listing is not an empty mailbox
+ *
+ * `null` when the client cannot list labels (an older port
+ * implementation, a test double) or Gmail answered with nothing. Gmail
+ * always returns the system labels (INBOX, SENT, …), so an empty array
+ * is a malformed or failed response, never a mailbox with no labels.
+ * Treating "we did not learn anything" as "there are none" would delete
+ * every sweeper row, which silently un-excludes the sweeper's marks and
+ * pushes its senders back toward looking engaged — the null-becomes-zero
+ * mistake pointed at a signal that feeds a destructive verb.
+ */
+export async function listMailboxLabels(
+  client: GmailMetadataClient,
+): Promise<MailboxLabel[] | null> {
+  if (!client.listLabels) return null;
+  const labels = await client.listLabels();
+  return labels.length === 0 ? null : labels;
+}
+
+/**
+ * Refresh `mailbox_labels` from a listing read by `listMailboxLabels`
+ * (mig 0064, F012). Database statements only.
+ *
+ * It exists so a manufactured read signal can be NAMED: we store
+ * `label_ids`, so a sweeper's label reads as `Label_117` and is
+ * indistinguishable from any other. On the founder's mailbox that one
+ * label carries 27.5% of the messages we count as read.
  *
  * `sweeper_vendor` is recomputed on EVERY pass rather than written once.
  * The vendor list is maintained in `@declutrmail/shared/senders`, and a
@@ -30,35 +62,20 @@ export interface MailboxLabelSyncResult {
  * the day they were created — so adding a vendor would silently apply
  * only to mailboxes connected afterwards.
  *
- * ## An absent listing is not an empty mailbox
- *
- * When the client cannot list labels (an older port implementation, a
- * test double), this returns `null` and touches nothing. Treating "we
- * did not ask" as "there are none" would delete every sweeper row, which
- * silently un-excludes the sweeper's marks and pushes its senders back
- * toward looking engaged — the null-becomes-zero mistake pointed at a
- * signal that feeds a destructive verb.
- *
- * Pruning is likewise scoped to a listing we actually received: rows
- * whose label id is absent from a non-empty response are gone from Gmail
- * (the user deleted the label) and would otherwise exclude read state
- * forever on an id that no longer exists.
+ * A `null` listing touches nothing (see `listMailboxLabels`). Pruning is
+ * likewise scoped to a listing we actually received: rows whose label id
+ * is absent from a non-empty response are gone from Gmail (the user
+ * deleted the label) and would otherwise exclude read state forever on
+ * an id that no longer exists.
  *
  * D7 / D228: label ids and names only. No body, no snippet, no header.
  */
 export async function syncMailboxLabels(
   tx: OutboxTx,
   mailboxAccountId: string,
-  client: GmailMetadataClient,
+  labels: readonly MailboxLabel[] | null,
 ): Promise<MailboxLabelSyncResult | null> {
-  if (!client.listLabels) return null;
-  const labels = await client.listLabels();
-  if (labels.length === 0) {
-    // Gmail always returns the system labels (INBOX, SENT, …), so an
-    // empty array is a malformed or failed response, never a mailbox
-    // with no labels. Leave the table alone.
-    return null;
-  }
+  if (labels === null || labels.length === 0) return null;
 
   const rows = labels.map((label) => ({
     mailboxAccountId,

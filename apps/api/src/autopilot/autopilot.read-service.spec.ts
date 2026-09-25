@@ -1335,7 +1335,10 @@ describe('AutopilotReadService', () => {
     });
 
     function withQueue(): { svc: AutopilotReadService; add: ReturnType<typeof vi.fn> } {
-      const add = vi.fn().mockResolvedValue(undefined);
+      // BullMQ's `add` returns the job it created, whose id is the one requested.
+      const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }));
       const svc = new AutopilotReadService(db as never, { add } as never);
       return { svc, add };
     }
@@ -1502,7 +1505,10 @@ describe('AutopilotReadService', () => {
     });
 
     it('approveAllForRule approves every pending row for the rule only', async () => {
-      const add = vi.fn().mockResolvedValue(undefined);
+      // BullMQ's `add` returns the job it created, whose id is the one requested.
+      const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }));
       const svc = new AutopilotReadService(db as never, { add } as never);
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const otherRuleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
