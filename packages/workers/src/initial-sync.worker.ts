@@ -1682,6 +1682,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
+      // Read BEFORE the ready upsert stamps `last_synced_at`. `markQueued`
+      // (a returning Google sign-in) re-queues a ready mailbox but never
+      // clears it, so null here means no scan of this mailbox has ever
+      // finished — the one case the "Your inbox is ready" email is for.
+      const [prior] = await tx
+        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .limit(1);
+      const firstReady = (prior?.lastSyncedAt ?? null) === null;
       await readyUpsert(tx);
       await runInsert(tx);
       await outbox.publish(tx, {
@@ -1692,6 +1702,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           workspaceId: account.workspaceId,
           readyAt: new Date().toISOString(),
           messageCount: run.messagesSynced,
+          firstReady,
         },
         schema: MailboxSyncReadyPayloadSchema,
       });
