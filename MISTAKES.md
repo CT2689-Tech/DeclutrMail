@@ -4722,3 +4722,44 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** When a change makes X the ONLY channel for a fact, list every reader of the channels being removed and what each loses, BEFORE deleting them (the same "write down every reader" step CLAUDE.md §8 asks for context-moving changes). Fixed: session-earned decisions are exempt from the baseline; polling backs off but never stops while work is out, and the line reads "not confirmed" instead of spinning; any undo (token or memberToken) releases the marks; an always-mounted `role="status"` region; `.dm-spinner`; the DB enum as the type; the action column pinned.
 **Rule:** Removing a redundant channel is only safe after proving the surviving one reaches every state the removed ones covered — navigation, reload, error, per-member, assistive tech, narrow viewport.
 **Enforcement update:** tests for each (negative-controlled): baseline exemption, never-seen-running job, failed-read line, member-undo un-mark, pre-existing live region, no-toast-on-action. None to hooks.
+
+## 2026-09-24 — Paced Gmail reads on the quota meter Google does not enforce
+**PR:** #765 introduced it; #769 (https://github.com/CT2689-Tech/DeclutrMail/pull/769) fixes it
+**Caught by:** user report — a friend's 40,898-email first sync took 68 minutes
+**What happened:** The redesign charged `messages.get` 20 units against a 12,000/min budget, so first syncs ran at 10 reads/s. The project has two meters: `gmail.googleapis.com/default` (5 units per get, 15,000/min/user, enforced) and `total_query_cost` (20 units, unlimited grandfathered override). The public docs and the console page each show only one of them.
+**Correct approach:** Measure both meters in Cloud Monitoring (`quota/rate/net_usage` per method, plus the Service Usage limits), then price every method against the enforced one. #769 adds a typed per-metric cost table and a required `GMAIL_QUOTA_METRIC` env var (boot fails on an unknown value). Live smoke: 7,200 reads in 180 s, zero errors.
+**Rule:** Before pacing to a vendor quota, read the vendor's own per-meter usage and limit data. Never trust a doc table or one console page.
+**Enforcement update:** manifest test pins the worker's quota env in `deploy-cloud-run.yml`; per-metric cost spec.
+
+## 2026-09-24 — Two PRs changed the two ends of one promise
+**PR:** #770 + #771
+**Caught by:** my own live smoke (retrying a failed re-scan on the dev stack)
+**What happened:** #770 made the sync gate say "we'll email you when your inbox is ready" whenever the ready-email setting was on. #771 stopped sending that email for re-scans. Each PR was green and gate-reviewed on its own. Together, a user retrying a failed re-scan, or reconnecting, was promised an email that never comes.
+**Correct approach:** Base the promise on the same condition the sender uses. The gate now also requires `last_synced_at === null`, which the status it already reads carries.
+**Rule:** When a PR changes WHEN a notification sends, grep every surface that promises it ("email you") and make each promise read that same condition. When two open PRs touch the two ends, smoke them together.
+**Enforcement update:** gate test for the re-scan case (negative-controlled); stories and fixtures carry `last_synced_at` as the API sends it.
+
+## 2026-09-24 — Swept the email templates for unbacked claims and missed siblings in the same flow
+**PR:** #772 (https://github.com/CT2689-Tech/DeclutrMail/pull/772)
+**Caught by:** architecture-guardian (4 blocking, pre-PR)
+**What happened:** The first cut removed "usually takes a few minutes" and similar lines from three sync emails, but left:
+- the lapse email's "One keystroke each" (false for 4 of 5 verbs: A/U/L/D open the preview);
+- a CAN-SPAM rationale comment that quoted the deleted sentence as its evidence;
+- the time promise in the toast on the page the "scan stopped" email opens.
+
+The count-noun test matched raw HTML, so it only ever saw the hidden preview text and never the visible body noun.
+**Correct approach:** Sweep a claim class across the whole flow: the templates, the comments that cite them, and the pages their links open. Strip tags before asserting what a reader sees.
+**Rule:** A copy sweep's scope is the user's path, not the directory. A match on raw email HTML tests the preview, not the body.
+**Enforcement update:** fact-pin tests for each (negative-controlled); the whole-text snapshot was replaced by fact pins.
+
+## 2026-09-24 — Told the founder what a code path costs before tracing it to its last consumer
+**PR:** n/a (session report)
+**Caught by:** founder ("when I go through sign-in … it just gets me directly to Senders")
+**What happened:** I said every returning sign-in re-scan "may show an onboarded user a scan screen" and "wastes Gmail quota". Neither was true:
+- the onboarding gate checks only `onboarded_at`;
+- the re-scan skips stored mail (196 Gmail calls for 96,235 ids).
+
+I then reversed to "leave it alone" before reading the post-scan hook. That hook had re-scored all 7,999 senders with 6,022 Haiku calls and emptied the Anthropic credits that morning.
+**Correct approach:** Trace the path to every consumer (what the user sees, what Gmail costs, every post-ready hook) and cite a log line for each before recommending anything.
+**Rule:** A cost or UX claim about a code path needs its LAST consumer read, not its first.
+**Enforcement update:** none (reporting discipline).
