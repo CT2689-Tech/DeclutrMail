@@ -140,9 +140,11 @@ export interface SyncGateEscape {
  * may leave. The email clause is stated only when the "Your inbox is
  * ready" email will actually go — `emailPrefs.syncComplete` is the
  * send-time switch (unsubscribing from all mail turns it off too), and
- * the email goes only for a mailbox's FIRST finished scan
- * (`sync-ready-email.trigger.ts`). A re-scan of a mailbox that finished
- * before — a retry after a failed re-scan, a reconnect — sends none.
+ * once #771 lands the email goes only for a mailbox's FIRST finished
+ * scan (`firstReady` in `sync-ready-email.trigger.ts`). A re-scan of a
+ * mailbox that finished before — a retry after a failed re-scan, a
+ * reconnect — gets no promise: until #771 it still sends, so this line
+ * under-promises, never over.
  * (D109's "This is a one-time scan." is gone: a reconnect or a retry
  * re-runs the scan, and nobody acts on the sentence.)
  */

@@ -9,8 +9,10 @@
 //   • Queued               — sync just enqueued, 0%
 //   • Syncing              — mid-scan; the "we'll email you" leave line
 //   • SyncingReadyEmailOff — mid-scan; leave line without the email promise
+//   • RescanNoReadyEmail   — re-scan of a mailbox that finished before; no email promise
 //   • Ready                — scan done, shown until the route navigates away
 //   • Failed               — terminal error with a known error_code
+//   • FailedPermanent      — the longest failed copy; names the support address
 //   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back
 
 import type { ComponentProps } from 'react';
@@ -41,7 +43,7 @@ const meta: StoryMeta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email is switched on), one progress bar and one stage sentence, both from real backend state. No privacy badge on this screen — it sits on the promise step, at the decision point.',
+          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one stage sentence, both from real backend state. No privacy badge on this screen — it sits on the promise step, at the decision point.',
       },
     },
   },
@@ -132,6 +134,15 @@ export const Ready: Story<typeof SyncGate> = {
 /** Failed — terminal error with retry affordance. */
 export const Failed: Story<typeof SyncGate> = {
   args: { status: FAILED },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Failed on a permanent error — the longest failed copy. It names
+ * support@declutrmail.com because the first-run gate has no route to Help.
+ */
+export const FailedPermanent: Story<typeof SyncGate> = {
+  args: { status: { ...FAILED, error_code: 'PermanentError' } },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
