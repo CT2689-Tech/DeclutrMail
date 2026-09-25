@@ -45,9 +45,10 @@ const ConfidenceSchema = z.number().min(0).max(1);
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Emitted by the score worker after a per-mailbox sweep finishes (a
- * `sync_complete` sweep over every sender; `cron_sweep` is a declared
- * trigger with no producer). Drives the
+ * Emitted by the score worker after EVERY score job — a whole-mailbox
+ * `sync_complete` sweep or a single-sender `signal_change` /
+ * `stale_refresh` / `manual_rescore` run (`cron_sweep` is declared but
+ * has no producer). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */
@@ -75,8 +76,10 @@ export type TriageScoreRunCompletedPayload = z.infer<typeof TriageScoreRunComple
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Emitted by the score worker when a single sender's decision row was
- * upserted (`ScoreTrigger='manual_rescore' | 'signal_change'`).
+ * Declared for a single sender's decision row being upserted
+ * (`ScoreTrigger='manual_rescore' | 'signal_change'`), but NOTHING
+ * publishes it: the score worker emits only `score_run_completed`, after
+ * every job.
  * Finer-grained than `score_run_completed`; consumers that only care
  * about one sender at a time (e.g. a future Autopilot
  * apply-on-change variant) subscribe here.

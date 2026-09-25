@@ -128,21 +128,12 @@ export const triageDecisions = pgTable(
      * Built for D25's weekly `WHERE expires_at < now()` sweep across
      * mailboxes, which was never produced (lazy `stale_refresh` instead,
      * 2026-08-19). `expires_at` leads so that sweep could have
-     * range-scanned it; no query filters on it today. Per-mailbox reads
-     * use `triage_decisions_account_sender_uniq`.
+     * range-scanned it; no query filters on it today.
      */
     expiresAtIdx: index('triage_decisions_expires_at_idx').on(
       table.expiresAt,
       table.mailboxAccountId,
     ),
-    /**
-     * Migration 0066: the needs-review join in `getSenderSummary` only
-     * wants actionable verdicts. Declared here so a generated migration
-     * can never drop it.
-     */
-    actionableIdx: index('triage_decisions_actionable_idx')
-      .on(table.mailboxAccountId, table.senderKey)
-      .where(sql`${table.verdict} IN ('unsubscribe', 'archive')`),
   }),
 );
 
