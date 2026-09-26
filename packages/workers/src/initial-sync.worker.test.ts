@@ -1707,9 +1707,12 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       workspaceId: string;
       readyAt: string;
       messageCount: number;
+      firstReady?: boolean;
     };
     expect(payload.mailboxAccountId).toBe(mailboxAccountId);
     expect(payload.messageCount).toBe(result.messagesSynced);
+    // No scan of this mailbox had finished before: the one email-worthy ready.
+    expect(payload.firstReady).toBe(true);
     expect(Date.parse(payload.readyAt)).not.toBeNaN();
     const [mb] = await db
       .select({ workspaceId: mailboxAccounts.workspaceId })
@@ -1751,6 +1754,11 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       outbox: new OutboxPublisher(),
     });
     await worker.processJob({ mailboxAccountId }, CTX); // → ready
+    const firstRunEventIds = new Set(
+      (await db.select().from(outboxEvents))
+        .filter((e) => e.topic === TOPICS.MAILBOX_SYNC_READY)
+        .map((e) => e.id),
+    );
 
     // What SyncService.markQueued does before any intended re-sync.
     await resetToQueued(db, mailboxAccountId);
@@ -1766,6 +1774,14 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       (e) => e.topic === TOPICS.MAILBOX_SYNC_READY,
     );
     expect(readyEvents).toHaveLength(2); // legit re-sync re-publishes
+    // …but only the first says so: a re-scan (a reconnect, a retry) must
+    // not send a second "Your inbox is ready" (the email trigger reads this).
+    const flagOf = (e: (typeof readyEvents)[number]) =>
+      (e.payload as { firstReady?: boolean }).firstReady;
+    const [first] = readyEvents.filter((e) => firstRunEventIds.has(e.id));
+    const [rescan] = readyEvents.filter((e) => !firstRunEventIds.has(e.id));
+    expect(flagOf(first!)).toBe(true);
+    expect(flagOf(rescan!)).toBe(false);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('ready');
   });

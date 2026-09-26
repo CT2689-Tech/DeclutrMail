@@ -250,6 +250,32 @@ describe('buildSyncReadyEmailHandler', () => {
     expect(reminderAdds).toHaveLength(0);
   });
 
+  it('sends nothing for a re-scan — the inbox was already ready once (firstReady=false)', async () => {
+    const queue = fakeQueue();
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler({ ...payload(), firstReady: false }, 'ev-rescan');
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('sends for the first completed scan (firstReady=true)', async () => {
+    const queue = fakeQueue();
+    const handler = buildSyncReadyEmailHandler({
+      db,
+      emailQueue: queue as unknown as Queue<EmailSendJobData>,
+      appUrl: 'https://app.declutrmail.com',
+      apiUrl: 'https://api.declutrmail.com',
+    });
+
+    await handler({ ...payload(), firstReady: true }, 'ev-first');
+    expect(queue.add).toHaveBeenCalledTimes(2);
+  });
+
   it('ACKs without enqueueing when the mailbox row is gone', async () => {
     const queue = fakeQueue();
     const handler = buildSyncReadyEmailHandler({

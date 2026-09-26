@@ -149,6 +149,9 @@ export class SyncService {
           // A queued row represents a fresh full-sync attempt. Clear the
           // previous applied cursor so InitialSync can capture a new base;
           // BullMQ retries do not call markQueued and therefore preserve it.
+          // `last_synced_at` is deliberately NOT cleared: it is how the
+          // next ready knows this mailbox already had its "Your inbox is
+          // ready" email (InitialSyncWorker.markReady).
           lastHistoryId: null,
           historyIdUpdatedAt: null,
           ...(options.freshCredentials
