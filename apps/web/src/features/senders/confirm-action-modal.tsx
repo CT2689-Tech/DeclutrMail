@@ -1248,7 +1248,9 @@ export function ConfirmActionModal({
             ? [
                 {
                   label: 'One-click',
-                  value: `${sendersLabel(unsubCapabilities.one_click)}, we unsubscribe for you`,
+                  // The request, not the outcome: whether mail stops is
+                  // the sender's call (D248), so never "we unsubscribe".
+                  value: `${sendersLabel(unsubCapabilities.one_click)}, we send the request for you`,
                 },
               ]
             : []),
