@@ -313,6 +313,11 @@ export type { DataExportFormat } from './data-export';
 // for denied signups. See ./beta-gate.ts for the env + flow contract.
 export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from './beta-gate';
 
+// D108 — closed results the Google OAuth routes put on /sign-in and
+// Settings. See ./oauth-return.ts for the return destinations.
+export { GMAIL_ACCESS_MISSING_RESULT, parseSignInResult, SIGN_IN_RESULTS } from './oauth-return';
+export type { SignInResult } from './oauth-return';
+
 // U27 — Activity feed rule attribution (D57): `rule` ref on
 // `GET /api/activity` rows, resolved from `activity_log.rule_id`.
 export { ActivityRuleRefSchema } from './activity';

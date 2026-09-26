@@ -166,3 +166,32 @@ describe('deriveMailboxHealth — hasSyncError (QA-sync-20260831-04)', () => {
     expect(health.hasSyncError).toBe(false);
   });
 });
+
+describe('deriveMailboxHealth — needsReconnect for a failed first scan', () => {
+  // A reconnect result lands on this row and names its Reconnect button.
+  // The onboarding gate and the top-bar indicator already treat an expired
+  // grant on the first scan as reconnect-only; this projection (Settings
+  // row and account menu) used to accept InvalidGrantError alone and
+  // offered "Scan again" against the same dead token instead.
+  function failedFirstScan(errorCode: string) {
+    return deriveMailboxHealth({
+      readiness_status: 'failed',
+      current_stage: 'failed',
+      progress_pct: 0,
+      is_ready_for_triage: false,
+      error_code: errorCode,
+      last_synced_at: null,
+    });
+  }
+
+  it.each(['InvalidGrantError', 'AuthExpiredError'])(
+    'asks for a reconnect when the first scan failed with %s',
+    (errorCode) => {
+      expect(failedFirstScan(errorCode).needsReconnect).toBe(true);
+    },
+  );
+
+  it('keeps the retry for a first scan that failed for any other reason', () => {
+    expect(failedFirstScan('RateLimitError').needsReconnect).toBe(false);
+  });
+});

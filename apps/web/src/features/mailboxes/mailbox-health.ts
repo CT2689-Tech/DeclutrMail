@@ -18,8 +18,9 @@ export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
  * onboarding gate's own local set; a later Codex adversarial review of
  * the same QA round found `SyncNowButton`'s failed-indicator still used
  * only `InvalidGrantError`, offering a doomed "Scan again" retry against
- * the same dead token the onboarding gate correctly reconnects for. Both
- * surfaces now read this one set instead of keeping their own copies.
+ * the same dead token the onboarding gate correctly reconnects for. The
+ * Settings mailbox row and the account menu (via `deriveMailboxHealth`)
+ * had the same gap. All of them now read this one set.
  */
 export const AUTH_RECOVERY_ERROR_CODES = new Set([INVALID_GRANT_CODE, AUTH_EXPIRED_CODE]);
 

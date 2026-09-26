@@ -1,5 +1,10 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { OAuth2Client } from 'google-auth-library';
+import {
+  BadRequestException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
+import { type Credentials, OAuth2Client } from 'google-auth-library';
 
 /**
  * Gmail OAuth scopes (D4).
@@ -10,16 +15,28 @@ import { OAuth2Client } from 'google-auth-library';
  * requested: it would block the `q` search the sync depends on.
  * `openid` + `userinfo.email` identify the connected account.
  */
-const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.modify',
-  'openid',
-  'https://www.googleapis.com/auth/userinfo.email',
-];
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
+const SCOPES = [GMAIL_SCOPE, 'openid', 'https://www.googleapis.com/auth/userinfo.email'];
 
 /** Result of `exchangeCode` — what the orchestrator needs to proceed. */
 export interface OAuthExchangeResult {
   email: string;
   refreshToken: string;
+}
+
+/**
+ * Google finished the consent without granting Gmail (D108).
+ *
+ * Google's consent screen can finish with the sign-in permissions but
+ * not Gmail, so the exchange succeeds with a refresh token that identifies
+ * the account but cannot read or change mail. Storing it only defers the
+ * failure to the first scan.
+ */
+export class GmailScopeNotGrantedError extends Error {
+  constructor() {
+    super('Google did not grant the Gmail scope.');
+    this.name = 'GmailScopeNotGrantedError';
+  }
 }
 
 /**
@@ -32,6 +49,8 @@ export interface OAuthExchangeResult {
  */
 @Injectable()
 export class GoogleOAuthService {
+  private readonly logger = new Logger(GoogleOAuthService.name);
+
   /** Build a fresh OAuth2Client from env config. */
   private oauthClient(): OAuth2Client {
     const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI } = process.env;
@@ -59,13 +78,18 @@ export class GoogleOAuthService {
   }
 
   /**
-   * Exchange the authorization code for tokens, verify the id_token,
-   * and return `{ email, refreshToken }` for the orchestrator. THIS
-   * METHOD WRITES NOTHING — persistence is the orchestrator's job.
+   * Exchange the authorization code for tokens, confirm Gmail was
+   * granted, verify the id_token, and return `{ email, refreshToken }`
+   * for the orchestrator. THIS METHOD WRITES NOTHING — persistence is
+   * the orchestrator's job.
    */
   async exchangeCode(code: string): Promise<OAuthExchangeResult> {
     const client = this.oauthClient();
     const { tokens } = await client.getToken(code);
+
+    if (!(await this.gmailGranted(client, tokens))) {
+      throw new GmailScopeNotGrantedError();
+    }
 
     if (!tokens.refresh_token) {
       throw new BadRequestException(
@@ -97,5 +121,27 @@ export class GoogleOAuthService {
     }
 
     return { email, refreshToken: tokens.refresh_token };
+  }
+
+  /**
+   * Whether this grant includes Gmail. Google's token response lists the
+   * granted scopes. A response without the list is neither a grant nor a
+   * refusal, so ask Google's token-info endpoint rather than guess; a
+   * failed lookup fails the exchange like any other Google error.
+   */
+  private async gmailGranted(client: OAuth2Client, tokens: Credentials): Promise<boolean> {
+    // Exact entries, not a substring test: `scope` is a space-delimited
+    // list of case-sensitive scope strings.
+    const listed = tokens.scope?.split(/\s+/).filter(Boolean) ?? [];
+    if (listed.length > 0) return listed.includes(GMAIL_SCOPE);
+
+    this.logger.warn('Google listed no granted scopes; checking token info.');
+    if (!tokens.access_token) {
+      throw new BadRequestException(
+        'Google returned no access token — cannot confirm Gmail access.',
+      );
+    }
+    const info = await client.getTokenInfo(tokens.access_token);
+    return info.scopes.includes(GMAIL_SCOPE);
   }
 }

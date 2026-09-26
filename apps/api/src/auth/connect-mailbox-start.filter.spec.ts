@@ -7,13 +7,13 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   ServiceUnavailableException,
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ERROR_CODES } from '@declutrmail/shared/contracts';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { AppException } from '../common/app-exception.js';
 import {
@@ -40,12 +40,27 @@ class FilteredBrowserStartController {
   unavailable(): void {
     throw new ServiceUnavailableException('private infrastructure detail');
   }
+
+  @Get('crash')
+  @UseFilters(ConnectMailboxStartFilter)
+  crash(): void {
+    throw new Error('private runtime detail');
+  }
 }
 
 describe('ConnectMailboxStartFilter', () => {
   const originalWebUrl = process.env.WEB_URL;
+  let logError: MockInstance;
+  let consoleError: MockInstance;
+
+  beforeEach(() => {
+    logError = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
 
   afterEach(() => {
+    logError.mockRestore();
+    consoleError.mockRestore();
     if (originalWebUrl === undefined) delete process.env.WEB_URL;
     else process.env.WEB_URL = originalWebUrl;
   });
@@ -69,8 +84,12 @@ describe('ConnectMailboxStartFilter', () => {
     (error, result) => {
       process.env.WEB_URL = 'https://app.example.test/';
       const redirect = vi.fn();
+      const req = { method: 'GET', route: { path: '/api/auth/google/connect-mailbox/start' } };
       const host = {
-        switchToHttp: () => ({ getResponse: () => ({ redirect }) }),
+        switchToHttp: () => ({
+          getRequest: () => req,
+          getResponse: () => ({ req, headersSent: false, redirect }),
+        }),
       };
 
       new ConnectMailboxStartFilter().catch(
@@ -109,7 +128,14 @@ describe('ConnectMailboxStartFilter', () => {
     }
   });
 
-  it('delegates an unexpected HTTP 5xx to the global diagnostic envelope', async () => {
+  // A person who clicked "Add Gmail account" must never land on API JSON
+  // (D108). The base filter's structured log and 5xx Sentry capture still
+  // run first, so an outage stays visible.
+  it.each([
+    ['an unexpected HTTP 5xx', 'unavailable'],
+    ['a runtime error', 'crash'],
+  ])('sends %s to the failed Settings result and still logs it', async (_label, route) => {
+    process.env.WEB_URL = 'https://app.example.test';
     const moduleRef = await Test.createTestingModule({
       controllers: [FilteredBrowserStartController],
       providers: [RejectBeforeHandlerGuard],
@@ -118,18 +144,17 @@ describe('ConnectMailboxStartFilter', () => {
 
     try {
       await app.listen(0, '127.0.0.1');
-      const response = await fetch(`${await app.getUrl()}/_connect-start-filter-test/unavailable`, {
+      const response = await fetch(`${await app.getUrl()}/_connect-start-filter-test/${route}`, {
         redirect: 'manual',
       });
-      const body = (await response.json()) as { error: Record<string, unknown> };
 
-      expect(response.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
-      expect(body.error).toMatchObject({
-        code: 'INTERNAL_ERROR',
-        message: ERROR_CODES.INTERNAL_ERROR.message,
-      });
-      expect(body.error.correlationId).toEqual(expect.any(String));
-      expect(JSON.stringify(body)).not.toContain('private infrastructure detail');
+      expect(response.status).toBe(HttpStatus.FOUND);
+      expect(response.headers.get('location')).toBe(
+        'https://app.example.test/settings?connect_start_result=failed#mailboxes',
+      );
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('"kind":"exception.5xx"'));
+      expect(JSON.stringify(consoleError.mock.calls)).toContain('private');
+      expect(response.headers.get('location')).not.toContain('private');
     } finally {
       await app.close();
     }

@@ -27,7 +27,9 @@
  *     only while NEWER than `last_synced_at` (a later successful run
  *     means the token works again — e.g. the user already reconnected).
  *   - `error_code`            — initial-sync failure (readiness stays
- *     `failed` until a successful run, so no recency check needed).
+ *     `failed` until a successful run, so no recency check needed). Here
+ *     `AuthExpiredError` counts too (`AUTH_RECOVERY_ERROR_CODES`), as on
+ *     the onboarding gate and the top-bar indicator.
  *
  * A mailbox with no sync row yet (404) simply reports no health —
  * designed state, not an error (the guard-4xx rule, CLAUDE.md §8).
@@ -39,7 +41,10 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { apiGet } from '@/lib/api/client';
 import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  syncStatusNeedsReconnect,
+} from '@/features/mailboxes/mailbox-health';
 
 export interface MailboxHealth {
   /** ISO stamp of the last completed sync run; null before the first. */
@@ -68,7 +73,12 @@ export interface MailboxHealth {
 /** Project a SyncStatus payload into the card's health shape. */
 export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const syncedAt = status.last_synced_at ?? null;
-  const needsReconnect = syncStatusNeedsReconnect(status);
+  // A first scan that failed on an expired grant is reconnect-only too,
+  // as on the onboarding gate and the top-bar indicator. Display only:
+  // `syncStatusNeedsReconnect` stays InvalidGrantError-only (see there).
+  const needsReconnect =
+    syncStatusNeedsReconnect(status) ||
+    (status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code));
   const errorAt = status.last_sync_error_at ?? null;
   const hasSyncError =
     !needsReconnect &&

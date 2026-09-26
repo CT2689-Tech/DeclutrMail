@@ -7,6 +7,7 @@ import {
   PRIVACY_STORAGE_ITEMS,
   PRIVACY_STORAGE_LABEL,
 } from '@declutrmail/shared';
+import type { SignInResult } from '@declutrmail/shared/contracts';
 
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl } from '../landing/urls';
@@ -14,6 +15,18 @@ import { oauthStartUrl } from '../landing/urls';
 // The preview promise, first sentence only — the rest of the shared claim
 // (a re-check when the action runs) belongs to the preview itself.
 const PREVIEW_PROMISE = ACTION_PREVIEW_CLAIM.split(/(?<=\.)\s+/)[0];
+
+// At most one OAuth result renders. Server-rendered alerts are not announced
+// on load, so the Google button points at it with `aria-describedby`.
+const AUTH_RESULT_ALERT_ID = 'dm-auth-entry-result';
+
+// One line each: what happened, then what to do. The button below them
+// restarts Google's consent.
+const AUTH_RESULT_LINE: Record<Exclude<SignInResult, 'inbox_limit'>, string> = {
+  gmail_access_missing: 'DeclutrMail needs Gmail access. Continue with Google and allow it.',
+  failed: 'Google sign-in didn’t finish. Try again.',
+  rate_limited: 'Too many sign-in attempts. Wait a minute, then try again.',
+};
 
 /**
  * /sign-in — the OAuth decision point. One centred card: the headline,
@@ -24,7 +37,7 @@ export function AuthEntry({
   authResult,
   returnTo,
 }: {
-  authResult?: 'inbox_limit';
+  authResult?: SignInResult;
   returnTo?: string;
 }) {
   return (
@@ -37,7 +50,7 @@ export function AuthEntry({
         </p>
 
         {authResult === 'inbox_limit' ? (
-          <div className="dm-auth-entry-alert" role="alert">
+          <div id={AUTH_RESULT_ALERT_ID} className="dm-auth-entry-alert" role="alert">
             <strong>This Gmail can’t reconnect yet.</strong>
             <p>
               Every Gmail connection your plan allows is already in use. Sign in with any connected
@@ -47,6 +60,10 @@ export function AuthEntry({
               Compare plans
             </TrackedCta>
           </div>
+        ) : authResult ? (
+          <div id={AUTH_RESULT_ALERT_ID} className="dm-auth-entry-alert" role="alert">
+            {AUTH_RESULT_LINE[authResult]}
+          </div>
         ) : null}
 
         <TrackedCta
@@ -54,6 +71,7 @@ export function AuthEntry({
           href={oauthStartUrl(returnTo)}
           cta="connect_gmail"
           placement="hero"
+          describedBy={authResult ? AUTH_RESULT_ALERT_ID : undefined}
         >
           <GoogleMark />
           Continue with Google

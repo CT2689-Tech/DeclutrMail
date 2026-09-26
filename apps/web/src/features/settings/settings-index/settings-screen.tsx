@@ -11,7 +11,7 @@ import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import type { ToastTone } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
-import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
+import { DEFAULT_BRIEF_PREFS, GMAIL_ACCESS_MISSING_RESULT } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -49,8 +49,20 @@ import { VerbTourCard } from './verb-tour-card';
 
 const { color, font, text, radius, motion } = tokens;
 
-type ReconnectResult = 'success' | 'account_mismatch' | 'target_invalid' | 'cancelled' | 'failed';
-type ConnectStartResult = 'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
+type ReconnectResult =
+  | 'success'
+  | 'account_mismatch'
+  | 'target_invalid'
+  | 'cancelled'
+  | 'failed'
+  | typeof GMAIL_ACCESS_MISSING_RESULT;
+type ConnectStartResult =
+  | 'target_invalid'
+  | 'inbox_limit'
+  | 'session_retry'
+  | 'rate_limited'
+  | 'failed'
+  | typeof GMAIL_ACCESS_MISSING_RESULT;
 
 /**
  * Closed, privacy-safe copy for the OAuth return contract. Never echo
@@ -88,6 +100,11 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
     tone: 'danger',
     liveRole: 'alert',
   },
+  [GMAIL_ACCESS_MISSING_RESULT]: {
+    message: 'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
 };
 
 const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy> = {
@@ -112,6 +129,16 @@ const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy>
     tone: 'warn',
     liveRole: 'status',
   },
+  [GMAIL_ACCESS_MISSING_RESULT]: {
+    message: 'DeclutrMail needs Gmail access. Try again and allow it on Google’s screen.',
+    tone: 'warn',
+    liveRole: 'status',
+  },
+  failed: {
+    message: 'Could not connect Gmail. Try again.',
+    tone: 'danger',
+    liveRole: 'alert',
+  },
 };
 
 const MAILBOX_HASH = /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
@@ -123,6 +150,7 @@ function reconnectResultOf(value: string | null): ReconnectResult | null {
     case 'target_invalid':
     case 'cancelled':
     case 'failed':
+    case GMAIL_ACCESS_MISSING_RESULT:
       return value;
     default:
       return null;
@@ -135,6 +163,8 @@ function connectStartResultOf(value: string | null): ConnectStartResult | null {
     case 'inbox_limit':
     case 'session_retry':
     case 'rate_limited':
+    case 'failed':
+    case GMAIL_ACCESS_MISSING_RESULT:
       return value;
     default:
       return null;

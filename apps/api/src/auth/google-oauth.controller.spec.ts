@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { BadRequestException, HttpException, Logger, UnauthorizedException } from '@nestjs/common';
+import { EXCEPTION_FILTERS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,9 +13,10 @@ import type { MailboxAccountsService } from '../mailboxes/mailbox-accounts.servi
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
-import type { GoogleOAuthService } from './google-oauth.service.js';
+import { GmailScopeNotGrantedError, type GoogleOAuthService } from './google-oauth.service.js';
 import { GoogleOAuthController, parseBillingReturnTo } from './google-oauth.controller.js';
 import { JwtService } from './jwt.service.js';
+import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import type { SessionPrincipal, SessionsService } from './sessions.service.js';
 
 const RECONNECT_MAILBOX_ID = '11111111-1111-4111-8111-111111111111';
@@ -1762,6 +1764,23 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     },
   );
 
+  it('keeps a validated billing choice on the login-mode quota recovery', async () => {
+    orchestrator.connect.mockRejectedValueOnce(new AppException({ code: 'INBOX_LIMIT_REACHED' }));
+
+    await controller.callback(
+      req({ cookies: loginCookie(NONCE, '/billing?plan=pro&cycle=annual') }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/sign-in?auth_result=inbox_limit&returnTo=%2Fbilling%3Fplan%3Dpro%26cycle%3Dannual`,
+    );
+  });
+
   it('does not trust an unregistered response code in a redirect or audit', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     orchestrator.addMailbox.mockRejectedValueOnce({
@@ -1937,5 +1956,289 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     ).resolves.toBeUndefined();
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/home`);
+  });
+});
+
+/**
+ * D108 — Google finished consent without granting Gmail. Every flow must
+ * stop before the orchestrator (which stores the token and queues the
+ * scan) and return the user to the one surface whose button restarts
+ * consent, with the closed result that renders the one-line reason.
+ */
+describe('GoogleOAuthController.callback — Gmail not granted', () => {
+  const NONCE = 'nonce-value';
+  const IP = '203.0.113.7';
+  const UA = 'curl/8';
+  let webBase: string;
+  let orchestrator: {
+    addMailbox: ReturnType<typeof vi.fn>;
+    connect: ReturnType<typeof vi.fn>;
+  };
+  let oauth: { exchangeCode: ReturnType<typeof vi.fn> };
+  let mailboxes: ReturnType<typeof makeMailboxAccounts>;
+  let securityEvents: ReturnType<typeof makeSecurityEvents>;
+  let jwt: JwtService;
+  let controller: GoogleOAuthController;
+  let res: {
+    clearCookie: ReturnType<typeof vi.fn>;
+    redirect: ReturnType<typeof vi.fn>;
+    cookie: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    // Read per test: earlier suites in this file set WEB_URL while running.
+    webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    orchestrator = { addMailbox: vi.fn(), connect: vi.fn() };
+    oauth = {
+      exchangeCode: vi.fn().mockRejectedValue(new GmailScopeNotGrantedError()),
+    };
+    mailboxes = makeMailboxAccounts();
+    securityEvents = makeSecurityEvents();
+    jwt = makeJwtService();
+    res = { clearCookie: vi.fn(), redirect: vi.fn(), cookie: vi.fn() };
+    controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      orchestrator as unknown as AuthSignupOrchestrator,
+      securityEvents.service,
+      mailboxes as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
+    );
+  });
+
+  function callbackWith(state: Record<string, unknown>): Promise<void> {
+    const req = {
+      cookies: { oauth_state: signedState(jwt, { nonce: NONCE, ...state }) },
+      ip: IP,
+      headers: { 'user-agent': UA },
+    } as unknown as Request;
+    return controller.callback(req, res as unknown as Response, 'auth-code', NONCE);
+  }
+
+  const CONNECT = {
+    mode: 'connect',
+    userId: RECONNECT_USER_ID,
+    workspaceId: RECONNECT_WORKSPACE_ID,
+    sessionId: CONNECT_SESSION_ID,
+  };
+
+  function expectNothingStored(): void {
+    expect(orchestrator.connect).not.toHaveBeenCalled();
+    expect(orchestrator.addMailbox).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+  }
+
+  it('returns a sign-in to /sign-in with the Gmail reason and no session', async () => {
+    await expect(callbackWith({ mode: 'login' })).resolves.toBeUndefined();
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/sign-in?auth_result=gmail_access_missing`,
+    );
+    expectNothingStored();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: IP,
+        userAgent: UA,
+        payload: { provider: 'google', reason: 'gmail_scope_missing' },
+      }),
+    );
+  });
+
+  it('keeps a validated billing choice on the way back to sign-in', async () => {
+    await callbackWith({ mode: 'login', returnTo: '/billing?plan=pro&cycle=annual' });
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/sign-in?auth_result=gmail_access_missing&returnTo=%2Fbilling%3Fplan%3Dpro%26cycle%3Dannual`,
+    );
+  });
+
+  it('drops a forged returnTo on the way back to sign-in', async () => {
+    await callbackWith({ mode: 'login', returnTo: 'https://evil.example/billing?plan=pro' });
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/sign-in?auth_result=gmail_access_missing`,
+    );
+  });
+
+  it('returns an added mailbox to the Settings mailbox list', async () => {
+    await expect(callbackWith(CONNECT)).resolves.toBeUndefined();
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/settings?connect_start_result=gmail_access_missing#mailboxes`,
+    );
+    expectNothingStored();
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'login.failure',
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+        payload: { provider: 'google', mode: 'connect', reason: 'gmail_scope_missing' },
+      }),
+    );
+  });
+
+  it.each([
+    ['reconnect', { reconnectMailboxId: RECONNECT_MAILBOX_ID }, RECONNECT_MAILBOX_ID],
+    ['reactivation', { reactivateMailboxId: REACTIVATE_MAILBOX_ID }, REACTIVATE_MAILBOX_ID],
+  ])('returns a %s to its own Settings row', async (_label, target, mailboxId) => {
+    await expect(callbackWith({ ...CONNECT, ...target })).resolves.toBeUndefined();
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/settings?reconnect_result=gmail_access_missing#mailbox-${mailboxId}`,
+    );
+    expectNothingStored();
+    expect(mailboxes.findOwned).not.toHaveBeenCalled();
+    // Named like every other targeted-recovery reason, so the audit trail
+    // tells a reconnect apart from a plain add.
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: { provider: 'google', mode: 'connect', reason: 'reconnect_gmail_scope_missing' },
+      }),
+    );
+  });
+});
+
+/**
+ * D108 — declining on Google's screen. Cancel is the other common way not
+ * to grant Gmail. It must return the person where they started instead of
+ * failing through to a missing-code 400 rendered as API JSON.
+ */
+describe('GoogleOAuthController.callback — declining on Google’s screen', () => {
+  const NONCE = 'nonce-value';
+  let webBase: string;
+  let oauth: { exchangeCode: ReturnType<typeof vi.fn> };
+  let securityEvents: ReturnType<typeof makeSecurityEvents>;
+  let sessions: ReturnType<typeof makeSessions>;
+  let jwt: JwtService;
+  let controller: GoogleOAuthController;
+  let res: {
+    clearCookie: ReturnType<typeof vi.fn>;
+    redirect: ReturnType<typeof vi.fn>;
+    cookie: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(() => {
+    webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+    oauth = { exchangeCode: vi.fn() };
+    securityEvents = makeSecurityEvents();
+    sessions = makeSessions();
+    jwt = makeJwtService();
+    res = { clearCookie: vi.fn(), redirect: vi.fn(), cookie: vi.fn() };
+    controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      { connect: vi.fn(), addMailbox: vi.fn() } as unknown as AuthSignupOrchestrator,
+      securityEvents.service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      sessions.service,
+    );
+  });
+
+  function returnFromGoogle(state: Record<string, unknown>, error: unknown): Promise<void> {
+    const req = {
+      cookies: { oauth_state: signedState(jwt, { nonce: NONCE, ...state }) },
+      headers: {},
+    } as unknown as Request;
+    return controller.callback(req, res as unknown as Response, undefined, NONCE, error);
+  }
+
+  const CONNECT = {
+    mode: 'connect',
+    userId: RECONNECT_USER_ID,
+    workspaceId: RECONNECT_WORKSPACE_ID,
+    sessionId: CONNECT_SESSION_ID,
+  };
+
+  it('returns a cancelled sign-in to the sign-in page, keeping the billing choice', async () => {
+    await returnFromGoogle(
+      { mode: 'login', returnTo: '/billing?plan=pro&cycle=annual' },
+      'access_denied',
+    );
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/sign-in?returnTo=%2Fbilling%3Fplan%3Dpro%26cycle%3Dannual`,
+    );
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(res.cookie).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: { provider: 'google', reason: 'consent_cancelled' } }),
+    );
+  });
+
+  it.each([['server_error'], [['access_denied']], ['leaked@example.com']])(
+    'sends any other Google error to the failed sign-in result without echoing it (%s)',
+    async (error) => {
+      await returnFromGoogle({ mode: 'login' }, error);
+
+      expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/sign-in?auth_result=failed`);
+      expect(securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({ payload: { provider: 'google', reason: 'consent_failed' } }),
+      );
+      const externalOutput = JSON.stringify({
+        redirects: res.redirect.mock.calls,
+        audits: securityEvents.record.mock.calls,
+      });
+      expect(externalOutput).not.toContain('server_error');
+      expect(externalOutput).not.toContain('leaked@example.com');
+    },
+  );
+
+  it('returns a cancelled mailbox add to the Settings mailbox list', async () => {
+    await returnFromGoogle(CONNECT, 'access_denied');
+
+    expect(sessions.lookupActiveById).toHaveBeenCalledWith(CONNECT_SESSION_ID);
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/settings#mailboxes`);
+    expect(oauth.exchangeCode).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+    expect(securityEvents.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: RECONNECT_USER_ID,
+        workspaceId: RECONNECT_WORKSPACE_ID,
+        payload: { provider: 'google', mode: 'connect', reason: 'consent_cancelled' },
+      }),
+    );
+  });
+
+  it('sends any other Google error on a mailbox add to the failed Settings result', async () => {
+    await returnFromGoogle(CONNECT, 'server_error');
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${webBase}/settings?connect_start_result=failed#mailboxes`,
+    );
+  });
+
+  it('refuses a cancelled mailbox add once the originating session is gone', async () => {
+    sessions.lookupActiveById.mockResolvedValueOnce(null);
+
+    await expect(returnFromGoogle(CONNECT, 'access_denied')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(res.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe('GoogleOAuthController — browser exit filters (D108)', () => {
+  const reflector = new Reflector();
+
+  it.each([
+    ['start', LoginStartExitFilter],
+    ['callback', OAuthCallbackExitFilter],
+  ] as const)('answers failures on GET /%s with a page, never API JSON', (route, filter) => {
+    const filters = reflector.get<unknown[]>(
+      EXCEPTION_FILTERS_METADATA,
+      GoogleOAuthController.prototype[route],
+    );
+    expect(filters).toEqual([filter]);
   });
 });

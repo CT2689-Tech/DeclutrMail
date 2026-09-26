@@ -245,6 +245,48 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
   });
 
+  it('offers Reconnect, not a doomed retry, when the first scan failed on an expired grant', async () => {
+    me = {
+      ...me,
+      mailboxes: me.mailboxes.map((m) =>
+        m.id === MAILBOX_B ? { ...m, readiness: 'failed' as const } : m,
+      ),
+    };
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/v1/sync/status'),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: (req) =>
+          jsonOk({
+            data:
+              req.headers.get('X-Active-Mailbox-Id') === MAILBOX_B
+                ? {
+                    readiness_status: 'failed',
+                    current_stage: 'failed',
+                    progress_pct: 0,
+                    is_ready_for_triage: false,
+                    error_code: 'AuthExpiredError',
+                    last_synced_at: null,
+                  }
+                : readySyncStatus(),
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const row = await waitFor(() => {
+      const item = screen.getByText('chintan.a.thakkar.crypt@gmail.com').closest('li');
+      expect(within(item as HTMLElement).getByText('Needs reconnect')).toBeInTheDocument();
+      return item as HTMLElement;
+    });
+    expect(within(row).queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
+    await userEvent.click(
+      within(row).getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    );
+    expect(startMailboxConnectSpy).toHaveBeenCalledWith(MAILBOX_B);
+  });
+
   it('renders "Needs reconnect" + the Reconnect affordance on an invalid grant', async () => {
     me = { ...me, activeMailboxId: MAILBOX_B };
     installFetchStub([
@@ -862,6 +904,12 @@ describe('SettingsScreen', () => {
       tone: 'danger',
       liveRole: 'alert',
     },
+    {
+      result: 'gmail_access_missing',
+      message: 'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
   ] as const)(
     'shows the controlled $result reconnect result exactly once',
     async ({ result, message, tone, liveRole }) => {
@@ -911,6 +959,18 @@ describe('SettingsScreen', () => {
       message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
       tone: 'warn',
       liveRole: 'status',
+    },
+    {
+      result: 'gmail_access_missing',
+      message: 'DeclutrMail needs Gmail access. Try again and allow it on Google’s screen.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
+    {
+      result: 'failed',
+      message: 'Could not connect Gmail. Try again.',
+      tone: 'danger',
+      liveRole: 'alert',
     },
   ] as const)(
     'shows and scrubs the controlled $result OAuth-start result',

@@ -20,10 +20,12 @@ import {
   BETA_DENIED_REASON,
   BETA_DENIED_REASON_PARAM,
   type ErrorCode,
+  GMAIL_ACCESS_MISSING_RESULT,
   isErrorCode,
   parseSignupAttributionRef,
   SIGNUP_ATTRIBUTION_REFS,
   SIGNUP_REF_COOKIE,
+  type SignInResult,
   type SignupAttributionRef,
 } from '@declutrmail/shared/contracts';
 
@@ -34,16 +36,16 @@ import { SecurityEventsService } from '../security-events/security-events.servic
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
-import { GoogleOAuthService } from './google-oauth.service.js';
+import { GmailScopeNotGrantedError, GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
 import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
+import { parseBillingReturnTo, STATE_COOKIE, STATE_COOKIE_PATH } from './oauth-browser.js';
+import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
 
-/** Cookie carrying the OAuth state — nonce + post-callback intent. */
-const STATE_COOKIE = 'oauth_state';
-/** Cookie path — scoped to the connect routes only. */
-const STATE_COOKIE_PATH = '/api/auth/google';
+export { parseBillingReturnTo };
+
 /** Signed state and browser cookie share the same bounded consent window. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -94,7 +96,12 @@ interface ConnectOAuthState extends OAuthStateBase {
 }
 
 type OAuthState = LoginOAuthState | ConnectOAuthState;
-type ReconnectResult = 'account_mismatch' | 'cancelled' | 'failed' | 'target_invalid';
+type ReconnectResult =
+  | 'account_mismatch'
+  | 'cancelled'
+  | 'failed'
+  | 'target_invalid'
+  | typeof GMAIL_ACCESS_MISSING_RESULT;
 type PendingOAuthState =
   | Omit<LoginOAuthState, 'issuedAt' | 'expiresAt'>
   | Omit<ConnectOAuthState, 'issuedAt' | 'expiresAt'>;
@@ -184,6 +191,7 @@ export class GoogleOAuthController {
    */
   @Get('start')
   @RateLimit('auth')
+  @UseFilters(LoginStartExitFilter)
   async start(
     @Req() req: Request,
     @Res() res: Response,
@@ -331,6 +339,7 @@ export class GoogleOAuthController {
 
   @Get('callback')
   @RateLimit('auth')
+  @UseFilters(OAuthCallbackExitFilter)
   async callback(
     @Req() req: Request,
     @Res() res: Response,
@@ -415,6 +424,41 @@ export class GoogleOAuthController {
       return;
     }
 
+    if (oauthError !== undefined) {
+      // Sign-in and a plain mailbox add. `access_denied` is Google's
+      // documented cancel: nothing was granted and nothing changed, so the
+      // person goes back where they started with no message. Any other
+      // value is one closed failure, never copied into a URL, audit or log.
+      const cancelled = typeof oauthError === 'string' && oauthError === 'access_denied';
+      const reason = cancelled ? 'consent_cancelled' : 'consent_failed';
+      if (cookieState.mode === 'connect') {
+        await this.assertConnectSessionActive(cookieState, res, ipAddress, userAgent);
+        void this.securityEvents.record({
+          eventType: 'login.failure',
+          severity: 'warning',
+          userId: cookieState.userId,
+          workspaceId: cookieState.workspaceId,
+          sourceIp: ipAddress,
+          userAgent,
+          payload: { provider: 'google', mode: 'connect', reason },
+        });
+        this.clearStateCookie(res);
+        if (cancelled) res.redirect(302, `${webBase}/settings#mailboxes`);
+        else this.redirectConnectStartResult(res, webBase, 'failed');
+        return;
+      }
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        sourceIp: ipAddress,
+        userAgent,
+        payload: { provider: 'google', reason },
+      });
+      this.clearStateCookie(res);
+      this.redirectSignInResult(res, webBase, cookieState, cancelled ? undefined : 'failed');
+      return;
+    }
+
     if (typeof code !== 'string' || code.length === 0) {
       if (recoveryState) {
         this.recordReconnectFailure({
@@ -450,6 +494,10 @@ export class GoogleOAuthController {
     try {
       ({ email, refreshToken } = await this.oauth.exchangeCode(code));
     } catch (err) {
+      if (err instanceof GmailScopeNotGrantedError) {
+        this.returnForGmailAccess(res, webBase, cookieState, ipAddress, userAgent);
+        return;
+      }
       // Google rejected the exchange — wrong/expired code, mis-configured
       // OAuth client, or no refresh_token (already-consented account).
       // Reason is a closed enum; the underlying error message is never
@@ -675,7 +723,7 @@ export class GoogleOAuthController {
           userAgent,
           payload: { provider: 'google', reason: 'INBOX_LIMIT_REACHED' },
         });
-        res.redirect(302, `${webBase}/sign-in?auth_result=inbox_limit`);
+        this.redirectSignInResult(res, webBase, cookieState, 'inbox_limit');
         return;
       }
       // D181 emit — the orchestrator itself failed (DB outage during
@@ -823,10 +871,90 @@ export class GoogleOAuthController {
   }
 
   /** Existing closed Settings recovery shared with the pre-consent filter. */
-  private redirectConnectStartResult(res: Response, webBase: string, result: 'inbox_limit'): void {
+  private redirectConnectStartResult(
+    res: Response,
+    webBase: string,
+    result: 'inbox_limit' | 'failed' | typeof GMAIL_ACCESS_MISSING_RESULT,
+  ): void {
     // The callback consumes the state immediately before the mutation.
     const query = new URLSearchParams({ connect_start_result: result });
     res.redirect(302, `${webBase}/settings?${query.toString()}#mailboxes`);
+  }
+
+  /**
+   * Public sign-in page for a login that issued no session, with the closed
+   * result that says why (none for a cancel). Carries the validated billing
+   * choice, so the retry resumes where the user started.
+   */
+  private redirectSignInResult(
+    res: Response,
+    webBase: string,
+    state: LoginOAuthState,
+    result: SignInResult | undefined,
+  ): void {
+    // Same trust-boundary re-validation as the success redirect.
+    const returnTo = parseBillingReturnTo(state.returnTo);
+    const query = new URLSearchParams({
+      ...(result ? { auth_result: result } : {}),
+      ...(returnTo ? { returnTo } : {}),
+    });
+    const search = query.toString();
+    res.redirect(302, `${webBase}/sign-in${search ? `?${search}` : ''}`);
+  }
+
+  /**
+   * Google finished consent without granting Gmail (D108). Its grant is
+   * discarded: no token stored, no scan queued, no session issued. Return
+   * the user to the surface whose button restarts consent, carrying the
+   * closed result that shows why.
+   */
+  private returnForGmailAccess(
+    res: Response,
+    webBase: string,
+    state: OAuthState,
+    sourceIp: string | null,
+    userAgent: string | null,
+  ): void {
+    if (isTargetedRecoveryState(state)) {
+      this.recordReconnectFailure({
+        reason: 'reconnect_gmail_scope_missing',
+        userId: state.userId,
+        workspaceId: state.workspaceId,
+        sourceIp,
+        userAgent,
+      });
+      this.redirectReconnectResult(
+        res,
+        webBase,
+        getRecoveryMailboxId(state),
+        GMAIL_ACCESS_MISSING_RESULT,
+      );
+      return;
+    }
+
+    this.clearStateCookie(res);
+    if (state.mode === 'connect') {
+      void this.securityEvents.record({
+        eventType: 'login.failure',
+        severity: 'warning',
+        userId: state.userId,
+        workspaceId: state.workspaceId,
+        sourceIp,
+        userAgent,
+        payload: { provider: 'google', mode: 'connect', reason: 'gmail_scope_missing' },
+      });
+      this.redirectConnectStartResult(res, webBase, GMAIL_ACCESS_MISSING_RESULT);
+      return;
+    }
+
+    void this.securityEvents.record({
+      eventType: 'login.failure',
+      severity: 'warning',
+      sourceIp,
+      userAgent,
+      payload: { provider: 'google', reason: 'gmail_scope_missing' },
+    });
+    this.redirectSignInResult(res, webBase, state, GMAIL_ACCESS_MISSING_RESULT);
   }
 
   /** Resolve a mailbox in the expected state, owned by both signed authorities. */
@@ -855,7 +983,8 @@ export class GoogleOAuthController {
       | 'reconnect_account_mismatch'
       | 'reconnect_cancelled'
       | 'reconnect_failed'
-      | 'reconnect_target_invalid';
+      | 'reconnect_target_invalid'
+      | 'reconnect_gmail_scope_missing';
     userId: string;
     workspaceId: string;
     sourceIp: string | null;
@@ -934,49 +1063,6 @@ function structuredErrorCode(error: unknown): ErrorCode | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Accept the single public-to-product destination supported at launch.
- * The returned path is canonical so OAuth state never carries arbitrary
- * hosts, fragments, duplicate parameters, or future unreviewed routes.
- */
-export function parseBillingReturnTo(value: unknown): string | undefined {
-  if (
-    typeof value !== 'string' ||
-    !value.startsWith('/') ||
-    value.startsWith('//') ||
-    value.includes('#')
-  ) {
-    return undefined;
-  }
-
-  let url: URL;
-  try {
-    url = new URL(value, 'https://declutrmail.invalid');
-  } catch {
-    return undefined;
-  }
-  if (url.origin !== 'https://declutrmail.invalid' || url.pathname !== '/billing') {
-    return undefined;
-  }
-
-  const keys = [...url.searchParams.keys()];
-  if (keys.some((key) => !['plan', 'cycle', 'promo'].includes(key))) return undefined;
-  if (new Set(keys).size !== keys.length) return undefined;
-
-  const plan = url.searchParams.get('plan');
-  const cycle = url.searchParams.get('cycle');
-  const promo = url.searchParams.get('promo');
-  if ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual')) {
-    return undefined;
-  }
-  if (promo !== null && promo !== 'foundingPro') return undefined;
-  if (promo === 'foundingPro' && (plan !== 'pro' || cycle !== 'annual')) return undefined;
-
-  const query = new URLSearchParams({ plan, cycle });
-  if (promo === 'foundingPro') query.set('promo', promo);
-  return `/billing?${query.toString()}`;
 }
 
 /** Constant-time state comparison — same shape as the original. */
