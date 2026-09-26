@@ -40,9 +40,19 @@ UUID='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 SINCE='[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z'
 DAY='[0-9]{4}-[0-9]{2}-[0-9]{2}'
 ENTRY="^(#.*|[[:space:]]*|${UUID}${TAB}${SINCE}${TAB}${DAY}${TAB}[^${TAB}]+)$"
-BAD="$(grep -nEv "$ENTRY" "$ACKS" | head -n1 || true)"
+# grep -v exits 0 when some line is malformed, 1 when none is, and 2 when
+# it could not check at all — which must not read as "none is".
+set +e
+BAD="$(grep -nEv "$ENTRY" "$ACKS")"
+GREP_RC=$?
+set -e
+if [ "$GREP_RC" -gt 1 ]; then
+  echo "::error title=Known-stuck list unreadable::grep could not check ${ACKS} (exit ${GREP_RC}) — the watchdog cannot tell known stuck mailboxes from new ones."
+  exit 2
+fi
 if [ -n "$BAD" ]; then
-  echo "::error title=Known-stuck list malformed::${ACKS}:${BAD%%:*}: expected mailbox_account_id<TAB>stuck_since (YYYY-MM-DDTHH:MM:SS.ffffffZ)<TAB>acknowledged_on (YYYY-MM-DD)<TAB>note — the watchdog cannot tell known stuck mailboxes from new ones."
+  FIRST="$(printf '%s\n' "$BAD" | head -n1)"
+  echo "::error title=Known-stuck list malformed::${ACKS}:${FIRST%%:*}: expected mailbox_account_id<TAB>stuck_since (YYYY-MM-DDTHH:MM:SS.ffffffZ)<TAB>acknowledged_on (YYYY-MM-DD)<TAB>note — the watchdog cannot tell known stuck mailboxes from new ones."
   exit 2
 fi
 

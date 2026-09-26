@@ -346,20 +346,22 @@ export async function starveTest(project) {
   try {
     await gcpRequest(`${metrics}/${r.metric.name}`, token, 'PUT', r.metric);
     created.push(`${metrics}/${r.metric.name}`);
-    // A new log metric's descriptor can lag its creation; the policy that
-    // filters on it may be refused until it exists.
-    let refused;
-    const perMailbox = await waitFor(
-      'the test metric to accept a policy',
+    // A new log metric's descriptor can lag its creation. Wait for it with
+    // a read, so the policy is created exactly once: re-sending a create
+    // after a lost response could leave a second policy nobody deletes.
+    await waitFor(
+      'the test metric descriptor',
       () =>
-        gcpRequest(`${root}/alertPolicies`, token, 'POST', r.perMailbox).catch((err) => {
-          refused = err;
-          return null;
+        gcpRequest(
+          `${root}/metricDescriptors/logging.googleapis.com/user/${r.metric.name}`,
+          token,
+        ).catch((err) => {
+          if (/HTTP 404/.test(err.message)) return null;
+          throw err;
         }),
-      3 * 60 * 1000,
-    ).catch((err) => {
-      throw refused ?? err;
-    });
+      20 * 60 * 1000,
+    );
+    const perMailbox = await gcpRequest(`${root}/alertPolicies`, token, 'POST', r.perMailbox);
     created.push(`${MONITORING}/${perMailbox.name}`);
     const silent = await gcpRequest(`${root}/alertPolicies`, token, 'POST', r.silent);
     created.push(`${MONITORING}/${silent.name}`);
@@ -406,6 +408,16 @@ export async function starveTest(project) {
     report.result = 'PASS';
   } finally {
     report.cleanup = [];
+    // Every policy this run made carries its run ID, including one whose
+    // create response was lost before its name reached `created`.
+    try {
+      for (const policy of await listAll(`${root}/alertPolicies`, 'alertPolicies', token)) {
+        const url = `${MONITORING}/${policy.name}`;
+        if (policy.displayName?.includes(runId) && !created.includes(url)) created.push(url);
+      }
+    } catch (err) {
+      report.cleanup.push(`FAILED to list policies for run ${runId}: ${err.message}`);
+    }
     for (const url of created.reverse()) {
       try {
         await gcpRequest(url, token, 'DELETE');
@@ -413,6 +425,12 @@ export async function starveTest(project) {
       } catch (err) {
         report.cleanup.push(`FAILED to delete ${url}: ${err.message}`);
       }
+    }
+    // A test policy left behind stays open in production, so a leak fails
+    // the run even when every check passed.
+    if (report.cleanup.some((line) => line.startsWith('FAILED'))) {
+      report.result = 'CLEANUP FAILED: delete the resources listed above by hand';
+      process.exitCode = 1;
     }
     console.log(JSON.stringify(report, null, 2));
   }

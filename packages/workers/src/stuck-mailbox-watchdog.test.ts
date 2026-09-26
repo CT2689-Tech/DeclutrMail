@@ -219,7 +219,10 @@ describe('findStuckMailboxes', () => {
 describe('reportStuckMailboxes', () => {
   type Line = { stream: 'error' | 'info'; record: Record<string, unknown> };
 
-  function capture(): { lines: Line[]; log: { error(l: string): void; info(l: string): void } } {
+  function capture(): {
+    lines: Line[];
+    log: { error: (l: string) => void; info: (l: string) => void };
+  } {
     const lines: Line[] = [];
     return {
       lines,
@@ -300,6 +303,32 @@ describe('reportStuckMailboxes', () => {
     expect(lines.at(-1)).toEqual({
       stream: 'info',
       record: { level: 'info', kind: 'stuck_mailbox_watchdog.completed', stuckMailboxes: 4 },
+    });
+  });
+
+  it('counts a mailbox stuck for two reasons once in the completed line', async () => {
+    // Nothing clears `readiness_status` when a revoked grant is recorded, so
+    // a first scan can read stalled and needs-reconnect at the same time.
+    const id = await seedMailbox('both@example.com');
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: id,
+      readinessStatus: 'syncing',
+      lastIncrementalErrorCode: 'InvalidGrantError',
+      lastIncrementalErrorAt: STALE,
+    });
+    await backdateUpdatedAt(id, STALE);
+    const { lines, log } = capture();
+
+    await reportStuckMailboxes(db as never, log, { now: () => NOW });
+
+    expect(lines.slice(0, -1).map((l) => l.record.reason)).toEqual(
+      expect.arrayContaining(['sync_stalled', 'needs_reconnect']),
+    );
+    expect(lines).toHaveLength(3);
+    expect(lines.at(-1)?.record).toEqual({
+      level: 'info',
+      kind: 'stuck_mailbox_watchdog.completed',
+      stuckMailboxes: 1,
     });
   });
 

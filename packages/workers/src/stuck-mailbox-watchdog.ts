@@ -52,8 +52,8 @@ export interface StuckMailbox {
  * condition — a second copy of that predicate is exactly the class of
  * drift `mailbox-reconnect.ts` warns against.
  *
- * The caller (the worker.ts scheduler) turns a non-empty result into a
- * structured log line per mailbox; this function only finds them.
+ * `reportStuckMailboxes` below turns the result into one log line per
+ * stuck mailbox and reason; this function only finds them.
  */
 export async function findStuckMailboxes(
   db: WorkerDb,
@@ -151,7 +151,7 @@ export async function findStuckMailboxes(
  */
 export async function reportStuckMailboxes(
   db: WorkerDb,
-  log: { error(line: string): void; info(line: string): void },
+  log: { error: (line: string) => void; info: (line: string) => void },
   opts: { now?: () => Date } = {},
 ): Promise<void> {
   const now = opts.now ?? (() => new Date());
@@ -174,7 +174,8 @@ export async function reportStuckMailboxes(
     JSON.stringify({
       level: 'info',
       kind: 'stuck_mailbox_watchdog.completed',
-      stuckMailboxes: stuck.length,
+      // Distinct mailboxes: one can be stuck for two reasons at once.
+      stuckMailboxes: new Set(stuck.map((mailbox) => mailbox.mailboxAccountId)).size,
     }),
   );
 }

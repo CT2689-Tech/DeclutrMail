@@ -84,6 +84,19 @@ test('a malformed entry fails closed and names its line', () => {
   }
 });
 
+test('a list check that cannot run fails closed', () => {
+  // grep exits 2 when it could not check at all; that is not "no bad lines".
+  const bin = mkdtempSync(join(tmpdir(), 'broken-grep-'));
+  writeFileSync(join(bin, 'grep'), '#!/bin/sh\nexit 2\n', { mode: 0o755 });
+  const result = spawnSync('bash', ['scripts/filter-known-stuck.sh'], {
+    input: '',
+    env: { PATH: `${bin}:${process.env.PATH}`, KNOWN_STUCK_FILE: ACKS },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 2);
+  assert.ok(result.stdout.includes('::error'));
+});
+
 test('the committed list is well formed', () => {
   assert.deepEqual(filter([], 'scripts/known-stuck-mailboxes.tsv'), { code: 0, out: '' });
 });
