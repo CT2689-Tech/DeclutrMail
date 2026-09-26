@@ -160,12 +160,17 @@ jobs:
               # must still run it.
               - 'scripts/setup-llm-rejection-alert.mjs'
               - *shared_server
+              # Specs here read the deploy manifest's --set-env-vars (the
+              # quota metric pairing); a manifest-only PR must run them.
+              - '.github/workflows/deploy-cloud-run.yml'
             workers:
               - *infra
               - 'packages/workers/**'
               - 'packages/db/**'
               - 'packages/events/**'
               - *shared_server
+              # unsub-send-enabled-deploy.test.ts reads the deploy manifest.
+              - '.github/workflows/deploy-cloud-run.yml'
             db:
               - *infra
               - 'packages/db/**'

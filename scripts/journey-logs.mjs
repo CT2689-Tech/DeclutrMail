@@ -65,15 +65,24 @@ const stamp = (iso) => (iso ? `${iso.slice(5, 10)} ${iso.slice(11, 19)}` : '—'
 const QUOTA_SOURCES = {
   units: {
     file: '.github/workflows/deploy-cloud-run.yml',
-    pattern: /GMAIL_QUOTA_UNITS_PER_MIN=\d+/,
+    pattern: /GMAIL_QUOTA_UNITS_PER_MIN=(\d+)/,
   },
-  cost: { file: 'apps/api/src/gmail/gmail-client.service.ts', pattern: /^\s+messagesGet:\s*\d+,/m },
+  metric: {
+    file: '.github/workflows/deploy-cloud-run.yml',
+    pattern: /GMAIL_QUOTA_METRIC=([\w./-]+)/,
+  },
+  // `messagesGet: metric === '<metric>' ? <units on it> : <units otherwise>,`
+  cost: {
+    file: 'apps/api/src/gmail/gmail-client.service.ts',
+    pattern: /^\s+messagesGet:\s*metric === '([\w./-]+)' \? (\d+) : (\d+),/m,
+  },
 };
 
 /**
  * OUR configured Gmail pace (limiter budget ÷ what we charge per
- * `messages.get`), read from the two files that set it rather than
- * hardcoded here: a copied constant is exactly the literal that goes stale.
+ * `messages.get` on the deployed quota metric), read from the files that
+ * set it rather than hardcoded here: a copied constant is exactly the
+ * literal that goes stale.
  * It is not Gmail's ceiling. On 2026-09-25 the enforced per-user limit was
  * `defaultPerMinutePerUser` = 15,000 at 5 units per read, while the 20-unit
  * `totalQueryCost` meter was unlimited — Cloud Monitoring
@@ -93,8 +102,10 @@ export function readQuota(root = REPO_ROOT) {
     }
     const match = text.match(pattern);
     if (!match) return null;
-    found[key] = { file, line: match[0].trim(), value: Number(match[0].match(/\d+/)[0]) };
+    found[key] = { file, line: match[0].trim(), groups: match.slice(1) };
   }
+  const [costMetric, onMetric, otherwise] = found.cost.groups;
+  const messagesGetCost = Number(found.metric.groups[0] === costMetric ? onMetric : otherwise);
   let since = null;
   try {
     const dates = Object.values(found).map(({ file, line }) =>
@@ -107,7 +118,7 @@ export function readQuota(root = REPO_ROOT) {
   } catch {
     since = null; // no git history — reported as "quota config date unknown"
   }
-  return { unitsPerMin: found.units.value, messagesGetCost: found.cost.value, since };
+  return { unitsPerMin: Number(found.units.groups[0]), messagesGetCost, since };
 }
 
 /** Cloud Logging entries → `{ ts, p }` rows in time order. */
