@@ -465,9 +465,10 @@ async function bootstrap(): Promise<void> {
    * Size of the dedicated advisory-lock pool.
    *
    * NOT sized to peak demand, and that is a deliberate, budgeted choice.
-   * SIX workers take this lock, and their BullMQ concurrencies sum to
-   * 38: IncrementalSync 20, LabelAction 10, AutopilotAction 5, and
-   * SenderIndexSweep / SnoozeWake / AccountDeletionPurge at 1 each.
+   * SIX workers take this lock, and together they can hold 41 at once:
+   * IncrementalSync 20, LabelAction 10, AutopilotAction 5, SnoozeWake 4
+   * (one job, but its sweep wakes four mailboxes at a time), and
+   * SenderIndexSweep / AccountDeletionPurge at 1 each.
    * (A comment on the autopilot registration below used to put the peak
    * at 15 — it counted only the two workers in front of it, and missed
    * IncrementalSync, which is both the largest consumer and the one that
@@ -478,12 +479,12 @@ async function bootstrap(): Promise<void> {
    * and the reserve queue always drains. The cost is latency, not
    * failure.
    *
-   * Raising it to 38 is what the wait argues for and the CONNECTION
+   * Raising it to 41 is what the wait argues for and the CONNECTION
    * BUDGET forbids today. Postgres reports `max_connections = 60` on the
    * current Supabase compute tier, and the fixed pools already claim 31:
    * this worker's main `pg` (postgres.js default 10) + this lock pool
-   * (10) + the outbox listener (1) + the API's own pool (10). At 38 the
-   * total is 59 of 60 — and exhausting connections fails requests
+   * (10) + the outbox listener (1) + the API's own pool (10). At 41 the
+   * total would be 62, past the 60 — and exhausting connections fails requests
    * outright, where an over-subscribed lock pool only queues. Deferred
    * to the compute-tier decision recorded in FOUNDER-FOLLOWUPS.md
    * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
@@ -2306,10 +2307,11 @@ async function bootstrap(): Promise<void> {
   const autopilotActionBullWorker = new Worker<AutopilotActionJobData, AutopilotActionResult>(
     AUTOPILOT_ACTION_QUEUE,
     (job) => autopilotActionWorker.run(job),
-    // Each sweep holds a `lockPg` advisory-lock connection for its full
-    // duration, sharing the lock pool with five other consumers. This
+    // Each sweep holds a `lockPg` advisory-lock connection for one MATCH
+    // at a time — per-match holds since 2026-09-25, not the whole sweep —
+    // sharing the lock pool with five other consumers. This
     // comment used to put combined peak demand at 15 > 10, counting
-    // only LabelActionWorker and this worker; the real figure is 38
+    // only LabelActionWorker and this worker; the real figure is 41
     // across six workers — see `LOCK_POOL_MAX` above, which carries the
     // accounting and the connection budget that keeps the pool at 10.
     // The overcommit is still ACCEPTED and still not a deadlock:

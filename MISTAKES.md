@@ -4804,6 +4804,30 @@ The declarations came back out.
 **Rule:** A guard that enumerates failure shapes passes every shape nobody thought of — compare against the one good shape instead.
 **Enforcement update:** starve tests for each case above (a GCP fake that reads back like GCP: dropped zeros, pagination, snoozes), each negative-controlled; no hook.
 
+## 2026-09-25 — Two more mailbox-lock holders scaled with the batch: the Autopilot sweep and the Later wake
+**PR:** not yet opened (lock-scope change prepared 2026-09-25)
+**Caught by:** manual review — the follow-up the incident entry above left open
+**What happened:** `AutopilotActionWorker` held the per-mailbox lock for a whole sweep (~20 statements plus a Gmail call per match: an "Approve all" of 100 matches was one 101 s hold at production latency, 201 s at full daily caps), and `SnoozeWakeWorker` held it for all of a mailbox's due wakes (50 senders, 17.9 s). Everything else on the mailbox — a user's Archive (45 s bound), a Later reschedule PATCH (10 s), incremental sync — timed out behind it: in a real-worker smoke, 4 of 19 Archives issued during an 80-match sweep failed on `lock timeout` (p50 31 s, max 62 s). The wake's `lock.run` also sat outside its per-sender try, so one mailbox's lock timeout failed the whole pass while the sibling mailboxes' tasks kept running detached from the failed job.
+**Correct approach:** one hold per match / per sender, every decision input re-read inside the hold (LEARNINGS 2026-09-25). After: max hold 1.5 s / 0.4 s; the same smoke ran 27 of 27 Archives with no timeout (p50 0.9 s, max 2.1 s). A lock the wake cannot take now defers only its own mailbox, stamps nothing on timers it never touched, and lets every other mailbox finish — but the pass still FAILS, and each stuck mailbox reaches Sentry. The first draft reported it as a success with a counter; two reviewers independently caught that this muted the scheduler alert that counts successful runs, so a stuck lock would have left Later mail unreturned behind a green watchdog.
+**Rule:** A lock holder that loops over user-sized input takes the lock per item and re-reads, inside each hold, whatever it acts on. Isolating a failure is not the same as absorbing it: the run still fails loudly.
+**Enforcement update:** tests (each negative-controlled against the old code or the naive per-item variant): statements per hold bounded (old: 197 autopilot, 32 wake), mid-sweep Protect honoured, concurrent-sweep cap clamp, in-flight claim finished not dismissed, lock-failure isolation with a failed pass and a Sentry capture, early stop. No hook.
+
+## 2026-09-25 — An approved Autopilot Later moved mail into Later with no way back
+**PR:** not yet opened (same change)
+**Caught by:** manual review — the readers analysis for the lock-scope change
+**What happened:** de21bae0 (2026-07-14, D245) moved the Later return timer out of an outbox projection of `actions.label_action_applied` and into `LabelActionWorker`'s terminal transaction, deleting the projection. `AutopilotActionWorker` relied on that projection ("the timer is projected only after Gmail has confirmed the move") and was not updated. An approved autopilot Later (`auto_screen_new_senders`) labelled the mail and took it out of the inbox but wrote no `sender_policies.snoozed_until`: it never woke, never showed on the Later page, and its Undo had no timer to cancel. The one test for the path asserted the action row's `wake_at` and the event payload — both producer-side — and never the row the wake sweep reads.
+**Correct approach:** one timer writer, `scheduleLaterReturn`, called from both terminal transactions. Autopilot keeps a timer the sender already has (the user's time, note and queued Wake now survive; the new mail returns with it). Review then showed the undo side of the same class: a sender has ONE timer, and undoing either of two Laters on it cleared that timer while the other's mail still carried the label — stranded, manual or Autopilot alike. Undo now clears the timer only when none of the sender's mail is left in Later.
+**Rule:** When a projection is folded into one producer's transaction, grep every producer of that event and move them together; test the consumer's input row, not the producer's payload. State a shared row's invariant ("Later mail always has a timer") and check it on every writer, including undo.
+**Enforcement update:** tests (negative-controlled): an approved Later leaves `snoozed_until = wake_at`; a Later that moved nothing leaves no timer; Autopilot keeps a user's timer; undo keeps the timer while other Later mail remains. No hook.
+
+## 2026-09-25 — The Autopilot unsubscribe cap charged each intent twice
+**PR:** not yet opened (same change)
+**Caught by:** manual review — moving the cap count inside the per-match hold
+**What happened:** the unsubscribe branch of the daily-cap count took every `source='autopilot'` activity row for the rule. Each intent also appends an outcome row under the same `rule_id` (`unsubscribe_action_required` / `unsubscribe_unavailable` in the same transaction; the terminal outcome from `UnsubExecutionWorker`), so the 25/day cap the UI shows admitted between 13 and 25 intents depending on how they spread across sweeps. The comment said "every intent row counts".
+**Correct approach:** count the decision row only (`action = 'unsubscribe'`).
+**Rule:** A count of decisions filters on the decision's own discriminator, never on everything that shares its foreign key.
+**Enforcement update:** test (negative-controlled): 24 intents plus 24 outcome rows leave one slot open. No hook.
+
 ## 2026-09-26 — The vendor watchdog stayed red for a known gap, so three new breaches changed nothing
 **PR:** TBD
 **Caught by:** class sweep after the stuck-mailbox fix (#778)
