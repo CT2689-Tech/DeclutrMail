@@ -301,6 +301,32 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       // Idempotent replay (BullMQ retry after a committed terminal tx).
       return { affectedCount: job.affectedCount, undoToken: job.undoToken, alreadyDone: true };
     }
+    // A failed forward row is final too. `failed` is only written once no
+    // retry follows, and a failed action runs again only as a new attempt
+    // from its review. A redelivery of the old job (a stalled job, or a
+    // dead-letter replay) would otherwise run it without the Protected
+    // re-check, since a failed row may have reached Gmail (D245).
+    // ENQUEUE_FAILED is the exception: that job may still be on its way.
+    if (
+      job.status === 'failed' &&
+      job.direction === 'forward' &&
+      job.errorCode !== ENQUEUE_FAILED_ERROR_CODE
+    ) {
+      console.warn(
+        JSON.stringify({
+          severity: 'WARNING',
+          level: 'warn',
+          kind: 'label_action.failed_redelivery_ignored',
+          actionId: job.id,
+          mailboxAccountId: job.mailboxAccountId,
+          errorCode: job.errorCode,
+          message: 'Ignored a failed action delivered again: only a reviewed retry runs it.',
+        }),
+      );
+      return job.errorCode === RECOVERY_SENDER_PROTECTED_ERROR_CODE
+        ? { affectedCount: 0, undoToken: null, alreadyDone: true, stoppedProtected: true }
+        : { affectedCount: job.affectedCount, undoToken: job.undoToken, alreadyDone: true };
+    }
 
     const change = labelChangeForVerb(job.verb);
 
@@ -832,6 +858,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         message: 'The Gmail client sent a request without running beforeFirstRequest.',
       }),
     );
+    // console.error never reaches Sentry (the worker SDK runs with
+    // `integrations: []`), and this is a broken client, not a log line.
+    this.observer.captureBackgroundFailure(new Error('Gmail client skipped beforeFirstRequest'), {
+      kind: 'label_action.before_first_request_skipped',
+      tags: { worker: this.workerName, mailbox_account_id: job.mailboxAccountId },
+    });
     await this.markExecuting(job.id, job.mailboxAccountId, null);
   }
 

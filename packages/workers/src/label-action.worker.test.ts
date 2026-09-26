@@ -1356,9 +1356,17 @@ describe('LabelActionWorker', () => {
     it('stops a retry whose sender turned Protected after its review, and keeps it retryable', async () => {
       const job = await recoveryJob();
       await protect();
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await run(job);
+      const logged = [...warned.mock.calls];
+      warned.mockRestore();
 
+      // Ids only (D7) — pinned, so an address added later fails here.
+      const [line] = structuredLines(logged, 'label_action.recovery_sender_protected');
+      expect(Object.keys(line!).sort()).toEqual(
+        ['actionId', 'kind', 'level', 'mailboxAccountId', 'message', 'severity', 'verb'].sort(),
+      );
       expect(gmail.calls).toHaveLength(0);
       expect(await statusOf(job.id)).toMatchObject({
         status: 'failed',
@@ -1368,6 +1376,62 @@ describe('LabelActionWorker', () => {
       expect(await db.select().from(activityLog)).toEqual([]);
       expect(await db.select().from(outboxEvents)).toEqual([]);
       expect(await db.select().from(undoJournal)).toEqual([]);
+    });
+
+    // BullMQ can deliver the same job twice (a stall, or a crash before it
+    // records completion). The stopped attempt stays stopped: only a new
+    // review creates the next attempt.
+    it('keeps a stopped retry stopped when the same job is delivered again', async () => {
+      const job = await recoveryJob();
+      await protect();
+
+      await run(job);
+      const again = await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(again).toMatchObject({ affectedCount: 0, undoToken: null, stoppedProtected: true });
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
+      expect(await db.select().from(undoJournal)).toEqual([]);
+      expect(await db.select().from(activityLog)).toEqual([]);
+    });
+
+    // Same for any failed row: its next run is a new attempt from a review,
+    // never a stalled or dead-letter replay of the old job — which would
+    // otherwise skip the re-check, since a failed row may have reached Gmail.
+    it('does not rerun a failed job that is delivered again', async () => {
+      const job = await forwardJob({
+        status: 'failed',
+        errorCode: 'PermanentError',
+        resolvedMessageIds: ['p1', 'p2'],
+      });
+      await protect();
+      const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const result = await run(job);
+      const lines = [...warned.mock.calls];
+      warned.mockRestore();
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(result).toMatchObject({ affectedCount: 0, undoToken: null, alreadyDone: true });
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: 'PermanentError',
+      });
+      const [line] = structuredLines(lines, 'label_action.failed_redelivery_ignored');
+      expect(Object.keys(line!).sort()).toEqual(
+        [
+          'actionId',
+          'errorCode',
+          'kind',
+          'level',
+          'mailboxAccountId',
+          'message',
+          'severity',
+        ].sort(),
+      );
     });
 
     it('stops that retry at the send too, if protection lands during the quota wait', async () => {
@@ -1493,6 +1557,12 @@ describe('LabelActionWorker', () => {
     it('says so loudly when the client never ran the hook, and still marks the job in flight', async () => {
       const job = await forwardJob();
       gmail.ignoreHook = true;
+      const captured: string[] = [];
+      worker.setObserver({
+        captureFailure: () => {},
+        captureBackgroundFailure: (_error, ctx) => captured.push(ctx.kind),
+        recordBackgroundNotice: () => {},
+      });
       const error = vi.spyOn(console, 'error').mockImplementation(() => {});
       let logged: unknown[][] = [];
       await run(job).finally(() => {
@@ -1500,7 +1570,14 @@ describe('LabelActionWorker', () => {
         error.mockRestore();
       });
 
-      expect(structuredLines(logged, 'label_action.before_first_request_skipped')).toHaveLength(1);
+      const lines = structuredLines(logged, 'label_action.before_first_request_skipped');
+      expect(lines).toHaveLength(1);
+      // Ids only (D7) — pinned, so an address added later fails here.
+      expect(Object.keys(lines[0]!).sort()).toEqual(
+        ['actionId', 'kind', 'level', 'mailboxAccountId', 'message', 'severity'].sort(),
+      );
+      // A console line never reaches Sentry; the observer does.
+      expect(captured).toEqual(['label_action.before_first_request_skipped']);
       expect(await statusOf(job.id)).toMatchObject({ status: 'done' });
     });
 
