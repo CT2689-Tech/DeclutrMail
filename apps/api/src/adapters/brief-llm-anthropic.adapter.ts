@@ -41,6 +41,8 @@ import type {
   BriefNarrativeNoiseGroup,
 } from '@declutrmail/workers';
 
+import { LlmCircuitBreaker, providerErrorFields } from './llm-circuit-breaker.js';
+
 /**
  * D62 — Anthropic Haiku 4.5. Same constant as the reasoning adapter for
  * D24; kept locally rather than imported so the two adapters can pin
@@ -117,17 +119,32 @@ export interface BriefLlmAnthropicAdapterDeps {
    * + base URL; tests inject a mock client.
    */
   client: Anthropic;
+  /**
+   * Pauses calls after the provider refuses the account. The composition
+   * root shares one with the reasoning adapter (same account). Required,
+   * so a construction site cannot silently get a breaker of its own.
+   */
+  breaker: LlmCircuitBreaker;
 }
 
 /**
  * BriefLlmAnthropicAdapter — implements `BriefLlmPort` against the
- * Messages API. Stateless; safe to share across the worker's bounded
- * concurrency pool.
+ * Messages API. Safe to share across the worker's bounded concurrency
+ * pool; its only state is the breaker.
  */
 export class BriefLlmAnthropicAdapter implements BriefLlmPort {
-  constructor(private readonly deps: BriefLlmAnthropicAdapterDeps) {}
+  private readonly breaker: LlmCircuitBreaker;
+
+  constructor(private readonly deps: BriefLlmAnthropicAdapterDeps) {
+    this.breaker = deps.breaker;
+  }
+
+  isBlocked(): boolean {
+    return this.breaker.isBlocked();
+  }
 
   async generateNarrative(input: BriefNarrativeInput): Promise<string | null> {
+    if (this.breaker.isBlocked()) return null;
     const userPrompt = renderBriefUserPrompt(input);
     try {
       const response = await this.deps.client.messages.create({
@@ -140,18 +157,19 @@ export class BriefLlmAnthropicAdapter implements BriefLlmPort {
       if (narrative === null || narrative.split(/\s+/).length > NARRATIVE_MAX_WORDS) return null;
       return narrative;
     } catch (err) {
-      // No throws — the port's contract is "soft path". Structured log
-      // so observability can correlate fallbacks with API health.
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'brief.adapter_error',
-          adapter: 'BriefLlmAnthropicAdapter',
-          model: HAIKU_MODEL_ID,
-          error: err instanceof Error ? err.message : String(err),
-          ...(err instanceof Anthropic.APIError ? { status: err.status, type: err.type } : {}),
-        }),
-      );
+      // No throws — the port's contract is "soft path". A refusal is
+      // logged by the breaker; anything else is logged here.
+      const source = { adapter: 'BriefLlmAnthropicAdapter', model: HAIKU_MODEL_ID };
+      if (this.breaker.recordFailure(err, source) === null) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'brief.adapter_error',
+            ...source,
+            ...providerErrorFields(err),
+          }),
+        );
+      }
       return null;
     }
   }
@@ -250,10 +268,11 @@ function extractText(response: Anthropic.Message): string | null {
  * always use the template" path per D62.
  */
 export function buildBriefLlmAdapter(
+  breaker: LlmCircuitBreaker,
   env: NodeJS.ProcessEnv = process.env,
 ): BriefLlmAnthropicAdapter | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const client = new Anthropic({ apiKey });
-  return new BriefLlmAnthropicAdapter({ client });
+  return new BriefLlmAnthropicAdapter({ client, breaker });
 }

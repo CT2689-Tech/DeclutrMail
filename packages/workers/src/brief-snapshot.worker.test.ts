@@ -1278,6 +1278,46 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.generatedBy).toBe('template');
   });
 
+  it('D62 — while the provider refuses the account, skips the call and says so per mailbox', async () => {
+    // Before the breaker each mailbox's refused call logged its own
+    // brief.adapter_error. Now only the first refusal reaches the
+    // provider, so the mailboxes after it must still say why their
+    // Brief has no note.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const generateNarrative = vi.fn();
+    const llm: BriefLlmPort = { generateNarrative, isBlocked: () => true };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+      await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+      expect(generateNarrative).not.toHaveBeenCalled();
+      const paused = warnSpy.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind?: string; mailboxAccountId?: string })
+        .filter((line) => line.kind === 'brief.llm_paused');
+      expect(paused).toEqual([expect.objectContaining({ mailboxAccountId })]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+    const [row] = await db
+      .select({ generatedBy: briefRuns.generatedBy })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.generatedBy).toBe('template');
+  });
+
   it('D62 — LLM empty/whitespace-only return falls back to template', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
