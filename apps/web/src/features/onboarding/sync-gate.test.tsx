@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
-import { SyncGate, stageSentence } from './sync-gate';
+import { SyncGate, stageSentence, timeLeftPhrase } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
@@ -102,7 +102,8 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
-    // No time promise (D109 hard rule) — in either leave-line variant.
+    // The leave line promises no time, in either variant: time left is
+    // only ever an estimate on the count line, from watched progress.
     for (const variant of [html, renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />)]) {
       expect(variant).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
     }
@@ -244,6 +245,125 @@ describe('SyncGate render', () => {
     ]) {
       expect(html).not.toMatch(/\bScreen\b/);
     }
+  });
+});
+
+describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 2026-09-26)', () => {
+  const READING: SyncStatus = {
+    readiness_status: 'syncing',
+    current_stage: 'fetching_metadata',
+    progress_pct: 26,
+    is_ready_for_triage: false,
+    last_synced_at: null,
+    message_progress: { processed: 12_400, total: 40_898 },
+  };
+  const reading = (processed: number): SyncStatus => ({
+    ...READING,
+    message_progress: { processed, total: 40_898 },
+  });
+
+  it('shows emails read of emails in the mailbox, in place of the stage sentence', () => {
+    render(<SyncGate status={READING} />);
+
+    const line = screen.getByTestId('sync-count');
+    expect(line).toHaveTextContent('12,400 of 40,898 emails');
+    // Nothing watched arriving yet, so no time.
+    expect(line).not.toHaveTextContent(/left/);
+    // The stage sentence stays the live status — for screen readers only,
+    // so each new count is not announced.
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Reading sender info.');
+    expect(status).toHaveStyle({ position: 'absolute' });
+    expect(line).not.toHaveAttribute('role');
+  });
+
+  it('before the mailbox is listed: no count, the stage sentence on screen', () => {
+    render(<SyncGate status={{ ...READING, message_progress: null }} />);
+
+    expect(screen.queryByTestId('sync-count')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading sender info.');
+    expect(screen.getByRole('status')).not.toHaveStyle({ position: 'absolute' });
+  });
+
+  it('an API without the field (an older deploy) shows no count', () => {
+    const { message_progress: _drop, ...older } = READING;
+
+    render(<SyncGate status={older} />);
+
+    expect(screen.queryByTestId('sync-count')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading sender info.');
+  });
+
+  it('shows counts only while the scan reads the mailbox', () => {
+    for (const html of [
+      renderToStaticMarkup(
+        <SyncGate status={{ ...READING, current_stage: 'building_sender_index' }} />,
+      ),
+      renderToStaticMarkup(
+        <SyncGate
+          status={{
+            ...READING,
+            readiness_status: 'ready',
+            current_stage: 'ready',
+            is_ready_for_triage: true,
+          }}
+        />,
+      ),
+      renderToStaticMarkup(
+        withClient(
+          <SyncGate
+            status={{
+              ...READING,
+              readiness_status: 'failed',
+              current_stage: 'failed',
+              error_code: 'TransientError',
+            }}
+          />,
+        ),
+      ),
+    ]) {
+      expect(html).not.toContain('data-testid="sync-count"');
+      expect(html).not.toContain('40,898');
+    }
+  });
+
+  it('adds time left once two batches have been watched arriving', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { rerender } = render(<SyncGate status={reading(12_400)} />);
+      vi.setSystemTime(10_000);
+      rerender(<SyncGate status={reading(12_900)} />);
+      expect(screen.getByTestId('sync-count')).not.toHaveTextContent(/left/);
+
+      vi.setSystemTime(20_000);
+      rerender(<SyncGate status={reading(13_400)} />);
+      // 27,498 left at the watched 50/s ≈ 9.2 min, rounded up.
+      expect(screen.getByTestId('sync-count')).toHaveTextContent(
+        '13,400 of 40,898 emails · about 10 min left',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('counts one email as "email"', () => {
+    render(<SyncGate status={{ ...READING, message_progress: { processed: 0, total: 1 } }} />);
+
+    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^0 of 1 email$/);
+  });
+});
+
+describe('timeLeftPhrase', () => {
+  it.each([
+    [10_000, 'about 1 min left'],
+    [549_960, 'about 10 min left'],
+    [59 * 60_000, 'about 59 min left'],
+    [60 * 60_000, 'about 1 hr left'],
+    [65 * 60_000, 'about 1 hr 5 min left'],
+    [150 * 60_000 + 1, 'about 2 hr 31 min left'],
+  ])('%i ms → %s (minutes rounded up)', (ms, phrase) => {
+    expect(timeLeftPhrase(ms)).toBe(phrase);
   });
 });
 

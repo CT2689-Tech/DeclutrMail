@@ -4,13 +4,14 @@ import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 import { OnboardingPhase } from './onboarding-phase';
 
 import { Button, tokens } from '@declutrmail/shared';
-import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
+import type { SyncMessageProgress, SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
+import { useScanTimeLeft } from './scan-time-left';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -20,8 +21,11 @@ const { color, font, text, radius, motion } = tokens;
  * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
  * connect, before the app opens. D109's one line saying the user may
  * leave, ONE progress bar bound to the real `progress_pct` and ONE
- * sentence naming the real `current_stage` — no fake ticking (D109 hard
- * rule), no aspirational stage list.
+ * line under it: while the scan reads the mailbox, the real counts
+ * ("12,400 of 40,898 emails", plus time left once this tab has watched
+ * two batches arrive); otherwise a sentence naming the real
+ * `current_stage` — no fake ticking (D109 hard rule), no aspirational
+ * stage list.
  *
  * This file is the PRESENTATIONAL view: it takes a `SyncStatus` and
  * renders. Polling + the ready→advance redirect live in the route
@@ -62,6 +66,34 @@ function stageSentence(status: SyncStatus): string {
   if (status.readiness_status === 'ready') return STAGE_SENTENCE.ready;
   if (status.current_stage === 'ready') return STAGE_SENTENCE.finalizing;
   return STAGE_SENTENCE[status.current_stage];
+}
+
+/**
+ * The counts, only while the scan reads the mailbox — the one stage they
+ * describe. `null` before the mailbox is listed and from an API that
+ * does not send the field yet: no line, never a guessed number.
+ */
+function readingCounts(status: SyncStatus): SyncMessageProgress | null {
+  if (status.readiness_status !== 'syncing' || status.current_stage !== 'fetching_metadata') {
+    return null;
+  }
+  return status.message_progress ?? null;
+}
+
+/** "about 10 min left" — minutes rounded up, so it errs long, never short. */
+function timeLeftPhrase(msLeft: number): string {
+  const minutes = Math.max(1, Math.ceil(msLeft / 60_000));
+  if (minutes < 60) return `about ${minutes} min left`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? `about ${hours} hr left` : `about ${hours} hr ${rest} min left`;
+}
+
+function countLine(counts: SyncMessageProgress, msLeft: number | null): string {
+  const read = `${counts.processed.toLocaleString('en-US')} of ${counts.total.toLocaleString(
+    'en-US',
+  )} ${counts.total === 1 ? 'email' : 'emails'}`;
+  return msLeft === null ? read : `${read} · ${timeLeftPhrase(msLeft)}`;
 }
 
 /**
@@ -203,6 +235,8 @@ function SyncProgress({
   // Strictly null: the API always sends the field, so a missing one is
   // unknown, and unknown promises nothing.
   const emailOnReady = readyEmail && status.last_synced_at === null;
+  const counts = readingCounts(status);
+  const msLeft = useScanTimeLeft(counts);
 
   return (
     <Shell>
@@ -251,20 +285,22 @@ function SyncProgress({
         />
       </div>
 
-      {/* The real current_stage, as one sentence. Ready says it in the title. */}
+      {/* The real current_stage, as one sentence. Ready says it in the title.
+          While counts show, it stays the live status for screen readers
+          only — a count that changes every batch would be announced each
+          time. */}
       {!ready && (
         <p
           role="status"
           data-testid="sync-stage"
-          style={{
-            color: color.fgMuted,
-            fontSize: text.lg,
-            lineHeight: 1.45,
-            margin: '16px 0 0',
-            fontVariantNumeric: 'tabular-nums',
-          }}
+          style={counts ? SCREEN_READER_ONLY : UNDER_BAR_LINE}
         >
           {stageSentence(status)}
+        </p>
+      )}
+      {counts && (
+        <p data-testid="sync-count" style={UNDER_BAR_LINE}>
+          {countLine(counts, msLeft)}
         </p>
       )}
 
@@ -392,6 +428,26 @@ function SyncFailed({
   );
 }
 
+const UNDER_BAR_LINE = {
+  color: color.fgMuted,
+  fontSize: text.lg,
+  lineHeight: 1.45,
+  margin: '16px 0 0',
+  fontVariantNumeric: 'tabular-nums',
+} as const;
+
+const SCREEN_READER_ONLY = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
+
 const titleStyle = {
   fontFamily: font.display,
   fontSize: 'clamp(30px, 4vw, 42px)',
@@ -437,4 +493,4 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export { stageSentence };
+export { stageSentence, timeLeftPhrase };

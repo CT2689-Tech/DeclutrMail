@@ -113,6 +113,23 @@ const syncStatus = (ready: boolean): FetchStubHandler => ({
     }),
 });
 
+/** Mid-read, as the API sends it: the running scan's counts ride along. */
+const syncStatusReading: FetchStubHandler = {
+  method: 'GET',
+  path: '/api/v1/sync/status',
+  respond: () =>
+    json({
+      data: {
+        readiness_status: 'syncing',
+        current_stage: 'fetching_metadata',
+        progress_pct: 26,
+        is_ready_for_triage: false,
+        last_synced_at: null,
+        message_progress: { processed: 12_400, total: 40_898 },
+      },
+    }),
+};
+
 const emptyRules: FetchStubHandler = {
   method: 'GET',
   path: '/api/autopilot/rules',
@@ -298,6 +315,13 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
+  it('the first-run gate shows how far the scan has read', async () => {
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
+  });
+
   // Asserted at the page: the gate renders the promise correctly on its own,
   // so the join to worry about is whether the route passes the setting in.
   it('the first-run gate promises the ready email when the user will get it (D109)', async () => {
@@ -419,6 +443,14 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
+  });
+
+  it('the secondary gate shows how far the scan has read too', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    installFetchStub([secondaryMe(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   it('the secondary gate passes the ready-email setting through too (D109)', async () => {

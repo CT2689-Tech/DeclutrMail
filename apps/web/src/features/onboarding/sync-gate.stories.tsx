@@ -10,12 +10,15 @@
 //   • Syncing              — mid-scan; the "we'll email you" leave line
 //   • SyncingReadyEmailOff — mid-scan; leave line without the email promise
 //   • RescanNoReadyEmail   — re-scan of a mailbox that finished before; no email promise
+//   • ReadingBeforeTotal   — reading, mailbox not listed yet: the stage sentence
+//   • ReadingCount         — reading: "12,400 of 40,898 emails", no time yet
+//   • ReadingTimeLeft      — live batches; time left appears after the second
 //   • Ready                — scan done, shown until the route navigates away
 //   • Failed               — terminal error with a known error_code
 //   • FailedPermanent      — the longest failed copy; names the support address
 //   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back
 
-import type { ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { SyncGate } from './sync-gate';
@@ -43,7 +46,7 @@ const meta: StoryMeta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one stage sentence, both from real backend state. No privacy badge on this screen — it sits on the promise step, at the decision point.',
+          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one line under it, all from real backend state: while the scan reads the mailbox, emails read of emails in it (plus time left once the tab has watched two batches arrive); otherwise the stage sentence. No privacy badge on this screen — it sits on the promise step, at the decision point.',
       },
     },
   },
@@ -123,6 +126,58 @@ export const RescanNoReadyEmail: Story<typeof SyncGate> = {
     readyEmail: true,
   },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+const READING: SyncStatus = {
+  readiness_status: 'syncing',
+  current_stage: 'fetching_metadata',
+  progress_pct: 26,
+  is_ready_for_triage: false,
+  last_synced_at: null,
+  message_progress: { processed: 12_400, total: 40_898 },
+};
+
+/** Reading, before the mailbox is listed — no total yet, so no count. */
+export const ReadingBeforeTotal: Story<typeof SyncGate> = {
+  args: { status: { ...READING, progress_pct: 5, message_progress: null }, readyEmail: true },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Reading — emails read of emails in the mailbox, from the worker's
+ * batches. No time left yet: this render has not watched a batch arrive.
+ */
+export const ReadingCount: Story<typeof SyncGate> = {
+  args: { status: READING, readyEmail: true },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Feeds a 500-email batch every 2s, the way the poll sees the worker's. */
+function LiveReading(args: GateArgs) {
+  const [processed, setProcessed] = useState(12_400);
+  useEffect(() => {
+    const id = setInterval(() => setProcessed((p) => Math.min(p + 500, 40_898)), 2_000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <SyncGate
+      {...args}
+      status={{
+        ...READING,
+        progress_pct: 5 + Math.round((70 * processed) / 40_898),
+        message_progress: { processed, total: 40_898 },
+      }}
+    />
+  );
+}
+
+/**
+ * Reading, live — "about N min left" joins the count after the second
+ * batch, at the rate watched between them.
+ */
+export const ReadingTimeLeft: Story<typeof SyncGate> = {
+  args: { status: READING, readyEmail: true },
+  render: (args: GateArgs) => frame(<LiveReading {...args} />),
 };
 
 /** Ready — shown only until the route navigates to the next step. */
