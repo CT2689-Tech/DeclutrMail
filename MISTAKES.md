@@ -4803,3 +4803,11 @@ The declarations came back out.
 **Correct approach:** Verify by equality with the known-good definition on every field that decides firing (normalised for proto3's dropped zeros), read snoozes, treat an unset `enabled` as off. Classify from the provider's own sentence anchored at the start of its message, accept the wording as a fallback for the structured code, and page (as `other`) on an unknown 429 code. Log provider fields only when they are shaped like identifiers. Give every surface that lost a signal its replacement (`brief.llm_paused`).
 **Rule:** A guard that enumerates failure shapes passes every shape nobody thought of — compare against the one good shape instead.
 **Enforcement update:** starve tests for each case above (a GCP fake that reads back like GCP: dropped zeros, pagination, snoozes), each negative-controlled; no hook.
+
+## 2026-09-26 — The vendor watchdog stayed red for a known gap, so three new breaches changed nothing
+**PR:** TBD
+**Caught by:** class sweep after the stuck-mailbox fix (#778)
+**What happened:** `check-vendor-limits.mjs` exits 1 on any BREACH or ERROR. Anthropic returned ERROR (no Admin API key) on every scheduled run from at least 2026-09-21, so the run was red daily. Sentry's BREACH (2026-09-24) and the Google Cloud budget and Upstash BREACHes (2026-09-25) arrived in a run that was already red, and nothing anyone saw changed.
+**Correct approach:** The same shape as the stuck-mailbox fix: a committed list of acknowledged (vendor, status) pairs, each with an expiry date. Listed rows warn, anything else fails, and a missing or malformed list fails closed.
+**Rule:** A watchdog that is red for a known reason has stopped reporting; acknowledge the known member explicitly so red means news again (see the 2026-09-26 stuck-mailbox entry).
+**Enforcement update:** `scripts/check-vendor-limits.test.mjs` replays the 2026-09-26 run's rows; each assertion was verified red against a negative control.

@@ -62,14 +62,22 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  * full command line, which would carry the DSN). HTTP error details
  * carry status code + truncated response body only.
  *
- * Exit codes: 0 — all OK/WARN/UNCONFIGURED · 1 — any BREACH or ERROR
- * (or WARN with WARN_IS_FAILURE=true).
+ * Known issues: a failing row listed in scripts/known-vendor-issues.tsv
+ * (vendor + status, until a date) prints as a warning and does not fail
+ * the run, so red means a failure nobody has acknowledged yet. Before the
+ * list, Anthropic's standing ERROR (no Admin API key) held the run red
+ * every day from at least 2026-09-21, and the Sentry and Google Cloud
+ * budget breaches of 2026-09-24/25 changed nothing anyone saw.
+ *
+ * Exit codes: 0 — nothing failing that is not acknowledged · 1 — an
+ * unacknowledged BREACH or ERROR (or WARN with WARN_IS_FAILURE=true) ·
+ * 2 — the known-issues list is missing or malformed.
  */
 
 import { checkGcpBillingExport } from './gcp-billing-export.mjs';
 import { execFile } from 'node:child_process';
-import { appendFileSync, writeFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { anthropicCostUsd, finiteNumber, makeSnapshot } from './infra-observability.mjs';
 
 // One slow vendor must not hang the run — every external call (HTTP
@@ -737,6 +745,54 @@ async function runVendor(vendor) {
   }
 }
 
+// ---------------------------------------------------------- known issues
+
+const FAILING_STATUSES = ['WARN', 'BREACH', 'ERROR'];
+
+/**
+ * Parses scripts/known-vendor-issues.tsv. Refuses anything it cannot use:
+ * a misspelt vendor or an OK status would never match a row, so it would
+ * read as an acknowledgment while acknowledging nothing.
+ */
+export function parseKnownIssues(text, vendorNames) {
+  const known = new Map();
+  text.split('\n').forEach((line, i) => {
+    if (!line.trim() || line.startsWith('#')) return;
+    const [vendor, status, until, note, ...extra] = line.split('\t');
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(until ?? '') ? new Date(`${until}T00:00:00Z`) : null;
+    const valid =
+      vendorNames.includes(vendor) &&
+      FAILING_STATUSES.includes(status) &&
+      date !== null &&
+      !Number.isNaN(date.getTime()) &&
+      date.toISOString().slice(0, 10) === until &&
+      Boolean(note?.trim()) &&
+      extra.length === 0;
+    if (!valid)
+      throw new Error(
+        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
+      );
+    const key = `${vendor}\t${status}`;
+    if (known.has(key)) throw new Error(`line ${i + 1}: ${vendor} ${status} is listed twice`);
+    known.set(key, { until, note: note.trim() });
+  });
+  return known;
+}
+
+/** Splits failing rows into acknowledged (through `until`, inclusive) and not. */
+export function triage(results, known, { today, warnIsFailure = false }) {
+  const failing = [];
+  const acknowledged = [];
+  for (const r of results) {
+    if (!(r.status === 'BREACH' || r.status === 'ERROR' || (warnIsFailure && r.status === 'WARN')))
+      continue;
+    const ack = known.get(`${r.name}\t${r.status}`);
+    if (ack && today <= ack.until) acknowledged.push({ ...r, ...ack });
+    else failing.push(ack ? { ...r, expired: ack.until } : r);
+  }
+  return { failing, acknowledged };
+}
+
 // ---------------------------------------------------------------- output
 
 const STATUS_ICON = {
@@ -789,14 +845,48 @@ async function main() {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${table}\n`);
   }
 
-  const warnIsFailure = process.env.WARN_IS_FAILURE === 'true';
-  const failing = results.filter(
-    (r) => r.status === 'BREACH' || r.status === 'ERROR' || (warnIsFailure && r.status === 'WARN'),
-  );
+  // Read on every run, failing rows or not, so a broken list fails the day
+  // it lands instead of the day the next vendor breaches.
+  const listPath =
+    process.env.KNOWN_VENDOR_ISSUES_FILE ??
+    fileURLToPath(new URL('./known-vendor-issues.tsv', import.meta.url));
+  let known;
+  try {
+    known = parseKnownIssues(
+      readFileSync(listPath, 'utf8'),
+      VENDORS.map((v) => v.name),
+    );
+  } catch (err) {
+    console.log(
+      `::error title=Known vendor issues list unreadable::${listPath}: ${err.message} — the watchdog cannot tell known vendor issues from new ones.`,
+    );
+    process.exit(2);
+  }
+  const { failing, acknowledged } = triage(results, known, {
+    today: new Date().toISOString().slice(0, 10),
+    warnIsFailure: process.env.WARN_IS_FAILURE === 'true',
+  });
+  for (const r of acknowledged) {
+    console.log(
+      `::warning title=Known vendor issue::${r.name} (${r.status}) — acknowledged until ${r.until}: ${r.note}`,
+    );
+  }
+  if (acknowledged.length > 0 && process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(
+      process.env.GITHUB_STEP_SUMMARY,
+      `Acknowledged in scripts/known-vendor-issues.tsv, not failing this run: ${acknowledged
+        .map((r) => `${r.name} (${r.status}) until ${r.until}`)
+        .join('; ')}\n`,
+    );
+  }
   if (failing.length > 0) {
     // `::error::` surfaces as a red annotation on the Actions run.
     console.log(
-      `::error::Vendor limits watchdog failing: ${failing.map((r) => `${r.name} (${r.status})`).join('; ')}`,
+      `::error::Vendor limits watchdog failing: ${failing
+        .map(
+          (r) => `${r.name} (${r.status}${r.expired ? `, acknowledged until ${r.expired}` : ''})`,
+        )
+        .join('; ')}`,
     );
     process.exit(1);
   }
