@@ -25,7 +25,7 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
 
-**Source:** PR adding `scripts/setup-stuck-mailbox-alert.mjs` (session 2026-09-26)
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778), session 2026-09-26
 
 **Why:** the new alert definitions ship in code, but Cloud Monitoring only
 changes when the script runs against prod. Until then the old policy
