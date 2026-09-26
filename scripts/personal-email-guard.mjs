@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-// The first character is alphanumeric so `${ALERT_EMAIL:-x@gmail.com}` reads as `x`.
+// The first character is alphanumeric so `${ALERT_EMAIL:-you@gmail.com}` reads as `you`.
 const CONSUMER_ADDRESS =
   /[A-Za-z0-9][A-Za-z0-9._%+-]*@(?:gmail\.com|googlemail\.com|yahoo\.[a-z.]+|hotmail\.[a-z.]+|outlook\.[a-z.]+|live\.com|msn\.com|icloud\.com|me\.com|aol\.com|proton\.me|protonmail\.com)\b/gi;
 

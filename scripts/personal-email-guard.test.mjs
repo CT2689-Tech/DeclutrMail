@@ -18,10 +18,10 @@ test('no tracked file carries a personal email address', () => {
 });
 
 test('a real-looking address is caught; placeholders and business senders are not', () => {
-  assert.deepEqual(findPersonalAddresses('signups (`jane.doe42@gmail.com`, x@yahoo.co.in)'), [
-    'jane.doe42@gmail.com',
-    'x@yahoo.co.in',
-  ]);
+  // Assembled at runtime so this tracked file stays clean under its own scan.
+  const real = ['jane.doe42', 'gmail.com'].join('@');
+  const other = ['x', 'yahoo.co.in'].join('@');
+  assert.deepEqual(findPersonalAddresses(`signups (\`${real}\`, ${other})`), [real, other]);
   assert.deepEqual(
     findPersonalAddresses(
       'you@gmail.com Owner@Gmail.com ${ALERT_EMAIL:-you@gmail.com} news@substack.com donotreply@dmv.ca.gov',
