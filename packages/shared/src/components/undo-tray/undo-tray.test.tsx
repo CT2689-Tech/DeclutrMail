@@ -353,6 +353,16 @@ describe('<UndoTray /> — one pill (static)', () => {
     expect(list).toContain(' · 1 Protected sender skipped');
   });
 
+  // Archived/Deleted read verb then count; Later reads the count before
+  // its destination, or the line runs "Moved to Later 1,400 emails".
+  it('puts the count before the destination for Later', () => {
+    const later = entry({ actionKind: 'later', affectedCount: 1400, senderCount: 1 });
+    const pill = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [later] })} />);
+    expect(pill).toContain('Moved 1,400 emails to Later');
+    expect(pill).toContain('Moved 1,400 emails to Later. Undo available.');
+    expect(pill).not.toContain('Moved to Later 1,400');
+  });
+
   it('renders for a running action alone, without an Undo', () => {
     const html = renderToStaticMarkup(
       <UndoTray

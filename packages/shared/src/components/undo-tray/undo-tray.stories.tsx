@@ -416,6 +416,67 @@ export const PillDoneProtectedSkipped: Story<typeof UndoTray> = {
     ),
 };
 
+/** The same decision in the opened list — the skip stays on its line. */
+export const ListDoneProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        defaultOpen
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999998',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 1400,
+            senderCount: 12,
+            note: '1 Protected sender skipped',
+          },
+        ])}
+      />,
+    ),
+};
+
+/** Part failed and one sender was skipped: both in the alert's own line, read aloud. */
+export const PillProblemProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-skip',
+              tone: 'attention',
+              label: 'Delete: 2 of 12 failed · 1 Protected sender skipped',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** Later names a destination, so the count goes before it. */
+export const PillDoneLater: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999997',
+            actionKind: 'later',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 1400,
+            senderCount: 12,
+          },
+        ])}
+      />,
+    ),
+};
+
 /** …and when nothing else ran, the skip is the line. */
 export const PillProtectedSkipped: Story<typeof UndoTray> = {
   render: () =>

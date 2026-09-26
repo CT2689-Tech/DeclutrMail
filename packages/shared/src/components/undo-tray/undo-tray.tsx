@@ -144,10 +144,10 @@ function headlineSpeech(headline: TrayHeadline | null): string {
   const { entry } = headline;
   const total =
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
-      ? ` ${emailCount(entry.affectedCount)}`
-      : '';
+      ? emailCount(entry.affectedCount)
+      : null;
   const note = entry.note ? ` ${entry.note}.` : '';
-  return `${doneLabel(entry.actionKind)}${total}.${note} Undo available.`;
+  return `${doneLine(entry.actionKind, total)}.${note} Undo available.`;
 }
 
 /**
@@ -557,8 +557,7 @@ function Headline({
   return (
     <>
       <span style={{ minWidth: 0 }}>
-        {doneLabel(entry.actionKind)}
-        {total !== null ? ` ${total}` : ''}
+        {doneLine(entry.actionKind, total)}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
         {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
       </span>
@@ -847,6 +846,16 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
  * registry's full result label. Unsubscribe states the request, never the
  * outcome (D58: nothing here knows the sender honoured it).
  */
+/**
+ * The pill's line: verb, then how much. Later names a destination, so its
+ * count goes before it — "Moved 1,400 emails to Later", never "Moved to
+ * Later 1,400 emails".
+ */
+function doneLine(kind: UndoActionKind, total: string | null): string {
+  if (total === null) return doneLabel(kind);
+  return kind === 'later' ? `Moved ${total} to Later` : `${doneLabel(kind)} ${total}`;
+}
+
 function doneLabel(kind: UndoActionKind): string {
   switch (kind) {
     case 'archive':

@@ -12,7 +12,7 @@ import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { resetTriageStore } from '@/features/triage/store';
 import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 
-import { outcomeNotice, undoLineNote, workingNotice } from './in-flight';
+import { outcomeNotice, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
@@ -102,6 +102,7 @@ describe('what the pill says once a decision stops', () => {
       'info',
       'Delete: 13 Protected senders skipped',
     ],
+    // The rest ran and changed nothing: both facts, not just the skip.
     [
       status({
         total: 12,
@@ -111,12 +112,14 @@ describe('what the pill says once a decision stops', () => {
         skippedProtectedSenderIds: ids(1),
       }),
       'info',
-      'Delete: 1 Protected sender skipped',
+      'Delete: 1 Protected sender skipped · nothing else changed',
     ],
+    // Beside a failure the skip is part of the line itself — an alert's
+    // detail slot is not read aloud.
     [
       status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) }),
       'attention',
-      'Delete: 2 of 12 failed',
+      'Delete: 2 of 12 failed · 1 Protected sender skipped',
     ],
     [
       status({
@@ -128,7 +131,7 @@ describe('what the pill says once a decision stops', () => {
         skippedProtectedSenderIds: ids(1),
       }),
       'attention',
-      'Delete failed',
+      'Delete failed · 1 Protected sender skipped',
     ],
   ] as const)('%#: %s → %s', (result, tone, label) => {
     expect(outcomeNotice(GROUP, result)).toMatchObject({ tone, label });
@@ -184,8 +187,9 @@ describe('what the pill says once a decision stops', () => {
   });
 
   // Founder decision D4: when the rest of the decision changed mail, the
-  // skip rides its Undo line — one line, not a second one above it.
-  it('folds a skip into the Undo line when the rest of the decision changed mail', () => {
+  // skip rides that decision's own Undo line (from `GET /api/undo`), so
+  // there is no second line here.
+  it('adds no line of its own when the rest of the decision changed mail', () => {
     const rest = status({
       total: 12,
       done: 12,
@@ -194,14 +198,11 @@ describe('what the pill says once a decision stops', () => {
       skippedProtectedSenderIds: ids(1),
     });
     expect(outcomeNotice(GROUP, rest)).toBeNull();
-    expect(undoLineNote(rest)).toBe('1 Protected sender skipped');
   });
 
-  it('puts the skip beside a failure instead of on the Undo line, and names no one', () => {
+  it('names no one on a failure line that also carries a skip', () => {
     const partly = status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) });
-    expect(outcomeNotice(GROUP, partly)).toMatchObject({ detail: '1 Protected sender skipped' });
     expect(outcomeNotice(GROUP, partly)?.who).toBeUndefined();
-    expect(undoLineNote(partly)).toBeNull();
     const failed = status({
       status: 'failed',
       total: 12,
@@ -210,13 +211,8 @@ describe('what the pill says once a decision stops', () => {
       affectedCount: 0,
       skippedProtectedSenderIds: ids(1),
     });
-    expect(outcomeNotice(GROUP, failed)).toMatchObject({ detail: '1 Protected sender skipped' });
     expect(outcomeNotice(GROUP, failed)?.who).toBeUndefined();
-  });
-
-  it('adds nothing to the Undo line when nothing was skipped', () => {
-    expect(undoLineNote(status({}))).toBeNull();
-    expect(undoLineNote(null)).toBeNull();
+    expect(outcomeNotice(GROUP, failed)?.detail).toBeUndefined();
   });
 
   it('claims no ending for a job that only aged out of the list', () => {
@@ -390,6 +386,9 @@ describe('ProductUndoTray — live line', () => {
     expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
   });
 
+  // The count comes with the decision itself (`GET /api/undo`), in the
+  // same read as the line: it never grows a moment after it renders, and
+  // survives a mailbox round trip. The batch status here names no skip.
   it('folds a Protected skip into the decision’s own Undo line (D4)', async () => {
     resetFetchStub();
     installFetchStub([
@@ -407,6 +406,7 @@ describe('ProductUndoTray — live line', () => {
                 expiresAt: '2026-09-25T10:00:05.000Z',
                 senderCount: 12,
                 affectedCount: 1400,
+                protectedSkippedCount: 1,
               },
             ],
           }),
@@ -421,13 +421,7 @@ describe('ProductUndoTray — live line', () => {
         path: /^\/api\/actions\/batch\/[^/]+$/,
         respond: () =>
           jsonOk({
-            data: status({
-              total: 12,
-              done: 12,
-              requestedCount: 1400,
-              affectedCount: 1400,
-              skippedProtectedSenderIds: ids(1),
-            }),
+            data: status({ total: 12, done: 12, requestedCount: 1400, affectedCount: 1400 }),
           }),
       },
     ]);

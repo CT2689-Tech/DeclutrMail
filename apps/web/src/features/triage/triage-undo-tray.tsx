@@ -12,16 +12,19 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import {
   isRunning,
   outcomeNotice,
-  undoLineNote,
   useInFlightActions,
   workingNotice,
 } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
-import { undoEntriesQueryOptions } from '@/features/undo/query-options';
+import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { getBatchStatus, isTerminalStatus, type InFlightActionGroup } from '@/lib/api/actions';
-import { getActionFailureCopy, UNDO_DONE_TOAST } from '@/lib/action-error-copy';
+import {
+  getActionFailureCopy,
+  protectedSkippedCopy,
+  UNDO_DONE_TOAST,
+} from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
@@ -70,7 +73,7 @@ const decisionId = (entry: UndoTrayEntry): string => entry.groupId ?? entry.toke
 function useUndoEntries(mailboxId?: string) {
   return useQuery(
     undoEntriesQueryOptions(mailboxId, async (signal) => {
-      const env = await apiGet<UndoTrayEntry[]>('/api/undo', {
+      const env = await apiGet<UndoWireEntry[]>('/api/undo', {
         signal,
         ...(mailboxId ? { mailboxId } : {}),
       });
@@ -146,8 +149,6 @@ export function ProductUndoTray({
    */
   const inFlightQuery = useInFlightActions(mailboxId);
   const [outcomes, setOutcomes] = useState<Array<Omit<UndoTrayNotice, 'onDismiss'>>>([]);
-  /** What a decision's own Undo line adds ("1 Protected sender skipped"), by `groupId`. */
-  const [undoNotes, setUndoNotes] = useState<ReadonlyMap<string, string>>(new Map());
   // Tagged with its mailbox: the other mailbox's list must never read as
   // "everything I was running has stopped".
   const seenRunning = useRef<{
@@ -199,8 +200,6 @@ export function ProductUndoTray({
         .catch(() => null)
         .then((status) => {
           if (mailboxGeneration.current !== generation) return;
-          const note = undoLineNote(status);
-          if (note) setUndoNotes((prev) => new Map(prev).set(group.groupId, note));
           const notice = outcomeNotice(group, status);
           if (!notice) return;
           setOutcomes((prev) => [notice, ...prev.filter((n) => n.id !== notice.id)].slice(0, 3));
@@ -223,7 +222,6 @@ export function ProductUndoTray({
     mailboxGeneration.current += 1;
     setInFlight(null);
     setOutcomes([]);
-    setUndoNotes(new Map());
     return () => {
       mailboxGeneration.current += 1;
     };
@@ -378,6 +376,13 @@ export function ProductUndoTray({
   // the headline: a line still reading "440 emails · 2 senders" while one
   // of them is on its way back would be a count the row no longer holds.
   const entries = (entriesQuery.data ?? [])
+    // D245 / founder decision D4: a sender the decision skipped rides its
+    // own Undo line — counted by the server, in the same read as the line.
+    .map(({ protectedSkippedCount, ...entry }: UndoWireEntry): UndoTrayEntry =>
+      protectedSkippedCount
+        ? { ...entry, note: protectedSkippedCopy(protectedSkippedCount) }
+        : entry,
+    )
     .filter(
       (entry) => !baseline?.tokens.has(decisionId(entry)) || sessionGroups.has(decisionId(entry)),
     )
@@ -404,10 +409,6 @@ export function ProductUndoTray({
             : {}),
         },
       ];
-    })
-    .map((entry) => {
-      const note = undoNotes.get(decisionId(entry));
-      return note ? { ...entry, note } : entry;
     });
 
   // Z — undo last (D35). Same typing guards as `resolveShortcut` in
