@@ -4,7 +4,7 @@ import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
 import { reconcileSenderCategories, sendersAwaitingRescore } from './gmail-category.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
@@ -250,15 +250,21 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
             rescoresNotRequested += awaiting.length;
           }
         }
-      } catch {
+      } catch (err) {
         mailboxesFailed += 1;
+        // SQLSTATE only — a closed five-character code ("57014" is a
+        // statement timeout), never the message, which can carry row
+        // data (D7).
+        const code = (err as { code?: unknown } | null)?.code;
         console.error(
           JSON.stringify({
             severity: 'ERROR',
             level: 'error',
             kind: 'sender_index_sweep.mailbox_failed',
             worker: this.workerName,
+            mailboxRef: telemetryReference(mailboxAccountId),
             step,
+            ...(typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? { sqlState: code } : {}),
             errorKind: ctx.signal?.aborted ? 'cancelled' : 'reconciliation_failed',
           }),
         );
@@ -296,10 +302,13 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
   /**
    * Ask the score worker for the recount's senders. Never throws: the
    * correction has already committed, and the senders stay marked
-   * (`sendersAwaitingRescore`), so tomorrow's run asks again. A failure
-   * is captured, not just printed — `console.error` reaches nobody
-   * (Sentry runs with `integrations: []`) — and counted on the success
-   * line, so "corrected N tabs" cannot read as "and re-scored them".
+   * (`sendersAwaitingRescore`), so tomorrow's run asks again. Until a
+   * new verdict lands, lists and Triage show the old one and a page open
+   * refreshes it; Autopilot does not act on it (a marked decision reads
+   * as "no decision" in `materializeAutopilotSignals`). A failure is
+   * captured, not just printed — `console.error` reaches nobody (Sentry
+   * runs with `integrations: []`) — and counted on the success line, so
+   * "corrected N tabs" cannot read as "and re-scored them".
    */
   private async requestRescore(
     mailboxAccountId: string,
@@ -315,12 +324,15 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
           level: 'error',
           kind: 'sender_index_sweep.rescore_enqueue_failed',
           worker: this.workerName,
+          mailboxRef: telemetryReference(mailboxAccountId),
           senders: senderKeys.length,
         }),
       );
       this.observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), {
         kind: 'sender_index_sweep.rescore_enqueue_failed',
-        tags: { worker: this.workerName, senders: senderKeys.length },
+        // Server Sentry tags are allowlisted (sentry-scrubber.ts); the
+        // count rides on the log line above.
+        tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
       });
       return false;
     }

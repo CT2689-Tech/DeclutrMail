@@ -10,7 +10,9 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { materializeAutopilotSignals } from './autopilot-signals.js';
 
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
@@ -222,6 +224,44 @@ describe('Gmail tab recount → re-score', () => {
     const d = await decisionOf('friend');
     expect(d.verdict).toBe('keep');
     expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('buys no model prose on the nightly path — the new reason is the template', async () => {
+    // The recount runs on a timer across every mailbox; the founder's
+    // standing choice is no scheduled bulk re-buy (2026-08-19, 09-25).
+    await seedGuessedPrimary('newsletter', [
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+    ]);
+    const explain = vi.fn(async () => 'Model prose.');
+
+    await sweepThenRescore({ explain });
+
+    expect(explain).not.toHaveBeenCalled();
+    const d = await decisionOf('newsletter');
+    expect(d.generatedBy).toBe('template');
+    expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('Autopilot does not act on a verdict the recount marked stale', async () => {
+    // Between the recount's commit and the new verdict, the old one was
+    // computed from the wrong tab. Autopilot must read it as "no
+    // decision" — its verdict-gated presets then skip the sender.
+    await seedGuessedPrimary('stale', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('fresh', [{ labelIds: ['INBOX', 'CATEGORY_PERSONAL'], read: true }]);
+    await db.update(triageDecisions).set({ verdict: 'archive', confidence: '0.90' });
+
+    await new SenderIndexSweepWorker({
+      db: db as never,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      onSendersRecategorized: async () => {}, // the re-score has not run yet
+    }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+    const rows = await materializeAutopilotSignals(db as never, mailboxAccountId, NOW);
+    const bySender = new Map(rows.map((r) => [r.senderKey, r.decision]));
+    expect(bySender.get('stale')).toBeNull();
+    expect(bySender.get('fresh')).toEqual({ verdict: 'archive', confidence: 0.9 });
   });
 
   it('refuses an empty set instead of scoring the whole mailbox', async () => {

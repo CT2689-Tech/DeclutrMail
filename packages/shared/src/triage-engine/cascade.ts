@@ -90,7 +90,8 @@ export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   protect_starred: 'the user starred a message from this sender in the past year',
   protect_gmail_important: 'Gmail marked several recent messages from this sender important',
   wrote_to_at_least_once: 'the user has written to this sender',
-  gmail_primary: 'Gmail files this sender in Primary, where real correspondence lands',
+  gmail_primary:
+    "Gmail files most of this sender's mail in Primary and it offers no unsubscribe link",
   starred_recently: 'the user starred a message from this sender recently',
   high_read_rate: 'the user reads most of what this sender sends',
   long_relationship_engaged: 'this is a long relationship the user still engages with',
@@ -325,8 +326,15 @@ export function runCascade(s: SenderSignals): CascadeResult {
     };
   }
 
-  // Rule 3 — Gmail's own Primary category.
-  if (s.gmailCategory === 'primary') {
+  // Rule 3 — Gmail's own Primary tab, for a sender that does not
+  // declare itself bulk mail. A List-Unsubscribe header is the sender's
+  // own statement that it is a mailing stream (RFC 2369), and people
+  // writing to you do not send one — so a Primary sender WITH a channel
+  // is judged on volume and engagement like everyone else (founder
+  // decision 2026-09-26). `gmailCategory` is 'primary' only when most of
+  // the sender's labelled mail is in Primary; mail with no tab label
+  // never counts (mig 0079).
+  if (s.gmailCategory === 'primary' && s.unsubscribeChannel === 'none') {
     return {
       verdict: 'keep',
       confidence: 0.95,

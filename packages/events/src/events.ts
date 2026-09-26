@@ -46,9 +46,10 @@ const ConfidenceSchema = z.number().min(0).max(1);
 
 /**
  * Emitted by the score worker after EVERY score job — a whole-mailbox
- * `sync_complete` sweep or a single-sender `signal_change` /
- * `stale_refresh` / `manual_rescore` run (`cron_sweep` is declared but
- * has no producer). Drives the
+ * `sync_complete` sweep, a single-sender `signal_change` /
+ * `stale_refresh` / `manual_rescore` run, or a `signal_change` run over
+ * the set of senders a Gmail tab recount marked stale (`cron_sweep` is
+ * declared but has no producer). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */

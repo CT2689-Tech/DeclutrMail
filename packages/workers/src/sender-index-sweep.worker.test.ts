@@ -562,9 +562,11 @@ describe('SenderIndexSweepWorker', () => {
         fail.mockRestore();
       }
       const failure = lines
-        .map((l) => JSON.parse(l) as { kind?: string; step?: string })
+        .map((l) => JSON.parse(l) as { kind?: string; step?: string; mailboxRef?: string })
         .find((l) => l.kind === 'sender_index_sweep.mailbox_failed');
       expect(failure?.step).toBe('categories');
+      // Joinable to the mailbox without naming it (telemetry reference).
+      expect(failure?.mailboxRef).toMatch(/^ref_/);
     });
   });
 

@@ -57,15 +57,20 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
     ).toBe('keep');
   });
 
-  it("one-click in category 'primary' is OFFERED but never RECOMMENDED", () => {
-    // Availability and recommendation are different questions. The verb
-    // stays live in the popover — there is a real one-click channel, and
-    // gating it greyed a button with no reason text and no server
-    // counterpart. But primary-category mail is where real correspondence
-    // lands, so Unsubscribe is never the derived default there.
+  it("one-click in category 'primary' leads with Unsubscribe — the header outranks the tab", () => {
+    // Founder decision 2026-09-26: Primary keeps a sender only when it
+    // offers no unsubscribe link. A one-click header is the sender saying
+    // it is a mailing stream, so the tab gives it no exemption here either.
     const row = sender({ unsubscribeMethod: 'one_click', gmailCategory: 'primary' });
-    expect(derivePrimaryVerbId(row)).toBe('keep');
+    expect(derivePrimaryVerbId(row)).toBe('unsubscribe');
     expect(canUnsubscribe(row)).toBe(true);
+  });
+
+  it("one-click with no majority Gmail tab ('unknown') leads with Unsubscribe", () => {
+    // Before mig 0079 these senders were stored as 'primary' by default
+    // and a one-click newsletter led with Keep.
+    const row = sender({ unsubscribeMethod: 'one_click', gmailCategory: 'unknown' });
+    expect(derivePrimaryVerbId(row)).toBe('unsubscribe');
   });
 
   it('mailto is NOT unsub-ready — manual at launch (D230), never auto-recommended', () => {

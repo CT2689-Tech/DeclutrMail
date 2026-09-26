@@ -222,9 +222,7 @@ export function canUnsubscribe(s: Sender): boolean {
   // nothing to send, which is a fact about the sender rather than a
   // policy. The former `gmailCategory !== 'primary'` term is gone — it
   // had no server, worker, or scoring counterpart and greyed the button
-  // with no reason text. `deriveDefaultPrimary` already declines to
-  // RECOMMEND Unsubscribe for those senders, which is the right place
-  // for a soft signal.
+  // with no reason text.
   return s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto';
 }
 

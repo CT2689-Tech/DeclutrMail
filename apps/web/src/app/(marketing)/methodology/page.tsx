@@ -80,18 +80,21 @@ export default function MethodologyPage() {
         title="Suggestions come from clear rules, not guessed categories."
       >
         <p>
-          Protected senders are handled first. New or low-volume senders are suggested for Later.
-          For the rest, DeclutrMail compares Archive and Unsubscribe using facts such as volume and
-          read rate. It does not use machine learning to guess email categories.
+          Protected senders are handled first. Senders you recently wrote to, starred, or mostly
+          read are kept, and so is one Gmail files in Primary that offers no unsubscribe link. New
+          or low-volume senders are suggested for Later. For the rest, DeclutrMail compares Archive
+          and Unsubscribe using facts such as volume and read rate. It does not use machine learning
+          to guess email categories.
         </p>
         <RecommendationCascadeFigure />
         <details>
           <summary>Where language generation fits</summary>
           <p>
             Anthropic may turn the selected sender facts into a short explanation. It receives the
-            sender, suggested action, volume, read rate, and Gmail&rsquo;s own category label. It
-            does not receive subject lines, preview snippets, or full email contents for this
-            explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation.
+            sender, suggested action, volume, read rate, and Gmail&rsquo;s own category label when
+            one applies. It does not receive subject lines, preview snippets, or full email contents
+            for this explanation. If Anthropic is unavailable, DeclutrMail shows a standard
+            explanation.
           </p>
         </details>
       </DocSection>

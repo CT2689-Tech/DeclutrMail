@@ -157,8 +157,8 @@ export interface ScoreJobData {
    * If set (and `senderKey` is not), score exactly these senders — the
    * ones a Gmail tab recount marked stale (`sendersAwaitingRescore`). One
    * job for the set, so the run publishes ONE `score_run_completed` and
-   * one Autopilot sweep follows, not one per sender. Stored explanations
-   * are never reused for them: their input is what changed.
+   * one Autopilot sweep follows, not one per sender. Their reasoning is
+   * the template: this path runs nightly and buys no model prose.
    */
   senderKeys?: readonly string[];
   trigger: ScoreTrigger;
@@ -433,12 +433,6 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       let batch: SignalBatch;
       try {
         batch = await this.loadSignalBatch(payload.mailboxAccountId, chunk);
-        // A named set is re-scored because its explanations' input
-        // changed (the Gmail tab recount). Never reuse one: a score job
-        // that overlapped the recount can have rewritten the stale row
-        // with a fresh expiry, and reuse would keep "…your Primary
-        // inbox" on a sender that is not in Primary.
-        if (payload.senderKeys) batch.existingDecisions.clear();
       } catch (err) {
         // A failed PREFETCH loses the chunk, not the sweep. Logged with
         // its size so a chunk silently skipped is never mistaken for a
@@ -461,7 +455,16 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       const settled = await Promise.allSettled(
         chunk.map((senderKey) =>
           this.limiter(() =>
-            this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt, batch),
+            this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt, batch, {
+              // A named set is the nightly Gmail tab recount, which runs
+              // on a timer across every mailbox; it buys no prose. The
+              // founder's standing choice is no bulk re-buy on a
+              // schedule (2026-08-19, 2026-09-25), and the template is
+              // true by construction — it cannot reuse or re-arm an old
+              // "…your Primary inbox" sentence, which reuse could after
+              // a score job overlapped the recount.
+              explain: !payload.senderKeys,
+            }),
           ),
         ),
       );
@@ -550,6 +553,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     producedAt: Date,
     expiresAt: Date,
     batch: SignalBatch,
+    opts: { explain: boolean },
   ): Promise<{
     verdict: TriageVerdict;
     generatedBy: 'llm_haiku' | 'template';
@@ -571,7 +575,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let timedOut = false;
     let reused = false;
     let called = false;
-    if (this.deps.llm) {
+    if (this.deps.llm && opts.explain) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
       // explain() for EVERY sender, including ones whose verdict did
@@ -1119,11 +1123,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
  * quarantine's own graduation rule already needs three.
  *
  * NO Primary carve-out. The obvious second clause — "or Gmail files it
- * in Primary, where real correspondence lands" — is unreachable: Primary
- * is Phase A rule 3, which returns Keep at 0.95 before Phase B is
- * consulted at all. A first message from a person never reaches the
- * Screener because it is never unjudged. Writing that clause and
- * watching its test fail is how this comment exists.
+ * in Primary" — is unreachable for the senders it would be written for:
+ * a Primary sender with no unsubscribe link is Phase A rule 3, which
+ * returns Keep at 0.95 before Phase B is consulted at all. What CAN reach
+ * Phase B is a Primary sender that declares itself bulk mail (an
+ * unsubscribe link) and first-contact mail with no Gmail tab label
+ * (mig 0079) — neither is the person-to-person case the clause means.
+ * Writing that clause and watching its test fail is how this comment
+ * exists.
  *
  * A sender that does not clear the bar is NOT hidden: it keeps its
  * engine verdict, stays in Senders, and remains eligible for Triage. It
