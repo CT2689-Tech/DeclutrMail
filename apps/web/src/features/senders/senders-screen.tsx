@@ -62,7 +62,12 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
-import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/action-error-copy';
+import {
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/action-error-copy';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
@@ -699,8 +704,9 @@ function SendersScreenContent({
   const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
     mailboxId: string | undefined;
     batchId: string;
-    /** Requested subject senders — locked against re-dispatch while
-     *  this handle is active or parked overdue. */
+    /** Senders sent a one-click request — locked against re-dispatch
+     *  while this handle is active or parked overdue. Every sender the
+     *  server skipped was sent nothing, so it is not here. */
     senderIds: string[];
     senderCount: number;
     skipped: UnsubBatchReceiptData['skipped'];
@@ -1275,7 +1281,9 @@ function SendersScreenContent({
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : `Couldn't ${primaryType} ${sender.name}`,
+                  : enqueueMayHaveStarted(err)
+                    ? getActionFailureCopy('status', { action: `${verb} for ${sender.name}` })
+                    : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
               );
             },
@@ -1401,7 +1409,9 @@ function SendersScreenContent({
                           reason: `enqueue_${secondary.type}_after_unsub`,
                         });
                         toast(
-                          `Unsubscribe started, but couldn't ${secondary.type} the older email from ${sref.name}`,
+                          enqueueMayHaveStarted(err)
+                            ? `Unsubscribe started, but couldn't confirm ${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email from ${sref.name} — check Activity before retrying`
+                            : `Unsubscribe started, but couldn't ${secondary.type} the older email from ${sref.name}`,
                           'warn',
                         );
                       },
@@ -1422,7 +1432,14 @@ function SendersScreenContent({
                   return;
                 }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-                toast(`Couldn't request the unsubscribe from ${sref.name}`, 'warn');
+                toast(
+                  enqueueMayHaveStarted(err)
+                    ? getActionFailureCopy('status', {
+                        action: `the unsubscribe from ${sref.name}`,
+                      })
+                    : `Couldn't request the unsubscribe from ${sref.name}`,
+                  'warn',
+                );
               },
             },
           );
@@ -1468,7 +1485,10 @@ function SendersScreenContent({
               setActiveUnsubBatch({
                 mailboxId: actionMailboxId,
                 batchId: res.batchId,
-                senderIds: senderRefs.map((sref) => sref.id),
+                senderIds: acceptedIds(
+                  senderRefs.map((sref) => sref.id),
+                  res.skipped,
+                ),
                 senderCount: res.senderCount,
                 skipped,
               });
@@ -1527,7 +1547,9 @@ function SendersScreenContent({
                       });
                     }
                     toast(
-                      `Unsubscribes started, but couldn't ${secondary.type} the older email — see Activity`,
+                      enqueueMayHaveStarted(err)
+                        ? `Unsubscribes started, but couldn't confirm ${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email — check Activity before retrying`
+                        : `Unsubscribes started, but couldn't ${secondary.type} the older email — see Activity`,
                       'warn',
                     );
                   },
@@ -1538,17 +1560,27 @@ function SendersScreenContent({
               closeSubmitted();
               // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              // 409 NO_ACTIONABLE_SENDERS is a designed state: the
-              // selection moved between the preview and the confirm.
+              // Sending is off: refused before anything was written, as on
+              // the single-sender path above.
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
+              // A 409 is a designed state, but the status names no cause:
+              // NO_ACTIONABLE_SENDERS (every sender Protected, gone, or
+              // without a one-click channel) shares it with the mailbox
+              // guard. The copy reads the code.
               const conflict = err instanceof ApiError && err.status === 409;
               if (!conflict) {
                 captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
               }
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                conflict
-                  ? 'None of these senders has an unsubscribe we can send — Archive moves their email instead.'
-                  : "Couldn't send the unsubscribe requests — try again.",
+                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
+                  ? 'No unsubscribe requests sent — open each sender for its options.'
+                  : enqueueMayHaveStarted(err)
+                    ? getActionFailureCopy('status', { action: 'the unsubscribe requests' })
+                    : "Couldn't send the unsubscribe requests — try again.",
                 'warn',
               );
             },
@@ -1695,10 +1727,15 @@ function SendersScreenContent({
                   reason: `enqueue_bulk_${primaryType}`,
                 });
               }
+              const noneActionable = apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS';
+              // The rows still read as before the click; re-read them.
+              if (noneActionable) void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
+                noneActionable
                   ? NO_ACTIONABLE_SENDERS_COPY
-                  : `Couldn't ${primaryType} email from ${n} senders`,
+                  : enqueueMayHaveStarted(err)
+                    ? getActionFailureCopy('status', { action: `${verb} for ${n} senders` })
+                    : `Couldn't ${primaryType} email from ${n} senders`,
                 'warn',
               );
             },
@@ -2027,7 +2064,7 @@ function SendersScreenContent({
       }),
       senderCount: activeBatch.senderCount,
       selectedCount: activeBatch.selectedCount,
-      skippedCount: activeBatch.skippedCount + skipped.size,
+      skippedCount: activeBatch.skippedCount,
     });
     // The bottom pill is the one voice for the outcome; this only refreshes.
     if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -2096,7 +2133,7 @@ function SendersScreenContent({
       }),
       senderCount: overdueBatch.senderCount,
       selectedCount: overdueBatch.selectedCount,
-      skippedCount: overdueBatch.skippedCount + skipped.size,
+      skippedCount: overdueBatch.skippedCount,
     });
     // The bottom pill is the one voice for the outcome; this only refreshes.
     if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });

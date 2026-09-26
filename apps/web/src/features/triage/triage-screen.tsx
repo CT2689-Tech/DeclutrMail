@@ -23,6 +23,7 @@ import {
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
+  enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
@@ -1066,7 +1067,9 @@ export function TriageScreen({
                         reason: 'enqueue_archive_after_unsub',
                       });
                       toast(
-                        `Unsubscribe request recorded, but older email from ${row.senderName} wasn't archived — Archive it from Senders.`,
+                        enqueueMayHaveStarted(err)
+                          ? `Unsubscribe request recorded, but couldn't confirm Archive for older email from ${row.senderName} — check Activity before retrying.`
+                          : `Unsubscribe request recorded, but older email from ${row.senderName} wasn't archived — Archive it from Senders.`,
                         'warn',
                       );
                     },
@@ -1085,6 +1088,7 @@ export function TriageScreen({
                 getActionFailureCopy('enqueue', {
                   action: `Unsubscribe for ${row.senderName}`,
                   outcome: 'no request was sent',
+                  error: err,
                 }),
                 'warn',
               );
@@ -1175,7 +1179,10 @@ export function TriageScreen({
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : sendDisabled
                   ? UNSUB_SEND_DISABLED_MESSAGE
-                  : getActionFailureCopy('enqueue', { action: `${verb} for ${row.senderName}` }),
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb} for ${row.senderName}`,
+                      error: err,
+                    }),
               'warn',
             );
           },
@@ -1393,8 +1400,10 @@ export function TriageScreen({
           // 402 FREE_CAP_REACHED — the UpgradeModal (global handler)
           // already explains; skip Sentry + the generic toast.
           if (err instanceof ApiError && err.status === 402) return;
-          // Every member refused at the click — a designed state.
+          // Every member refused at the click — a designed state. The rows
+          // still read as before it, so the queue is re-read.
           if (apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS') {
+            void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
             toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
             return;
           }
@@ -1403,13 +1412,16 @@ export function TriageScreen({
             reason: 'enqueue_domain_batch',
           });
           toast(
-            getActionFailureCopy('enqueue', { action: `${verb} for the ${batch.domain} batch` }),
+            getActionFailureCopy('enqueue', {
+              action: `${verb} for the ${batch.domain} batch`,
+              error: err,
+            }),
             'warn',
           );
         },
       },
     );
-  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId, journey]);
+  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId, journey, qc]);
 
   /**
    * Escape clears an INLINE pending preview — the contract the comment

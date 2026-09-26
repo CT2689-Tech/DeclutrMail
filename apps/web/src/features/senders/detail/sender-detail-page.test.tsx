@@ -1839,7 +1839,7 @@ describe('SenderDetailRoute', () => {
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
-      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+      async function unsubscribeThenBacklog(backlog: () => Response) {
         installHappyPath();
         addFetchHandlers([
           detailPreviewHandler(),
@@ -1858,7 +1858,7 @@ describe('SenderDetailRoute', () => {
                 },
               }),
           },
-          { method: 'POST', path: '/api/actions', respond: () => jsonServerError() },
+          { method: 'POST', path: '/api/actions', respond: backlog },
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
@@ -1867,7 +1867,24 @@ describe('SenderDetailRoute', () => {
         const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
+      }
+      /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
+      const apiFailure = (status: number, code: string) => () =>
+        new Response(JSON.stringify({ error: { code, message: code } }), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+
+      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+        await unsubscribeThenBacklog(apiFailure(500, 'INTERNAL_ERROR'));
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+      });
+
+      // The queue did not confirm the add: the archive may still run.
+      it('marks the past-email half unconfirmed when its start is unconfirmed', async () => {
+        await unsubscribeThenBacklog(apiFailure(503, 'ENQUEUE_FAILED'));
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
+        expect(pill('failed')).toBeNull();
       });
 
       it('drops the last mark when a new Unsubscribe starts', async () => {

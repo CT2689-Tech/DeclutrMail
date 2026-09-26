@@ -2403,7 +2403,9 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Every selected sender is now Protected or gone/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Every selected sender is now Protected or no longer in this mailbox/i),
+    ).toBeInTheDocument();
   });
 });
 

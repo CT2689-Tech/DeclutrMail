@@ -38,6 +38,7 @@ import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
+import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
@@ -1159,7 +1160,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
   });
 
-  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
+  /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
+  function apiFailure(status: number, code: string): Response {
+    return new Response(JSON.stringify({ error: { code, message: code } }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  function unsubThenBacklog(backlog: () => Response) {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1173,13 +1181,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
             },
           }),
       },
-      {
-        // The backlog-archive enqueue fails AFTER the intent succeeded.
-        method: 'POST',
-        path: '/api/actions',
-        respond: () => jsonServerError('boom'),
-      },
+      { method: 'POST', path: '/api/actions', respond: backlog },
     ]);
+  }
+
+  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
+    // The backlog-archive enqueue fails AFTER the intent succeeded.
+    unsubThenBacklog(() => apiFailure(500, 'INTERNAL_ERROR'));
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
@@ -1205,6 +1213,26 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     // No archive latch lingers (the enqueue never returned an actionId).
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+  });
+
+  // The queue did not confirm the backlog's add: it may still run, so it
+  // is not "wasn't archived".
+  it('Unsubscribe then an unconfirmed backlog start: sends the user to Activity', async () => {
+    unsubThenBacklog(() => apiFailure(503, 'ENQUEUE_FAILED'));
+    renderScreen(createTestQueryClient());
+
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
+    await confirmOpenSheet('Unsubscribe');
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Unsubscribe request recorded, but couldn't confirm Archive for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        'warn',
+      ),
+    );
   });
 
   it('re-entry guard: a 2nd decision while one confirms is deferred with an info toast', async () => {
@@ -2194,6 +2222,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
   });
 
   /** The Archive-verdict trio behind "Archive all 3 recommended senders". */
+  let batchClient: QueryClient;
   function domainBatch(enqueue: () => Response, status?: () => Response) {
     const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
     const buckets = {
@@ -2226,8 +2255,9 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
         ? [{ method: 'GET' as const, path: /^\/api\/actions\/batch\//, respond: status }]
         : []),
     ]);
+    batchClient = createTestQueryClient();
     render(
-      <QueryWrapper client={createTestQueryClient()}>
+      <QueryWrapper client={batchClient}>
         <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
       </QueryWrapper>,
     );
@@ -2311,6 +2341,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
           headers: { 'content-type': 'application/json' },
         }),
     );
+    const invalidate = vi.spyOn(batchClient, 'invalidateQueries');
     await confirmDomainBatch();
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
@@ -2319,6 +2350,8 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       ),
     );
     expect(h.captureFeatureException).not.toHaveBeenCalled();
+    // The rows still read as before the click: the queue is re-read.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   });
 
   // D245: a sender protected while the batch waited is skipped exactly

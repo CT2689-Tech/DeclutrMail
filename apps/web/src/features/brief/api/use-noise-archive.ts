@@ -624,6 +624,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       toast(
         getActionFailureCopy('enqueue', {
           action: `Archive for ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
+          error: err,
         }),
         'warn',
       );

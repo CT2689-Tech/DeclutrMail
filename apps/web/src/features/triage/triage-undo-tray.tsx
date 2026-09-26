@@ -307,7 +307,7 @@ export function ProductUndoTray({
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
-            : getActionFailureCopy('revert-enqueue'),
+            : getActionFailureCopy('revert-enqueue', { error: err }),
           'warn',
         );
         setInFlight(null);

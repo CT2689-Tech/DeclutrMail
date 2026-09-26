@@ -1101,7 +1101,7 @@ export function ConfirmActionModal({
       }
     />
   ) : nothingActionableBulk ? (
-    'Every selected sender is now Protected or gone. Close and refresh.'
+    'Every selected sender is now Protected or no longer in this mailbox. Close and refresh.'
   ) : null;
   // A no-op spends no cleanup action, and a sheet that cannot run has
   // nothing to charge — the status line above is the reason.

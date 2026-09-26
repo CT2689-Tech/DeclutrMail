@@ -103,6 +103,8 @@ import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
 import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { UNSUBSCRIBE_ACCEPTED_CAVEAT } from '@declutrmail/shared/actions';
+import { NO_ACTIONABLE_SENDERS_COPY } from '@/lib/action-error-copy';
+import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 
 // Typed against the wire contract so a field the API always sends cannot
 // go missing here unnoticed. These fixtures reach the app as `unknown`
@@ -2961,6 +2963,82 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(unsubPosts).toHaveLength(1);
     });
 
+    // Only a sender that was sent a request can be sent a second one. One
+    // refused at the click has no job, so acting on it must not wait.
+    it('does not hold a sender refused at the click while the unsubscribe batch runs', async () => {
+      const intents: unknown[] = [];
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-u',
+                status: 'queued',
+                senderCount: 1,
+                requestedTotal: 0,
+                skipped: [{ senderId: 'a', reason: 'protected' }],
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-u',
+                status: 'executing',
+                total: 1,
+                done: 0,
+                failed: 0,
+                requestedCount: 0,
+                affectedCount: 0,
+                undoToken: null,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-intent',
+          respond: async (req) => {
+            intents.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: 'a',
+                recordedAt: '2026-07-12T12:00:00.000Z',
+                activityLogId: 'activity-a',
+                method: 'none',
+                executionActionId: null,
+                mailtoUrl: null,
+              },
+            });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('u');
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() =>
+        expect(within(dialog).getByRole('button', { name: /Unsubscribe/ })).toBeEnabled(),
+      );
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      const held = screen.queryAllByText(/Still confirming your last action/).length;
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'u' });
+      await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ });
+      fireEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: /unsubscribe/i }),
+      );
+      await waitFor(() => expect(intents).toHaveLength(1));
+      expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
+    });
+
     it('says so when SEVERAL senders are kept — it used to say nothing at all', async () => {
       // N `mutate` calls on one hook: each call replaces the observer's
       // callbacks, so only the LAST sender's ever fired and the
@@ -3570,7 +3648,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const receipt = await confirmBulkUnsubscribe();
     await waitFor(() => expect(receipt).toHaveTextContent(/1 request accepted/i));
     expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
-    expect(receipt).toHaveTextContent('Not sent: 1 sender protected');
+    expect(receipt).toHaveTextContent('Not sent: 1 Protected sender');
     expect(receipt).not.toHaveTextContent(/failed/i);
   });
 
@@ -3586,9 +3664,94 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     });
     const receipt = await confirmBulkUnsubscribe();
     await waitFor(() => expect(receipt).toHaveTextContent('No unsubscribe requests sent'));
-    expect(receipt).toHaveTextContent('Not sent: 2 senders protected');
+    expect(receipt).toHaveTextContent('Not sent: 2 Protected senders');
     expect(receipt).not.toHaveTextContent('✓');
     expect(receipt).not.toHaveTextContent(UNSUBSCRIBE_ACCEPTED_CAVEAT);
+  });
+
+  // A 409 names no cause: the mailbox guard shares the status. Each copy
+  // is read from the code.
+  function conflict(code: string): Response {
+    return new Response(JSON.stringify({ error: { code, message: code } }), {
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  function refusedBulk(code: string) {
+    let listReads = 0;
+    installFetchStub([
+      {
+        ...TWO_SENDER_LIST,
+        respond: () => {
+          listReads += 1;
+          return TWO_SENDER_LIST.respond();
+        },
+      },
+      BULK_PREVIEW_OK,
+      { method: 'POST', path: '/api/actions', respond: () => conflict(code) },
+    ]);
+    return () => listReads;
+  }
+  async function confirmBulk(key: 'u' | 'a') {
+    renderScreenWithToasts();
+    await selectBothAndPress(key);
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: key === 'u' ? /Unsubscribe/ : /Archive/ }),
+      ).toBeEnabled(),
+    );
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+  }
+
+  it('says no requests were sent when no selected sender could be, and re-reads the list', async () => {
+    const listReads = refusedBulk('NO_ACTIONABLE_SENDERS');
+    await confirmBulk('u');
+    const before = listReads();
+    await screen.findByText('No unsubscribe requests sent — open each sender for its options.');
+    await waitFor(() => expect(listReads()).toBeGreaterThan(before));
+  });
+
+  it('says nothing was sent when unsubscribe sending is off', async () => {
+    refusedBulk('UNSUB_SEND_DISABLED');
+    await confirmBulk('u');
+    await screen.findByText(UNSUB_SEND_DISABLED_MESSAGE);
+  });
+
+  // The queue did not confirm the add: some requests may be going out, and
+  // a second can never be recalled (D58). No "try again".
+  it('sends an unconfirmed bulk unsubscribe to Activity, not to a retry', async () => {
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'queue timeout' } }),
+            { status: 503, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    await confirmBulk('u');
+    await screen.findByText(
+      "Couldn't confirm the unsubscribe requests — check Activity before retrying.",
+    );
+  });
+
+  it('blames no sender for a mailbox conflict', async () => {
+    refusedBulk('SELECT_MAILBOX');
+    await confirmBulk('u');
+    await screen.findByText("Couldn't send the unsubscribe requests — try again.");
+  });
+
+  it('re-reads the list when an Archive refused every sender', async () => {
+    const listReads = refusedBulk('NO_ACTIONABLE_SENDERS');
+    await confirmBulk('a');
+    const before = listReads();
+    await screen.findByText(NO_ACTIONABLE_SENDERS_COPY);
+    await waitFor(() => expect(listReads()).toBeGreaterThan(before));
   });
 
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {

@@ -65,6 +65,7 @@ import { relTime } from './data';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
 import styles from '../sender-workspace.module.css';
@@ -823,7 +824,9 @@ function ReadyState({
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : `Couldn't ${primaryType} ${sender.name}`,
+                  : enqueueMayHaveStarted(err)
+                    ? getActionFailureCopy('status', { action: `${verb} for ${sender.name}` })
+                    : `Couldn't ${primaryType} ${sender.name}`,
                 'warn',
               );
             },
@@ -926,13 +929,22 @@ function ReadyState({
                       // 402 FREE_CAP_REACHED — the upgrade prompt
                       // explains why the backlog didn't enqueue.
                       if (err instanceof ApiError && err.status === 402) return;
-                      setSettled({ phase: 'failed', verb: secondary.type });
+                      // The job may still run: its outcome is not known.
+                      const unconfirmed = enqueueMayHaveStarted(err);
+                      setSettled({
+                        phase: unconfirmed ? 'unconfirmed' : 'failed',
+                        verb: secondary.type,
+                      });
                       captureFeatureException(err, {
                         surface: 'senders',
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        `Couldn't ${secondary.type} the older email from ${sender.name}`,
+                        unconfirmed
+                          ? getActionFailureCopy('status', {
+                              action: `${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email from ${sender.name}`,
+                            })
+                          : `Couldn't ${secondary.type} the older email from ${sender.name}`,
                         'warn',
                       );
                     },
@@ -947,7 +959,14 @@ function ReadyState({
                 return;
               }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-              toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
+              toast(
+                enqueueMayHaveStarted(err)
+                  ? getActionFailureCopy('status', {
+                      action: `the unsubscribe from ${sender.name}`,
+                    })
+                  : `Couldn't request the unsubscribe from ${sender.name}`,
+                'warn',
+              );
             },
           },
         );

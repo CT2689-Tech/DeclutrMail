@@ -18,13 +18,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
-import {
-  addFetchHandlers,
-  installFetchStub,
-  jsonOk,
-  jsonServerError,
-  resetFetchStub,
-} from '@/test/fetch-stub';
+import { addFetchHandlers, installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import type { UndoTrayEntry } from '@declutrmail/shared';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -326,9 +320,21 @@ describe('triage_action_taken (D159)', () => {
     expect(actionTakenCalls()).toHaveLength(1);
   });
 
+  /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
+  function apiFailure(status: number, code: string): Response {
+    return new Response(JSON.stringify({ error: { code, message: code } }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
   it('a FAILED mutation fires NO event (never optimistic)', async () => {
     addFetchHandlers([
-      { method: 'POST', path: '/api/actions', respond: () => jsonServerError('boom') },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => apiFailure(500, 'INTERNAL_ERROR'),
+      },
     ]);
     renderScreen();
 
@@ -339,6 +345,31 @@ describe('triage_action_taken (D159)', () => {
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
         expect.stringContaining(`Couldn't start Archive for ${GROUPON.senderName}`),
+        'warn',
+      ),
+    );
+    expect(actionTakenCalls()).toHaveLength(0);
+  });
+
+  // The queue did not confirm the add, so the job may still run: never
+  // "nothing changed", and still no event.
+  it('sends an unconfirmed start to Activity, and fires no event', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => apiFailure(503, 'ENQUEUE_FAILED'),
+      },
+    ]);
+    renderScreen();
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Couldn't confirm Archive for ${GROUPON.senderName} — check Activity before retrying.`,
         'warn',
       ),
     );

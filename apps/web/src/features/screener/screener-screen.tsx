@@ -60,6 +60,7 @@ import {
 import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
+import { enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
 
 const { color, text } = tokens;
 
@@ -602,7 +603,11 @@ export function ScreenerScreen({
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
-                : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
+                : enqueueMayHaveStarted(err)
+                  ? getActionFailureCopy('status', {
+                      action: `${VERB_LABEL[verb]} for ${row.senderName}`,
+                    })
+                  : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
               'warn',
             );
           },

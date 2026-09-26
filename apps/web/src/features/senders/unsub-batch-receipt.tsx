@@ -47,13 +47,16 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
     none: count('no_channel'),
     unknown: count('unknown'),
   });
-  const senders = (n: number): string => `${n} sender${n === 1 ? '' : 's'}`;
+  const noun = (n: number): string => `sender${n === 1 ? '' : 's'}`;
   const protectedCount = count('protected');
   const missingCount = count('not_found');
   return [
     ...capability,
-    ...(protectedCount > 0 ? [`${senders(protectedCount)} protected`] : []),
-    ...(missingCount > 0 ? [`${senders(missingCount)} no longer in your list`] : []),
+    // The state's own name, first — as the pill and Activity say it.
+    ...(protectedCount > 0 ? [`${protectedCount} Protected ${noun(protectedCount)}`] : []),
+    ...(missingCount > 0
+      ? [`${missingCount} ${noun(missingCount)} no longer in this mailbox`]
+      : []),
   ];
 }
 

@@ -1,4 +1,5 @@
-import { apiErrorDisplayId } from '@/lib/api/client';
+import type { BulkSkipReason } from '@/lib/api/actions';
+import { ApiError, apiErrorCode, apiErrorDisplayId } from '@/lib/api/client';
 
 /**
  * Plain-language failure copy for the asynchronous action pipeline — one
@@ -28,8 +29,18 @@ export interface ActionFailureCopyOptions {
   readonly action?: string;
   /** Some of a batch completed — the sentence leads with the confirmed split. */
   readonly partial?: { readonly done: number; readonly total: number; readonly unit: string };
-  /** Replaces the clause after the dash. Lowercase, no trailing period. */
+  /**
+   * Replaces the clause after the dash. Lowercase, no trailing period.
+   * For an enqueue phase it refines "nothing changed", so it is dropped
+   * when that is unproven.
+   */
   readonly outcome?: string;
+  /**
+   * The enqueue's failure. An enqueue phase says "nothing changed" only
+   * when this proves it (see `enqueueMayHaveStarted`); without it, it
+   * says the start is unconfirmed.
+   */
+  readonly error?: unknown;
 }
 
 const CHECK_ACTIVITY = 'check Activity before retrying';
@@ -49,13 +60,17 @@ export function getActionFailureCopy(
     return `${lead} — ${options.outcome ?? 'check Activity for the rest'}.`;
   }
 
+  const unconfirmedStart =
+    (phase === 'enqueue' || phase === 'revert-enqueue') && enqueueMayHaveStarted(options.error);
   const [lead, outcome] = ((): [string, string] => {
     switch (phase) {
       case 'preview':
         return ["Couldn't load the preview", NOTHING_CHANGED];
       case 'enqueue':
       case 'revert-enqueue':
-        return [`Couldn't start ${action}`, NOTHING_CHANGED];
+        return unconfirmedStart
+          ? [`Couldn't confirm ${action}`, CHECK_ACTIVITY]
+          : [`Couldn't start ${action}`, NOTHING_CHANGED];
       case 'status':
       case 'revert-status':
         return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
@@ -64,7 +79,22 @@ export function getActionFailureCopy(
         return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
     }
   })();
-  return `${lead} — ${options.outcome ?? outcome}.`;
+  return `${lead} — ${unconfirmedStart ? outcome : (options.outcome ?? outcome)}.`;
+}
+
+/**
+ * Whether a failed enqueue may still have started its job, which leaves
+ * "nothing changed" unproven and a blind retry able to run it twice.
+ * `ENQUEUE_FAILED` says so outright: the queue did not confirm the add —
+ * a timed-out reply leaves the job running — and a bulk answers it when
+ * any one add fails while the rest run. With no response, or a 5xx the
+ * API did not write (a gateway timeout), nothing says either way. Only an
+ * answer the API wrote proves the request never started.
+ */
+export function enqueueMayHaveStarted(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  const code = apiErrorCode(error);
+  return code === 'ENQUEUE_FAILED' || (error.status >= 500 && code === null);
 }
 
 /**
@@ -83,8 +113,8 @@ export function protectedSkippedCopy(count: number): string {
  * two reasons only (an Unsubscribe bulk has its own receipt).
  */
 export function skippedAtClickCopy(
-  verb: string,
-  skipped: readonly { reason: string }[],
+  verb: 'Archive' | 'Later' | 'Delete',
+  skipped: readonly { reason: BulkSkipReason }[],
 ): string | null {
   const protectedCount = skipped.filter((s) => s.reason === 'protected').length;
   const missing = skipped.filter((s) => s.reason === 'not_found').length;
