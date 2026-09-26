@@ -48,14 +48,17 @@ describe('TriageEmptyState', () => {
       />,
     );
     expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
-    expect(screen.queryByText(/Retry the scan/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Scan again/)).not.toBeInTheDocument();
   });
 
   it('keeps the retry step for a failed scan whose grant is fine', () => {
     render(
       <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} syncFailed={true} />,
     );
-    expect(screen.getByText(/Retry the scan in Settings/)).toBeInTheDocument();
+    expect(screen.getByText(/Scan again in Settings/)).toBeInTheDocument();
+    // No "untouched" reassurance: during a failed re-scan the user may
+    // have acted from Senders, so it is not a fact this state can see.
+    expect(screen.queryByText(/untouched/i)).not.toBeInTheDocument();
   });
 
   it('does not render the sync-failed copy once the user has decided something today', () => {

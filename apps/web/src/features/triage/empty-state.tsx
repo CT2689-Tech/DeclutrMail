@@ -79,7 +79,7 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="This mailbox's last scan didn't finish."
-        description={`Your Gmail is untouched. ${failedScanSettingsStep(syncNeedsReconnect)}`}
+        description={failedScanSettingsStep(syncNeedsReconnect)}
         action={
           <a href="/settings#mailboxes" style={LINK_BUTTON}>
             Open Settings

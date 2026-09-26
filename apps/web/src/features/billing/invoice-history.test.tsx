@@ -110,6 +110,8 @@ describe('InvoiceHistory', () => {
     // A provider that answered with an error was reached — the copy
     // claims only that invoices did not come back.
     expect(await screen.findByText(/didn’t return your invoices/i)).toBeInTheDocument();
+    // The partial state carries its own way out.
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 

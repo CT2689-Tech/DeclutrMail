@@ -75,7 +75,7 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed');
     rerender();
     expect(h.toast).toHaveBeenCalledWith(
-      "b@example.com's scan didn't finish — see Settings to try again.",
+      "b@example.com's scan didn't finish — scan again in Settings → Gmail accounts.",
       'danger',
     );
   });
@@ -88,10 +88,10 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed', true);
     rerender();
     expect(h.toast).toHaveBeenCalledWith(
-      expect.stringContaining('reconnect it in Settings'),
+      "b@example.com's scan didn't finish — reconnect it in Settings → Gmail accounts.",
       'danger',
     );
-    expect(h.toast).not.toHaveBeenCalledWith(expect.stringContaining('try again'), 'danger');
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringContaining('scan again'), 'danger');
   });
 
   it('stays silent for a mailbox already failed at mount', () => {

@@ -184,6 +184,8 @@ describe('SyncErrorBanner', () => {
     const banner = screen.getByTestId('sync-error-banner');
     expect(banner).toHaveTextContent('allow Gmail access');
     expect(banner).not.toHaveTextContent(/renew|expired/i);
+    // Gmail actions on a refused grant fail — nothing "resumes" them.
+    expect(banner).not.toHaveTextContent(/Gmail actions/i);
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
   });
 

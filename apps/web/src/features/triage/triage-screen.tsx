@@ -33,7 +33,7 @@ import { captureFeatureException } from '@/lib/sentry';
 // packages/shared promotion, so triage imports across the boundary
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
-import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { mailLocationCopy } from '@declutrmail/shared/actions';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';

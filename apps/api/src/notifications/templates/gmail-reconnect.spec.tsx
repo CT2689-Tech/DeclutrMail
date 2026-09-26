@@ -21,6 +21,14 @@ describe('gmail-reconnect', () => {
     }
   });
 
+  it('pauses only syncing — Gmail actions on a refused grant fail, they do not wait', async () => {
+    const email = await gmailReconnectEmail(input);
+    for (const part of [email.text, email.html ?? '']) {
+      expect(part).toContain('Syncing for this inbox is paused');
+      expect(part).not.toMatch(/Gmail actions/i);
+    }
+  });
+
   it('assumes no earlier sync — the inbox may never have finished one', async () => {
     const email = await gmailReconnectEmail(input);
     for (const part of [email.text, email.html ?? '']) {

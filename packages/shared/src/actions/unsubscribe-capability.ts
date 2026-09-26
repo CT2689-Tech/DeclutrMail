@@ -126,10 +126,11 @@ export function unsubscribeOutcomeBreakdown(counts: UnsubscribeOutcomeCounts): s
       `${requests(counts.unconfirmed)} sent, ${counts.unconfirmed === 1 ? 'result' : 'results'} unconfirmed`,
     );
   }
-  // The sender refused one-click but takes email (D252): not a dead end,
-  // so never counted with `failed`, which means nothing is left to try.
+  // The endpoint did not accept one-click (any 4xx or 5xx) but the sender
+  // takes email (D252): not a dead end, so never counted with `failed`,
+  // which means nothing is left to try.
   if (counts.actionRequired > 0) {
-    lines.push(`${requests(counts.actionRequired)} refused — send from Gmail instead`);
+    lines.push(`${requests(counts.actionRequired)} not accepted — send from Gmail instead`);
   }
   if (counts.failed > 0) {
     lines.push(`${requests(counts.failed)} failed`);

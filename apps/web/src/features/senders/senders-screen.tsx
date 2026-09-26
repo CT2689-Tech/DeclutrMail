@@ -18,6 +18,7 @@ import {
 import {
   buildActionReceiptResult,
   countUnsubscribeCapabilities,
+  type UnsubscribeOutcomeCounts,
 } from '@declutrmail/shared/actions';
 import {
   canBulkArchive,
@@ -64,9 +65,9 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { isTerminalStatus, type UnsubscribeBatchOutcomes } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
-import { unsubscribeOutcomeToast } from './unsub-status';
+import { unsubscribeOutcomeToast } from './unsub-outcome-toast';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -1475,7 +1476,7 @@ function SendersScreenContent({
               });
               // In-flight receipt: it names how many requests are going
               // out and claims NO outcome. The polled effect below fills
-              // in the three terminal outcomes when the worker reports.
+              // in the terminal outcomes when the worker reports.
               setUnsubBatchReceipt({
                 senderCount: res.senderCount,
                 skipped,
@@ -1544,11 +1545,10 @@ function SendersScreenContent({
               }
               // Every 409 here is a designed state, not a bug: the
               // selection or the active mailbox moved between the preview
-              // and the confirm. Only NO_ACTIONABLE_SENDERS says the
-              // senders have nothing to send — and it also covers senders
-              // that became Protected or were removed, which bulk Archive
-              // skips too, so the old "Archive moves their email instead"
-              // pointed some users at a second refusal.
+              // and the confirm. NO_ACTIONABLE_SENDERS names no reason —
+              // no sendable channel, or every sender became Protected or
+              // was removed (which bulk Archive skips too) — so its copy
+              // states only the outcome.
               const conflict = err instanceof ApiError && err.status === 409;
               if (!conflict) {
                 captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
@@ -1556,7 +1556,7 @@ function SendersScreenContent({
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
                 apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
-                  ? 'None of these senders has an unsubscribe we can send.'
+                  ? 'No unsubscribe requests were sent.'
                   : "Couldn't send the unsubscribe requests — try again.",
                 'warn',
               );
@@ -1887,14 +1887,7 @@ function SendersScreenContent({
       skipped: activeUnsubBatch.skipped,
       // An API that predates the field leaves the receipt honestly
       // outcome-less rather than inventing a success/failure split.
-      outcomes: outcomes
-        ? {
-            endpointAccepted: outcomes.endpointAccepted,
-            unconfirmed: outcomes.unconfirmed,
-            actionRequired: outcomes.actionRequired ?? 0,
-            failed: outcomes.failed,
-          }
-        : null,
+      outcomes: outcomes ? receiptOutcomes(outcomes) : null,
       pending: outcomes?.pending ?? 0,
     });
     reconcileAction(qc, data);
@@ -1931,14 +1924,7 @@ function SendersScreenContent({
     setUnsubBatchReceipt({
       senderCount: overdueUnsubBatch.senderCount,
       skipped: overdueUnsubBatch.skipped,
-      outcomes: outcomes
-        ? {
-            endpointAccepted: outcomes.endpointAccepted,
-            unconfirmed: outcomes.unconfirmed,
-            actionRequired: outcomes.actionRequired ?? 0,
-            failed: outcomes.failed,
-          }
-        : null,
+      outcomes: outcomes ? receiptOutcomes(outcomes) : null,
       pending: outcomes?.pending ?? 0,
     });
     reconcileAction(qc, data);
@@ -2878,6 +2864,21 @@ function SendersScreenContent({
  * question and are read-only, or the count is from loaded rows only.
  * A healthy list says nothing.
  */
+/**
+ * The server counts a refused-but-emailable request inside `failed` AND in
+ * `actionRequired` (so an older client never reads it as a success); the
+ * receipt shows them as separate lines.
+ */
+function receiptOutcomes(outcomes: UnsubscribeBatchOutcomes): UnsubscribeOutcomeCounts {
+  const actionRequired = outcomes.actionRequired ?? 0;
+  return {
+    endpointAccepted: outcomes.endpointAccepted,
+    unconfirmed: outcomes.unconfirmed,
+    actionRequired,
+    failed: Math.max(0, outcomes.failed - actionRequired),
+  };
+}
+
 function SenderResultsWarning({
   approximate,
   rowsReadOnly,

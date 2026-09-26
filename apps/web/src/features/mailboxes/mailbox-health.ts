@@ -7,19 +7,21 @@ export const INVALID_GRANT_CODE = 'InvalidGrantError';
 export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
 
 /**
- * Error codes whose only real recovery is reconnecting Gmail, for
- * surfaces reading an INITIAL-sync `error_code` directly rather than
- * `syncStatusNeedsReconnect` below (which stays `InvalidGrantError`-only
- * to match the backend's `me.needsReconnect`/`getNeedsReconnectByMailbox`
- * sweep contract — widening THAT is a separate, worker-policy-adjacent
- * change, deliberately not made here).
+ * INITIAL-sync `error_code`s that send the user to reconnect Gmail.
  *
- * QA-sync-20260831-07 added `AuthExpiredError` display-only to the
- * onboarding gate's own local set; a later Codex adversarial review of
- * the same QA round found `SyncNowButton`'s failed-indicator still used
- * only `InvalidGrantError`, offering a doomed "Scan again" retry against
- * the same dead token the onboarding gate correctly reconnects for. Both
- * surfaces now read this one set instead of keeping their own copies.
+ * QA-sync-20260831-07 added `AuthExpiredError` to the onboarding gate and
+ * the header's failed indicator, while Settings, Home, Triage and Senders
+ * kept offering a retry for it — two answers on one screen. The rule now
+ * lives once, in `syncStatusNeedsReconnect` below and its server twin
+ * (`SyncService.getMailboxHealth`, which feeds `me.needsReconnect`), and
+ * every surface reads one of the two. A reconnect also re-queues the
+ * scan, so it covers whatever a retry would.
+ *
+ * Only the INITIAL-sync field: no sweep reads it (a failed initial sync is
+ * already out of every sweep), so this changes what the user is shown,
+ * never what a worker does. The incremental check stays
+ * `InvalidGrantError`-only to match the workers' own reconnect gate
+ * (packages/workers/src/mailbox-reconnect.ts).
  */
 export const AUTH_RECOVERY_ERROR_CODES = new Set([INVALID_GRANT_CODE, AUTH_EXPIRED_CODE]);
 
@@ -28,7 +30,7 @@ export const AUTH_RECOVERY_ERROR_CODES = new Set([INVALID_GRANT_CODE, AUTH_EXPIR
  * reauthorization.
  *
  * Incremental failures are current until a success stamp catches up; an
- * initial-sync invalid grant remains current while its failed readiness row
+ * initial-sync grant failure remains current while its failed readiness row
  * carries `error_code`. Keeping this projection pure lets every surface use
  * the same answer from the shared mailbox-keyed React Query cache.
  */
@@ -42,7 +44,10 @@ export function syncStatusNeedsReconnect(status: SyncStatus | undefined): boolea
     errorAt !== null &&
     (syncedAt === null || new Date(errorAt).getTime() > new Date(syncedAt).getTime());
 
-  return incrementalAuthError || status.error_code === INVALID_GRANT_CODE;
+  return (
+    incrementalAuthError ||
+    (status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code))
+  );
 }
 
 /**
@@ -54,7 +59,8 @@ export function syncStatusNeedsReconnect(status: SyncStatus | undefined): boolea
  * (same rule as `syncStatusNeedsReconnect`).
  */
 export function failedScanSettingsStep(needsReconnect: boolean): string {
+  // "Scan again": the label of the button Settings shows for a retry.
   return needsReconnect
     ? 'Reconnect it in Settings → Gmail accounts.'
-    : 'Retry the scan in Settings → Gmail accounts.';
+    : 'Scan again in Settings → Gmail accounts.';
 }

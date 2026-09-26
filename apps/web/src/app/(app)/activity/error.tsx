@@ -24,7 +24,7 @@ export default function ActivityError({
       reset={reset}
       boundary="activity"
       headline="We couldn't load your activity."
-      body="Your decisions and undos are untouched. Try again, or head back to Triage."
+      body="Try again, or head back to Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

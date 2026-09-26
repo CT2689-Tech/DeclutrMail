@@ -3218,7 +3218,7 @@ describe('ActionsService', () => {
       });
     });
 
-    describe('getBatchStatus — three terminal outcomes', () => {
+    describe('getBatchStatus — terminal unsubscribe outcomes', () => {
       async function seedUnsubBatch(): Promise<{ batchId: string; rowIds: string[] }> {
         const sender3Id = await seedExtraSender('d');
         await setMethod(senderId, 'one_click', 'https://a.example/oc');
@@ -3298,9 +3298,11 @@ describe('ActionsService', () => {
 
         const status = await service.getBatchStatus(batchId, mailboxId);
 
+        // `actionRequired` is counted INSIDE `failed` too, so a client that
+        // predates the field still reads the refusal as not accepted.
         expect(status.unsubscribeOutcomes).toMatchObject({
           actionRequired: 1,
-          failed: 1,
+          failed: 2,
           endpointAccepted: 1,
         });
       });

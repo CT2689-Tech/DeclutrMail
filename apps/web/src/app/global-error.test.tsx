@@ -61,7 +61,9 @@ describe('GlobalError boundary — D167', () => {
     );
     // Nothing reloads on its own and nothing saves the page: the copy
     // promises neither.
-    expect(document.body.textContent ?? '').not.toMatch(/is reloading|pick up where you left off/i);
+    expect(document.body.textContent ?? '').not.toMatch(
+      /is reloading|pick up where you left off|untouched/i,
+    );
   });
 
   it('wires Try again to the `reset` prop', () => {

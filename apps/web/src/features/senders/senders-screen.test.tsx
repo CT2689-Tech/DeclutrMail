@@ -443,7 +443,7 @@ describe('SendersScreen — edge states', () => {
     );
     // Said once: the empty state owns it, the warning line stays out.
     expect(screen.getAllByText(/scan failed/i)).toHaveLength(1);
-    expect(screen.getByText(/retry the scan in settings/i)).toBeInTheDocument();
+    expect(screen.getByText(/scan again in settings/i)).toBeInTheDocument();
     expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
   });
@@ -2321,7 +2321,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
   it.each([
     ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
-    ['NO_ACTIONABLE_SENDERS', /has an unsubscribe we can send/i, /archive/i],
+    ['NO_ACTIONABLE_SENDERS', /No unsubscribe requests were sent/, /archive|has an unsubscribe/i],
     ['NO_ACTIVE_MAILBOX', /couldn't send the unsubscribe requests/i, /has an unsubscribe/i],
   ] as const)(
     'a %s refusal on bulk Unsubscribe says only what that code proves',
@@ -3344,7 +3344,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   );
 
   // ─────────────────── D248 — bulk unsubscribe receipt ───────────────────
-  it('reports the three terminal outcomes and never claims "unsubscribed"', async () => {
+  it('reports the terminal outcomes and never claims "unsubscribed"', async () => {
     installFetchStub([
       TWO_SENDER_LIST,
       BULK_PREVIEW_OK,
@@ -3411,6 +3411,71 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(receipt.textContent?.toLowerCase()).not.toContain('unsubscribed');
     // A delivered request cannot be recalled — no undo is offered.
     expect(within(receipt).queryByRole('button', { name: /^undo$/i })).toBeNull();
+  });
+
+  it('shows a refused-but-emailable request as "send from Gmail", never as failed', async () => {
+    // The API counts it inside `failed` AND in `actionRequired` (so a tab
+    // that predates the field still reads it as not accepted); this client
+    // splits them.
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-manual',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 2,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch/batch-unsub-manual',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-manual',
+              status: 'done',
+              total: 2,
+              done: 0,
+              failed: 2,
+              requestedCount: 2,
+              affectedCount: 0,
+              undoToken: null,
+              unsubscribeOutcomes: {
+                endpointAccepted: 0,
+                unconfirmed: 0,
+                failed: 2,
+                actionRequired: 1,
+                pending: 0,
+              },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText(/unsubscribe from 2 senders/i);
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Unsubscribe/ })).toBeEnabled(),
+    );
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    const receipt = await findReceipt();
+    await waitFor(() =>
+      expect(receipt).toHaveTextContent('1 request not accepted — send from Gmail instead'),
+    );
+    expect(receipt).toHaveTextContent('1 request failed');
+    expect(receipt).not.toHaveTextContent(/2 requests failed/);
   });
 
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {

@@ -411,18 +411,19 @@ function formatRecoveryDate(iso: string): string {
  * The start refusals that are raised BEFORE any Gmail read and repeat on
  * every attempt: the row changed since Activity rendered it. "We couldn't
  * check Gmail's current state" named a check that never ran, and its
- * "Check again" only asked for the same refusal.
+ * "Check again" only asked for the same refusal. Activity re-reads on these
+ * (`useCreateActionRecoveryPreview`), so Close shows the row as it is now.
  */
 function recoveryStartRefusal(error: Error): string | null {
   switch (apiErrorCode(error)) {
     case 'ACTION_ALREADY_RECOVERED':
-      return 'This action was already recovered. Refresh Activity to see its current state.';
+      return 'This action was already recovered.';
     case 'RECOVERY_ATTEMPT_STALE':
-      return 'A newer attempt exists for this action. Refresh Activity to see it.';
+      return 'A newer attempt exists for this action.';
     case 'ACTION_NOT_RECOVERABLE':
-      return 'This action no longer needs recovery. Refresh Activity to see its current state.';
+      return 'This action no longer needs recovery.';
     case 'ACTION_NOT_FOUND':
-      return "We couldn't find this action. Refresh Activity to see the current list.";
+      return "We couldn't find this action.";
     default:
       return null;
   }
@@ -439,11 +440,13 @@ function recoveryConfirmErrorMessage(error: Error): string {
   if (code === 'LATER_WAKE_TIME_REQUIRED') {
     return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
   }
+  // Activity re-reads on these two (`useConfirmActionRecovery`); there is
+  // no "Refresh Activity" control to point at.
   if (code === 'ACTION_NO_LONGER_FAILED') {
-    return 'This action no longer needs recovery. Refresh Activity to see its current state.';
+    return 'This action no longer needs recovery.';
   }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
-    return 'This recovery review was already used. Refresh Activity to see the current attempt.';
+    return 'This recovery review was already used.';
   }
   return "We couldn't confirm the retry. Try again — it won't create a duplicate.";
 }

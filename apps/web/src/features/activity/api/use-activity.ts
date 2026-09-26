@@ -36,6 +36,7 @@ import {
   type ActionRecoveryPreviewResult,
 } from '@/lib/api/actions';
 
+import { apiErrorCode } from '@/lib/api/client';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { undoKeys } from '@/features/undo/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
@@ -109,9 +110,37 @@ export function useRevertActivity() {
 
 /** Starts a read-only, metadata-only provider verification pass. */
 export function useCreateActionRecoveryPreview() {
+  const queryClient = useQueryClient();
   return useMutation<ActionRecoveryPreviewResult, Error, string>({
     mutationFn: (actionId) => createActionRecoveryPreview(actionId),
+    onError: (err) => refreshActivityIfStale(queryClient, err),
   });
+}
+
+/**
+ * Refusals that mean the row changed since Activity rendered it (another
+ * tab recovered it, a newer attempt exists, it no longer needs recovery).
+ * Each repeats on every try, so Activity re-reads and Close shows the row
+ * as it is now — there is no "Refresh Activity" control to send users to.
+ */
+const STALE_RECOVERY_ROW_CODES: ReadonlySet<string> = new Set([
+  'ACTION_ALREADY_RECOVERED',
+  'RECOVERY_ATTEMPT_STALE',
+  'ACTION_NOT_RECOVERABLE',
+  'ACTION_NOT_FOUND',
+  'ACTION_NO_LONGER_FAILED',
+  'IDEMPOTENCY_KEY_CONFLICT',
+  'RECOVERY_ALREADY_REQUESTED',
+]);
+
+function refreshActivityIfStale(
+  queryClient: ReturnType<typeof useQueryClient>,
+  err: unknown,
+): void {
+  const code = apiErrorCode(err);
+  if (code !== null && STALE_RECOVERY_ROW_CODES.has(code)) {
+    void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+  }
 }
 
 /** Poll only while the provider verification is in progress. */
@@ -141,5 +170,6 @@ export function useConfirmActionRecovery() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
     },
+    onError: (err) => refreshActivityIfStale(queryClient, err),
   });
 }

@@ -253,6 +253,29 @@ describe('SyncNowButton completion watch', () => {
     ).toBe(false);
   });
 
+  it('failure from a refused grant names the reconnect the banner offers, not a retry', async () => {
+    // The button unmounts behind SyncErrorBanner's Reconnect for a refused
+    // grant; a "try again" toast beside it named a remedy that cannot work.
+    renderButton();
+    await clickSyncNow();
+
+    pushStatus(
+      statusOf({
+        last_synced_at: '2026-07-07T10:00:00.000Z',
+        last_sync_error_at: '2026-07-07T10:00:30.000Z',
+        last_sync_error_code: 'InvalidGrantError',
+      }),
+    );
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+      "Sync didn't finish — reconnect Gmail.",
+      'danger',
+    );
+    expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
+      expect.stringMatching(/try again/i),
+      expect.anything(),
+    );
+  });
+
   it('timeout — promises nothing when neither stamp moved in 90 seconds', async () => {
     // A retryable failure keeps the outage's FIRST error stamp, so a run
     // that failed again looks exactly like one still running. The old
@@ -264,7 +287,7 @@ describe('SyncNowButton completion watch', () => {
       await act(async () => {
         vi.advanceTimersByTime(90_000);
       });
-      expect(vi.mocked(toast)).toHaveBeenCalledWith("Sync hasn't finished yet.", 'info');
+      expect(vi.mocked(toast)).toHaveBeenCalledWith("Couldn't confirm the sync finished.", 'info');
       expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
         expect.stringMatching(/will appear/i),
         expect.anything(),

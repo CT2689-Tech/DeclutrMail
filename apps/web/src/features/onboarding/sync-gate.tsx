@@ -10,10 +10,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import {
-  AUTH_RECOVERY_ERROR_CODES,
-  syncStatusNeedsReconnect,
-} from '@/features/mailboxes/mailbox-health';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -77,28 +74,12 @@ function stageSentence(status: SyncStatus): string {
  * 2026-07-28). Every string here now points at the button instead.
  */
 /**
- * Error codes whose `ERROR_COPY` above already diagnoses a revoked/
- * expired Gmail grant. QA-sync-20260831-07: the gate used to offer only
- * "Try again" for these — re-queuing a full scan against the SAME dead
- * token, which fails again at `getClient` and burns one of the retry
- * route's rate-limited attempts, with no reconnect action anywhere on
- * screen. Display-only: this does NOT touch `syncStatusNeedsReconnect`
- * or the backend's `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep
- * contract (packages/workers/src/mailbox-reconnect.ts), which govern
- * periodic-sweep eligibility and are a separate, wider change.
- *
- * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
- * review of this QA round) — both surfaces read the one set exported
- * from mailbox-health.ts so this classification can't drift between
- * them again.
- */
-
-/**
  * Every reconnect-recoverable failure reads the same: a refused refresh,
  * a missing Gmail permission, a missing token, and a fresh access token
  * Google still rejects (each attempt mints one, so a terminal
  * `AuthExpiredError` is not an expiry) all mean only "Google is not
- * granting the access", and reconnecting is the one lever the user has.
+ * granting the access". Reconnecting also re-queues the scan, so it covers
+ * what a retry would.
  */
 const RECONNECT_COPY =
   'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.';
@@ -326,14 +307,12 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
-  // Reads the incremental grant failure too, exactly as `SyncNowButton`'s
-  // failed indicator does. A scan can fail as `TransientError` and a later
-  // background call then prove the grant is the problem: the 2026-09-04
+  // The one reconnect rule every surface reads. It includes the incremental
+  // grant failure: a scan can fail as `TransientError` and a later
+  // background call then prove the grant is the problem — the 2026-09-04
   // mailbox still carries both, and keyed on `error_code` alone this screen
   // offered "Try again" against a grant Google had already refused.
-  const needsReconnect =
-    syncStatusNeedsReconnect(status) ||
-    (status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code));
+  const needsReconnect = syncStatusNeedsReconnect(status);
   const copy = needsReconnect
     ? RECONNECT_COPY
     : ((status.error_code && ERROR_COPY[status.error_code]) ??

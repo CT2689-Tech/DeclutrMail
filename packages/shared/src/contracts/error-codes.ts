@@ -116,7 +116,7 @@ export const ERROR_CODES = {
     // DeclutrMail account is refused here too.
     message:
       'This Gmail account is linked to a different DeclutrMail account. ' +
-      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported yet.",
+      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported.",
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---

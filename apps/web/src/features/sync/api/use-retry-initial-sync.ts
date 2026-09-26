@@ -119,16 +119,17 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
 
 /**
  * One sentence per cause the error proves. Waiting fixes only the route's
- * own 3-per-minute limit; a 409 means this inbox is no longer the one this
+ * own 3-per-minute limit; a 409 means this inbox is no longer one this
  * session can act on (disconnected in another tab or device), which no
- * wait fixes. Neither the retry nor the scan it queues changes Gmail.
+ * wait fixes — and the 409 already resets the app's mailbox state, so the
+ * screen moves on without a reload.
  */
 function retryErrorMessage(err: unknown): string {
   if (isMailboxScopeConflict(err)) {
-    return "This inbox isn't connected to your account now. Reload the page.";
+    return 'This inbox is no longer connected to your account.';
   }
   if (err instanceof ApiError && err.status === 429) {
-    return "Couldn't start the scan yet. Wait a minute, then try again.";
+    return "Couldn't start the scan — try again in a minute.";
   }
-  return "Couldn't start the scan. Try again — nothing in Gmail changed.";
+  return "Couldn't start the scan — try again.";
 }

@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
-import { ERROR_CODES } from '@declutrmail/shared/contracts';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import {
@@ -165,7 +164,10 @@ export function deletionSubmitError(error: unknown): string | null {
     return 'The confirmation phrase did not match. Type it exactly to continue.';
   }
   if (apiErrorCode(error) === 'DELETION_ALREADY_PENDING') {
-    return ERROR_CODES.DELETION_ALREADY_PENDING.message;
+    // The registry's own sentence, as a literal: importing `ERROR_CODES`
+    // added its whole table (~4 kB gzipped) to the Settings route. A test
+    // pins the two equal.
+    return 'Account deletion is already scheduled for this account.';
   }
   return 'Could not submit the deletion request. Please try again.';
 }

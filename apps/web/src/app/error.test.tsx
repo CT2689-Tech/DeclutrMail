@@ -139,9 +139,10 @@ describe('AppError boundary — D167', () => {
     expect(heading).not.toMatch(/^(error|oops|sorry)/i);
   });
 
-  it('promises no recovery the boundary does not run', () => {
+  it('promises no recovery the boundary does not run, and claims nothing it cannot see', () => {
     // The boundary only reports to Sentry: nothing saves the page and
-    // nothing retries "the rest in the background".
+    // nothing retries "the rest in the background". It cannot see whether a
+    // mutation committed before the crash, so no "untouched" either.
     const { container } = render(
       <AppError
         error={Object.assign(new Error('Boom'), { digest: 'd' })}
@@ -149,7 +150,7 @@ describe('AppError boundary — D167', () => {
       />,
     );
     expect(container.textContent ?? '').not.toMatch(
-      /in the background|pick up where you left off/i,
+      /in the background|pick up where you left off|untouched/i,
     );
   });
 

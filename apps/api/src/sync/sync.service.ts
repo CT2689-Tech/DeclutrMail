@@ -9,6 +9,9 @@ import {
   type IncrementalSyncJobData,
 } from '@declutrmail/workers';
 import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
+
+/** `error.name` of the workers' `AuthExpiredError` (worker-errors.ts). */
+const AUTH_EXPIRED_ERROR = 'AuthExpiredError';
 import type { InitialSyncJobData } from '@declutrmail/workers';
 import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
 
@@ -476,7 +479,14 @@ export class SyncService {
           r.mailboxAccountId,
           {
             readiness: r.readiness,
-            needsReconnect: incrementalAuthError || r.errorCode === INVALID_GRANT_ERROR,
+            // Same rule as the web's `syncStatusNeedsReconnect`: an initial
+            // scan that ended on a refused grant OR a fresh token Gmail still
+            // rejected sends the user to reconnect on every surface. Display
+            // only — no sweep reads this map.
+            needsReconnect:
+              incrementalAuthError ||
+              r.errorCode === INVALID_GRANT_ERROR ||
+              r.errorCode === AUTH_EXPIRED_ERROR,
           },
         ];
       }),

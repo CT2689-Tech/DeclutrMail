@@ -6,6 +6,7 @@ import type { SyncReadiness } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { observeSyncReadiness } from '@/features/sync/sync-lifecycle';
+import { failedScanSettingsStep } from './mailbox-health';
 
 /**
  * Fires a one-time toast when a mailbox finishes its initial sync
@@ -37,11 +38,10 @@ export function useMailboxSyncToasts(): void {
       if (becameReady) {
         toast(`${mailbox.email} is ready.`, 'success');
       } else if (becameFailed) {
-        // Settings offers Reconnect, not a retry, for a refused grant.
+        // The same step Triage, Senders and Home name, in the same words.
+        const step = failedScanSettingsStep(mailbox.needsReconnect === true);
         toast(
-          mailbox.needsReconnect === true
-            ? `${mailbox.email}'s scan didn't finish — reconnect it in Settings.`
-            : `${mailbox.email}'s scan didn't finish — see Settings to try again.`,
+          `${mailbox.email}'s scan didn't finish — ${step.charAt(0).toLowerCase()}${step.slice(1)}`,
           'danger',
         );
       }

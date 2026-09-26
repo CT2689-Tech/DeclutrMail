@@ -121,15 +121,15 @@ describe('useRetryInitialSync', () => {
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      "Couldn't start the scan yet. Wait a minute, then try again.",
+      "Couldn't start the scan — try again in a minute.",
       'danger',
     );
   });
 
   it.each([
-    [409, 'MAILBOX_NOT_OWNED', /Reload the page/],
-    [409, 'NO_ACTIVE_MAILBOX', /Reload the page/],
-    [500, 'INTERNAL_ERROR', /Try again/],
+    [409, 'MAILBOX_NOT_OWNED', /no longer connected/],
+    [409, 'NO_ACTIVE_MAILBOX', /no longer connected/],
+    [500, 'INTERNAL_ERROR', /try again/],
   ] as const)(
     'does not tell the user to wait a minute for a %i %s',
     async (status, code, remedy) => {

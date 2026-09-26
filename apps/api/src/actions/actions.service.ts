@@ -2938,8 +2938,8 @@ export class ActionsService {
 }
 
 /**
- * Aggregate the three terminal one-click outcomes across a batch's
- * unsubscribe rows (D248). Returns `null` for a batch with no
+ * Aggregate the terminal one-click outcomes across a batch's unsubscribe
+ * rows (D248). Returns `null` for a batch with no
  * unsubscribe row so a label batch cannot render an unsubscribe receipt.
  */
 function summarizeUnsubscribeOutcomes(
@@ -2963,10 +2963,14 @@ function summarizeUnsubscribeOutcomes(
     // what keeps a worker-side rename from silently reclassifying every
     // `unconfirmed` row as `failed` (D248).
     else if (row.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE) outcomes.unconfirmed += 1;
-    // Same pairing for D252's refused-but-emailable sender: the worker's
-    // own rule is that `failed` means nothing is left to try.
-    else if (row.errorCode === UNSUB_MANUAL_REQUIRED_ERROR_CODE) outcomes.actionRequired += 1;
-    else outcomes.failed += 1;
+    else {
+      outcomes.failed += 1;
+      // D252's refused-but-emailable sender is counted INSIDE `failed` as
+      // well as here: a client that predates `actionRequired` then still
+      // reads it as not accepted, never as a success. Readers that know the
+      // field subtract it to show the "send from Gmail" line.
+      if (row.errorCode === UNSUB_MANUAL_REQUIRED_ERROR_CODE) outcomes.actionRequired += 1;
+    }
   }
   return outcomes;
 }

@@ -4,10 +4,11 @@ import {
   UNSUB_MANUAL_REQUIRED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
-import { UNSUB_PILL, unsubscribeOutcomeToast } from './unsub-status';
+import { unsubscribeOutcomeToast } from './unsub-outcome-toast';
+import { UNSUB_PILL } from './unsub-status';
 
 describe('unsubscribeOutcomeToast', () => {
-  it('names the email step when the sender refused one-click but takes email', () => {
+  it('names the email step when one-click was not accepted but the sender takes email', () => {
     // UNSUB_MANUAL_REQUIRED is "Send from Gmail" on the row; the toast
     // said "failed — Archive still works" and hid the step that still
     // unsubscribes (one such job in production, 2026-09-19).

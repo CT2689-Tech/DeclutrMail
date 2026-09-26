@@ -127,7 +127,7 @@ describe('unsubscribeUnavailableReason', () => {
 });
 
 describe('unsubscribeOutcomeBreakdown', () => {
-  it('reports all three terminal outcomes without collapsing any', () => {
+  it('reports every terminal outcome without collapsing any', () => {
     expect(
       unsubscribeOutcomeBreakdown({
         endpointAccepted: 6,
@@ -170,7 +170,7 @@ describe('unsubscribeOutcomeBreakdown', () => {
       actionRequired: 2,
       failed: 0,
     });
-    expect(lines).toEqual(['2 requests refused — send from Gmail instead']);
+    expect(lines).toEqual(['2 requests not accepted — send from Gmail instead']);
     expect(lines.join(' ')).not.toContain('failed');
   });
 

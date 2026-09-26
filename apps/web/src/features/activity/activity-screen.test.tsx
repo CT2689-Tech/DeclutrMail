@@ -1751,12 +1751,14 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       // These are raised before any Gmail read and repeat on every attempt:
       // "We couldn't check Gmail's current state" + "Check again" sent the
       // user into the same refusal.
+      let activityReads = 0;
       installFetchStub([
         {
           method: 'GET',
           path: '/api/activity',
-          respond: () =>
-            jsonOk({
+          respond: () => {
+            activityReads += 1;
+            return jsonOk({
               data: [
                 row({
                   action: 'archive',
@@ -1772,7 +1774,8 @@ describe('ActivityScreen — outcome-aware recovery', () => {
                 }),
               ],
               meta: META_BASE,
-            }),
+            });
+          },
         },
         {
           method: 'POST',
@@ -1791,7 +1794,13 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       const alert = await within(dialog).findByRole('alert');
       expect(alert).toHaveTextContent(says);
       expect(alert).not.toHaveTextContent(/couldn.t check gmail/i);
+      // No "Refresh Activity" control exists — Activity re-reads itself so
+      // Close shows the row as it is now.
+      expect(alert).not.toHaveTextContent(/refresh activity/i);
       expect(within(dialog).queryByRole('button', { name: 'Check again' })).toBeNull();
+      const readsAtRefusal = activityReads;
+      await waitFor(() => expect(activityReads).toBeGreaterThan(1));
+      expect(readsAtRefusal).toBeGreaterThanOrEqual(1);
     },
   );
 

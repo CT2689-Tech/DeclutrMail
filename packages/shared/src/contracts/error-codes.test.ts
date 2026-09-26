@@ -41,7 +41,7 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     // Rate limiting is the one generic code that is retryable.
     expect(ERROR_CODES.RATE_LIMITED.retryable).toBe(true);
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
-      "moving a Gmail account between DeclutrMail accounts isn't supported yet.",
+      "moving a Gmail account between DeclutrMail accounts isn't supported.",
     );
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toContain('disconnect');
     // The ownership check reads the row whatever its status, so the

@@ -20,7 +20,7 @@ describe('UnsubBatchReceipt', () => {
       />,
     );
     const receipt = screen.getByRole('status');
-    expect(receipt).toHaveTextContent('2 requests refused — send from Gmail instead');
+    expect(receipt).toHaveTextContent('2 requests not accepted — send from Gmail instead');
     expect(receipt).not.toHaveTextContent(/failed/);
     // Neutral frame: no success tick over requests nobody accepted.
     expect(receipt).not.toHaveTextContent('✓');
@@ -45,5 +45,19 @@ describe('UnsubBatchReceipt', () => {
     const heading = screen.getByText(headline, { selector: 'strong' });
     expect(heading.textContent).toBe(headline);
     expect(document.body.textContent ?? '').not.toMatch(/requests sent/i);
+  });
+
+  it.each([
+    { endpointAccepted: 0, unconfirmed: 1, actionRequired: 0, failed: 1 },
+    { endpointAccepted: 0, unconfirmed: 0, actionRequired: 1, failed: 1 },
+  ])('shows no success tick when nothing was accepted (%o)', (outcomes) => {
+    render(
+      <UnsubBatchReceipt
+        receipt={{ senderCount: 2, skipped: [], outcomes, pending: 0 }}
+        onDismiss={() => undefined}
+      />,
+    );
+    const receipt = screen.getByRole('status');
+    expect(receipt).not.toHaveTextContent('✓');
   });
 });

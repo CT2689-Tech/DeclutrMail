@@ -92,19 +92,16 @@ export function UnsubBatchReceipt({
     receipt.outcomes.unconfirmed === 0 &&
     receipt.outcomes.actionRequired === 0 &&
     receipt.outcomes.failed > 0;
-  // Nothing accepted and nothing failed — every request is unconfirmed or
-  // waits on the user sending it from Gmail. Success chrome (green tick,
-  // emerald) would round that toward "accepted" in exactly the way the
-  // copy refuses to, so the surface stays neutral: D248 puts `unconfirmed`
-  // on equal footing with its neighbours, and the frame is part of the claim.
-  const allUnconfirmed =
-    receipt.outcomes !== null &&
-    receipt.outcomes.endpointAccepted === 0 &&
-    receipt.outcomes.failed === 0 &&
-    receipt.outcomes.unconfirmed + receipt.outcomes.actionRequired > 0;
+  // Nothing accepted, and not everything failed — some mix of unconfirmed,
+  // waiting on the user in Gmail, and failed. Success chrome (green tick,
+  // emerald) would round that toward "accepted" in exactly the way the copy
+  // refuses to, so the surface stays neutral: D248 puts `unconfirmed` on
+  // equal footing with its neighbours, and the frame is part of the claim.
+  const noneAccepted =
+    receipt.outcomes !== null && receipt.outcomes.endpointAccepted === 0 && !allFailed;
   const tone: 'failed' | 'neutral' | 'positive' = allFailed
     ? 'failed'
-    : allUnconfirmed || inFlight || unreported
+    : noneAccepted || inFlight || unreported
       ? 'neutral'
       : 'positive';
   const frame = {

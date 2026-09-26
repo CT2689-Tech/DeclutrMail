@@ -28,7 +28,7 @@ const UnsubMailtoCallout = dynamic(
     import('@/features/senders/unsub-mailto-callout').then((module) => module.UnsubMailtoCallout),
   { loading: () => <p role="status">Loading the remaining email unsubscribe step…</p> },
 );
-import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import {

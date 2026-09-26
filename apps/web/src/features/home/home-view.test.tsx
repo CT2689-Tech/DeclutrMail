@@ -208,13 +208,12 @@ describe('HomeView', () => {
     // users looking for a problem that was not there.
     const { unmount } = render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
     expect(screen.queryByText(/connection/i)).toBeNull();
-    expect(screen.getByText(/Retry the scan in Settings/)).toBeInTheDocument();
+    expect(screen.getByText(/Scan again in Settings/)).toBeInTheDocument();
     unmount();
 
     render(<HomeView state={{ kind: 'sync-failed', needsReconnect: true }} />);
-    expect(screen.getByText('Connection needs attention')).toBeInTheDocument();
     expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
-    expect(screen.queryByText(/Retry the scan/)).toBeNull();
+    expect(screen.queryByText(/Scan again/)).toBeNull();
   });
 
   it('loading: a labelled skeleton and no link', () => {

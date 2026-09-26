@@ -103,16 +103,6 @@ export default function GlobalError({
                 app (`reset`) rather than reloading the page. */}
             We couldn&rsquo;t load DeclutrMail.
           </h1>
-          <p
-            style={{
-              fontSize: text.md,
-              color: color.fgSoft,
-              lineHeight: 1.6,
-              margin: 0,
-            }}
-          >
-            Your mailbox and decisions are untouched. Try again to continue.
-          </p>
 
           {error.digest != null && (
             <TechnicalDetails summary="Show support reference">

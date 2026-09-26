@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
+
 import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -16,7 +18,7 @@ describe('deletionSubmitError', () => {
     // DELETION_ALREADY_PENDING repeats on every attempt: another tab or
     // device already scheduled it.
     const message = deletionSubmitError(conflict('DELETION_ALREADY_PENDING'));
-    expect(message).toBe('Account deletion is already scheduled for this account.');
+    expect(message).toBe(ERROR_CODES.DELETION_ALREADY_PENDING.message);
     expect(message).not.toMatch(/try again/i);
   });
 
