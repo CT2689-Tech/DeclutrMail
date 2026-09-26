@@ -6,7 +6,6 @@ import {
   BUSINESS_POSTAL_ADDRESS,
   hasPostalAddress,
   PRIVACY_BADGE_HEADLINE,
-  PRIVACY_BADGE_LEAD,
 } from '@declutrmail/shared/copy';
 
 /** Rendered email — what the EmailSendWorker job carries. */
@@ -80,9 +79,10 @@ export const HERO_NUMERAL = {
  * opts in — chrome that only appears after "display images" is chrome
  * that mostly does not appear.
  *
- * Every email closes on the D228 trust line. It is the product's whole
- * wedge and it is true of all four kinds, so it is shell-level rather
- * than per-template.
+ * Every HTML email built on this shell closes on the D228 trust line —
+ * the product's whole wedge — so it lives here, not per template. Plain
+ * text parts, and the text-only kinds that never use the shell, do not
+ * carry it.
  */
 /**
  * The in-body opt-out block for a marketing/relationship send.
@@ -178,14 +178,10 @@ export function Shell(props: {
             {PRIVACY_BADGE_HEADLINE}
           </Text>
 
-          {/* The headline is a deliberately literal, falsifiable metric — it
-              reads as jargon on its own. Every other surface that shows it
-              pairs it with a plain-language translation; this footer was the
-              one place it rendered naked. */}
-          <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '6px 0 0' }}>
-            {PRIVACY_BADGE_LEAD}
-          </Text>
-
+          {/* The headline alone. PRIVACY_BADGE_LEAD ("…the Gmail details
+              listed below") introduces the generated storage list, which an
+              email does not render — so it pointed every recipient at a
+              list that was not there. */}
           <Text style={{ color: MUTED, fontSize: '12px', lineHeight: '18px', margin: '10px 0 0' }}>
             {props.footer}
           </Text>

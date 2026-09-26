@@ -465,7 +465,7 @@ function WakeConfirm({
       ? 'Everything from this sender in DeclutrMail/Later returns to your inbox now, and the return time clears'
       : row.laterCount === 0
         ? 'No email is in the Later label — this clears the return time'
-        : `${row.laterCount} message${row.laterCount === 1 ? '' : 's'} return${row.laterCount === 1 ? 's' : ''} to your inbox now, and the return time clears`;
+        : `${row.laterCount} email${row.laterCount === 1 ? '' : 's'} return${row.laterCount === 1 ? 's' : ''} to your inbox now, and the return time clears`;
   return (
     <div
       style={{

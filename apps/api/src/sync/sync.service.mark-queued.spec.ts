@@ -106,4 +106,46 @@ describe('SyncService.markQueued — incremental error lifecycle', () => {
     expect(row.lastIncrementalErrorAt).toEqual(errorAt);
     expect(row.lastIncrementalErrorCode).toBe('InvalidGrantError');
   });
+
+  /**
+   * "Your inbox is ready" sends only while `last_synced_at` is null
+   * (InitialSyncWorker.markReady). A reset that cleared it would make
+   * every re-scan a first scan again, and every other test would pass.
+   */
+  describe('keeps last_synced_at through every re-queue', () => {
+    const syncedAt = new Date('2026-09-01T10:00:00Z');
+
+    async function seed(readinessStatus: 'ready' | 'failed'): Promise<void> {
+      await db.insert(providerSyncState).values({
+        mailboxAccountId: mailboxId,
+        readinessStatus,
+        currentStage: readinessStatus,
+        progressPct: readinessStatus === 'ready' ? 100 : 40,
+        lastSyncedAt: syncedAt,
+      });
+    }
+
+    it('markQueued, with and without fresh credentials', async () => {
+      await seed('ready');
+
+      await service.markQueued(db, mailboxId, { freshCredentials: true });
+      let row = await readState();
+      expect(row.readinessStatus).toBe('queued');
+      expect(row.lastSyncedAt).toEqual(syncedAt);
+
+      await service.markQueued(db, mailboxId);
+      row = await readState();
+      expect(row.lastSyncedAt).toEqual(syncedAt);
+    });
+
+    it('the failed-scan retry', async () => {
+      await seed('failed');
+
+      await service.retryFailedInitialSync(mailboxId);
+
+      const row = await readState();
+      expect(row.readinessStatus).toBe('queued');
+      expect(row.lastSyncedAt).toEqual(syncedAt);
+    });
+  });
 });
