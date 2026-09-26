@@ -106,6 +106,25 @@ describe('scanMsLeft — from what the worker wrote, when it wrote it', () => {
     expect(scanMsLeft(track, 30_000)).toBe(((next.total - next.processed) * 10_000) / 100);
   });
 
+  // Seen live in the 2026-09-26 re-smoke: dev reads ~4 emails/s (4,800
+  // quota units a minute at 20 a read), a 500-email batch every ~2 min,
+  // and the stall rule restarted the track on every second batch — the
+  // line never showed a time.
+  it('a slow scan (~4 emails/s, a batch every ~2 min) gets a time on its second batch', () => {
+    let track = watched(1_345, [
+      [0, 0],
+      [125_000, 500],
+    ]);
+
+    // 845 left at 500 per 125s.
+    expect(scanMsLeft(track, 125_000)).toBe(211_250);
+
+    track = observeScan(track, counts(1_000, 0, 1_345), 250_000);
+    // 345 left at 1,000 per 250s, and a 2-minute gap is not a stall here.
+    expect(scanMsLeft(track, 250_000)).toBe(86_250);
+    expect(scanMsLeft(track, 250_000 + 86_000)).toBe(250);
+  });
+
   it('starts over when a batch lands after a stall, so the pause is not averaged in', () => {
     let track = watched(40_898, [
       [0, 12_400],
@@ -240,6 +259,45 @@ describe('useScanTimeLeft', () => {
 
     // 1,000 in 20s → 26,998 left at 50/s, and nothing else ever painted.
     expect(committed).toEqual([539_960]);
+  });
+
+  it('measures the pace again after the tab was hidden, before trusting a stall window', () => {
+    const setVisibility = (state: DocumentVisibilityState) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      act(() => {
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+    };
+    try {
+      const { result, rerender } = renderHook(({ progress }) => useScanTimeLeft(progress), {
+        initialProps: { progress: counts(12_400) as SyncMessageProgress | null },
+      });
+      vi.setSystemTime(3_000);
+      rerender({ progress: counts(12_400, 3_000) }); // one batch placed, at 0
+
+      vi.setSystemTime(5_000);
+      setVisibility('hidden'); // polls stop; the worker keeps writing
+      vi.setSystemTime(605_000);
+      setVisibility('visible');
+      rerender({ progress: counts(36_400, 1_000) }); // written at 604,000
+      // One batch seen since the tab came back: no pace yet.
+      expect(result.current).toBeNull();
+
+      vi.setSystemTime(617_500);
+      rerender({ progress: counts(36_900) });
+      // 500 per 13.5s since return → 3,998 left.
+      expect(result.current).toBe(107_946);
+      // A stall now drops it within the minute floor, not 3× a 10-minute gap.
+      act(() => {
+        vi.advanceTimersByTime(70_000);
+      });
+      expect(result.current).toBeNull();
+    } finally {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'visible',
+      });
+    }
   });
 
   it('has no time while the total is unknown', () => {

@@ -15,9 +15,11 @@ import type { SyncMessageProgress } from '@declutrmail/shared/contracts';
  * average rate since the track started, counted down between batches.
  *
  * The track starts over when the counts go away, drop or change total,
- * and when a batch lands after a stall — a pause (or a hidden tab) is not
- * averaged into the pace that follows it. The time is dropped when
- * batches stop arriving at their usual pace, and when it runs out.
+ * and when a batch lands after a stall against the pace already seen; a
+ * hidden tab measures the pace again on return. So a pause is not
+ * averaged into the pace that follows it, while a slow scan's minutes-long
+ * first gap still counts as its pace. The time is dropped when batches
+ * stop arriving at their usual pace, and when it runs out.
  */
 
 /** No batch for this many usual gaps means the rate no longer holds. */
@@ -74,7 +76,10 @@ export function observeScan(
     seen === null ||
     progress.total !== seen.total ||
     progress.processed < last.processed ||
-    point.at - last.at > staleAfter(track);
+    // A long gap is a stall only against a pace already seen. The first
+    // gap IS the pace — each batch is timed by its write — and a slow
+    // scan's is minutes long.
+    (track.steps > 0 && point.at - last.at > staleAfter(track));
   if (restarted) {
     return { seen: progress, first: point, last: point, steps: 0 };
   }
@@ -122,6 +127,19 @@ export function useScanTimeLeft(progress: SyncMessageProgress | null): number | 
     setTrack(observeScan(track, progress, receivedAt));
     setNow(receivedAt);
   }
+
+  // Hidden, the tab stops polling while the worker keeps writing: the next
+  // batch it sees can span many. Measure the pace again from what it can
+  // watch, so a stall after return is judged against that pace.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        setTrack((t) => startScanTrack(t.seen));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
 
   const msLeft = scanMsLeft(track, now);
   const shown = msLeft !== null;
