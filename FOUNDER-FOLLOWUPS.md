@@ -23,6 +23,42 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Turn on the page for a refused Anthropic account
+
+**Source:** the LLM refusal breaker + alert PR (branch
+`fix/d024-llm-rejection-breaker`); the 2026-09-24 credit outage.
+
+**Why:** the worker now logs `llm.provider_rejected` on every refused
+Anthropic call and stops calling, but a log line pages nobody until the
+GCP log metric and alert policy exist. Creating them needs GCP
+credentials; the session that wrote the PR had none (gcloud asked for
+re-authentication).
+
+**How:** after the PR merges and deploys:
+
+```bash
+gcloud auth login
+node scripts/setup-llm-rejection-alert.mjs --apply
+```
+
+It creates the log metric `llm_provider_rejected` and the alert policy
+"LLM provider refused our calls (credit, limit or key)", reuses the
+existing admin@declutrmail.ai email channel, then reads both back.
+
+Then the drill, the only step that proves an email arrives: write one
+synthetic line, labelled as a drill, and expect one alert email within
+about 5 minutes.
+
+```bash
+curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
+```
+
+**Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
+`Configured:` and exits 0, and the drill produces an alert email naming
+`reason=other`.
+
+**Status:** Open
+
 ### 2026-09-24 — Add the return-path records so SPF counts for declutrmail.com
 **Source:** session 2026-09-24 (a friend's "Your inbox is ready" landed in spam; PR #772)
 **Why:** Resend sends through Amazon SES with the envelope sender (return-path) on `send.send.declutrmail.com`, and that host has no records. So SPF passes only for `amazonses.com`, not for our domain; DKIM and DMARC still pass (DMARC aligns via DKIM). Resend's dashboard still says "verified" from an older check. Fixing it gives mailbox providers a second aligned signal. Checked 2026-09-24 with `dig`: the MX and SPF records sit on `send.declutrmail.com`, and `send.send.declutrmail.com` returns nothing.
@@ -44,8 +80,8 @@ Then Resend → Domains → declutrmail.com → Verify.
 ### 2026-09-24 — Top up Anthropic credits (they ran out, and nothing alerted)
 **Source:** session 2026-09-24 (prod logs)
 **Why:** The balance hit zero at ~08:15 UTC on 2026-09-24. Since then every AI explanation and the Brief fall back to templates without telling anyone. A new user's first scan on 2026-09-25 got 2,929 "credit balance is too low" errors, so every one of their senders got a template reason. The drain came from one sweep: a returning Google sign-in re-scanned an already-synced mailbox and re-scored all 7,999 senders, which made 6,022 Haiku calls. `scripts/check-vendor-limits.mjs` watches only for spend that is too HIGH, so nothing checks for credits running out.
-**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog, and stopping the sign-in re-scan (decision pending).
-**Verifies by:** `reasoning.adapter_error` stops appearing in worker logs, and the next score sweep reports `llmExplanations > 0`.
+**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog (now a log-based page, see 2026-09-26 above), and stopping the sign-in re-scan (decision pending).
+**Verifies by:** `llm.provider_rejected` stops appearing in worker logs (refusals log there since the 2026-09-26 breaker, no longer as `reasoning.adapter_error`), and the next score sweep reports `llmExplanations` greater than `llmReused`.
 **Status:** Open
 
 ### 2026-09-21 — Apple-simple redesign: six decisions left for the founder

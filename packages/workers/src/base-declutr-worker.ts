@@ -492,6 +492,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'kind',
   'labelActionsExecuted',
   'labelChanges',
+  'llmBlocked',
   'llmCalls',
   'llmExplanations',
   'llmReused',

@@ -185,11 +185,17 @@ import type {
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
+import { LlmCircuitBreaker } from './adapters/llm-circuit-breaker.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import {
+  GMAIL_QUOTA_BURST_WINDOW_MS,
+  GMAIL_QUOTA_WINDOW_MS,
+  resolveGmailQuotaConfig,
+} from './gmail/gmail-quota-config.js';
 import {
   deletionReceiptEmail,
   lapseReengagementEmail,
@@ -224,45 +230,6 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  *
  * Local dev: `./scripts/dev-worker.sh`.
  */
-
-/**
- * Gmail quota throttle (D5). Newer projects get 6,000 units/user/minute;
- * default to 4,800 (20% headroom). The production project retains a
- * 15,000-unit legacy ceiling, so its deploy manifest sets this to 12,000.
- * Each Gmail method still reserves its current published cost. One limiter
- * per mailbox.
- */
-const configuredGmailQuotaUnits = process.env.GMAIL_QUOTA_UNITS_PER_MIN;
-const GMAIL_QUOTA_UNITS_PER_MIN = configuredGmailQuotaUnits
-  ? Number(configuredGmailQuotaUnits)
-  : 4_800;
-if (
-  !Number.isSafeInteger(GMAIL_QUOTA_UNITS_PER_MIN) ||
-  GMAIL_QUOTA_UNITS_PER_MIN < 1_200 ||
-  GMAIL_QUOTA_UNITS_PER_MIN > 12_000
-) {
-  throw new Error('GMAIL_QUOTA_UNITS_PER_MIN must be an integer from 1200 to 12000');
-}
-const GMAIL_QUOTA_WINDOW_MS = 60_000;
-
-/**
- * Burst ceiling — separate from the sustained target above (2026-09-03,
- * post-incident: see `RedisGmailQuotaLimiter`'s class doc for the full
- * root-cause). Both limiter implementations previously started a fresh
- * mailbox's bucket FULL, so `InitialSyncWorker`'s fetch loop could spend
- * the entire 12,000-unit sustained budget the instant it started —
- * ~2,400 `messages.get` calls at the old 5-unit accounting, with zero
- * pacing before either limiter ever introduced a delay.
- *
- * A five-second share of the sustained budget caps that instant burst:
- * 400 units by default or 1,000 for the production legacy quota. Paired
- * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME average rate, so the
- * in-process `RateLimiter` fallback paces identically to the primary
- * Redis-backed bucket instead of reverting to the old full-burst
- * behavior the moment Redis degrades.
- */
-const GMAIL_QUOTA_BURST_CAPACITY = Math.floor(GMAIL_QUOTA_UNITS_PER_MIN / 12);
-const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */
 function requireEnv(name: string): string {
@@ -396,6 +363,13 @@ async function bootstrap(): Promise<void> {
   // away instead of "worker silently never logs `worker.listening`".
   auditRequiredEnv();
   bootStep('env_audit_complete');
+
+  // Gmail pacing (D5), resolved here rather than at module load so a bad
+  // value fails through `worker.boot_failed`. Logged in full: the
+  // 2026-09-24 (UTC) pricing regression left no trace in the logs and was found
+  // only by timing a 68-minute first sync.
+  const gmailQuota = resolveGmailQuotaConfig(process.env);
+  bootStep('gmail_quota', { ...gmailQuota });
 
   // Boot-refusal (mirrors the DEV_AUTH_ENABLED guard in main.ts):
   // `UNSUB_ALLOW_INSECURE_TARGETS` lets the unsub executor POST to
@@ -789,17 +763,17 @@ async function bootstrap(): Promise<void> {
         gmailQuotaConnection,
         gmailQuotaSha,
         mailboxAccountId,
-        GMAIL_QUOTA_BURST_CAPACITY,
-        GMAIL_QUOTA_UNITS_PER_MIN,
+        gmailQuota.burstCapacity,
+        gmailQuota.unitsPerMin,
         GMAIL_QUOTA_WINDOW_MS,
-        new RateLimiter(GMAIL_QUOTA_BURST_CAPACITY, GMAIL_QUOTA_BURST_WINDOW_MS),
+        new RateLimiter(gmailQuota.burstCapacity, GMAIL_QUOTA_BURST_WINDOW_MS),
       );
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
     // D181: close over the mailbox row's workspace/user so the audit
     // emit carries the operator-useful identifiers. Fire-and-forget —
     // a failed insert never alters the original token-swap throw.
-    return new GmailClientService(oauth, limiter, ({ reason }) => {
+    return new GmailClientService(oauth, limiter, gmailQuota.metric, ({ reason }) => {
       void securityEvents.record({
         eventType: 'oauth.refresh_failed',
         // `invalid_grant` means the mailbox needs reconnect (a real
@@ -1074,8 +1048,13 @@ async function bootstrap(): Promise<void> {
    * worker accepts `undefined` to mean "no LLM available; always use
    * the deterministic template". `null → undefined` so the worker
    * checks `this.deps.llm` rather than `null !== undefined`.
+   *
+   * One breaker for both Anthropic adapters (Brief here, reasoning
+   * below): they bill the same account, so a credit or key refusal seen
+   * by either pauses both.
    */
-  const briefLlm = buildBriefLlmAdapter();
+  const anthropicBreaker = new LlmCircuitBreaker();
+  const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
   briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -1142,6 +1121,7 @@ async function bootstrap(): Promise<void> {
           timeout: resolveExplainTimeoutMs(process.env.REASONING_TIMEOUT_MS),
           maxRetries: 1,
         }),
+        breaker: anthropicBreaker,
       })
     : undefined;
   // U14/U-WIRE: `outbox` publishes `triage.score_run_completed` after

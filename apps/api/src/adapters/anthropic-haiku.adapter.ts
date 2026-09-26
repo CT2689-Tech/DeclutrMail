@@ -41,6 +41,8 @@ import {
   type ReasoningLlmPort,
 } from '@declutrmail/workers';
 
+import { LlmCircuitBreaker, providerErrorFields } from './llm-circuit-breaker.js';
+
 /**
  * D62 — Anthropic Haiku 4.5. The bare alias auto-resolves to the
  * latest stable Haiku 4.5 release; date-suffixed IDs are reserved for
@@ -95,17 +97,32 @@ export interface AnthropicHaikuAdapterDeps {
    * + base URL; tests inject a mock client.
    */
   client: Anthropic;
+  /**
+   * Pauses calls after the provider refuses the account. The composition
+   * root shares one with the Brief adapter (same account). Required, so
+   * a construction site cannot silently get a breaker of its own.
+   */
+  breaker: LlmCircuitBreaker;
 }
 
 /**
  * AnthropicHaikuAdapter — implements `ReasoningLlmPort` against the
- * Messages API. Stateless; safe to share across the worker's bounded
- * concurrency pool.
+ * Messages API. Safe to share across the worker's bounded concurrency
+ * pool; its only state is the breaker.
  */
 export class AnthropicHaikuAdapter implements ReasoningLlmPort {
-  constructor(private readonly deps: AnthropicHaikuAdapterDeps) {}
+  private readonly breaker: LlmCircuitBreaker;
+
+  constructor(private readonly deps: AnthropicHaikuAdapterDeps) {
+    this.breaker = deps.breaker;
+  }
+
+  isBlocked(): boolean {
+    return this.breaker.isBlocked();
+  }
 
   async explain(input: ReasoningInput): Promise<string | null> {
+    if (this.breaker.isBlocked()) return null;
     const userPrompt = renderUserPrompt(input);
     try {
       const response = await this.deps.client.messages.create({
@@ -116,19 +133,20 @@ export class AnthropicHaikuAdapter implements ReasoningLlmPort {
       });
       return extractText(response);
     } catch (err) {
-      // No throws — the port's contract is "soft path". Structured log
-      // so observability can correlate fallbacks with API health, but
-      // the worker only sees `null` and falls back to the template.
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'reasoning.adapter_error',
-          adapter: 'AnthropicHaikuAdapter',
-          model: HAIKU_MODEL_ID,
-          error: err instanceof Error ? err.message : String(err),
-          ...(err instanceof Anthropic.APIError ? { status: err.status, type: err.type } : {}),
-        }),
-      );
+      // No throws — the port's contract is "soft path"; the worker sees
+      // `null` and falls back to the template. A refusal is logged by
+      // the breaker; anything else is logged here.
+      const source = { adapter: 'AnthropicHaikuAdapter', model: HAIKU_MODEL_ID };
+      if (this.breaker.recordFailure(err, source) === null) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'reasoning.adapter_error',
+            ...source,
+            ...providerErrorFields(err),
+          }),
+        );
+      }
       return null;
     }
   }
@@ -224,10 +242,11 @@ function capitalize(s: string): string {
  * always use the template" path.
  */
 export function buildAnthropicHaikuAdapter(
+  breaker: LlmCircuitBreaker,
   env: NodeJS.ProcessEnv = process.env,
 ): AnthropicHaikuAdapter | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const client = new Anthropic({ apiKey });
-  return new AnthropicHaikuAdapter({ client });
+  return new AnthropicHaikuAdapter({ client, breaker });
 }

@@ -155,13 +155,22 @@ jobs:
               # 40 files under apps/api/src import @declutrmail/workers, so a
               # worker-only behaviour change still has to run this suite.
               - 'packages/workers/**'
+              # The alert's log filter is checked against the adapters'
+              # real output by an apps/api spec; editing only the script
+              # must still run it.
+              - 'scripts/setup-llm-rejection-alert.mjs'
               - *shared_server
+              # Specs here read the deploy manifest's --set-env-vars (the
+              # quota metric pairing); a manifest-only PR must run them.
+              - '.github/workflows/deploy-cloud-run.yml'
             workers:
               - *infra
               - 'packages/workers/**'
               - 'packages/db/**'
               - 'packages/events/**'
               - *shared_server
+              # unsub-send-enabled-deploy.test.ts reads the deploy manifest.
+              - '.github/workflows/deploy-cloud-run.yml'
             db:
               - *infra
               - 'packages/db/**'
@@ -248,7 +257,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
