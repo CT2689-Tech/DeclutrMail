@@ -10958,14 +10958,18 @@ knew both numbers the whole time.
 
 **What keeps it honest.**
 - The counts are the worker's own, written per 500-message batch and as
-  soon as the mailbox is listed. D224's field set gains
-  `message_progress`, read from the initial-sync BullMQ job (no
-  migration). No count before the mailbox is listed, outside the reading
-  stage, or when the job cannot be read.
-- Time left is never a fixed rate. It is the average rate between two
-  batches the tab watched arrive — counts already on screen at first
-  render are not a point — and it is dropped when batches stop arriving
-  at their usual pace. Minutes round up.
+  soon as the mailbox is listed ("Found 40,898 emails" until the first
+  batch lands). D224's field set gains `message_progress`, read from a
+  short-lived Redis key the worker writes (no migration): cleared when an
+  attempt starts and when the read ends, expiring 30 minutes after its
+  last write. No count before the mailbox is listed, outside the reading
+  stage, or when the key cannot be read.
+- Time left is never a fixed rate. It is the average pace of the
+  worker's own batches, each timed by when the worker wrote it — so a
+  late poll cannot shorten it — counted down between batches. It starts
+  over after a stall or a hidden tab, and is dropped when batches stop
+  arriving at their usual pace or the estimate runs out. Minutes round
+  up; past an hour, to the next five.
 - The "you can close this tab" line still promises no time.
 
 `show_sync_live_counters` and `show_sync_eta` are retired with this. In

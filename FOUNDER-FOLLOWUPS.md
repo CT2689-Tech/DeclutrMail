@@ -269,6 +269,13 @@ curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorizatio
 
 **Status:** Open
 
+### 2026-09-26 — Decide what Redis may keep of a mailbox's sync counts after "delete my data"
+**Source:** privacy-auditor on the scan-count PR (feat/d109-sync-gate-progress-count), 2026-09-26
+**Why:** The D245 registry files per-sync counts under `processing-and-retry-records` ("keep counts and timings for each mailbox sync") with `removalTrigger: 'delete-indexed-data'` (packages/shared/src/contracts/gmail-data-inventory.ts). Two Redis copies are not removed that way, checked in source on 2026-09-26: (1) a mailbox's finished initial-sync BullMQ job keeps its result, including `messagesSynced`, for at least 24h after completing — `removeOnComplete: { age: 86_400 }` is enforced only when a later initial-sync job finishes — and indefinitely after a terminal failure (`removeOnFail: false`, `initialSyncJobOptions` in packages/workers/src/queue.ts); (2) BullMQ writes each finish, with that result, into the queue's events stream (bullmq 6.3.1 `moveToFinished-14.lua`, line 198), trimmed only by length. The deletion worker uses only the email-send queue (packages/workers/src/deletion.worker.ts). Pre-existing. The scan-count PR adds nothing to either: its counts use their own key, cleared when the read ends and expiring 30 minutes after the last write.
+**How:** Retention is Tier 1, so pick one: (a) record the Redis copies and their real retention in the registry (a model change — `storageRefs` holds only DB columns today); or (b) make mailbox-data deletion remove the mailbox's initial-sync job and cap the initial-sync queue's events stream (`streams.events.maxLen`).
+**Verifies by:** After deleting a test mailbox's saved data, `redis-cli HGET bull:initial-sync:<mailboxId> returnvalue` returns nothing — or the registry states the Redis retention the app actually has.
+**Status:** Open
+
 ### 2026-09-24 — Add the return-path records so SPF counts for declutrmail.com
 **Source:** session 2026-09-24 (a friend's "Your inbox is ready" landed in spam; PR #772)
 **Why:** Resend sends through Amazon SES with the envelope sender (return-path) on `send.send.declutrmail.com`, and that host has no records. So SPF passes only for `amazonses.com`, not for our domain; DKIM and DMARC still pass (DMARC aligns via DKIM). Resend's dashboard still says "verified" from an older check. Fixing it gives mailbox providers a second aligned signal. Checked 2026-09-24 with `dig`: the MX and SPF records sit on `send.declutrmail.com`, and `send.send.declutrmail.com` returns nothing.
