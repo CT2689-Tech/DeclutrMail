@@ -30,7 +30,7 @@ import { abortableDelay } from './abortable-delay.js';
  * in it, letting a fresh sync burn the whole minute's budget in a single
  * burst before the limiter ever introduced a millisecond of pacing.
  *
- * The 2026-08-26 incident (andre.darmochwal@gmail.com, workspace
+ * The 2026-08-26 incident (a real signup's mailbox, workspace
  * `300563ea-…`) is consistent with exactly this: a 30k+-message mailbox
  * tripped Gmail's real quota-exceeded 403 on its first burst, and three
  * more manual retries over the next 24 minutes — each opening with the
