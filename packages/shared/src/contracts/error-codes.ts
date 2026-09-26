@@ -85,7 +85,7 @@ export const ERROR_CODES = {
     status: 500,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Something went wrong on our side. Your email is untouched — try again in a moment.',
+    message: 'Something went wrong on our side. Try again in a moment.',
   },
 
   // --- domain: mailbox scope (current-mailbox.guard, auth orchestrator) ---
@@ -701,13 +701,13 @@ export const ERROR_CODES = {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "That couldn't be queued just now. Your email is untouched — try again in a moment.",
+    message: "We couldn't confirm that started. Check Activity before trying again.",
   },
   RECOVERY_ENQUEUE_FAILED: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "Recovery couldn't be queued just now. Your email is untouched — try again.",
+    message: "We couldn't confirm the retry started. Try again — it won't run twice.",
   },
   SERVICE_UNAVAILABLE: {
     status: 503,

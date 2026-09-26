@@ -1288,8 +1288,9 @@ export class ActionsService {
    * and one skipped is not named, and its Activity line records the skip.
    *
    * Only the latest attempt of each lineage counts: a retry from Activity
-   * joins its batch (it inherits `composite_id`), and the failure it
-   * replaced no longer does.
+   * joins its batch (a member's retry inherits `composite_id`; the
+   * anchor's points at the anchor), and the failure it replaced no longer
+   * does.
    */
   async getBatchStatus(batchId: string, mailboxAccountId: string): Promise<BatchStatusResult> {
     const rows = await this.db

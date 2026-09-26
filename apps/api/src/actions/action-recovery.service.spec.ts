@@ -379,6 +379,48 @@ describe('ActionRecoveryService', () => {
     expect(storedPreview).toMatchObject({ status: 'consumed', recoveryActionId: first.actionId });
   });
 
+  // A retry stays in its decision: the batch status, the pill and "Undo all"
+  // read a batch as its anchor plus every row pointing at it. The anchor
+  // points at nothing, so a retry of the anchor used to leave the batch,
+  // which kept reporting the failure the retry replaced.
+  it('a retry stays in its batch, including a retry of the batch anchor', async () => {
+    const anchor = await seedFailedAction(db, mailbox, { key: 'batch-anchor' });
+    const [member] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: mailbox.senderId, senderKey: mailbox.senderKey },
+        resolvedMessageIds: ['gmail-3'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'batch-member',
+        compositeId: anchor.id,
+      })
+      .returning();
+
+    for (const [action, key] of [
+      [anchor, 'retry-anchor'],
+      [member!, 'retry-member'],
+    ] as const) {
+      const preview = await service.createPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        actionId: action.id,
+      });
+      await makeReady(db, preview.previewId);
+      const retry = await service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: key,
+        wakeAt: null,
+      });
+      const [child] = await db.select().from(actionJobs).where(eq(actionJobs.id, retry.actionId));
+      expect(child!.compositeId).toBe(anchor.id);
+    }
+  });
+
   it('already-applied Gmail state is still reconciled to repair Activity and Undo', async () => {
     const original = await seedFailedAction(db, mailbox, { key: 'original-applied' });
     const preview = await service.createPreview({

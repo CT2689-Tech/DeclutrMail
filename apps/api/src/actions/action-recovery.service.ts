@@ -423,7 +423,10 @@ export class ActionRecoveryService {
           retryOfActionId: action.id,
           recoveryAttempt: attempt,
           selectionFrozenAt: new Date(),
-          compositeId: action.compositeId,
+          // The attempt stays in its decision: a batch member keeps its
+          // anchor, and an anchor's (or a lone action's) retry points at the
+          // lineage root — every reader groups by coalesce(composite_id, id).
+          compositeId: action.compositeId ?? preview.rootActionId,
           wakeAt,
           // ADR-0028: the attempt inherits the original reach. Without
           // this, an all-mail Delete's recovery journal would lose the
