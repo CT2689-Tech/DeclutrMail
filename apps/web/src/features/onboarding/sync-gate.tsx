@@ -98,7 +98,8 @@ const RECONNECT_COPY =
 const ERROR_COPY: Record<string, string> = {
   RateLimitError:
     'Gmail limited how fast the scan could read. Try again later — if it fails twice, email support@declutrmail.com.',
-  AuthExpiredError: RECONNECT_COPY,
+  AuthExpiredError:
+    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
   InvalidGrantError: RECONNECT_COPY,
   TransientError:
     'A request to Google failed. Try again — if it fails twice, email support@declutrmail.com.',
