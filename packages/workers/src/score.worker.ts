@@ -582,23 +582,15 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         // expires_at still advance — only the LLM call is skipped.
         reasoning = existing.reasoning;
         reused = true;
-      } else if (port.isBlocked?.()) {
-        // The provider refused the account (credit, spend limit, key):
-        // this call would be refused too. Template now, without the
-        // rate-limit wait — on 2026-09-24 each refused call still waited
-        // its turn, 2,927 of them in 431 s for one mailbox.
+      } else if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
+        // The provider refused the account (credit, spend limit, key),
+        // before this row's turn or while it waited for it: this call
+        // would be refused too. Template now, without the rate-limit wait
+        // — on 2026-09-24 each refused call still waited its turn, 2,927
+        // of them in 431 s for one mailbox.
         blocked = true;
       } else {
         called = true;
-        // Pace BEFORE the timeout race starts. If pacing were inside the
-        // raced task, the wall-clock budget would include rate-limiter
-        // wait time and a short timeout (e.g. 5_000ms) could surface as a
-        // `reasoning.timeout` even though the port itself never started.
-        // Pacing OUTSIDE the race makes the timeout measure only the
-        // port's own latency, which is what the budget is meant to bound.
-        if (this.rateLimiter) {
-          await this.rateLimiter.acquire(1);
-        }
         const raced = await runWithTimeout(
           () =>
             port.explain({
@@ -758,6 +750,24 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       called,
       blocked,
     };
+  }
+
+  /**
+   * Wait for this row's rate-limit slot; `false` when the provider started
+   * refusing the account meanwhile.
+   *
+   * Pace BEFORE the timeout race starts. If pacing were inside the raced
+   * task, the wall-clock budget would include rate-limiter wait time and a
+   * short timeout (e.g. 5_000ms) could surface as a `reasoning.timeout`
+   * even though the port itself never started. Pacing OUTSIDE the race
+   * makes the timeout measure only the port's own latency, which is what
+   * the budget is meant to bound.
+   */
+  private async waitForSlot(port: ReasoningLlmPort): Promise<boolean> {
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire(1);
+    }
+    return !port.isBlocked?.();
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */

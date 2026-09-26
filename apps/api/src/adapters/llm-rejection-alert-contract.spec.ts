@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 
 import { AnthropicHaikuAdapter } from './anthropic-haiku.adapter.js';
 import { BriefLlmAnthropicAdapter } from './brief-llm-anthropic.adapter.js';
+import { LlmCircuitBreaker, PROVIDER_REJECTION_REASONS } from './llm-circuit-breaker.js';
 
 /**
  * The join between the line the adapters log and the filter the page
@@ -19,7 +20,11 @@ import { BriefLlmAnthropicAdapter } from './brief-llm-anthropic.adapter.js';
 
 interface AlertModule {
   LOG_FILTER: string;
-  expectedMetric: () => { labelExtractors: Record<string, string> };
+  expectedMetric: () => {
+    labelExtractors: Record<string, string>;
+    metricDescriptor: { labels: Array<{ key: string; description: string }> };
+  };
+  expectedPolicy: (channel: string) => { documentation: { content: string } };
 }
 
 const WORKER_RESOURCE = {
@@ -94,7 +99,10 @@ function printed(): Array<Record<string, unknown>> {
 
 describe('llm_provider_rejected — the metric counts what the adapters print', () => {
   it('counts a credit-balance refusal from the reasoning adapter', async () => {
-    await new AnthropicHaikuAdapter({ client: client(creditBalance()) }).explain(REASONING_INPUT);
+    await new AnthropicHaikuAdapter({
+      client: client(creditBalance()),
+      breaker: new LlmCircuitBreaker(),
+    }).explain(REASONING_INPUT);
     const [line] = printed();
     expect(matches(alert.LOG_FILTER, { resource: WORKER_RESOURCE, jsonPayload: line })).toBe(true);
     // The metric's `reason` label reads this field.
@@ -105,6 +113,7 @@ describe('llm_provider_rejected — the metric counts what the adapters print', 
   it('counts a refusal from the Brief adapter, and one from the API service', async () => {
     await new BriefLlmAnthropicAdapter({
       client: client(providerError(401, 'authentication_error', 'test: invalid x-api-key')),
+      breaker: new LlmCircuitBreaker(),
     }).generateNarrative(BRIEF_INPUT);
     const [line] = printed();
     expect(matches(alert.LOG_FILTER, { resource: WORKER_RESOURCE, jsonPayload: line })).toBe(true);
@@ -118,9 +127,23 @@ describe('llm_provider_rejected — the metric counts what the adapters print', 
       client: client(
         providerError(429, 'rate_limit_error', 'test: slow down', { 'retry-after': '2' }),
       ),
+      breaker: new LlmCircuitBreaker(),
     }).explain(REASONING_INPUT);
     const [line] = printed();
     expect(line?.kind).toBe('reasoning.adapter_error');
     expect(matches(alert.LOG_FILTER, { resource: WORKER_RESOURCE, jsonPayload: line })).toBe(false);
+  });
+});
+
+describe('llm_provider_rejected — the page explains every reason the breaker can log', () => {
+  it('names each reason in the metric label and in the runbook the email carries', () => {
+    // Both lists are hand-kept prose in the script; a reason added here
+    // and not there would reach the founder's inbox unexplained.
+    const label = alert.expectedMetric().metricDescriptor.labels.find((l) => l.key === 'reason');
+    const runbook = alert.expectedPolicy('projects/p/notificationChannels/1').documentation.content;
+    for (const reason of PROVIDER_REJECTION_REASONS) {
+      expect(label?.description).toContain(reason);
+      expect(runbook).toContain(`\`${reason}\``);
+    }
   });
 });

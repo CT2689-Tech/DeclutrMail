@@ -45,16 +45,17 @@ It creates the log metric `llm_provider_rejected` and the alert policy
 "LLM provider refused our calls (credit, limit or key)", reuses the
 existing admin@declutrmail.ai email channel, then reads both back.
 
-Optional drill: one synthetic line, labelled as a drill, should produce
-one alert email within about 5 minutes.
+Then the drill, the only step that proves an email arrives: write one
+synthetic line, labelled as a drill, and expect one alert email within
+about 5 minutes.
 
 ```bash
 curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
 ```
 
 **Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
-`Wired:` and exits 0. With the drill, an alert email naming
-`reason=other` arrives.
+`Configured:` and exits 0, and the drill produces an alert email naming
+`reason=other`.
 
 **Status:** Open
 

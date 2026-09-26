@@ -18,17 +18,20 @@
  *      existing channel; this script never creates one).
  *
  * Unlike the older setup-*-alert.sh scripts, "already exists" is not
- * success here: every run reads the resources back and checks each link
- * a page depends on — the metric's filter, the policy being enabled,
- * notifying the admin channel, counting this metric, and firing on the
- * first refusal. Anything else exits non-zero and says which link.
+ * success here. Every run reads the resources back and compares what
+ * decides whether an email goes out — the metric's filter and state, and
+ * the policy's condition, trigger, channel, prompts and any snooze —
+ * against the known-good definition. Anything else exits non-zero and
+ * names the link. It checks configuration, not delivery: the drill in
+ * FOUNDER-FOLLOWUPS (2026-09-26) is what proves an email arrives.
  *
  *   node scripts/setup-llm-rejection-alert.mjs [project]           verify (read-only)
  *   node scripts/setup-llm-rejection-alert.mjs [project] --apply   create or repair, then verify
  *
- * Exit: 0 wired · 1 not wired (problems listed) · 2 could not check.
+ * Exit: 0 configured · 1 not configured (problems listed) · 2 could not check.
  */
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 import { gcpToken } from './infra-observability.mjs';
 
@@ -63,7 +66,7 @@ export function expectedMetric() {
   };
 }
 
-const RUNBOOK = `Anthropic refused an LLM call. Every refusal except \`other\` pauses LLM calls in that worker for a cool-down (\`DEFAULT_LLM_COOLDOWN_MS\`); new recommendation reasons and Brief notes use templates until one call after a pause succeeds.
+const RUNBOOK = `Anthropic refused an LLM call. Every refusal except \`other\` pauses LLM calls in that worker for a cool-down (\`DEFAULT_LLM_COOLDOWN_MS\`). While paused, new recommendation reasons are templates and Briefs go out without their note. After each pause calls go out again, and another refusal starts a new pause. While refusals keep arriving, this email repeats every 4 hours.
 
 Find the lines (the \`reason\` is on each, and in this incident's labels):
 \`gcloud logging read 'resource.type="cloud_run_revision" AND jsonPayload.kind="llm.provider_rejected"' --project=declutrmail-ai-prod --freshness=2h\`
@@ -77,9 +80,9 @@ What to do, by \`reason\`:
 - \`not_found\` — 404: the model or endpoint is gone. Check the model id in apps/api/src/adapters.
 - \`other\` — a refusal the classifier does not recognise; calls are NOT paused. The line has status, type and requestId (the provider's message is never logged). If it repeats on many calls, apps/api/src/adapters/llm-circuit-breaker.ts may be missing a new billing wording.
 
-Senders scored during the outage keep template reasons until something re-scores them.
+Senders scored during the outage keep template reasons until something re-scores them. A Brief written while paused keeps no note for its day.
 
-This incident closing only means no refused call in the last hour — which is also what no LLM traffic at all looks like. It does not mean the account works: look for a ScoreWorker \`worker.succeeded\` line with \`llmCalls\` > 0 and \`llmBlocked\` 0.
+This incident closing only means no refused call in the last hour — which is also what no LLM traffic at all looks like. It does not mean the account works: look for a ScoreWorker \`worker.succeeded\` line whose \`llmExplanations\` is greater than its \`llmReused\` (new LLM text was written).
 
 Why this exists: 2026-09-24 the balance ran out and ~20 hours passed with no page.`;
 
@@ -90,10 +93,15 @@ export function expectedPolicy(channelName) {
     combiner: 'OR',
     enabled: true,
     notificationChannels: [channelName],
-    // An outage's retries keep one incident open for its length; a close
-    // is not announced as recovery because it cannot tell recovery from
-    // silence (see RUNBOOK).
-    alertStrategy: { notificationPrompts: ['OPENED'] },
+    alertStrategy: {
+      // A close is not announced as recovery: it cannot tell recovery from
+      // silence (see RUNBOOK).
+      notificationPrompts: ['OPENED'],
+      // One email per outage is easy to miss; remind while it lasts.
+      notificationChannelStrategy: [
+        { notificationChannelNames: [channelName], renotifyInterval: '14400s' },
+      ],
+    },
     conditions: [
       {
         displayName: `${METRIC_NAME} > 0 in the last hour`,
@@ -124,18 +132,24 @@ export function expectedPolicy(channelName) {
  * response. A refused READ rejects: a check that could not look must
  * never report what it did not see.
  */
-export async function run({ project, request, apply = false, log = console.log }) {
-  let state = await inspect(project, request);
+export async function run({
+  project,
+  request,
+  apply = false,
+  log = console.log,
+  now = Date.now(),
+}) {
+  let state = await inspect(project, request, now);
   if (apply) {
     await converge(project, request, state, log);
-    state = await inspect(project, request);
+    state = await inspect(project, request, now);
   }
   for (const line of state.passed) log(`✓ ${line}`);
   for (const problem of state.problems) log(`✗ ${problem}`);
   return state.problems;
 }
 
-async function inspect(project, request) {
+async function inspect(project, request, now) {
   const problems = [];
   const passed = [];
 
@@ -155,7 +169,8 @@ async function inspect(project, request) {
   const channels = (
     await listAll(request, `${monitoring}/notificationChannels`, 'notificationChannels')
   ).filter(
-    (c) => c.type === 'email' && c.labels?.email_address === ADMIN_EMAIL && c.enabled !== false,
+    // Unset `enabled` is not assumed on.
+    (c) => c.type === 'email' && c.labels?.email_address === ADMIN_EMAIL && c.enabled === true,
   );
   const channel = channels.length === 1 ? channels[0] : null;
   if (channel) passed.push(`${ADMIN_EMAIL} has one enabled email channel`);
@@ -167,6 +182,7 @@ async function inspect(project, request) {
   const policies = (await listAll(request, `${monitoring}/alertPolicies`, 'alertPolicies')).filter(
     (p) => p.displayName === POLICY_DISPLAY_NAME,
   );
+  const snoozes = await listAll(request, `${monitoring}/snoozes`, 'snoozes');
   const policy = policies.length === 1 ? policies[0] : null;
   if (policies.length === 0) problems.push(`alert policy "${POLICY_DISPLAY_NAME}" does not exist`);
   if (policies.length > 1)
@@ -175,6 +191,16 @@ async function inspect(project, request) {
     );
   if (policy) {
     const policyProblems = policyDrift(policy, channel);
+    for (const snooze of snoozes) {
+      if (!(snooze.criteria?.policies ?? []).includes(policy.name)) continue;
+      // An unreadable interval counts as active: fail closed.
+      const start = Date.parse(snooze.interval?.startTime ?? '');
+      const end = Date.parse(snooze.interval?.endTime ?? '');
+      if (!(start > now) && !(end <= now))
+        policyProblems.push(
+          `alert policy "${POLICY_DISPLAY_NAME}" is snoozed until ${snooze.interval?.endTime ?? '(unknown)'} — no email until then`,
+        );
+    }
     problems.push(...policyProblems);
     if (policyProblems.length === 0)
       passed.push(
@@ -185,10 +211,21 @@ async function inspect(project, request) {
   return { metric, channel, policies, policy, problems, passed };
 }
 
+/** GCP may store a filter with different spacing around `=`; compare meaning, not spaces. */
+function normalizeFilter(filter) {
+  return typeof filter === 'string'
+    ? filter
+        .replace(/\s*=\s*/g, '=')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : filter;
+}
+
 function metricDrift(metric) {
   const want = expectedMetric();
   const drift = [];
-  if (metric.filter !== want.filter)
+  if (metric.disabled === true) drift.push(`log metric ${METRIC_NAME} is disabled`);
+  if (normalizeFilter(metric.filter) !== normalizeFilter(want.filter))
     drift.push(
       `log metric ${METRIC_NAME} filter is \`${metric.filter}\`; expected \`${want.filter}\``,
     );
@@ -202,41 +239,75 @@ function metricDrift(metric) {
   return drift;
 }
 
+/**
+ * Compare what decides whether an email goes out with the known-good
+ * policy — never a list of known-bad shapes, which passes every shape
+ * nobody thought of. Proto3 JSON drops zero values on read, so an absent
+ * threshold is 0.
+ */
 function policyDrift(policy, channel) {
-  const drift = [];
   const name = `alert policy "${POLICY_DISPLAY_NAME}"`;
+  const drift = [];
   // Always populated on read (Monitoring API); unset is not "enabled".
   if (policy.enabled !== true) drift.push(`${name} is not enabled`);
   if (channel && !(policy.notificationChannels ?? []).includes(channel.name))
     drift.push(`${name} does not notify ${ADMIN_EMAIL}`);
-  const threshold = (policy.conditions ?? [])
-    .map((c) => c.conditionThreshold)
-    .find((t) => t?.filter?.includes(`metric.type="${METRIC_TYPE}"`));
-  if (!threshold) {
-    drift.push(`${name} does not count ${METRIC_NAME}`);
+  const prompts = policy.alertStrategy?.notificationPrompts;
+  if (prompts && !prompts.includes('OPENED'))
+    drift.push(
+      `${name} does not include OPENED in notificationPrompts, so a new incident sends nothing`,
+    );
+
+  const conditions = policy.conditions ?? [];
+  const got = conditions.length === 1 ? conditions[0].conditionThreshold : undefined;
+  if (!got) {
+    drift.push(
+      `${name} must have exactly one condition, a threshold on ${METRIC_NAME}; it has ${conditions.length} condition(s)`,
+    );
     return drift;
   }
-  const firesOnFirst =
-    threshold.comparison === 'COMPARISON_GT' &&
-    // Proto3 JSON omits zero values on read.
-    (threshold.thresholdValue ?? 0) === 0 &&
-    Number.parseFloat(threshold.duration ?? '0s') === 0 &&
-    threshold.aggregations?.[0]?.perSeriesAligner === 'ALIGN_SUM';
-  if (!firesOnFirst)
-    drift.push(
-      `${name} would not page on the first refusal (needs count > 0, duration 0s, ALIGN_SUM)`,
-    );
+  const want = expectedPolicy('').conditions[0].conditionThreshold;
+  const differs = [];
+  if (normalizeFilter(got.filter) !== normalizeFilter(want.filter))
+    differs.push(`filter \`${got.filter}\``);
+  if (got.comparison !== want.comparison) differs.push(`comparison ${got.comparison}`);
+  if ((got.thresholdValue ?? 0) !== want.thresholdValue)
+    differs.push(`threshold ${got.thresholdValue}`);
+  // "0s" and an absent duration read as 0; anything unparseable is NaN and differs.
+  if (Number.parseFloat(got.duration ?? '0s') !== 0) differs.push(`duration ${got.duration}`);
+  const trigger = got.trigger ?? {};
+  if (trigger.percent !== undefined || (trigger.count ?? 1) > 1)
+    differs.push(`trigger ${JSON.stringify(got.trigger)}`);
+  if (
+    JSON.stringify(aggregationShape(got.aggregations)) !==
+    JSON.stringify(aggregationShape(want.aggregations))
+  )
+    differs.push(`aggregation ${JSON.stringify(got.aggregations)}`);
+  if (differs.length > 0)
+    drift.push(`${name} would not page on the first refusal: ${differs.join('; ')}`);
   return drift;
+}
+
+function aggregationShape(aggregations = []) {
+  return aggregations.map((a) => ({
+    alignmentPeriod: a.alignmentPeriod,
+    perSeriesAligner: a.perSeriesAligner,
+    crossSeriesReducer: a.crossSeriesReducer,
+    groupByFields: a.groupByFields ?? [],
+  }));
 }
 
 async function converge(project, request, state, log) {
   if (state.metric === null || metricDrift(state.metric).length > 0) {
     const url = `https://logging.googleapis.com/v2/projects/${project}/metrics/${METRIC_NAME}`;
-    // PUT is the Logging API's create-or-update for a named metric.
+    // PUT is the Logging API's create-or-update for a named metric; the
+    // full body also clears a `disabled` flag.
     ok(await request('PUT', url, expectedMetric()), 'PUT', url);
     log(`→ ${state.metric === null ? 'created' : 'repaired'} log metric ${METRIC_NAME}`);
   }
-  if (!state.channel || state.policies.length > 1) return; // named by the re-check; never guess
+  // Named by the re-check; never guess a channel or pick among duplicates.
+  // A snooze is the founder's own decision and is left alone.
+  if (!state.channel || state.policies.length > 1) return;
   if (state.policy === null) {
     const url = `https://monitoring.googleapis.com/v3/projects/${project}/alertPolicies`;
     ok(await request('POST', url, expectedPolicy(state.channel.name)), 'POST', url);
@@ -288,7 +359,10 @@ function gcpHttp(token) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Real paths on both sides: run through a symlink (or macOS's /tmp →
+// /private/tmp), the URL comparison other scripts use never matches, and
+// the script would exit 0 having checked nothing.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const project = args.find((a) => !a.startsWith('--')) ?? 'declutrmail-ai-prod';
   const apply = args.includes('--apply');
@@ -301,9 +375,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   if (problems.length > 0) {
     console.error(
-      `NOT WIRED — ${problems.length} problem(s) above; a refused LLM call would not page.`,
+      `NOT CONFIGURED — ${problems.length} problem(s) above; a refused LLM call would not page.`,
     );
     process.exit(1);
   }
-  console.log(`Wired: a refused LLM call pages ${ADMIN_EMAIL} (${project}).`);
+  console.log(
+    `Configured: a refused LLM call should page ${ADMIN_EMAIL} (${project}). This checks configuration; the drill in FOUNDER-FOLLOWUPS proves an email arrives.`,
+  );
 }

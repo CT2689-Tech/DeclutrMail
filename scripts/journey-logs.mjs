@@ -440,13 +440,19 @@ export function summarize({ mailboxRows, workerRows, quota, ref, now = Date.now(
   }
   const firstReady = scans.find((s) => s.readyAt)?.readyAt;
   for (const run of scoring) {
-    if (run.decisions >= 10 && run.llm === 0) {
+    // Checked first and on its own: reused prose keeps `llm` above 0, so a
+    // refused run can hide behind rows that never needed a call.
+    if (run.blocked > 0) {
+      flag(
+        'user',
+        'LLM_REFUSED',
+        `${run.blocked} of ${run.decisions} recommendations ${stamp(run.at)} got a template without a call — Anthropic was refusing the account; check llm.provider_rejected for the reason`,
+      );
+    } else if (run.decisions >= 10 && run.llm === 0) {
       flag(
         'user',
         'LLM_OFF',
-        run.blocked > 0
-          ? `${run.decisions} recommendations ${stamp(run.at)}, 0 from the LLM — Anthropic refused the account and ${run.blocked} calls were skipped; check llm.provider_rejected for the reason`
-          : `${run.decisions} recommendations ${stamp(run.at)}, 0 from the LLM — every reason is a template; check reasoning.adapter_error and llm.provider_rejected`,
+        `${run.decisions} recommendations ${stamp(run.at)}, 0 from the LLM — every reason is a template; check reasoning.adapter_error and llm.provider_rejected`,
       );
     }
   }

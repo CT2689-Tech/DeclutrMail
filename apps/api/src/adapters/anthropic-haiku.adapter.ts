@@ -99,10 +99,10 @@ export interface AnthropicHaikuAdapterDeps {
   client: Anthropic;
   /**
    * Pauses calls after the provider refuses the account. The composition
-   * root shares one with the Brief adapter (same account); omitted, the
-   * adapter gets its own.
+   * root shares one with the Brief adapter (same account). Required, so
+   * a construction site cannot silently get a breaker of its own.
    */
-  breaker?: LlmCircuitBreaker;
+  breaker: LlmCircuitBreaker;
 }
 
 /**
@@ -114,7 +114,7 @@ export class AnthropicHaikuAdapter implements ReasoningLlmPort {
   private readonly breaker: LlmCircuitBreaker;
 
   constructor(private readonly deps: AnthropicHaikuAdapterDeps) {
-    this.breaker = deps.breaker ?? new LlmCircuitBreaker();
+    this.breaker = deps.breaker;
   }
 
   isBlocked(): boolean {
@@ -242,10 +242,11 @@ function capitalize(s: string): string {
  * always use the template" path.
  */
 export function buildAnthropicHaikuAdapter(
+  breaker: LlmCircuitBreaker,
   env: NodeJS.ProcessEnv = process.env,
 ): AnthropicHaikuAdapter | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const client = new Anthropic({ apiKey });
-  return new AnthropicHaikuAdapter({ client });
+  return new AnthropicHaikuAdapter({ client, breaker });
 }

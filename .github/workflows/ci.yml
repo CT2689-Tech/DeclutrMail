@@ -155,6 +155,10 @@ jobs:
               # 40 files under apps/api/src import @declutrmail/workers, so a
               # worker-only behaviour change still has to run this suite.
               - 'packages/workers/**'
+              # The alert's log filter is checked against the adapters'
+              # real output by an apps/api spec; editing only the script
+              # must still run it.
+              - 'scripts/setup-llm-rejection-alert.mjs'
               - *shared_server
             workers:
               - *infra

@@ -121,10 +121,10 @@ export interface BriefLlmAnthropicAdapterDeps {
   client: Anthropic;
   /**
    * Pauses calls after the provider refuses the account. The composition
-   * root shares one with the reasoning adapter (same account); omitted,
-   * the adapter gets its own.
+   * root shares one with the reasoning adapter (same account). Required,
+   * so a construction site cannot silently get a breaker of its own.
    */
-  breaker?: LlmCircuitBreaker;
+  breaker: LlmCircuitBreaker;
 }
 
 /**
@@ -136,7 +136,11 @@ export class BriefLlmAnthropicAdapter implements BriefLlmPort {
   private readonly breaker: LlmCircuitBreaker;
 
   constructor(private readonly deps: BriefLlmAnthropicAdapterDeps) {
-    this.breaker = deps.breaker ?? new LlmCircuitBreaker();
+    this.breaker = deps.breaker;
+  }
+
+  isBlocked(): boolean {
+    return this.breaker.isBlocked();
   }
 
   async generateNarrative(input: BriefNarrativeInput): Promise<string | null> {
@@ -264,11 +268,11 @@ function extractText(response: Anthropic.Message): string | null {
  * always use the template" path per D62.
  */
 export function buildBriefLlmAdapter(
+  breaker: LlmCircuitBreaker,
   env: NodeJS.ProcessEnv = process.env,
-  breaker?: LlmCircuitBreaker,
 ): BriefLlmAnthropicAdapter | null {
   const apiKey = env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const client = new Anthropic({ apiKey });
-  return new BriefLlmAnthropicAdapter({ client, ...(breaker ? { breaker } : {}) });
+  return new BriefLlmAnthropicAdapter({ client, breaker });
 }

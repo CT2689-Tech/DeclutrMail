@@ -1078,7 +1078,7 @@ async function bootstrap(): Promise<void> {
    * by either pauses both.
    */
   const anthropicBreaker = new LlmCircuitBreaker();
-  const briefLlm = buildBriefLlmAdapter(process.env, anthropicBreaker);
+  const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
   briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);

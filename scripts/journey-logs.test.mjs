@@ -252,31 +252,41 @@ test('a scoring run with no LLM explanations is flagged; one with some is not', 
   assert.ok(!codes(40).includes('LLM_OFF'));
 });
 
-test('an all-template run the provider refused points at the refusal, not at adapter errors', () => {
+test('a run the provider refused is flagged by its skipped calls, even beside reused prose', () => {
   // Since the breaker, a refused account logs `llm.provider_rejected` once
-  // and the run counts the skipped calls as `llmBlocked` — no
-  // `reasoning.adapter_error` line exists to check.
+  // and the run counts the skipped calls as `llmBlocked`. Reused prose
+  // keeps `llmExplanations` above 0, so "0 from the LLM" alone misses it.
   const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
   const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });
-  const detail = (result) =>
+  const flags = (result) =>
     summarize({
       mailboxRows,
       workerRows: normalize([
         ready,
-        succeeded('2026-01-01T01:00:30Z', REF, 'ScoreWorker', {
-          decisionsWritten: 100,
-          llmExplanations: 0,
-          templateExplanations: 100,
-          ...result,
-        }),
+        succeeded('2026-01-01T01:00:30Z', REF, 'ScoreWorker', { decisionsWritten: 100, ...result }),
       ]),
       quota: null,
       ref: REF,
-    }).flags.find((f) => f.code === 'LLM_OFF').detail;
-  const refused = detail({ llmCalls: 1, llmBlocked: 99 });
-  assert.match(refused, /llm\.provider_rejected/);
-  assert.match(refused, /99/);
-  assert.match(detail({ llmCalls: 100, llmBlocked: 0 }), /reasoning\.adapter_error/);
+    }).flags;
+  const refused = flags({
+    llmExplanations: 40,
+    llmReused: 40,
+    templateExplanations: 60,
+    llmCalls: 1,
+    llmBlocked: 59,
+  });
+  const flag = refused.find((f) => f.code === 'LLM_REFUSED');
+  assert.ok(flag, JSON.stringify(refused));
+  assert.match(flag.detail, /llm\.provider_rejected/);
+  assert.match(flag.detail, /59/);
+  const off = flags({
+    llmExplanations: 0,
+    templateExplanations: 100,
+    llmCalls: 100,
+    llmBlocked: 0,
+  });
+  assert.ok(!off.some((f) => f.code === 'LLM_REFUSED'));
+  assert.match(off.find((f) => f.code === 'LLM_OFF').detail, /reasoning\.adapter_error/);
 });
 
 test('recommendations landing minutes after "ready" are flagged', () => {

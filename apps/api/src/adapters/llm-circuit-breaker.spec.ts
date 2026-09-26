@@ -78,6 +78,15 @@ const MALFORMED_REQUEST = providerError(
   'messages: roles must alternate between "user" and "assistant"',
 );
 const TOO_LARGE = providerError(413, 'request_too_large', 'test: request too large');
+// The same cap without the structured code: the wording must still count.
+const TIER_SPEND_CAP_NO_CODE = providerError(
+  429,
+  'rate_limit_error',
+  "You have reached your API usage limits: your organization has crossed its monthly API usage threshold, set based on your organization's API tier. You will regain access on 2026-09-01 at 00:00 UTC.",
+);
+const UNKNOWN_429_CODE = providerError(429, 'rate_limit_error', 'test: something new', {
+  errorCode: 'some_new_code',
+});
 const RATE_LIMITED = providerError(429, 'rate_limit_error', 'test: rate limited', {
   headers: { 'retry-after': '3' },
 });
@@ -116,7 +125,19 @@ describe('LlmCircuitBreaker — which failures stop calls', () => {
     ['credit balance too low (400)', CREDIT_BALANCE, 'credit_balance', true],
     ['org spend limit reached (400)', SPEND_LIMIT, 'spend_limit', true],
     ['workspace spend limit reached (400)', WORKSPACE_SPEND_LIMIT, 'spend_limit', true],
-    ['tier monthly spend cap (429, no retry-after)', TIER_SPEND_CAP, 'tier_spend_cap', true],
+    [
+      'tier monthly spend cap (429, enforced_spend_limit_reached)',
+      TIER_SPEND_CAP,
+      'tier_spend_cap',
+      true,
+    ],
+    [
+      'tier monthly spend cap (429, wording only, no code)',
+      TIER_SPEND_CAP_NO_CODE,
+      'tier_spend_cap',
+      true,
+    ],
+    ['429 with an error code the classifier does not know', UNKNOWN_429_CODE, 'other', false],
     ['billing_error (402)', BILLING_ERROR, 'billing_error', true],
     ['authentication_error (401)', UNAUTHENTICATED, 'auth', true],
     ['permission_error (403)', FORBIDDEN, 'auth', true],
@@ -218,5 +239,43 @@ describe('LlmCircuitBreaker — the log line the alert counts', () => {
     const raw = errorSpy.mock.calls.map((call) => String(call[0])).join('\n');
     expect(raw).not.toContain('Acme Marketing');
     expect(raw).not.toContain('credit balance');
+  });
+
+  it('logs the provider type, code and request id only when they are identifiers', () => {
+    // The same echo threat as the message: these three come from the
+    // response body too (the request id only when no header carried it).
+    const echo = 'Sender: Acme Marketing';
+    const { breaker } = makeBreaker();
+    breaker.recordFailure(
+      Anthropic.APIError.generate(
+        400,
+        {
+          type: 'error',
+          error: { type: echo, message: 'test: bad', details: { error_code: echo } },
+          request_id: echo,
+        },
+        undefined,
+        new Headers(),
+      ),
+      SOURCE,
+    );
+    const [line] = loggedLines();
+    expect(JSON.stringify(line)).not.toContain('Acme Marketing');
+    expect(line).toMatchObject({ reason: 'other', status: 400, type: null, requestId: null });
+  });
+
+  it('does not read an echoed snippet that mentions a credit balance as a credit refusal', () => {
+    // A Brief snippet can say anything; only the provider's own sentence counts.
+    const { breaker } = makeBreaker();
+    const rejection = breaker.recordFailure(
+      providerError(
+        400,
+        'invalid_request_error',
+        'messages.0.content: "- Bank: Your credit balance is too low to cover the payment"',
+      ),
+      SOURCE,
+    );
+    expect(rejection?.reason).toBe('other');
+    expect(breaker.isBlocked()).toBe(false);
   });
 });

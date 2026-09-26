@@ -1075,6 +1075,36 @@ describe('ScoreWorker — the provider is refusing the account', () => {
     expect(row?.generatedBy).toBe('llm_haiku');
   });
 
+  it('a pause that starts while a row waits for its rate-limit slot skips that row too', async () => {
+    // Up to four rows pass the first check at once. When a sibling's
+    // refusal pauses calls while this row waits its turn, the row must not
+    // reach explain() — and counts as blocked, not as a call.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, 'waited@refused.test', {});
+    let checks = 0;
+    const explain = vi.fn(async () => null);
+    const llm: ReasoningLlmPort = {
+      // Clear at the row's first check, paused by the time its slot comes.
+      isBlocked: () => (checks += 1) > 1,
+      explain,
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      reasoningRatePerMin: 1000,
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+
+    expect(explain).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ llmCalls: 0, llmBlocked: 1, templateExplanations: 1 });
+  });
+
   it('reports llmBlocked on worker.succeeded — the allowlist drops silently', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

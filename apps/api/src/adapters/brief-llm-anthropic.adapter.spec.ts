@@ -181,7 +181,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: 'Boss needs a reply about Q4. Nothing else urgent.' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     const result = await adapter.generateNarrative(SAMPLE_INPUT);
     expect(result).toBe('Boss needs a reply about Q4. Nothing else urgent.');
   });
@@ -191,7 +194,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: 'ok' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     await adapter.generateNarrative(SAMPLE_INPUT);
 
     expect(create).toHaveBeenCalledTimes(1);
@@ -218,7 +224,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: 'ok' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     await adapter.generateNarrative(SAMPLE_INPUT);
 
     const system = create.mock.calls[0]![0].system as string;
@@ -236,7 +245,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: '\n  Trimmed.  \n' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     const result = await adapter.generateNarrative(SAMPLE_INPUT);
     expect(result).toBe('Trimmed.');
   });
@@ -246,7 +258,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: Array(56).fill('word').join(' ') }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
@@ -255,7 +270,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'refusal',
       content: [{ type: 'text', text: 'I cannot help with that.' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
@@ -264,7 +282,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'max_tokens',
       content: [{ type: 'text', text: 'partial...' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
@@ -273,7 +294,10 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'thinking', text: '...' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
@@ -282,20 +306,29 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
       stop_reason: 'end_turn',
       content: [{ type: 'text', text: '   \n   ' }],
     } satisfies MockMessage);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
   it('returns null on a network / SDK error (never throws)', async () => {
     const create = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 
   it('returns null on an Anthropic.APIError (rate limit / 5xx) — never throws', async () => {
     const err = new Anthropic.RateLimitError(429, undefined, 'rate limited', new Headers());
     const create = vi.fn().mockRejectedValue(err);
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
   });
 });
@@ -345,12 +378,16 @@ describe('BriefLlmAnthropicAdapter — provider refusals', () => {
 
   it('stops its own calls after a credit-balance refusal', async () => {
     const create = vi.fn().mockRejectedValue(creditBalance());
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       await adapter.generateNarrative(SAMPLE_INPUT);
       await adapter.generateNarrative(SAMPLE_INPUT);
       expect(create).toHaveBeenCalledTimes(1);
+      expect(adapter.isBlocked()).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -369,7 +406,10 @@ describe('BriefLlmAnthropicAdapter — provider refusals', () => {
       .fn()
       .mockRejectedValueOnce(echo(400, 'invalid_request_error'))
       .mockRejectedValueOnce(echo(429, 'rate_limit_error'));
-    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const adapter = new BriefLlmAnthropicAdapter({
+      client: stubClient(create),
+      breaker: new LlmCircuitBreaker(),
+    });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
@@ -390,15 +430,17 @@ describe('BriefLlmAnthropicAdapter — provider refusals', () => {
 
 describe('buildBriefLlmAdapter', () => {
   it('returns null when ANTHROPIC_API_KEY is unset', () => {
-    expect(buildBriefLlmAdapter({})).toBeNull();
+    expect(buildBriefLlmAdapter(new LlmCircuitBreaker(), {})).toBeNull();
   });
 
   it('returns null when ANTHROPIC_API_KEY is an empty string', () => {
-    expect(buildBriefLlmAdapter({ ANTHROPIC_API_KEY: '' })).toBeNull();
+    expect(buildBriefLlmAdapter(new LlmCircuitBreaker(), { ANTHROPIC_API_KEY: '' })).toBeNull();
   });
 
   it('constructs the adapter when ANTHROPIC_API_KEY is present', () => {
-    const adapter = buildBriefLlmAdapter({ ANTHROPIC_API_KEY: 'sk-ant-test-key' });
+    const adapter = buildBriefLlmAdapter(new LlmCircuitBreaker(), {
+      ANTHROPIC_API_KEY: 'sk-ant-test-key',
+    });
     expect(adapter).toBeInstanceOf(BriefLlmAnthropicAdapter);
   });
 });
