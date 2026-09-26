@@ -203,10 +203,15 @@ export interface ScoreJobResult {
   /** Rows that kept stored LLM prose instead of calling `explain()`. */
   llmReused: number;
   /**
+   * Rows that needed a call but got the template without one, because the
+   * provider was refusing the account (`ReasoningLlmPort.isBlocked`).
+   */
+  llmBlocked: number;
+  /**
    * Rows this run was allowed to buy a sentence for: a sweep's first-view
    * set that it left on the template, or the one row an `explain` job
    * names. `llmCalls` can only be lower — a row can qualify and still be
-   * skipped (`explainSkipped`) or reused.
+   * skipped (`explainSkipped`), blocked (`llmBlocked`) or reused.
    */
   explainCandidates: number;
   /**
@@ -392,6 +397,8 @@ type ExplainSkip =
 
 type ExplainOutcome =
   | { kind: 'skipped'; reason: ExplainSkip }
+  /** The provider is refusing the account: no call, counted in `llmBlocked`. */
+  | { kind: 'blocked' }
   | { kind: 'called'; written: boolean; timedOut: boolean; error?: Error };
 
 /**
@@ -570,6 +577,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmTimeouts = 0;
     let llmCalls = 0;
     let llmReused = 0;
+    let llmBlocked = 0;
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
@@ -625,6 +633,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         if (written.timedOut) llmTimeouts += 1;
         if (written.called) llmCalls += 1;
         if (written.reused) llmReused += 1;
+        if (written.blocked) llmBlocked += 1;
         if (written.screenerFlagged) screenerFlagged += 1;
       }
     }
@@ -650,6 +659,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       explainCandidates = explained.candidates;
       explainSkipped = explained.skipped;
       explainFailed = explained.failed;
+      llmBlocked += explained.blocked;
       llmCalls += explained.calls;
       llmTimeouts += explained.timeouts;
       // A sentence written here upgrades a row counted as template above.
@@ -700,6 +710,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmTimeouts,
       llmCalls,
       llmReused,
+      llmBlocked,
       explainCandidates,
       explainSkipped,
       explainFailed,
@@ -724,6 +735,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmTimeouts: 0,
       llmCalls: 0,
       llmReused: 0,
+      llmBlocked: 0,
       explainCandidates: 1,
       explainSkipped: 1,
       explainFailed: 0,
@@ -731,6 +743,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       sendersFailed: 0,
       chunksFailed: 0,
     };
+    if (this.deps.llm?.isBlocked?.()) {
+      // The provider is refusing the account: the sentence cannot be bought,
+      // so the six batch reads would be wasted too. The next ask after the
+      // hour's dedupe window tries again.
+      return { ...skipped, explainSkipped: 0, llmBlocked: 1 };
+    }
     if (!this.deps.llm) {
       // A worker with no model is being asked for sentences — the feature
       // is dark, which is a configuration gap, not a race. Said at warn,
@@ -756,6 +774,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // here is final: Sentry and the dead-letter table, not a quiet count.
     if (outcome.kind === 'called' && outcome.error) throw outcome.error;
     const called = outcome.kind === 'called';
+    const blocked = outcome.kind === 'blocked';
     return {
       decisionsWritten: 0,
       llmExplanations: called && outcome.written ? 1 : 0,
@@ -763,8 +782,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmTimeouts: called && outcome.timedOut ? 1 : 0,
       llmCalls: called ? 1 : 0,
       llmReused: 0,
+      llmBlocked: blocked ? 1 : 0,
       explainCandidates: 1,
-      explainSkipped: called ? 0 : 1,
+      explainSkipped: outcome.kind === 'skipped' ? 1 : 0,
       explainFailed: 0,
       screenerFlagged: 0,
       sendersFailed: 0,
@@ -787,9 +807,18 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     written: number;
     timeouts: number;
     skipped: number;
+    blocked: number;
     failed: number;
   }> {
-    const totals = { candidates: 0, calls: 0, written: 0, timeouts: 0, skipped: 0, failed: 0 };
+    const totals = {
+      candidates: 0,
+      calls: 0,
+      written: 0,
+      timeouts: 0,
+      skipped: 0,
+      blocked: 0,
+      failed: 0,
+    };
     let targets: ExplainTarget[];
     let batch: SignalBatch;
     try {
@@ -818,6 +847,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       const value = outcome.value;
       if (value.kind === 'skipped') {
         totals.skipped += 1;
+        continue;
+      }
+      if (value.kind === 'blocked') {
+        totals.blocked += 1;
         continue;
       }
       // Counted as a call even when the write then threw: it was billed.
@@ -980,6 +1013,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       signals,
       result,
     );
+    if (prose.blocked) return { kind: 'blocked' };
     if (prose.reasoning === null) {
       return { kind: 'called', written: false, timedOut: prose.timedOut };
     }
@@ -1045,6 +1079,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     screenerFlagged: boolean;
     reused: boolean;
     called: boolean;
+    blocked: boolean;
   } | null> {
     const signals = this.loadSignals(mailboxAccountId, senderKey, batch);
     if (!signals) return null;
@@ -1059,6 +1094,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let timedOut = false;
     let reused = false;
     let called = false;
+    let blocked = false;
     if (this.deps.llm) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
@@ -1090,10 +1126,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         reasoning = existing.reasoning;
         reused = true;
       } else if (mayExplain) {
-        called = true;
         const prose = await this.generateProse(port, mailboxAccountId, senderKey, signals, result);
-        reasoning = prose.reasoning;
-        timedOut = prose.timedOut;
+        if (prose.blocked) {
+          blocked = true;
+        } else {
+          called = true;
+          reasoning = prose.reasoning;
+          timedOut = prose.timedOut;
+        }
       }
     }
     const generatedBy: 'llm_haiku' | 'template' = reasoning ? 'llm_haiku' : 'template';
@@ -1187,15 +1227,43 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         );
     }
 
-    return { verdict: result.verdict, generatedBy, timedOut, screenerFlagged, reused, called };
+    return {
+      verdict: result.verdict,
+      generatedBy,
+      timedOut,
+      screenerFlagged,
+      reused,
+      called,
+      blocked,
+    };
+  }
+
+  /**
+   * Wait for this row's rate-limit slot; `false` when the provider started
+   * refusing the account meanwhile.
+   *
+   * Pace BEFORE the timeout race starts. If pacing were inside the raced
+   * task, the wall-clock budget would include rate-limiter wait time and a
+   * short timeout (e.g. 5_000ms) could surface as a `reasoning.timeout`
+   * even though the port itself never started. Pacing OUTSIDE the race
+   * makes the timeout measure only the port's own latency, which is what
+   * the budget is meant to bound.
+   */
+  private async waitForSlot(port: ReasoningLlmPort): Promise<boolean> {
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire(1);
+    }
+    return !port.isBlocked?.();
   }
 
   /**
    * THE place a sentence is bought — every trigger that pays (a re-score,
    * a sweep's first-view set, an `explain` job) goes through here, so the
-   * pacing, the timeout and the vocabulary check cover all of them.
+   * breaker, the pacing, the timeout and the vocabulary check cover all of
+   * them.
    *
-   * Returns `null` reasoning when the model's answer is unusable; the
+   * `blocked` when the provider is refusing the account: no call was made.
+   * Otherwise `null` reasoning when the model's answer is unusable; the
    * caller keeps the template. Never throws (the port's contract, held
    * from this side by `runWithTimeout`).
    */
@@ -1205,15 +1273,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     senderKey: string,
     signals: { signals: SenderSignals; displayName: string; domain: string; email: string },
     result: CascadeResult,
-  ): Promise<{ reasoning: string | null; timedOut: boolean }> {
-    // Pace BEFORE the timeout race starts. If pacing were inside the
-    // raced task, the wall-clock budget would include rate-limiter
-    // wait time and a short timeout (e.g. 5_000ms) could surface as a
-    // `reasoning.timeout` even though the port itself never started.
-    // Pacing OUTSIDE the race makes the timeout measure only the
-    // port's own latency, which is what the budget is meant to bound.
-    if (this.rateLimiter) {
-      await this.rateLimiter.acquire(1);
+  ): Promise<{ reasoning: string | null; timedOut: boolean; blocked: boolean }> {
+    if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
+      // The provider refused the account (credit, spend limit, key),
+      // before this row's turn or while it waited for it: this call
+      // would be refused too. Template now, without the rate-limit wait
+      // — on 2026-09-24 each refused call still waited its turn, 2,927
+      // of them in 431 s for one mailbox.
+      return { reasoning: null, timedOut: false, blocked: true };
     }
     const raced = await runWithTimeout(
       () =>
@@ -1245,13 +1312,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           senderKey,
         }),
       );
-      return { reasoning: null, timedOut: false };
+      return { reasoning: null, timedOut: false, blocked: false };
     }
     const identity = `${signals.displayName} ${signals.domain} ${signals.email}`;
     const leaked =
       raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
     if (raced.kind === 'ok' && leaked === null) {
-      return { reasoning: raced.value, timedOut: false };
+      return { reasoning: raced.value, timedOut: false, blocked: false };
     }
     if (raced.kind === 'ok') {
       // The prompt no longer contains an id, but the model can still
@@ -1269,7 +1336,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           token: leaked,
         }),
       );
-      return { reasoning: null, timedOut: false };
+      return { reasoning: null, timedOut: false, blocked: false };
     }
     // Either way the sender falls back to its template explanation —
     // an explanation is an enhancement, never a reason to fail the
@@ -1288,7 +1355,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           : { error: raced.error.name }),
       }),
     );
-    return { reasoning: null, timedOut: raced.kind === 'timeout' };
+    return { reasoning: null, timedOut: raced.kind === 'timeout', blocked: false };
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */

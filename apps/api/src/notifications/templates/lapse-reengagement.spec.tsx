@@ -21,14 +21,14 @@ describe('lapse-reengagement', () => {
     expect(email.subject).toBe('4 senders are waiting on a decision');
     // D126 Part 3: "Plain text only; no marketing chrome."
     expect(email.html).toBeUndefined();
-    expect(email.text.split('\n').slice(0, 6)).toEqual([
-      '4 senders are waiting on a decision',
-      '',
-      'You have not opened DeclutrMail for five days. This is the number',
-      'of senders still waiting for your first decision across all your',
-      'mailboxes. Triage shows one mailbox at a time.',
-      '',
-    ]);
+    expect(email.text.split('\n')[0]).toBe('4 senders are waiting on a decision');
+    // The two recorded facts, and the caveat that the count spans
+    // mailboxes while Triage shows one. Whitespace-flattened, so a
+    // rewrap is not a failure.
+    const flat = email.text.replace(/\s+/g, ' ');
+    expect(flat).toContain('five days');
+    expect(flat).toContain('across all your mailboxes');
+    expect(flat).toContain('one mailbox at a time');
     expect(email.text).toContain('Open Triage: https://app.declutrmail.com/triage');
     // Commercial mail: visible opt-out AND postal address in the text
     // alternative, not only in the RFC 8058 header.
@@ -40,11 +40,24 @@ describe('lapse-reengagement', () => {
   });
 
   it('uses the canonical K/A/U/L/D verbs (D227)', () => {
-    expect(render(4).text).toContain(
-      'One keystroke each: K to keep, A to archive, U to unsubscribe,',
-    );
+    const text = render(4).text;
+    for (const key of [
+      'K to keep',
+      'A to archive',
+      'U to unsubscribe',
+      'L for later',
+      'D to delete',
+    ]) {
+      expect(text).toContain(key);
+    }
     // "Screen" is an internal enum only — never product copy.
-    expect(render(4).text).not.toMatch(/\bScreen\b/);
+    expect(text).not.toMatch(/\bScreen\b/);
+  });
+
+  it('makes no effort claim — only Keep lands in one key (D226)', () => {
+    // A/U/L/D open the mandatory preview and confirm on a second press,
+    // so "one keystroke each" was true of one verb in five.
+    expect(render(4).text).not.toMatch(/keystroke|one key\b|single key/i);
   });
 
   /**

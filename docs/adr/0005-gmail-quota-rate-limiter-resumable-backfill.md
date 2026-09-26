@@ -151,9 +151,9 @@ mid-window interruption never restarts from zero and re-burns quota.
 - `packages/workers/src/initial-sync.worker.test.ts` — three new PGlite
   integration cases: fresh sync, resume-skips-stored, orphan heal.
 
-## References
+## Amendments
 
-### 2026-09-23 quota update
+### 2026-09-23 (UTC) quota update
 
 The 15,000-unit ceiling and 5-unit `messages.get` cost above record the
 original implementation and May 2026 project observation. Google's
@@ -165,6 +165,23 @@ with a 400-unit burst ceiling. The authenticated production quota page
 on 2026-09-23 confirmed this project's 15,000-unit legacy ceiling, so
 the production deploy sets a 12,000-unit target with a 1,000-unit
 five-second burst; see `docs/ops/sync-infra-setup.md`.
+
+### 2026-09-25 (UTC) correction — two metrics, one budget
+
+The 2026-09-23 update paired a budget and a price from different quota
+metrics. Google meters every Gmail call on `gmail.googleapis.com/default`
+(`messages.get` = 5 units; this project's enforced 15,000/user/minute
+limit) and on `gmail.googleapis.com/total_query_cost` (`messages.get` =
+20 units; unlimited here by grandfathered override). Charging the 20-unit
+price against the 15,000-unit budget ran first syncs at 600 reads/minute
+instead of 2,400 — a 40,898-message sync took 68 minutes. Measured from
+Cloud Monitoring `quota/rate/net_usage` and the Service Usage API
+limits (details and the re-check command in `docs/ops/sync-infra-setup.md`).
+The worker now prices each method on the metric named by
+`GMAIL_QUOTA_METRIC`; production sets `gmail.googleapis.com/default`, and
+unset keeps the newer metric's pricing for new projects.
+
+## References
 
 - `docs/execution/Implementation-Plan.md` — D5, D157, D203, D224, D225
 - `docs/ops/sync-infra-setup.md` — Gmail quota for `declutrmail-ai-prod`

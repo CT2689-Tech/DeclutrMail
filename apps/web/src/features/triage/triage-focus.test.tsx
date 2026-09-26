@@ -210,7 +210,9 @@ describe('focus mode — the card', () => {
     );
     expect(within(card()).getByText('emails in 90 days')).toBeInTheDocument();
     // The big number is the count — the why-line must not repeat it.
-    expect(within(card()).queryByText(/messages$/)).toBeNull();
+    // Either noun: the row's why-line ended "· N messages" until it
+    // became "· N emails", which a /messages$/ guard could never see.
+    expect(within(card()).queryByText(/·\s*[\d,]+ (emails?|messages?)$/)).toBeNull();
     expect(screen.queryByRole('list', { name: 'Triage queue' })).toBeNull();
     // The second sender is not on screen.
     expect(screen.queryByRole('heading', { name: GROUPON.senderName })).toBeNull();

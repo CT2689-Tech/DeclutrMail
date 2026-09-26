@@ -4723,6 +4723,47 @@ recommending merge even on a change that felt small and precedented.
 **Rule:** Removing a redundant channel is only safe after proving the surviving one reaches every state the removed ones covered — navigation, reload, error, per-member, assistive tech, narrow viewport.
 **Enforcement update:** tests for each (negative-controlled): baseline exemption, never-seen-running job, failed-read line, member-undo un-mark, pre-existing live region, no-toast-on-action. None to hooks.
 
+## 2026-09-24 — Paced Gmail reads on the quota meter Google does not enforce
+**PR:** #765 introduced it; #769 (https://github.com/CT2689-Tech/DeclutrMail/pull/769) fixes it
+**Caught by:** user report — a friend's 40,898-email first sync took 68 minutes
+**What happened:** The redesign charged `messages.get` 20 units against a 12,000/min budget, so first syncs ran at 10 reads/s. The project has two meters: `gmail.googleapis.com/default` (5 units per get, 15,000/min/user, enforced) and `total_query_cost` (20 units, unlimited grandfathered override). The public docs and the console page each show only one of them.
+**Correct approach:** Measure both meters in Cloud Monitoring (`quota/rate/net_usage` per method, plus the Service Usage limits), then price every method against the enforced one. #769 adds a typed per-metric cost table and a required `GMAIL_QUOTA_METRIC` env var (boot fails on an unknown value). Live smoke: 7,200 reads in 180 s, zero errors.
+**Rule:** Before pacing to a vendor quota, read the vendor's own per-meter usage and limit data. Never trust a doc table or one console page.
+**Enforcement update:** manifest test pins the worker's quota env in `deploy-cloud-run.yml`; per-metric cost spec.
+
+## 2026-09-24 — Two PRs changed the two ends of one promise
+**PR:** #770 + #771
+**Caught by:** my own live smoke (retrying a failed re-scan on the dev stack)
+**What happened:** #770 made the sync gate say "we'll email you when your inbox is ready" whenever the ready-email setting was on. #771 stopped sending that email for re-scans. Each PR was green and gate-reviewed on its own. Together, a user retrying a failed re-scan, or reconnecting, was promised an email that never comes.
+**Correct approach:** Base the promise on the same condition the sender uses. The gate now also requires `last_synced_at === null`, which the status it already reads carries.
+**Rule:** When a PR changes WHEN a notification sends, grep every surface that promises it ("email you") and make each promise read that same condition. When two open PRs touch the two ends, smoke them together.
+**Enforcement update:** gate test for the re-scan case (negative-controlled); stories and fixtures carry `last_synced_at` as the API sends it.
+
+## 2026-09-24 — Swept the email templates for unbacked claims and missed siblings in the same flow
+**PR:** #772 (https://github.com/CT2689-Tech/DeclutrMail/pull/772)
+**Caught by:** architecture-guardian (4 blocking, pre-PR)
+**What happened:** The first cut removed "usually takes a few minutes" and similar lines from three sync emails, but left:
+- the lapse email's "One keystroke each" (false for 4 of 5 verbs: A/U/L/D open the preview);
+- a CAN-SPAM rationale comment that quoted the deleted sentence as its evidence;
+- the time promise in the toast on the page the "scan stopped" email opens.
+
+The count-noun test matched raw HTML, so it only ever saw the hidden preview text and never the visible body noun.
+**Correct approach:** Sweep a claim class across the whole flow: the templates, the comments that cite them, and the pages their links open. Strip tags before asserting what a reader sees.
+**Rule:** A copy sweep's scope is the user's path, not the directory. A match on raw email HTML tests the preview, not the body.
+**Enforcement update:** fact-pin tests for each (negative-controlled); the whole-text snapshot was replaced by fact pins.
+
+## 2026-09-24 — Told the founder what a code path costs before tracing it to its last consumer
+**PR:** n/a (session report)
+**Caught by:** founder ("when I go through sign-in … it just gets me directly to Senders")
+**What happened:** I said every returning sign-in re-scan "may show an onboarded user a scan screen" and "wastes Gmail quota". Neither was true:
+- the onboarding gate checks only `onboarded_at`;
+- the re-scan skips stored mail (196 Gmail calls for 96,235 ids).
+
+I then reversed to "leave it alone" before reading the post-scan hook. That hook had re-scored all 7,999 senders with 6,022 Haiku calls and emptied the Anthropic credits that morning.
+**Correct approach:** Trace the path to every consumer (what the user sees, what Gmail costs, every post-ready hook) and cite a log line for each before recommending anything.
+**Rule:** A cost or UX claim about a code path needs its LAST consumer read, not its first.
+**Enforcement update:** none (reporting discipline).
+
 ## 2026-09-25 — One bulk Delete held a user's mailbox lock for 8 minutes and dead-lettered eight redundant syncs
 **PR:** not yet opened (fix prepared in session 2026-09-24 PDT)
 **Caught by:** production — Cloud Run logs (`mailbox_lock.acquire_failed`, `worker.incremental.terminal_failed`), mailbox `ref_f55fc2a50d75689402e2df84`
@@ -4730,6 +4771,38 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** Coalesce per mailbox (BullMQ `deduplication.keepLastIfActive`: one queued + one running, a follow-up guaranteed for pushes that land mid-run), start a follow-up from the stored cursor instead of its stale payload, and apply label/tombstone runs set-based, 1,000 messages per statement: the same burst held the lock 1.6s in 26 statements. The post-pass Gmail `labels.list` call moved out of the transaction and the lock (MISTAKES 2026-08-23, open until now). Chunking the apply with lock release between chunks was rejected after listing its readers: a purge could run between chunks and the next chunk would resurrect rows, and protection/read-rate would lag the rows destructive readers act on.
 **Rule:** A per-item statement loop inside the mailbox lock costs 2 RTT x items in production — batch it; a producer fired per external event coalesces per mailbox, never per event.
 **Enforcement update:** tests (each negative-controlled): statements under the lock bounded for a 5,000-record burst (old code: 5,008), folded batch lands where per-record application does (seeded stream; fails on a deliberately broken fold), real-Redis coalescing suite with a Redis service added to the Workers CI job so it stops skipping (plus an always-running reachability test that fails when TEST_REDIS_URL is set but Redis is not). Gate review (architecture-guardian) added a liveness bound: a job ACTIVE past 30 min stops absorbing enqueues, so a stuck sync cannot silently swallow a mailbox's pushes and drift retries. Same coalescing applied to Autopilot action sweeps. No hook.
+
+## 2026-09-25 — Fixed stale comments with new unverified claims, then widened a PR to "fix the class"
+**PR:** #775 (https://github.com/CT2689-Tech/DeclutrMail/pull/775)
+**Caught by:** schema-migration-reviewer (two rounds)
+**What happened:** Rewriting comments that promised a re-score cron that does not exist, I also rewrote two claims without reading their producer:
+- `score_run_completed`'s trigger list: it fires after every score job, not only sweeps.
+- `decision_recomputed`: I left it described as emitted, but nothing publishes it.
+
+Following a gate suggestion, I declared four migration-only indexes "so a generated migration can never drop them". The next round showed two things:
+- the repo's generator, with its snapshot frozen at 0015, cannot drop them;
+- the four were one slice of a much larger Drizzle-vs-migration gap.
+
+The declarations came back out.
+**Correct approach:** Treat a comment correction as a claim: read the producer and consumers before rewriting what they do. Before folding a class into an unrelated PR, check the size of the class and whether the harm you name is real. Tidying with no user-visible effect goes to the deferred effort.
+**Rule:** Verify a class's harm and size before widening a PR for it; verify each rewritten comment against the code it describes.
+**Enforcement update:** none.
+
+## 2026-09-26 — A single half-open probe turned the first sweep after a top-up into templates
+**PR:** branch `fix/d024-llm-rejection-breaker` (caught before the PR was opened)
+**Caught by:** my own smoke — real SDK over HTTP to a local server returning the production credit-balance 400, real adapters, real ScoreWorker (4 calls in flight, 400/min pacing) on PGlite
+**What happened:** The first version of the LLM refusal breaker admitted exactly one probe call after the cool-down and reported "blocked" to everyone else while it was in flight. Every unit test passed. In a real sweep, senders that see "blocked" skip the call and finish in microseconds, so the whole queue drained behind one probe's network latency: with credits restored, the next sweep wrote 1 LLM reason and 199 templates. The design was right for one caller and wrong for a pool of concurrent ones.
+**Correct approach:** Drop the exclusive probe. The pause is a timestamp: while it runs, calls are skipped; after it, calls simply go out, and the first refusal re-pauses. Worst case is one refused call per in-flight slot per cool-down, and refused calls are not billed. Pinned by `llm-circuit-breaker.sweep.spec.ts` (real ScoreWorker + real adapter; the old breaker fails it 1 LLM / 19 blocked).
+**Rule:** A gate that makes waiters skip instead of wait must be exercised under the real consumer's concurrency — a skipped item completes instantly and the queue races past the gate.
+**Enforcement update:** the sweep-level regression test; no hook.
+
+## 2026-09-26 — The fail-closed alert I was asked for listed the bad shapes it knew, and passed the rest
+**PR:** branch `fix/d024-llm-rejection-breaker` (fixed before the PR was opened)
+**Caught by:** silent-failure-hunter, typescript-reviewer, privacy-auditor and architecture-guardian (pre-PR, no BLOCKING; every finding folded in)
+**What happened:** The founder asked for an LLM-refusal page that fails closed per CLAUDE.md §8. My verify step checked the policy for four known-bad shapes, so a disabled metric, a condition narrowed to one reason, `trigger: {count: 5}`, a second AND-ed condition or an active snooze all printed "Wired". Same pattern in the classifier: a 429 spend cap without its structured code fell through as a rate limit — no line, no page, the 09-24 incident again. Its unanchored wording regexes would have read an echoed Brief snippet ("your credit balance is…") as a credit refusal and paused both adapters. Provider `type`/`error_code`/`request_id` were logged raw, though the same body's `message` was dropped for exactly that echo risk. The Brief worker lost its per-mailbox failure line and nothing replaced it.
+**Correct approach:** Verify by equality with the known-good definition on every field that decides firing (normalised for proto3's dropped zeros), read snoozes, treat an unset `enabled` as off. Classify from the provider's own sentence anchored at the start of its message, accept the wording as a fallback for the structured code, and page (as `other`) on an unknown 429 code. Log provider fields only when they are shaped like identifiers. Give every surface that lost a signal its replacement (`brief.llm_paused`).
+**Rule:** A guard that enumerates failure shapes passes every shape nobody thought of — compare against the one good shape instead.
+**Enforcement update:** starve tests for each case above (a GCP fake that reads back like GCP: dropped zeros, pagination, snoozes), each negative-controlled; no hook.
 
 ## 2026-09-26 — Explain on demand: four defects the gates and controls caught before merge
 **PR:** branch `claude/determined-ptolemy-771b62` (explain senders on demand, D24)

@@ -31,6 +31,8 @@ const SYNCING: SyncStatus = {
   current_stage: 'building_sender_index',
   progress_pct: 45,
   is_ready_for_triage: false,
+  // A first scan: nothing has finished yet.
+  last_synced_at: null,
 };
 
 const READY: SyncStatus = {
@@ -100,8 +102,10 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
-    // No time promise (D109 hard rule).
-    expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    // No time promise (D109 hard rule) — in either leave-line variant.
+    for (const variant of [html, renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />)]) {
+      expect(variant).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    }
   });
 
   it('a non-finite percentage renders an empty bar, never NaN', () => {
@@ -124,12 +128,62 @@ describe('SyncGate render', () => {
     vi.unstubAllGlobals();
   });
 
+  it('says the user may leave, and promises the ready email only when it will send (D109)', () => {
+    const withEmail = renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />);
+    expect(withEmail).toContain('You can close this tab');
+    expect(withEmail).toContain('we’ll email you when your inbox is ready');
+
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail={false} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+    ]) {
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
+    }
+  });
+
+  it('promises no ready email on a re-scan — it goes only for a first scan', () => {
+    // A retry after a failed re-scan, or a reconnect, re-runs the scan of
+    // a mailbox that finished before; the sync-ready trigger sends
+    // nothing for it. A missing field is unknown, and promises nothing.
+    const { last_synced_at: _drop, ...unknown } = SYNCING;
+    for (const status of [{ ...SYNCING, last_synced_at: '2026-09-01T10:00:00.000Z' }, unknown]) {
+      const html = renderToStaticMarkup(<SyncGate status={status} readyEmail />);
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
+    }
+  });
+
+  it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
+    const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
+    expect(html).toContain('Your inbox is ready.');
+    expect(html).not.toContain('Reading your inbox');
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
+  });
+
+  it('failed: the leave line gives way to cause + next action', () => {
+    const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} readyEmail />));
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html).not.toMatch(/email you/i);
+  });
+
   it('failed: cause + next action, with a real retry', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).toContain('scan stopped');
     expect(html).toContain('Try again');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
+  });
+
+  it('failed: a "reach us" step carries the address — the first-run gate has no route to Help', () => {
+    for (const error_code of ['PermanentError', 'ValidationError']) {
+      const html = renderToStaticMarkup(
+        withClient(<SyncGate status={{ ...FAILED, error_code }} />),
+      );
+      expect(html, error_code).toContain('support@declutrmail.com');
+      expect(html, error_code).not.toMatch(/contact support/i);
+    }
   });
 
   it('never promises an automatic retry it cannot deliver', () => {
@@ -183,8 +237,13 @@ describe('SyncGate render', () => {
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
-    const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    expect(html).not.toMatch(/\bScreen\b/);
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />),
+      renderToStaticMarkup(<SyncGate status={READY} readyEmail />),
+    ]) {
+      expect(html).not.toMatch(/\bScreen\b/);
+    }
   });
 });
 

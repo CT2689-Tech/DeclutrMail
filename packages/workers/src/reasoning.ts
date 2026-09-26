@@ -47,6 +47,13 @@ export interface ReasoningLlmPort {
    * falls back to the template.
    */
   explain(input: ReasoningInput): Promise<string | null>;
+  /**
+   * `true` while the provider is refusing this account's calls (credit,
+   * spend limit, key). The worker then skips the call — and the
+   * rate-limit wait before it — and writes the template. Optional: an
+   * implementation without it is never blocked.
+   */
+  isBlocked?(): boolean;
 }
 
 /**

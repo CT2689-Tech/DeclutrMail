@@ -23,6 +23,67 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Turn on the page for a refused Anthropic account
+
+**Source:** the LLM refusal breaker + alert PR (branch
+`fix/d024-llm-rejection-breaker`); the 2026-09-24 credit outage.
+
+**Why:** the worker now logs `llm.provider_rejected` on every refused
+Anthropic call and stops calling, but a log line pages nobody until the
+GCP log metric and alert policy exist. Creating them needs GCP
+credentials; the session that wrote the PR had none (gcloud asked for
+re-authentication).
+
+**How:** after the PR merges and deploys:
+
+```bash
+gcloud auth login
+node scripts/setup-llm-rejection-alert.mjs --apply
+```
+
+It creates the log metric `llm_provider_rejected` and the alert policy
+"LLM provider refused our calls (credit, limit or key)", reuses the
+existing admin@declutrmail.ai email channel, then reads both back.
+
+Then the drill, the only step that proves an email arrives: write one
+synthetic line, labelled as a drill, and expect one alert email within
+about 5 minutes.
+
+```bash
+curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
+```
+
+**Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
+`Configured:` and exits 0, and the drill produces an alert email naming
+`reason=other`.
+
+**Status:** Open
+
+### 2026-09-24 — Add the return-path records so SPF counts for declutrmail.com
+**Source:** session 2026-09-24 (a friend's "Your inbox is ready" landed in spam; PR #772)
+**Why:** Resend sends through Amazon SES with the envelope sender (return-path) on `send.send.declutrmail.com`, and that host has no records. So SPF passes only for `amazonses.com`, not for our domain; DKIM and DMARC still pass (DMARC aligns via DKIM). Resend's dashboard still says "verified" from an older check. Fixing it gives mailbox providers a second aligned signal. Checked 2026-09-24 with `dig`: the MX and SPF records sit on `send.declutrmail.com`, and `send.send.declutrmail.com` returns nothing.
+**How:** Squarespace → Domains → declutrmail.com → DNS → add two custom records:
+1. Host `send.send`, type **MX**, priority `10`, value `feedback-smtp.us-east-1.amazonses.com`
+2. Host `send.send`, type **TXT**, value `v=spf1 include:amazonses.com ~all`
+
+Then Resend → Domains → declutrmail.com → Verify.
+**Verifies by:** `dig +short MX send.send.declutrmail.com` returns the SES host, and a fresh send to Gmail shows `spf=pass` with `smtp.mailfrom=…send.declutrmail.com` in "Show original".
+**Status:** Open
+
+### 2026-09-24 — Send one test email to support@declutrmail.com, then turn on Reply-To
+**Source:** session 2026-09-24 (PR #772 review)
+**Why:** Our emails go out with no Reply-To (`EMAIL_REPLY_TO` is unset in both deploy manifests and the live revisions), so a reply reaches Amazon SES's feedback handler, not a person. PR #772 removed the sync-failed email's "reply to this email and a human will look" for that reason. Help, contact, refunds, billing errors, the in-app support form and the failed-scan screen all point people at support@, and nobody has confirmed that inbox receives mail: the 2026-07-02 legal-pages item (under Done) closed with ".com delivery pending the declutrmail.com domain-alias add".
+**How:** From your phone, email support@declutrmail.com and say whether it arrives. If it does, reply here and an agent adds `EMAIL_REPLY_TO=support@declutrmail.com` to the worker and API env in `deploy-cloud-run.yml`.
+**Verifies by:** The test email arrives, and a later "scan stopped" email shows `Reply-To: support@declutrmail.com`.
+**Status:** Open
+
+### 2026-09-24 — Top up Anthropic credits (they ran out, and nothing alerted)
+**Source:** session 2026-09-24 (prod logs)
+**Why:** The balance hit zero at ~08:15 UTC on 2026-09-24. Since then every AI explanation and the Brief fall back to templates without telling anyone. A new user's first scan on 2026-09-25 got 2,929 "credit balance is too low" errors, so every one of their senders got a template reason. The drain came from one sweep: a returning Google sign-in re-scanned an already-synced mailbox and re-scored all 7,999 senders, which made 6,022 Haiku calls. `scripts/check-vendor-limits.mjs` watches only for spend that is too HIGH, so nothing checks for credits running out.
+**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog (now a log-based page, see 2026-09-26 above), and stopping the sign-in re-scan (decision pending).
+**Verifies by:** `llm.provider_rejected` stops appearing in worker logs (refusals log there since the 2026-09-26 breaker, no longer as `reasoning.adapter_error`), and the next score sweep reports `llmExplanations` greater than `llmReused`.
+**Status:** Open
+
 ### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
 **Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
 **Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:

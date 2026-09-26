@@ -37,8 +37,10 @@ export interface LapseReengagementEmailInput {
  * does NOT claim the inbox was untouched while they were away —
  * Autopilot in active mode acts without them, so that reassurance would
  * be false for exactly the users who most need it to be true. It also
- * makes no time-to-clear claim: D126's "30 seconds" is a guess, and the
- * keystrokes are the honest version of the same point.
+ * makes no time-to-clear or effort claim: D126's "30 seconds" is a
+ * guess, and only Keep lands in one key — Archive, Unsubscribe, Later
+ * and Delete open the mandatory preview first (D226). So it names the
+ * five keys and says nothing about how fast they are.
  *
  * Carries only a count and DeclutrMail URLs: no sender identities, no
  * subjects, no mailbox content (D7/D228).
@@ -56,8 +58,7 @@ export function lapseReengagementEmail(input: LapseReengagementEmailInput): Rend
     'of senders still waiting for your first decision across all your',
     'mailboxes. Triage shows one mailbox at a time.',
     '',
-    'One keystroke each: K to keep, A to archive, U to unsubscribe,',
-    'L for later, D to delete.',
+    'K to keep, A to archive, U to unsubscribe, L for later, D to delete.',
     '',
     `Open Triage: ${triageUrl}`,
     '',
