@@ -71,6 +71,26 @@ re-auth before anything can run.
 opened beside the already-stuck ones and a `silentProbe` open time, and
 its `cleanup` lists three deletions.
 
+### 2026-09-26 — Two vendor breaches will fail the daily watchdog until you act on them
+
+**Source:** vendor-limits known-issues PR, session 2026-09-26; figures in
+run 36256853826 (2026-09-26)
+
+**Why:** the vendor-limits watchdog now fails only for failing rows missing
+from `scripts/known-vendor-issues.tsv`. Only Anthropic's ERROR (no Admin
+API key; item 2026-08-29 below) is listed, until 2026-10-26. Two failing
+rows are new since 2026-09-24/25 and were hidden behind it: Google Cloud
+(budgets) BREACH — spend past the monthly budget alert — and Sentry BREACH
+— errors dropped for quota or rate limits.
+
+**How:** for each, fix it (budget, spend, Sentry quota) or acknowledge it
+with a line in `scripts/known-vendor-issues.tsv`: the text of the cause
+you looked at (so a different cause for the same vendor still fails) and
+a date at most 30 days out. Confirm or delete the Anthropic line too.
+
+**Verifies by:** the next scheduled vendor-limits run is green, or red only
+for something new.
+
 **Status:** Open
 
 ### 2026-09-26 — Turn on the page for a refused Anthropic account

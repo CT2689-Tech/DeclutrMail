@@ -1,0 +1,18 @@
+# Vendor issues someone has looked at. The vendor-limits watchdog
+# (scripts/check-vendor-limits.mjs) still shows them in every run, as
+# warnings, until the date given, and fails only for a failing vendor
+# row that is not here (or whose date has passed).
+#
+# One tab-separated line per cause:
+#   vendor (exactly as the run table names it)
+#   status (WARN|BREACH|ERROR)
+#   detail_contains (text the row's detail must contain: the cause you looked at)
+#   acknowledged_until (YYYY-MM-DD, UTC, inclusive, at most 30 days out)
+#   note
+# Anything else fails the run again: another status, another cause for
+# the same vendor, a passed date. A line that matched nothing is flagged
+# in the run so it gets deleted.
+#
+# This repository is public: notes say what is known and who owns it,
+# nothing secret.
+Anthropic	ERROR	The Admin API requires an Admin API key	2026-10-26	no Admin API key, so LLM spend is unreadable here (FOUNDER-FOLLOWUPS 2026-08-29); LLM refusals page through #779
