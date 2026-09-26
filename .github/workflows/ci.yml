@@ -257,6 +257,8 @@ jobs:
         run: node --test scripts/check-pr-body-d-ref.test.mjs
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
+      - name: Stuck-mailbox alert and sync watchdog contracts
+        run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and

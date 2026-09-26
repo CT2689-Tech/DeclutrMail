@@ -23,6 +23,33 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
+
+**Source:** PR adding `scripts/setup-stuck-mailbox-alert.mjs` (session 2026-09-26)
+
+**Why:** the new alert definitions ship in code, but Cloud Monitoring only
+changes when the script runs against prod. Until then the old policy
+stays: one alert, open since 2026-09-05, that a newly stuck mailbox
+cannot fire again. Prod metric and policy changes wait for your OK, and
+the stored `admin@declutrmail.ai` gcloud login needs an interactive
+re-auth before anything can run.
+
+**How:** after the PR merges and the worker deploys:
+
+1. `gcloud auth login` as admin@declutrmail.ai.
+2. `node scripts/setup-stuck-mailbox-alert.mjs declutrmail-ai-prod` —
+   review the printed plan.
+3. Same command with `--apply`. Expect one email at admin@declutrmail.ai
+   per mailbox stuck at that moment (three were reported on 2026-09-26);
+   acknowledge each in Monitoring → Alerting.
+4. Same command with `--starve-test` (about 25 minutes, pages nobody).
+
+**Verifies by:** step 4 prints `"result": "PASS"` with a `freshAlert` that
+opened beside the already-stuck ones and a `silentProbe` open time, and
+its `cleanup` lists three deletions.
+
+**Status:** Open
+
 ### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
 **Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
 **Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:
@@ -101,6 +128,13 @@ is on for this account, so a future `vendor-limits-watchdog` BREACH
 **Verifies by:** a deliberate `workflow_dispatch` re-run of
 `vendor-limits-watchdog` with a low threshold produces a visible
 notification.
+
+**Update 2026-09-26:** a Gmail search of chintan.a.thakkar@gmail.com
+found no `notifications@github.com` "Run failed" or watchdog mail in the
+past 40 days, while `sync-stuck-watchdog` failed 155 scheduled runs in a
+row (2026-09-03 23:21 UTC onward). If GitHub sends these, they go to
+another address or are filtered before that inbox. The account that
+last changed that workflow's `cron:` line is CT2689.
 
 **Status:** Open
 

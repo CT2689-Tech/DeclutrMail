@@ -19,7 +19,11 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { findStuckMailboxes, STUCK_MAILBOX_GRACE_MS } from './stuck-mailbox-watchdog.js';
+import {
+  findStuckMailboxes,
+  reportStuckMailboxes,
+  STUCK_MAILBOX_GRACE_MS,
+} from './stuck-mailbox-watchdog.js';
 
 type Db = Awaited<ReturnType<typeof freshTestDb>>;
 
@@ -204,4 +208,122 @@ describe('findStuckMailboxes', () => {
       expect(await run()).toEqual([]);
     },
   );
+});
+
+/**
+ * `reportStuckMailboxes` is one watchdog tick as Cloud Logging sees it.
+ * The Cloud Monitoring alert (`scripts/setup-stuck-mailbox-alert.mjs`)
+ * opens one alert per `mailboxAccountId` + `reason` read off these lines,
+ * and a second policy pages when the `completed` line stops arriving.
+ */
+describe('reportStuckMailboxes', () => {
+  type Line = { stream: 'error' | 'info'; record: Record<string, unknown> };
+
+  function capture(): { lines: Line[]; log: { error(l: string): void; info(l: string): void } } {
+    const lines: Line[] = [];
+    return {
+      lines,
+      log: {
+        error: (line) => lines.push({ stream: 'error', record: JSON.parse(line) }),
+        info: (line) => lines.push({ stream: 'info', record: JSON.parse(line) }),
+      },
+    };
+  }
+
+  async function seedFailed(email: string, updatedAt: Date, errorCode: string): Promise<string> {
+    const id = await seedMailbox(email);
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId: id, readinessStatus: 'failed', errorCode });
+    await backdateUpdatedAt(id, updatedAt);
+    return id;
+  }
+
+  it('writes a line for a newly stuck mailbox beside the ones stuck for weeks, then a completed count', async () => {
+    const weeksAgo = new Date(NOW.getTime() - 21 * 24 * 60 * 60 * 1000);
+    const knownA = await seedFailed('known-a@example.com', weeksAgo, 'RateLimitError');
+    const knownB = await seedFailed('known-b@example.com', STALE, 'TransientError');
+    const knownC = await seedMailbox('known-c@example.com');
+    await db.insert(providerSyncState).values({
+      mailboxAccountId: knownC,
+      readinessStatus: 'ready',
+      lastIncrementalErrorCode: 'InvalidGrantError',
+      lastIncrementalErrorAt: weeksAgo,
+      lastSyncedAt: new Date(weeksAgo.getTime() - 60_000),
+    });
+    // Crossed the grace window one minute ago — the mailbox the alert must not lose.
+    const justStuck = new Date(NOW.getTime() - STUCK_MAILBOX_GRACE_MS - 60_000);
+    const fresh = await seedFailed('fresh@example.com', justStuck, 'RateLimitError');
+    const { lines, log } = capture();
+
+    await reportStuckMailboxes(db as never, log, { now: () => NOW });
+
+    const stuck = lines.slice(0, -1);
+    expect(stuck.every((l) => l.stream === 'error')).toBe(true);
+    expect(stuck.map((l) => l.record)).toHaveLength(4);
+    expect(stuck.map((l) => l.record)).toEqual(
+      expect.arrayContaining([
+        {
+          level: 'error',
+          kind: 'mailbox.stuck_unnoticed',
+          mailboxAccountId: knownA,
+          reason: 'sync_failed',
+          errorCode: 'RateLimitError',
+          stuckSinceHours: 504,
+        },
+        {
+          level: 'error',
+          kind: 'mailbox.stuck_unnoticed',
+          mailboxAccountId: knownB,
+          reason: 'sync_failed',
+          errorCode: 'TransientError',
+          stuckSinceHours: 3,
+        },
+        {
+          level: 'error',
+          kind: 'mailbox.stuck_unnoticed',
+          mailboxAccountId: knownC,
+          reason: 'needs_reconnect',
+          errorCode: 'InvalidGrantError',
+          stuckSinceHours: 504,
+        },
+        {
+          level: 'error',
+          kind: 'mailbox.stuck_unnoticed',
+          mailboxAccountId: fresh,
+          reason: 'sync_failed',
+          errorCode: 'RateLimitError',
+          stuckSinceHours: 2,
+        },
+      ]),
+    );
+    expect(lines.at(-1)).toEqual({
+      stream: 'info',
+      record: { level: 'info', kind: 'stuck_mailbox_watchdog.completed', stuckMailboxes: 4 },
+    });
+  });
+
+  it('writes a completed line with zero when nothing is stuck, so an empty sweep is not silence', async () => {
+    const id = await seedMailbox('healthy@example.com');
+    await db.insert(providerSyncState).values({ mailboxAccountId: id, readinessStatus: 'ready' });
+    const { lines, log } = capture();
+
+    await reportStuckMailboxes(db as never, log, { now: () => NOW });
+
+    expect(lines).toEqual([
+      {
+        stream: 'info',
+        record: { level: 'info', kind: 'stuck_mailbox_watchdog.completed', stuckMailboxes: 0 },
+      },
+    ]);
+  });
+
+  it('writes nothing when the sweep query fails, so the missing completed line pages', async () => {
+    await seedFailed('stuck@example.com', STALE, 'RateLimitError');
+    await db.execute(sql`DROP TABLE provider_sync_state CASCADE`);
+    const { lines, log } = capture();
+
+    await expect(reportStuckMailboxes(db as never, log, { now: () => NOW })).rejects.toThrow();
+    expect(lines).toEqual([]);
+  });
 });

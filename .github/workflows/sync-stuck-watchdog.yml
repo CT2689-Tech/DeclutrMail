@@ -1,8 +1,7 @@
 # Sync-stuck / sync-failed watchdog (D38, D224, D159).
 #
-# Runs every 5 minutes (GitHub Actions' cron minimum) against the
-# Supabase prod DB. Two independent checks, both against
-# `provider_sync_state`:
+# Reads the Supabase prod DB directly. Two independent checks, both
+# against `provider_sync_state`:
 #   - check-sync-stuck.sh:  syncs WEDGED in `queued`/`syncing` (never
 #     reached a terminal state — `current_stage NOT IN ('ready','failed')`).
 #   - check-sync-failed.sh: INITIAL syncs that reached the TERMINAL
@@ -17,34 +16,47 @@
 #     (`last_incremental_error_at`, self-healed by a 5-min cron drift
 #     sweep) and are NOT covered by either check — see check-sync-failed.sh.
 #
+# Red means something NEW. A stuck row listed in
+# scripts/known-stuck-mailboxes.tsv — matched on mailbox AND stuck-since
+# instant, so a retry that fails again is new — prints as a warning on
+# every run and does not fail it (scripts/filter-known-stuck.sh). Before
+# that list, this workflow failed on every run from 2026-09-03 for the
+# same two first-scan failures, so a third stuck mailbox would have
+# changed nothing anyone looked at. To acknowledge a row, paste the line
+# the failing run prints into that file.
+#
 # Both scripts run even if one fails (`|| rc=1`, no `set -e` across
 # them) — a step that stops at the first failure would let a stuck-sync
-# alert mask a same-tick failed-sync alert, or vice versa. A failed
-# workflow run = email to the founder via GH's "Send notifications for
-# failed workflows" setting; the printed `::error::` lines say which
-# check(s) fired.
+# alert mask a same-tick failed-sync alert, or vice versa. When a
+# scheduled run fails, GitHub notifies the account that last changed the
+# `cron:` line, per that account's notification settings; the printed
+# `::error::` lines say which check(s) fired.
 #
-# Why GH Actions cron + psql vs Cloud Monitoring:
-#   * Cloud Monitoring can't directly query an external Supabase DB —
-#     it'd need a Cloud Run Job + Scheduler + IAM bindings. GH Actions
-#     cron is free + already authed via SUPABASE_SESSION_DSN secret.
-#   * GH cron has ~minute jitter under load (not guaranteed exact
-#     5-min ticks). Acceptable for a dev-phase watchdog — false-quiet
-#     windows of ≤ ~5 extra minutes are fine. Revisit if launch volume
-#     makes Cloud Monitoring's tighter cadence necessary.
+# A backstop, not the pager:
+#   * The schedule asks for every 5 minutes. GitHub started it 5-8 times
+#     a day from 2026-09-15 to 2026-09-25 (the */15 cron-stale watchdog
+#     got the same), so a new stuck row can take hours to turn this red.
+#     The pager is the Cloud Monitoring alert fed by the worker's
+#     15-minute sweep, one alert per mailbox
+#     (scripts/setup-stuck-mailbox-alert.mjs).
+#   * It stays because it reads the database directly, so it still works
+#     when the worker or Cloud Logging does not. Cloud Monitoring can't
+#     query an external Supabase DB without a Cloud Run Job + Scheduler +
+#     IAM bindings; GH Actions cron is free + already authed via the
+#     SUPABASE_SESSION_DSN secret.
 #
 # Privacy (D7 / D228): script reads ONLY `provider_sync_state`. No
 # `mail_messages` / `senders` / `triage_decisions` access. The alert
 # body carries mailbox_account_id (a UUID, not user-identifiable in
-# isolation) + stage + progress + stuck_seconds.
+# isolation) + stuck-since + stage/error + progress + stuck_seconds.
 
 name: Sync-stuck / sync-failed watchdog
 
 on:
   schedule:
-    # Every 5 min. GitHub may delay by up to several minutes under
-    # platform load; the script's threshold accommodates that
-    # (STUCK_MINUTES default = 10 — see the job step below for why).
+    # Asks for every 5 min; GitHub starts it far less often (see "A
+    # backstop, not the pager" above). STUCK_MINUTES = 10 is about the
+    # sync's own backoff, not GitHub's timing — see the job step below.
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
 

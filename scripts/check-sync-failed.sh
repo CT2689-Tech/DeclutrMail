@@ -33,6 +33,10 @@
 # a founder look, not an automatic retry (retrying blind here would just
 # replay whatever tripped it originally).
 #
+# Known vs new: rows acknowledged in scripts/known-stuck-mailboxes.tsv
+# (matched on mailbox AND stuck-since instant) print as warnings; only an
+# unacknowledged row fails the run — see scripts/filter-known-stuck.sh.
+#
 # Privacy (D7 / D228): reads ONLY `provider_sync_state`. Surfaces
 # `mailbox_account_id`, `error_code`, `updated_at`, `stuck_seconds`.
 # NEVER reads `mail_messages` / `senders` / `triage_decisions`.
@@ -57,8 +61,8 @@ fi
 QUERY=$(cat <<EOF
 SELECT
   mailbox_account_id,
+  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stuck_since,
   error_code,
-  updated_at,
   EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS stuck_seconds
 FROM provider_sync_state
 WHERE readiness_status = 'failed'
@@ -96,16 +100,28 @@ if [ "$RC" -ne 0 ]; then
 fi
 rm -f "$PSQL_ERR"
 
-if [ -z "$OUT" ]; then
-  echo "OK — no unretried failed syncs found (threshold ${STUCK_FAILED_HOURS}h)."
-  exit 0
-fi
+# Every run goes through the known-stuck filter, rows or not, so a broken
+# scripts/known-stuck-mailboxes.tsv fails the run the day it lands rather
+# than the day the next mailbox gets stuck. Red means a failed sync that
+# nobody has acknowledged yet; acknowledged ones stay listed as warnings.
+set +e
+if [ -n "$OUT" ]; then printf '%s\n' "$OUT"; fi | "$(dirname "$0")/filter-known-stuck.sh"
+RC=$?
+set -e
 
-echo "::error::Unretried failed sync detected — ${STUCK_FAILED_HOURS}h threshold exceeded"
-echo ""
-echo "Failed rows:"
-printf "%s\n" "$OUT"
-echo ""
-echo "Each row: mailbox_account_id | error_code | updated_at | stuck_seconds"
-
-exit 1
+case "$RC" in
+  0)
+    if [ -z "$OUT" ]; then
+      echo "OK — no unretried failed syncs found (threshold ${STUCK_FAILED_HOURS}h)."
+    else
+      echo "OK — no NEW unretried failed sync (threshold ${STUCK_FAILED_HOURS}h); every one above is acknowledged in scripts/known-stuck-mailboxes.tsv."
+    fi
+    exit 0
+    ;;
+  1)
+    echo "::error::New unretried failed sync — ${STUCK_FAILED_HOURS}h threshold exceeded"
+    echo "Details per row: error_code | stuck_seconds"
+    exit 1
+    ;;
+  *) exit 2 ;;
+esac

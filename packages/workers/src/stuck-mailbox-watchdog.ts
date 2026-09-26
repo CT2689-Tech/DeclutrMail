@@ -136,3 +136,45 @@ export async function findStuckMailboxes(
     })),
   ];
 }
+
+/**
+ * One watchdog tick, written as the log lines Cloud Monitoring reads
+ * (`scripts/setup-stuck-mailbox-alert.mjs`):
+ *
+ *   - `mailbox.stuck_unnoticed` once per stuck mailbox, every tick. The
+ *     alert opens one alert per `mailboxAccountId` + `reason`, so a mailbox
+ *     that breaks today pages even while older ones are still open.
+ *   - `stuck_mailbox_watchdog.completed` last, and only once the query has
+ *     returned. A second policy pages when it stops arriving, so a sweep
+ *     that throws, hangs or was never deployed is not read as "nothing
+ *     stuck".
+ */
+export async function reportStuckMailboxes(
+  db: WorkerDb,
+  log: { error(line: string): void; info(line: string): void },
+  opts: { now?: () => Date } = {},
+): Promise<void> {
+  const now = opts.now ?? (() => new Date());
+  const stuck = await findStuckMailboxes(db, { now });
+  for (const mailbox of stuck) {
+    log.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'mailbox.stuck_unnoticed',
+        mailboxAccountId: mailbox.mailboxAccountId,
+        reason: mailbox.reason,
+        errorCode: mailbox.errorCode,
+        stuckSinceHours: Math.floor(
+          (now().getTime() - mailbox.stuckSince.getTime()) / (60 * 60 * 1000),
+        ),
+      }),
+    );
+  }
+  log.info(
+    JSON.stringify({
+      level: 'info',
+      kind: 'stuck_mailbox_watchdog.completed',
+      stuckMailboxes: stuck.length,
+    }),
+  );
+}
