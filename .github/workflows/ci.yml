@@ -260,6 +260,8 @@ jobs:
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs
       - name: PR-body D-citation matcher
         run: node --test scripts/check-pr-body-d-ref.test.mjs
+      - name: User-journey log trace
+        run: node --test scripts/journey-logs.test.mjs
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -357,6 +359,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Same reason, for Redis: per-mailbox job coalescing and the shared
+      # Gmail quota budget both live in Lua that a fake cannot model, so
+      # their tests run `it.runIf(live)` against a real Redis — and without
+      # this service they were skipped in CI, reported as green.
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -368,6 +383,7 @@ jobs:
       # See the note on the API shard above — no `--` before the flag.
       - run: pnpm --filter @declutrmail/workers test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
+          TEST_REDIS_URL: redis://127.0.0.1:6379
           # A DEDICATED, EMPTY database — the test applies every
           # migration to it. Schema-level isolation is not an option:
           # the migrations write `CREATE TYPE "public"."<enum>"` and

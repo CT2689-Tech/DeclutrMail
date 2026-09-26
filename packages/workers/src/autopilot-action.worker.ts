@@ -38,6 +38,7 @@ import type {
 import { labelChangeForVerb, type MailboxActionLock } from './label-action.worker.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import type { CoalescedJobOptions } from './queue.js';
 import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import { unsubSendsEnabled } from './unsub-execution.worker.js';
@@ -224,9 +225,10 @@ const DAILY_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * One Autopilot action sweep over a mailbox. `triggeredAtMs` forms the
- * BullMQ `jobId` so duplicate adds within the same trigger window are
- * deduped; per-match idempotency is the `action_jobs` row keyed
+ * One Autopilot action sweep over a mailbox. Immediate sweeps coalesce per
+ * mailbox (`autopilotActionSweepJobOptions`); `triggeredAtMs` prefixes
+ * their job id for log search and keys the delayed quiet-resume sweep's
+ * id. Per-match idempotency is the `action_jobs` row keyed
  * `autopilot-<matchId>` plus the `intent_applied` flag.
  */
 export interface AutopilotActionJobData {
@@ -324,6 +326,33 @@ export function autopilotActionJobOptions(jobId: string): JobsOptions {
     ...backoffJobOptions(policy.backoff),
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
+  };
+}
+
+/**
+ * Options for an IMMEDIATE action sweep, coalesced per mailbox — at most
+ * one queued and one running (`addCoalescedJob`). A sweep executes every
+ * approved-unapplied match for its mailbox under one hold of the mailbox
+ * lock, so a second sweep queued behind a running one only waits on
+ * `pg_advisory_lock` and holds a lock-pool connection while it does.
+ * Every trigger used to enqueue its own (`${mailbox}-${ms}`): an approve,
+ * and every apply run that found pending matches — which runs once per
+ * first-seen sender. That is the shape that dead-lettered eight
+ * incremental syncs on 2026-09-25.
+ *
+ * The quiet-resume sweep stays on `autopilotActionJobOptions`: it is
+ * DELAYED until quiet ends, and absorbing an immediate trigger into it
+ * would hold that trigger for hours.
+ */
+export function autopilotActionSweepJobOptions(
+  mailboxAccountId: string,
+  triggeredAtMs: number,
+): CoalescedJobOptions {
+  const jobId = `${mailboxAccountId}-${triggeredAtMs}`;
+  return {
+    ...autopilotActionJobOptions(jobId),
+    jobId,
+    deduplication: { id: mailboxAccountId, keepLastIfActive: true },
   };
 }
 

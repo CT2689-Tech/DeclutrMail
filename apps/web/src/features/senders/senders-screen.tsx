@@ -598,8 +598,9 @@ function SendersScreenContent({
   // visible in the header instead of a static "default mailbox".
   const activeEmail = activeMailbox?.email ?? me.user.email;
   // QA-onboarding-20260828-01: an active mailbox that is still `queued`/
-  // `syncing` (e.g. an ordinary returning login mid-resync, not only a
-  // fresh connect) must not be presented as fully synced — the sender
+  // `syncing` (e.g. a reconnect after a revoked grant, or a cursor-too-old
+  // recovery, not only a fresh connect) must not be presented as fully
+  // synced — the sender
   // index is torn down and rebuilt in ONE transaction only at the END of
   // sync, so a mid-resync read is either genuinely empty or a stale
   // pre-resync snapshot, never partial.

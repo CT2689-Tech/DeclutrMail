@@ -29,7 +29,7 @@ import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
-import { syncMailboxLabels } from './mailbox-label-sync.js';
+import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -84,9 +84,10 @@ export interface InitialSyncDeps {
    * first sync — without it a freshly-synced mailbox has senders but
    * an empty Triage queue.
    *
-   * Best-effort: a failure here is logged and swallowed (the cron
-   * re-score sweep is the safety net), so a Redis blip at score-enqueue
-   * time never fails an otherwise-successful sync.
+   * Best-effort: a failure here is logged and swallowed, so a Redis blip
+   * at score-enqueue time never fails an otherwise-successful sync.
+   * Nothing retries it — `cron_sweep` has no producer — so the logged
+   * `sync.score_enqueue_failed` is the only trace.
    */
   onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
   /**
@@ -441,8 +442,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Stage 3 — computing_recommendations. The sender index is built,
     // so fire the `sync_complete` score trigger (D25): the score sweep
     // runs the cascade over every sender and writes `triage_decisions`.
-    // Best-effort — a score-enqueue failure must not fail the sync; the
-    // cron re-score sweep is the safety net.
+    // Best-effort — a score-enqueue failure must not fail the sync
+    // (nothing retries it: `cron_sweep` has no producer).
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
     if (this.deps.onSenderIndexBuilt) {
       try {
@@ -1030,6 +1031,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // threshold (two-way: >=3 addressed outbound AND >=1 inbound).
     // Both run inside the rebuild tx so a partial pass rolls back
     // with the rest.
+    // Gmail is read BEFORE the rebuild transaction opens: no network call
+    // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
+    const labels = await listMailboxLabels(client);
     await this.deps.db.transaction(async (tx) => {
       signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
@@ -1175,7 +1179,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // (mig 0064, F012), so a stale label set would reconcile the
       // counters against the wrong exclusion. `null` = the client could
       // not list; the existing rows stand rather than being emptied.
-      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, labels);
       if (labelSync) {
         console.log(
           JSON.stringify({
@@ -1581,7 +1585,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * exists iff the ready state committed). The consumer router seeds
    * the D101 Autopilot presets + enqueues the apply sweep off it. A
    * RESUMED sync that re-reaches ready publishes again — consumers are
-   * idempotent (seeder ON CONFLICT; apply job deduped per trigger).
+   * idempotent (seeder ON CONFLICT; apply job deduped per trigger). The
+   * one consumer that is NOT idempotent across events, the "Your inbox
+   * is ready" email, reads the event's `firstReady` flag instead.
    */
   private async markReady(
     mailboxAccountId: string,
@@ -1631,6 +1637,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           progressPct: 100,
           lastHistoryId,
           historyIdUpdatedAt: sql`now()`,
+          // Ready means stamped on both branches: the stamp is what tells
+          // the next ready that this is not the mailbox's first.
+          lastSyncedAt: sql`now()`,
         })
         .onConflictDoUpdate({
           target: providerSyncState.mailboxAccountId,
@@ -1682,6 +1691,23 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
+      // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
+      // clears it — `markQueued` (any connect that needs a scan, e.g. a reconnect),
+      // the failed-scan retry and the cursor-too-old recovery all keep it —
+      // so null means no scan has finished since this row was created: the
+      // one case the "Your inbox is ready" email is for. The incremental
+      // writer cannot stamp it first; its producers require `ready`.
+      //
+      // FOR UPDATE: two runs of one mailbox can overlap after a stall
+      // reclaim. Without the lock both read null and both send. The upsert
+      // takes this same row lock one statement later anyway.
+      const [prior] = await tx
+        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update')
+        .limit(1);
+      const firstReady = (prior?.lastSyncedAt ?? null) === null;
       await readyUpsert(tx);
       await runInsert(tx);
       await outbox.publish(tx, {
@@ -1692,6 +1718,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           workspaceId: account.workspaceId,
           readyAt: new Date().toISOString(),
           messageCount: run.messagesSynced,
+          firstReady,
         },
         schema: MailboxSyncReadyPayloadSchema,
       });

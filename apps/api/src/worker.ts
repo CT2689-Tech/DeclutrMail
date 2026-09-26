@@ -910,11 +910,11 @@ async function bootstrap(): Promise<void> {
   // IncrementalSyncWorker consumer (D8, D229 follow-up). Producer side
   // is the webhook (`WebhooksModule` enqueues on every verified Pub/Sub
   // push); consumer runs here in the same worker process so the
-  // observer/D159 seam shares wiring with InitialSyncWorker. BullMQ jobId
-  // namespacing deduplicates an identical historyId but does NOT serialize
-  // different historyIds for one mailbox. Run the complete sync lifecycle
-  // under the same cross-process mailbox advisory lock as label actions so
-  // overlapping history jobs cannot double-apply deltas or race mutations.
+  // observer/D159 seam shares wiring with InitialSyncWorker. Enqueues
+  // coalesce per mailbox — at most one queued and one running job
+  // (`incrementalSyncJobOptions`) — and the worker still writes under the
+  // same cross-process mailbox advisory lock as label actions, so a sync
+  // never interleaves its deltas with a mutation.
   const incrementalSync = new IncrementalSyncWorker({
     db,
     gmailAccess,
@@ -979,6 +979,8 @@ async function bootstrap(): Promise<void> {
         // to re-run a mailbox still marked ready. Reset the durable gate
         // and clear the expired applied cursor before scheduling the full
         // resync; the worker captures a fresh base snapshot on entry.
+        // Keep `last_synced_at`: clearing it would re-send "Your inbox is
+        // ready" for a mailbox that had it long ago.
         await db
           .update(providerSyncState)
           .set({
@@ -1932,12 +1934,11 @@ async function bootstrap(): Promise<void> {
    * so without that it would look stale forever and be retried forever.
    *
    * Idempotent end-to-end:
-   *   - `ensureIncrementalSyncJob` dedups by `${mailbox}:${cursor}` so
-   *     a sweep that fires while the previous one's job is still in
-   *     flight is a no-op.
-   *   - The worker advances the cursor on success, so the NEXT sweep
-   *     sees a different `${cursor}` and (correctly) enqueues a new
-   *     job — Gmail history may have advanced since.
+   *   - `ensureIncrementalSyncJob` coalesces per mailbox, so a sweep that
+   *     fires while that mailbox's sync is queued or running adds nothing
+   *     (a running one is followed by at most one more run).
+   *   - Once that sync finishes, the NEXT sweep enqueues a new job —
+   *     Gmail history may have advanced since.
    */
   const incrementalReconcilerQueue = new Queue<IncrementalSyncJobData>(INCREMENTAL_SYNC_QUEUE, {
     connection,

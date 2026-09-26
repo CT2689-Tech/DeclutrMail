@@ -205,7 +205,7 @@ export class GmailWebhookController {
         break;
       case 'enqueued':
         this.logger.log(
-          `pubsub.history_enqueued mailbox=${outcome.mailboxAccountId} from=${outcome.previousHistoryId} to=${outcome.historyId}`,
+          `pubsub.history_enqueued mailbox=${outcome.mailboxAccountId} from=${outcome.previousHistoryId} to=${outcome.historyId} queue=${outcome.queue}`,
         );
         break;
       case 'deferred_initial_sync_in_flight':

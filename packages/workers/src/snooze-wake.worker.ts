@@ -183,6 +183,10 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
   ): Promise<SnoozeWakeResult> {
     const startedAt = Date.now();
     return this.deps.lock.run(payload.mailboxAccountId, async () => {
+      // Inside the lock, before the credential read — the lock wait
+      // (up to its 45s timeout) must not widen the superseded-grant
+      // window (see `recordMailboxSyncFailure`).
+      const attemptStartedAt = new Date();
       const version = timerVersionFromJob(payload);
 
       try {
@@ -205,7 +209,13 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
         if (isNonRetryable(error) || ctx.attempt >= ctx.maxAttempts) {
-          await this.recordWakeFailure(payload.mailboxAccountId, payload.senderKey, version, error);
+          await this.recordWakeFailure(
+            payload.mailboxAccountId,
+            payload.senderKey,
+            version,
+            error,
+            attemptStartedAt,
+          );
         }
         throw error;
       }
@@ -313,6 +323,8 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
         limiter(async () => {
           await this.deps.lock.run(mailboxAccountId, async () => {
             for (const { senderKey, version } of timers) {
+              // Before the credential read — see `recordMailboxSyncFailure`.
+              const attemptStartedAt = new Date();
               try {
                 const restored = await this.wakeSender(mailboxAccountId, senderKey, version);
                 // A reschedule/new Later action made the captured sweep
@@ -324,7 +336,13 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
                 // The timer stays due — retryable failures are eligible
                 // next sweep; deterministic ones are excluded above.
                 failed += 1;
-                await this.recordWakeFailure(mailboxAccountId, senderKey, version, err);
+                await this.recordWakeFailure(
+                  mailboxAccountId,
+                  senderKey,
+                  version,
+                  err,
+                  attemptStartedAt,
+                );
                 console.error(
                   JSON.stringify({
                     severity: 'ERROR',
@@ -366,6 +384,8 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
         .filter((mb) => !byMailbox.has(mb.id))
         .map((mb) =>
           limiter(async () => {
+            // Before the credential read — see `recordMailboxSyncFailure`.
+            const attemptStartedAt = new Date();
             try {
               const existing = await this.deps.labelMap.get(mb.id);
               if (existing !== null) return;
@@ -378,7 +398,9 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
               // insufficient grant. Persist the shared incident so subsequent
               // sweeps stop spending it and the existing recovery outbox fires.
               if (err instanceof InvalidGrantError) {
-                await recordMailboxSyncFailure(this.deps.db, mb.id, 'InvalidGrantError');
+                await recordMailboxSyncFailure(this.deps.db, mb.id, 'InvalidGrantError', {
+                  attemptStartedAt,
+                });
               }
               console.error(
                 JSON.stringify({
@@ -541,18 +563,26 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     senderKey: string,
     version: SnoozeTimerVersion,
     error: unknown,
+    attemptStartedAt: Date,
   ): Promise<void> {
-    if (error instanceof InvalidGrantError) {
-      await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, 'InvalidGrantError');
-    }
+    const grantOutcome =
+      error instanceof InvalidGrantError
+        ? await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, 'InvalidGrantError', {
+            attemptStartedAt,
+          })
+        : null;
     const failedAt = (this.deps.now ?? (() => new Date()))();
     const errorName = error instanceof Error ? error.name : 'UnknownError';
+    // A grant the user already replaced is not a reason to ask them to
+    // reconnect: the next attempt uses the fresh one.
     const failureKind =
-      errorName === 'InvalidGrantError'
-        ? 'reauthorize'
-        : errorName === 'PermanentError' || errorName === 'ValidationError'
-          ? 'needs_attention'
-          : 'temporary';
+      grantOutcome === 'superseded'
+        ? 'temporary'
+        : errorName === 'InvalidGrantError'
+          ? 'reauthorize'
+          : errorName === 'PermanentError' || errorName === 'ValidationError'
+            ? 'needs_attention'
+            : 'temporary';
 
     await this.deps.db
       .update(senderPolicies)

@@ -1,4 +1,6 @@
-import type { JobsOptions, Queue } from 'bullmq';
+import { randomUUID } from 'node:crypto';
+
+import { Job, type JobsOptions, type Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 
 import { backoffJobOptions } from './rate-limit-backoff.js';
@@ -54,17 +56,28 @@ export interface IncrementalSyncJobData {
 /**
  * Job options for an incremental-sync enqueue.
  *
- * `jobId = ${mailboxAccountId}__${endHistoryId}` namespaces by mailbox
- * AND historyId — concurrent webhooks for the same mailbox advance the
- * cursor monotonically, but a redelivered webhook for the same
- * `endHistoryId` MUST be a no-op rather than enqueueing twice. BullMQ
- * dedups by jobId so the second `add()` is silently ignored.
+ * ONE QUEUED + ONE RUNNING PER MAILBOX (2026-09-25 incident). A bulk
+ * Delete of 8,799 messages produced a Pub/Sub push per Gmail label
+ * change. Keyed on `${mailbox}__${endHistoryId}`, every push became its
+ * own job for the same mailbox; eight of them spent five attempts each
+ * waiting 45s on the mailbox lock, re-reading the whole burst from Gmail
+ * on every attempt, and dead-lettered.
  *
- * Separator is `__` (double underscore), not `:` — BullMQ ≥5.77 rejects
- * jobIds containing ':' at validateOptions (smoke 2026-06-06 caught a
- * 500 on the new POST /api/v1/sync/incremental endpoint with the old
- * `${mailbox}:${historyId}` pattern). UUID + bigint both stay
- * representable without colons; the dedup semantics are preserved.
+ * `deduplication` keys on the MAILBOX, with BullMQ's `keepLastIfActive`:
+ *   - a waiting/delayed job exists → the push is absorbed. That job has
+ *     not read history yet, and it reads from the stored cursor to
+ *     Gmail's current head, so it covers the push.
+ *   - the job is RUNNING → it may already have read past this push's
+ *     change, so BullMQ stores the push and enqueues exactly one
+ *     follow-up when the running job finishes (completes, or fails for
+ *     good). Later pushes overwrite the stored one; only the latest runs.
+ * Both branches execute inside BullMQ's add/finish Lua, so two API
+ * instances racing the same mailbox cannot both enqueue.
+ *
+ * The dedup key carries the coalescing, so `jobId` is only a readable
+ * prefix — mailbox and historyId, for log search — that `addCoalescedJob`
+ * makes unique per add. The separator is `__` because BullMQ rejects ':'
+ * in custom ids (smoke 2026-06-06).
  *
  * `perMailboxPolicy` (D203/D225) governs retries — backoff matches
  * initial-sync since both speak to the same Gmail API + rate budget.
@@ -72,10 +85,11 @@ export interface IncrementalSyncJobData {
 export function incrementalSyncJobOptions(
   mailboxAccountId: string,
   endHistoryId: string,
-): JobsOptions {
+): CoalescedJobOptions {
   const policy = WORKER_POLICIES.perMailboxPolicy;
   return {
     jobId: `${mailboxAccountId}__${endHistoryId}`,
+    deduplication: { id: mailboxAccountId, keepLastIfActive: true },
     attempts: policy.maxAttempts,
     ...backoffJobOptions(policy.backoff),
     // Drop completed jobs after 24h — they are pure ack signal, no
@@ -87,54 +101,137 @@ export function incrementalSyncJobOptions(
 }
 
 /**
- * Enqueue an incremental-sync job. Idempotent for LIVE jobs — BullMQ
- * dedups by jobId, so redelivered webhooks AND concurrent producers
- * (controller path + reconciler) cannot double-enqueue the same
- * `(mailboxAccountId, endHistoryId)` pair while one is waiting/active.
+ * How long a job may stay ACTIVE before `addCoalescedJob` stops absorbing
+ * adds into it. Far past any healthy run — after the 2026-09-25 fix the
+ * incident's 8,692-record burst applied in ~1.6s of lock, and even the
+ * pre-fix run took 9.2 minutes end to end — so reaching it means the job is
+ * stuck, not slow.
+ */
+export const COALESCED_STUCK_ACTIVE_MS = 30 * 60_000;
+
+/** Options for a job coalesced per `deduplication.id` (see `addCoalescedJob`). */
+export type CoalescedJobOptions = JobsOptions & {
+  /** A readable prefix; `addCoalescedJob` appends a UUID per add. */
+  jobId: string;
+  deduplication: { id: string; keepLastIfActive: true };
+};
+
+/**
+ * Add a job COALESCED on `opts.deduplication.id` — at most one queued and
+ * one running job per id, via BullMQ's `keepLastIfActive` (semantics in
+ * `incrementalSyncJobOptions`). For per-mailbox work whose run covers
+ * every trigger that came before it, so a second queued run is pure
+ * contention for the mailbox lock.
  *
- * TERMINAL residue is replaced, same semantics as
- * `ensureInitialSyncJob` below (Codex "terminal residue must not block
- * reconnect"). A completed ack is retained for 24h and a failed job
- * forever (`removeOnFail: false`), and both satisfy `getJob` — without
- * the state check, a quiet mailbox (cursor unchanged) turned "Sync
- * now" into a silent no-op for a day (2026-07-07 integrated smoke:
- * 202 → dedup-drop → 90s watch timeout), and a DEAD-LETTERED
- * incremental bricked the cursor permanently: every webhook/drift/
- * manual enqueue at that cursor dropped against the failed ack, so
- * nothing could ever retry. Re-running a completed cursor is a no-op
- * server-side (empty history → stamps `last_synced_at`), which is
- * exactly the completion signal the D38/D224 watch consumes.
+ *   - `'added'` — a new job was created.
+ *   - `'noop'`  — absorbed by the id's live job: a waiting/delayed one
+ *     that has not started, or a running one that BullMQ will follow with
+ *     one more run. Either way a run that starts AFTER this call is
+ *     guaranteed; nothing is dropped.
+ *
+ * A finished job never swallows a later add: BullMQ clears the dedup key
+ * when the job it names completes or fails for good, so a dead-lettered
+ * job cannot brick its id.
+ *
+ * STALE KEY. With `keepLastIfActive` the dedup key has no TTL. A key that
+ * outlived its job (hash evicted, a replica that lost the write) would
+ * absorb every later add into a ghost: the work would stop happening and
+ * nothing would fail. So when the absorbing job is gone or finished, the
+ * key is cleared — compare-and-delete, only if it still names that job —
+ * and the add is retried once.
+ *
+ * STUCK HOLDER. A job that never settles stays `active` — BullMQ renews
+ * its lock while the process lives, `perMailboxPolicy` sets no deadline,
+ * and a deadline could not interrupt a stalled DB or lock-pool wait anyway
+ * — and an active job absorbs every add. Once it has run longer than
+ * `COALESCED_STUCK_ACTIVE_MS`, it is treated like a gone one: the key is
+ * cleared and a fresh job starts beside it, which is what every trigger
+ * did before coalescing. Losing coalescing is the cost; silently losing
+ * every sync (and every drift-sweep retry) for the mailbox is the
+ * alternative. Both paths log.
+ *
+ * THE ID IS MADE UNIQUE HERE, per add ATTEMPT, not trusted to the caller.
+ * A created job is told apart from an absorbed one by the id BullMQ hands
+ * back, and BullMQ answers an add whose custom id already exists with that
+ * same id BEFORE it looks at the dedup key — so a repeated id would read as
+ * `'added'` while nothing was created (an Autopilot sweep id is only unique
+ * to the millisecond). The retry needs its own id too: an add absorbed by a
+ * RUNNING job leaves a follow-up stored under that add's id, which BullMQ
+ * enqueues when the next job for the dedup id finishes — reusing the id
+ * made that follow-up collide with the retry's finished job, and one push
+ * ran twice under a single id (caught by the stuck-holder test).
+ */
+export async function addCoalescedJob<T>(
+  queue: Queue<T>,
+  name: Parameters<Queue<T>['add']>[0],
+  data: Parameters<Queue<T>['add']>[1],
+  opts: CoalescedJobOptions,
+): Promise<'added' | 'noop'> {
+  const add = async (): Promise<{ added: boolean; holderId: string }> => {
+    const jobId = `${opts.jobId}__${randomUUID()}`;
+    const job = await queue.add(name, data, { ...opts, jobId });
+    // No id means we cannot tell whether anything will run, and 'noop'
+    // would promise that something will. BullMQ always returns one.
+    if (job.id === undefined) throw new Error(`BullMQ returned no job id for ${queue.name}`);
+    // When the add is absorbed, BullMQ hands back the id of the job that
+    // absorbed it rather than the id we asked for.
+    return { added: job.id === jobId, holderId: job.id };
+  };
+
+  const first = await add();
+  if (first.added) return 'added';
+
+  const holder = await queue.getJob(first.holderId);
+  const state = holder ? await holder.getState() : 'unknown';
+  const activeForMs =
+    state === 'active' && holder?.processedOn !== undefined ? Date.now() - holder.processedOn : 0;
+  const stuck = activeForMs > COALESCED_STUCK_ACTIVE_MS;
+  if (!stuck && state !== 'completed' && state !== 'failed' && state !== 'unknown') return 'noop';
+
+  // Finished, gone, or stuck. If it finished AFTER absorbing this add,
+  // BullMQ has already moved the key on (to the follow-up it enqueued, or
+  // cleared it), the delete below matches nothing, and the absorbed add is
+  // safe.
+  const cleared = await new Job(
+    queue,
+    name,
+    data,
+    { deduplication: { id: opts.deduplication.id } },
+    first.holderId,
+  ).removeDeduplicationKey();
+  if (!cleared) return 'noop';
+
+  console.warn(
+    JSON.stringify({
+      level: 'warn',
+      kind: stuck ? 'queue.coalesced_holder_stuck' : 'queue.stale_dedup_key_cleared',
+      queue: queue.name,
+      dedupId: opts.deduplication.id,
+      holderState: state,
+      ...(stuck ? { activeForMs } : {}),
+    }),
+  );
+  return (await add()).added ? 'added' : 'noop';
+}
+
+/**
+ * Enqueue an incremental-sync job, coalesced per mailbox (see
+ * `incrementalSyncJobOptions`). Shared by every producer: the Pub/Sub
+ * webhook, "Sync now", and the drift sweep. Re-running an unchanged
+ * cursor ("Sync now" on a quiet mailbox, the drift sweep) still produces
+ * a run once the previous one has finished — the completion signal the
+ * D38/D224 watch consumes.
  */
 export async function ensureIncrementalSyncJob(
   queue: Queue<IncrementalSyncJobData>,
   data: IncrementalSyncJobData,
 ): Promise<'added' | 'noop'> {
-  // `__` separator matches incrementalSyncJobOptions — BullMQ ≥5.77
-  // rejects ':' in jobIds. Keep both call sites identical so dedup works.
-  const jobId = `${data.mailboxAccountId}__${data.endHistoryId}`;
-  const existing = await queue.getJob(jobId);
-  if (existing) {
-    const state = await existing.getState();
-    // `unknown` = hash evicted; a thin handle BullMQ can't schedule.
-    const nonLive = state === 'completed' || state === 'failed' || state === 'unknown';
-    if (!nonLive) {
-      return 'noop'; // genuinely in flight (waiting/active/delayed)
-    }
-    // Lost race: `remove()` rejects if a worker locked the job between
-    // `getState()` and here. Treat as noop — the now-live attempt IS
-    // the sync the caller wanted.
-    try {
-      await existing.remove();
-    } catch {
-      return 'noop';
-    }
-  }
-  await queue.add(
+  return addCoalescedJob(
+    queue,
     INCREMENTAL_SYNC_JOB,
     data,
     incrementalSyncJobOptions(data.mailboxAccountId, data.endHistoryId),
   );
-  return 'added';
 }
 
 /**

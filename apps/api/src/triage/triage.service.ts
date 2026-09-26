@@ -179,7 +179,9 @@ export class TriageService {
    *
    * "Not seen in 7 days" is approximated by `produced_at < now() - 7d`:
    * a fresh `triage_decisions` row is the engine's *current* verdict,
-   * and the worker rewrites the row on every signal change (D25). A
+   * and the worker rewrites the row whenever the sender is re-scored
+   * (D25): a full scan, a first-seen sender, an on-attention stale
+   * refresh, or a manual re-score. A
    * row that hasn't been recomputed in 7d is effectively unattended
    * for the purposes of the backlog count. The richer "user actually
    * skipped this row in the UI" signal will arrive with the activity-

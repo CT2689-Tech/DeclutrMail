@@ -25,6 +25,7 @@ import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
 import { UnprotectButton } from './unprotect-button';
 import { recommendedVerb } from './types';
+import { focusFacts, whyLine } from './why-line';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -439,6 +440,14 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     // ever seeing the message (D45). The first pass at this fix corrected
     // the window and kept the banned verb.
     expect(container.textContent).not.toContain('opened');
+  });
+
+  it('names the 90-day count with the focus card’s noun', () => {
+    // The row and the focus card print the same `last90dMessages`; the
+    // row said "144 messages" while the card said "144 emails".
+    const row = rowById('t-oldnavy'); // readRate 0 over 144
+    expect(whyLine(row)).toMatch(/· 144 emails$/);
+    expect(focusFacts(row).unit).toMatch(/^emails /);
   });
 
   it('never renders an unqualified read-rate percentage', () => {
