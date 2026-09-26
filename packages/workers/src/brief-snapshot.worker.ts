@@ -752,7 +752,18 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     noise: readonly BriefSenderGroup[];
     snippetBySenderKey: ReadonlyMap<string, string>;
   }): Promise<{ narrative: string; generatedBy: 'llm_haiku' | 'template' }> {
-    if (this.deps.llm) {
+    if (this.deps.llm?.isBlocked?.()) {
+      // The provider refused the account; only the first refusal reached
+      // it and logged. Say per mailbox why this Brief has no note.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'brief.llm_paused',
+          worker: this.workerName,
+          mailboxAccountId: input.mailboxAccountId,
+        }),
+      );
+    } else if (this.deps.llm) {
       const port = this.deps.llm;
       const narrativeInput = buildNarrativeInput(input);
       try {
