@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { deriveMailboxRef, normalize, readQuota, summarize } from './journey-logs.mjs';
 
@@ -230,6 +233,25 @@ test('quota pace is read from the files that set it (fails loudly if either move
     'readQuota() returned null — deploy-cloud-run.yml or gmail-client.service.ts changed shape',
   );
   assert.ok(quota.unitsPerMin > 0 && quota.messagesGetCost > 0);
+});
+
+test('a read is priced on the metric the deploy actually sets', () => {
+  const root = mkdtempSync(join(tmpdir(), 'journey-quota-'));
+  mkdirSync(join(root, '.github/workflows'), { recursive: true });
+  mkdirSync(join(root, 'apps/api/src/gmail'), { recursive: true });
+  writeFileSync(
+    join(root, 'apps/api/src/gmail/gmail-client.service.ts'),
+    "    messagesGet: metric === 'gmail.googleapis.com/default' ? 5 : 20,\n",
+  );
+  const deploy = (metric) =>
+    writeFileSync(
+      join(root, '.github/workflows/deploy-cloud-run.yml'),
+      `--set-env-vars="^|^GMAIL_QUOTA_UNITS_PER_MIN=12000|GMAIL_QUOTA_METRIC=${metric}|X=1"\n`,
+    );
+  deploy('gmail.googleapis.com/default');
+  assert.equal(readQuota(root).messagesGetCost, 5);
+  deploy('gmail.googleapis.com/total_query_cost');
+  assert.equal(readQuota(root).messagesGetCost, 20);
 });
 
 test('a scoring run with no LLM explanations is flagged; one with some is not', () => {
