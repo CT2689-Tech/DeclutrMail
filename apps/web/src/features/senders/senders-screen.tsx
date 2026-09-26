@@ -62,8 +62,9 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/action-error-copy';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
@@ -659,8 +660,10 @@ function SendersScreenContent({
     mailboxId: string | undefined;
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
-    /** Requested subject senders — locked against re-dispatch while
-     *  this handle is active or parked overdue (see `senderId` above). */
+    /** Senders the server accepted — locked against re-dispatch while
+     *  this handle is active or parked overdue (see `senderId` above).
+     *  One refused at the click (Protected or gone) has no job: it is
+     *  not here, so its row never reads as running or done. */
     senderIds: string[];
     senderCount: number;
     selectedCount: number;
@@ -1505,7 +1508,10 @@ function SendersScreenContent({
                       mailboxId: actionMailboxId,
                       batchId: bres.batchId,
                       verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                      senderIds: senderRefs.map((sref) => sref.id),
+                      senderIds: acceptedIds(
+                        senderRefs.map((sref) => sref.id),
+                        bres.skipped,
+                      ),
                       senderCount: bres.senderCount,
                       selectedCount: senderRefs.length,
                       skippedCount: bres.skipped.length,
@@ -1655,17 +1661,16 @@ function SendersScreenContent({
               if (res.senderCount > 0) trackActionConfirmed(primaryType);
               // The server accepted the batch — NOW the selection clears.
               setSelected(new Set());
-              if (res.skipped.length > 0) {
-                toast(
-                  `${res.skipped.length} sender${res.skipped.length === 1 ? '' : 's'} skipped (protected or no longer present)`,
-                  'warn',
-                );
-              }
+              const leftOut = skippedAtClickCopy(verb, res.skipped);
+              if (leftOut !== null) toast(leftOut, 'warn');
               setActiveBatch({
                 mailboxId: actionMailboxId,
                 batchId: res.batchId,
                 verb,
-                senderIds: senders.map((s) => s.id),
+                senderIds: acceptedIds(
+                  senders.map((s) => s.id),
+                  res.skipped,
+                ),
                 senderCount: res.senderCount,
                 selectedCount: senders.length,
                 skippedCount: res.skipped.length,
@@ -1692,7 +1697,7 @@ function SendersScreenContent({
               }
               toast(
                 apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
-                  ? 'Nothing to do — the selected senders are protected or gone'
+                  ? NO_ACTIONABLE_SENDERS_COPY
                   : `Couldn't ${primaryType} email from ${n} senders`,
                 'warn',
               );
@@ -1746,16 +1751,20 @@ function SendersScreenContent({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    settleRowsRef.current(
-      [activeAction.senderId],
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: a sender found Protected when its job ran was skipped. Its
+    // mail is all still there, so its row claims no outcome.
+    if (!isProtectedSkip(data)) {
+      settleRowsRef.current(
+        [activeAction.senderId],
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1793,16 +1802,19 @@ function SendersScreenContent({
     }
     const data = overdueActionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    settleRowsRef.current(
-      [overdueAction.senderId],
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: skipped as Protected — no outcome to claim (see above).
+    if (!isProtectedSkip(data)) {
+      settleRowsRef.current(
+        [overdueAction.senderId],
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count.
     reconcileAction(qc, data, data.actionId);
@@ -1878,9 +1890,15 @@ function SendersScreenContent({
     const data = unsubBatchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     const outcomes = data.unsubscribeOutcomes ?? null;
+    // D245: a sender refused as Protected when its request was due was
+    // never sent to — "not sent", beside the ones refused at the click.
+    const refused = data.skippedProtectedSenderIds ?? [];
     setUnsubBatchReceipt({
-      senderCount: activeUnsubBatch.senderCount,
-      skipped: activeUnsubBatch.skipped,
+      senderCount: activeUnsubBatch.senderCount - refused.length,
+      skipped: [
+        ...activeUnsubBatch.skipped,
+        ...refused.map(() => ({ reason: 'protected' as const })),
+      ],
       // An API that predates the field leaves the receipt honestly
       // outcome-less rather than inventing a success/failure split.
       outcomes: outcomes
@@ -1923,9 +1941,13 @@ function SendersScreenContent({
     // confirm surface describes: its preview must re-count.
     reconcileAction(qc, data);
     const outcomes = data.unsubscribeOutcomes ?? null;
+    const refused = data.skippedProtectedSenderIds ?? [];
     setUnsubBatchReceipt({
-      senderCount: overdueUnsubBatch.senderCount,
-      skipped: overdueUnsubBatch.skipped,
+      senderCount: overdueUnsubBatch.senderCount - refused.length,
+      skipped: [
+        ...overdueUnsubBatch.skipped,
+        ...refused.map(() => ({ reason: 'protected' as const })),
+      ],
       outcomes: outcomes
         ? {
             endpointAccepted: outcomes.endpointAccepted,
@@ -1972,8 +1994,10 @@ function SendersScreenContent({
     // same thing about every member; a PARTIAL failure does not say which
     // member failed — so those rows claim no outcome and point at Activity
     // (unmarked, they just looked untouched, and some silently vanished).
+    // D245: found Protected when their job ran — skipped, so unmarked.
+    const skipped = new Set(data.skippedProtectedSenderIds ?? []);
     settleRowsRef.current(
-      activeBatch.senderIds,
+      activeBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
         ? { phase: 'failed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
         : data.failed > 0
@@ -2003,7 +2027,7 @@ function SendersScreenContent({
       }),
       senderCount: activeBatch.senderCount,
       selectedCount: activeBatch.selectedCount,
-      skippedCount: activeBatch.skippedCount,
+      skippedCount: activeBatch.skippedCount + skipped.size,
     });
     // The bottom pill is the one voice for the outcome; this only refreshes.
     if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -2036,8 +2060,9 @@ function SendersScreenContent({
     // same thing about every member; a PARTIAL failure does not say which
     // member failed — so those rows claim no outcome and point at Activity
     // (unmarked, they just looked untouched, and some silently vanished).
+    const skipped = new Set(data.skippedProtectedSenderIds ?? []);
     settleRowsRef.current(
-      overdueBatch.senderIds,
+      overdueBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
         ? { phase: 'failed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
         : data.failed > 0
@@ -2071,7 +2096,7 @@ function SendersScreenContent({
       }),
       senderCount: overdueBatch.senderCount,
       selectedCount: overdueBatch.selectedCount,
-      skippedCount: overdueBatch.skippedCount,
+      skippedCount: overdueBatch.skippedCount + skipped.size,
     });
     // The bottom pill is the one voice for the outcome; this only refreshes.
     if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -2904,6 +2929,15 @@ function SenderResultsWarning({
       {rowsReadOnly && (syncFailed || stillSyncing) && ' Rows are read-only while results load.'}
     </div>
   );
+}
+
+/** The senders a bulk enqueue accepted — every one it did not refuse. */
+function acceptedIds(
+  requested: readonly string[],
+  refused: readonly { senderId: string }[],
+): string[] {
+  const out = new Set(refused.map((skip) => skip.senderId));
+  return requested.filter((id) => !out.has(id));
 }
 
 /**

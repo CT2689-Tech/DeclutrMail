@@ -15,22 +15,30 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 import { eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ActionVerb } from '@declutrmail/shared/actions';
 
 import type {
+  BatchModifyOptions,
   GmailMutationAccess,
   GmailMutationClient,
   LabelChange,
 } from './gmail-mutation-client.js';
 import {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
   LabelActionWorker,
   labelChangeForVerb,
   PASSTHROUGH_MAILBOX_LOCK,
 } from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
-import { InvalidGrantError, PermanentError, ValidationError } from './worker-errors.js';
+import {
+  InvalidGrantError,
+  PermanentError,
+  RateLimitError,
+  TransientError,
+  ValidationError,
+} from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -103,15 +111,33 @@ async function seedMessage(
   });
 }
 
-/** Fake mutation client that records every batchModify call. */
+/**
+ * Fake mutation client that records every batchModify call, in production's
+ * order: the quota wait and token refresh (`throwBeforeSend`) can fail
+ * before `beforeFirstRequest` runs; Gmail's answer (`shouldThrow`) comes
+ * after it.
+ */
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change: LabelChange }[] = [];
   shouldThrow: Error | null = null;
+  throwBeforeSend: Error | null = null;
+  /** Runs where the quota wait sits — after "starting", before the hook. */
+  duringQuotaWait: (() => Promise<void>) | null = null;
+  /** Runs at the moment the request would leave. */
+  onSend: (() => Promise<void>) | null = null;
   /** User labels known to the fake "Gmail" (name → id). */
   labelIdsByName = new Map<string, string>();
   ensureLabelIdCalls: string[] = [];
   async modifyLabels(): Promise<void> {}
-  async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+  async batchModify(
+    messageIds: string[],
+    change: LabelChange,
+    opts: BatchModifyOptions = {},
+  ): Promise<void> {
+    if (this.duringQuotaWait) await this.duringQuotaWait();
+    if (this.throwBeforeSend) throw this.throwBeforeSend;
+    await opts.beforeFirstRequest?.();
+    if (this.onSend) await this.onSend();
     if (this.shouldThrow) throw this.shouldThrow;
     this.calls.push({ ids: [...messageIds], change });
   }
@@ -393,9 +419,47 @@ describe('LabelActionWorker', () => {
     expect((evts[0]!.payload as { affectedCount: number }).affectedCount).toBe(0);
   });
 
-  it('forward archive — messages selector uses the frozen set', async () => {
+  it('refuses a fresh forward message-list job — no sender to check Protected against (D245)', async () => {
+    // No product surface enqueues this shape any more; a frozen id list
+    // can span senders, so the Protected re-check has nothing to key on.
+    await seedMessage(db, mailboxId, 'm1', ['INBOX']);
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['m1'],
+        requestedCount: 1,
+        idempotencyKey: 'idem-msgs',
+      })
+      .returning();
+
+    await expect(
+      worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-msgs' },
+        CTX,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    expect(gmail.calls).toHaveLength(0);
+  });
+
+  it('a recovery attempt of a legacy message-list action still applies its frozen set', async () => {
     await seedMessage(db, mailboxId, 'm1', ['INBOX']);
     await seedMessage(db, mailboxId, 'm2', ['INBOX']);
+    const [root] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['m1', 'm2'],
+        status: 'failed',
+        idempotencyKey: 'idem-msgs-root',
+      })
+      .returning();
     const [job] = await db
       .insert(actionJobs)
       .values({
@@ -405,12 +469,16 @@ describe('LabelActionWorker', () => {
         selector: { type: 'messages' },
         resolvedMessageIds: ['m1', 'm2'],
         requestedCount: 2,
-        idempotencyKey: 'idem-msgs',
+        idempotencyKey: 'idem-msgs-recovery',
+        rootActionId: root!.id,
+        retryOfActionId: root!.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
       })
       .returning();
 
     const result = await worker.processJob(
-      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-msgs' },
+      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-msgs-recovery' },
       CTX,
     );
     expect(gmail.calls[0]!.ids.sort()).toEqual(['m1', 'm2']);
@@ -1063,7 +1131,7 @@ describe('LabelActionWorker', () => {
         mailboxAccountId: mailboxId,
         verb: 'archive',
         direction: 'forward',
-        selector: { type: 'messages' },
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
         resolvedMessageIds: ['m1'],
         idempotencyKey: 'idem-fail',
       })
@@ -1082,6 +1150,289 @@ describe('LabelActionWorker', () => {
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
     expect(row!.status).toBe('failed');
     expect(row!.errorCode).toBe('InvalidGrantError');
+  });
+
+  /**
+   * D245 — Protected senders are excluded from BULK actions, and the
+   * exclusion is re-read here, inside the mailbox lock, because the job
+   * can wait tens of seconds for that lock after the click. A job that may
+   * already have reached Gmail always finishes, so no moved mail is left
+   * without its Activity row and Undo.
+   */
+  describe('execution-time Protected re-check', () => {
+    async function protect(): Promise<void> {
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        isProtected: true,
+        protectionReason: 'starred',
+        protectionSetAt: new Date(),
+      });
+    }
+
+    async function forwardJob(
+      values: Partial<typeof actionJobs.$inferInsert> = {},
+    ): Promise<typeof actionJobs.$inferSelect> {
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          idempotencyKey: 'idem-protected',
+          ...values,
+        })
+        .returning();
+      return job!;
+    }
+
+    function run(
+      job: typeof actionJobs.$inferSelect,
+      extra: { protectedConfirmed?: boolean } = {},
+    ) {
+      return worker.processJob(
+        {
+          actionId: job.id,
+          mailboxAccountId: mailboxId,
+          idempotencyKey: job.idempotencyKey,
+          ...extra,
+        },
+        CTX,
+      );
+    }
+
+    async function statusOf(jobId: string) {
+      const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, jobId));
+      return row!;
+    }
+
+    beforeEach(async () => {
+      await seedMessage(db, mailboxId, 'p1', ['INBOX']);
+      await seedMessage(db, mailboxId, 'p2', ['INBOX']);
+    });
+
+    it('skips a job whose sender became Protected: nothing changed, recorded, or announced', async () => {
+      const job = await forwardJob();
+      await protect();
+
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      let warned: unknown[][] = [];
+      const result = await run(job).finally(() => {
+        warned = [...warn.mock.calls];
+        warn.mockRestore();
+      });
+
+      // D7: the one trace is ids and a closed verb — pinned key for key, so
+      // an address or message ids cannot join it without this failing.
+      const lines = structuredLines(warned, 'label_action.sender_protected');
+      expect(lines).toHaveLength(1);
+      expect(Object.keys(lines[0]!).sort()).toEqual([
+        'actionId',
+        'kind',
+        'level',
+        'mailboxAccountId',
+        'message',
+        'senderKey',
+        'severity',
+        'verb',
+      ]);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(result).toEqual({
+        affectedCount: 0,
+        undoToken: null,
+        alreadyDone: false,
+        skippedProtected: true,
+      });
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'done',
+        affectedCount: 0,
+        undoToken: null,
+        errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+        resolvedMessageIds: [],
+      });
+      expect(await db.select().from(activityLog)).toEqual([]);
+      expect(await db.select().from(outboxEvents)).toEqual([]);
+      expect(await db.select().from(undoJournal)).toEqual([]);
+    });
+
+    it('a skipped Later never schedules a wake time', async () => {
+      const job = await forwardJob({ verb: 'later', wakeAt: new Date(Date.now() + 86_400_000) });
+      await protect();
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      const [policy] = await db.select().from(senderPolicies);
+      expect(policy!.snoozedUntil).toBeNull();
+    });
+
+    it('a job the user confirmed on a Protected sender still runs', async () => {
+      const job = await forwardJob();
+      await protect();
+
+      const result = await run(job, { protectedConfirmed: true });
+
+      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
+      expect(result.affectedCount).toBe(2);
+    });
+
+    it('a recovery attempt still runs on a Protected sender — its review is the consent', async () => {
+      const root = await forwardJob({ status: 'failed', idempotencyKey: 'idem-protected-root' });
+      const job = await forwardJob({
+        idempotencyKey: 'idem-protected-recovery',
+        resolvedMessageIds: ['p1', 'p2'],
+        rootActionId: root.id,
+        retryOfActionId: root.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+      });
+      await protect();
+
+      const result = await run(job);
+
+      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
+      expect(result.affectedCount).toBe(2);
+    });
+
+    it('a retry that may already have reached Gmail finishes, even for a now-Protected sender', async () => {
+      // `executing` is written as the first request leaves, so this row
+      // may have moved mail. Skipping it would leave that mail moved with
+      // no Activity row and no Undo.
+      const job = await forwardJob({ status: 'executing', resolvedMessageIds: ['p1', 'p2'] });
+      await protect();
+
+      const result = await run(job);
+
+      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
+      expect(result.undoToken).not.toBeNull();
+      const [act] = await db.select().from(activityLog);
+      expect(act).toMatchObject({ action: 'delete', affectedCount: 2 });
+    });
+
+    it('a retry that never reached Gmail is re-checked', async () => {
+      // Attempt 1 froze the set, then failed before any request left.
+      const job = await forwardJob({ resolvedMessageIds: ['p1', 'p2'] });
+      await protect();
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
+    });
+
+    it('is still queued when the token refresh fails, so the retry is re-checked', async () => {
+      // In production the refresh happens inside batchModify, before the
+      // request is sent — never in getClient.
+      const job = await forwardJob();
+      gmail.throwBeforeSend = new TransientError('Gmail token refresh failed');
+
+      await expect(run(job)).rejects.toThrow('Gmail token refresh failed');
+      expect(await statusOf(job.id)).toMatchObject({ status: 'queued' });
+
+      await protect();
+      gmail.throwBeforeSend = null;
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
+    });
+
+    it('is marked executing before the request leaves', async () => {
+      const job = await forwardJob();
+      let statusAtSend: string | null = null;
+      gmail.onSend = async () => {
+        statusAtSend = (await statusOf(job.id)).status;
+      };
+
+      await run(job);
+
+      expect(statusAtSend).toBe('executing');
+    });
+
+    it('catches protection that lands during the quota wait, at the send', async () => {
+      const job = await forwardJob();
+      gmail.duringQuotaWait = protect;
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'done',
+        errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+      });
+    });
+
+    it('goes back to queued when Gmail refuses the only request, so the retry is re-checked', async () => {
+      const job = await forwardJob();
+      gmail.shouldThrow = new RateLimitError('Gmail returned 429', 65_000);
+
+      await expect(run(job)).rejects.toBeInstanceOf(RateLimitError);
+      expect(await statusOf(job.id)).toMatchObject({ status: 'queued' });
+
+      await protect();
+      gmail.shouldThrow = null;
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
+    });
+
+    it('stays executing after an ambiguous failure — the retry finishes for a now-Protected sender', async () => {
+      const job = await forwardJob();
+      gmail.shouldThrow = new TransientError('Gmail returned 503');
+
+      await expect(run(job)).rejects.toBeInstanceOf(TransientError);
+      expect(await statusOf(job.id)).toMatchObject({ status: 'executing' });
+
+      await protect();
+      gmail.shouldThrow = null;
+      const result = await run(job);
+
+      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
+      expect(result.undoToken).not.toBeNull();
+    });
+
+    it('re-checks a job the API reported as not enqueued that ran anyway', async () => {
+      const job = await forwardJob({ status: 'failed', errorCode: 'ENQUEUE_FAILED' });
+      await protect();
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
+    });
+
+    it('never blocks Undo of a now-Protected sender', async () => {
+      await seedMessage(db, mailboxId, 'p3', ['TRASH']);
+      const [undo] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'delete',
+          payload: { kind: 'delete', messageIds: ['p3'], inboxMessageIds: ['p3'] },
+        })
+        .returning();
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          direction: 'reverse',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          resolvedMessageIds: ['p3'],
+          undoToken: undo!.token,
+          idempotencyKey: `revert-${undo!.token}`,
+        })
+        .returning();
+      await protect();
+
+      await run(job!);
+
+      expect(gmail.calls[0]!.ids).toEqual(['p3']);
+      expect(gmail.calls[0]!.change).toEqual({ addLabelIds: ['INBOX'], removeLabelIds: ['TRASH'] });
+    });
   });
 });
 
@@ -1139,3 +1490,15 @@ describe('labelChangeForVerb (registry-routed, ADR-0015)', () => {
     expect(() => labelChangeForVerb(unarchive)).toThrow(/archive-only/);
   });
 });
+
+/** The structured JSON log lines of one `kind` among a console spy's calls. */
+function structuredLines(calls: unknown[][], kind: string): Array<Record<string, unknown>> {
+  return calls.flatMap(([line]) => {
+    try {
+      const parsed = JSON.parse(String(line)) as Record<string, unknown>;
+      return parsed.kind === kind ? [parsed] : [];
+    } catch {
+      return [];
+    }
+  });
+}

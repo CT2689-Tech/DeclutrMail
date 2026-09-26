@@ -2389,6 +2389,8 @@ function RecoveryCell({
         previewId: preview.previewId,
         idempotencyKey,
         ...(wakeAt ? { wakeAt } : {}),
+        // The review named the Protected sender; confirming is the consent.
+        ...(preview.senderProtected === true ? { senderProtected: true } : {}),
       });
       setOpen(false);
       setPreviewId(null);

@@ -47,7 +47,7 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -1023,15 +1023,19 @@ function ReadyState({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: the sender was Protected by the time the job ran, so it was
+    // skipped. Its mail is all still there: the page claims no outcome.
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1068,15 +1072,18 @@ function ReadyState({
     // next-opened) confirm surface describes: its preview must re-count
     // before the freed guard lets it dispatch.
     reconcileAction(qc, data, data.actionId);
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: skipped as Protected — no outcome to claim (see above).
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,

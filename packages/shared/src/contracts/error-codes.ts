@@ -507,6 +507,14 @@ export const ERROR_CODES = {
     retryable: true,
     message: 'This recovery review expired. Refresh it before trying again.',
   },
+  // D245 — the review the user confirmed did not say the sender is
+  // Protected, but it is now; its Confirm is only consent once it does.
+  RECOVERY_SENDER_PROTECTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This sender is Protected now. Check again before retrying.',
+  },
   IDEMPOTENCY_KEY_CONFLICT: {
     status: 409,
     severityTier: 'inline_recoverable',

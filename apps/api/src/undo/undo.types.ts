@@ -137,6 +137,11 @@ export interface UndoDecision {
   affectedCount: number | null;
   /** Members carry different verbs — one total would mislabel them. */
   mixedKinds: boolean;
+  /**
+   * Senders this decision skipped because they were Protected when their
+   * job ran (D245): no token, so not in `senderCount` or `members`.
+   */
+  protectedSkippedCount: number;
   members: Array<{
     token: string;
     actionKind: UndoActionKind;

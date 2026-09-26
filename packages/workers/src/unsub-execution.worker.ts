@@ -388,8 +388,8 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     const mailboxAccountId = job.mailboxAccountId;
 
     // Guard, execution-time Protected re-check (QA-protect-20260901-04
-    // follow-up) — mirrors autopilot-action.worker.ts's "guard 4" and
-    // label-action.worker.ts's execution-time re-check for
+    // follow-up) — mirrors autopilot-action.worker.ts's per-match "guard
+    // 4" and label-action.worker.ts's `protectionRecheckApplies` for
     // Archive/Later/Delete. Protection is checked once at enqueue
     // (actions.service.ts's bulk path, autopilot-action.worker.ts's
     // match/apply step) and never again before this point; per-mailbox
@@ -818,6 +818,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     // Sender/mailbox ids only, never the URL (D7).
     console.warn(
       JSON.stringify({
+        severity: 'WARNING',
         level: 'warn',
         kind: 'unsub.sender_protected',
         actionId,

@@ -4722,3 +4722,43 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** When a change makes X the ONLY channel for a fact, list every reader of the channels being removed and what each loses, BEFORE deleting them (the same "write down every reader" step CLAUDE.md §8 asks for context-moving changes). Fixed: session-earned decisions are exempt from the baseline; polling backs off but never stops while work is out, and the line reads "not confirmed" instead of spinning; any undo (token or memberToken) releases the marks; an always-mounted `role="status"` region; `.dm-spinner`; the DB enum as the type; the action column pinned.
 **Rule:** Removing a redundant channel is only safe after proving the surviving one reaches every state the removed ones covered — navigation, reload, error, per-member, assistive tech, narrow viewport.
 **Enforcement update:** tests for each (negative-controlled): baseline exemption, never-seen-running job, failed-read line, member-undo un-mark, pre-existing live region, no-toast-on-action. None to hooks.
+
+## 2026-09-25 — Bulk Archive/Later/Delete trusted a click-time Protected check across the lock wait
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** founder code read (grep, 2026-09-24), then a failing end-to-end contract test
+**What happened:** `enqueueBulkComposite` drops Protected senders once, at the click. The jobs then wait on the per-mailbox advisory lock (17-56 s observed in production), and `LabelActionWorker.executeForward` never re-read `is_protected` — so a sender protected in that window (a Protect click, or incremental sync's automatic protection, which runs inside that same lock) still had its mail archived or trashed. Meanwhile `unsub-execution.worker.ts` said its own re-check "mirrors … label-action.worker.ts's execution-time re-check". That guard did not exist; the comment made the gap look covered. The class sweep found three more instances: Autopilot read protection once per sweep, before a serial loop of Gmail calls; Autopilot wrote `executing` before `getClient`/`ensureLabelId`, so a claim whose token refresh failed skipped every start-gate (Protected included) on its retry; and the Activity recovery review never mentioned that the sender was now Protected.
+**Correct approach:** Re-read protection inside the lock, in the worker that performs the mutation, immediately before the first Gmail call (`protectionRecheckApplies`). Exempt only what D245 exempts (single-sender `explicit`, a recovery attempt the user reviewed) and what must finish (a job that may already have changed Gmail). Autopilot re-reads per match. The review shows the sender's current protection.
+**Rule:** A safety check that gates a destructive action is re-read by the executor at execution time. An enqueue-time check is a preview, not a guarantee. A comment claiming another file has a guard must be checked with grep before it is written.
+**Enforcement update:** `actions-pipeline.contract.spec.ts` (real enqueue → real policy write → real worker with the enqueued payload) plus worker/Autopilot/recovery specs, each negative-controlled; none to hooks.
+
+## 2026-09-25 — "executing" written before the Gmail call made retries skip every start-gate
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** defect-class sweep of the Protected re-check (above); the first fix was then caught wrong by an adversarial review
+**What happened:** Both label workers flipped `status='executing'` in the same write that froze `resolved_message_ids`, before `getClient` and label-id resolution. Every in-flight carve-out reads that status as "Gmail may already have been changed", so a failure that never reached Gmail produced a retry that skipped the Protected, paused-rule and daily-cap checks. The first fix moved the write to just before `client.batchModify(...)`, which was still wrong: `batchModify` itself waits on the quota limiter and refreshes the token before its first request, so a 429, an expired grant or a protection change during the quota wait all landed after `executing`. Its tests passed because the fakes threw from `getClient`, which production never does, so they asserted an order the real client does not have.
+**Correct approach:** `batchModify(ids, change, { beforeFirstRequest })`: the client calls the hook after `limiter.acquire` and `accessToken()` and immediately before the first `fetch`, once. The hook writes `executing` atomically with a `NOT EXISTS` Protected check. A definitive refusal (429/401/403/invalid_grant) on a single chunk resets the job to `queued`; an ambiguous 5xx or timeout stays `executing`. Test fakes call the hook in production order.
+**Rule:** The "may have mutated" marker is written by the transport, immediately before the first request leaves. A fake that does not reproduce the real client's order proves nothing about ordering.
+**Enforcement update:** client-order tests in `gmail-client.service.spec.ts`; worker and Autopilot specs for a token failure, a quota-wait protection, a 429 and a 503, each negative-controlled. Distill candidate: third recurrence across workers (with `unsub-execution.worker.ts`).
+
+## 2026-09-25 — Bulk surfaces treated senders refused at the click as part of the batch
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** tests written for the execution-time skip (defects on the same surfaces, found while there)
+**What happened:** A bulk enqueue answers with `skipped` (Protected or gone at the click). Senders settled every selected row with the batch outcome, so a Protected row whose mail was untouched read "Archived", and showed "Archiving…" / locked while the rest ran. Triage ignored `skipped` entirely: no word that a member was left out, and a parked batch held the refused row busy. Brief left refused senders checked, inviting the same refusal again. `NO_ACTIONABLE_SENDERS` (every sender refused) was a generic failure plus a Sentry event in Triage and Brief, and three surfaces worded it three ways.
+**Correct approach:** A batch handle carries only the senders the server accepted. Click-time refusals get one toast in the pill's words (`skippedAtClickCopy`); execution-time skips come from the batch status and are said by the pill. `NO_ACTIONABLE_SENDERS` is a designed state with one shared sentence and no crash report.
+**Rule:** Every surface that holds a bulk handle builds its member list from the enqueue RESPONSE, never from the selection it sent.
+**Enforcement update:** Senders, Triage and Brief tests for click-time refusal, execution-time skip and `NO_ACTIONABLE_SENDERS`, negative-controlled; none to hooks.
+
+## 2026-09-25 — Brief read a batch's undo state from its first sender's job
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** reading the Brief's undo query while adding execution-time skips
+**What happened:** The Noise archive derived "Undo available" and "archive was undone" from `GET /api/actions/<batchId>`, the anchor job, which is only the first sender's. When that sender had nothing to move (and now, when it is skipped as Protected) the anchor holds no token: the receipt never offered Undo, and an Undo from the pill left "Archived ✓" on rows whose mail was back. The pill's per-sender Undo was never visible to it either.
+**Correct approach:** The batch status reports the batch's own `undoExpiresAt`, `undoRevertedAt` (everything back) and `revertedSenderIds`; the Brief reads a batch as a batch and clears each sender's ✓ on its own.
+**Rule:** A decision's state is read from the decision, never from whichever member happens to share its id.
+**Enforcement update:** API spec for the three fields; Brief tests where the anchor contradicts the batch, negative-controlled.
+
+## 2026-09-25 — Leaving skipped jobs out of batch counts made "0 of 0" read as "all failed"
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** pill test for a one-sender skip, before merge
+**What happened:** Once the batch status left skipped jobs out of `total`/`done`/`failed`, a one-sender skip reported `total: 0, failed: 0`, and the pill's `failed === total` check said "Delete failed". The same change first left `requestedCount` counting skipped senders, so the pill would also have said "some email not changed" about them.
+**Correct approach:** `total > 0 && failed === total`; `requestedCount` covers the same jobs as `affectedCount`.
+**Rule:** When a count's population changes, re-check every comparison against it for the empty case — the CLAUDE.md §8 "guard that cannot fail" tell, in its arithmetic form.
+**Enforcement update:** `in-flight.test.tsx` one-sender-skip case; API spec for `requestedCount`.

@@ -24,6 +24,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 import { useRevertUndo } from '@/lib/api/use-action';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import {
   addFetchHandlers,
   installFetchStub,
@@ -1594,6 +1595,63 @@ describe('SenderDetailRoute', () => {
       }
     });
 
+    it('clears a parked action that ends skipped as Protected — it claims no outcome (D245)', async () => {
+      vi.useFakeTimers();
+      try {
+        let skipped = false;
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () =>
+              jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } }),
+          },
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () =>
+              jsonOk({
+                data: {
+                  ...actionStatusBody('act-1', skipped),
+                  affectedCount: 0,
+                  undoToken: null,
+                  undoExpiresAt: null,
+                  errorCode: skipped ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+                },
+              }),
+          },
+        ]);
+        const tick = (ms: number) =>
+          act(async () => {
+            await vi.advanceTimersByTimeAsync(ms);
+          });
+        render(
+          <QueryWrapper client={createTestQueryClient()}>
+            <SenderDetailRoute id="linkedin" />
+          </QueryWrapper>,
+        );
+        await tick(200);
+        fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+        await tick(200);
+        screen.getByText(/rechecked when it runs/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        await tick(ACTION_OVERDUE_MS);
+        expect(screen.getByText('Archive not confirmed')).toBeInTheDocument();
+
+        skipped = true;
+        await tick(2_500);
+        expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).not.toHaveAttribute(
+          'aria-disabled',
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('holds the confirm on "Submitting…" until the server accepts, then shows the page working', async () => {
       let accept!: () => void;
       const accepted = new Promise<void>((resolve) => {
@@ -1723,6 +1781,27 @@ describe('SenderDetailRoute', () => {
           }),
         );
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+      });
+
+      // D245: protected while the job waited, the sender was skipped. The
+      // job ends "done, 0 changed", but the mail is all still there.
+      it('claims no outcome for an action skipped because the sender became Protected', async () => {
+        let polled = false;
+        await archiveWith(() => {
+          polled = true;
+          return jsonOk({
+            data: {
+              ...actionStatusBody('act-end', true),
+              affectedCount: 0,
+              undoToken: null,
+              undoExpiresAt: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          });
+        });
+        await waitFor(() => expect(polled).toBe(true));
+        await waitFor(() => expect(pill('working')).toBeNull());
+        expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
       });
 
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {

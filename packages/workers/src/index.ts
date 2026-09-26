@@ -71,13 +71,17 @@ export type {
   GmailWatchResult,
 } from './ports.js';
 export type {
+  BatchModifyOptions,
   GmailMutationAccess,
   GmailMutationClient,
   LabelChange,
 } from './gmail-mutation-client.js';
+export { GMAIL_BATCH_MODIFY_MAX_IDS } from './gmail-mutation-client.js';
 export {
+  ENQUEUE_FAILED_ERROR_CODE,
   LABEL_ACTION_JOB,
   LABEL_ACTION_QUEUE,
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
   MAILBOX_ACTION_LOCK_NS,
   LabelActionWorker,
   labelActionJobOptions,

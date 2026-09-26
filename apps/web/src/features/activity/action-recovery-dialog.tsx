@@ -68,6 +68,10 @@ export function ActionRecoveryDialog({
     !preview?.requiresNewWakeAt ||
     (wakeAt !== null && Number.isFinite(wakeAt.getTime()) && wakeAt.getTime() > Date.now());
   const ready = preview?.status === 'ready';
+  // D245: bulk skips Protected senders, but a retry is one reviewed
+  // decision — said here, and the button that carries it says "anyway".
+  // Nothing left to change in Gmail means nothing to consent to.
+  const protectedNow = preview?.senderProtected === true && preview.remainingCount > 0;
   const confirmNeedsRecheck = confirmError ? recoveryConfirmNeedsRecheck(confirmError) : false;
   const canConfirm = ready && wakeAtValid && !isConfirming && !confirmNeedsRecheck;
 
@@ -132,7 +136,14 @@ export function ActionRecoveryDialog({
 
           {ready && preview && (
             <>
-              <RecoveryConsequence preview={preview} />
+              <RecoveryConsequence
+                preview={preview}
+                protectedLine={
+                  protectedNow
+                    ? protectedSenderLine(row.sender?.displayName || row.sender?.email || null)
+                    : null
+                }
+              />
               {preview.requiresNewWakeAt ? (
                 <label
                   style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.base }}
@@ -218,7 +229,9 @@ export function ActionRecoveryDialog({
                 ? 'Starting…'
                 : preview.outcome === 'already_applied'
                   ? 'Update this record'
-                  : 'Try this action again'}
+                  : protectedNow
+                    ? `${failedActionNoun(preview.verb)} anyway`
+                    : 'Try this action again'}
             </Button>
           )}
         </div>
@@ -349,7 +362,13 @@ function RecoveryCount({ label, value }: { label: string; value: number }) {
   );
 }
 
-function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult }) {
+function RecoveryConsequence({
+  preview,
+  protectedLine,
+}: {
+  preview: ActionRecoveryPreviewResult;
+  protectedLine: string | null;
+}) {
   const actionCopy =
     preview.verb === 'archive'
       ? 'Archive takes these emails out of the Inbox. It does not delete them.'
@@ -372,6 +391,9 @@ function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult
         lineHeight: 1.5,
       }}
     >
+      {protectedLine !== null && (
+        <div style={{ color: color.fg, marginBottom: 4 }}>{protectedLine}</div>
+      )}
       <div>{outcomeCopy}</div>
       <div style={{ marginTop: 4 }}>{actionCopy}</div>
       {preview.unavailableCount > 0 && (
@@ -382,6 +404,13 @@ function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult
       )}
     </div>
   );
+}
+
+/** D245 — said once, at the decision point. */
+function protectedSenderLine(senderName: string | null): string {
+  return senderName !== null
+    ? `${senderName} is Protected — this action applies anyway.`
+    : 'A Protected sender is included — this action applies anyway.';
 }
 
 function toLocalDateTimeInput(date: Date): string {
@@ -413,6 +442,9 @@ function recoveryConfirmErrorMessage(error: Error): string {
   if (code === 'ACTION_NO_LONGER_FAILED') {
     return 'This action no longer needs recovery. Refresh Activity to see its current state.';
   }
+  if (code === 'RECOVERY_SENDER_PROTECTED') {
+    return 'This sender is Protected now — check Gmail again to review it.';
+  }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';
   }
@@ -421,7 +453,12 @@ function recoveryConfirmErrorMessage(error: Error): string {
 
 function recoveryConfirmNeedsRecheck(error: Error): boolean {
   const code = apiErrorCode(error);
-  return code === 'RECOVERY_PREVIEW_EXPIRED' || code === 'LATER_WAKE_TIME_REQUIRED';
+  return (
+    code === 'RECOVERY_PREVIEW_EXPIRED' ||
+    code === 'LATER_WAKE_TIME_REQUIRED' ||
+    // D245: the review the reader confirmed no longer says what is true.
+    code === 'RECOVERY_SENDER_PROTECTED'
+  );
 }
 
 /**

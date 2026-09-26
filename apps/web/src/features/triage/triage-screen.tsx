@@ -20,9 +20,13 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
+import {
+  getActionFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -693,8 +697,9 @@ export function TriageScreen({
       // No success toast (D35 — the tray is the feedback channel).
       invalidateAfterDecision(qc);
       // Session burn-down: count on server confirmation only (D226).
-      // A backlog-archive riding an Unsubscribe already counted.
-      if (!activeAction.followOn) {
+      // A backlog-archive riding an Unsubscribe already counted, and a
+      // sender found Protected when the job ran (D245) was not decided.
+      if (!activeAction.followOn && !isProtectedSkip(data)) {
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
@@ -787,7 +792,7 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       invalidateAfterDecision(qc);
-      if (!overdueAction.followOn) {
+      if (!overdueAction.followOn && !isProtectedSkip(data)) {
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
@@ -1370,18 +1375,29 @@ export function TriageScreen({
             source: 'triage_domain_batch',
           });
           trackActionConfirmed(verb === 'Archive' ? 'archive' : 'later', journey);
+          // A member refused at the click (Protected or gone since the
+          // preview) has no job: only this can say so, and its row is not
+          // part of what runs.
+          const leftOut = skippedAtClickCopy(verb, res.skipped);
+          if (leftOut !== null) toast(leftOut, 'warn');
+          const refused = new Set(res.skipped.map((skip) => skip.senderId));
           setBatchAction({
             mailboxId: actionMailboxId,
             batchId: res.batchId,
             domain: batch.domain,
             verb,
-            rowIds: eligible.map((r) => r.id),
+            rowIds: eligible.filter((r) => !refused.has(r.senderId)).map((r) => r.id),
           });
         },
         onError: (err) => {
           // 402 FREE_CAP_REACHED — the UpgradeModal (global handler)
           // already explains; skip Sentry + the generic toast.
           if (err instanceof ApiError && err.status === 402) return;
+          // Every member refused at the click — a designed state.
+          if (apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS') {
+            toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
+            return;
+          }
           captureFeatureException(err, {
             surface: 'triage',
             reason: 'enqueue_domain_batch',

@@ -101,6 +101,8 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
 import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
+import { UNSUBSCRIBE_ACCEPTED_CAVEAT } from '@declutrmail/shared/actions';
 
 // Typed against the wire contract so a field the API always sends cannot
 // go missing here unnoticed. These fixtures reach the app as `unknown`
@@ -1608,6 +1610,51 @@ describe('SendersScreen — edge states', () => {
     expect(await findRowStatus()).toHaveTextContent('Nothing to change');
   });
 
+  // D245: protected while the job waited, the sender is skipped. Its job
+  // ends "done, 0 changed", but the mail is all still there — the row must
+  // not say "Nothing to change", or anything else about an outcome.
+  it('leaves a single sender that became Protected before its job ran unmarked', async () => {
+    let statusPolled = false;
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => {
+          statusPolled = true;
+          return jsonOk({
+            data: archiveStatus({
+              affectedCount: 0,
+              undoToken: null,
+              undoExpiresAt: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            }),
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/rechecked when it runs/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => expect(statusPolled).toBe(true));
+    await waitFor(() =>
+      expect(document.querySelector('[data-dm-row-activity="working"]')).toBeNull(),
+    );
+    expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
+  });
+
   it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
     // The real preview now gates the no-op UPFRONT: a 0 count tells the user
     // there's nothing to archive and blocks confirm, so they never enqueue
@@ -2219,6 +2266,58 @@ describe('SendersScreen — edge states', () => {
       vi.useRealTimers();
     }
   });
+
+  it('clears a parked row whose job ends skipped as Protected — it claims no outcome (D245)', async () => {
+    vi.useFakeTimers();
+    try {
+      let skipped = false;
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(12),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: archiveStatus({
+                status: skipped ? 'done' : 'executing',
+                affectedCount: 0,
+                undoToken: null,
+                undoExpiresAt: null,
+                errorCode: skipped ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+              }),
+            }),
+        },
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+
+      renderScreenWithToasts();
+      await tick(200);
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await tick(200);
+      screen.getByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      await tick(ACTION_OVERDUE_MS);
+      expect(document.querySelector('[data-dm-row-activity="unconfirmed"]')).not.toBeNull();
+
+      skipped = true;
+      await tick(2_500);
+      expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 /**
@@ -2498,6 +2597,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     function bulkStub(
       batch: () => Record<string, unknown>,
       list: FetchStubHandler = TWO_SENDER_LIST,
+      skipped: Array<{ senderId: string; reason: string }> = [],
     ) {
       installFetchStub([
         list,
@@ -2510,9 +2610,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
               data: {
                 batchId: 'batch-1',
                 status: 'queued',
-                senderCount: 2,
+                senderCount: 2 - skipped.length,
                 requestedTotal: 30,
-                skipped: [],
+                skipped,
               },
             }),
         },
@@ -2977,6 +3077,67 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy');
     });
 
+    // D245: a Protected sender is skipped whether protection landed
+    // before the click (enqueue) or while its job waited (worker). Either
+    // way nothing happened to it, so its row claims no outcome.
+    it('leaves a sender that became Protected while its job waited unmarked', async () => {
+      // The skipped sender is left out of every count.
+      bulkStub(() => ({
+        status: 'done',
+        total: 1,
+        done: 1,
+        failed: 0,
+        requestedCount: 18,
+        affectedCount: 18,
+        skippedProtectedSenderIds: ['a'],
+      }));
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
+      expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+    });
+
+    it('leaves a sender skipped as Protected at the click unmarked', async () => {
+      bulkStub(
+        () => ({
+          status: 'done',
+          total: 1,
+          done: 1,
+          failed: 0,
+          requestedCount: 18,
+          affectedCount: 18,
+        }),
+        TWO_SENDER_LIST,
+        [{ senderId: 'a', reason: 'protected' }],
+      );
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
+      expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+    });
+
+    // A sender refused at the click has no job: while the rest runs, its
+    // row must not read "Archiving…", nor lock as if it were being moved.
+    it('never shows a sender refused at the click as running', async () => {
+      bulkStub(() => ({ ...running, total: 1 }), TWO_SENDER_LIST, [
+        { senderId: 'a', reason: 'protected' },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await screen.findByText('Archive: 1 Protected sender skipped');
+      await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(1));
+      expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+      expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy', 'true');
+      expect(rowOf(/select sender b/i)).toHaveAttribute('aria-busy', 'true');
+    });
+
     it('releases a held "done" row once the list is asked a different question', async () => {
       // After the action the server stops listing Sender A (nothing left).
       let acted = false;
@@ -3352,6 +3513,82 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(receipt.textContent?.toLowerCase()).not.toContain('unsubscribed');
     // A delivered request cannot be recalled — no undo is offered.
     expect(within(receipt).queryByRole('button', { name: /^undo$/i })).toBeNull();
+  });
+
+  // D245 (founder decision D2): a sender refused as Protected when its
+  // request was due was never sent to — "not sent", never a failure.
+  function unsubBatch(batch: Record<string, unknown>) {
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-skip',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 2,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch/batch-unsub-skip',
+        respond: () =>
+          jsonOk({
+            data: { batchId: 'batch-unsub-skip', status: 'done', undoToken: null, ...batch },
+          }),
+      },
+    ]);
+  }
+  async function confirmBulkUnsubscribe() {
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Unsubscribe/ })).toBeEnabled(),
+    );
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    return findReceipt();
+  }
+
+  it('lists a sender refused as Protected at send time under "Not sent", not as sent', async () => {
+    unsubBatch({
+      total: 1,
+      done: 1,
+      failed: 0,
+      requestedCount: 1,
+      affectedCount: 1,
+      skippedProtectedSenderIds: ['a'],
+      unsubscribeOutcomes: { endpointAccepted: 1, unconfirmed: 0, failed: 0, pending: 0 },
+    });
+    const receipt = await confirmBulkUnsubscribe();
+    await waitFor(() => expect(receipt).toHaveTextContent(/1 request accepted/i));
+    expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
+    expect(receipt).toHaveTextContent('Not sent: 1 sender protected');
+    expect(receipt).not.toHaveTextContent(/failed/i);
+  });
+
+  it('never ticks a batch that sent nothing because every sender turned Protected', async () => {
+    unsubBatch({
+      total: 0,
+      done: 0,
+      failed: 0,
+      requestedCount: 0,
+      affectedCount: 0,
+      skippedProtectedSenderIds: ['a', 'b'],
+      unsubscribeOutcomes: { endpointAccepted: 0, unconfirmed: 0, failed: 0, pending: 0 },
+    });
+    const receipt = await confirmBulkUnsubscribe();
+    await waitFor(() => expect(receipt).toHaveTextContent('No unsubscribe requests sent'));
+    expect(receipt).toHaveTextContent('Not sent: 2 senders protected');
+    expect(receipt).not.toHaveTextContent('✓');
+    expect(receipt).not.toHaveTextContent(UNSUBSCRIBE_ACCEPTED_CAVEAT);
   });
 
   it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {

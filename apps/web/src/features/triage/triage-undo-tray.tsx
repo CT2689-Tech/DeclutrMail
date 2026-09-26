@@ -12,6 +12,7 @@ import { sendersKeys } from '@/features/senders/api/query-keys';
 import {
   isRunning,
   outcomeNotice,
+  undoLineNote,
   useInFlightActions,
   workingNotice,
 } from '@/features/undo/in-flight';
@@ -145,6 +146,8 @@ export function ProductUndoTray({
    */
   const inFlightQuery = useInFlightActions(mailboxId);
   const [outcomes, setOutcomes] = useState<Array<Omit<UndoTrayNotice, 'onDismiss'>>>([]);
+  /** What a decision's own Undo line adds ("1 Protected sender skipped"), by `groupId`. */
+  const [undoNotes, setUndoNotes] = useState<ReadonlyMap<string, string>>(new Map());
   // Tagged with its mailbox: the other mailbox's list must never read as
   // "everything I was running has stopped".
   const seenRunning = useRef<{
@@ -196,6 +199,8 @@ export function ProductUndoTray({
         .catch(() => null)
         .then((status) => {
           if (mailboxGeneration.current !== generation) return;
+          const note = undoLineNote(status);
+          if (note) setUndoNotes((prev) => new Map(prev).set(group.groupId, note));
           const notice = outcomeNotice(group, status);
           if (!notice) return;
           setOutcomes((prev) => [notice, ...prev.filter((n) => n.id !== notice.id)].slice(0, 3));
@@ -218,6 +223,7 @@ export function ProductUndoTray({
     mailboxGeneration.current += 1;
     setInFlight(null);
     setOutcomes([]);
+    setUndoNotes(new Map());
     return () => {
       mailboxGeneration.current += 1;
     };
@@ -398,6 +404,10 @@ export function ProductUndoTray({
             : {}),
         },
       ];
+    })
+    .map((entry) => {
+      const note = undoNotes.get(decisionId(entry));
+      return note ? { ...entry, note } : entry;
     });
 
   // Z — undo last (D35). Same typing guards as `resolveShortcut` in

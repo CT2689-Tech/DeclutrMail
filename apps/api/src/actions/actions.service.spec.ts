@@ -13,7 +13,11 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq, inArray } from 'drizzle-orm';
+import {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
+} from '@declutrmail/workers';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -217,6 +221,21 @@ describe('ActionsService', () => {
     svc = new ActionsService(db as never, queue as never);
   });
 
+  // Consent is to what the user saw: an override sent for a sender that
+  // was not Protected at the click must not exempt the job from the
+  // execution-time re-check if the sender turns Protected while it waits.
+  it('carries no consent for an override on a sender that was not Protected at the click', async () => {
+    await seedMessage(db, mailboxId, 'm-ov', ['INBOX']);
+    await svc.enqueueComposite({
+      mailboxAccountId: mailboxId,
+      selector: { type: 'sender', senderId },
+      primary: { type: 'archive' },
+      idempotencyKey: 'override-unprotected',
+      override: true,
+    });
+    expect(queue.jobData[0]).not.toHaveProperty('protectedConfirmed');
+  });
+
   it('derives the stable reverse queue id from a fixed SHA-256 vector', () => {
     const token = '00000000-0000-4000-8000-000000000000';
     const expected = 'revert-e653b27601bd42c8c61984414503bc70f9ca9725f01054a342ff10a9f8d3921d';
@@ -244,6 +263,8 @@ describe('ActionsService', () => {
     expect(res.status).toBe('queued');
     expect(queue.count).toBe(1);
     expect(queue.jobIds).toEqual(['archive-click-0001']); // verb-namespaced, colon-free (BullMQ jobId)
+    // No "…anyway" confirm, so the worker re-checks protection (D245).
+    expect(queue.jobData[0]).not.toHaveProperty('protectedConfirmed');
 
     const [row] = await db.select().from(actionJobs).where(eq(actionJobs.id, res.actionId));
     expect(row!.selector).toEqual({ type: 'sender', senderId, senderKey: SENDER_KEY });
@@ -298,15 +319,21 @@ describe('ActionsService', () => {
       }),
     ).rejects.toMatchObject({ response: { code: 'PROTECTED_SENDER' } });
 
-    // With override it proceeds.
+    // With override it proceeds — and the "…anyway" confirm rides every
+    // row of the click, so the worker does not re-check it (D245).
     const res = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
       selector: { type: 'sender', senderId },
       primary: { type: 'archive' },
+      secondary: { type: 'delete', olderThanDays: 30 },
       idempotencyKey: 'click-prot-ovr',
       override: true,
     });
     expect(res.status).toBe('queued');
+    expect(queue.jobData).toEqual([
+      expect.objectContaining({ protectedConfirmed: true }),
+      expect.objectContaining({ protectedConfirmed: true }),
+    ]);
   });
 
   it('the composite wire rejects the removed messages selector (quota-bypass hardening)', () => {
@@ -1093,6 +1120,72 @@ describe('ActionsService', () => {
       expect(flakyQueue.count).toBe(1);
     });
 
+    // A queue add can throw AFTER the job landed (a Redis timeout on the
+    // reply). The worker may then finish first — a Protected skip ends in
+    // milliseconds, with no Gmail call — and the failure write must not
+    // overwrite what the worker recorded.
+    it('leaves a job the worker already finished when its queue add is reported failed', async () => {
+      await seedMessage(db, mailboxId, 'm-late-throw', ['INBOX']);
+      const lateQueue = fakeQueue();
+      lateQueue.add = async (_job, _data, opts) => {
+        await db
+          .update(actionJobs)
+          .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+          .where(eq(actionJobs.idempotencyKey, opts.jobId ?? ''));
+        throw new Error('reply timed out');
+      };
+      const service = new ActionsService(db as never, lateQueue as never);
+
+      await expect(
+        service.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          idempotencyKey: 'late-throw',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+      const [row] = await db
+        .select({ status: actionJobs.status, errorCode: actionJobs.errorCode })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'archive-late-throw'));
+      expect(row).toEqual({ status: 'done', errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE });
+    });
+
+    // The destructive half of the same race: a late failure write over
+    // `executing` would read as "never reached Gmail" on retry, and a
+    // sender protected meanwhile would be recorded as skipped although
+    // Gmail may already have moved its mail.
+    it('leaves a job the worker is already sending when its queue add is reported failed', async () => {
+      await seedMessage(db, mailboxId, 'm-late-exec', ['INBOX']);
+      const lateQueue = fakeQueue();
+      lateQueue.add = async (_job, _data, opts) => {
+        await db
+          .update(actionJobs)
+          .set({ status: 'executing' })
+          .where(eq(actionJobs.idempotencyKey, opts.jobId ?? ''));
+        throw new Error('reply timed out');
+      };
+      const service = new ActionsService(db as never, lateQueue as never);
+
+      await expect(
+        service.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          idempotencyKey: 'late-exec',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+      const [row] = await db
+        .select({ status: actionJobs.status, errorCode: actionJobs.errorCode })
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, 'archive-late-exec'));
+      expect(row).toEqual({ status: 'executing', errorCode: null });
+    });
+
     it('Protected sender blocks BOTH rows before either is written (no partial-composite)', async () => {
       await db.insert(senderPolicies).values({
         mailboxAccountId: mailboxId,
@@ -1625,6 +1718,10 @@ describe('ActionsService', () => {
       expect([...queue.jobIds].sort()).toEqual(
         [`archive-bulk-click-1-${senderId}`, `archive-bulk-click-1-${sender2Id}`].sort(),
       );
+      // Bulk never carries a confirm: the worker re-checks Protected (D245).
+      expect(
+        queue.jobData.filter((d) => (d as { protectedConfirmed?: boolean }).protectedConfirmed),
+      ).toEqual([]);
 
       const rows = await db
         .select()
@@ -1882,6 +1979,203 @@ describe('ActionsService', () => {
       const status = await svc.getBatchStatus(batchId, mailboxId);
       expect(status.status).toBe('failed');
       expect(status.undoToken).toBeNull();
+    });
+
+    it('counts a sender skipped as Protected once, across all its composite rows (D245)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 's1-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 's2-a', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        secondary: { type: 'delete', olderThanDays: 30 },
+        idempotencyKey: 'bulk-batch-skip',
+      });
+      // What the worker writes for a sender protected after the click:
+      // primary AND secondary end done, nothing changed, marked.
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(sql`${actionJobs.selector}->>'senderKey' = ${SENDER_KEY}`);
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(sql`${actionJobs.selector}->>'senderKey' = ${SENDER_KEY_2}`);
+
+      // A skipped sender counts nowhere, exactly like one skipped at the
+      // click — it is only named in `skippedProtectedSenderIds`.
+      await expect(svc.getBatchStatus(res.batchId, mailboxId)).resolves.toMatchObject({
+        status: 'done',
+        total: 2,
+        done: 2,
+        failed: 0,
+        skippedProtectedSenderIds: [senderId],
+      });
+    });
+
+    it('reads an all-skipped batch as done with nothing counted — never "failed"', async () => {
+      const { batchId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        status: 'done',
+        total: 0,
+        done: 0,
+        failed: 0,
+      });
+    });
+
+    it('keeps a sender whose first action ran and whose second was skipped out of the skipped list', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        secondary: { type: 'delete', olderThanDays: 30 },
+        idempotencyKey: 'bulk-batch-split',
+      });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      await db
+        .update(actionJobs)
+        .set({ affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(
+          sql`${actionJobs.selector}->>'senderKey' = ${SENDER_KEY} and ${actionJobs.idempotencyKey} like '%-sec'`,
+        );
+
+      await expect(svc.getBatchStatus(res.batchId, mailboxId)).resolves.toMatchObject({
+        total: 3,
+        done: 3,
+        skippedProtectedSenderIds: [],
+      });
+    });
+
+    /** A done archive row holding its own undo token. */
+    async function doneWithToken(jobId: string, expiresAt: Date): Promise<string> {
+      const [u] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'archive',
+          payload: { kind: 'archive', messageIds: [jobId], priorLabels: ['INBOX'] },
+          expiresAt,
+        })
+        .returning({ token: undoJournal.token });
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1, undoToken: u!.token })
+        .where(eq(actionJobs.id, jobId));
+      return u!.token;
+    }
+
+    // The anchor is only the first sender's job. When that sender was
+    // skipped (D245) or had nothing to move, it holds no undo token — so
+    // a surface reading the anchor alone saw "no undo" and never saw it
+    // reverted. The batch answers for the whole decision.
+    it('reports the undo window of a batch whose anchor holds no token', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(eq(actionJobs.id, anchorId));
+      const expiresAt = new Date('2031-01-02T03:04:05.000Z');
+      const token = await doneWithToken(otherId, expiresAt);
+
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        undoToken: token,
+        undoExpiresAt: expiresAt.toISOString(),
+        undoRevertedAt: null,
+        revertedSenderIds: [],
+      });
+    });
+
+    it('names each sender an Undo put back, and says when all of it is back', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      const expiresAt = new Date('2031-01-02T03:04:05.000Z');
+      const anchorToken = await doneWithToken(anchorId, expiresAt);
+      await doneWithToken(otherId, expiresAt);
+      const [other] = await db.select().from(actionJobs).where(eq(actionJobs.id, otherId));
+      const otherSenderId = (other!.selector as { senderId: string }).senderId;
+      const [anchor] = await db.select().from(actionJobs).where(eq(actionJobs.id, anchorId));
+      const anchorSenderId = (anchor!.selector as { senderId: string }).senderId;
+
+      // One sender undone on its own from the pill.
+      await db
+        .update(undoJournal)
+        .set({ revertedAt: new Date('2030-06-01T00:00:00.000Z') })
+        .where(eq(undoJournal.token, other!.undoToken!));
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        undoRevertedAt: null,
+        revertedSenderIds: [otherSenderId],
+      });
+
+      // Then the rest: the whole decision is back.
+      await db
+        .update(undoJournal)
+        .set({ revertedAt: new Date('2030-06-02T00:00:00.000Z') })
+        .where(eq(undoJournal.token, anchorToken));
+      const status = await svc.getBatchStatus(batchId, mailboxId);
+      expect(status.undoRevertedAt).toBe('2030-06-02T00:00:00.000Z');
+      expect([...status.revertedSenderIds].sort()).toEqual([anchorSenderId, otherSenderId].sort());
+    });
+
+    it('has no undo window and nothing reverted when nothing was changed', async () => {
+      const { batchId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0 })
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        undoToken: null,
+        undoExpiresAt: null,
+        undoRevertedAt: null,
+        revertedSenderIds: [],
+      });
+    });
+
+    it("leaves a skipped sender's email out of requestedCount", async () => {
+      // `affectedCount < requestedCount` reads as "mail moved between the
+      // preview and the job". A skipped sender changed nothing by design;
+      // counting its request there says "some email not changed" about it.
+      const { batchId, anchorId, otherId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.id, otherId));
+
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        requestedCount: 1,
+        affectedCount: 1,
+      });
+    });
+
+    it('does not count a skipped sender as done next to a real failure', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 0, errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'GmailError' })
+        .where(eq(actionJobs.id, otherId));
+
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        status: 'failed',
+        total: 1,
+        done: 0,
+        failed: 1,
+      });
     });
 
     it('is mailbox-scoped (404 for a foreign mailbox)', async () => {
@@ -3261,6 +3555,31 @@ describe('ActionsService', () => {
         // request IS job-status `failed`, which is exactly why the
         // receipt must not be derived from done/failed.
         expect(status.failed).toBe(2);
+      });
+
+      it('reports a sender refused as Protected when its request was due as skipped, not failed (D245)', async () => {
+        const { batchId, rowIds } = await seedUnsubBatch();
+        await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, rowIds[0]!));
+        await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, rowIds[1]!));
+        // Exactly what UnsubExecutionWorker.recordSenderProtected writes.
+        await db
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: UNSUB_SENDER_PROTECTED_ERROR_CODE })
+          .where(eq(actionJobs.id, rowIds[2]!));
+        const [skipped] = await db.select().from(actionJobs).where(eq(actionJobs.id, rowIds[2]!));
+
+        const status = await service.getBatchStatus(batchId, mailboxId);
+
+        expect(status.unsubscribeOutcomes).toEqual({
+          endpointAccepted: 2,
+          unconfirmed: 0,
+          failed: 0,
+          pending: 0,
+        });
+        expect(status).toMatchObject({ status: 'done', total: 2, failed: 0 });
+        expect(status.skippedProtectedSenderIds).toEqual([
+          (skipped!.selector as { senderId: string }).senderId,
+        ]);
       });
 
       it('reports rows with no outcome yet as pending, never as failed', async () => {

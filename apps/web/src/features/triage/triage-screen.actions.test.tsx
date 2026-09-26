@@ -38,6 +38,7 @@ import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
 // decisions never success-toast), so failure tests must assert the
@@ -499,6 +500,59 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'today-summary'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
+  });
+
+  // D245: a sender protected while its action waited is skipped. The job
+  // ends "done, nothing changed", but the sender stays in the queue, so
+  // it is not a decision — and the pill, not a toast, says what happened.
+  it('does not count an action skipped because the sender became Protected', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 47,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    // The queue still refreshes: the sender's row now reads Protected.
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+    );
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
   it('Delete is available in Triage and dispatches through the existing previewed Trash pipeline', async () => {
@@ -1937,6 +1991,64 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     }
   });
 
+  it('a parked action that ends skipped as Protected is not counted as decided (D245)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let actionState: 'executing' | 'done' = 'executing';
+      addFetchHandlers([
+        enqueueOkHandler,
+        {
+          method: 'GET',
+          path: `/api/actions/${ACTION_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                status: actionState,
+                requestedCount: 47,
+                affectedCount: 0,
+                undoToken: null,
+                errorCode: actionState === 'done' ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+              },
+            }),
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      const { container } = renderScreen(client);
+
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      await confirmOpenSheet('Archive');
+      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
+          'info',
+        ),
+      );
+
+      invalidateSpy.mockClear();
+      h.toast.mockClear();
+      actionState = 'done';
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_POLL_MS * 2);
+      });
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+      );
+      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+      expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+      expect(h.toast).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a sheet opened on a batch member before the batch parks cannot dispatch onto the parked member', async () => {
     // The bypass shape: batch members are NOT busy while the batch is
     // merely confirming (batchAction), so a sheet can open on one. When
@@ -2079,5 +2191,218 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /** The Archive-verdict trio behind "Archive all 3 recommended senders". */
+  function domainBatch(enqueue: () => Response, status?: () => Response) {
+    const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+    const buckets = {
+      all: 90,
+      olderThan30d: 60,
+      olderThan90d: 30,
+      olderThan180d: 9,
+      olderThan365d: 3,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: archiveTrio.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts: buckets,
+                protected: false,
+              })),
+              totals: buckets,
+              protectedCount: 0,
+            },
+          }),
+      },
+      { method: 'POST', path: '/api/actions', respond: enqueue },
+      ...(status
+        ? [{ method: 'GET' as const, path: /^\/api\/actions\/batch\//, respond: status }]
+        : []),
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+    return archiveTrio;
+  }
+
+  async function confirmDomainBatch() {
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+    const sheet = await screen.findByRole('dialog');
+    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+  }
+
+  // D245: a member refused at the click (Protected between the preview and
+  // the confirm) has no job. Only a toast can say so — the pill never saw
+  // it — and its row must not read busy while the rest runs.
+  it('names a batch member refused at the click, and never holds its row busy', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '99999999-9999-4999-8999-999999999999';
+      let refusedId = '';
+      const trio = domainBatch(
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 60,
+              wakeAt: null,
+              skipped: [{ senderId: refusedId, reason: 'protected' }],
+            },
+          }),
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'executing',
+              total: 2,
+              done: 0,
+              failed: 0,
+              requestedCount: 60,
+              affectedCount: 0,
+              undoToken: null,
+              unsubscribeOutcomes: null,
+            },
+          }),
+      );
+      refusedId = trio[0]!.senderId;
+      await confirmDomainBatch();
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith('Archive: 1 Protected sender skipped', 'warn'),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is still running — see Activity.',
+          'info',
+        ),
+      );
+      const rowOf = (name: string) =>
+        screen
+          .getByRole('button', { name: `${name} — expand triage detail` })
+          .closest('[aria-busy]');
+      expect(rowOf(trio[0]!.senderName)).toHaveAttribute('aria-busy', 'false');
+      expect(rowOf(trio[1]!.senderName)).toHaveAttribute('aria-busy', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says nothing changed when every batch member was refused, without a crash report', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'NO_ACTIONABLE_SENDERS' } }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Nothing changed — those senders are Protected or no longer in this mailbox.',
+        'warn',
+      ),
+    );
+    expect(h.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // D245: a sender protected while the batch waited is skipped exactly
+  // like one protected at the click — it stays in the queue, so it is
+  // not counted as decided.
+  it('does not count a batch member skipped as Protected as decided', async () => {
+    const BATCH_ID = '88888888-8888-4888-8888-888888888888';
+    const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+    expect(archiveTrio).toHaveLength(3);
+    const buckets = {
+      all: 90,
+      olderThan30d: 60,
+      olderThan90d: 30,
+      olderThan180d: 9,
+      olderThan365d: 3,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: archiveTrio.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts: buckets,
+                protected: false,
+              })),
+              totals: buckets,
+              protectedCount: 0,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 90,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/batch/${BATCH_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'done',
+              // The skipped member is left out of every count.
+              total: 2,
+              done: 2,
+              failed: 0,
+              requestedCount: 60,
+              affectedCount: 60,
+              undoToken: null,
+              unsubscribeOutcomes: null,
+              skippedProtectedSenderIds: [archiveTrio[0]!.senderId],
+            },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+    const batchSheet = await screen.findByRole('dialog');
+    const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    await waitFor(() => expect(batchConfirm).not.toBeDisabled());
+    fireEvent.click(batchConfirm);
+
+    await waitFor(() => expect(useTriageStore.getState().sessionMessagesMoved).toBe(60));
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(2);
   });
 });

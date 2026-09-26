@@ -12,6 +12,9 @@ export type ActionReceipt = ActionReceiptResult & {
   senderName?: string;
   /** Original bulk selection, when different from accepted scope. */
   selectedCount?: number;
-  /** Protected or no-longer-present senders skipped at enqueue time. */
+  /**
+   * Senders never acted on: Protected or gone at the click, or Protected
+   * by the time their job ran (D245).
+   */
   skippedCount?: number;
 };

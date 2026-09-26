@@ -146,7 +146,8 @@ function headlineSpeech(headline: TrayHeadline | null): string {
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
       ? ` ${emailCount(entry.affectedCount)}`
       : '';
-  return `${doneLabel(entry.actionKind)}${total}. Undo available.`;
+  const note = entry.note ? ` ${entry.note}.` : '';
+  return `${doneLabel(entry.actionKind)}${total}.${note} Undo available.`;
 }
 
 /**
@@ -559,6 +560,7 @@ function Headline({
         {doneLabel(entry.actionKind)}
         {total !== null ? ` ${total}` : ''}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
+        {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
       </span>
       <Button
         size="sm"
@@ -680,6 +682,7 @@ function DecisionRow({
               {who !== null ? ` · ${who}` : ''}
             </span>
           ) : null}
+          {entry.note ? ` · ${entry.note}` : null}
           <span
             style={{
               display: 'block',

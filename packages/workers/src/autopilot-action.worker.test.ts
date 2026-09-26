@@ -30,6 +30,7 @@ import {
 } from './autopilot-action.worker.js';
 import { seedAutopilotPresets } from './autopilot-preset-seeder.js';
 import type {
+  BatchModifyOptions,
   GmailMutationAccess,
   GmailMutationClient,
   LabelChange,
@@ -38,6 +39,7 @@ import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { UnsubExecutionJobData } from './unsub-execution.worker.js';
+import { RateLimitError, TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -224,12 +226,29 @@ async function seedApprovedMatch(
   return row!.id;
 }
 
-/** Fake mutation client — records batchModify calls (mirrors label-action tests). */
+/**
+ * Fake mutation client — records batchModify calls in production's order
+ * (mirrors label-action tests): `throwBeforeSend` fails before the
+ * `beforeFirstRequest` hook (quota wait, token refresh); `shouldThrow` is
+ * Gmail's answer after it.
+ */
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change: LabelChange }[] = [];
   labelIdsByName = new Map<string, string>();
+  throwBeforeSend: Error | null = null;
+  shouldThrow: Error | null = null;
+  /** Runs where the quota wait sits; receives the ids about to be sent. */
+  duringQuotaWait: ((ids: string[]) => Promise<void>) | null = null;
   async modifyLabels(): Promise<void> {}
-  async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+  async batchModify(
+    messageIds: string[],
+    change: LabelChange,
+    opts: BatchModifyOptions = {},
+  ): Promise<void> {
+    if (this.duringQuotaWait) await this.duringQuotaWait(messageIds);
+    if (this.throwBeforeSend) throw this.throwBeforeSend;
+    await opts.beforeFirstRequest?.();
+    if (this.shouldThrow) throw this.shouldThrow;
     this.calls.push({ ids: [...messageIds], change });
   }
   async ensureLabelId(name: string): Promise<string> {
@@ -285,6 +304,16 @@ describe('AutopilotActionWorker', () => {
       },
       now: () => NOW,
       ...overrides,
+    });
+  }
+
+  async function protect(senderKey: string): Promise<void> {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: NOW,
     });
   }
 
@@ -1366,6 +1395,151 @@ describe('AutopilotActionWorker', () => {
     expect(match!.resolution).toBe('dismissed');
     expect(match!.dismissReason).toBe('protected');
     expect(match!.intentApplied).toBe(false);
+  });
+
+  it('re-reads Protected per match: a sender protected mid-sweep is dismissed, never archived', async () => {
+    // "Approve all" runs every match serially inside ONE sweep, and a
+    // Protect click takes no lock — so one snapshot at the sweep's start
+    // is stale by the time a later match reaches Gmail.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const a = await seedSender(db, mailboxId, 'first@shop.com', { inboxMessages: 2 });
+    const b = await seedSender(db, mailboxId, 'second@shop.com', { inboxMessages: 2 });
+    const aMatch = await seedApprovedMatch(db, mailboxId, ruleId, a.senderKey);
+    const bMatch = await seedApprovedMatch(db, mailboxId, ruleId, b.senderKey);
+
+    // Match order is by id, so protect whichever sender Gmail has NOT
+    // seen yet, while the first archive is on its way out.
+    let protectedKey: string | null = null;
+    gmail.duringQuotaWait = async (ids) => {
+      if (protectedKey !== null) return;
+      const other = ids[0]!.startsWith(a.senderKey.slice(0, 8)) ? b : a;
+      protectedKey = other.senderKey;
+      await protect(other.senderKey);
+    };
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(result.skippedProtected).toBe(1);
+    expect(gmail.calls).toHaveLength(1);
+    const protectedMatch = protectedKey === a.senderKey ? aMatch : bMatch;
+    const [dismissed] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.id, protectedMatch));
+    expect(dismissed).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
+  });
+
+  describe('a claim that never reached Gmail', () => {
+    async function claimOf(matchId: string) {
+      const [claim] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
+      return claim;
+    }
+
+    async function sweep(at: number): Promise<Awaited<ReturnType<typeof worker.processJob>>> {
+      return worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: at }, CTX);
+    }
+
+    let matchId: string;
+    let senderKey: string;
+    let ruleId: string;
+
+    beforeEach(async () => {
+      ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+      ({ senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', { inboxMessages: 2 }));
+      matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+      worker.setObserver({
+        captureFailure: () => {},
+        captureBackgroundFailure: () => {},
+        recordBackgroundNotice: () => {},
+      });
+    });
+
+    it('is released when the token refresh fails, and the next sweep is re-checked', async () => {
+      // In production the refresh happens inside batchModify, before the
+      // request is sent — never in getClient.
+      gmail.throwBeforeSend = new TransientError('Gmail token refresh failed');
+      await sweep(NOW.getTime());
+      expect(await claimOf(matchId)).toBeUndefined();
+
+      await protect(senderKey);
+      gmail.throwBeforeSend = null;
+      const result = await sweep(NOW.getTime() + 1);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(result.skippedProtected).toBe(1);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
+      expect(await claimOf(matchId)).toBeUndefined();
+    });
+
+    it('is released when Gmail refuses the only request, and the next sweep is re-checked', async () => {
+      gmail.shouldThrow = new RateLimitError('Gmail returned 429', 65_000);
+      await sweep(NOW.getTime());
+      expect(await claimOf(matchId)).toBeUndefined();
+
+      await protect(senderKey);
+      gmail.shouldThrow = null;
+      await sweep(NOW.getTime() + 1);
+
+      expect(gmail.calls).toHaveLength(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
+    });
+
+    it('does not outlive a sweep that paused it, so no stale row sits in Activity', async () => {
+      gmail.throwBeforeSend = new TransientError('Gmail token refresh failed');
+      await sweep(NOW.getTime());
+      await enablePreset(db, mailboxId, 'auto_archive_low_engagement', 'paused');
+      gmail.throwBeforeSend = null;
+
+      const result = await sweep(NOW.getTime() + 1);
+
+      expect(result.skippedRuleInactive).toBe(1);
+      expect(await claimOf(matchId)).toBeUndefined();
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'approved', intentApplied: false });
+    });
+
+    it('is caught at the send when protection lands during the quota wait', async () => {
+      gmail.duringQuotaWait = async () => protect(senderKey);
+
+      const result = await sweep(NOW.getTime());
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(result.skippedProtected).toBe(1);
+      expect(result.labelActionsExecuted).toBe(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
+      expect(await claimOf(matchId)).toBeUndefined();
+    });
+
+    it('stays in flight after an ambiguous failure — the next sweep finishes it for a now-Protected sender', async () => {
+      gmail.shouldThrow = new TransientError('Gmail returned 503');
+      await sweep(NOW.getTime());
+      expect(await claimOf(matchId)).toMatchObject({ status: 'executing' });
+
+      await protect(senderKey);
+      gmail.shouldThrow = null;
+      const result = await sweep(NOW.getTime() + 1);
+
+      expect(result.labelActionsExecuted).toBe(1);
+      expect(gmail.calls).toHaveLength(1);
+      const [activity] = await db.select().from(activityLog);
+      expect(activity).toMatchObject({ action: 'archive', affectedCount: 2 });
+      const [claim] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
+      expect(claim).toMatchObject({ status: 'done' });
+      expect(claim!.resolvedMessageIds).toHaveLength(2);
+    });
   });
 
   it('enforces the per-rule daily cap and leaves over-cap matches pending', async () => {

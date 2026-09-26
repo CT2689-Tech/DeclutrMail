@@ -10,7 +10,8 @@ import {
 import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { actionJobs, actionRecoveryPreviews, senderPolicies } from '@declutrmail/db';
+import { actionJobs, actionRecoveryPreviews, mailMessages, senderPolicies } from '@declutrmail/db';
+import type { LabelActionSelector } from '@declutrmail/db';
 import {
   ACTION_RECOVERY_JOB,
   actionRecoveryJobOptions,
@@ -121,6 +122,8 @@ export class ActionRecoveryService {
         preview: actionRecoveryPreviews,
         verb: actionJobs.verb,
         wakeAt: actionJobs.wakeAt,
+        selector: actionJobs.selector,
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
       })
       .from(actionRecoveryPreviews)
       .innerJoin(
@@ -143,7 +146,62 @@ export class ActionRecoveryService {
         message: 'Recovery preview not found.',
       });
     }
-    return projectPreview(row.preview, row.verb, row.wakeAt);
+    return projectPreview(
+      row.preview,
+      row.verb,
+      row.wakeAt,
+      await this.senderProtected(this.db, mailboxAccountId, row.selector, row.resolvedMessageIds),
+    );
+  }
+
+  /**
+   * Is a sender of this action Protected NOW? A recovery attempt is one
+   * reviewed decision, so the worker does not re-check it (D245) — its
+   * Confirm is the consent, which only holds if the review says so. Read
+   * on every poll and again at Confirm, never frozen with the review. A
+   * legacy message-list action can span senders, so it asks whether ANY
+   * of its messages' senders is.
+   */
+  private async senderProtected(
+    executor: Pick<DrizzleDb, 'select'>,
+    mailboxAccountId: string,
+    selector: LabelActionSelector,
+    messageIds: string[],
+  ): Promise<boolean> {
+    // ADR-0008 §3 exception: actions → senders (read).
+    if (selector.type === 'sender') {
+      const [policy] = await executor
+        .select({ isProtected: senderPolicies.isProtected })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, selector.senderKey),
+          ),
+        )
+        .limit(1);
+      return policy?.isProtected === true;
+    }
+    if (messageIds.length === 0) return false;
+    const [hit] = await executor
+      .select({ one: sql<number>`1` })
+      .from(mailMessages)
+      .innerJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, mailMessages.mailboxAccountId),
+          eq(senderPolicies.senderKey, mailMessages.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          inArray(mailMessages.providerMessageId, messageIds),
+          eq(senderPolicies.isProtected, true),
+        ),
+      )
+      .limit(1);
+    return hit !== undefined;
   }
 
   async confirmPreview(input: {
@@ -151,6 +209,8 @@ export class ActionRecoveryService {
     previewId: string;
     idempotencyKey: string;
     wakeAt: Date | null;
+    /** What the review showed — see `actionRecoveryConfirmRequestSchema`. */
+    senderProtected?: boolean;
   }): Promise<ActionRecoveryEnqueueResult> {
     if (!this.actionQueue) {
       throw new ServiceUnavailableException({
@@ -265,6 +325,25 @@ export class ActionRecoveryService {
         throw new ConflictException({
           code: 'RECOVERY_NOTHING_TO_APPLY',
           message: 'No Gmail messages require reconciliation.',
+        });
+      }
+      // D245 — Confirm consents to changing a Protected sender's mail only
+      // when the review said the sender is Protected. A review that loaded
+      // before protection landed did not, so it is sent back for another
+      // look. An already-applied review changes nothing in Gmail.
+      if (
+        preview.remainingMessageIds.length > 0 &&
+        input.senderProtected !== true &&
+        (await this.senderProtected(
+          tx,
+          input.mailboxAccountId,
+          action.selector,
+          preview.targetMessageIds,
+        ))
+      ) {
+        throw new ConflictException({
+          code: 'RECOVERY_SENDER_PROTECTED',
+          message: 'This sender is Protected now. Check again before retrying.',
         });
       }
 
@@ -568,6 +647,7 @@ export class ActionRecoveryService {
         message: 'Later recovery requires the original sender scope.',
       });
     }
+    // ADR-0008 §3 exception: actions → senders (read).
     const [policy] = await db
       .select({ snoozedUntil: senderPolicies.snoozedUntil })
       .from(senderPolicies)
@@ -597,6 +677,7 @@ function projectPreview(
   preview: typeof actionRecoveryPreviews.$inferSelect,
   verb: RecoverableVerb,
   wakeAt: Date | null,
+  senderProtected: boolean,
 ): ActionRecoveryPreviewResult {
   const unavailableCount = preview.unavailableCount;
   const alreadyAppliedCount = Math.max(
@@ -620,6 +701,7 @@ function projectPreview(
     requiresNewWakeAt: verb === 'later' && (!wakeAt || wakeAt.getTime() <= Date.now()),
     expiresAt: preview.expiresAt.toISOString(),
     recoveryActionId: preview.recoveryActionId,
+    senderProtected,
   };
 }
 

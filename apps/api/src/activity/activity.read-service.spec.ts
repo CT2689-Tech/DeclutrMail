@@ -2024,6 +2024,230 @@ describe('ActivityReadService', () => {
 
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
 
+  // D245 — a job skipped because its sender was Protected when it ran
+  // changed nothing, so it has no activity_log row; Activity still owes the
+  // user a lasting line once the pill fades.
+  describe('actions skipped because the sender was Protected (D245)', () => {
+    async function seedSkippedLabelJob(senderKey: string, senderId: string): Promise<string> {
+      const id = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        verb: 'delete',
+        status: 'done',
+        errorCode: 'LABEL_SENDER_PROTECTED',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      return id;
+    }
+
+    it('lists a skipped Delete in the default feed as "skipped — Protected", with no Undo', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-key',
+        'news@skip.com',
+        'Skip News',
+      );
+      const jobId = await seedSkippedLabelJob('skip-key', senderId);
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          id: jobId,
+          source: 'manual',
+          action: 'delete',
+          affectedCount: 0,
+          reviewOutcome: 'protected',
+          executionState: null,
+          undoState: { kind: 'unavailable' },
+          sender: expect.objectContaining({ displayName: 'Skip News' }),
+        }),
+      ]);
+      const failedOnly = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+        outcomes: ['failed'],
+      });
+      expect(failedOnly.rows).toEqual([]);
+    });
+
+    // The line is dated by the click, like the queued line it replaces —
+    // the skip lands a lock-wait later. It also lets the read be bounded
+    // by the (mailbox, status, created_at) index instead of scanning every
+    // finished job the mailbox ever ran.
+    it('dates a skipped action by when you clicked it', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-when',
+        'news@when.com',
+        'When News',
+      );
+      const jobId = await seedSkippedLabelJob('skip-when', senderId);
+      const clickedAt = new Date(NOW_MS - ONE_DAY_MS);
+      await db
+        .update(actionJobs)
+        .set({ updatedAt: new Date(clickedAt.getTime() + 5 * 60 * 1000) })
+        .where(eq(actionJobs.id, jobId));
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ id: jobId, occurredAt: clickedAt.toISOString() }),
+      ]);
+    });
+
+    it('closes an Unsubscribe intent whose request was refused as Protected', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'unsub-skip',
+        'list@skip.com',
+        'Skip List',
+      );
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey: 'unsub-skip' },
+          status: 'failed',
+          errorCode: 'UNSUB_SENDER_PROTECTED',
+          idempotencyKey: 'unsubexec-skip',
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'unsub-skip',
+        actionJobId: job!.id,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ action: 'unsubscribe', reviewOutcome: 'protected' }),
+      ]);
+    });
+
+    it('counts both kinds of skip as Protected in the weekly review', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-key',
+        'news@skip.com',
+        'Skip News',
+      );
+      await seedSkippedLabelJob('skip-key', senderId);
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey: 'skip-key' },
+          status: 'failed',
+          errorCode: 'UNSUB_SENDER_PROTECTED',
+          idempotencyKey: 'unsubexec-skip-weekly',
+          updatedAt: new Date(NOW_MS - ONE_DAY_MS),
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'skip-key',
+        actionJobId: job!.id,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 0,
+        failed: 0,
+        protected: 2,
+      });
+    });
+
+    it("keys the refused-Unsubscribe outcome to the intent row's own job", async () => {
+      // Another mailbox's refused request must not close this intent.
+      const bSender = await seedSender(db, mailboxB.mailboxAccountId, 'b-key', 'x@b.com', 'B');
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: bSender, senderKey: 'b-key' },
+        status: 'failed',
+        errorCode: 'UNSUB_SENDER_PROTECTED',
+        idempotencyKey: 'unsubexec-other-mailbox',
+      });
+      const aSender = await seedSender(db, mailboxA.mailboxAccountId, 'a-key', 'y@a.com', 'A');
+      const [ownJob] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: aSender, senderKey: 'a-key' },
+          status: 'queued',
+          idempotencyKey: 'unsubexec-own',
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'a-key',
+        actionJobId: ownJob!.id,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toEqual([
+        expect.objectContaining({ action: 'unsubscribe', reviewOutcome: null }),
+      ]);
+    });
+  });
+
   describe('weekly review outcomes (D246)', () => {
     /**
      * The card sits on a page whose every other number follows the

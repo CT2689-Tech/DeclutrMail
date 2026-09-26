@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ToastHost } from '@declutrmail/shared';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -38,6 +39,8 @@ vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
+const sentry = vi.hoisted(() => ({ captureFeatureException: vi.fn(), addBreadcrumb: vi.fn() }));
+vi.mock('@/lib/sentry', () => sentry);
 
 const ID_NEWS = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ID_SHOP = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -104,11 +107,23 @@ function jsonConflict(code: string): Response {
   });
 }
 
-function briefHandler() {
+/**
+ * `protectedNow` is read per request: a sender that turns Protected shows
+ * as such once the section re-reads the Brief.
+ */
+function briefHandler(protectedNow: () => readonly string[] = () => []) {
   return {
     method: 'GET' as const,
     path: '/api/briefs/today',
-    respond: () => jsonOk({ data: BRIEF }),
+    respond: () =>
+      jsonOk({
+        data: {
+          ...BRIEF,
+          noiseSenders: BRIEF.noiseSenders.map((s) =>
+            protectedNow().includes(s.senderId!) ? { ...s, isProtected: true } : s,
+          ),
+        },
+      }),
   };
 }
 
@@ -121,32 +136,54 @@ function bulkPreviewHandler(respond?: () => Response) {
 }
 
 /**
- * `GET /api/actions/:id` — the undo-truth read the section derives its
- * Done marks and receipt from. `reverted` flips `undoRevertedAt`, which is
- * exactly what an undo taken in the global tray produces.
+ * `GET /api/actions/batch/:id` — the outcome, and the undo truth the
+ * section derives its Done marks and receipt from. `undo` is read per
+ * request, so a test can land an Undo taken in the global tray.
  */
 function batchStatusHandler(
-  opts: { done?: number; failed?: number; status?: string } = {},
+  opts: {
+    total?: number;
+    done?: number;
+    failed?: number;
+    status?: string;
+    affectedCount?: number;
+    skippedProtectedSenderIds?: string[];
+    undo?: () => { reverted?: boolean; revertedSenderIds?: string[]; expired?: boolean };
+  } = {},
 ): FetchStubHandler {
   return {
     method: 'GET',
     path: /^\/api\/actions\/batch\//,
-    respond: () =>
-      jsonOk({
+    respond: () => {
+      const undo = opts.undo?.() ?? {};
+      return jsonOk({
         data: {
           batchId: 'batch-1',
           status: opts.status ?? 'done',
-          total: 2,
+          total: opts.total ?? 2,
           done: opts.done ?? 2,
           failed: opts.failed ?? 0,
           requestedCount: 351,
-          affectedCount: 348,
+          affectedCount: opts.affectedCount ?? 348,
+          skippedProtectedSenderIds: opts.skippedProtectedSenderIds ?? [],
           undoToken: 'undo-token-1',
+          undoExpiresAt: undo.expired
+            ? new Date(Date.now() - 1_000).toISOString()
+            : new Date(Date.now() + 86_400_000).toISOString(),
+          undoRevertedAt: undo.reverted ? new Date().toISOString() : null,
+          revertedSenderIds: undo.revertedSenderIds ?? (undo.reverted ? [ID_NEWS, ID_SHOP] : []),
+          unsubscribeOutcomes: null,
         },
-      }),
+      });
+    },
   };
 }
 
+/**
+ * `GET /api/actions/:id` — a single archive's status and undo truth. In a
+ * batch it is only the FIRST sender's job, which is why batch tests give
+ * it a state the batch contradicts: the section must read the batch.
+ */
 function undoStateHandler(opts: { reverted?: boolean; expired?: boolean } = {}) {
   return {
     method: 'GET' as const,
@@ -191,6 +228,81 @@ function enqueueHandler() {
       });
     },
   };
+}
+
+/** Live composite preview for Newsletter Daily — the one-sender path. */
+function singlePreviewHandler(): FetchStubHandler {
+  const none = {
+    all: [],
+    olderThan30d: [],
+    olderThan90d: [],
+    olderThan180d: [],
+    olderThan365d: [],
+  };
+  return {
+    method: 'GET',
+    path: '/api/actions/preview',
+    respond: () =>
+      jsonOk({
+        data: {
+          sender: {
+            id: ID_NEWS,
+            name: 'Newsletter Daily',
+            domain: 'news.example',
+            lastSeenDays: 1,
+            wroteToCount: 0,
+            monthly: 30,
+          },
+          counts: {
+            all: 210,
+            olderThan30d: 0,
+            olderThan90d: 0,
+            olderThan180d: 0,
+            olderThan365d: 0,
+          },
+          recentMessages: none,
+          recentSubjects: none,
+          allMail: null,
+          unsubAvailable: false,
+          protected: false,
+        },
+      }),
+  };
+}
+
+function singleEnqueueHandler(): FetchStubHandler {
+  return {
+    method: 'POST',
+    path: '/api/actions',
+    respond: async (req: Request) => {
+      enqueued.push((await req.json()) as Record<string, unknown>);
+      return jsonOk({
+        data: {
+          actionId: 'act-news',
+          compositeId: 'act-news',
+          secondaryId: null,
+          status: 'queued',
+          primaryCount: 210,
+          secondaryCount: null,
+        },
+      });
+    },
+  };
+}
+
+/** Uncheck Old Navy so the archive runs for Newsletter Daily alone. */
+async function selectNewsOnly() {
+  fireEvent.click(
+    await screen.findByRole('checkbox', { name: /include old navy in the archive/i }),
+  );
+  await waitFor(() => expect(archiveButton()).toHaveAccessibleName('Archive 1 sender'));
+}
+
+async function confirmArchive() {
+  const dialog = await openPreview();
+  const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
 }
 
 function renderScreen() {
@@ -527,6 +639,220 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(screen.getByText(/2 messages yesterday · Protected/i)).toBeInTheDocument();
   });
 
+  // D245: a sender protected while its job waited is left out exactly
+  // like one protected at the click — no ✓, not counted, unchecked, and
+  // its row re-reads as Protected. The bottom pill (not mounted here) is
+  // the one voice for the skip, so the section adds no toast.
+  it('leaves out a sender that became Protected while the archive waited', async () => {
+    installFetchStub([
+      briefHandler(() => (enqueued.length > 0 ? [ID_SHOP] : [])),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({
+        total: 1,
+        done: 1,
+        affectedCount: 210,
+        skippedProtectedSenderIds: [ID_SHOP],
+      }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/Archived 210 emails from 1 sender\b/i, undefined, { timeout: 5000 });
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    await screen.findByText(/3 messages yesterday · Protected/i);
+    expect(screen.queryByText(/3 messages yesterday · Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Protected sender skipped/i)).not.toBeInTheDocument();
+  });
+
+  it('claims nothing when every sender became Protected while the archive waited', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({
+        total: 0,
+        done: 0,
+        affectedCount: 0,
+        skippedProtectedSenderIds: [ID_NEWS, ID_SHOP],
+      }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await waitFor(() => expect(archiveButton()).toHaveAccessibleName('Archive 0 senders'), {
+      timeout: 5000,
+    });
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Archived 0 emails/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing was archived/i)).not.toBeInTheDocument();
+  });
+
+  // D245 (founder decision D1): one sender, no "…anyway" confirm — a
+  // sender protected before the job ran is skipped. "Done, 0 changed" is
+  // not an archive: no ✓, no "Archived 0 emails".
+  it('claims nothing for a single sender that became Protected before its archive ran', async () => {
+    installFetchStub([
+      briefHandler(() => (enqueued.length > 0 ? [ID_NEWS] : [])),
+      singlePreviewHandler(),
+      singleEnqueueHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => {
+          return jsonOk({
+            data: {
+              actionId: 'act-news',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 210,
+              affectedCount: 0,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectNewsOnly();
+    await confirmArchive();
+
+    await screen.findByText(/4 messages yesterday · Protected/i, undefined, { timeout: 5000 });
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Archived 0 emails/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+  });
+
+  it('unchecks a sender the archive refused at the click', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req: Request) => {
+          enqueued.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'queued',
+              senderCount: 1,
+              requestedTotal: 210,
+              wakeAt: null,
+              skipped: [{ senderId: ID_SHOP, reason: 'protected' }],
+            },
+          });
+        },
+      },
+      batchStatusHandler({ total: 1, done: 1, affectedCount: 210 }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText('Archive: 1 Protected sender skipped');
+    await screen.findByText(/Archived 210 emails from 1 sender\b/i, undefined, { timeout: 5000 });
+    expect(
+      screen.getByRole('checkbox', { name: /include old navy in the archive/i }),
+    ).not.toBeChecked();
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+  });
+
+  it('says nothing was archived when the server refuses every sender, without a crash report', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => jsonConflict('NO_ACTIONABLE_SENDERS'),
+      },
+    ]);
+    sentry.captureFeatureException.mockClear();
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(
+      'Nothing changed — those senders are Protected or no longer in this mailbox.',
+    );
+    expect(sentry.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // The anchor is the first sender's job. When that sender was skipped
+  // (D245) or had nothing to move it holds no undo token, and a receipt
+  // read from it said nothing about the Undo the batch does have.
+  it('reads undo from the whole batch, not its first sender', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'batch-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 210,
+              affectedCount: 0,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
+    await screen.findByText(/Undo it from Recent actions/i);
+  });
+
+  it('clears only the ✓ of a sender undone on its own from the pill', async () => {
+    let revertedSenderIds: string[] = [];
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ undo: () => ({ revertedSenderIds }) }),
+      // The first sender's own job says nothing was undone.
+      undoStateHandler(),
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await confirmArchive();
+    await screen.findByText(/3 messages yesterday · Archived ✓/i, undefined, { timeout: 5000 });
+
+    revertedSenderIds = [ID_SHOP];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['undo'] });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/3 messages yesterday · Archived ✓/i)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    expect(screen.getByText(/Undone for 1 of 2 senders/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument();
+  });
+
   /**
    * The worst blocker the gates found: `Archived ✓` and the receipt were
    * plain component state, which no invalidation can reach, so a tray
@@ -541,12 +867,9 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      batchStatusHandler(),
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: () => undoStateHandler({ reverted }).respond(),
-      },
+      batchStatusHandler({ undo: () => ({ reverted }) }),
+      // The first sender's own job never reads reverted: only the batch does.
+      undoStateHandler(),
     ]);
     const client = createTestQueryClient();
     render(
@@ -583,8 +906,8 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      batchStatusHandler(),
-      undoStateHandler({ expired: true }),
+      batchStatusHandler({ undo: () => ({ expired: true }) }),
+      undoStateHandler(),
     ]);
     renderScreen();
 
@@ -640,7 +963,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           });
         },
       },
-      batchStatusHandler({ done: 1 }),
+      batchStatusHandler({ total: 1, done: 1 }),
       undoStateHandler(),
     ]);
     renderScreen();
@@ -650,7 +973,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
 
-    await screen.findByText(/1 no longer in this mailbox — left out of this archive/i);
+    await screen.findByText('Archive: 1 sender no longer in this mailbox');
   });
 
   it('renders the scope-conflict state instead of a Retry that would 409 forever', async () => {

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   actionJobs,
   actionRecoveryPreviews,
+  mailMessages,
   mailboxAccounts,
   schema,
   senderPolicies,
@@ -131,6 +132,16 @@ async function makeReady(
   return preview!;
 }
 
+async function protect(db: Db, mailbox: Awaited<ReturnType<typeof seedMailbox>>): Promise<void> {
+  await db.insert(senderPolicies).values({
+    mailboxAccountId: mailbox.mailboxId,
+    senderKey: mailbox.senderKey,
+    isProtected: true,
+    protectionReason: 'starred',
+    protectionSetAt: new Date(),
+  });
+}
+
 function errorCode(error: unknown): unknown {
   if (!error || typeof error !== 'object' || !('getResponse' in error)) return null;
   const response = (error as { getResponse(): unknown }).getResponse();
@@ -171,6 +182,112 @@ describe('ActionRecoveryService', () => {
     expect(replay.previewId).toBe(first.previewId);
     expect(recoveryQueue.calls).toHaveLength(1);
     expect(await db.select().from(actionRecoveryPreviews)).toHaveLength(1);
+  });
+
+  it('the review says whether the sender is Protected NOW — its Confirm is the consent (D245)', async () => {
+    const action = await seedFailedAction(db, mailbox, { key: 'original-protected' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: action.id,
+    });
+    expect(preview.senderProtected).toBe(false);
+
+    // Protected after the action failed: the next read of the review
+    // must say so, not a value frozen when the review opened.
+    await protect(db, mailbox);
+    await expect(service.getPreview(mailbox.mailboxId, preview.previewId)).resolves.toMatchObject({
+      senderProtected: true,
+    });
+  });
+
+  it('a legacy message-list review says whether ANY of its senders is Protected', async () => {
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailbox.mailboxId,
+      providerMessageId: 'gmail-1',
+      providerThreadId: 't-gmail-1',
+      senderKey: mailbox.senderKey,
+      internalDate: new Date('2026-07-01T00:00:00Z'),
+      isUnread: false,
+      labelIds: ['INBOX'],
+    });
+    const [action] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['gmail-1'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'original-message-list',
+      })
+      .returning();
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: action!.id,
+    });
+    expect(preview.senderProtected).toBe(false);
+
+    await protect(db, mailbox);
+    await expect(service.getPreview(mailbox.mailboxId, preview.previewId)).resolves.toMatchObject({
+      senderProtected: true,
+    });
+  });
+
+  it('Confirm refuses once the sender became Protected after the review said otherwise', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-stale-review' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+    await protect(db, mailbox);
+
+    const stale = await service
+      .confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-stale',
+        wakeAt: null,
+        senderProtected: false,
+      })
+      .catch((error: unknown) => error);
+    expect(errorCode(stale)).toBe('RECOVERY_SENDER_PROTECTED');
+    expect(actionQueue.calls).toHaveLength(0);
+
+    // Reviewed again, the review now names the protection — that Confirm
+    // is the consent.
+    await expect(
+      service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-informed',
+        wakeAt: null,
+        senderProtected: true,
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+  });
+
+  it('Confirm goes ahead for an already-applied review — it changes nothing in Gmail', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-applied-protected' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId, { outcome: 'already_applied', remaining: [] });
+    await protect(db, mailbox);
+
+    await expect(
+      service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-applied-protected',
+        wakeAt: null,
+        senderProtected: false,
+      }),
+    ).resolves.toMatchObject({ replayed: false });
   });
 
   it('confirmation creates one linked immutable attempt and HTTP replay returns it', async () => {

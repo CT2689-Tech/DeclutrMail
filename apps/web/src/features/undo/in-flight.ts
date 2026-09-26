@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { UndoTrayNotice } from '@declutrmail/shared';
 
+import { protectedSkippedCopy } from '@/lib/action-error-copy';
 import {
   getInFlightActions,
   type BatchStatusResult,
@@ -92,25 +93,58 @@ export function outcomeNotice(
   }
   // Still running server-side (it only aged out of the list): say nothing.
   if (status.status !== 'done' && status.status !== 'failed') return null;
-  if (status.failed === status.total) {
-    return { id, tone: 'attention', label: `${verb} failed`, who: who(group) };
+  // D245: senders found Protected when their job ran were skipped, exactly
+  // like ones protected at the click. Their jobs are left out of every
+  // count here — so a one-sender skip is 0 of 0, which is not "all failed".
+  const skipped = status.skippedProtectedSenderIds?.length ?? 0;
+  // Beside a failure the skip is a detail, and the group's lead sender may
+  // be the skipped one, so that line names no one.
+  const failureAside =
+    skipped > 0 ? { detail: protectedSkippedCopy(skipped) } : { who: who(group) };
+  if (status.total > 0 && status.failed === status.total) {
+    return { id, tone: 'attention', label: `${verb} failed`, ...failureAside };
   }
   if (status.failed > 0) {
     return {
       id,
       tone: 'attention',
       label: `${verb}: ${status.failed.toLocaleString('en-US')} of ${status.total.toLocaleString('en-US')} failed`,
+      ...(skipped > 0 ? { detail: protectedSkippedCopy(skipped) } : {}),
     };
   }
   if (status.affectedCount === 0) {
-    return { id, tone: 'info', label: `Nothing to ${verb.toLowerCase()}`, who: who(group) };
+    // Nothing changed, so there is no Undo line to carry a skip: say it
+    // here — never "Nothing to …" about mail that is still there.
+    return skipped > 0
+      ? {
+          id,
+          tone: 'info',
+          label: `${verb}: ${protectedSkippedCopy(skipped)}`,
+          // The group's lead sender is only the skipped one when all were.
+          ...(skipped === group.senderCount ? { who: who(group) } : {}),
+        }
+      : { id, tone: 'info', label: `Nothing to ${verb.toLowerCase()}`, who: who(group) };
   }
+  // Mail changed: a skip rides the decision's own Undo line (`undoLineNote`).
   // Mail moved between the preview's count and the job: fewer changed than
   // were counted. The decision's own line has the real number.
   if (status.affectedCount < status.requestedCount) {
     return { id, tone: 'info', label: `${verb}: some email not changed`, who: who(group) };
   }
   return null;
+}
+
+/**
+ * D245 / founder decision D4 — where a skip goes when the rest of the
+ * decision changed mail: onto that decision's Undo line ("Deleted 1,400
+ * emails · 12 senders · 1 Protected sender skipped"), not a second line
+ * above it. `null` when there is nothing to add; `outcomeNotice` says
+ * the skip in every other case.
+ */
+export function undoLineNote(status: BatchStatusResult | null): string | null {
+  if (status === null || status.status !== 'done' || status.failed > 0) return null;
+  const skipped = status.skippedProtectedSenderIds?.length ?? 0;
+  return skipped > 0 && status.affectedCount > 0 ? protectedSkippedCopy(skipped) : null;
 }
 
 /**

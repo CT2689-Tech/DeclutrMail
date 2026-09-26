@@ -135,6 +135,7 @@ export type { UndoActionKind } from './undo-action-kind';
 // D226 action job lifecycle — mirrored from `action_job_status` pg_enum.
 // Contract-tested in apps/api/src/actions/actions.types.ts.
 export type { ActionJobStatus } from './action-job-status';
+export { LABEL_SENDER_PROTECTED_ERROR_CODE } from './action-job-status';
 export { ACTION_REACHES } from './action-reach';
 export type { ActionReach } from './action-reach';
 

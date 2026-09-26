@@ -12,7 +12,7 @@ import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { resetTriageStore } from '@/features/triage/store';
 import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 
-import { outcomeNotice, workingNotice } from './in-flight';
+import { outcomeNotice, undoLineNote, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
@@ -36,6 +36,9 @@ const GROUP: InFlightActionGroup = {
   leadSenderName: 'Yankee Candle',
   startedAt: '2026-09-20T10:00:00.000Z',
 };
+
+/** `n` distinct sender ids, as the batch status lists skipped senders. */
+const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `sender-${i}`);
 
 const status = (over: Partial<BatchStatusResult>): BatchStatusResult => ({
   batchId: GROUP.groupId,
@@ -85,8 +88,135 @@ describe('what the pill says once a decision stops', () => {
     [status({ affectedCount: 0 }), 'info', 'Nothing to delete'],
     [status({ affectedCount: 1400 }), 'info', 'Delete: some email not changed'],
     [null, 'attention', 'Delete not confirmed'],
+    // D245: a sender protected after the click is skipped, like one
+    // protected before it — never "nothing to delete", never a failure.
+    // Skipped senders are left out of every count the batch reports.
+    [
+      status({
+        total: 0,
+        done: 0,
+        requestedCount: 0,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(13),
+      }),
+      'info',
+      'Delete: 13 Protected senders skipped',
+    ],
+    [
+      status({
+        total: 12,
+        done: 12,
+        requestedCount: 9,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(1),
+      }),
+      'info',
+      'Delete: 1 Protected sender skipped',
+    ],
+    [
+      status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) }),
+      'attention',
+      'Delete: 2 of 12 failed',
+    ],
+    [
+      status({
+        status: 'failed',
+        total: 12,
+        done: 0,
+        failed: 12,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(1),
+      }),
+      'attention',
+      'Delete failed',
+    ],
   ] as const)('%#: %s → %s', (result, tone, label) => {
     expect(outcomeNotice(GROUP, result)).toMatchObject({ tone, label });
+  });
+
+  // A one-sender job that was skipped has no job left to count: 0 of 0 is
+  // not "every one failed".
+  it('says a one-sender skip was skipped, never that it failed', () => {
+    const one = { ...GROUP, total: 1, done: 1, failed: 0, senderCount: 1 };
+    expect(
+      outcomeNotice(
+        one,
+        status({
+          total: 0,
+          done: 0,
+          requestedCount: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(1),
+        }),
+      ),
+    ).toMatchObject({
+      tone: 'info',
+      label: 'Delete: 1 Protected sender skipped',
+      who: 'Yankee Candle',
+    });
+  });
+
+  it('names who only when every sender was skipped as Protected', () => {
+    expect(
+      outcomeNotice(
+        GROUP,
+        status({
+          total: 0,
+          done: 0,
+          requestedCount: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(13),
+        }),
+      )?.who,
+    ).toBe('Yankee Candle + 12 others');
+    expect(
+      outcomeNotice(
+        GROUP,
+        status({
+          total: 12,
+          done: 12,
+          requestedCount: 9,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(1),
+        }),
+      )?.who,
+    ).toBeUndefined();
+  });
+
+  // Founder decision D4: when the rest of the decision changed mail, the
+  // skip rides its Undo line — one line, not a second one above it.
+  it('folds a skip into the Undo line when the rest of the decision changed mail', () => {
+    const rest = status({
+      total: 12,
+      done: 12,
+      requestedCount: 1400,
+      affectedCount: 1400,
+      skippedProtectedSenderIds: ids(1),
+    });
+    expect(outcomeNotice(GROUP, rest)).toBeNull();
+    expect(undoLineNote(rest)).toBe('1 Protected sender skipped');
+  });
+
+  it('puts the skip beside a failure instead of on the Undo line, and names no one', () => {
+    const partly = status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) });
+    expect(outcomeNotice(GROUP, partly)).toMatchObject({ detail: '1 Protected sender skipped' });
+    expect(outcomeNotice(GROUP, partly)?.who).toBeUndefined();
+    expect(undoLineNote(partly)).toBeNull();
+    const failed = status({
+      status: 'failed',
+      total: 12,
+      done: 0,
+      failed: 12,
+      affectedCount: 0,
+      skippedProtectedSenderIds: ids(1),
+    });
+    expect(outcomeNotice(GROUP, failed)).toMatchObject({ detail: '1 Protected sender skipped' });
+    expect(outcomeNotice(GROUP, failed)?.who).toBeUndefined();
+  });
+
+  it('adds nothing to the Undo line when nothing was skipped', () => {
+    expect(undoLineNote(status({}))).toBeNull();
+    expect(undoLineNote(null)).toBeNull();
   });
 
   it('claims no ending for a job that only aged out of the list', () => {
@@ -258,6 +388,75 @@ describe('ProductUndoTray — live line', () => {
     const pill = await screen.findByRole('region', { name: 'Recent actions' });
     await waitFor(() => expect(pill).toHaveTextContent('Deleted 1,489 emails'));
     expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
+  });
+
+  it('folds a Protected skip into the decision’s own Undo line (D4)', async () => {
+    resetFetchStub();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: GROUP.groupId,
+                token: '11111111-1111-4111-8111-111111111111',
+                actionKind: 'delete',
+                createdAt: '2026-09-20T10:00:05.000Z',
+                expiresAt: '2026-09-25T10:00:05.000Z',
+                senderCount: 12,
+                affectedCount: 1400,
+              },
+            ],
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: [{ ...GROUP, running: false, done: 13, failed: 0 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: status({
+              total: 12,
+              done: 12,
+              requestedCount: 1400,
+              affectedCount: 1400,
+              skippedProtectedSenderIds: ids(1),
+            }),
+          }),
+      },
+    ]);
+    mount();
+    const pill = await screen.findByRole('region', { name: 'Recent actions' });
+    await waitFor(() =>
+      expect(pill).toHaveTextContent(
+        'Deleted 1,400 emails · 12 senders · 1 Protected sender skipped',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /^Undo Delete/ })).toHaveTextContent('Undo all');
+    expect(pillText()).not.toMatch(/Delete: 1 Protected/);
+  });
+
+  it('says a one-sender job skipped as Protected was skipped, never that it failed', async () => {
+    active = [{ ...GROUP, running: false, total: 1, done: 1, failed: 0, senderCount: 1 }];
+    batch = status({
+      total: 0,
+      done: 0,
+      requestedCount: 0,
+      affectedCount: 0,
+      skippedProtectedSenderIds: ids(1),
+    });
+    mount();
+    const pill = await screen.findByRole('region', { name: 'Recent actions' });
+    await waitFor(() =>
+      expect(pill).toHaveTextContent('Delete: 1 Protected sender skipped · Yankee Candle'),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('never reads another mailbox’s empty list as "everything stopped"', async () => {

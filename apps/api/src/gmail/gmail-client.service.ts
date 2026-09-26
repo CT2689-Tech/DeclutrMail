@@ -6,9 +6,11 @@ import {
   PermanentError,
   RateLimitError,
   type GmailQuotaLimiter,
+  GMAIL_BATCH_MODIFY_MAX_IDS,
   TransientError,
 } from '@declutrmail/workers';
 import type {
+  BatchModifyOptions,
   GmailHistoryPage,
   GmailHistoryRecord,
   GmailGrantClient,
@@ -79,8 +81,6 @@ const QUOTA_UNITS = {
   watch: 100,
   stop: 50,
 } as const;
-/** Gmail caps `messages.batchModify` at 1000 ids per request. */
-const BATCH_MODIFY_MAX_IDS = 1000;
 
 /** Shape of a `messages.list` response (the fields we read). */
 interface GmailListResponse {
@@ -536,9 +536,16 @@ export class GmailClientService
    * response body: a label-modify response carries only ids/labels, none
    * of which we need, and not reading it keeps the call body-free (D7).
    */
-  private async post(path: string, body: unknown, quotaUnits: number): Promise<void> {
+  private async post(
+    path: string,
+    body: unknown,
+    quotaUnits: number,
+    beforeSend?: () => Promise<void>,
+  ): Promise<void> {
     await this.limiter.acquire(quotaUnits);
     const token = await this.accessToken();
+    // Last point where nothing has reached Gmail: see `BatchModifyOptions`.
+    await beforeSend?.();
 
     let res: Response;
     try {
@@ -668,15 +675,20 @@ export class GmailClientService
    * (D5). Only message ids + label ids cross the wire (D7-safe). An empty
    * id list is a no-op — no request, no quota spend.
    */
-  async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+  async batchModify(
+    messageIds: string[],
+    change: LabelChange,
+    opts: BatchModifyOptions = {},
+  ): Promise<void> {
     const addLabelIds = change.addLabelIds ?? [];
     const removeLabelIds = change.removeLabelIds ?? [];
-    for (let i = 0; i < messageIds.length; i += BATCH_MODIFY_MAX_IDS) {
-      const ids = messageIds.slice(i, i + BATCH_MODIFY_MAX_IDS);
+    for (let i = 0; i < messageIds.length; i += GMAIL_BATCH_MODIFY_MAX_IDS) {
+      const ids = messageIds.slice(i, i + GMAIL_BATCH_MODIFY_MAX_IDS);
       await this.post(
         '/messages/batchModify',
         { ids, addLabelIds, removeLabelIds },
         QUOTA_UNITS.messagesBatchModify,
+        i === 0 ? opts.beforeFirstRequest : undefined,
       );
     }
   }

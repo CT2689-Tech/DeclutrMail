@@ -108,7 +108,12 @@ export const ArchivedUndoExpired: Story<typeof NoiseArchiveBar> = {
  * told by the tray.
  */
 export const Reverted: Story<typeof NoiseArchiveBar> = {
-  render: () => frame({ selectedCount: 4, outcome: { kind: 'reverted', senderCount: 4 } }),
+  render: () => frame({ selectedCount: 4, outcome: { kind: 'reverted', senderCount: 4, of: 4 } }),
+};
+
+/** One sender of the archive undone on its own from the tray; the rest stay archived. */
+export const PartlyReverted: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 1, outcome: { kind: 'reverted', senderCount: 1, of: 4 } }),
 };
 
 /**

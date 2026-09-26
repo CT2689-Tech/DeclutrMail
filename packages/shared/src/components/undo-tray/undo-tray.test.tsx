@@ -329,6 +329,30 @@ describe('<UndoTray /> — one pill (static)', () => {
     expect(html).not.toMatch(/until|Trash|applied/);
   });
 
+  // D245 / founder decision D4: a Protected sender the decision skipped
+  // rides its Undo line — one line, never a second one above it.
+  it('carries the host note on the Undo line, in the list and in what is read aloud', () => {
+    const skipped = entry({
+      actionKind: 'delete',
+      groupId: 'group-1',
+      senderCount: 12,
+      affectedCount: 1400,
+      note: '1 Protected sender skipped',
+    });
+    const pill = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [skipped] })} />);
+    expect(pill).toContain('Deleted 1,400 emails');
+    expect(pill).toContain(' · 12 senders');
+    expect(pill).toContain(' · 1 Protected sender skipped');
+    expect(pill).toContain('>Undo all<');
+    // The screen reader hears it too, before the Undo.
+    expect(pill).toContain('Deleted 1,400 emails. 1 Protected sender skipped. Undo available.');
+
+    const list = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [skipped] })} />,
+    );
+    expect(list).toContain(' · 1 Protected sender skipped');
+  });
+
   it('renders for a running action alone, without an Undo', () => {
     const html = renderToStaticMarkup(
       <UndoTray

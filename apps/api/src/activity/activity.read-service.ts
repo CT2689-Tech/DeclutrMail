@@ -18,7 +18,11 @@
 
 import { measureRequestOperation } from '../observability/request-performance.js';
 import { Inject, Injectable } from '@nestjs/common';
-import { engagementWindowStart } from '@declutrmail/shared/contracts';
+import {
+  engagementWindowStart,
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
+import { UNSUB_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/workers';
 import {
   and,
   count,
@@ -636,8 +640,11 @@ export class ActivityReadService {
       cursor,
       outcomes,
     });
-    const ruleReviewRows = await this.loadRuleReviewRows(params);
-    return [...projected, ...executionRows, ...ruleReviewRows]
+    const [ruleReviewRows, protectedSkipRows] = await Promise.all([
+      this.loadRuleReviewRows(params),
+      this.loadProtectedSkipRows(params),
+    ]);
+    return [...projected, ...executionRows, ...ruleReviewRows, ...protectedSkipRows]
       .sort(compareActivityRowsNewestFirst)
       .slice(0, limit + 1);
   }
@@ -758,6 +765,109 @@ export class ActivityReadService {
   }
 
   /**
+   * Label jobs skipped because their sender was Protected when they ran
+   * (D245). Nothing changed, so there is no `activity_log` row; the job's
+   * own marker is the durable record, shown as the same "skipped — sender
+   * is Protected" line Autopilot's protection dismissals use, with no Undo.
+   * Unlike those, it is the user's own action, so it sits in the default
+   * feed — the lasting trace once the bottom pill has faded.
+   *
+   * Dated by the click (`created_at`), like the queued line it replaces;
+   * the skip lands a lock-wait later. That also keeps the read on the
+   * `(mailbox, status, created_at)` index, bounded by the window, instead
+   * of scanning every finished job the mailbox ever ran.
+   */
+  private async loadProtectedSkipRows(params: ListActivityParams): Promise<ActivityRowFacts[]> {
+    const {
+      mailboxAccountId,
+      window,
+      source,
+      verbs = [],
+      senderQuery = '',
+      dateFrom = null,
+      dateTo = null,
+      outcomes = [],
+      cursor,
+      limit,
+      nowMs,
+    } = params;
+    if (source !== null && source !== 'manual') return [];
+    if (outcomes.length > 0 && !outcomes.includes('protected')) return [];
+    const skipVerbs = verbs.filter((verb): verb is ExecutionVerb =>
+      EXECUTION_VERBS.includes(verb as ExecutionVerb),
+    );
+    if (verbs.length > 0 && skipVerbs.length === 0) return [];
+    const useCustomRange = dateFrom !== null || dateTo !== null;
+    const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
+    // Column reference for every Date bound: postgres.js only accepts Date
+    // params when drizzle maps them through a column's encoder.
+    const clickedAt = actionJobs.createdAt;
+    const whereParts = [
+      eq(actionJobs.mailboxAccountId, mailboxAccountId),
+      eq(actionJobs.direction, 'forward' as const),
+      eq(actionJobs.status, 'done' as const),
+      eq(actionJobs.errorCode, LABEL_SENDER_PROTECTED_ERROR_CODE),
+      inArray(actionJobs.verb, skipVerbs.length > 0 ? skipVerbs : EXECUTION_VERBS),
+    ];
+    if (windowStart) whereParts.push(gte(clickedAt, windowStart));
+    if (dateFrom) whereParts.push(gte(clickedAt, dateFrom));
+    if (dateTo) whereParts.push(lt(clickedAt, dateTo));
+    if (senderQuery.length > 0) {
+      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
+    }
+    if (cursor) {
+      whereParts.push(
+        or(
+          lt(clickedAt, cursor.occurredAt),
+          and(eq(clickedAt, cursor.occurredAt), lt(actionJobs.id, cursor.id)),
+        )!,
+      );
+    }
+    const rows = await this.db
+      .select({
+        id: actionJobs.id,
+        occurredAt: clickedAt,
+        verb: actionJobs.verb,
+        senderKey: senders.senderKey,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+      })
+      .from(actionJobs)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, actionJobs.mailboxAccountId),
+          sql`${senders.senderKey} = ${actionJobs.selector}->>'senderKey'`,
+        ),
+      )
+      .where(and(...whereParts))
+      .orderBy(desc(clickedAt), desc(actionJobs.id))
+      .limit(limit + 1);
+    return rows.map((row) => ({
+      id: row.id,
+      occurredAt: row.occurredAt.toISOString(),
+      source: 'manual',
+      action: row.verb as ExecutionVerb,
+      affectedCount: 0,
+      sender:
+        row.senderKey === null || row.senderEmail === null
+          ? null
+          : {
+              senderKey: row.senderKey,
+              displayName: row.senderDisplayName ?? row.senderEmail,
+              email: row.senderEmail,
+              domain: domainOf(row.senderEmail),
+            },
+      rule: null,
+      feedbackRating: null,
+      undoState: { kind: 'unavailable' },
+      executionState: null,
+      reviewOutcome: 'protected',
+    }));
+  }
+
+  /**
    * Exact factual counts for the seven-day in-app review.
    *
    * Honours the sender filter (D246 + the 2026-08-19 founder decision):
@@ -787,12 +897,18 @@ export class ActivityReadService {
       senderQuery,
       sql`${failedCurrent.selector}->>'senderKey'`,
     );
-    const [persisted, dismissed, unresolved] = await Promise.all([
+    const skipScope = this.senderScopeFilter(
+      mailboxAccountId,
+      senderQuery,
+      sql`${actionJobs.selector}->>'senderKey'`,
+    );
+    const [persisted, dismissed, unresolved, skipped] = await Promise.all([
       this.db
         .select({
           completed: sql<number>`count(*) filter (where ${reviewOutcome} = 'completed')::int`,
           failed: sql<number>`count(*) filter (where ${reviewOutcome} = 'failed')::int`,
           recovered: sql<number>`count(*) filter (where ${reviewOutcome} = 'recovered')::int`,
+          protected: sql<number>`count(*) filter (where ${reviewOutcome} = 'protected')::int`,
         })
         .from(activityLog)
         .where(
@@ -846,6 +962,23 @@ export class ActivityReadService {
             ),
           ),
         ),
+      // Label jobs skipped as Protected when they ran (D245) — no
+      // activity_log row, so they are counted from the job's marker, dated
+      // by the click like their feed line (`loadProtectedSkipRows`).
+      this.db
+        .select({ n: count(actionJobs.id) })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.direction, 'forward'),
+            eq(actionJobs.status, 'done'),
+            eq(actionJobs.errorCode, LABEL_SENDER_PROTECTED_ERROR_CODE),
+            gte(actionJobs.createdAt, cutoff),
+            lt(actionJobs.createdAt, upperBound),
+            ...(skipScope ? [skipScope] : []),
+          ),
+        ),
     ]);
     const persistedCounts = persisted[0];
     const dismissCounts = new Map(dismissed.map((row) => [row.reason, Number(row.n)]));
@@ -858,7 +991,10 @@ export class ActivityReadService {
       skipped: dismissCounts.get('user') ?? 0,
       failed: Number(persistedCounts?.failed ?? 0) + unresolvedFailures,
       recovered: Number(persistedCounts?.recovered ?? 0),
-      protected: dismissCounts.get('protected') ?? 0,
+      protected:
+        (dismissCounts.get('protected') ?? 0) +
+        Number(persistedCounts?.protected ?? 0) +
+        Number(skipped[0]?.n ?? 0),
     };
   }
 
@@ -1330,6 +1466,13 @@ function persistedReviewOutcomeExpression() {
         and recovery.status = 'done'
         and recovery.undo_token = ${activityLog.undoToken}
     ) then 'recovered'
+    when ${activityLog.action} = 'unsubscribe' and ${activityLog.actionJobId} is not null and exists (
+      select 1 from action_jobs refused
+      where refused.id = ${activityLog.actionJobId}
+        and refused.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and refused.status = 'failed'
+        and refused.error_code = ${UNSUB_SENDER_PROTECTED_ERROR_CODE}
+    ) then 'protected'
     when ${activityLog.action} in (
       'unsubscribe',
       'unsubscribe_action_required',

@@ -282,6 +282,65 @@ describe('UndoService', () => {
       ]);
     });
 
+    /** A forward job its worker skipped because the sender was Protected (D245). */
+    async function seedSkippedJob(input: {
+      sender: { id: string; senderKey: string };
+      compositeId: string | null;
+    }): Promise<string> {
+      seq += 1;
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          direction: 'forward',
+          selector: {
+            type: 'sender',
+            senderId: input.sender.id,
+            senderKey: input.sender.senderKey,
+          },
+          resolvedMessageIds: [],
+          requestedCount: 12,
+          affectedCount: 0,
+          status: 'done',
+          errorCode: 'LABEL_SENDER_PROTECTED',
+          idempotencyKey: `job-${seq}`,
+          compositeId: input.compositeId,
+        })
+        .returning({ id: actionJobs.id });
+      return job!.id;
+    }
+
+    // Founder decision D4: the skip rides the decision's own Undo line.
+    // Counted here, in the same read as the line, so the pill never shows
+    // the line first and grows it a moment later.
+    it('counts the senders a decision skipped as Protected — when it is not the anchor', async () => {
+      const kept = await seedSender('Yankee Candle');
+      const skipped = await seedSender('Old Navy');
+      const anchor = await seedDoneJob({ sender: kept, verb: 'delete', affected: 40 });
+      await seedSkippedJob({ sender: skipped, compositeId: anchor.id });
+
+      const [d] = await svc.listActiveDecisions(mailboxId);
+      expect(d).toMatchObject({ senderCount: 1, protectedSkippedCount: 1 });
+    });
+
+    it('counts a skipped anchor too, and reports 0 when nothing was skipped', async () => {
+      const skipped = await seedSender('Old Navy');
+      const kept = await seedSender('Yankee Candle');
+      const lone = await seedSender('Greenhouse');
+      const anchorId = await seedSkippedJob({ sender: skipped, compositeId: null });
+      await seedDoneJob({ sender: kept, verb: 'delete', affected: 40, compositeId: anchorId });
+      await seedDoneJob({ sender: lone, verb: 'delete', affected: 9 });
+
+      const decisions = await svc.listActiveDecisions(mailboxId);
+      expect(
+        new Map(decisions.map((d) => [d.groupId, d.protectedSkippedCount])).get(anchorId),
+      ).toBe(1);
+      expect(decisions.filter((d) => d.groupId !== anchorId)).toEqual([
+        expect.objectContaining({ protectedSkippedCount: 0 }),
+      ]);
+    });
+
     it('reads the list in ONE statement — two would see two snapshots', async () => {
       // An undo landing between two statements emptied a group (a crash
       // that 500s the whole tray) and a token issued between them printed

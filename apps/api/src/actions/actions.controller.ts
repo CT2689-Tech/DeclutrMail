@@ -388,6 +388,7 @@ export class ActionsController {
         previewId,
         idempotencyKey: idempotencyKey.trim(),
         wakeAt: parsed.data.wakeAt ? new Date(parsed.data.wakeAt) : null,
+        senderProtected: parsed.data.senderProtected === true,
       }),
     );
   }

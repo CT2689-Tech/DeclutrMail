@@ -15,7 +15,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
@@ -369,10 +369,35 @@ describe('UnsubExecutionWorker', () => {
       resolveHost: PUBLIC_RESOLVE,
     });
 
-    const result = await worker.processJob(
-      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' },
-      ctx(1),
-    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let warned: unknown[][] = [];
+    const result = await worker
+      .processJob({ actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' }, ctx(1))
+      .finally(() => {
+        warned = [...warn.mock.calls];
+        warn.mockRestore();
+      });
+
+    // D7: the refusal's one trace is ids — pinned key for key, so the
+    // unsubscribe URL or an address cannot join it without this failing.
+    const lines = warned.flatMap(([line]) => {
+      try {
+        const parsed = JSON.parse(String(line)) as Record<string, unknown>;
+        return parsed.kind === 'unsub.sender_protected' ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+    expect(lines).toHaveLength(1);
+    expect(Object.keys(lines[0]!).sort()).toEqual([
+      'actionId',
+      'kind',
+      'level',
+      'mailboxAccountId',
+      'message',
+      'senderKey',
+      'severity',
+    ]);
 
     // The load-bearing assertion: nothing left the process. A fake that
     // would have answered 200 was never asked — the sender became
