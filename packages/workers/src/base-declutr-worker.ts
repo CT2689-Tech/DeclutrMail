@@ -533,6 +533,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'skippedUnsubSendDisabled',
   'skippedDuplicateRun',
   'skippedMissingSender',
+  'skippedNoLongerPending',
   'skippedProtected',
   'skippedRuleInactive',
   'source',
