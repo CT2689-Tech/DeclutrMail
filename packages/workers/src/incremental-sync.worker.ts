@@ -17,6 +17,7 @@ import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { listMailboxLabels, syncMailboxLabels, type MailboxLabel } from './mailbox-label-sync.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
+import { messageGmailCategory } from './gmail-category.js';
 import {
   isAwaitingReconnect,
   notNeedingReconnect,
@@ -115,16 +116,6 @@ export async function selectIncrementalDriftCandidates(
       : [{ mailboxAccountId: row.mailboxAccountId, lastHistoryId: row.lastHistoryId }],
   );
 }
-
-/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
- * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */
-const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
-  CATEGORY_PERSONAL: 'primary',
-  CATEGORY_PROMOTIONS: 'promotions',
-  CATEGORY_SOCIAL: 'social',
-  CATEGORY_UPDATES: 'updates',
-  CATEGORY_FORUMS: 'forums',
-};
 
 /**
  * Rank fragments for the monotonic unsubscribe-method upgrade (D9):
@@ -1506,20 +1497,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
 }
 
 /**
- * Pick the dominant Gmail category from a message's label set.
- * Mirrors `InitialSyncWorker.dominantCategory` for the single-message
- * case — when the message has no CATEGORY_*, fall back to `primary`
- * (the same default the worker's per-sender `dominantCategory` uses
- * for senders w/ no categorized messages).
+ * The category a sender first seen through this message is written with:
+ * the tab Gmail filed the message under, or `unknown` when it carries no
+ * CATEGORY_* label — never a guessed `primary` (mig 0079). Later mail does
+ * not revise it here; the nightly `SenderIndexSweepWorker` recomputes
+ * every sender from all its labelled mail (`reconcileSenderCategories`).
  */
 function pickGmailCategory(labelIds: string[]): GmailCategory {
-  for (const label of labelIds) {
-    const mapped = CATEGORY_LABEL_MAP[label];
-    if (mapped) {
-      return mapped;
-    }
-  }
-  return 'primary';
+  return messageGmailCategory(labelIds) ?? 'unknown';
 }
 
 /**

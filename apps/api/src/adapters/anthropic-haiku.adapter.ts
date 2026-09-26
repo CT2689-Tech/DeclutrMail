@@ -150,7 +150,9 @@ export function renderUserPrompt(input: ReasoningInput): string {
   return [
     `Sender: ${senderLabel}`,
     `Domain: ${input.domain || '(unknown)'}`,
-    `Gmail category: ${input.gmailCategory}`,
+    // No tab holds most of the sender's mail → no line. Printing
+    // "unknown" invites the model to talk about Gmail's labels (mig 0079).
+    ...(input.gmailCategory === 'unknown' ? [] : [`Gmail category: ${input.gmailCategory}`]),
     `Monthly volume: ${input.facts.monthlyVolume} messages`,
     // Never "0%" for unmeasurable — the model would faithfully explain a
     // disengagement that was never observed.

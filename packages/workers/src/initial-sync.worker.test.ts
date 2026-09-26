@@ -1350,12 +1350,14 @@ describe('InitialSyncWorker', () => {
     it('protects explicit stars and repeated Gmail importance, but not one weak importance signal', async () => {
       const fixture = [
         ...makeLabeledSender(10, [['INBOX', 'STARRED']]),
+        // Primary-labelled: importance only protects inside Primary, and
+        // mail with no tab label is no longer read as Primary (mig 0079).
         ...makeLabeledSender(11, [
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
         ]),
-        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT']]),
+        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']]),
       ];
 
       await new InitialSyncWorker({
@@ -1416,6 +1418,32 @@ describe('InitialSyncWorker', () => {
       expect(reasons.has(deriveSenderKey('sender20@example.com'))).toBe(false);
       expect(reasons.has(deriveSenderKey('sender21@example.com'))).toBe(false);
       expect(reasons.get(deriveSenderKey('sender22@example.com'))).toBe('gmail_important');
+    });
+
+    it('gmail importance does not protect a sender whose mail carries no tab label', async () => {
+      // "Protected because Gmail marked … this Primary-inbox sender
+      // important" needs a Primary label behind it. With no CATEGORY_*
+      // label at all, the old default filed the sender under Primary and
+      // the importance rule protected it on nothing (mig 0079).
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(
+          new FakeGmailClient(
+            makeLabeledSender(23, [
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+            ]),
+          ),
+        ),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const policies = await db
+        .select({ senderKey: schema.senderPolicies.senderKey })
+        .from(schema.senderPolicies);
+      expect(policies.map((p) => p.senderKey)).not.toContain(
+        deriveSenderKey('sender23@example.com'),
+      );
     });
 
     it('sweep withdraws importance-only protection from non-Primary senders (self-heals stale rows)', async () => {
@@ -1612,6 +1640,82 @@ describe('InitialSyncWorker', () => {
       // started, not the most recent rerun.
       expect(secondRun?.protectionSetAt?.getTime()).toBe(firstSetAt?.getTime());
     });
+  });
+});
+
+describe('InitialSyncWorker — gmail_category is Gmail’s own tab label, never a default (mig 0079)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  /** One sender, one message per label set. */
+  function senderWith(index: number, labelSets: string[][]): GmailMessageMetadata[] {
+    const base = Date.UTC(2026, 0, 1) + index * 86_400_000;
+    return labelSets.map((labelIds, i) => ({
+      id: `cat-${index}-${i}`,
+      threadId: `cat-thread-${index}-${i}`,
+      labelIds,
+      snippet: '',
+      internalDate: String(base + i * 60_000),
+      from: `Sender ${index} <cat${index}@example.com>`,
+      subject: `Subject ${i}`,
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    }));
+  }
+
+  async function categories(fixture: GmailMessageMetadata[]): Promise<Map<string, string>> {
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(fixture)),
+    }).processJob({ mailboxAccountId }, CTX);
+    const rows = await db
+      .select({ email: senders.email, category: senders.gmailCategory })
+      .from(senders);
+    return new Map(rows.map((r) => [r.email, r.category]));
+  }
+
+  it('stores unknown — not primary — for a sender Gmail never filed under a tab', async () => {
+    // 30,443 of 38,259 inbound messages on one production mailbox carried
+    // no CATEGORY_* label (2026-09-25); each of their senders was stored
+    // as Primary and kept at 95%.
+    const byEmail = await categories(senderWith(1, [['INBOX'], ['INBOX', 'UNREAD'], ['CHAT']]));
+    expect(byEmail.get('cat1@example.com')).toBe('unknown');
+  });
+
+  it('lets labelled mail decide — unlabelled messages no longer vote for Primary', async () => {
+    const byEmail = await categories(
+      senderWith(2, [['INBOX'], ['INBOX'], ['INBOX'], ['INBOX', 'CATEGORY_PROMOTIONS']]),
+    );
+    expect(byEmail.get('cat2@example.com')).toBe('promotions');
+  });
+
+  it('stores unknown on a tie instead of handing it to Primary', async () => {
+    const byEmail = await categories(
+      senderWith(3, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+    );
+    expect(byEmail.get('cat3@example.com')).toBe('unknown');
+  });
+
+  it('keeps Primary when most of the labelled mail is Primary', async () => {
+    const byEmail = await categories(
+      senderWith(4, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_UPDATES'],
+        ['INBOX'],
+      ]),
+    );
+    expect(byEmail.get('cat4@example.com')).toBe('primary');
   });
 });
 

@@ -113,8 +113,8 @@ interface SignalBatch {
  * over D25's weekly sweep, and `cron_sweep` has no producer. Scoring runs
  * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
  * longer re-scans),
- * `signal_change` (first-seen senders), `stale_refresh` and
- * `manual_rescore`.
+ * `signal_change` (first-seen senders, and senders whose Gmail tab the
+ * nightly sweep corrected), `stale_refresh` and `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -141,9 +141,9 @@ export type ScoreTrigger =
   | 'cron_sweep';
 
 /**
- * One score job. Either runs for a single `senderKey` (signal-change
- * event, manual rescore) or for every active sender in the mailbox
- * (sync-complete sweep).
+ * One score job. Runs for a single `senderKey` (signal-change event,
+ * manual rescore), a named `senderKeys` set (Gmail tab recount), or every
+ * active sender in the mailbox (sync-complete sweep).
  *
  * `producedAtMs` is the trigger event's clock — passed in so the worker
  * is testable without `Date.now()` and so the idempotency key is stable
@@ -153,6 +153,14 @@ export interface ScoreJobData {
   mailboxAccountId: string;
   /** If set, score just this sender. If unset, score every active sender. */
   senderKey?: string;
+  /**
+   * If set (and `senderKey` is not), score exactly these senders — the
+   * ones a Gmail tab recount marked stale (`sendersAwaitingRescore`). One
+   * job for the set, so the run publishes ONE `score_run_completed` and
+   * one Autopilot sweep follows, not one per sender. Stored explanations
+   * are never reused for them: their input is what changed.
+   */
+  senderKeys?: readonly string[];
   trigger: ScoreTrigger;
   producedAtMs: number;
 }
@@ -367,8 +375,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
     // `${mailbox_id}:${sender_key}:${produced_at}` per the task spec.
-    // `'*'` for the all-senders sync_complete sweep so its key is stable.
-    return `${payload.mailboxAccountId}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+    // `'*'` for the all-senders sync_complete sweep so its key is stable;
+    // `'subset'` for a named set, so it never collides with either.
+    const scope = payload.senderKey ?? (payload.senderKeys ? 'subset' : '*');
+    return `${payload.mailboxAccountId}:${scope}:${payload.producedAtMs}`;
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
@@ -378,14 +388,22 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     if (!payload.producedAtMs || !Number.isFinite(payload.producedAtMs)) {
       throw new ValidationError('score job is missing producedAtMs');
     }
+    // An empty set is a producer bug, never "score everyone": falling
+    // through to the whole mailbox would re-buy every explanation.
+    if (payload.senderKeys && payload.senderKeys.length === 0) {
+      throw new ValidationError('score job names an empty senderKeys set');
+    }
 
     const producedAt = new Date(payload.producedAtMs);
     const expiresAt = new Date(payload.producedAtMs + RESCORE_TTL_MS);
 
-    // Which senders to score: one (signal-change) or all (sync-complete sweep).
+    // Which senders to score: one (signal-change), a named set (Gmail tab
+    // recount), or all (sync-complete sweep).
     const senderKeys = payload.senderKey
       ? [payload.senderKey]
-      : await this.listMailboxSenderKeys(payload.mailboxAccountId);
+      : payload.senderKeys
+        ? [...new Set(payload.senderKeys)]
+        : await this.listMailboxSenderKeys(payload.mailboxAccountId);
 
     // CHUNKED, and each chunk isolated.
     //
@@ -415,6 +433,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       let batch: SignalBatch;
       try {
         batch = await this.loadSignalBatch(payload.mailboxAccountId, chunk);
+        // A named set is re-scored because its explanations' input
+        // changed (the Gmail tab recount). Never reuse one: a score job
+        // that overlapped the recount can have rewritten the stale row
+        // with a fresh expiry, and reuse would keep "…your Primary
+        // inbox" on a sender that is not in Primary.
+        if (payload.senderKeys) batch.existingDecisions.clear();
       } catch (err) {
         // A failed PREFETCH loses the chunk, not the sweep. Logged with
         // its size so a chunk silently skipped is never mistaken for a

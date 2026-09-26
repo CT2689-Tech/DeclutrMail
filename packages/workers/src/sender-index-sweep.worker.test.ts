@@ -1,10 +1,18 @@
-import { mailMessages, schema, senderPolicies, senders, senderTimeseries } from '@declutrmail/db';
+import {
+  mailMessages,
+  schema,
+  senderPolicies,
+  senders,
+  senderTimeseries,
+  triageDecisions,
+} from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as protection from './automatic-protection.js';
+import * as gmailCategory from './gmail-category.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
 import {
   MAILBOX_BATCH_SIZE,
@@ -28,6 +36,8 @@ const CTX: WorkerContext = { attempt: 1, jobId: 'sweep-1' } as WorkerContext;
 const RECENT = new Date(Date.now() - 30 * 86_400_000);
 const LONG_AGO = new Date(Date.now() - 400 * 86_400_000);
 const MONTH = '2026-08-01';
+/** For tests that are not about re-scoring — the hook is required. */
+const NO_RESCORE = async () => {};
 
 describe('SenderIndexSweepWorker', () => {
   let db: Db;
@@ -65,6 +75,7 @@ describe('SenderIndexSweepWorker', () => {
       db: db as never,
       lock: PASSTHROUGH_MAILBOX_LOCK,
       enqueueContinuation,
+      onSendersRecategorized: NO_RESCORE,
     }).processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
   }
 
@@ -334,6 +345,229 @@ describe('SenderIndexSweepWorker', () => {
     expect(result.mailboxesProcessed).toBe(1);
   });
 
+  describe('Gmail tab recount (mig 0079)', () => {
+    /**
+     * A sender written by the old "no tab label → primary" default, with
+     * the stored decision a recount has to invalidate.
+     */
+    async function seedGuessedPrimary(senderKey: string, labelSets: string[][]): Promise<void> {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        verdict: 'keep',
+        confidence: '0.95',
+        reasoning: 'Kept because Gmail puts them in your Primary inbox.',
+        generatedBy: 'llm_haiku',
+        expiresAt: new Date(Date.now() + 86_400_000),
+      });
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        email: `${senderKey}@ex.com`,
+        domain: 'ex.com',
+        gmailCategory: 'primary',
+        firstSeenAt: LONG_AGO,
+        lastSeenAt: RECENT,
+      });
+      await db.insert(mailMessages).values(
+        labelSets.map((labelIds, i) => ({
+          mailboxAccountId: mailboxId,
+          providerMessageId: `${senderKey}-${i}`,
+          providerThreadId: `t-${senderKey}-${i}`,
+          senderKey,
+          subject: 's',
+          snippet: '',
+          internalDate: RECENT,
+          labelIds,
+          isUnread: false,
+          isOutbound: false,
+        })),
+      );
+    }
+
+    async function categoryOf(senderKey: string) {
+      const [row] = await db
+        .select({ c: senders.gmailCategory })
+        .from(senders)
+        .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, senderKey)));
+      return row?.c;
+    }
+
+    it('corrects a Primary no label backs, then asks for exactly those senders to be re-scored', async () => {
+      await seedGuessedPrimary('guessed', [['INBOX'], ['INBOX']]);
+      await seedGuessedPrimary('person', [['INBOX', 'CATEGORY_PERSONAL']]);
+      const rescored: [string, readonly string[]][] = [];
+
+      const result = await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: async (mb, keys) => {
+          rescored.push([mb, keys]);
+        },
+      }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+      expect(await categoryOf('guessed')).toBe('unknown');
+      expect(await categoryOf('person')).toBe('primary');
+      expect(result.categoriesCorrected).toBe(1);
+      expect(result.rescoresRequested).toBe(1);
+      expect(rescored).toEqual([[mailboxId, ['guessed']]]);
+    });
+
+    it('does not re-score a corrected sender that was never scored — there is no claim to replace', async () => {
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: 'never-scored',
+        email: 'ns@ex.com',
+        domain: 'ex.com',
+        gmailCategory: 'primary',
+        firstSeenAt: LONG_AGO,
+        lastSeenAt: RECENT,
+      });
+      const onSendersRecategorized = vi.fn(async () => {});
+
+      const result = await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized,
+      }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+      expect(result.categoriesCorrected).toBe(1);
+      expect(onSendersRecategorized).not.toHaveBeenCalled();
+    });
+
+    it('releases an importance protection that only a guessed Primary granted — in the same pass', async () => {
+      // Order matters: protection reads `gmail_category = 'primary'`, so
+      // the recount has to land first or the stale protection survives
+      // until the next night.
+      await seedGuessedPrimary('important-unlabelled', [
+        ['INBOX', 'IMPORTANT'],
+        ['INBOX', 'IMPORTANT'],
+        ['INBOX', 'IMPORTANT'],
+      ]);
+      await seedProtection('important-unlabelled', 'gmail_important');
+
+      await run();
+
+      const policy = await policyFor('important-unlabelled');
+      expect(policy?.isProtected).toBe(false);
+      expect(policy?.reason).toBeNull();
+    });
+
+    it('keeps an importance protection that real Primary mail backs', async () => {
+      await seedGuessedPrimary('important-primary', [
+        ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+      ]);
+      await seedProtection('important-primary', 'gmail_important');
+
+      await run();
+
+      const policy = await policyFor('important-primary');
+      expect(policy?.isProtected).toBe(true);
+      expect(policy?.reason).toBe('gmail_important');
+    });
+
+    it('asks for no re-score when no tab moved', async () => {
+      await seedGuessedPrimary('person', [['INBOX', 'CATEGORY_PERSONAL']]);
+      const onSendersRecategorized = vi.fn(async () => {});
+
+      const result = await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized,
+      }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+      expect(result.categoriesCorrected).toBe(0);
+      expect(onSendersRecategorized).not.toHaveBeenCalled();
+    });
+
+    it('a failed re-score request is captured, counted, and asked for again the next night', async () => {
+      await seedGuessedPrimary('guessed', [['INBOX']]);
+      const captured: string[] = [];
+      const observer = {
+        captureFailure() {},
+        captureBackgroundFailure(_e: Error, c: { kind: string }) {
+          captured.push(c.kind);
+        },
+        recordBackgroundNotice() {},
+      };
+      const requests: (readonly string[])[] = [];
+      let fail = true;
+      const worker = new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: async (_mb, keys) => {
+          if (fail) throw new Error('redis down');
+          requests.push(keys);
+        },
+      });
+      worker.setObserver(observer);
+
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      let first;
+      try {
+        first = await worker.processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+      } finally {
+        spy.mockRestore();
+      }
+
+      // The correction committed; the miss reached the observer and the ops line.
+      expect(await categoryOf('guessed')).toBe('unknown');
+      expect(first.mailboxesProcessed).toBe(1);
+      expect(first.rescoresNotRequested).toBe(1);
+      expect(captured).toEqual(['sender_index_sweep.rescore_enqueue_failed']);
+
+      // Next night: the tab no longer moves, but the sender is still
+      // marked stale, so it is asked for again.
+      fail = false;
+      const second = await worker.processJob({ scheduledAtMinute: '2026-09-27T03:00' }, CTX);
+      expect(second.categoriesCorrected).toBe(0);
+      expect(second.rescoresRequested).toBe(1);
+      expect(requests).toEqual([['guessed']]);
+    });
+
+    it('corrects a disconnected mailbox — the export prints its tab — without asking for a re-score', async () => {
+      await seedGuessedPrimary('guessed', [['INBOX']]);
+      await db
+        .update(schema.mailboxAccounts)
+        .set({ status: 'disconnected' })
+        .where(eq(schema.mailboxAccounts.id, mailboxId));
+      const onSendersRecategorized = vi.fn(async () => {});
+
+      const result = await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized,
+      }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+      expect(result.categoriesCorrected).toBe(1);
+      expect(await categoryOf('guessed')).toBe('unknown');
+      expect(onSendersRecategorized).not.toHaveBeenCalled();
+    });
+
+    it('names the step that failed, so a broken recount is not an anonymous failure', async () => {
+      await seedGuessedPrimary('guessed', [['INBOX']]);
+      const lines: string[] = [];
+      const fail = vi
+        .spyOn(gmailCategory, 'reconcileSenderCategories')
+        .mockRejectedValue(new Error('shape drift'));
+      const spy = vi.spyOn(console, 'error').mockImplementation((l: unknown) => {
+        lines.push(String(l));
+      });
+      try {
+        await expect(run()).rejects.toThrow(/failed for all 1 eligible/);
+      } finally {
+        spy.mockRestore();
+        fail.mockRestore();
+      }
+      const failure = lines
+        .map((l) => JSON.parse(l) as { kind?: string; step?: string })
+        .find((l) => l.kind === 'sender_index_sweep.mailbox_failed');
+      expect(failure?.step).toBe('categories');
+    });
+  });
+
   it('skips a mailbox that is not sync-ready', async () => {
     // Blind case for the eligibility query: if this swept, the
     // `readiness_status` predicate is doing nothing and the counts
@@ -363,6 +597,7 @@ describe('SenderIndexSweepWorker', () => {
       await new SenderIndexSweepWorker({
         db: db as never,
         lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: NO_RESCORE,
       }).run({
         id: 'sweep-1',
         data: { scheduledAtMinute: '2026-08-24T03:00' },
@@ -408,6 +643,7 @@ describe('SenderIndexSweepWorker', () => {
       enqueueContinuation: async (payload) => {
         pending.push(payload);
       },
+      onSendersRecategorized: NO_RESCORE,
     });
     while (pending.length) await worker.processJob(pending.shift()!, CTX);
     expect(visited).toHaveLength(MAILBOX_BATCH_SIZE + 3);
@@ -437,6 +673,7 @@ describe('SenderIndexSweepWorker', () => {
       const worker = new SenderIndexSweepWorker({
         db: db as never,
         lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: NO_RESCORE,
       });
       await expect(
         worker.processJob(
@@ -467,6 +704,7 @@ describe('SenderIndexSweepWorker', () => {
       enqueueContinuation: async (payload) => {
         continuations.push(payload);
       },
+      onSendersRecategorized: NO_RESCORE,
     });
     await expect(worker.processJob({ scheduledAtMinute: '2026-09-22T03:00' }, CTX)).rejects.toThrow(
       /all 1 eligible/,

@@ -461,6 +461,51 @@ describe('IncrementalSyncWorker', () => {
     expect(state!.lastSyncedAt).not.toBeNull();
   });
 
+  it.each([
+    [['INBOX'], 'unknown'],
+    [['INBOX', 'CATEGORY_PROMOTIONS'], 'promotions'],
+    [['INBOX', 'CATEGORY_PERSONAL'], 'primary'],
+  ] as const)(
+    'a first-seen sender takes its tab from Gmail’s label, never a guessed Primary (%j → %s)',
+    async (labelIds, expected) => {
+      const meta = makeMetadata(
+        'm-cat',
+        'thread-cat',
+        'first@example.com',
+        [...labelIds],
+        Date.UTC(2026, 5, 1),
+      );
+      const client = new FakeGmailClient(
+        [
+          {
+            forCursor: '1000',
+            page: {
+              records: [
+                {
+                  kind: 'added',
+                  messageId: 'm-cat',
+                  threadId: 'thread-cat',
+                  labelIds: [...labelIds],
+                },
+              ],
+              historyId: '1500',
+            },
+          },
+        ],
+        new Map([['m-cat', meta]]),
+      );
+
+      await new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+      const [sender] = await db.select({ category: senders.gmailCategory }).from(senders);
+      expect(sender?.category).toBe(expected);
+    },
+  );
+
   /**
    * `getMessageMetadata` resolves `null` for BOTH "deleted between the
    * history record and the get" and "Gmail refused to render it". Only the

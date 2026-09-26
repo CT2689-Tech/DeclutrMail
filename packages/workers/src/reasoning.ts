@@ -68,7 +68,7 @@ export interface ReasoningInput {
    */
   ruleLabel: string;
   facts: CascadeResult['facts'];
-  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';
 }
 
 /**

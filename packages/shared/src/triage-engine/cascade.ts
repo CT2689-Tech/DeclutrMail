@@ -177,10 +177,13 @@ export interface SenderSignals {
    */
   hasWrittenTo: boolean;
   /**
-   * Gmail's own `CATEGORY_PERSONAL` (mapped to `'primary'` in our enum).
+   * The Gmail tab more than half of the sender's LABELLED mail carries
+   * (`CATEGORY_PERSONAL` is `'primary'`). `'unknown'` when none of its
+   * mail carries a tab label, or no tab holds a majority — no rule may
+   * read it as Primary, which is what the old default did (mig 0079).
    * D222: this is GMAIL's classification, not DeclutrMail's prediction.
    */
-  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';
   /** D21 rule 4 — user has starred ≥ 1 message in the past year. */
   starredInLastYear: boolean;
   /**

@@ -68,7 +68,7 @@ export interface TriageQueueRow {
    * controller resolves it for the whole page in one batched read.
    */
   brandMark: boolean;
-  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';
   /**
    * Sender unsubscribe capability. NULLABLE — null means the sender
    * index has not derived a method yet, which is NOT the same fact as
