@@ -10,6 +10,7 @@ import {
   type TriageVerdict,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { FIRST_VIEW_QUEUE_ROWS } from '@declutrmail/workers';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -361,5 +362,155 @@ describe('TriageService.getQueueSize — D30 integration', () => {
     }
     expect(await service.getQueueSize(mailboxA)).toBe(TRIAGE_QUEUE_MIN);
     expect(await service.getQueueSize(mailboxB)).toBe(TRIAGE_QUEUE_MAX);
+  });
+});
+
+describe('TriageService.explainSenders — explanations on demand (D24)', () => {
+  let db: Db;
+  let queued: Array<{ name: string; data: Record<string, unknown>; opts: Record<string, unknown> }>;
+  let service: TriageService;
+  let mailboxA: string;
+  let mailboxB: string;
+
+  /**
+   * Models BullMQ 6's custom-id rule rather than accepting anything: an id
+   * containing `:` is rejected unless it has exactly three segments. A spy
+   * that took any id is how a malformed id shipped twice before (U14,
+   * domain icons) — every enqueue threw in production, and nothing in the
+   * suite could see it.
+   */
+  function bullmqLikeQueue() {
+    return {
+      addBulk: async (
+        jobs: Array<{ name: string; data: Record<string, unknown>; opts: { jobId?: string } }>,
+      ) => {
+        for (const job of jobs) {
+          const id = job.opts.jobId ?? '';
+          if (id.includes(':') && id.split(':').length !== 3) {
+            throw new Error('Custom Id cannot contain :');
+          }
+          queued.push(job as never);
+        }
+      },
+    } as never;
+  }
+
+  async function seedScoredSender(
+    mailboxAccountId: string,
+    email: string,
+    decision: { generatedBy: 'llm_haiku' | 'template'; producedAt: Date; expiresAt: Date } | null,
+  ): Promise<{ id: string; senderKey: string }> {
+    const senderKey = senderKeyFor(email);
+    const [row] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId,
+        senderKey,
+        email,
+        displayName: email,
+        domain: 'example.com',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      })
+      .returning({ id: senders.id });
+    if (decision) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'archive',
+        confidence: '0.80',
+        reasoning: 'Sender sends 30/mo. Recommended: Archive.',
+        ...decision,
+      });
+    }
+    return { id: row!.id, senderKey };
+  }
+
+  const NOW = new Date('2026-09-26T12:00:00.000Z');
+  const FRESH = {
+    producedAt: new Date('2026-09-25T08:30:00.123Z'),
+    expiresAt: new Date('2026-10-02T08:30:00.123Z'),
+  };
+
+  beforeEach(async () => {
+    db = await freshDb();
+    queued = [];
+    service = new TriageService(db as never, bullmqLikeQueue());
+    mailboxA = await seedMailbox(db, 'a@example.com');
+    mailboxB = await seedMailbox(db, 'b@example.com');
+  });
+
+  it('queues one explain job per fresh template row, keyed to the row version', async () => {
+    const opened = await seedScoredSender(mailboxA, 'opened@example.com', {
+      generatedBy: 'template',
+      ...FRESH,
+    });
+
+    const result = await service.explainSenders({
+      mailboxAccountId: mailboxA,
+      senderIds: [opened.id],
+      now: NOW,
+    });
+
+    expect(result).toEqual({ queued: [opened.id] });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.data).toEqual({
+      mailboxAccountId: mailboxA,
+      senderKey: opened.senderKey,
+      trigger: 'explain',
+      producedAtMs: Date.parse('2026-09-25T08:30:00.123Z'),
+    });
+    // Same row version, same id: a second ask while the first is queued
+    // (or within retention) is one job, not two bills.
+    expect(queued[0]!.opts.jobId).toBe(
+      `explain-${mailboxA}-${opened.senderKey}-${Date.parse('2026-09-25T08:30:00.123Z')}`,
+    );
+  });
+
+  it('asks for nothing a row does not need', async () => {
+    const explained = await seedScoredSender(mailboxA, 'explained@example.com', {
+      generatedBy: 'llm_haiku',
+      ...FRESH,
+    });
+    // Past its TTL: opening it asks for a re-score, which buys its own
+    // sentence — explaining it first would pay twice.
+    const stale = await seedScoredSender(mailboxA, 'stale@example.com', {
+      generatedBy: 'template',
+      producedAt: new Date('2026-09-10T00:00:00Z'),
+      expiresAt: new Date('2026-09-17T00:00:00Z'),
+    });
+    const unscored = await seedScoredSender(mailboxA, 'unscored@example.com', null);
+    // Another mailbox's sender, by id: a guessed id must not reach it.
+    const foreign = await seedScoredSender(mailboxB, 'foreign@example.com', {
+      generatedBy: 'template',
+      ...FRESH,
+    });
+
+    const result = await service.explainSenders({
+      mailboxAccountId: mailboxA,
+      senderIds: [explained.id, stale.id, unscored.id, foreign.id],
+      now: NOW,
+    });
+
+    expect(result).toEqual({ queued: [] });
+    expect(queued).toHaveLength(0);
+  });
+
+  it('refuses to pretend when there is no queue to put the work on', async () => {
+    const noQueue = new TriageService(db as never, null);
+    await expect(
+      noQueue.explainSenders({ mailboxAccountId: mailboxA, senderIds: [randomUUID()], now: NOW }),
+    ).rejects.toThrow(/REDIS_URL/);
+  });
+
+  /**
+   * The worker explains the top `FIRST_VIEW_QUEUE_ROWS` of the queue when a
+   * mailbox becomes ready. It lives in `packages/workers`, which cannot
+   * import this constant — so raising the D30 ceiling without it would
+   * leave the tail of the first queue on the template.
+   */
+  it('the worker explains at least a full queue at ready', () => {
+    expect(FIRST_VIEW_QUEUE_ROWS).toBeGreaterThanOrEqual(TRIAGE_QUEUE_MAX);
   });
 });

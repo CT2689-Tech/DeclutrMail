@@ -51,6 +51,7 @@ import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
+import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
 import {
@@ -521,6 +522,25 @@ export function TriageScreen({
     pendingAction != null && state.kind === 'ready'
       ? (state.rows.find((r) => r.id === pendingAction.rowId) ?? null)
       : null;
+
+  // D24 — explanations on demand (founder decision 2026-09-25). The queue
+  // IS what the user is about to read — every decision opens its reason —
+  // so the whole queue asks for the sentences still on the template, and a
+  // row entering after a decision asks as it arrives, well before the user
+  // reaches it. Only the reason on screen (the expanded row or the card's
+  // "Why?", and the sheet's "Why suggested") is re-read until its sentence
+  // lands; the rest ride the re-read every decision already makes.
+  //
+  // Unlike a re-score, an explanation never moves verdict, confidence or
+  // age, so it cannot re-sort the queue — which is why it runs in
+  // onboarding (D112) too. The key's prefix covers onboarding's
+  // first-triage read as well.
+  useExplainReasons(state.kind === 'ready' ? state.rows : [], {
+    invalidate: TRIAGE_BOOTSTRAP_KEY,
+    showing: [expandedRow, pendingAction?.surface === 'sheet' ? pendingRow : null].filter(
+      (row): row is TriageDecisionRow => row !== null,
+    ),
+  });
 
   // D226 real-count preview: the confirm surface states what actually
   // moves (the sender's current-inbox count from

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { TriageController } from './triage.controller.js';
@@ -57,5 +59,67 @@ describe('TriageController.bootstrap', () => {
       mailboxAccountId: 'mailbox-2',
       limit: 12,
     });
+  });
+});
+
+describe('TriageController.explain — explanations on demand (D24)', () => {
+  const ID_A = '2f1c4a36-8d8e-4a47-9b1e-3b1f0c2d4e5f';
+  const ID_B = '7b9e2c10-1a2b-4c3d-8e4f-5a6b7c8d9e0f';
+
+  function makeExplainController() {
+    const triage = {
+      explainSenders: vi.fn().mockResolvedValue({ queued: [ID_A] }),
+    };
+    const controller = new TriageController(
+      triage as unknown as TriageService,
+      {} as TriageReadService,
+      {} as IconsService,
+    );
+    return { controller, triage };
+  }
+
+  it('hands the service a de-duplicated list of the ids asked for', async () => {
+    const { controller, triage } = makeExplainController();
+
+    const res = await controller.explain({ id: 'mailbox-1' }, { senderIds: [ID_A, ID_B, ID_A] });
+
+    expect(triage.explainSenders).toHaveBeenCalledWith({
+      mailboxAccountId: 'mailbox-1',
+      senderIds: [ID_A, ID_B],
+    });
+    expect(res.data).toEqual({ queued: [ID_A] });
+  });
+
+  it.each([
+    ['a missing list', {}],
+    ['an empty list', { senderIds: [] }],
+    ['a list of non-strings', { senderIds: [42] }],
+    ['a malformed id', { senderIds: ['not-a-uuid'] }],
+    // A queue's worth (D30 ceiling) at most: a request is a page asking
+    // about what it shows, never a crawl of the mailbox.
+    ['more than a queue of ids', { senderIds: Array.from({ length: 13 }, () => randomUUID()) }],
+  ])('rejects %s with 400 and queues nothing', async (_label, body) => {
+    const { controller, triage } = makeExplainController();
+
+    await expect(controller.explain({ id: 'mailbox-1' }, body)).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(triage.explainSenders).not.toHaveBeenCalled();
+  });
+});
+
+describe('TriageController.scoreSender — sender id shape', () => {
+  it('rejects a malformed sender id with 400 before it reaches a uuid column', async () => {
+    const triage = { resolveSenderKey: vi.fn(), scoreSender: vi.fn() };
+    const controller = new TriageController(
+      triage as unknown as TriageService,
+      {} as TriageReadService,
+      {} as IconsService,
+    );
+
+    await expect(
+      controller.scoreSender({ id: 'mailbox-1' }, { senderId: 'not-a-uuid', reason: 'stale' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(triage.resolveSenderKey).not.toHaveBeenCalled();
   });
 });

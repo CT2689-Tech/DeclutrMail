@@ -35,6 +35,7 @@ import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './type
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { useSenderDetail } from '../api/use-sender-detail';
 import { useRefreshStaleRead } from '../api/use-refresh-stale-read';
+import { useExplainReasons } from '../api/use-explain-reasons';
 import { useSenderMessages } from '../api/use-sender-messages';
 import { useSenderTimeseries } from '../api/use-sender-timeseries';
 import { useSenderHistory } from '../api/use-sender-history';
@@ -245,6 +246,24 @@ export function SenderDetailRoute({
   useRefreshStaleRead(id, detail.data ? (detail.data.data.recommendation ?? null) : undefined, {
     invalidate: sendersKeys.detail(id),
   });
+  // D24 — explanations on demand (founder decision 2026-09-25). Opening a
+  // sender whose reason is still the template asks for its sentence; the
+  // template shows meanwhile. A stale read is the refresh above's — the
+  // re-score buys its own sentence.
+  const recommendation = detail.data?.data.recommendation ?? null;
+  useExplainReasons(
+    recommendation
+      ? [
+          {
+            senderId: id,
+            generatedBy: recommendation.generatedBy,
+            stale: recommendation.stale,
+            scoredAt: recommendation.scoredAt,
+          },
+        ]
+      : [],
+    { invalidate: sendersKeys.detail(id) },
+  );
   const messages = useSenderMessages(id);
   const timeseries = useSenderTimeseries(id);
   const history = useSenderHistory(id);

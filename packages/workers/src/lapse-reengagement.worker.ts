@@ -6,6 +6,7 @@ import {
   mailboxAccounts,
   type schema,
   senderPolicies,
+  TRIAGE_DECIDED_WINDOW_DAYS,
   triageDecisions,
   users,
 } from '@declutrmail/db';
@@ -90,9 +91,8 @@ export const CANDIDATE_BATCH_SIZE = 500;
  * template emits BARE column names that mis-bind across the three
  * tables (LEARNINGS 2026-06 — Drizzle correlated-subquery pitfall).
  *
- * `TRIAGE_DECIDED_WINDOW_DAYS` is duplicated here as a literal because
- * `packages/workers` cannot import from `apps/api`. Its source of truth
- * is the read service; the two must move together.
+ * `TRIAGE_DECIDED_WINDOW_DAYS` comes from `@declutrmail/db`, where the
+ * Triage queue's own exclusion (`triageNotDecidedRecently`) reads it too.
  *
  * TAKES `now` RATHER THAN CALLING SQL `now()`. Every other instant in
  * this job derives from the injected clock (`deps.now`, resolved once
@@ -109,7 +109,6 @@ export const CANDIDATE_BATCH_SIZE = 500;
  * window and a "queue is empty" case started queueing mail. Any test
  * that pins `deps.now` was silently only half-pinned.
  */
-const TRIAGE_DECIDED_WINDOW_DAYS = 7;
 const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
   SELECT 1
   FROM activity_log al

@@ -341,7 +341,7 @@ export {
   followupCheckJobOptions,
   scheduledAtMinute as followupCheckScheduledAtMinute,
 } from './followup-check.queue.js';
-export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
+export { FIRST_VIEW_QUEUE_ROWS, SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
 export type {
   ScoreJobData,
   ScoreJobResult,

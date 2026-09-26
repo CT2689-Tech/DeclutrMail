@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, eq, ne, lt, count } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, lt, ne } from 'drizzle-orm';
 
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
@@ -11,6 +11,16 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /** NestJS DI token for the score-worker BullMQ queue (D25 triggers). */
 export const SCORE_QUEUE_TOKEN = 'SCORE_QUEUE';
+
+/**
+ * How long a finished `explain` job keeps its id, in seconds. The id names
+ * the row version, so while it exists a repeat ask for the same row is a
+ * no-op: at most one attempt per row version per hour. A row whose call
+ * failed (a provider outage, a timeout) is tried again on the next ask
+ * after that; a row whose call succeeded is never asked for again, because
+ * it is no longer on the template.
+ */
+const EXPLAIN_JOB_RETENTION_S = 60 * 60;
 
 /**
  * D30 — minimum daily queue size. The queue is never smaller than 5,
@@ -167,6 +177,84 @@ export class TriageService {
     };
     await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });
     return { idempotencyKey };
+  }
+
+  /**
+   * Ask for the LLM sentence behind template reasons someone is about to
+   * read (D24; founder decision 2026-09-25 — explain only what the user is
+   * about to see). Enqueues one `explain` job per row that still needs one
+   * and returns WITHOUT waiting: no LLM call runs on a request.
+   *
+   * Only fresh template rows qualify. A row with LLM prose needs nothing; a
+   * row past its TTL is re-scored when opened (`stale_refresh`), which buys
+   * its own sentence — explaining it first would pay twice. Ids resolve
+   * inside this mailbox, so a guessed id queues nothing.
+   *
+   * ADR-0008 §3 exception: triage reads the senders-owned table (the page
+   * holds sender ids, not keys) — same crossing as `resolveSenderKey`.
+   *
+   * Returns the ids an explanation is now pending for, so the page knows
+   * which reasons are about to change.
+   */
+  async explainSenders(input: {
+    mailboxAccountId: string;
+    senderIds: readonly string[];
+    now?: Date;
+  }): Promise<{ queued: string[] }> {
+    if (!this.scoreQueue) {
+      throw new Error(
+        'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
+      );
+    }
+    if (input.senderIds.length === 0) return { queued: [] };
+    const rows = await this.db
+      .select({
+        senderId: senders.id,
+        senderKey: senders.senderKey,
+        producedAt: triageDecisions.producedAt,
+      })
+      .from(senders)
+      .innerJoin(
+        triageDecisions,
+        and(
+          eq(triageDecisions.mailboxAccountId, senders.mailboxAccountId),
+          eq(triageDecisions.senderKey, senders.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(senders.mailboxAccountId, input.mailboxAccountId),
+          inArray(senders.id, [...input.senderIds]),
+          eq(triageDecisions.generatedBy, 'template'),
+          gt(triageDecisions.expiresAt, input.now ?? new Date()),
+        ),
+      );
+    if (rows.length === 0) return { queued: [] };
+    await this.scoreQueue.addBulk(
+      rows.map((row) => {
+        const producedAtMs = row.producedAt.getTime();
+        const data: ScoreJobData = {
+          mailboxAccountId: input.mailboxAccountId,
+          senderKey: row.senderKey,
+          trigger: 'explain',
+          producedAtMs,
+        };
+        return {
+          name: SCORE_JOB,
+          data,
+          opts: {
+            // Hyphens, never colons: BullMQ rejects a custom id containing
+            // `:` unless it has exactly three segments, and throws on add —
+            // how the U14 apply trigger and the domain-icon queue both
+            // shipped a queue that never received a job.
+            jobId: `explain-${input.mailboxAccountId}-${row.senderKey}-${producedAtMs}`,
+            removeOnComplete: { age: EXPLAIN_JOB_RETENTION_S },
+            removeOnFail: { age: EXPLAIN_JOB_RETENTION_S },
+          },
+        };
+      }),
+    );
+    return { queued: rows.map((row) => row.senderId) };
   }
 
   /**

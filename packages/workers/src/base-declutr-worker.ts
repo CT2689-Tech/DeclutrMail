@@ -485,6 +485,8 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'abortedIndexRebuilt',
   'advancedToHistoryId',
   'enforced',
+  'explainCandidates',
+  'explainSkipped',
   'failed',
   'flippedToFailed',
   'gmailApiCalls',
