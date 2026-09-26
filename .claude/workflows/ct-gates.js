@@ -1,8 +1,14 @@
 // ct-gates — fan out the CLAUDE.md §7 gate agents across a diff.
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
-// merge recommendation. Routing mirrors the §7 table exactly and each gate
-// keeps its own charter.
+// merge recommendation. Routing mirrors the §7 table, with one addition:
+// silent-failure-hunter also reads scripts, shell hooks and workflow files,
+// where this repo's watchdogs and guards live. Each gate keeps its own
+// charter.
+//
+// Verdicts: NO_DIFF (nothing changed) · NO_GATES_IN_SCOPE (files changed,
+// no gate routes to any of them, so nothing was reviewed — not a pass) ·
+// INCOMPLETE (a gate returned nothing) · BLOCKED · NO_BLOCKERS.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -41,7 +47,10 @@ const GATES = [
   { type: 'design-system-agent',       tier: 'gate',     when: /^(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
   { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
-  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.ts$/ },
+  // Beyond §7's "all TS files": the guard-that-cannot-fail class (§8) keeps
+  // recurring in scripts, hooks and workflows, and before this route a PR
+  // touching only those ran zero gates and came back NO_BLOCKERS.
+  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.ts$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\// },
   { type: 'flow-completeness-auditor', tier: 'advisory', when: /^apps\/web\/src\/features\// },
 ]
 
@@ -138,6 +147,28 @@ const skipped = GATES.filter((g) => !applicable.includes(g)).map((g) => g.type)
 log(`${files.length} changed files → ${applicable.length} gates: ${applicable.map((g) => g.type).join(', ')}`)
 if (skipped.length) log(`Out of scope, not run: ${skipped.join(', ')}`)
 
+// No gate routes these. A gate that runs for another file may still read
+// them, but nothing is charged with them.
+const unrouted = files.filter((f) => !GATES.some((g) => g.when.test(f)))
+if (unrouted.length) log(`No gate routes: ${unrouted.join(', ')}`)
+
+// Zero gates is not zero findings. Returning NO_BLOCKERS here would make
+// this a gate network that cannot fail (CLAUDE.md §8): nothing looked.
+if (applicable.length === 0) {
+  log(`No gate is in scope for ${files.length} changed file(s): nothing was reviewed. NO_GATES_IN_SCOPE is not a pass.`)
+  return {
+    diffRef,
+    files,
+    gatesRun: [],
+    gatesSkipped: skipped,
+    gatesFailed: [],
+    unrouted,
+    stopConditions: [],
+    findings: [],
+    verdict: 'NO_GATES_IN_SCOPE',
+  }
+}
+
 // The gate charters tell each agent to post PR comments and set status checks.
 // Inside this workflow they are pure reviewers — the caller decides what to do
 // with the findings.
@@ -231,6 +262,7 @@ return {
   gatesRun: ran.map((r) => r.gate),
   gatesSkipped: skipped,
   gatesFailed: died,
+  unrouted,
   stopConditions: stops,
   findings,
   // Structural only. CLAUDE.md §8: green gates are NOT a smoke.
