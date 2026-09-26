@@ -300,44 +300,101 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     let woken = 0;
     let restoredMessages = 0;
     let failed = 0;
+    // Mailboxes whose lock could not be taken, and the due senders they
+    // leave for the next pass — see below.
+    let lockFailures = 0;
+    let sendersLeftDue = 0;
 
     const concurrency = this.deps.concurrency ?? DEFAULT_CONCURRENCY;
     const limiter = createLimiter(concurrency);
 
-    // Wake due senders, grouped per mailbox so one Gmail client (and
-    // its label-id cache) serves all of a mailbox's wakes this pass.
-    // Counter mutation happens only in awaited limiter bodies — the
-    // limiter serializes increments with the surrounding await.
-    await Promise.all(
+    // Wake due senders, grouped per mailbox so a mailbox's wakes run in
+    // order under the concurrency cap. Counter mutation happens only in
+    // awaited limiter bodies — the limiter serializes increments with
+    // the surrounding await.
+    //
+    // ONE LOCK HOLD PER SENDER. This pass used to hold the mailbox lock
+    // across every due sender: ~6 statements plus a Gmail call each, at
+    // ~55 ms a statement in production. A bulk Later coming due held it
+    // for the whole batch — 17.9 s for 50 senders before any Gmail time,
+    // past the 10 s bound on a user's Later reschedule, and past a label
+    // action's 45 s once the batch is large enough. Each wake is an
+    // independent claim → restore → clear unit, version-guarded against a
+    // reschedule at both ends, so it is also the unit of mutual exclusion.
+    //
+    // A lock that cannot be taken (its 45 s `lock_timeout`, a lost
+    // connection, a failed `set_config`) says nothing about these senders'
+    // returns, so nothing is recorded against them: the rest of that
+    // mailbox stays due, and the pass moves on to the other mailboxes
+    // instead of waiting the timeout out once per sender. It is not a
+    // success, though. The pass fails once every mailbox has run, so a
+    // lock that stays stuck keeps failing runs and trips the scheduler
+    // alert that counts successful ones — the signal a single lock timeout
+    // gave when it failed the whole pass. `allSettled`, not `all`: a
+    // rejection must not leave the other mailboxes' wakes running detached
+    // from a job that has already failed.
+    const wakes = await Promise.allSettled(
       Array.from(byMailbox.entries()).map(([mailboxAccountId, timers]) =>
         limiter(async () => {
-          await this.deps.lock.run(mailboxAccountId, async () => {
-            for (const { senderKey, version } of timers) {
-              try {
-                const restored = await this.wakeSender(mailboxAccountId, senderKey, version);
-                // A reschedule/new Later action made the captured sweep
-                // version stale before this mailbox acquired the lock.
-                if (restored === null) continue;
-                restoredMessages += restored;
-                woken += 1;
-              } catch (err) {
-                // The timer stays due — retryable failures are eligible
-                // next sweep; deterministic ones are excluded above.
-                failed += 1;
-                await this.recordWakeFailure(mailboxAccountId, senderKey, version, err);
-                console.error(
-                  JSON.stringify({
-                    severity: 'ERROR',
-                    level: 'error',
-                    kind: 'snooze.wake_failed',
-                    worker: this.workerName,
-                    mailboxAccountId,
-                    errorCode: snoozeErrorCode(err),
-                  }),
-                );
-              }
+          for (const [index, { senderKey, version }] of timers.entries()) {
+            // An object, not a `let`: TypeScript cannot see a closure's
+            // assignment and would type the check below as always false.
+            const hold = { entered: false };
+            try {
+              await this.deps.lock.run(mailboxAccountId, async () => {
+                hold.entered = true;
+                try {
+                  const restored = await this.wakeSender(mailboxAccountId, senderKey, version);
+                  // A reschedule/new Later action made the captured sweep
+                  // version stale before this sender acquired the lock.
+                  if (restored === null) return;
+                  restoredMessages += restored;
+                  woken += 1;
+                } catch (err) {
+                  // The timer stays due — retryable failures are eligible
+                  // next sweep; deterministic ones are excluded above.
+                  failed += 1;
+                  // Logged first: if recording fails, this line is all
+                  // that is left of the wake's own error.
+                  console.error(
+                    JSON.stringify({
+                      severity: 'ERROR',
+                      level: 'error',
+                      kind: 'snooze.wake_failed',
+                      worker: this.workerName,
+                      mailboxAccountId,
+                      errorCode: snoozeErrorCode(err),
+                    }),
+                  );
+                  await this.recordWakeFailure(mailboxAccountId, senderKey, version, err);
+                }
+              });
+            } catch (err) {
+              if (hold.entered) throw err;
+              lockFailures += 1;
+              sendersLeftDue += timers.length - index;
+              console.error(
+                JSON.stringify({
+                  severity: 'ERROR',
+                  level: 'error',
+                  kind: 'snooze.mailbox_lock_failed',
+                  worker: this.workerName,
+                  mailboxAccountId,
+                  sendersLeftDue: timers.length - index,
+                  errorCode: snoozeErrorCode(err),
+                  sqlState: sqlStateOf(err),
+                }),
+              );
+              this.observer.captureBackgroundFailure(
+                err instanceof Error ? err : new Error(String(err)),
+                {
+                  kind: 'snooze.mailbox_lock_failed',
+                  tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+                },
+              );
+              return;
             }
-          });
+          }
         }),
       ),
     );
@@ -394,6 +451,14 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
           }),
         ),
     );
+
+    const escaped = wakes.find((w): w is PromiseRejectedResult => w.status === 'rejected');
+    if (escaped) throw escaped.reason;
+    if (lockFailures > 0) {
+      throw new Error(
+        `${sendersLeftDue} due Later return(s) in ${lockFailures} mailbox(es) left for the next pass: mailbox lock unavailable`,
+      );
+    }
 
     return {
       kind: 'sweep',
@@ -588,6 +653,12 @@ function snoozeErrorCode(error: unknown): string {
   ].includes(name)
     ? name
     : 'UnknownError';
+}
+
+/** A Postgres SQLSTATE (e.g. `55P03` for a lock timeout), or null — a closed diagnostic code. */
+function sqlStateOf(error: unknown): string | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : null;
 }
 
 /** Optimistic timer version: both schedule and schedule-write timestamp. */

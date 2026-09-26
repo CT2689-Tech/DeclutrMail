@@ -1,18 +1,18 @@
-import type { schema } from '@declutrmail/db';
 import {
   cronRuns,
   mailMessages,
   mailboxAccounts,
   outboxEvents,
   providerSyncState,
+  schema,
   senderPolicies,
   senders,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { freshTestDb } from '@declutrmail/db/testing';
+import { freshTestDb, freshTestPglite } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
-import type { drizzle } from 'drizzle-orm/pglite';
+import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -27,7 +27,7 @@ import {
   snoozeWakeNowJobId,
 } from './snooze-wake.queue.js';
 import { laterLabelName, SnoozeWakeWorker, type SnoozeWakeJobData } from './snooze-wake.worker.js';
-import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { PASSTHROUGH_MAILBOX_LOCK, type MailboxActionLock } from './label-action.worker.js';
 import { InvalidGrantError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -710,6 +710,134 @@ describe('SnoozeWakeWorker — sweep', () => {
     expect(result.mappingsRefreshed).toBe(1);
     expect(labelMap.store.get(mailboxId)).toBe('Label_7');
     expect(labelMap.store.has(disconnectedId)).toBe(false);
+  });
+});
+
+describe('SnoozeWakeWorker — mailbox lock scope', () => {
+  const sweepJob = { kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' } as const;
+
+  async function seedDueSender(db: Db, mailboxAccountId: string, senderKey: string) {
+    await seedSender(db, mailboxAccountId, senderKey);
+    await seedMessage(db, mailboxAccountId, senderKey, `m-${senderKey.slice(0, 6)}`, ['Label_7']);
+    await seedSnooze(db, mailboxAccountId, senderKey, PAST);
+  }
+
+  function workerWith(db: Db, gmail: FakeMutationClient, lock: MailboxActionLock) {
+    return new SnoozeWakeWorker({
+      db: db as never,
+      gmailMutation: { getClient: async () => gmail },
+      labelMap: new FakeLabelMap(),
+      lock,
+      now: () => NOW,
+      concurrency: 1,
+    });
+  }
+
+  // A bulk Later wakes every sender at once. Label actions and schedule
+  // writes for the mailbox wait on ONE hold, so that is what this pins.
+  it('holds the mailbox lock per sender, so no hold grows with the due senders', async () => {
+    let inHold: number | null = null;
+    const statementsPerHold: number[] = [];
+    const db = drizzle(await freshTestPglite(), {
+      schema,
+      logger: {
+        logQuery: () => {
+          if (inHold !== null) inHold += 1;
+        },
+      },
+    });
+    const mailboxId = await seedMailbox(db);
+    for (let i = 0; i < 8; i += 1) await seedDueSender(db, mailboxId, String(i).repeat(64));
+    const worker = workerWith(db, new FakeMutationClient(), {
+      run: async (_mailboxAccountId, fn) => {
+        inHold = 0;
+        try {
+          return await fn();
+        } finally {
+          statementsPerHold.push(inHold);
+          inHold = null;
+        }
+      },
+    });
+
+    const result = await worker.processJob(sweepJob, CTX);
+
+    expect(result.woken).toBe(8);
+    // One sender is 4 statements. All eight under one hold was 32.
+    expect(Math.max(...statementsPerHold)).toBeLessThan(10);
+  });
+
+  it('leaves a mailbox whose lock cannot be taken due and unmarked, wakes the others, and fails the pass', async () => {
+    const db = await freshDb();
+    const blocked = await seedMailbox(db, 'blocked@declutrmail.ai');
+    const open = await seedMailbox(db, 'open@declutrmail.ai');
+    await seedDueSender(db, blocked, SENDER_KEY_A);
+    await seedDueSender(db, open, SENDER_KEY_B);
+    const gmail = new FakeMutationClient();
+    const worker = workerWith(db, gmail, {
+      run: async (mailboxAccountId, fn) => {
+        if (mailboxAccountId === blocked) {
+          throw new Error('canceling statement due to lock timeout');
+        }
+        return fn();
+      },
+    });
+    const captured: string[] = [];
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_error, ctx) => captured.push(ctx.kind),
+      recordBackgroundNotice: () => {},
+    });
+
+    // Not a success: a lock that stays stuck must keep failing runs, or
+    // the scheduler alert that counts successful ones goes quiet.
+    await expect(worker.processJob(sweepJob, CTX)).rejects.toThrow(/mailbox lock unavailable/);
+
+    expect(captured).toEqual(['snooze.mailbox_lock_failed']);
+    // The other mailbox still woke.
+    expect(gmail.calls.map((c) => c.ids)).toEqual([[`m-${SENDER_KEY_B.slice(0, 6)}`]]);
+    const [openPolicy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, open));
+    expect(openPolicy!.snoozedUntil).toBeNull();
+    // A busy lock says nothing about this sender's return: no failure is
+    // recorded against it, and it stays due for the next sweep.
+    const [blockedPolicy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, blocked));
+    expect(blockedPolicy!.snoozedUntil).not.toBeNull();
+    expect(blockedPolicy!.snoozeWakeLastAttemptAt).toBeNull();
+    expect(blockedPolicy!.snoozeWakeLastFailedAt).toBeNull();
+    expect(blockedPolicy!.snoozeWakeFailureCount).toBe(0);
+    const [run] = await db.select().from(cronRuns);
+    expect(run!.status).toBe('failed');
+  });
+
+  it('stops a mailbox at its first unavailable lock instead of waiting it out once per sender', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db);
+    for (const key of ['1', '2', '3']) await seedDueSender(db, mailboxId, key.repeat(64));
+    let attempts = 0;
+    const worker = workerWith(db, new FakeMutationClient(), {
+      run: async (_mailboxAccountId, fn) => {
+        attempts += 1;
+        if (attempts > 1) throw new Error('canceling statement due to lock timeout');
+        return fn();
+      },
+    });
+
+    await expect(worker.processJob(sweepJob, CTX)).rejects.toThrow(
+      /2 due Later return\(s\) in 1 mailbox/,
+    );
+
+    expect(attempts).toBe(2);
+    const due = await db
+      .select({ until: senderPolicies.snoozedUntil })
+      .from(senderPolicies)
+      .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+    expect(due.filter((p) => p.until !== null)).toHaveLength(2);
   });
 });
 
