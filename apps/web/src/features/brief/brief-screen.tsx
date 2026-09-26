@@ -22,6 +22,7 @@ import {
 } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
+import { protectedSkippedCopy } from '@/lib/action-error-copy';
 import type {
   BriefItemWire,
   BriefNoiseSenderWire,
@@ -862,8 +863,7 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
       // The pill can undo one sender of a bulk at a time.
       return outcome.senderCount < outcome.of ? (
         <>
-          Undone for {outcome.senderCount} of {outcome.of} senders — that mail is back in your
-          inbox.
+          Mail from {outcome.senderCount} of {outcome.of} senders is back in your inbox.
         </>
       ) : (
         <>
@@ -880,6 +880,15 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
       );
     case 'failed':
       return <>Nothing was archived. The senders are still checked, so you can try again.</>;
+    case 'skipped':
+      return (
+        <>
+          Nothing archived —{' '}
+          {outcome.protectedCount !== null
+            ? `${protectedSkippedCopy(outcome.protectedCount)}.`
+            : 'those senders are Protected or no longer in this mailbox.'}
+        </>
+      );
     case 'unconfirmed':
       return (
         <>

@@ -48,6 +48,7 @@ import { toast } from '@declutrmail/shared';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import {
@@ -195,6 +196,13 @@ export type NoiseArchiveOutcome =
   | { kind: 'partial'; doneCount: number; failedCount: number; total: number }
   /** Every sibling failed. Nothing moved, so retrying is safe. */
   | { kind: 'failed' }
+  /**
+   * Nothing ran: every sender was refused — Protected at the click or by
+   * the time its job ran (D245), or no longer in this mailbox.
+   * `protectedCount` when every one was named Protected; null when the
+   * server did not say which reason was whose.
+   */
+  | { kind: 'skipped'; protectedCount: number | null }
   /** The status read failed. The outcome is genuinely unknown. */
   | { kind: 'unconfirmed' };
 
@@ -334,12 +342,16 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       const { kind, handleId, senderIds } = settled!;
       if (kind === 'batch') {
         const batch = await getBatchStatus(handleId);
-        return {
-          undoToken: batch.undoToken,
-          undoExpiresAt: batch.undoExpiresAt ?? null,
-          undoRevertedAt: batch.undoRevertedAt ?? null,
-          revertedSenderIds: batch.revertedSenderIds ?? [],
-        };
+        // An API that predates the batch's own undo fields (the web deploys
+        // first) falls through to the anchor job, the batch handle's id.
+        if (batch.undoExpiresAt !== undefined) {
+          return {
+            undoToken: batch.undoToken,
+            undoExpiresAt: batch.undoExpiresAt,
+            undoRevertedAt: batch.undoRevertedAt ?? null,
+            revertedSenderIds: batch.revertedSenderIds ?? [],
+          };
+        }
       }
       const single = await getActionStatus(handleId);
       return {
@@ -440,6 +452,18 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
    * displaced here.
    */
   const [overdueInFlight, setOverdueInFlight] = useState<typeof inFlight>(null);
+
+  // A mailbox switch: the section now lists another mailbox's senders, so
+  // nothing about the last one's archive may show — its receipt, ✓ marks,
+  // open sheet or in-flight handle. The job itself keeps running there.
+  const resetScope = useCallback(() => {
+    setSettled(null);
+    setFailureOutcome(null);
+    setPending(null);
+    setInFlight(null);
+    setOverdueInFlight(null);
+  }, []);
+  useMailboxScopeReset(activeMailboxId ?? undefined, resetScope);
 
   // Overdue-parking timer. Cleanup cancels the deadline whenever the
   // handle clears normally, so only a genuinely stuck handle parks.
@@ -602,6 +626,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       // read. See the docblock on `apps/web/src/lib/api/client.ts`.
       if (apiErrorCode(err) === 'PROTECTED_SENDER') {
         toast(`Archive: ${protectedSkippedCopy(1)}`, 'warn');
+        setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
         refreshRows();
         return;
       }
@@ -609,6 +634,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       // not a defect, and the server does not say which reason was whose.
       if (apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS') {
         toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
+        setFailureOutcome({ kind: 'skipped', protectedCount: null });
         refreshRows();
         return;
       }
@@ -800,10 +826,11 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     const data = singleStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     // D245: the sender was Protected by the time the job ran, so nothing
-    // moved. No ✓, no receipt; its row re-reads as Protected, and the
-    // bottom pill says it was skipped.
+    // moved. No ✓ and no receipt: the line says it was skipped, and its
+    // row re-reads as Protected.
     if (isProtectedSkip(data)) {
       clearSelection(inFlight.senderKeys);
+      setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
       refreshRows();
       setInFlight(null);
       return;
@@ -857,7 +884,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     if (!data || !isTerminalStatus(data.status)) return;
     // D245: senders found Protected when their job ran were skipped — no
     // ✓, not counted, unchecked, and their rows re-read as Protected. The
-    // bottom pill says it; this section adds no voice of its own.
+    // pill says it beside the Undo line; when nothing else ran, the line
+    // here says it too, since this attempt has no receipt of its own.
     const { acted, skippedKeys } = splitSkippedAtExecution(inFlight, data);
     if (skippedKeys.length > 0) {
       clearSelection(skippedKeys);
@@ -898,6 +926,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         { kind: 'batch', handleId: inFlight.batchId, senderKeys: acted.keys, senderIds: acted.ids },
         { senderCount: acted.keys.length, affectedCount: data.affectedCount },
       );
+    } else if (skippedKeys.length > 0) {
+      setFailureOutcome({ kind: 'skipped', protectedCount: skippedKeys.length });
     }
     setInFlight(null);
   }, [
@@ -946,6 +976,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     if (isProtectedSkip(data)) {
       clearSelection(overdueInFlight.senderKeys);
+      setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
       refreshRows();
       setOverdueInFlight(null);
       return;
@@ -1041,6 +1072,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         },
         { senderCount: acted.keys.length, affectedCount: data.affectedCount },
       );
+    } else if (skippedKeys.length > 0) {
+      setFailureOutcome({ kind: 'skipped', protectedCount: skippedKeys.length });
     }
     setOverdueInFlight(null);
   }, [

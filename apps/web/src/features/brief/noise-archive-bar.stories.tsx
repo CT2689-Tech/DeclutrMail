@@ -138,3 +138,17 @@ export const Failed: Story<typeof NoiseArchiveBar> = {
 export const Unconfirmed: Story<typeof NoiseArchiveBar> = {
   render: () => frame({ selectedCount: 0, outcome: { kind: 'unconfirmed' } }),
 };
+
+/**
+ * D245 — every sender was Protected by the time its job ran (or at the
+ * click), so nothing ran. The line says what this attempt did, rather
+ * than leaving an earlier archive's receipt to read as its result.
+ */
+export const SkippedProtected: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 0, outcome: { kind: 'skipped', protectedCount: 2 } }),
+};
+
+/** Every sender refused at the click; the server did not say which reason was whose. */
+export const SkippedUnnamed: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 0, outcome: { kind: 'skipped', protectedCount: null } }),
+};
