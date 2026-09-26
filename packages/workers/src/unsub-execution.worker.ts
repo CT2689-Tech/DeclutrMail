@@ -389,7 +389,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
 
     // Guard, execution-time Protected re-check (QA-protect-20260901-04
     // follow-up) — mirrors autopilot-action.worker.ts's per-match "guard
-    // 4" and label-action.worker.ts's `protectionRecheckApplies` for
+    // 4" and label-action.worker.ts's `protectionSubject` for
     // Archive/Later/Delete. Protection is checked once at enqueue
     // (actions.service.ts's bulk path, autopilot-action.worker.ts's
     // match/apply step) and never again before this point; per-mailbox

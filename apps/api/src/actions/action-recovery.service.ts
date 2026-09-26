@@ -146,21 +146,26 @@ export class ActionRecoveryService {
         message: 'Recovery preview not found.',
       });
     }
+    // The set Confirm checks and the retry re-applies, once verified.
+    const retrySet =
+      row.preview.targetMessageIds.length > 0
+        ? row.preview.targetMessageIds
+        : row.resolvedMessageIds;
     return projectPreview(
       row.preview,
       row.verb,
       row.wakeAt,
-      await this.senderProtected(this.db, mailboxAccountId, row.selector, row.resolvedMessageIds),
+      await this.senderProtected(this.db, mailboxAccountId, row.selector, retrySet),
     );
   }
 
   /**
-   * Is a sender of this action Protected NOW? A recovery attempt is one
-   * reviewed decision, so the worker does not re-check it (D245) — its
-   * Confirm is the consent, which only holds if the review says so. Read
-   * on every poll and again at Confirm, never frozen with the review. A
-   * legacy message-list action can span senders, so it asks whether ANY
-   * of its messages' senders is.
+   * Is a sender of this action Protected NOW? The review says so, and only
+   * then can its Confirm carry consent: without it the worker re-checks
+   * the retry at execution and stops it if the sender is Protected (D245;
+   * founder decision 2026-09-26). Read on every poll and again at Confirm,
+   * never frozen with the review. A legacy message-list action can span
+   * senders, so it asks whether ANY of its messages' senders is.
    */
   private async senderProtected(
     executor: Pick<DrizzleDb, 'select'>,
@@ -234,7 +239,12 @@ export class ActionRecoveryService {
         });
       }
       if (existing.status === 'queued') {
-        await this.enqueueRecoveryAction(existing.id, input.mailboxAccountId, storageKey);
+        await this.enqueueRecoveryAction(
+          existing.id,
+          input.mailboxAccountId,
+          storageKey,
+          await this.retryConsent(input.mailboxAccountId, existing, input.senderProtected),
+        );
       }
       return {
         previewId: input.previewId,
@@ -327,12 +337,13 @@ export class ActionRecoveryService {
           message: 'No Gmail messages require reconciliation.',
         });
       }
-      // D245 — Confirm consents to changing a Protected sender's mail only
-      // when the review said the sender is Protected. A review that loaded
-      // before protection landed did not, so it is sent back for another
-      // look. An already-applied review changes nothing in Gmail.
+      // D245 — the retry re-applies its whole verified set, so it may change
+      // a Protected sender's mail only when the review said the sender is
+      // Protected (founder decision 2026-09-26). A review that loaded before
+      // protection landed did not, so it is sent back for another look —
+      // an already-applied one too: anything moved back since would change,
+      // and the worker would stop the retry anyway.
       if (
-        preview.remainingMessageIds.length > 0 &&
         input.senderProtected !== true &&
         (await this.senderProtected(
           tx,
@@ -429,7 +440,12 @@ export class ActionRecoveryService {
     });
 
     if (created.child.status === 'queued') {
-      await this.enqueueRecoveryAction(created.child.id, input.mailboxAccountId, storageKey);
+      await this.enqueueRecoveryAction(
+        created.child.id,
+        input.mailboxAccountId,
+        storageKey,
+        await this.retryConsent(input.mailboxAccountId, created.child, input.senderProtected),
+      );
     }
 
     return {
@@ -539,15 +555,43 @@ export class ActionRecoveryService {
     }
   }
 
+  /**
+   * The consent a retry carries to the worker's execution-time re-check:
+   * the review said the sender is Protected (the acknowledgement), and it
+   * still is. Anything else leaves the worker to re-check — and to stop the
+   * retry if the sender turned Protected after all (D245).
+   */
+  private async retryConsent(
+    mailboxAccountId: string,
+    child: { selector: LabelActionSelector; resolvedMessageIds: string[] },
+    acknowledged: boolean | undefined,
+  ): Promise<boolean> {
+    return (
+      acknowledged === true &&
+      (await this.senderProtected(
+        this.db,
+        mailboxAccountId,
+        child.selector,
+        child.resolvedMessageIds,
+      ))
+    );
+  }
+
   private async enqueueRecoveryAction(
     actionId: string,
     mailboxAccountId: string,
     storageKey: string,
+    protectedConfirmed: boolean,
   ): Promise<void> {
     try {
       await this.actionQueue!.add(
         LABEL_ACTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey: storageKey },
+        {
+          actionId,
+          mailboxAccountId,
+          idempotencyKey: storageKey,
+          ...(protectedConfirmed ? { protectedConfirmed: true } : {}),
+        },
         labelActionJobOptions(storageKey),
       );
     } catch (error) {
@@ -611,6 +655,8 @@ export class ActionRecoveryService {
         wakeAt: actionJobs.wakeAt,
         previewId: actionRecoveryPreviews.id,
         confirmationFingerprint: actionRecoveryPreviews.confirmationFingerprint,
+        selector: actionJobs.selector,
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
       })
       .from(actionJobs)
       .leftJoin(actionRecoveryPreviews, eq(actionRecoveryPreviews.recoveryActionId, actionJobs.id))

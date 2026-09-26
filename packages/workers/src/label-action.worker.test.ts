@@ -30,6 +30,7 @@ import {
   LabelActionWorker,
   labelChangeForVerb,
   PASSTHROUGH_MAILBOX_LOCK,
+  RECOVERY_SENDER_PROTECTED_ERROR_CODE,
 } from './label-action.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
@@ -485,6 +486,59 @@ describe('LabelActionWorker', () => {
     const [act] = await db.select().from(activityLog);
     expect(act!.senderKey).toBeNull(); // messages selector → account-scoped
     expect(result.affectedCount).toBe(2);
+  });
+
+  // A legacy message-list retry has no single sender; its review asks
+  // whether ANY of its senders is Protected, and so does its execution.
+  it('stops a message-list retry when any of its senders turned Protected after review', async () => {
+    await seedMessage(db, mailboxId, 'm1', ['INBOX']);
+    const [root] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['m1'],
+        status: 'failed',
+        idempotencyKey: 'idem-msgs-root-p',
+      })
+      .returning();
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['m1'],
+        requestedCount: 1,
+        idempotencyKey: 'idem-msgs-recovery-p',
+        rootActionId: root!.id,
+        retryOfActionId: root!.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+      })
+      .returning();
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      isProtected: true,
+      protectionReason: 'starred',
+      protectionSetAt: new Date(),
+    });
+
+    await worker.processJob(
+      { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: 'idem-msgs-recovery-p' },
+      CTX,
+    );
+
+    expect(gmail.calls).toHaveLength(0);
+    const [after] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
+    expect(after).toMatchObject({
+      status: 'failed',
+      errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+    });
   });
 
   it('reverse (undo) re-adds INBOX and flips reverted_at', async () => {
@@ -1278,9 +1332,10 @@ describe('LabelActionWorker', () => {
       expect(result.affectedCount).toBe(2);
     });
 
-    it('a recovery attempt still runs on a Protected sender — its review is the consent', async () => {
+    /** A reviewed retry of a failed action, with its verified set frozen. */
+    async function recoveryJob(): Promise<typeof actionJobs.$inferSelect> {
       const root = await forwardJob({ status: 'failed', idempotencyKey: 'idem-protected-root' });
-      const job = await forwardJob({
+      return forwardJob({
         idempotencyKey: 'idem-protected-recovery',
         resolvedMessageIds: ['p1', 'p2'],
         rootActionId: root.id,
@@ -1288,9 +1343,47 @@ describe('LabelActionWorker', () => {
         recoveryAttempt: 1,
         selectionFrozenAt: new Date(),
       });
+    }
+
+    // Founder decision 2026-09-26: a retry whose sender turned Protected
+    // after its review said "not Protected" does not touch Gmail. It FAILS,
+    // so Activity keeps it reviewable, and the next review offers
+    // "<Verb> anyway" — the only consent a Protected sender's mail has.
+    it('stops a retry whose sender turned Protected after its review, and keeps it retryable', async () => {
+      const job = await recoveryJob();
       await protect();
 
-      const result = await run(job);
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        affectedCount: 0,
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
+      expect(await db.select().from(activityLog)).toEqual([]);
+      expect(await db.select().from(outboxEvents)).toEqual([]);
+      expect(await db.select().from(undoJournal)).toEqual([]);
+    });
+
+    it('stops that retry at the send too, if protection lands during the quota wait', async () => {
+      const job = await recoveryJob();
+      gmail.duringQuotaWait = protect;
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
+    });
+
+    it('runs a retry the user confirmed with the Protected line — "…anyway" is the consent', async () => {
+      const job = await recoveryJob();
+      await protect();
+
+      const result = await run(job, { protectedConfirmed: true });
 
       expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
       expect(result.affectedCount).toBe(2);

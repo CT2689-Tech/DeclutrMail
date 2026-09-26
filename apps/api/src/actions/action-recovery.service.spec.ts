@@ -258,7 +258,7 @@ describe('ActionRecoveryService', () => {
     expect(actionQueue.calls).toHaveLength(0);
 
     // Reviewed again, the review now names the protection — that Confirm
-    // is the consent.
+    // is the consent, and the retry carries it to the worker's re-check.
     await expect(
       service.confirmPreview({
         mailboxAccountId: mailbox.mailboxId,
@@ -268,9 +268,40 @@ describe('ActionRecoveryService', () => {
         senderProtected: true,
       }),
     ).resolves.toMatchObject({ replayed: false });
+    expect(actionQueue.calls).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ protectedConfirmed: true }) }),
+    ]);
   });
 
-  it('Confirm goes ahead for an already-applied review — it changes nothing in Gmail', async () => {
+  // Consent is to what the review said: an acknowledgement sent for a
+  // sender that is not Protected carries nothing, so the worker still
+  // re-checks it (founder decision 2026-09-26).
+  it('carries no consent when the sender is not Protected, acknowledgement or not', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-unprotected-ack' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+
+    await service.confirmPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      previewId: preview.previewId,
+      idempotencyKey: 'confirm-unprotected-ack',
+      wakeAt: null,
+      senderProtected: true,
+    });
+
+    expect(actionQueue.calls).toHaveLength(1);
+    expect(actionQueue.calls[0]!.data).not.toHaveProperty('protectedConfirmed');
+  });
+
+  // An already-applied review still re-applies its whole verified set (the
+  // Gmail no-ops are what let the record be written), and anything moved
+  // back since would change — so a Protected sender needs the review to
+  // say so here too. Without it, the retry would be stopped at execution
+  // and the same review offered again, forever.
+  it('an already-applied review on a Protected sender needs the acknowledgement too', async () => {
     const original = await seedFailedAction(db, mailbox, { key: 'original-applied-protected' });
     const preview = await service.createPreview({
       mailboxAccountId: mailbox.mailboxId,
@@ -279,15 +310,29 @@ describe('ActionRecoveryService', () => {
     await makeReady(db, preview.previewId, { outcome: 'already_applied', remaining: [] });
     await protect(db, mailbox);
 
-    await expect(
-      service.confirmPreview({
+    const refused = await service
+      .confirmPreview({
         mailboxAccountId: mailbox.mailboxId,
         previewId: preview.previewId,
         idempotencyKey: 'confirm-applied-protected',
         wakeAt: null,
         senderProtected: false,
+      })
+      .catch((error: unknown) => error);
+    expect(errorCode(refused)).toBe('RECOVERY_SENDER_PROTECTED');
+
+    await expect(
+      service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-applied-protected-informed',
+        wakeAt: null,
+        senderProtected: true,
       }),
     ).resolves.toMatchObject({ replayed: false });
+    expect(actionQueue.calls).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ protectedConfirmed: true }) }),
+    ]);
   });
 
   it('confirmation creates one linked immutable attempt and HTTP replay returns it', async () => {
