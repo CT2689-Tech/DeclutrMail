@@ -24,6 +24,7 @@ export {
 } from './mailbox-reconnect.js';
 export {
   findStuckMailboxes,
+  reportStuckMailboxes,
   STUCK_MAILBOX_GRACE_MS,
   type StuckMailbox,
   type StuckMailboxReason,

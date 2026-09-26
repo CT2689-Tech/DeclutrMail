@@ -1,0 +1,39 @@
+-- 0079_gmail_category_unknown.sql
+--
+-- Adds 'unknown' to `gmail_category`: no Gmail tab (CATEGORY_* label)
+-- holds more than half of the sender's labelled mail — usually because
+-- none of its mail carries a tab label at all.
+--
+-- Until now the sync workers wrote 'primary' for a message with no
+-- CATEGORY_* label, on the assumption that unlabelled mail sits in the
+-- Primary tab. Nothing checked that. On one production mailbox
+-- (2026-09-25 trace) 30,443 of 38,259 inbound messages carried no
+-- category label, and 1,552 senders were kept at 95% "because Gmail puts
+-- them in your Primary inbox" on the strength of that default alone. On
+-- the dev database (2026-09-26) the unlabelled mail is mostly Google Talk
+-- chat logs, pre-2014 mail and Trash. An absent label is an absence of
+-- evidence, so it is stored as 'unknown' (CLAUDE.md §2.0 Tier 1b,
+-- §2.4/D222: we mirror Gmail's labels, we never infer one).
+--
+-- Additive only. Existing rows are NOT rewritten here: the nightly
+-- `SenderIndexSweepWorker` recounts senders' tabs from
+-- `mail_messages.label_ids` and re-scores the senders whose tab changed,
+-- so the backfill runs through the same code path that keeps the column
+-- correct afterwards.
+--
+-- `ADD VALUE IF NOT EXISTS` matches the repo convention (0018, 0019,
+-- 0024, 0028, 0031, 0045). Postgres 12+ accepts it inside the
+-- transaction Atlas opens; the new value just cannot be USED in that
+-- same transaction, and nothing here uses it.
+--
+-- DEPLOY ORDER — this must be applied in production BEFORE any worker
+-- that writes 'unknown' runs there. `migration-apply.yml` and
+-- `deploy-cloud-run.yml` are independent: the deploy waits for CI, not
+-- for this migration. If the migration fails or stalls while the new
+-- worker image deploys, every sync transaction that writes 'unknown'
+-- fails with "invalid input value for enum gmail_category" and rolls
+-- back — the shape of the 0045 incident. Land this file on its own and
+-- confirm production has applied it before merging the code that writes
+-- the value.
+
+ALTER TYPE "public"."gmail_category" ADD VALUE IF NOT EXISTS 'unknown';
