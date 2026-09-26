@@ -185,6 +185,7 @@ import type {
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
+import { LlmCircuitBreaker } from './adapters/llm-circuit-breaker.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
@@ -1071,8 +1072,13 @@ async function bootstrap(): Promise<void> {
    * worker accepts `undefined` to mean "no LLM available; always use
    * the deterministic template". `null → undefined` so the worker
    * checks `this.deps.llm` rather than `null !== undefined`.
+   *
+   * One breaker for both Anthropic adapters (Brief here, reasoning
+   * below): they bill the same account, so a credit or key refusal seen
+   * by either pauses both.
    */
-  const briefLlm = buildBriefLlmAdapter();
+  const anthropicBreaker = new LlmCircuitBreaker();
+  const briefLlm = buildBriefLlmAdapter(process.env, anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
   briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -1139,6 +1145,7 @@ async function bootstrap(): Promise<void> {
           timeout: resolveExplainTimeoutMs(process.env.REASONING_TIMEOUT_MS),
           maxRetries: 1,
         }),
+        breaker: anthropicBreaker,
       })
     : undefined;
   // U14/U-WIRE: `outbox` publishes `triage.score_run_completed` after

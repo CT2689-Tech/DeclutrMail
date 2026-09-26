@@ -162,6 +162,27 @@ $50 CI / $100 prod worker) are already live — see
 `docs/runbooks/secrets-inventory.md`. Verify each slot still has its
 cap after any key rotation.
 
+**(c) Refusal page (2026-09-26)** — `cost_report` sees spend, not a
+refused account. When the prepaid balance ran out on 2026-09-24,
+nothing noticed for ~20 hours. Two pieces now cover that:
+
+- In the worker, `apps/api/src/adapters/llm-circuit-breaker.ts`
+  classifies each refused call (`credit_balance`, `spend_limit`,
+  `tier_spend_cap`, `billing_error`, `auth`, `not_found`, `other`) and
+  logs one `llm.provider_rejected` line per refusal. For every reason
+  except `other` it pauses LLM calls for `DEFAULT_LLM_COOLDOWN_MS`, then
+  lets one call try. Recommendation reasons and Brief notes fall back to
+  templates at once instead of pacing refused calls.
+- `scripts/setup-llm-rejection-alert.mjs` provisions the log metric
+  `llm_provider_rejected` and an alert policy that emails admin@ on the
+  first refused call. Run it with `--apply` once. Run it without flags
+  any time to verify the wiring: it exits non-zero, naming the broken
+  link, if the metric, policy or channel has drifted.
+
+What it cannot see: a refusal exists only when something calls
+Anthropic. With no LLM traffic the page is silent, which says nothing
+about the balance.
+
 ### 3. Google Cloud
 
 **(a) Watchdog auth** — **UNCONFIGURED in CI today, by design.** The

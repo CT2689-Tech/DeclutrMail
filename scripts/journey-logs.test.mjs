@@ -252,6 +252,33 @@ test('a scoring run with no LLM explanations is flagged; one with some is not', 
   assert.ok(!codes(40).includes('LLM_OFF'));
 });
 
+test('an all-template run the provider refused points at the refusal, not at adapter errors', () => {
+  // Since the breaker, a refused account logs `llm.provider_rejected` once
+  // and the run counts the skipped calls as `llmBlocked` — no
+  // `reasoning.adapter_error` line exists to check.
+  const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
+  const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });
+  const detail = (result) =>
+    summarize({
+      mailboxRows,
+      workerRows: normalize([
+        ready,
+        succeeded('2026-01-01T01:00:30Z', REF, 'ScoreWorker', {
+          decisionsWritten: 100,
+          llmExplanations: 0,
+          templateExplanations: 100,
+          ...result,
+        }),
+      ]),
+      quota: null,
+      ref: REF,
+    }).flags.find((f) => f.code === 'LLM_OFF').detail;
+  const refused = detail({ llmCalls: 1, llmBlocked: 99 });
+  assert.match(refused, /llm\.provider_rejected/);
+  assert.match(refused, /99/);
+  assert.match(detail({ llmCalls: 100, llmBlocked: 0 }), /reasoning\.adapter_error/);
+});
+
 test('recommendations landing minutes after "ready" are flagged', () => {
   const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
   const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });

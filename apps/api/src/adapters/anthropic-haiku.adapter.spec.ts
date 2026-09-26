@@ -7,6 +7,7 @@ import {
   buildAnthropicHaikuAdapter,
   renderUserPrompt,
 } from './anthropic-haiku.adapter.js';
+import { LlmCircuitBreaker } from './llm-circuit-breaker.js';
 
 /**
  * AnthropicHaikuAdapter unit tests (D24, D62).
@@ -245,6 +246,109 @@ describe('AnthropicHaikuAdapter.explain', () => {
     // future change to extractText() is a deliberate decision.
     const result = await adapter.explain(SAMPLE_INPUT);
     expect(result).toBe('partial');
+  });
+});
+
+/** A refusal built the way the SDK builds one from an HTTP error response. */
+function providerError(
+  status: number,
+  type: string,
+  message: string,
+  headers: Record<string, string> = {},
+) {
+  return Anthropic.APIError.generate(
+    status,
+    { type: 'error', error: { type, message }, request_id: 'req_test_1' },
+    undefined,
+    new Headers({ 'request-id': 'req_test_1', ...headers }),
+  );
+}
+
+// The 2026-09-24 production refusal (see llm-circuit-breaker.ts).
+const CREDIT_BALANCE = () =>
+  providerError(
+    400,
+    'invalid_request_error',
+    'Your credit balance is too low to access the Anthropic API',
+  );
+
+describe('AnthropicHaikuAdapter — provider refusals', () => {
+  it('stops calling Anthropic after a credit-balance refusal and reports itself blocked', async () => {
+    const create = vi.fn().mockRejectedValue(CREDIT_BALANCE());
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await adapter.explain(SAMPLE_INPUT)).toBeNull();
+      expect(adapter.isBlocked()).toBe(true);
+      expect(await adapter.explain(SAMPLE_INPUT)).toBeNull();
+      expect(await adapter.explain(SAMPLE_INPUT)).toBeNull();
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('keeps calling through a rate limit — the next call can succeed', async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValue(
+        providerError(429, 'rate_limit_error', 'test: rate limited', { 'retry-after': '2' }),
+      );
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await adapter.explain(SAMPLE_INPUT);
+      await adapter.explain(SAMPLE_INPUT);
+      expect(create).toHaveBeenCalledTimes(2);
+      expect(adapter.isBlocked()).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('calls again once the cool-down has passed', async () => {
+    let now = Date.parse('2026-09-24T08:15:00Z');
+    const breaker = new LlmCircuitBreaker({ cooldownMs: 1_000, now: () => now });
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(CREDIT_BALANCE())
+      .mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Back.' }] });
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create), breaker });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await adapter.explain(SAMPLE_INPUT);
+      now += 1_000;
+      expect(await adapter.explain(SAMPLE_INPUT)).toBe('Back.');
+      expect(await adapter.explain(SAMPLE_INPUT)).toBe('Back.');
+      expect(create).toHaveBeenCalledTimes(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('never logs the prompt, even when the provider echoes it back', async () => {
+    const prompt = renderUserPrompt(SAMPLE_INPUT);
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(providerError(400, 'invalid_request_error', `bad input: ${prompt}`))
+      .mockRejectedValueOnce(providerError(429, 'rate_limit_error', `slow down: ${prompt}`))
+      .mockRejectedValueOnce(providerError(503, 'api_error', `upstream: ${prompt}`));
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      for (let i = 0; i < 3; i += 1) await adapter.explain(SAMPLE_INPUT);
+      expect(create).toHaveBeenCalledTimes(3);
+      const logged = [...warnSpy.mock.calls, ...errorSpy.mock.calls].map((c) => String(c[0]));
+      expect(logged).toHaveLength(3);
+      for (const line of logged) {
+        expect(line).not.toContain('Acme Marketing');
+        expect(JSON.parse(line)).toMatchObject({ requestId: 'req_test_1' });
+      }
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 });
 

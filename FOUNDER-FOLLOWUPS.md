@@ -23,6 +23,41 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Turn on the page for a refused Anthropic account
+
+**Source:** the LLM refusal breaker + alert PR (branch
+`fix/d024-llm-rejection-breaker`); the 2026-09-24 credit outage.
+
+**Why:** the worker now logs `llm.provider_rejected` on every refused
+Anthropic call and stops calling, but a log line pages nobody until the
+GCP log metric and alert policy exist. Creating them needs GCP
+credentials; the session that wrote the PR had none (gcloud asked for
+re-authentication).
+
+**How:** after the PR merges and deploys:
+
+```bash
+gcloud auth login
+node scripts/setup-llm-rejection-alert.mjs --apply
+```
+
+It creates the log metric `llm_provider_rejected` and the alert policy
+"LLM provider refused our calls (credit, limit or key)", reuses the
+existing admin@declutrmail.ai email channel, then reads both back.
+
+Optional drill: one synthetic line, labelled as a drill, should produce
+one alert email within about 5 minutes.
+
+```bash
+curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
+```
+
+**Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
+`Wired:` and exits 0. With the drill, an alert email naming
+`reason=other` arrives.
+
+**Status:** Open
+
 ### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
 **Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
 **Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:

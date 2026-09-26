@@ -2,12 +2,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { BriefNarrativeInput } from '@declutrmail/workers';
 import { describe, expect, it, vi } from 'vitest';
 
+import { AnthropicHaikuAdapter } from './anthropic-haiku.adapter.js';
 import {
   BriefLlmAnthropicAdapter,
   buildBriefLlmAdapter,
   narrativeWordBudget,
   renderBriefUserPrompt,
 } from './brief-llm-anthropic.adapter.js';
+import { LlmCircuitBreaker } from './llm-circuit-breaker.js';
 
 /**
  * BriefLlmAnthropicAdapter unit tests (D62).
@@ -295,6 +297,94 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     const create = vi.fn().mockRejectedValue(err);
     const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
     expect(await adapter.generateNarrative(SAMPLE_INPUT)).toBeNull();
+  });
+});
+
+describe('BriefLlmAnthropicAdapter — provider refusals', () => {
+  // The 2026-09-24 production refusal (see llm-circuit-breaker.ts).
+  const creditBalance = () =>
+    Anthropic.APIError.generate(
+      400,
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'Your credit balance is too low to access the Anthropic API',
+        },
+        request_id: 'req_test_1',
+      },
+      undefined,
+      new Headers({ 'request-id': 'req_test_1' }),
+    );
+
+  it('shares one pause with the reasoning adapter: a refusal seen by either stops both', async () => {
+    // Both adapters bill the same Anthropic account; the composition
+    // root hands them one breaker.
+    const breaker = new LlmCircuitBreaker();
+    const haikuCreate = vi.fn().mockRejectedValue(creditBalance());
+    const briefCreate = vi.fn();
+    const haiku = new AnthropicHaikuAdapter({ client: stubClient(haikuCreate), breaker });
+    const brief = new BriefLlmAnthropicAdapter({ client: stubClient(briefCreate), breaker });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await haiku.explain({
+        displayName: 'Acme',
+        domain: 'acme.example',
+        verdict: 'archive',
+        confidence: 0.9,
+        ruleLabel: 'rarely marked read',
+        facts: { monthlyVolume: 10, readRatePct: 2 },
+        gmailCategory: 'promotions',
+      });
+      expect(await brief.generateNarrative(SAMPLE_INPUT)).toBeNull();
+      expect(briefCreate).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('stops its own calls after a credit-balance refusal', async () => {
+    const create = vi.fn().mockRejectedValue(creditBalance());
+    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await adapter.generateNarrative(SAMPLE_INPUT);
+      await adapter.generateNarrative(SAMPLE_INPUT);
+      expect(create).toHaveBeenCalledTimes(1);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('never logs subjects or snippets, even when the provider echoes the prompt', async () => {
+    const prompt = renderBriefUserPrompt(SAMPLE_INPUT);
+    const echo = (status: number, type: string) =>
+      Anthropic.APIError.generate(
+        status,
+        { type: 'error', error: { type, message: `echo: ${prompt}` }, request_id: 'req_test_2' },
+        undefined,
+        new Headers({ 'request-id': 'req_test_2' }),
+      );
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(echo(400, 'invalid_request_error'))
+      .mockRejectedValueOnce(echo(429, 'rate_limit_error'));
+    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await adapter.generateNarrative(SAMPLE_INPUT);
+      await adapter.generateNarrative(SAMPLE_INPUT);
+      const logged = [...warnSpy.mock.calls, ...errorSpy.mock.calls].map((c) => String(c[0]));
+      expect(logged).toHaveLength(2);
+      for (const line of logged) {
+        expect(line).not.toContain('Q4 sync');
+        expect(line).not.toContain('Statement available');
+      }
+    } finally {
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    }
   });
 });
 
