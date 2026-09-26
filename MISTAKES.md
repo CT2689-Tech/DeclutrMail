@@ -4843,3 +4843,11 @@ The declarations came back out.
 **Correct approach:** Identify a user in any tracked file by a workspace or mailbox id prefix (`300563ea-…`), never by address or name.
 **Rule:** No personal email address in a tracked file, ever; cite an id prefix.
 **Enforcement update:** `scripts/personal-email-guard.test.mjs` in the CI Lint job fails on any consumer-domain address that is not a listed placeholder (negative-controlled against the original lines; refuses to pass when it sees no files).
+
+## 2026-09-26 — The vendor watchdog stayed red for a known gap, so three new breaches changed nothing
+**PR:** TBD
+**Caught by:** class sweep after the stuck-mailbox fix (#778)
+**What happened:** `check-vendor-limits.mjs` exits 1 on any BREACH or ERROR. Anthropic returned ERROR (no Admin API key) on every scheduled run from at least 2026-09-21, so the run was red daily. Sentry's BREACH (2026-09-24) and the Google Cloud budget and Upstash BREACHes (2026-09-25) arrived in a run that was already red, and nothing anyone saw changed.
+**Correct approach:** The same shape as the stuck-mailbox fix: a committed list of acknowledged causes (vendor, status, and text the row's detail must contain), each with an expiry at most 30 days out. Listed causes warn, anything else fails, an entry that matched nothing is flagged for deletion, and a missing or malformed list fails closed. The first draft keyed on (vendor, status) alone; review showed one line then muted every cause for that vendor, such as an Upstash volume acknowledgment hiding a suspended database.
+**Rule:** A watchdog that is red for a known reason has stopped reporting; acknowledge the known member explicitly so red means news again (see the 2026-09-26 stuck-mailbox entry).
+**Enforcement update:** `scripts/check-vendor-limits.test.mjs` replays the 2026-09-26 run's rows; each assertion was verified red against a negative control.
