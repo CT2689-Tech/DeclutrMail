@@ -385,11 +385,18 @@ describe('SyncGate — failure copy names only what its error proves', () => {
     expect(html).toContain('support@declutrmail.com');
   });
 
-  it('does not promise reconnecting "restores" a refused AuthExpiredError', () => {
-    const html = failedCopy({ ...FAILED, error_code: 'AuthExpiredError' });
-    expect(html).not.toMatch(/restores/i);
-    expect(html).toContain('allow Gmail access');
-  });
+  it.each(['InvalidGrantError', 'AuthExpiredError'])(
+    'renders the one reconnect sentence for %s',
+    (errorCode) => {
+      // Both codes are in the reconnect rule, so the per-code map is never
+      // read for them (its entries were deleted); the sentence is the rule's.
+      const html = failedCopy({ ...FAILED, error_code: errorCode });
+      expect(html).toContain(
+        'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
+      );
+      expect(html).not.toMatch(/restores|partway through/i);
+    },
+  );
 
   it('offers Reconnect when a later background call proved the grant is refused', () => {
     // The 2026-09-04 mailbox's live row: the scan failed as TransientError,

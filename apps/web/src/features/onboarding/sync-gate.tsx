@@ -98,9 +98,9 @@ const RECONNECT_COPY =
 const ERROR_COPY: Record<string, string> = {
   RateLimitError:
     'Gmail limited how fast the scan could read. Try again later — if it fails twice, email support@declutrmail.com.',
-  AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
-  InvalidGrantError: RECONNECT_COPY,
+  // No InvalidGrantError / AuthExpiredError entries: both are in the
+  // reconnect rule (`syncStatusNeedsReconnect`), and every state that rule
+  // covers renders RECONNECT_COPY before this map is read.
   TransientError:
     'A request to Google failed. Try again — if it fails twice, email support@declutrmail.com.',
   // The address, not "contact support": on a first run the onboarding
