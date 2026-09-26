@@ -33,7 +33,11 @@ interface ConnectIdentity {
 interface PersistedConnect extends ConnectIdentity {
   mailboxId: string;
   isNewSignup: boolean;
+  /** What the connect decided for sync — see `SyncService.markConnected`. */
+  syncIntent: ConnectSyncIntent;
 }
+
+type ConnectSyncIntent = Awaited<ReturnType<SyncService['markConnected']>>;
 
 /**
  * AuthSignupOrchestrator (D205, the documented exception).
@@ -51,12 +55,14 @@ interface PersistedConnect extends ConnectIdentity {
  *      bootstrap workspace + user + mailbox + sync state in one UoW;
  *      users.email and provider-identity losers re-resolve the winner.
  *   2. Envelope-encrypt the refresh token via TokenCryptoService.
- *   3. For returning identities, upsert the mailbox_accounts row + mark
- *      sync queued in one transaction so a Redis outage cannot strand
- *      the user (see
+ *   3. For returning identities, upsert the mailbox_accounts row and
+ *      record the sync intent in one transaction (`markConnected`): a
+ *      mailbox that is already synced stays `ready`; anything else is
+ *      marked `queued` so a Redis outage cannot strand the user (see
  *      `provider_sync_state.readiness_status='queued'` + the boot
  *      reconciler in apps/api/src/worker.ts).
- *   4. Best-effort enqueue the BullMQ initial-sync job.
+ *   4. Best-effort enqueue: the initial-sync job for a queued mailbox,
+ *      an incremental catch-up for one that stayed ready.
  *   5. Issue a session row + JWT pair via SessionsService.
  *
  * Returns the issued tokens + identifiers the controller needs to set
@@ -125,7 +131,7 @@ export class AuthSignupOrchestrator {
     const persisted = identity
       ? await this.persistResolvedConnect(identity, email, encrypted, false)
       : await this.bootstrapAndPersistConnect(email, encrypted, input.signupAttributionRef);
-    const { userId, workspaceId, mailboxId, isNewSignup } = persisted;
+    const { userId, workspaceId, mailboxId, isNewSignup, syncIntent } = persisted;
 
     // Land the user on the mailbox they just authenticated with — set
     // it as the active-mailbox preference so the account switcher +
@@ -134,12 +140,7 @@ export class AuthSignupOrchestrator {
     // the primary mailbox as active.
     await this.users.patchPreferences(userId, { activeMailboxId: mailboxId });
 
-    // Best-effort BullMQ enqueue — the durable signal is the `queued`
-    // row above. Reconciler picks it up if Redis is unreachable.
-    // `force`: we just stored a fresh OAuth token, so supersede any
-    // stale pending job (e.g. a reconnect's pre-disconnect leftover)
-    // that would fail on the old token and flip readiness to `failed`.
-    await this.sync.schedule(mailboxId, { force: true });
+    await this.scheduleAfterConnect(mailboxId, syncIntent);
 
     // `users.watch` on connect AND reconnect (D8/D225/D229 — both the
     // first-time connect and a post-disconnect reconnect flow through
@@ -210,8 +211,8 @@ export class AuthSignupOrchestrator {
         dekEncrypted: encrypted.wrappedDek,
         keyVersion: encrypted.keyVersion,
       });
-      await this.sync.markQueued(tx, row.id, { freshCredentials: true });
-      return row;
+      const syncIntent = await this.sync.markConnected(tx, row.id, { wasActive: row.wasActive });
+      return { id: row.id, syncIntent };
     });
 
     // Switch-and-gate (D115, D109): make the just-connected mailbox the
@@ -224,10 +225,7 @@ export class AuthSignupOrchestrator {
       activeMailboxId: mailboxRow.id,
     });
 
-    // `force`: we just stored a fresh OAuth token, so supersede any
-    // stale pending job (e.g. a reconnect's pre-disconnect leftover)
-    // that would fail on the old token and flip readiness to `failed`.
-    await this.sync.schedule(mailboxRow.id, { force: true });
+    await this.scheduleAfterConnect(mailboxRow.id, mailboxRow.syncIntent);
 
     // `users.watch` for the added/reconnected mailbox — same
     // best-effort contract as `connect` above (D8/D225/D229).
@@ -240,7 +238,7 @@ export class AuthSignupOrchestrator {
     identity: ConnectIdentity,
     email: string,
     encrypted: EnvelopeCiphertext,
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; syncIntent: ConnectSyncIntent }> {
     return this.db.transaction(async (tx) => {
       const row = await this.mailboxes.upsertConnect(tx, {
         workspaceId: identity.workspaceId,
@@ -250,9 +248,32 @@ export class AuthSignupOrchestrator {
         dekEncrypted: encrypted.wrappedDek,
         keyVersion: encrypted.keyVersion,
       });
-      await this.sync.markQueued(tx, row.id, { freshCredentials: true });
-      return row;
+      const syncIntent = await this.sync.markConnected(tx, row.id, { wasActive: row.wasActive });
+      return { id: row.id, syncIntent };
     });
+  }
+
+  /**
+   * Post-commit, best-effort (the durable signal is the row written in
+   * the connect transaction; the reconciler covers a Redis outage).
+   *
+   * `queued` → the initial-sync job. `force`: we just stored a fresh
+   * OAuth token, so supersede any stale pending job (e.g. a reconnect's
+   * pre-disconnect leftover) that would fail on the old token and flip
+   * readiness to `failed`.
+   *
+   * `kept_ready` → one incremental catch-up, so a returning user's
+   * mailbox is current without re-scanning and re-scoring it.
+   */
+  private async scheduleAfterConnect(
+    mailboxId: string,
+    syncIntent: ConnectSyncIntent,
+  ): Promise<void> {
+    if (syncIntent === 'queued') {
+      await this.sync.schedule(mailboxId, { force: true });
+    } else {
+      await this.sync.scheduleCatchUp(mailboxId);
+    }
   }
 
   /**
@@ -270,7 +291,7 @@ export class AuthSignupOrchestrator {
   ): Promise<PersistedConnect> {
     try {
       const mailbox = await this.persistMailbox(identity, email, encrypted);
-      return { ...identity, mailboxId: mailbox.id, isNewSignup };
+      return { ...identity, mailboxId: mailbox.id, isNewSignup, syncIntent: mailbox.syncIntent };
     } catch (err) {
       if (!isMailboxOwnershipConflict(err)) {
         throw err;
@@ -289,6 +310,7 @@ export class AuthSignupOrchestrator {
       workspaceId: winner.workspaceId,
       mailboxId: mailbox.id,
       isNewSignup: false,
+      syncIntent: mailbox.syncIntent,
     };
   }
 
@@ -315,8 +337,10 @@ export class AuthSignupOrchestrator {
           dekEncrypted: encrypted.wrappedDek,
           keyVersion: encrypted.keyVersion,
         });
-        await this.sync.markQueued(tx, mailbox.id, { freshCredentials: true });
-        return { ...identity, mailboxId: mailbox.id, isNewSignup: true };
+        const syncIntent = await this.sync.markConnected(tx, mailbox.id, {
+          wasActive: mailbox.wasActive,
+        });
+        return { ...identity, mailboxId: mailbox.id, isNewSignup: true, syncIntent };
       });
     } catch (err) {
       if (!(err instanceof EmailRaceLostError) && !isMailboxOwnershipConflict(err)) {

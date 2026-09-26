@@ -34,8 +34,9 @@ const GMAIL_QUOTA_WINDOW_MS = 60_000;
  *
  * Call sites:
  *   - `AuthSignupOrchestrator.connect` / `.addMailbox` — watch right
- *     after the OAuth connect/reconnect commits. Initial sync is NOT
- *     ready yet at that point and that is fine: the webhook treats
+ *     after the OAuth connect/reconnect commits. The mailbox may not be
+ *     ready yet (a first connect or a re-scan; one that stayed ready
+ *     applies pushes immediately), and that is fine: the webhook treats
  *     pushes for unsynced mailboxes as designed no-ops
  *     (`sync_state_uninitialized` / `deferred_initial_sync_in_flight`),
  *     and the subscription is already live the moment the mailbox

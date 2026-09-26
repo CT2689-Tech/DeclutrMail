@@ -186,9 +186,10 @@ export interface IncrementalSyncDeps {
    * ScoreWorker owns the flag write; this is only the trigger).
    *
    * BEST-EFFORT: a callback failure is WARN-logged and the sync job
-   * proceeds — the message/sender writes are the canonical work; the
-   * next sync_complete sweep re-scores every sender as the safety
-   * net.
+   * proceeds — the message/sender writes are the canonical work.
+   * Nothing retries it: the sender stays unscored (and out of the
+   * Screener) until a full scan, or until someone opens it
+   * (`stale_refresh` on a null read).
    */
   onNewSender?: (mailboxAccountId: string, senderKey: string) => Promise<void>;
   /**
@@ -356,11 +357,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   protected override async onTerminalFailure(
     payload: IncrementalSyncJobData,
     error: Error,
+    ctx: WorkerContext,
   ): Promise<void> {
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) return;
     const errorCode = error.name || 'UnknownError';
-    await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, errorCode);
+    await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, errorCode, {
+      attemptStartedAt: ctx.startedAt,
+    });
     console.error(
       JSON.stringify({
         level: 'error',

@@ -2256,9 +2256,16 @@ describe('IncrementalSyncWorker', () => {
         onTerminalFailure: (
           payload: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
           err: Error,
+          ctx: WorkerContext,
         ) => Promise<void>;
       }
-    ).onTerminalFailure({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, error);
+    ).onTerminalFailure(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      error,
+      // As the base worker passes it: this attempt started now, after
+      // the mailbox was connected.
+      { ...CTX, startedAt: new Date() },
+    );
 
     const [state] = await db
       .select()
@@ -2281,13 +2288,14 @@ describe('IncrementalSyncWorker', () => {
         onTerminalFailure: (
           p: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
           e: Error,
+          ctx: WorkerContext,
         ) => Promise<void>;
       }
     ).onTerminalFailure.bind(worker);
     const payload = { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' };
     const error = Object.assign(new Error('grant lost'), { name: 'InvalidGrantError' });
-    await fail(payload, error);
-    await fail(payload, error);
+    await fail(payload, error, { ...CTX, startedAt: new Date() });
+    await fail(payload, error, { ...CTX, startedAt: new Date() });
     const events = await db
       .select()
       .from(outboxEvents)
@@ -2306,13 +2314,53 @@ describe('IncrementalSyncWorker', () => {
       .update(providerSyncState)
       .set({ lastIncrementalErrorAt: null, lastIncrementalErrorCode: null })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
-    await fail(payload, error);
+    await fail(payload, error, { ...CTX, startedAt: new Date() });
     expect(
       await db
         .select()
         .from(outboxEvents)
         .where(eq(outboxEvents.topic, 'mailbox.reconnect_required')),
     ).toHaveLength(2);
+  });
+
+  it('ignores a revoked grant from an attempt that began before the reconnect', async () => {
+    // The job read the old, already-dead grant; the user signed in again
+    // (connected_at moves) before it failed. A sign-in keeps the mailbox
+    // ready, so recording this would re-gate a just-reconnected mailbox.
+    const attemptStartedAt = new Date(Date.now() - 60_000);
+    await db
+      .update(mailboxAccounts)
+      .set({ connectedAt: new Date() })
+      .where(eq(mailboxAccounts.id, mailboxAccountId));
+    const worker = new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(new FakeGmailClient([], new Map())),
+    });
+    await (
+      worker as unknown as {
+        onTerminalFailure: (
+          p: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
+          e: Error,
+          ctx: WorkerContext,
+        ) => Promise<void>;
+      }
+    ).onTerminalFailure(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      Object.assign(new Error('grant lost'), { name: 'InvalidGrantError' }),
+      { ...CTX, startedAt: attemptStartedAt },
+    );
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastIncrementalErrorCode).toBeNull();
+    expect(
+      await db
+        .select()
+        .from(outboxEvents)
+        .where(eq(outboxEvents.topic, 'mailbox.reconnect_required')),
+    ).toHaveLength(0);
   });
 
   it('preserves outage age across retries so the watchdog can detect continuous failure', async () => {
@@ -2335,11 +2383,13 @@ describe('IncrementalSyncWorker', () => {
         onTerminalFailure: (
           p: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
           e: Error,
+          ctx: WorkerContext,
         ) => Promise<void>;
       }
     ).onTerminalFailure(
       { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
       Object.assign(new Error('quota'), { name: 'RateLimitError' }),
+      { ...CTX, startedAt: new Date() },
     );
     const [state] = await db
       .select()

@@ -145,8 +145,8 @@ export class GmailWebhookService {
     // timeout) would leave the job visible before the dedup transaction
     // commits. Keeping Redis after commit preserves that ordering while
     // the unchanged applied cursor supplies the recovery point. Symmetric to
-    // `SyncModule.connect` which enqueues `initial-sync` AFTER the
-    // OAuth tx commits.
+    // `AuthSignupOrchestrator`, which enqueues the initial sync or the
+    // incremental catch-up AFTER the connect tx commits.
     const outcome = await this.db.transaction(async (tx): Promise<PlannedOutcome> => {
       // Step 7: messageId dedup. Atomic PK insert; conflict means
       // we've already processed this delivery. Insert FIRST, before

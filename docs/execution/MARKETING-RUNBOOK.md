@@ -38,7 +38,7 @@ that sentence.
 | ---------------------------------------------------------- | ------------------------------------------------- | ------------------------------ |
 | **This runbook**                                           | What to do, in order                              | Every marketing session        |
 | `.agents/product-marketing.md`                             | Voice, claims, objections. Skills read this first | Writing any public sentence    |
-| `~/.claude/skills/reddit-comments-declutrmail/SKILL.md`    | Drafts Reddit comments                            | You paste a Reddit URL         |
+| `~/.claude/skills/ct-reddit/SKILL.md`                      | Drafts Reddit comments                            | You paste a Reddit URL         |
 | `docs/execution/launch-content-drafts-2026-08-04.md`       | Raw launch posts — **not safe to post yet**       | Phase C rewrite                |
 | `docs/adr/0030-positioning-preview-guarantee.md`           | Why we sell the preview, not "by sender"          | Positioning argument           |
 | `docs/execution/marketing-outreach-playbook-2026-08-04.md` | Tactic archive (69 items, verdicts)               | You need a kill/keep rationale |
@@ -97,7 +97,7 @@ daily. Skills **draft**. You **click submit**.
 **Reddit (15–30 min, ≤2 replies/day)**
 
 1. F5Bot (or saved search) on: `unroll.me alternative`, `clean email safe`, `trimbox`, `mailstrom`, `sanebox`, `leave me alone app`, `gmail storage full`, `mass delete gmail`, `bulk unsubscribe`, `delete emails by sender`.
-2. Paste the thread URL in Cursor: _"Draft a Reddit comment for this using the reddit-comments-declutrmail skill."_
+2. Paste the thread URL in Cursor: _"Draft a Reddit comment for this using the ct-reddit skill."_
 3. Read the live thread. Rewrite anything that sounds like a template. Post from the human account.
 
 Test: would this still be the best answer if DeclutrMail vanished? If the last paragraph is why you showed up, it is a pitch.
@@ -247,18 +247,18 @@ Do **not** install the rest of the pack. Do **not** re-run the nine lenses — t
 
 Reddit stays on the **custom** skill. Do not install a second Reddit automation skill.
 
-| You want                           | Say this to Cursor                                                 | Skill                         | Constraint from this runbook                                                      |
-| ---------------------------------- | ------------------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------- |
-| Measure launch traffic             | "Phase B. Use the attribution skill."                              | `attribution`                 | Set-once first-touch `ref` + separate self-report. Never sum them. No multi-touch |
-| Safer public copy                  | "Phase C. Use copy-editing."                                       | `copy-editing`                | Locked privacy headline                                                           |
-| New HN/PH/X words                  | "Write the Show HN body. Use copywriting."                         | `copywriting`                 | Simulator first, no kicker copy on HN                                             |
-| X or LinkedIn post                 | "Turn this cleanup session into one X post. Use the social skill." | `social`                      | 1 original/day, not 3–10. Link in LinkedIn first comment                          |
-| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`                         | No A/B. Ship one version                                                          |
-| AlternativeTo blurb                | "Directory copy for AlternativeTo. Skip AI directories."           | `directory-submissions`       | After Phase B                                                                     |
-| First user interviews              | "Draft 5 interview prompts."                                       | `customer-research`           | After users exist                                                                 |
-| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                       | Real product shots via Playwright/simulator                                       |
-| Shot list for the 20s clip         | "Shot list for preview→confirm→undo. Screen recording, no avatar." | `video`                       | Real capture. No talking-head                                                     |
-| Reddit reply                       | Paste URL + "draft a comment"                                      | `reddit-comments-declutrmail` | You click submit. ≤2/day                                                          |
+| You want                           | Say this to Cursor                                                 | Skill                   | Constraint from this runbook                                                      |
+| ---------------------------------- | ------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------- |
+| Measure launch traffic             | "Phase B. Use the attribution skill."                              | `attribution`           | Set-once first-touch `ref` + separate self-report. Never sum them. No multi-touch |
+| Safer public copy                  | "Phase C. Use copy-editing."                                       | `copy-editing`          | Locked privacy headline                                                           |
+| New HN/PH/X words                  | "Write the Show HN body. Use copywriting."                         | `copywriting`           | Simulator first, no kicker copy on HN                                             |
+| X or LinkedIn post                 | "Turn this cleanup session into one X post. Use the social skill." | `social`                | 1 original/day, not 3–10. Link in LinkedIn first comment                          |
+| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`                   | No A/B. Ship one version                                                          |
+| AlternativeTo blurb                | "Directory copy for AlternativeTo. Skip AI directories."           | `directory-submissions` | After Phase B                                                                     |
+| First user interviews              | "Draft 5 interview prompts."                                       | `customer-research`     | After users exist                                                                 |
+| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                 | Real product shots via Playwright/simulator                                       |
+| Shot list for the 20s clip         | "Shot list for preview→confirm→undo. Screen recording, no avatar." | `video`                 | Real capture. No talking-head                                                     |
+| Reddit reply                       | Paste URL + "draft a comment"                                      | `ct-reddit`             | You click submit. ≤2/day                                                          |
 
 Every Haines skill reads `.agents/product-marketing.md` first. Keep that file honest.
 
