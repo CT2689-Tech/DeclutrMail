@@ -33,9 +33,10 @@ import type {
   MeSettings,
 } from '@declutrmail/shared/contracts';
 
-import { apiGet, apiPatch } from '@/lib/api/client';
+import { apiPatch } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { useTriageStore, type RememberableVerb } from '@/features/triage/store';
+import { readMeSettings } from './me-settings-reader';
 import { ME_SETTINGS_QUERY_KEY, meSettingsQueryOptions } from './query-options';
 
 export { ME_SETTINGS_QUERY_KEY } from './query-options';
@@ -54,12 +55,7 @@ export const VERB_TO_WIRE: Record<RememberableVerb, keyof ActionSheetPrefs> = {
 };
 
 export function useMeSettings() {
-  return useQuery(
-    meSettingsQueryOptions(async (): Promise<MeSettings> => {
-      const env = await apiGet<MeSettings>('/api/me/settings');
-      return env.data;
-    }),
-  );
+  return useQuery(meSettingsQueryOptions(readMeSettings));
 }
 
 /**

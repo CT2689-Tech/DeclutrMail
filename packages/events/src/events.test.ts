@@ -325,6 +325,22 @@ describe('MailboxSyncReadyPayloadSchema', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts firstReady true, false or absent, and nothing else', () => {
+    const base = {
+      mailboxAccountId: VALID_MAILBOX,
+      workspaceId: VALID_WORKSPACE,
+      readyAt: '2026-05-25T08:00:00Z',
+      messageCount: 1234,
+    };
+    // Absent = an event published before the flag existed.
+    for (const firstReady of [true, false, undefined]) {
+      expect(MailboxSyncReadyPayloadSchema.safeParse({ ...base, firstReady }).success).toBe(true);
+    }
+    for (const firstReady of ['false', 0, null]) {
+      expect(MailboxSyncReadyPayloadSchema.safeParse({ ...base, firstReady }).success).toBe(false);
+    }
+  });
 });
 
 describe('MailboxDeletedPayloadSchema', () => {
