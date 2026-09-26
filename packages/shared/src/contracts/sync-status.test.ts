@@ -105,6 +105,45 @@ describe('SyncStatusSchema', () => {
     );
   });
 
+  describe('message_progress (the scan line: "12,400 of 40,898 emails")', () => {
+    it('accepts processed and total while the scan reads the mailbox', () => {
+      const parsed = SyncStatusSchema.parse({
+        ...VALID_SYNCING,
+        message_progress: { processed: 12_400, total: 40_898 },
+      });
+      expect(parsed.message_progress).toEqual({ processed: 12_400, total: 40_898 });
+    });
+
+    it('accepts null (total not known yet) and an OMITTED field (pre-field API)', () => {
+      expect(
+        SyncStatusSchema.parse({ ...VALID_SYNCING, message_progress: null }).message_progress,
+      ).toBeNull();
+      expect(SyncStatusSchema.parse(VALID_SYNCING).message_progress).toBeUndefined();
+    });
+
+    it('accepts processed === total (the last batch)', () => {
+      expect(
+        SyncStatusSchema.safeParse({
+          ...VALID_SYNCING,
+          message_progress: { processed: 500, total: 500 },
+        }).success,
+      ).toBe(true);
+    });
+
+    it.each([
+      ['more processed than the mailbox holds', { processed: 501, total: 500 }],
+      ['a zero total (nothing to count against)', { processed: 0, total: 0 }],
+      ['a negative count', { processed: -1, total: 500 }],
+      ['a fractional count', { processed: 1.5, total: 500 }],
+      ['half the pair', { processed: 10 }],
+      ['an extra key', { processed: 10, total: 500, subject: 'Hello' }],
+    ])('rejects %s', (_label, message_progress) => {
+      expect(SyncStatusSchema.safeParse({ ...VALID_SYNCING, message_progress }).success).toBe(
+        false,
+      );
+    });
+  });
+
   it('rejects progress_pct > 100', () => {
     const result = SyncStatusSchema.safeParse({
       ...VALID_SYNCING,

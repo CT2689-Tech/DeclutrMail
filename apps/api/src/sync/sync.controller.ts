@@ -18,6 +18,7 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { InitialSyncProgressReader } from './initial-sync-progress.reader.js';
 import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.service.js';
 
 /**
@@ -45,14 +46,18 @@ import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.
  * The pre-session `?mailboxAccountId=` query param is gone.
  *
  * Privacy posture (§2.1): both responses carry only stage enums + a
- * numeric percentage + an allowlisted boolean + a string cursor id.
- * No body content, no headers, no message-derived data of any kind.
+ * numeric percentage + two message counts + an allowlisted boolean + a
+ * string cursor id. No body content, no headers, no message-derived
+ * data of any kind.
  * `privacy-auditor` verifies this.
  */
 @Controller('v1/sync')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SyncController {
-  constructor(private readonly sync: SyncService) {}
+  constructor(
+    private readonly sync: SyncService,
+    private readonly scanProgress: InitialSyncProgressReader,
+  ) {}
 
   /**
    * Rate-limit (D156): `triage-load` bucket with a per-route override
@@ -68,12 +73,15 @@ export class SyncController {
     if (status === null) {
       throw new NotFoundException('No sync state for the given mailbox.');
     }
+    // The gate's "N of M emails" line: the running scan's counts, or
+    // null whenever they cannot be vouched for (reader docs).
+    const message_progress = await this.scanProgress.read(mailbox.id, status);
 
     // Validate at the boundary — a worker bug that wrote `progress_pct
     // = 150` (or any other shape drift) becomes a 500 here, never
     // reaches the UI. SyncStatusSchema is the wire-format source of
     // truth (D224).
-    const result = SyncStatusSchema.safeParse(status);
+    const result = SyncStatusSchema.safeParse({ ...status, message_progress });
     if (!result.success) {
       throw new InternalServerErrorException('Sync state failed contract validation.');
     }

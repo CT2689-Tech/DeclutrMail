@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import {
   createRedisConnection,
+  createRedisProducerConnection,
   INCREMENTAL_SYNC_QUEUE,
   INITIAL_SYNC_QUEUE,
 } from '@declutrmail/workers';
@@ -9,6 +10,10 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
+import {
+  INITIAL_SYNC_PROGRESS_QUEUE_TOKEN,
+  InitialSyncProgressReader,
+} from './initial-sync-progress.reader.js';
 import { SyncController } from './sync.controller.js';
 import {
   INCREMENTAL_SYNC_QUEUE_TOKEN,
@@ -73,6 +78,21 @@ import {
         });
       },
     },
+    {
+      // Read-only, for the status poll: fail-fast, so a Redis outage drops
+      // the "N of M emails" line instead of hanging the gate's poll.
+      provide: INITIAL_SYNC_PROGRESS_QUEUE_TOKEN,
+      useFactory: (): Queue<InitialSyncJobData> => {
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          throw new Error('REDIS_URL is not set — see .env.example.');
+        }
+        return new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, {
+          connection: createRedisProducerConnection(url),
+        });
+      },
+    },
+    InitialSyncProgressReader,
     SyncService,
   ],
   exports: [SyncService, INITIAL_SYNC_QUEUE_TOKEN, INCREMENTAL_SYNC_QUEUE_TOKEN],

@@ -158,6 +158,16 @@ export interface InitialSyncResult {
   alreadyReady?: boolean;
 }
 
+/**
+ * The metadata read's counts: messages read (including ones an earlier
+ * attempt saved) of the messages Gmail listed. The shape of the job's
+ * progress that `GET /api/v1/sync/status` reads (`SyncMessageProgress`).
+ */
+interface ScanCounts {
+  processed: number;
+  total: number;
+}
+
 /** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
 type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 
@@ -402,6 +412,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // `worker.started` and `worker.succeeded` made "is it hung or just
     // slow?" unanswerable. Each emit costs ~1 line; benign.
     initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
+    // Clear a retried attempt's counts BEFORE the row drops back to 5%:
+    // the status route reads the row, then the job, and must never pair
+    // this attempt's bar with the last attempt's numbers.
+    await this.reportScanProgress(ctx, null);
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
@@ -424,7 +438,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       messagesSynced,
       gmailApiCalls: fetchCalls,
       unreadable,
-    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal);
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
+      await this.updateProgress(mailboxAccountId, counts.processed, counts.total);
+      await this.reportScanProgress(ctx, counts);
+    });
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -681,7 +698,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    onProgress: (counts: ScanCounts) => Promise<void>,
   ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
@@ -833,7 +851,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
-        await this.updateProgress(mailboxAccountId, processed, total);
+        await onProgress({ processed, total });
         initialSyncLog('fetch_flush', mailboxAccountId, {
           processed,
           total,
@@ -842,6 +860,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     };
 
+    // The total is known from here on — say so before the first batch,
+    // counting what an earlier attempt already saved as read.
+    await onProgress({ processed, total });
     initialSyncLog('fetch_loop_begin', mailboxAccountId, {
       total,
       toFetch: total - skipSet.size,
@@ -1514,6 +1535,32 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       .update(providerSyncState)
       .set({ progressPct: Math.min(pct, 75), updatedAt: sql`now()` })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+  }
+
+  /**
+   * Put the scan's counts on this run's BullMQ job — `null` clears them
+   * back to BullMQ's own "no progress" (0). Display-only, so a failed
+   * write is logged and the scan carries on: a missing "N of M" line is
+   * the only cost, and the status route already reads a missing or
+   * unreadable value as no line at all.
+   */
+  private async reportScanProgress(ctx: WorkerContext, counts: ScanCounts | null): Promise<void> {
+    if (!ctx.reportProgress) {
+      return;
+    }
+    try {
+      await ctx.reportProgress(counts ?? 0);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.scan_progress_report_failed',
+          worker: this.workerName,
+          mailboxAccountId: ctx.mailboxAccountId,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 
   /** Persist the first pre-fetch cursor and reuse it across BullMQ retries. */

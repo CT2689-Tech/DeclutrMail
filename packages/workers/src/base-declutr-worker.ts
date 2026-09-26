@@ -263,6 +263,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
       maxAttempts: typeof jobAttempts === 'number' ? Math.max(1, jobAttempts) : config.maxAttempts,
       startedAt: new Date(),
       policy: this.policy,
+      reportProgress: (progress) => job.updateProgress(progress),
       ...(job.data && typeof job.data === 'object' && 'mailboxAccountId' in job.data
         ? { mailboxAccountId: String((job.data as Record<string, unknown>).mailboxAccountId) }
         : {}),

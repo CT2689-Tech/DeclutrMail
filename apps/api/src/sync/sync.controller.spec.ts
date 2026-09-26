@@ -2,6 +2,7 @@ import { ConflictException, InternalServerErrorException, NotFoundException } fr
 import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { InitialSyncProgressReader } from './initial-sync-progress.reader.js';
 import { SyncController } from './sync.controller.js';
 import type { ManualIncrementalSyncResult, SyncService } from './sync.service.js';
 
@@ -24,6 +25,7 @@ const MAILBOX = { id: 'mailbox-uuid-1' } as const;
 function makeController(opts: {
   getStatus?: SyncService['getStatus'];
   enqueueManualIncrementalSync?: SyncService['enqueueManualIncrementalSync'];
+  readProgress?: InitialSyncProgressReader['read'];
 }): SyncController {
   const service = {
     getStatus: opts.getStatus ?? (() => Promise.resolve(null)),
@@ -32,7 +34,10 @@ function makeController(opts: {
       ((): Promise<ManualIncrementalSyncResult> =>
         Promise.resolve({ kind: 'enqueued', cursorHistoryId: '1500' })),
   } as unknown as SyncService;
-  return new SyncController(service);
+  const progress = {
+    read: opts.readProgress ?? (() => Promise.resolve(null)),
+  } as unknown as InitialSyncProgressReader;
+  return new SyncController(service, progress);
 }
 
 const VALID_STATUS: SyncStatus = {
@@ -49,7 +54,7 @@ describe('SyncController.getStatus', () => {
 
     const result = await controller.getStatus(MAILBOX);
 
-    expect(result).toEqual({ data: VALID_STATUS });
+    expect(result).toEqual({ data: { ...VALID_STATUS, message_progress: null } });
     // The inner `data` must round-trip through the schema — this is
     // the contract guarantee the controller makes to the client.
     expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
@@ -95,7 +100,21 @@ describe('SyncController.getStatus', () => {
     const controller = makeController({ getStatus });
 
     const result = await controller.getStatus(MAILBOX);
-    expect(result).toEqual({ data: failed });
+    expect(result).toEqual({ data: { ...failed, message_progress: null } });
+  });
+
+  it("adds the running scan's counts, read for the state it is describing", async () => {
+    const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
+    const readProgress = vi
+      .fn<InitialSyncProgressReader['read']>()
+      .mockResolvedValue({ processed: 12_400, total: 40_898 });
+    const controller = makeController({ getStatus, readProgress });
+
+    const result = await controller.getStatus(MAILBOX);
+
+    expect(result.data.message_progress).toEqual({ processed: 12_400, total: 40_898 });
+    expect(readProgress).toHaveBeenCalledWith('mailbox-uuid-1', VALID_STATUS);
+    expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
   });
 });
 
