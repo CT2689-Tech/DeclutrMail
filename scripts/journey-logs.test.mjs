@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { deriveMailboxRef, normalize, readQuota, summarize } from './journey-logs.mjs';
 
@@ -232,6 +235,25 @@ test('quota pace is read from the files that set it (fails loudly if either move
   assert.ok(quota.unitsPerMin > 0 && quota.messagesGetCost > 0);
 });
 
+test('a read is priced on the metric the deploy actually sets', () => {
+  const root = mkdtempSync(join(tmpdir(), 'journey-quota-'));
+  mkdirSync(join(root, '.github/workflows'), { recursive: true });
+  mkdirSync(join(root, 'apps/api/src/gmail'), { recursive: true });
+  writeFileSync(
+    join(root, 'apps/api/src/gmail/gmail-client.service.ts'),
+    "    messagesGet: metric === 'gmail.googleapis.com/default' ? 5 : 20,\n",
+  );
+  const deploy = (metric) =>
+    writeFileSync(
+      join(root, '.github/workflows/deploy-cloud-run.yml'),
+      `--set-env-vars="^|^GMAIL_QUOTA_UNITS_PER_MIN=12000|GMAIL_QUOTA_METRIC=${metric}|X=1"\n`,
+    );
+  deploy('gmail.googleapis.com/default');
+  assert.equal(readQuota(root).messagesGetCost, 5);
+  deploy('gmail.googleapis.com/total_query_cost');
+  assert.equal(readQuota(root).messagesGetCost, 20);
+});
+
 test('a scoring run with no LLM explanations is flagged; one with some is not', () => {
   const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
   const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });
@@ -250,6 +272,43 @@ test('a scoring run with no LLM explanations is flagged; one with some is not', 
     }).flags.map((f) => f.code);
   assert.ok(codes(0).includes('LLM_OFF'));
   assert.ok(!codes(40).includes('LLM_OFF'));
+});
+
+test('a run the provider refused is flagged by its skipped calls, even beside reused prose', () => {
+  // Since the breaker, a refused account logs `llm.provider_rejected` once
+  // and the run counts the skipped calls as `llmBlocked`. Reused prose
+  // keeps `llmExplanations` above 0, so "0 from the LLM" alone misses it.
+  const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
+  const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });
+  const flags = (result) =>
+    summarize({
+      mailboxRows,
+      workerRows: normalize([
+        ready,
+        succeeded('2026-01-01T01:00:30Z', REF, 'ScoreWorker', { decisionsWritten: 100, ...result }),
+      ]),
+      quota: null,
+      ref: REF,
+    }).flags;
+  const refused = flags({
+    llmExplanations: 40,
+    llmReused: 40,
+    templateExplanations: 60,
+    llmCalls: 1,
+    llmBlocked: 59,
+  });
+  const flag = refused.find((f) => f.code === 'LLM_REFUSED');
+  assert.ok(flag, JSON.stringify(refused));
+  assert.match(flag.detail, /llm\.provider_rejected/);
+  assert.match(flag.detail, /59/);
+  const off = flags({
+    llmExplanations: 0,
+    templateExplanations: 100,
+    llmCalls: 100,
+    llmBlocked: 0,
+  });
+  assert.ok(!off.some((f) => f.code === 'LLM_REFUSED'));
+  assert.match(off.find((f) => f.code === 'LLM_OFF').detail, /reasoning\.adapter_error/);
 });
 
 test('recommendations landing minutes after "ready" are flagged', () => {

@@ -73,6 +73,13 @@ export interface BriefPayload {
  */
 export interface BriefLlmPort {
   generateNarrative(input: BriefNarrativeInput): Promise<string | null>;
+  /**
+   * `true` while the provider is refusing this account's calls (credit,
+   * spend limit, key). The worker then skips the call and logs why the
+   * Brief has no note. Optional: an implementation without it is never
+   * blocked.
+   */
+  isBlocked?(): boolean;
 }
 
 /**
