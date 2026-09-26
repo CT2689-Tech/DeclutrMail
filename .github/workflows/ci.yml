@@ -266,6 +266,8 @@ jobs:
         run: node --test scripts/check-pr-body-d-ref.test.mjs
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
+      - name: No personal email addresses in tracked files (D7)
+        run: node --test scripts/personal-email-guard.test.mjs
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
