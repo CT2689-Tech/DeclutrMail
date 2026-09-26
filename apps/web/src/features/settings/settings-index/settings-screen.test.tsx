@@ -875,20 +875,19 @@ describe('SettingsScreen', () => {
   it.each([
     {
       result: 'success',
-      message: 'Gmail reconnected. Sync status is shown below.',
+      message: 'Gmail reconnected.',
       tone: 'success',
       liveRole: 'status',
     },
     {
       result: 'account_mismatch',
-      message:
-        'That was a different Google account. Retry Reconnect next to the mailbox you meant.',
+      message: 'That was a different Google account. Reconnect with the account you meant.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'target_invalid',
-      message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
+      message: 'Could not match that recovery request to the mailbox you chose. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -900,7 +899,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'failed',
-      message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+      message: 'Could not reconnect Gmail. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -936,8 +935,7 @@ describe('SettingsScreen', () => {
   it.each([
     {
       result: 'target_invalid',
-      message:
-        'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+      message: 'That Gmail recovery request is no longer available. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -988,6 +986,30 @@ describe('SettingsScreen', () => {
     },
   );
 
+  // D108: someone who has not finished onboarding reaches Settings only to
+  // be sent to /onboarding. The gate carries the result there; using it up
+  // here first would lose it.
+  it('leaves an OAuth result for the onboarding gate while onboarding is incomplete', async () => {
+    const onboardingState = vi.fn(() =>
+      jsonOk({
+        data: { onboardedAt: null, skipped: false, goal: null, presetPicks: null, presets: [] },
+      }),
+    );
+    installFetchStub([
+      ...happyHandlers(),
+      { method: 'GET', path: '/api/onboarding/state', respond: onboardingState },
+    ]);
+    setSettingsLocation('reconnect_result=gmail_access_missing', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    await waitFor(() => expect(onboardingState).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+    expect(toast).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).get('reconnect_result')).toBe(
+      'gmail_access_missing',
+    );
+  });
+
   it('pre-mounts empty polite and assertive regions, then populates only the result region', async () => {
     const client = createTestQueryClient();
     const view = renderScreen(client);
@@ -1009,9 +1031,7 @@ describe('SettingsScreen', () => {
     );
 
     await waitFor(() =>
-      expect(alertRegion).toHaveTextContent(
-        'Could not reconnect Gmail. Try again from this mailbox list.',
-      ),
+      expect(alertRegion).toHaveTextContent('Could not reconnect Gmail. Try again.'),
     );
     expect(statusRegion).toBeEmptyDOMElement();
   });
@@ -1039,9 +1059,7 @@ describe('SettingsScreen', () => {
 
     expect(screen.getByText('Loading plan…')).toBeInTheDocument();
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
-    expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent(
-      'Gmail reconnected. Sync status is shown below.',
-    );
+    expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent('Gmail reconnected.');
     expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
     expect(document.activeElement).toBe(document.getElementById(`mailbox-${MAILBOX_A}`));
     expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');

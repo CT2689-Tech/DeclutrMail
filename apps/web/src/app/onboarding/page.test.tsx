@@ -190,6 +190,35 @@ function renderPage() {
   );
 }
 
+describe('onboarding page — a result carried from Settings (D108)', () => {
+  const setURL = (u: string) =>
+    (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+
+  afterEach(() => setURL('http://localhost/onboarding'));
+
+  it.each([
+    [
+      'reconnect_result=gmail_access_missing',
+      'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+    ],
+    [
+      'reconnect_result=account_mismatch',
+      'That was a different Google account. Reconnect with the account you meant.',
+    ],
+    ['connect_start_result=failed', 'Could not connect Gmail. Try again.'],
+    ['connect_error=connect_failed', 'Could not connect that Gmail account. Try again.'],
+  ])('shows the carried %s once, then clears it', async (query, line) => {
+    setURL(`http://localhost/onboarding?${query}`);
+    searchParams = new URLSearchParams(query);
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
+
+    renderPage();
+
+    expect(await screen.findByText(line)).toBeInTheDocument();
+    expect(window.location.search).toBe('');
+  });
+});
+
 describe('onboarding page — pre-auth boundary (D107/D108)', () => {
   it('unauthed visitor sees the promise screen with the D228 trust copy — no OAuth bounce', async () => {
     installFetchStub([me401, refresh401]);

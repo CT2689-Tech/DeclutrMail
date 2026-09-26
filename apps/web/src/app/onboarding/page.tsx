@@ -24,6 +24,7 @@ import { StepFirstTriage } from '@/features/onboarding/step-first-triage';
 import { StepProtectionReview } from '@/features/onboarding/step-protection-review';
 import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
+import { useCarriedOAuthResult } from '@/features/onboarding/use-carried-oauth-result';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
@@ -81,6 +82,7 @@ export default function OnboardingPage() {
 }
 
 function OnboardingFlow() {
+  useCarriedOAuthResult();
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
   // Exact closed flag, honored only alongside the secondary-mailbox

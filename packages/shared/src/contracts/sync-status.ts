@@ -83,3 +83,21 @@ export const SyncStatusSchema = z
   .strict();
 
 export type SyncStatus = z.infer<typeof SyncStatusSchema>;
+
+/**
+ * First-scan failures whose only real recovery is reconnecting Gmail: a
+ * revoked grant (`InvalidGrantError`) or one Gmail stopped accepting
+ * partway through (`AuthExpiredError`). Names match
+ * `packages/workers/src/worker-errors.ts`. One definition for every
+ * surface, web or API, that offers Reconnect instead of a retry.
+ *
+ * QA-sync-20260831-07 added `AuthExpiredError` to the onboarding gate's
+ * own local set. A Codex review of the same round found the top-bar
+ * indicator still used only `InvalidGrantError`, offering a doomed "Scan
+ * again" against the same dead token; the Settings row and the account
+ * menu had the same gap (D108). They all read this set now.
+ */
+export const AUTH_RECOVERY_ERROR_CODES: ReadonlySet<string> = new Set([
+  'InvalidGrantError',
+  'AuthExpiredError',
+]);

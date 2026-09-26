@@ -36,15 +36,12 @@
  */
 
 import { useQueries } from '@tanstack/react-query';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { AUTH_RECOVERY_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
 import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-import {
-  AUTH_RECOVERY_ERROR_CODES,
-  syncStatusNeedsReconnect,
-} from '@/features/mailboxes/mailbox-health';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 
 export interface MailboxHealth {
   /** ISO stamp of the last completed sync run; null before the first. */

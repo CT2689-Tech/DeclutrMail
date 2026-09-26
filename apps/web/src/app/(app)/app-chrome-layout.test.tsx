@@ -413,6 +413,34 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(summarySpy.mock.calls[0]![1].toString()).not.toContain('q=');
   });
 
+  // D108: someone who has not finished onboarding can come back from Google
+  // to a Settings or Triage URL. The gate sends them to /onboarding, and the
+  // one-line result must travel with them, not be used up first.
+  it.each([
+    [
+      '/settings?reconnect_result=gmail_access_missing',
+      '/onboarding?reconnect_result=gmail_access_missing',
+    ],
+    ['/settings?connect_start_result=failed', '/onboarding?connect_start_result=failed'],
+    ['/triage?connect_error=connect_failed', '/onboarding?connect_error=connect_failed'],
+    ['/settings?reconnect_result=not-a-result', '/onboarding'],
+  ])('carries the OAuth result from %s through the onboarding gate', async (from, to) => {
+    const setURL = (u: string) =>
+      (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+    setURL(`http://localhost${from}`);
+    installFetchStub(authedHandlers({ onboardedAt: null }));
+
+    try {
+      renderLayout();
+
+      await vi.waitFor(() => expect(replaceSpy).toHaveBeenCalledWith(to));
+      // The chrome's own connect toast leaves it for /onboarding to show.
+      expect(screen.queryByText('Could not connect that Gmail account. Try again.')).toBeNull();
+    } finally {
+      setURL('http://localhost/senders');
+    }
+  });
+
   it('replaces the route with /onboarding when onboarding is incomplete (strict gate)', async () => {
     installFetchStub(authedHandlers({ onboardedAt: null }));
 

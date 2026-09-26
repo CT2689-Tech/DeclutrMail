@@ -3,6 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { onboardingPathKeepingOAuthResult } from '@/features/mailboxes/oauth-result';
+
 import { useOnboardingState } from './api/use-onboarding';
 
 /**
@@ -46,7 +48,9 @@ export function useOnboardingGate(): { gating: boolean; resolving: boolean } {
 
   useEffect(() => {
     if (shouldGate) {
-      router.replace('/onboarding');
+      // Keep a closed OAuth result (a reconnect that came back without
+      // Gmail, say) so /onboarding can still say what happened (D108).
+      router.replace(onboardingPathKeepingOAuthResult(window.location.search));
     }
   }, [shouldGate, router]);
 

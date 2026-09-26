@@ -2,25 +2,10 @@
 
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
-import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
-/**
- * Human copy for each `connect_error` code the BE can redirect with, on
- * the plain "Connect a Gmail account" path (`google-oauth.controller.ts`'s
- * `/api/auth/google/start` → `/triage?connect_error=<code>` redirect).
- *
- * QA-onboarding-20260828-05: `reconnect_account_mismatch` /
- * `reconnect_target_invalid` were dead entries — no code path on THIS
- * redirect can ever emit them (they described the Reconnect flow, which
- * exits through `/settings?reconnect_result=…` instead and never reaches
- * `connect_error` at all). `MAILBOX_DATA_DELETION_IN_PROGRESS` is a real,
- * reachable code that had no entry, degrading to the generic fallback.
- */
-const CONNECT_ERROR_COPY: Record<string, string> = {
-  MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
-  MAILBOX_DATA_DELETION_IN_PROGRESS: ERROR_CODES.MAILBOX_DATA_DELETION_IN_PROGRESS.message,
-  connect_failed: 'Could not connect that Gmail account. Try again.',
-};
+import { useOnboardingState } from '@/features/onboarding/api/use-onboarding';
+
+import { CONNECT_ERROR_COPY } from './oauth-result';
 
 /**
  * Reads `?connected` / `?connect_error` from the URL once on mount, fires
@@ -41,8 +26,15 @@ const CONNECT_ERROR_COPY: Record<string, string> = {
  */
 export function useConnectResultToast(): void {
   const fired = useRef(false);
+  // Someone who has not finished onboarding is about to be sent to
+  // /onboarding, and the gate carries this result there to show (D108).
+  // Using it up here first would lose it. A failed read counts as done, so
+  // the result still shows somewhere.
+  const onboarding = useOnboardingState();
+  const onboarded =
+    onboarding.isError || (onboarding.data !== undefined && onboarding.data.onboardedAt !== null);
   useEffect(() => {
-    if (fired.current || typeof window === 'undefined') return;
+    if (fired.current || typeof window === 'undefined' || !onboarded) return;
     fired.current = true;
 
     const params = new URLSearchParams(window.location.search);
@@ -69,7 +61,5 @@ export function useConnectResultToast(): void {
       '',
       window.location.pathname + (qs ? `?${qs}` : ''),
     );
-  }, []);
+  }, [onboarded]);
 }
-
-export { CONNECT_ERROR_COPY };

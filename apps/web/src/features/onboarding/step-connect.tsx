@@ -11,6 +11,8 @@ import {
   GMAIL_OAUTH_ACCESS,
 } from '@declutrmail/shared/contracts';
 
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+
 import { StepShell } from './step-shell';
 
 const { color, font, text, radius, shadow } = tokens;
@@ -31,8 +33,10 @@ const { color, font, text, radius, shadow } = tokens;
  *     `/onboarding`, lands authed, and the machine advances to the
  *     sync gate.
  *   - AUTHED with zero active mailboxes (aborted OAuth, or every
- *     mailbox disconnected): same screen, same CTA — `variant`
- *     adjusts the copy so it doesn't pretend the user is new.
+ *     mailbox disconnected): same screen — `variant` adjusts the copy so
+ *     it doesn't pretend the user is new — but the CTA connects a mailbox
+ *     to the signed-in account. The signed-out start bounces a live
+ *     session to the app, which sent it straight back here (D108).
  */
 export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconnect' }) {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -97,7 +101,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
       <Button
         tone="primary"
         size="xl"
-        onClick={() => window.location.assign(startUrl)}
+        onClick={() =>
+          variant === 'reconnect' ? startMailboxConnect() : window.location.assign(startUrl)
+        }
         style={editorialOnboardingActionStyle}
       >
         Continue to Google

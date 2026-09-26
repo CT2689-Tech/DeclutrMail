@@ -4,13 +4,16 @@ import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 import { OnboardingPhase } from './onboarding-phase';
 
 import { Button, tokens } from '@declutrmail/shared';
-import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  type SyncStatus,
+  type SyncStage,
+} from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -93,7 +96,7 @@ function stageSentence(status: SyncStatus): string {
 const ERROR_COPY: Record<string, string> = {
   RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
   AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
+    'Google stopped accepting our access partway through. Reconnect the account and allow Gmail access.',
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
