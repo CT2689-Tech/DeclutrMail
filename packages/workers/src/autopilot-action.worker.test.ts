@@ -1172,6 +1172,10 @@ describe('AutopilotActionWorker', () => {
       .where(eq(actionJobs.idempotencyKey, `autopilot-unsubexec-${matchId}`));
     expect(exec!.status).toBe('queued');
     expect(exec!.verb).toBe('unsubscribe');
+    // The decision names its execution job, as the manual intents do, so
+    // Activity can close it — e.g. as "Skipped — sender is Protected" when
+    // the send is refused (D245).
+    expect(activity[0]!.actionJobId).toBe(exec!.id);
 
     // Match flipped; no token for unsub.
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
@@ -1232,6 +1236,31 @@ describe('AutopilotActionWorker', () => {
       TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED,
       TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED,
     ]);
+  });
+
+  // The add can throw after the job landed (a timed-out reply) and the
+  // worker may already have finished it. The failure write must not turn
+  // that outcome into "failed", nor log a failure that did not happen.
+  it('leaves an unsubscribe the worker already finished when its enqueue is reported failed', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+    const { senderKey } = await seedSender(db, mailboxId, 'late@news.com', {
+      unsubscribeMethod: 'one_click',
+      unsubscribeUrl: 'https://news.com/unsub',
+    });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    worker = buildWorker({
+      enqueueUnsubExecution: async (data) => {
+        await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, data.actionId));
+        throw new Error('reply timed out');
+      },
+    });
+
+    await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+
+    const [job] = await db.select().from(actionJobs);
+    expect(job!).toMatchObject({ status: 'done', errorCode: null });
+    const activities = await db.select().from(activityLog);
+    expect(activities.map((a) => a.action)).toEqual(['unsubscribe']);
   });
 
   it('defers the whole sweep while quiet state is active (U18 seam)', async () => {

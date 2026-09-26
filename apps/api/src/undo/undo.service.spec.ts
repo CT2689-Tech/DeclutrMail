@@ -341,6 +341,19 @@ describe('UndoService', () => {
       ]);
     });
 
+    // A composite sender whose primary moved mail and whose secondary was
+    // skipped is NOT a skipped sender — its moved mail is on this very line.
+    // (A ran job's error_code is NULL; a NULL-blind comparison let
+    // `bool_and` ignore that row and count the sender as skipped.)
+    it('does not count a sender whose other job moved mail', async () => {
+      const half = await seedSender('Half Skipped');
+      const anchor = await seedDoneJob({ sender: half, verb: 'archive', affected: 12 });
+      await seedSkippedJob({ sender: half, compositeId: anchor.id });
+
+      const [d] = await svc.listActiveDecisions(mailboxId);
+      expect(d).toMatchObject({ senderCount: 1, protectedSkippedCount: 0 });
+    });
+
     it('reads the list in ONE statement — two would see two snapshots', async () => {
       // An undo landing between two statements emptied a group (a crash
       // that 500s the whole tray) and a token issued between them printed

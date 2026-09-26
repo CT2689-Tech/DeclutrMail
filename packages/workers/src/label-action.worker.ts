@@ -738,7 +738,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // Only a sender-selector job reaches here: a message list runs only as
     // a recovery attempt.
     const senderKey = job.selector.type === 'sender' ? job.selector.senderKey : null;
-    await this.deps.db
+    const [landed] = await this.deps.db
       .update(actionJobs)
       .set({
         status: 'done',
@@ -746,21 +746,23 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
         updatedAt: sql`now()`,
       })
-      .where(eq(actionJobs.id, job.id));
-    // After the write, so the line never claims a skip that did not land.
-    // Ids only (D7).
-    console.warn(
-      JSON.stringify({
-        severity: 'WARNING',
-        level: 'warn',
-        kind: 'label_action.sender_protected',
-        actionId: job.id,
-        mailboxAccountId: job.mailboxAccountId,
-        senderKey,
-        verb: job.verb,
-        message: 'Skipped an action: the sender is Protected and the user did not confirm.',
-      }),
-    );
+      .where(eq(actionJobs.id, job.id))
+      .returning({ id: actionJobs.id });
+    // Only once the write landed, so the line never claims a skip that did
+    // not. Ids only (D7).
+    if (landed)
+      console.warn(
+        JSON.stringify({
+          severity: 'WARNING',
+          level: 'warn',
+          kind: 'label_action.sender_protected',
+          actionId: job.id,
+          mailboxAccountId: job.mailboxAccountId,
+          senderKey,
+          verb: job.verb,
+          message: 'Skipped an action: the sender is Protected and the user did not confirm.',
+        }),
+      );
     return { affectedCount: 0, undoToken: null, alreadyDone: false, skippedProtected: true };
   }
 
@@ -774,7 +776,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   private async recordRecoveryProtected(
     job: typeof actionJobs.$inferSelect,
   ): Promise<LabelActionResult> {
-    await this.deps.db
+    const [landed] = await this.deps.db
       .update(actionJobs)
       .set({
         status: 'failed',
@@ -782,19 +784,21 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
         updatedAt: sql`now()`,
       })
-      .where(eq(actionJobs.id, job.id));
-    // Ids only (D7).
-    console.warn(
-      JSON.stringify({
-        severity: 'WARNING',
-        level: 'warn',
-        kind: 'label_action.recovery_sender_protected',
-        actionId: job.id,
-        mailboxAccountId: job.mailboxAccountId,
-        verb: job.verb,
-        message: 'Stopped a retry: its sender is Protected now and its review did not say so.',
-      }),
-    );
+      .where(eq(actionJobs.id, job.id))
+      .returning({ id: actionJobs.id });
+    // Only once the write landed. Ids only (D7).
+    if (landed)
+      console.warn(
+        JSON.stringify({
+          severity: 'WARNING',
+          level: 'warn',
+          kind: 'label_action.recovery_sender_protected',
+          actionId: job.id,
+          mailboxAccountId: job.mailboxAccountId,
+          verb: job.verb,
+          message: 'Stopped a retry: its sender is Protected now and its review did not say so.',
+        }),
+      );
     return { affectedCount: 0, undoToken: null, alreadyDone: false, stoppedProtected: true };
   }
 

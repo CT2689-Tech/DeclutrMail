@@ -37,6 +37,7 @@ import {
   type LabelChange,
 } from './gmail-mutation-client.js';
 import {
+  ENQUEUE_FAILED_ERROR_CODE,
   isRefusedBeforeApply,
   labelChangeForVerb,
   protectedSenderRow,
@@ -1458,6 +1459,14 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
             .limit(1);
           actionId = row?.id ?? null;
         }
+        // The decision names its execution job, as the manual intents do:
+        // Activity closes it from there (e.g. refused as Protected, D245).
+        if (actionId) {
+          await tx
+            .update(activityLog)
+            .set({ actionJobId: actionId })
+            .where(eq(activityLog.id, audit.id));
+        }
       }
 
       await tx
@@ -1486,10 +1495,12 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       } catch (err) {
         const failedAt = new Date();
         await db.transaction(async (tx) => {
+          // Only a job still `queued`: the add can throw after the job
+          // landed, and the worker may already have run it.
           const [failedJob] = await tx
             .update(actionJobs)
-            .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-            .where(eq(actionJobs.id, executionActionId))
+            .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
+            .where(and(eq(actionJobs.id, executionActionId), eq(actionJobs.status, 'queued')))
             .returning({ id: actionJobs.id });
           if (failedJob) {
             await tx.insert(activityLog).values({

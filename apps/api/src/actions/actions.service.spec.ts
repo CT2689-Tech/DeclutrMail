@@ -2139,6 +2139,46 @@ describe('ActionsService', () => {
       });
     });
 
+    // A retry from Activity joins its batch (it inherits composite_id).
+    // Only the latest attempt of each lineage counts: a failure the user
+    // retried successfully must not keep the batch reading "1 failed".
+    it('counts a retried member by its latest attempt, not the failure it replaced', async () => {
+      const { batchId, anchorId, otherId } = await seedBatch();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.id, anchorId));
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed', errorCode: 'GmailError' })
+        .where(eq(actionJobs.id, otherId));
+      const [failed] = await db.select().from(actionJobs).where(eq(actionJobs.id, otherId));
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: failed!.verb,
+        direction: 'forward',
+        selector: failed!.selector,
+        resolvedMessageIds: ['s2-a'],
+        requestedCount: 1,
+        affectedCount: 1,
+        status: 'done',
+        idempotencyKey: 'retry-of-other',
+        rootActionId: otherId,
+        retryOfActionId: otherId,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+        compositeId: failed!.compositeId,
+      });
+
+      await expect(svc.getBatchStatus(batchId, mailboxId)).resolves.toMatchObject({
+        status: 'done',
+        total: 2,
+        done: 2,
+        failed: 0,
+        affectedCount: 2,
+      });
+    });
+
     it("leaves a skipped sender's email out of requestedCount", async () => {
       // `affectedCount < requestedCount` reads as "mail moved between the
       // preview and the job". A skipped sender changed nothing by design;
@@ -2324,6 +2364,36 @@ describe('ActionsService', () => {
         .set({ updatedAt: new Date(Date.now() - 5 * 60_000) })
         .where(eq(actionJobs.mailboxAccountId, mailboxId));
       expect(await svc.listInFlight(mailboxId)).toEqual([]);
+    });
+
+    // A retry from Activity rejoins its batch; the line counts it in place
+    // of the failure it replaced — never "1 failed" beside a running retry.
+    it('counts a retried member once, by its latest attempt', async () => {
+      const batchId = await seedBulk('bulk-retry-1');
+      await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, batchId));
+      const [member] = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.compositeId, batchId));
+      await db.update(actionJobs).set({ status: 'failed' }).where(eq(actionJobs.id, member!.id));
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: member!.verb,
+        direction: 'forward',
+        selector: member!.selector,
+        resolvedMessageIds: ['bulk-retry-1-b'],
+        requestedCount: 1,
+        status: 'queued',
+        idempotencyKey: 'retry-live-1',
+        rootActionId: member!.id,
+        retryOfActionId: member!.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+        compositeId: batchId,
+      });
+
+      const [line] = await svc.listInFlight(mailboxId);
+      expect(line).toMatchObject({ groupId: batchId, running: true, total: 2, done: 1, failed: 0 });
     });
 
     it('leads with the ANCHOR job — its verb and sender — and reports mixed verbs and failures', async () => {
@@ -3105,6 +3175,38 @@ describe('ActionsService', () => {
       expect(activities.map((a) => a.action)).toEqual(['unsubscribe', 'unsubscribe_failed']);
     });
 
+    // The add can throw after the job landed; the worker may already be
+    // sending. "Failed" there would claim an outcome nobody knows yet —
+    // the worker records the real one.
+    it('leaves a request already on its way when its enqueue is reported failed', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+      let sendingId = '';
+      unsubQueue.add = async (_job: unknown, data: unknown) => {
+        sendingId = (data as { actionId: string }).actionId;
+        await db
+          .update(actionJobs)
+          .set({ status: 'executing' })
+          .where(eq(actionJobs.id, sendingId));
+        throw new Error('reply timed out');
+      };
+
+      await expect(
+        service.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'enqueue-late-1',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'ENQUEUE_FAILED' } });
+
+      const [job] = await db.select().from(actionJobs).where(eq(actionJobs.id, sendingId));
+      expect(job).toMatchObject({ status: 'executing', errorCode: null });
+      const [policy] = await db.select().from(senderPolicies);
+      expect(policy!.unsubStatus).toBe('requested');
+      const activities = await db.select().from(activityLog);
+      expect(activities.map((a) => a.action)).toEqual(['unsubscribe']);
+    });
+
     it('mailto progress is monotonic, explicit, and idempotent', async () => {
       await setSenderMethod('mailto', 'mailto:opt-out@shop.example?subject=unsubscribe');
       const service = svcWithUnsubQueue();
@@ -3362,6 +3464,27 @@ describe('ActionsService', () => {
         expect(jobs[0]!.selector).toMatchObject({ senderId });
         expect(unsubQueue.count).toBe(1);
         expect(unsubQueue.jobIds).toEqual([`unsubexec-bulk-unsub-mixed-${senderId}`]);
+      });
+
+      // D245: the intent row names its execution job, as the single-sender
+      // intent's does. Activity closes the intent from that link — without
+      // it, a request refused as Protected stayed "Unsubscribe request
+      // recorded" with no outcome, forever.
+      it('links each intent row to the job that sends it', async () => {
+        await setMethod(senderId, 'one_click', 'https://unsub.shop.example/oc?u=1');
+
+        await service.enqueueBulkUnsubscribe({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId],
+          idempotencyKey: 'bulk-unsub-link',
+        });
+
+        const [job] = await db.select().from(actionJobs);
+        const intents = await db
+          .select({ actionJobId: activityLog.actionJobId })
+          .from(activityLog)
+          .where(eq(activityLog.action, 'unsubscribe'));
+        expect(intents).toEqual([{ actionJobId: job!.id }]);
       });
 
       it('records the standing decision only for the senders it sends for', async () => {

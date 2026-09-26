@@ -13,6 +13,7 @@ import { ActionsUnsubscribeExecutedPayloadSchema, TOPICS } from '@declutrmail/ev
 import {
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   UNSUB_MANUAL_REQUIRED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
@@ -255,13 +256,11 @@ export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
 /**
  * `action_jobs.error_code` when the execution-time Protected re-check
- * (below) refuses a since-protected sender. Job-only, like
- * `UNSUB_NOT_ONE_CLICK`/`UNSUB_TARGET_REJECTED` — never a live API
- * response, so it is not part of the `ErrorCode` registry the way
- * `UNSUB_SEND_DISABLED`/`PROTECTED_SENDER` are (those two are ALSO
- * thrown synchronously at enqueue).
+ * (below) refuses a since-protected sender. Re-exported: it lives in
+ * `@declutrmail/shared/contracts` beside its label sibling, because the
+ * API and web read it too.
  */
-export const UNSUB_SENDER_PROTECTED_ERROR_CODE = 'UNSUB_SENDER_PROTECTED';
+export { UNSUB_SENDER_PROTECTED_ERROR_CODE };
 
 /**
  * Whether this process may perform a real one-click unsubscribe POST.

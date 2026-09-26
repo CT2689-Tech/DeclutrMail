@@ -138,6 +138,7 @@ export type { ActionJobStatus } from './action-job-status';
 export {
   LABEL_SENDER_PROTECTED_ERROR_CODE,
   RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from './action-job-status';
 export { ACTION_REACHES } from './action-reach';
 export type { ActionReach } from './action-reach';

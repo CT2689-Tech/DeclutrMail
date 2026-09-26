@@ -351,8 +351,11 @@ export class UndoService {
             and m.sender_id is not null
           group by m.sender_id
           -- A sender counts only when EVERY one of its jobs was skipped,
-          -- the same rule the batch status uses.
-          having bool_and(m.status = 'done' and m.error_code = ${LABEL_SENDER_PROTECTED_ERROR_CODE})
+          -- the same rule the batch status uses. NULL-safe: a job that ran
+          -- has no error_code, and bool_and would silently skip a NULL row.
+          having bool_and(
+            m.status = 'done' and m.error_code is not distinct from ${LABEL_SENDER_PROTECTED_ERROR_CODE}
+          )
         ) skipped_sender
         group by g.group_id
       ),

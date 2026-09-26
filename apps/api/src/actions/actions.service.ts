@@ -1148,6 +1148,9 @@ export class ActionsService {
             affectedCount: 0,
             // D58 — a delivered unsubscribe cannot be recalled.
             undoToken: null,
+            // As the single-sender intent does: Activity closes the intent
+            // from its job, e.g. a request refused as Protected (D245).
+            actionJobId: jobRow.row.id,
           })
           .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
         if (!inserted) {
@@ -1278,11 +1281,15 @@ export class ActionsService {
    * Mailbox-scoped → 404 for an unowned / unknown id.
    *
    * A job the worker skipped because its sender was Protected when it ran
-   * (D245) counts nowhere — exactly like a sender skipped at the click,
-   * which never became a job. It is only named, per sender, in
-   * `skippedProtectedSenderIds`. `requestedCount` stays what the preview
-   * counted, so a partly skipped sender still reads as "some email not
-   * changed".
+   * (D245) counts nowhere — not in the job counts, not in `requestedCount`
+   * or `affectedCount` — exactly like a sender skipped at the click, which
+   * never became a job. It is named in `skippedProtectedSenderIds` only
+   * when every job of that sender was skipped; a sender with one job run
+   * and one skipped is not named, and its Activity line records the skip.
+   *
+   * Only the latest attempt of each lineage counts: a retry from Activity
+   * joins its batch (it inherits `composite_id`), and the failure it
+   * replaced no longer does.
    */
   async getBatchStatus(batchId: string, mailboxAccountId: string): Promise<BatchStatusResult> {
     const rows = await this.db
@@ -1298,7 +1305,14 @@ export class ActionsService {
     if (rows.length === 0) {
       throw new NotFoundException({ code: 'ACTION_NOT_FOUND', message: 'Action not found.' });
     }
-    const live = rows.filter((r) => !isProtectedSkip(r));
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const lineage = row.rootActionId ?? row.id;
+      const seen = latest.get(lineage);
+      if (!seen || row.recoveryAttempt > seen.recoveryAttempt) latest.set(lineage, row);
+    }
+    const current = [...latest.values()];
+    const live = current.filter((r) => !isProtectedSkip(r));
     const total = live.length;
     const done = live.filter((r) => r.status === 'done').length;
     const failed = live.filter((r) => r.status === 'failed').length;
@@ -1311,14 +1325,14 @@ export class ActionsService {
       : anyProgress
         ? 'executing'
         : 'queued';
-    const anchor = rows.find((r) => r.id === batchId);
+    const anchor = current.find((r) => r.id === batchId);
     const undoToken =
-      anchor?.undoToken ?? rows.map((r) => r.undoToken).find((t) => t !== null) ?? null;
+      anchor?.undoToken ?? current.map((r) => r.undoToken).find((t) => t !== null) ?? null;
     // The whole decision's undo state, not just the anchor's: the anchor is
     // one sender's job, and holds no token when that sender was skipped
     // (D245) or had nothing to move. The pill also undoes one sender at a
     // time, so "reverted" is per sender as well as for the whole.
-    const tokenRows = rows.filter(
+    const tokenRows = current.filter(
       (r): r is typeof r & { undoToken: string } => r.undoToken !== null,
     );
     const journal =
@@ -1352,7 +1366,7 @@ export class ActionsService {
       failed,
       requestedCount: live.reduce((sum, r) => sum + r.requestedCount, 0),
       affectedCount: live.reduce((sum, r) => sum + r.affectedCount, 0),
-      skippedProtectedSenderIds: protectedSkippedSenderIds(rows),
+      skippedProtectedSenderIds: protectedSkippedSenderIds(current),
       undoToken,
       undoExpiresAt:
         (undoToken !== null ? byToken.get(undoToken)?.expiresAt?.toISOString() : null) ?? null,
@@ -1431,11 +1445,22 @@ export class ActionsService {
         ) aj on true
         where aj.mailbox_account_id = ${mailboxAccountId}
           and aj.direction = 'forward'
+          -- Only the latest attempt of each lineage: a retry from Activity
+          -- joins its batch, and the failure it replaced no longer counts.
+          -- (A later attempt always carries root_action_id — indexed.)
+          and not exists (
+            select 1 from action_jobs later
+            where later.mailbox_account_id = aj.mailbox_account_id
+              and later.root_action_id = coalesce(aj.root_action_id, aj.id)
+              and later.recovery_attempt > aj.recovery_attempt
+          )
       ),
       grouped as (
         select
           group_id,
           count(*)::int as total,
+          -- Progress, in jobs: one skipped as Protected (D245) has finished,
+          -- so it counts here; getBatchStatus leaves it out of the outcome.
           count(*) filter (where status = 'done')::int as done,
           count(*) filter (where status = 'failed')::int as failed,
           count(distinct sender_id)::int as sender_count,
@@ -2192,28 +2217,31 @@ export class ActionsService {
       );
     } catch (err) {
       await this.db.transaction(async (tx) => {
+        // Only a job still `queued`: the add can throw after the job landed
+        // (a timed-out reply), and the worker may already be sending — its
+        // outcome is the worker's to record, not a guessed "failed".
         const [failedJob] = await tx
           .update(actionJobs)
-          .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+          .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
           .where(
             and(
               eq(actionJobs.id, actionId),
               eq(actionJobs.mailboxAccountId, mailboxAccountId),
-              inArray(actionJobs.status, ['queued', 'executing']),
+              eq(actionJobs.status, 'queued'),
             ),
           )
           .returning({ id: actionJobs.id });
-        await tx
-          .update(senderPolicies)
-          .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-              eq(senderPolicies.senderKey, senderKey),
-              inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
-            ),
-          );
         if (failedJob) {
+          await tx
+            .update(senderPolicies)
+            .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+            .where(
+              and(
+                eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+                eq(senderPolicies.senderKey, senderKey),
+                inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
+              ),
+            );
           await tx.insert(activityLog).values({
             mailboxAccountId,
             senderKey,

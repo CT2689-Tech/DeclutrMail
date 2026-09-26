@@ -14,6 +14,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
+import { RECOVERY_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -2115,6 +2116,89 @@ describe('ActivityReadService', () => {
       expect(rows).toEqual([
         expect.objectContaining({ id: jobId, occurredAt: clickedAt.toISOString() }),
       ]);
+    });
+
+    // Founder decision 2026-09-26: a retry stopped because its sender turned
+    // Protected after its review stays REVIEWABLE — the next review offers
+    // "…anyway". Pinned, so a change to failure routing cannot turn it
+    // into "support required".
+    it('keeps a retry stopped as Protected reviewable', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'stop-key',
+        'news@stop.com',
+        'Stop News',
+      );
+      const rootActionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'stop-key',
+        verb: 'delete',
+        status: 'failed',
+        errorCode: 'TransientError',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'stop-key',
+        verb: 'delete',
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId,
+        retryOfActionId: rootActionId,
+        recoveryAttempt: 1,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          executionState: expect.objectContaining({
+            kind: 'failed',
+            errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+            resolution: 'review',
+          }),
+        }),
+      ]);
+    });
+
+    // An export reads as of its snapshot: a job skipped after it was taken
+    // is not yet a skip — the execution rows may already have listed it
+    // queued, and one id must never appear twice.
+    it('leaves a skip that landed after the export snapshot out of the export', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'late-skip',
+        'news@late.com',
+        'Late News',
+      );
+      const jobId = await seedSkippedLabelJob('late-skip', senderId);
+      const snapshot = { createdAt: new Date(NOW_MS - ONE_DAY_MS + 60_000) };
+      await db
+        .update(actionJobs)
+        .set({ updatedAt: new Date(NOW_MS - ONE_DAY_MS + 120_000) })
+        .where(eq(actionJobs.id, jobId));
+
+      const ids: string[] = [];
+      for await (const row of svc.iterateActivity(
+        { mailboxAccountId: mailboxA.mailboxAccountId, window: '30d', source: null, nowMs: NOW_MS },
+        500,
+        snapshot,
+      )) {
+        ids.push(row.id);
+      }
+      expect(ids).not.toContain(jobId);
     });
 
     it('closes an Unsubscribe intent whose request was refused as Protected', async () => {

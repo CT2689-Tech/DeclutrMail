@@ -32,3 +32,13 @@ export const LABEL_SENDER_PROTECTED_ERROR_CODE = 'LABEL_SENDER_PROTECTED';
  * Protected sender, and its "…anyway" confirm is the consent.
  */
 export const RECOVERY_SENDER_PROTECTED_ERROR_CODE = 'RECOVERY_SENDER_PROTECTED';
+
+/**
+ * `action_jobs.error_code` on an unsubscribe job ended `failed` because its
+ * sender was Protected when its request was due (D245) — nothing was sent,
+ * so every surface reads it as "not sent", never as a failure. Job-only,
+ * like `UNSUB_NOT_ONE_CLICK`/`UNSUB_TARGET_REJECTED` — never a live API
+ * response, so it is not in the `ErrorCode` registry the way
+ * `UNSUB_SEND_DISABLED`/`PROTECTED_SENDER` are.
+ */
+export const UNSUB_SENDER_PROTECTED_ERROR_CODE = 'UNSUB_SENDER_PROTECTED';

@@ -21,8 +21,8 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   engagementWindowStart,
   LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
-import { UNSUB_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/workers';
 import {
   and,
   count,
@@ -642,7 +642,7 @@ export class ActivityReadService {
     });
     const [ruleReviewRows, protectedSkipRows] = await Promise.all([
       this.loadRuleReviewRows(params),
-      this.loadProtectedSkipRows(params),
+      this.loadProtectedSkipRows(params, snapshotCreatedAt),
     ]);
     return [...projected, ...executionRows, ...ruleReviewRows, ...protectedSkipRows]
       .sort(compareActivityRowsNewestFirst)
@@ -777,7 +777,10 @@ export class ActivityReadService {
    * `(mailbox, status, created_at)` index, bounded by the window, instead
    * of scanning every finished job the mailbox ever ran.
    */
-  private async loadProtectedSkipRows(params: ListActivityParams): Promise<ActivityRowFacts[]> {
+  private async loadProtectedSkipRows(
+    params: ListActivityParams,
+    snapshotCreatedAt: Date | null = null,
+  ): Promise<ActivityRowFacts[]> {
     const {
       mailboxAccountId,
       window,
@@ -812,6 +815,9 @@ export class ActivityReadService {
     if (windowStart) whereParts.push(gte(clickedAt, windowStart));
     if (dateFrom) whereParts.push(gte(clickedAt, dateFrom));
     if (dateTo) whereParts.push(lt(clickedAt, dateTo));
+    // An export reads as of its snapshot: a skip that landed after it is
+    // not one yet, and the execution rows may already list the job queued.
+    if (snapshotCreatedAt) whereParts.push(lte(actionJobs.updatedAt, snapshotCreatedAt));
     if (senderQuery.length > 0) {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
