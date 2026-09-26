@@ -78,7 +78,7 @@ export function whyLine(row: TriageDecisionRow): string {
   }
   const phrase = readPhrase(row.readRate, row.last90dMessages);
   if (row.readRate >= 0.7) return `${phrase} · keep close`;
-  return `${phrase} · ${row.last90dMessages} ${row.last90dMessages === 1 ? 'message' : 'messages'}`;
+  return `${phrase} · ${row.last90dMessages} ${row.last90dMessages === 1 ? 'email' : 'emails'}`;
 }
 
 /**

@@ -1006,6 +1006,8 @@ async function bootstrap(): Promise<void> {
         // to re-run a mailbox still marked ready. Reset the durable gate
         // and clear the expired applied cursor before scheduling the full
         // resync; the worker captures a fresh base snapshot on entry.
+        // Keep `last_synced_at`: clearing it would re-send "Your inbox is
+        // ready" for a mailbox that had it long ago.
         await db
           .update(providerSyncState)
           .set({
