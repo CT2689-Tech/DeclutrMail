@@ -121,7 +121,7 @@ describe('buildSyncReadyEmailHandler', () => {
     });
     // Counts + the user's own mailbox address only; trailing slash on
     // appUrl is normalized.
-    expect(completeData.text).toContain('4,321 messages');
+    expect(completeData.text).toContain('4,321 emails');
     expect(completeData.text).toContain('inbox@gmail.com');
     expect(completeData.text).toContain('https://app.declutrmail.com/triage');
     expect(completeOpts.jobId).toBe('email__sync-complete__ev-1');
