@@ -4727,7 +4727,7 @@ recommending merge even on a change that felt small and precedented.
 **PR:** pending (worktree `upbeat-wiles-416cdd`)
 **Caught by:** founder code read (grep, 2026-09-24), then a failing end-to-end contract test
 **What happened:** `enqueueBulkComposite` drops Protected senders once, at the click. The jobs then wait on the per-mailbox advisory lock (17-56 s observed in production), and `LabelActionWorker.executeForward` never re-read `is_protected` — so a sender protected in that window (a Protect click, or incremental sync's automatic protection, which runs inside that same lock) still had its mail archived or trashed. Meanwhile `unsub-execution.worker.ts` said its own re-check "mirrors … label-action.worker.ts's execution-time re-check". That guard did not exist; the comment made the gap look covered. The class sweep found three more instances: Autopilot read protection once per sweep, before a serial loop of Gmail calls; Autopilot wrote `executing` before `getClient`/`ensureLabelId`, so a claim whose token refresh failed skipped every start-gate (Protected included) on its retry; and the Activity recovery review never mentioned that the sender was now Protected.
-**Correct approach:** Re-read protection inside the lock, in the worker that performs the mutation, immediately before the first Gmail call (`protectionRecheckApplies`). Exempt only what D245 exempts (single-sender `explicit`, a recovery attempt the user reviewed) and what must finish (a job that may already have changed Gmail). Autopilot re-reads per match. The review shows the sender's current protection.
+**Correct approach:** Re-read protection inside the lock, in the worker that performs the mutation, immediately before the first Gmail call (`protectionRecheckApplies`). Exempt only what the user consented to (a single-sender "…anyway" confirm, or a recovery review that showed the sender as Protected) and what must finish (a job that may already have changed Gmail). Autopilot re-reads per match. The review shows the sender's current protection.
 **Rule:** A safety check that gates a destructive action is re-read by the executor at execution time. An enqueue-time check is a preview, not a guarantee. A comment claiming another file has a guard must be checked with grep before it is written.
 **Enforcement update:** `actions-pipeline.contract.spec.ts` (real enqueue → real policy write → real worker with the enqueued payload) plus worker/Autopilot/recovery specs, each negative-controlled; none to hooks.
 
@@ -4762,3 +4762,68 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** `total > 0 && failed === total`; `requestedCount` covers the same jobs as `affectedCount`.
 **Rule:** When a count's population changes, re-check every comparison against it for the empty case — the CLAUDE.md §8 "guard that cannot fail" tell, in its arithmetic form.
 **Enforcement update:** `in-flight.test.tsx` one-sender-skip case; API spec for `requestedCount`.
+
+## 2026-09-26 — A retry skipped the execution-time Protected re-check without consent
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** flow-completeness-auditor [BLOCKING] and architecture-guardian [QUESTION], on the first cut of the fix above
+**What happened:** The worker exempted every recovery attempt (`recoveryAttempt > 0`) from the new re-check, reasoning that the user had reviewed it. But the review could show the sender as not Protected, and the confirmed job then waits on the same lock where incremental sync auto-protects. A retry could still archive or trash a now-Protected sender's mail with no "…anyway" from anyone.
+**Correct approach:** The retry carries consent only when the review showed the sender as Protected and it still is. Otherwise the worker re-checks, and a Protected sender stops the retry as `failed / RECOVERY_SENDER_PROTECTED` (founder decision 2026-09-26: failed, not skipped, so it stays reviewable). Confirm refuses 409 when the set is Protected and the review said otherwise.
+**Rule:** An exemption from a safety check is a consent the user gave on screen, carried in the job, never a property of the job's kind.
+**Enforcement update:** worker specs (stopped, stopped at send, consented runs) and a contract spec from a real Confirm to the real worker, each negative-controlled.
+
+## 2026-09-26 — The retry's consent line and the consent it sent came from two conditions
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** flow-completeness-auditor [BLOCKING]
+**What happened:** The recovery dialog drew its Protected line and "Delete anyway" button only when mail was still to change (`senderProtected && remainingCount > 0`), while the Activity cell sent `senderProtected: true` whenever the review said Protected. An already-applied review therefore sent consent the reader never saw, and the retry re-applies its whole set, moving anything back in the Inbox since the check. The half-fix (send only what was shown) loops: the API 409s, "Check Gmail again" returns the same review, the line stays hidden. A test pinned the hidden line.
+**Correct approach:** One value (`ready && senderProtected`) draws the line, words the button and is what `onConfirm` hands back to be sent.
+**Rule:** The consent a request carries is the value the consent UI rendered, passed through, never recomputed by the caller.
+**Enforcement update:** activity-screen test for the already-applied review, negative-controlled.
+
+## 2026-09-26 — `bool_and` over a comparison with a NULL column ignored the row
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** flow-completeness-auditor, confirmed with a PGlite probe
+**What happened:** The undo list counted a sender as "Protected sender skipped" when `bool_and(m.status = 'done' and m.error_code = 'LABEL_SENDER_PROTECTED')` held over its jobs. A job that ran has `error_code` NULL, so its comparison is NULL, and `bool_and` skips NULLs: a composite sender whose primary moved mail and whose secondary was skipped read as wholly skipped, on the same Undo line that counted its moved mail. The batch status excluded that sender, so two reads of one fact disagreed.
+**Correct approach:** `m.error_code is not distinct from …`, so a NULL compares false.
+**Rule:** Inside `bool_and` / `bool_or` / `every`, compare nullable columns NULL-safely; an aggregate that skips NULL turns "unknown" into "true".
+**Enforcement update:** undo.service spec for the same-sender mixed case, red before the fix.
+
+## 2026-09-26 — A test seeded the link that production never wrote
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** adversarial review of the Activity skip rows
+**What happened:** Activity renders a bulk Unsubscribe refused as Protected from the intent row's `actionJobId`. The bulk path and Autopilot inserted the intent row without it, so in production that branch never matched and the refusal fell through to the generic row. The spec passed because its fixture inserted the intent row WITH `actionJobId`, asserting the join the code never made.
+**Correct approach:** Link the intent row to its job where the job is created (bulk and Autopilot), and test through the producer, not a hand-seeded row.
+**Rule:** A fixture must not write a column the producer under test is responsible for writing; seed through the producer or assert the producer writes it.
+**Enforcement update:** actions.service and Autopilot specs assert the link on the producer's own rows.
+
+## 2026-09-26 — A failure write after an ambiguous queue add overwrote a later state
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** architecture-guardian [BLOCKING]
+**What happened:** When `queue.add` threw, `enqueueJob` set the job `failed / ENQUEUE_FAILED` by id alone. An add can throw after it landed (a timed-out reply), so the worker may already have started or finished the job: the write could turn a Protected skip into a retryable failure, or overwrite `executing`. The worker reads `failed + ENQUEUE_FAILED` as "never reached Gmail", so a retry after that overwrite would skip the Protected re-check after Gmail may have moved the mail. The Unsubscribe and Autopilot sibling writes had the same shape (one also wrote `unsub_status='failed'` and an `unsubscribe_failed` row about a request that may have been delivered).
+**Correct approach:** Guard every such write with `status = 'queued'`, and write its side effects only when that update matched a row.
+**Rule:** A write that records the failure of an external call must be conditioned on the state it assumes the call left; an ambiguous failure never overwrites progress.
+**Enforcement update:** API and Autopilot specs where the add throws after the row moved, negative-controlled.
+
+## 2026-09-26 — Enqueue failures said "nothing changed" when the job could still run
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** flow-completeness-auditor (pre-existing, on the surfaces this branch touched), then a class sweep
+**What happened:** A 503 `ENQUEUE_FAILED` means the queue did not confirm the add, and a bulk answers it when any one add fails while the rest run. Every web enqueue handler said the opposite: "Couldn't start … — nothing changed", "Couldn't archive X", and for a bulk Unsubscribe "try again", which would send a second request that can never be recalled. The same held for no response and a gateway 5xx.
+**Correct approach:** `enqueueMayHaveStarted(err)` is false only for an answer the API wrote that proves nothing started. Otherwise the copy is "Couldn't confirm {action} — check Activity before retrying", and `getActionFailureCopy`'s enqueue phase fails closed when it is not given the error.
+**Rule:** "Nothing changed" is a claim; make it only on a response that proves it, and default to unconfirmed.
+**Enforcement update:** unit tests for the predicate and copy; Senders, Triage and Sender Detail tests for `ENQUEUE_FAILED`, negative-controlled.
+
+## 2026-09-26 — An absent wire field defaulted to null made the web blind during deploy skew
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** self-review against the deploy order (web ships before the API)
+**What happened:** The Brief read a batch's new `undoRevertedAt` / `revertedSenderIds` with `?? null` / `?? []`. From an API that predates them, "field absent" became "not reverted", so a web deploy ahead of the API would have left "Archived ✓" on rows whose mail an Undo had already put back.
+**Correct approach:** Treat the field's absence as "this API cannot say" and fall back to the old read (the anchor job).
+**Rule:** Never default a missing wire field to the value that means "no"; branch on its absence (Tier 1b: unknown is not no).
+**Enforcement update:** Brief test with a legacy batch body, negative-controlled.
+
+## 2026-09-26 — Toast assertions passed or failed by test file order
+**PR:** pending (worktree `upbeat-wiles-416cdd`)
+**Caught by:** full-file runs after adding tests
+**What happened:** The shared toast store outlives a test, so `getByText(<toast>)` found a toast an earlier test left and threw "multiple elements", and `queryByText(...) === null` failed on an earlier test's toast. Tests that passed alone failed in the full file, and an existing test broke only because new tests now ran before it.
+**Correct approach:** Count before and after (`queryAllByText(...).length` then `before + 1`), as `senders-screen.test.tsx` already did for Keep.
+**Rule:** Assert on a toast by the change in its count, never by presence or absence.
+**Enforcement update:** the three parked Brief tests and the Senders refusal tests.
+
