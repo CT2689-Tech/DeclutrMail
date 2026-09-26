@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import type { TriageSessionStats } from './data';
 
 const { color, font, radius, text } = tokens;
@@ -45,6 +46,7 @@ export function TriageEmptyState({
   stats,
   onOpenUpgrade,
   syncFailed = false,
+  syncNeedsReconnect = false,
   footnote,
 }: {
   stats: TriageSessionStats;
@@ -57,6 +59,8 @@ export function TriageEmptyState({
    * confident "nothing to do" claim as a genuinely caught-up mailbox.
    */
   syncFailed?: boolean;
+  /** The failed mailbox needs reconnecting — Settings offers no retry for it. */
+  syncNeedsReconnect?: boolean;
   /** One muted line under the completion numerals (the D214 "today" fact). */
   footnote?: ReactNode;
 }) {
@@ -75,7 +79,7 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="This mailbox's last scan didn't finish."
-        description="Your Gmail is untouched. Retry the scan in Settings → Gmail accounts."
+        description={`Your Gmail is untouched. ${failedScanSettingsStep(syncNeedsReconnect)}`}
         action={
           <a href="/settings#mailboxes" style={LINK_BUTTON}>
             Open Settings

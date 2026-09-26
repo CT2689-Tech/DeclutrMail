@@ -79,7 +79,12 @@ export const Syncing: Story<typeof HomeView> = {
 };
 
 export const SyncFailed: Story<typeof HomeView> = {
-  args: { state: { kind: 'sync-failed' } },
+  args: { state: { kind: 'sync-failed', needsReconnect: false } },
+};
+
+/** Only a refused Gmail grant is a connection problem — Settings offers Reconnect. */
+export const SyncFailedNeedsReconnect: Story<typeof HomeView> = {
+  args: { state: { kind: 'sync-failed', needsReconnect: true } },
 };
 
 export const Loading: Story<typeof HomeView> = {

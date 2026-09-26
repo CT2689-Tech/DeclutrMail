@@ -25,6 +25,8 @@ const mockAuth = vi.hoisted(() => ({
   cleanupRemaining: null as number | null,
   /** Active mailbox's initial-sync readiness (QA-onboarding-20260828-01). */
   readiness: 'ready' as 'queued' | 'syncing' | 'ready' | 'failed' | null,
+  /** Server-computed `me.mailboxes[].needsReconnect` for the active mailbox. */
+  needsReconnect: false,
   activeMailboxId: 'mb-1',
 }));
 
@@ -60,6 +62,7 @@ vi.mock('@/features/auth/auth-provider', () => {
           status: 'active',
           connectedAt: null,
           readiness: mockAuth.readiness,
+          needsReconnect: mockAuth.needsReconnect,
         },
       ],
     },
@@ -164,6 +167,7 @@ beforeEach(() => {
   mockAuth.tier = 'plus';
   mockAuth.cleanupRemaining = null;
   mockAuth.readiness = 'ready';
+  mockAuth.needsReconnect = false;
   mockAuth.activeMailboxId = 'mb-1';
   trackMock.mockClear();
 });
@@ -439,7 +443,7 @@ describe('SendersScreen — edge states', () => {
     );
     // Said once: the empty state owns it, the warning line stays out.
     expect(screen.getAllByText(/scan failed/i)).toHaveLength(1);
-    expect(screen.getByText(/retry in settings/i)).toBeInTheDocument();
+    expect(screen.getByText(/retry the scan in settings/i)).toBeInTheDocument();
     expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
   });
@@ -629,6 +633,22 @@ describe('SendersScreen — edge states', () => {
     // The negative control: reverting to that phrasing makes this fail.
     expect(freshness).not.toHaveTextContent(/from before this scan started/i);
     expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
+  });
+
+  it('sends a failed scan that needs reconnecting to Reconnect, not to a retry Settings lacks', async () => {
+    // Settings → Gmail accounts shows "Needs reconnect" + Reconnect for a
+    // refused grant and no retry button; "retry in Settings" named a step
+    // the user could not find there.
+    mockAuth.readiness = 'failed';
+    mockAuth.needsReconnect = true;
+    installFetchStub([oneSenderHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/Reconnect it in Settings/);
+    expect(freshness).not.toHaveTextContent(/retry/i);
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {
@@ -2298,6 +2318,45 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
     fireEvent.keyDown(document.body, { key });
   }
+
+  it.each([
+    ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
+    ['NO_ACTIONABLE_SENDERS', /has an unsubscribe we can send/i, /archive/i],
+    ['NO_ACTIVE_MAILBOX', /couldn't send the unsubscribe requests/i, /has an unsubscribe/i],
+  ] as const)(
+    'a %s refusal on bulk Unsubscribe says only what that code proves',
+    async (code, says, neverSays) => {
+      // Every 409 used to read "None of these senders has an unsubscribe we
+      // can send — Archive moves their email instead": false when sending
+      // is off, when the active mailbox moved, and — for senders that
+      // became Protected — Archive refuses them too.
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            new Response(JSON.stringify({ error: { code, message: 'refused' } }), {
+              status: 409,
+              headers: { 'content-type': 'application/json' },
+            }),
+        },
+      ]);
+
+      renderScreenWithToasts();
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      const dialog = screen.getByRole('dialog');
+      await waitFor(() =>
+        expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).toBeEnabled(),
+      );
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      const toast = await screen.findByText(says);
+      expect(toast.textContent).not.toMatch(neverSays);
+    },
+  );
 
   it('qualifies bulk selection as the currently loaded rows', async () => {
     installFetchStub([TWO_SENDER_LIST]);

@@ -1234,12 +1234,14 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // D249: the release renders only after a provider check actually
     // ran. The reconcile route is UNSTUBBED here (599), so the check
-    // lands in the honest "couldn't reach the provider" fallback — the
-    // one non-verified state that still legitimizes a manual release.
+    // lands in the honest "couldn't check" fallback — the one
+    // non-verified state that still legitimizes a manual release. It
+    // names no failure to reach the provider: our own refusal lands here.
     await within(notice).findByTestId('provider-check');
     expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
-      'We couldn’t reach the payment provider to check automatically.',
+      'We couldn’t check with the payment provider automatically.',
     );
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/reach/i);
 
     // The explicit, user-asserted release — the only non-flip way out —
     // is TWO-step: the first click states the double-charge risk and
@@ -1357,6 +1359,48 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     // Truth is written server-side; asking the customer to assert "no
     // charge" now would invite releasing a PAID checkout.
+    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+  });
+
+  it('D249: an outcome this build does not know never reads as "Found your payment"', async () => {
+    // The outcome is cast from the wire, not parsed. A web deploy behind
+    // its API used to render any new value as a found payment.
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'monthly',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => jsonOk({ data: { outcome: 'a_future_outcome' } }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await waitFor(() =>
+      expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+        'We couldn’t confirm this with the payment provider yet.',
+      ),
+    );
+    expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(
+      /found your payment/i,
+    );
+    // Unknown is not a verified absence: the release stays locked.
     expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
   });
 
@@ -2908,6 +2952,69 @@ describe('BillingScreen — paid subscriber', () => {
       expect(screen.queryByTestId('scheduled-plan-change-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+  });
+
+  it.each([
+    [
+      'a definitive provider refusal',
+      502,
+      { code: 'BILLING_PROVIDER_ERROR', details: { providerOutcome: 'definitive' } },
+      /declined this — your plan change is still scheduled/,
+    ],
+    [
+      'an ambiguous provider error',
+      502,
+      { code: 'BILLING_PROVIDER_ERROR' },
+      /may or may not have registered/,
+    ],
+    [
+      'the renewal cutoff',
+      409,
+      { code: 'PLAN_CHANGE_TOO_LATE' },
+      /the scheduled change applies at renewal/,
+    ],
+  ] as const)('"Keep current plan" names what %s proves', async (_label, status, error, says) => {
+    // The registry's "could not be reached" was false for a provider that
+    // answered, and "try again after the renewal completes" was a step
+    // this control no longer offers once the renewal applies the change.
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PRO_SUB,
+              subscription: {
+                ...SUB,
+                scheduledChange: {
+                  tier: 'plus',
+                  cycle: 'annual',
+                  effectiveAt: SUB.currentPeriodEnd!,
+                  state: 'scheduled',
+                },
+              },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () =>
+          new Response(JSON.stringify({ error: { ...error, message: 'ignored' } }), {
+            status,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('scheduled-plan-change-notice');
+    fireEvent.click(within(notice).getByRole('button', { name: 'Keep current plan' }));
+    const alert = await within(notice).findByRole('alert');
+    expect(alert).toHaveTextContent(says);
+    expect(alert).not.toHaveTextContent(/could not be reached|after the renewal completes/);
   });
 
   // QA-billing-20260901-08: `changePlan` (what "Keep current plan" calls)

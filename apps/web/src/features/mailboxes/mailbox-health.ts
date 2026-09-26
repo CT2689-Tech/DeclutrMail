@@ -44,3 +44,17 @@ export function syncStatusNeedsReconnect(status: SyncStatus | undefined): boolea
 
   return incrementalAuthError || status.error_code === INVALID_GRANT_CODE;
 }
+
+/**
+ * The next step for a failed scan, named as Settings → Gmail accounts
+ * offers it. A mailbox needing reconnect shows "Needs reconnect" and a
+ * Reconnect button there — never a retry (`mailboxes-card.tsx`) — so
+ * Triage, Senders, Home and the scan toast used to send those users to a
+ * retry that does not exist. Pass the server's `me.mailboxes[].needsReconnect`
+ * (same rule as `syncStatusNeedsReconnect`).
+ */
+export function failedScanSettingsStep(needsReconnect: boolean): string {
+  return needsReconnect
+    ? 'Reconnect it in Settings → Gmail accounts.'
+    : 'Retry the scan in Settings → Gmail accounts.';
+}

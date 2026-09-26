@@ -141,7 +141,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     <SyncBannerFrame testId="sync-error-banner">
       <SyncBannerMessage>
         {needsReconnect
-          ? 'Gmail access needs renewing. Reconnect this account to resume syncing and Gmail actions.'
+          ? "Google isn't granting access to this inbox. Reconnect and allow Gmail access to resume syncing and Gmail actions."
           : "New email isn't syncing — the last attempt failed."}
       </SyncBannerMessage>
       <Button

@@ -179,7 +179,11 @@ describe('SyncErrorBanner', () => {
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
 
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
-    expect(screen.getByText(/gmail access needs renewing/i)).toBeInTheDocument();
+    // Names the full remedy and no expiry: the same code is a Gmail
+    // permission left unticked, which a plain reconnect only repeats.
+    const banner = screen.getByTestId('sync-error-banner');
+    expect(banner).toHaveTextContent('allow Gmail access');
+    expect(banner).not.toHaveTextContent(/renew|expired/i);
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
   });
 

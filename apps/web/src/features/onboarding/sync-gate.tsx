@@ -10,7 +10,10 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  syncStatusNeedsReconnect,
+} from '@/features/mailboxes/mailbox-health';
 
 const { color, font, text, radius, motion } = tokens;
 
@@ -90,13 +93,34 @@ function stageSentence(status: SyncStatus): string {
  * them again.
  */
 
+/**
+ * Every reconnect-recoverable failure reads the same: a refused refresh,
+ * a missing Gmail permission, a missing token, and a fresh access token
+ * Google still rejects (each attempt mints one, so a terminal
+ * `AuthExpiredError` is not an expiry) all mean only "Google is not
+ * granting the access", and reconnecting is the one lever the user has.
+ */
+const RECONNECT_COPY =
+  'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.';
+
+/**
+ * Each sentence names only what its error name proves. `TransientError`
+ * is also a Google 5xx, an unrecognised 403, any other 4xx, a malformed
+ * response, a failed token refresh and "Gmail refused most messages" —
+ * never only a lost connection. The 2026-09-04 signup whose real problem
+ * was a missing Gmail permission read "kept losing its connection",
+ * retried twice and left. A terminal `RateLimitError` means the worker
+ * already backed off between attempts (Gmail's Retry-After, else 65
+ * seconds) and was still throttled, so "wait a minute" was never the fix
+ * (the 2026-08-26 signup waited, retried three times, and never synced).
+ */
 const ERROR_COPY: Record<string, string> = {
-  RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
-  AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
-  InvalidGrantError:
-    'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
-  TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
+  RateLimitError:
+    'Gmail limited how fast the scan could read. Try again later — if it fails twice, email support@declutrmail.com.',
+  AuthExpiredError: RECONNECT_COPY,
+  InvalidGrantError: RECONNECT_COPY,
+  TransientError:
+    'A request to Google failed. Try again — if it fails twice, email support@declutrmail.com.',
   // The address, not "contact support": on a first run the onboarding
   // guard bounces every in-app route back here, so Help is unreachable.
   PermanentError:
@@ -302,11 +326,18 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
+  // Reads the incremental grant failure too, exactly as `SyncNowButton`'s
+  // failed indicator does. A scan can fail as `TransientError` and a later
+  // background call then prove the grant is the problem: the 2026-09-04
+  // mailbox still carries both, and keyed on `error_code` alone this screen
+  // offered "Try again" against a grant Google had already refused.
   const needsReconnect =
-    status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code);
-  const copy =
-    (status.error_code && ERROR_COPY[status.error_code]) ??
-    'Something interrupted the scan. Your Gmail is untouched — try again.';
+    syncStatusNeedsReconnect(status) ||
+    (status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code));
+  const copy = needsReconnect
+    ? RECONNECT_COPY
+    : ((status.error_code && ERROR_COPY[status.error_code]) ??
+      'Something interrupted the scan. Your Gmail is untouched — try again.');
   return (
     <Shell>
       <h1 style={titleStyle}>The inbox scan stopped.</h1>

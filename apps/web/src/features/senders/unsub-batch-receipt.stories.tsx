@@ -51,7 +51,7 @@ export const MixedSelection: Story<typeof UnsubBatchReceipt> = {
         ...Array.from({ length: 2 }, () => ({ reason: 'no_channel' as const })),
         { reason: 'unknown' as const },
       ],
-      outcomes: { endpointAccepted: 6, unconfirmed: 1, failed: 1 },
+      outcomes: { endpointAccepted: 6, unconfirmed: 1, actionRequired: 0, failed: 1 },
       pending: 0,
     },
     onDismiss: noop,
@@ -94,7 +94,7 @@ export const AllAccepted: Story<typeof UnsubBatchReceipt> = {
     receipt: {
       senderCount: 3,
       skipped: [],
-      outcomes: { endpointAccepted: 3, unconfirmed: 0, failed: 0 },
+      outcomes: { endpointAccepted: 3, unconfirmed: 0, actionRequired: 0, failed: 0 },
       pending: 0,
     },
     onDismiss: noop,
@@ -107,7 +107,23 @@ export const AllUnconfirmed: Story<typeof UnsubBatchReceipt> = {
     receipt: {
       senderCount: 2,
       skipped: [{ reason: 'unknown' as const }],
-      outcomes: { endpointAccepted: 0, unconfirmed: 2, failed: 0 },
+      outcomes: { endpointAccepted: 0, unconfirmed: 2, actionRequired: 0, failed: 0 },
+      pending: 0,
+    },
+    onDismiss: noop,
+  } satisfies ReceiptArgs,
+};
+
+/**
+ * The senders refused one-click but take email (D252) — not a dead end,
+ * so neither the alert tone nor the success tick.
+ */
+export const RefusedButEmailable: Story<typeof UnsubBatchReceipt> = {
+  args: {
+    receipt: {
+      senderCount: 2,
+      skipped: [],
+      outcomes: { endpointAccepted: 0, unconfirmed: 0, actionRequired: 2, failed: 0 },
       pending: 0,
     },
     onDismiss: noop,
@@ -120,7 +136,7 @@ export const AllFailed: Story<typeof UnsubBatchReceipt> = {
     receipt: {
       senderCount: 4,
       skipped: [{ reason: 'protected' as const }],
-      outcomes: { endpointAccepted: 0, unconfirmed: 0, failed: 4 },
+      outcomes: { endpointAccepted: 0, unconfirmed: 0, actionRequired: 0, failed: 4 },
       pending: 0,
     },
     onDismiss: noop,

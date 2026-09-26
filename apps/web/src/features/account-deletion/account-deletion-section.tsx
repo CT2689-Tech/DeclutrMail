@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
-import { ApiError } from '@/lib/api/client';
+import { ERROR_CODES } from '@declutrmail/shared/contracts';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import {
   useAccountDeletionStatus,
@@ -29,11 +30,7 @@ export function AccountDeletionSection() {
   const cancel = useCancelAccountDeletion();
   const [modalOpen, setModalOpen] = useState(false);
 
-  const submitError = request.error
-    ? request.error instanceof ApiError && request.error.status === 400
-      ? 'The confirmation phrase did not match. Type it exactly to continue.'
-      : 'Could not submit the deletion request. Please try again.'
-    : null;
+  const submitError = deletionSubmitError(request.error);
 
   return (
     <>
@@ -156,3 +153,19 @@ const rowHeadingStyle = {
   fontWeight: 400,
   color: color.fg,
 } as const;
+
+/**
+ * The request's error, named by what it proves. `DELETION_ALREADY_PENDING`
+ * repeats on every attempt — another tab or device already scheduled the
+ * deletion — so "Please try again" was a step that could never work.
+ */
+export function deletionSubmitError(error: unknown): string | null {
+  if (!error) return null;
+  if (error instanceof ApiError && error.status === 400) {
+    return 'The confirmation phrase did not match. Type it exactly to continue.';
+  }
+  if (apiErrorCode(error) === 'DELETION_ALREADY_PENDING') {
+    return ERROR_CODES.DELETION_ALREADY_PENDING.message;
+  }
+  return 'Could not submit the deletion request. Please try again.';
+}

@@ -9,6 +9,7 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { EditorialKicker } from '@/features/editorial/page';
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
 import type { HomeSenderPreview } from './api/use-home-pending';
@@ -117,11 +118,16 @@ function HomeBody({
         </section>
       );
     case 'sync-failed':
+      // "Connection" only when the grant is what failed: a scan also stops
+      // on Gmail throttling, a Google error or a response it could not
+      // process, and Settings offers a retry for those, not a reconnect.
       return (
         <section className={styles.beginning} aria-label="Mailbox needs attention">
-          <span className={styles.eyebrow}>Connection needs attention</span>
+          <span className={styles.eyebrow}>
+            {state.needsReconnect ? 'Connection needs attention' : 'Mailbox needs attention'}
+          </span>
           <h2>Gmail scan failed</h2>
-          <p>Open your Gmail account settings to review the connection and try again.</p>
+          <p>{failedScanSettingsStep(state.needsReconnect)}</p>
           <PrimaryLink action={SYNC_FAILED_ACTION} />
         </section>
       );

@@ -666,7 +666,13 @@ export interface UnsubscribeBatchOutcomes {
   endpointAccepted: number;
   /** Sent; the outcome could not be established. Never rounded away. */
   unconfirmed: number;
-  /** The request did not go through. */
+  /**
+   * Refused one-click, but the sender takes email — the user can finish
+   * it from Gmail (D252). Optional during a rolling API/web deploy
+   * (D245): absent reads as 0.
+   */
+  actionRequired?: number;
+  /** The request did not go through, and nothing is left to try. */
   failed: number;
   /** Still queued or executing — no outcome yet. */
   pending: number;

@@ -139,6 +139,20 @@ describe('AppError boundary — D167', () => {
     expect(heading).not.toMatch(/^(error|oops|sorry)/i);
   });
 
+  it('promises no recovery the boundary does not run', () => {
+    // The boundary only reports to Sentry: nothing saves the page and
+    // nothing retries "the rest in the background".
+    const { container } = render(
+      <AppError
+        error={Object.assign(new Error('Boom'), { digest: 'd' })}
+        reset={() => undefined}
+      />,
+    );
+    expect(container.textContent ?? '').not.toMatch(
+      /in the background|pick up where you left off/i,
+    );
+  });
+
   it('respects D227 — the banned product-UI verb does not appear', () => {
     const { container } = render(
       <AppError

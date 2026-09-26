@@ -36,6 +36,28 @@ describe('TriageEmptyState', () => {
     );
   });
 
+  it('sends a mailbox that needs reconnecting to Reconnect, not to a retry Settings does not offer', () => {
+    // Settings shows "Needs reconnect" + Reconnect for these, never a
+    // retry button — "Retry the scan in Settings" was a step the user
+    // could not find there.
+    render(
+      <TriageEmptyState
+        stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
+        syncFailed={true}
+        syncNeedsReconnect={true}
+      />,
+    );
+    expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/Retry the scan/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the retry step for a failed scan whose grant is fine', () => {
+    render(
+      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} syncFailed={true} />,
+    );
+    expect(screen.getByText(/Retry the scan in Settings/)).toBeInTheDocument();
+  });
+
   it('does not render the sync-failed copy once the user has decided something today', () => {
     // `decidedToday > 0` is the D33 celebration state, unconditional on
     // sync health — a session that already made progress should not be

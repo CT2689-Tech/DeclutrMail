@@ -104,7 +104,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
           title="We couldn't load your invoices"
-          description="Your payment provider didn't answer. Your plan and your billing are unaffected — this page only reads them."
+          description="Your plan and your billing are unaffected — this page only reads them."
           onRetry={() => invoices.refetch()}
         />
       </section>
@@ -192,7 +192,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // never-billed state (D212 EmptyState primitive).
         partial ? (
           <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-            We couldn&rsquo;t reach your payment provider, so we can&rsquo;t show your invoices
+            Your payment provider didn&rsquo;t return your invoices, so we can&rsquo;t show them
             right now.
           </p>
         ) : data.omittedRows > 0 ? (

@@ -37,7 +37,13 @@ export function useMailboxSyncToasts(): void {
       if (becameReady) {
         toast(`${mailbox.email} is ready.`, 'success');
       } else if (becameFailed) {
-        toast(`${mailbox.email}'s scan didn't finish — see Settings to try again.`, 'danger');
+        // Settings offers Reconnect, not a retry, for a refused grant.
+        toast(
+          mailbox.needsReconnect === true
+            ? `${mailbox.email}'s scan didn't finish — reconnect it in Settings.`
+            : `${mailbox.email}'s scan didn't finish — see Settings to try again.`,
+          'danger',
+        );
       }
       // D159 — same transition the toast already observed. Shared
       // session pairing means the onboarding gate cannot also emit

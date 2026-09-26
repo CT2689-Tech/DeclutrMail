@@ -146,8 +146,10 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
       // QA-sync-20260831-10 item 5: the freshness label this toast used
       // to point at (`dm-topbar-collapse`) is `display: none` below
       // 900px, so a phone toast referenced a control the viewport had
-      // hidden. Say what will happen instead of where to look for it.
-      toast('Still checking Gmail. New email will appear when it finishes.', 'info');
+      // hidden. It promises nothing either: a retryable failure keeps the
+      // outage's FIRST error stamp (`recordMailboxSyncFailure`), so a run
+      // that failed again is invisible to this watch and times out here.
+      toast("Sync hasn't finished yet.", 'info');
     }, WATCH_TIMEOUT_MS);
     return () => {
       clearInterval(poll);
@@ -166,7 +168,10 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
 
     if (movedPast(lastErrorAt, baseline.error) && !movedPast(lastSyncedAt, lastErrorAt)) {
       setWatching(false);
-      toast('Sync failed — check the mailbox connection and try again.', 'danger');
+      // No cause: the stamp moves for any error name, and the 2026-09
+      // failures were database lock timeouts, not the Gmail connection.
+      // A refused grant hides this button behind the reconnect banner.
+      toast("Sync didn't finish — try again.", 'danger');
       return;
     }
 

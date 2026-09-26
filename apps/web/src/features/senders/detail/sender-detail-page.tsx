@@ -47,12 +47,12 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, type TimelineItem } from '../uplift-d';
-import { unsubscribeStatusCopy } from '../unsub-status';
+import { unsubscribeOutcomeToast, unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
@@ -1110,19 +1110,8 @@ function ReadyState({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    const outcome = unsubscribeOutcomeToast(activeUnsub.senderName, data);
+    toast(outcome.message, outcome.tone);
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);

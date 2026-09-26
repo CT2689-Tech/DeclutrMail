@@ -28,11 +28,11 @@ const UnsubMailtoCallout = dynamic(
     import('@/features/senders/unsub-mailto-callout').then((module) => module.UnsubMailtoCallout),
   { loading: () => <p role="status">Loading the remaining email unsubscribe step…</p> },
 );
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import {
   isTerminalStatus,
-  UNSUB_AMBIGUOUS_ERROR_CODE,
   type ActionReach,
   type CompositeActionPreviewResult,
 } from '@/lib/api/actions';
@@ -452,20 +452,9 @@ export function ScreenerScreen({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-      invalidateAfterDecision(qc);
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
-    }
+    const outcome = unsubscribeOutcomeToast(unsubWatch.senderName, data);
+    toast(outcome.message, outcome.tone);
+    if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
 

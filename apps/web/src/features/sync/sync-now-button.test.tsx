@@ -201,7 +201,7 @@ describe('SyncNowButton completion watch', () => {
       }),
     );
     expect(toast).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
-    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'), 'danger');
+    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining("Sync didn't finish"), 'danger');
   });
 
   it('does not report the next mailbox freshness as completion of the previous mailbox sync', async () => {
@@ -241,13 +241,37 @@ describe('SyncNowButton completion watch', () => {
         last_sync_error_code: 'GMAIL_HISTORY_GONE',
       }),
     );
-    expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      'Sync failed — check the mailbox connection and try again.',
-      'danger',
+    expect(vi.mocked(toast)).toHaveBeenCalledWith("Sync didn't finish — try again.", 'danger');
+    // The stamp moves for ANY error name — the 2026-09 incremental
+    // failures were database lock timeouts — so the toast names no cause.
+    expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
+      expect.stringMatching(/connection/i),
+      expect.anything(),
     );
     expect(
       screen.getByRole('button', { name: /check gmail for new emails/i }).hasAttribute('disabled'),
     ).toBe(false);
+  });
+
+  it('timeout — promises nothing when neither stamp moved in 90 seconds', async () => {
+    // A retryable failure keeps the outage's FIRST error stamp, so a run
+    // that failed again looks exactly like one still running. The old
+    // "New email will appear when it finishes" was false for the first.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderButton();
+      await clickSyncNow();
+      await act(async () => {
+        vi.advanceTimersByTime(90_000);
+      });
+      expect(vi.mocked(toast)).toHaveBeenCalledWith("Sync hasn't finished yet.", 'info');
+      expect(vi.mocked(toast)).not.toHaveBeenCalledWith(
+        expect.stringMatching(/will appear/i),
+        expect.anything(),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('baseline freshness — pre-click drift served by the refetch does not false-positive', async () => {

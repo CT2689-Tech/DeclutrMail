@@ -2,6 +2,7 @@
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -63,8 +64,9 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isTerminalStatus } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
+import { unsubscribeOutcomeToast } from './unsub-status';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -612,6 +614,7 @@ function SendersScreenContent({
   // currency claim `mailboxStillSyncing` exists to prevent, for the one
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<
@@ -1533,16 +1536,27 @@ function SendersScreenContent({
               closeSubmitted();
               // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              // 409 NO_ACTIONABLE_SENDERS is a designed state: the
-              // selection moved between the preview and the confirm.
+              // Sending is off in this environment: the single-sender
+              // path's designed state and words, "nothing was sent".
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
+              // Every 409 here is a designed state, not a bug: the
+              // selection or the active mailbox moved between the preview
+              // and the confirm. Only NO_ACTIONABLE_SENDERS says the
+              // senders have nothing to send — and it also covers senders
+              // that became Protected or were removed, which bulk Archive
+              // skips too, so the old "Archive moves their email instead"
+              // pointed some users at a second refusal.
               const conflict = err instanceof ApiError && err.status === 409;
               if (!conflict) {
                 captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
               }
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                conflict
-                  ? 'None of these senders has an unsubscribe we can send — Archive moves their email instead.'
+                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
+                  ? 'None of these senders has an unsubscribe we can send.'
                   : "Couldn't send the unsubscribe requests — try again.",
                 'warn',
               );
@@ -1843,19 +1857,8 @@ function SendersScreenContent({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    const outcome = unsubscribeOutcomeToast(activeUnsub.senderName, data);
+    toast(outcome.message, outcome.tone);
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -1888,6 +1891,7 @@ function SendersScreenContent({
         ? {
             endpointAccepted: outcomes.endpointAccepted,
             unconfirmed: outcomes.unconfirmed,
+            actionRequired: outcomes.actionRequired ?? 0,
             failed: outcomes.failed,
           }
         : null,
@@ -1931,6 +1935,7 @@ function SendersScreenContent({
         ? {
             endpointAccepted: outcomes.endpointAccepted,
             unconfirmed: outcomes.unconfirmed,
+            actionRequired: outcomes.actionRequired ?? 0,
             failed: outcomes.failed,
           }
         : null,
@@ -2540,6 +2545,7 @@ function SendersScreenContent({
               // With no rows, the empty state below already says it.
               stillSyncing={mailboxStillSyncing && senders.length > 0}
               syncFailed={mailboxSyncFailed && senders.length > 0}
+              needsReconnect={mailboxNeedsReconnect}
             />
 
             <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
@@ -2657,7 +2663,10 @@ function SendersScreenContent({
             ) : senders.length === 0 && mailboxSyncFailed ? (
               // Same shape for the one readiness value that guard didn't
               // cover — a search over a failed scan never really ran.
-              <EmptyState title="Scan failed" body="Retry in Settings → Gmail accounts." />
+              <EmptyState
+                title="Scan failed"
+                body={failedScanSettingsStep(mailboxNeedsReconnect)}
+              />
             ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
               // First-visit default is active-only (launch-audit B2). A
               // mailbox with nothing ACTIVE must not read as a filter
@@ -2874,6 +2883,7 @@ function SenderResultsWarning({
   rowsReadOnly,
   stillSyncing,
   syncFailed,
+  needsReconnect,
 }: {
   /** No mailbox-wide count on the wire — the hero counts loaded rows. */
   approximate: boolean;
@@ -2881,9 +2891,11 @@ function SenderResultsWarning({
   rowsReadOnly: boolean;
   stillSyncing: boolean;
   syncFailed: boolean;
+  /** Settings offers Reconnect, not a retry, for this mailbox. */
+  needsReconnect: boolean;
 }) {
   const message = syncFailed
-    ? 'The last scan failed, so this list may be incomplete or stale — retry in Settings → Gmail accounts.'
+    ? `The last scan failed, so this list may be incomplete or stale. ${failedScanSettingsStep(needsReconnect)}`
     : stillSyncing
       ? 'Still syncing — this list may be incomplete or stale.'
       : rowsReadOnly

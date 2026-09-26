@@ -20,7 +20,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -33,6 +33,7 @@ import { captureFeatureException } from '@/lib/sentry';
 // packages/shared promotion, so triage imports across the boundary
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { mailLocationCopy } from '@declutrmail/shared/actions';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -231,8 +232,9 @@ export function TriageScreen({
   // QA-sync-20260831-01: Triage otherwise has zero sync awareness — the
   // resting-queue empty state must not claim "nothing to do" while the
   // active mailbox's initial sync has terminally failed.
-  const mailboxSyncFailed =
-    auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId)?.readiness === 'failed';
+  const activeMailbox = auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId);
+  const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
   // Stored WITH the pending action it was chosen for, so a wider
@@ -491,20 +493,9 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    if (data.status === 'done') {
-      toast(
-        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-      invalidateAfterDecision(qc);
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
-    }
+    const outcome = unsubscribeOutcomeToast(unsubWatch.senderName, data);
+    toast(outcome.message, outcome.tone);
+    if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [
     actionMailboxId,
@@ -1561,6 +1552,7 @@ export function TriageScreen({
             stats={state.stats}
             onOpenUpgrade={openPricing}
             syncFailed={mailboxSyncFailed}
+            syncNeedsReconnect={mailboxNeedsReconnect}
             footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
           />
         </section>

@@ -49,8 +49,10 @@ export default function AppError({
         error={error}
         reset={reset}
         boundary="app-router-error"
-        headline="We’ll pick up where you left off."
-        body="Your mailbox and decisions are untouched. Try again, or head back to Triage and we’ll retry the rest in the background."
+        // No promise of recovery: the boundary only reports to Sentry —
+        // nothing saves the page or retries anything in the background.
+        headline="We couldn’t load this page."
+        body="Your mailbox and decisions are untouched. Try again, or head back to Triage."
         escape={{ href: '/triage', label: 'Back to Triage' }}
       />
     </>

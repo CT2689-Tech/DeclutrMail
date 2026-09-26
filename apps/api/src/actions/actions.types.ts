@@ -626,7 +626,12 @@ export interface UnsubscribeBatchOutcomes {
   endpointAccepted: number;
   /** Sent, outcome unknowable (ambiguous redirect). Never rounded. */
   unconfirmed: number;
-  /** The request did not go through. */
+  /**
+   * Refused one-click, but the sender also takes email (D252,
+   * `UNSUB_MANUAL_REQUIRED`) — the user can still finish it from Gmail.
+   */
+  actionRequired: number;
+  /** The request did not go through, and nothing is left to try. */
   failed: number;
   /** Rows still queued or executing — no outcome yet. */
   pending: number;

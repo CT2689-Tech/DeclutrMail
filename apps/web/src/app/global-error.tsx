@@ -99,7 +99,9 @@ export default function GlobalError({
               margin: 0,
             }}
           >
-            DeclutrMail is reloading.
+            {/* Nothing reloads on its own, and the button re-renders the
+                app (`reset`) rather than reloading the page. */}
+            We couldn&rsquo;t load DeclutrMail.
           </h1>
           <p
             style={{
@@ -109,8 +111,7 @@ export default function GlobalError({
               margin: 0,
             }}
           >
-            Your mailbox and decisions are untouched. Reload the page to continue — we&rsquo;ll pick
-            up where you left off.
+            Your mailbox and decisions are untouched. Try again to continue.
           </p>
 
           {error.digest != null && (
@@ -142,7 +143,7 @@ export default function GlobalError({
               marginTop: 6,
             }}
           >
-            Reload
+            Try again
           </button>
         </div>
       </body>

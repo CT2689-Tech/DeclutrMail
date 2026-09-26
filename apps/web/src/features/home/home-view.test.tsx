@@ -193,13 +193,28 @@ describe('HomeView', () => {
   });
 
   it('sync-failed: says the scan failed and links to Gmail accounts — never "Nothing cleared yet"', () => {
-    render(<HomeView state={{ kind: 'sync-failed' }} />);
+    render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
     expect(screen.getByText('Gmail scan failed')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet')).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     const links = screen.getAllByRole('link');
     expect(links).toHaveLength(1);
     expect(links[0]).toHaveAttribute('href', '/settings#mailboxes');
+  });
+
+  it('sync-failed: blames the connection only when the grant is what failed', () => {
+    // A scan also stops on Gmail throttling or a Google error; Settings
+    // offers a retry for those, and "review the connection" sent those
+    // users looking for a problem that was not there.
+    const { unmount } = render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
+    expect(screen.queryByText(/connection/i)).toBeNull();
+    expect(screen.getByText(/Retry the scan in Settings/)).toBeInTheDocument();
+    unmount();
+
+    render(<HomeView state={{ kind: 'sync-failed', needsReconnect: true }} />);
+    expect(screen.getByText('Connection needs attention')).toBeInTheDocument();
+    expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/Retry the scan/)).toBeNull();
   });
 
   it('loading: a labelled skeleton and no link', () => {

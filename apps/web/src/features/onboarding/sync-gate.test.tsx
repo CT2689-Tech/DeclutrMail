@@ -361,3 +361,62 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
     expect(onReturn).toHaveBeenCalledOnce();
   });
 });
+
+describe('SyncGate — failure copy names only what its error proves', () => {
+  function failedCopy(status: SyncStatus): string {
+    return renderToStaticMarkup(withClient(<SyncGate status={status} mailboxId="mb-1" />));
+  }
+
+  it('does not blame a lost connection for a TransientError', () => {
+    // TransientError is also a Google 5xx, an unrecognised 403, another
+    // 4xx or a malformed response. The 2026-09-04 signup behind a missing
+    // Gmail permission read "kept losing its connection" and retried twice.
+    const html = failedCopy({ ...FAILED, error_code: 'TransientError' });
+    expect(html).not.toMatch(/connection/i);
+    expect(html).toContain('Try again');
+    expect(html).toContain('support@declutrmail.com');
+  });
+
+  it('does not promise that a minute fixes a terminal RateLimitError', () => {
+    // The worker already backed off between attempts (Gmail's Retry-After,
+    // else 65s) and was still throttled before giving up.
+    const html = failedCopy({ ...FAILED, error_code: 'RateLimitError' });
+    expect(html).not.toMatch(/a minute/i);
+    expect(html).toContain('support@declutrmail.com');
+  });
+
+  it('does not promise reconnecting "restores" a refused AuthExpiredError', () => {
+    const html = failedCopy({ ...FAILED, error_code: 'AuthExpiredError' });
+    expect(html).not.toMatch(/restores/i);
+    expect(html).toContain('allow Gmail access');
+  });
+
+  it('offers Reconnect when a later background call proved the grant is refused', () => {
+    // The 2026-09-04 mailbox's live row: the scan failed as TransientError,
+    // then a background call recorded InvalidGrantError. Keyed on
+    // `error_code` alone the gate kept offering "Try again".
+    const status: SyncStatus = {
+      ...FAILED,
+      error_code: 'TransientError',
+      last_synced_at: null,
+      last_sync_error_at: '2026-09-05T23:50:49.872Z',
+      last_sync_error_code: 'InvalidGrantError',
+    };
+    render(withClient(<SyncGate status={status} mailboxId="mb-1" />));
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.getByText(/allow Gmail access/)).toBeInTheDocument();
+  });
+
+  it('keeps "Try again" when the incremental grant failure is older than a success', () => {
+    const status: SyncStatus = {
+      ...FAILED,
+      error_code: 'TransientError',
+      last_synced_at: '2026-09-06T00:00:00.000Z',
+      last_sync_error_at: '2026-09-05T23:50:49.872Z',
+      last_sync_error_code: 'InvalidGrantError',
+    };
+    render(withClient(<SyncGate status={status} mailboxId="mb-1" />));
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});

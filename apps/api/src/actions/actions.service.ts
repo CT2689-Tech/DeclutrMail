@@ -45,6 +45,7 @@ import {
   initialUnsubscribeLifecycleStatus,
   normalizeUnsubscribeLifecycleStatus,
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
+  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
   type UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
@@ -2949,6 +2950,7 @@ function summarizeUnsubscribeOutcomes(
   const outcomes: UnsubscribeBatchOutcomes = {
     endpointAccepted: 0,
     unconfirmed: 0,
+    actionRequired: 0,
     failed: 0,
     pending: 0,
   };
@@ -2961,6 +2963,9 @@ function summarizeUnsubscribeOutcomes(
     // what keeps a worker-side rename from silently reclassifying every
     // `unconfirmed` row as `failed` (D248).
     else if (row.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE) outcomes.unconfirmed += 1;
+    // Same pairing for D252's refused-but-emailable sender: the worker's
+    // own rule is that `failed` means nothing is left to try.
+    else if (row.errorCode === UNSUB_MANUAL_REQUIRED_ERROR_CODE) outcomes.actionRequired += 1;
     else outcomes.failed += 1;
   }
   return outcomes;

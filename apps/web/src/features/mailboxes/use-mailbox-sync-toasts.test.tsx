@@ -23,12 +23,19 @@ vi.mock('@/lib/posthog', () => ({ track: h.track }));
 import { resetSyncLifecycleForTests } from '@/features/sync/sync-lifecycle';
 import { useMailboxSyncToasts } from './use-mailbox-sync-toasts';
 
-function meWith(readiness: SyncReadiness | null) {
+function meWith(readiness: SyncReadiness | null, needsReconnect = false) {
   return {
     user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
     activeMailboxId: null,
     mailboxes: [
-      { id: 'b', email: 'b@example.com', status: 'active', connectedAt: null, readiness },
+      {
+        id: 'b',
+        email: 'b@example.com',
+        status: 'active',
+        connectedAt: null,
+        readiness,
+        needsReconnect,
+      },
     ],
   };
 }
@@ -71,6 +78,20 @@ describe('useMailboxSyncToasts', () => {
       "b@example.com's scan didn't finish — see Settings to try again.",
       'danger',
     );
+  });
+
+  it('points a failed scan that needs reconnecting at Reconnect, not a retry', () => {
+    // Settings shows "Needs reconnect" + Reconnect for a refused grant and
+    // no retry button, so "see Settings to try again" named a missing step.
+    h.me = meWith('syncing');
+    const { rerender } = renderHook(() => useMailboxSyncToasts());
+    h.me = meWith('failed', true);
+    rerender();
+    expect(h.toast).toHaveBeenCalledWith(
+      expect.stringContaining('reconnect it in Settings'),
+      'danger',
+    );
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringContaining('try again'), 'danger');
   });
 
   it('stays silent for a mailbox already failed at mount', () => {

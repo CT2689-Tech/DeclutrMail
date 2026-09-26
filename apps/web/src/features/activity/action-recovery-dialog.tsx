@@ -241,6 +241,14 @@ function RecoveryPreviewBody({
   onReconnect: () => void;
 }) {
   if (startError) {
+    const refusal = recoveryStartRefusal(startError);
+    if (refusal !== null) {
+      return (
+        <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
+          {refusal}
+        </div>
+      );
+    }
     return <RecoveryVerificationFailure error={startError} onRetry={onRetryVerification} />;
   }
 
@@ -397,6 +405,27 @@ function formatRecoveryDate(iso: string): string {
     ? new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
     : // An unparseable wire date must not leak the raw ISO string into copy.
       'an unknown time';
+}
+
+/**
+ * The start refusals that are raised BEFORE any Gmail read and repeat on
+ * every attempt: the row changed since Activity rendered it. "We couldn't
+ * check Gmail's current state" named a check that never ran, and its
+ * "Check again" only asked for the same refusal.
+ */
+function recoveryStartRefusal(error: Error): string | null {
+  switch (apiErrorCode(error)) {
+    case 'ACTION_ALREADY_RECOVERED':
+      return 'This action was already recovered. Refresh Activity to see its current state.';
+    case 'RECOVERY_ATTEMPT_STALE':
+      return 'A newer attempt exists for this action. Refresh Activity to see it.';
+    case 'ACTION_NOT_RECOVERABLE':
+      return 'This action no longer needs recovery. Refresh Activity to see its current state.';
+    case 'ACTION_NOT_FOUND':
+      return "We couldn't find this action. Refresh Activity to see the current list.";
+    default:
+      return null;
+  }
 }
 
 function recoveryConfirmErrorMessage(error: Error): string {

@@ -90,17 +90,18 @@ export function UnsubBatchReceipt({
     receipt.outcomes !== null &&
     receipt.outcomes.endpointAccepted === 0 &&
     receipt.outcomes.unconfirmed === 0 &&
+    receipt.outcomes.actionRequired === 0 &&
     receipt.outcomes.failed > 0;
-  // Nothing accepted and nothing failed — every request is unconfirmed.
-  // Success chrome (green tick, emerald) would round that toward
-  // "accepted" in exactly the way the copy refuses to, so the surface
-  // stays neutral: D248 puts `unconfirmed` on equal footing with its
-  // neighbours, and the frame is part of the claim.
+  // Nothing accepted and nothing failed — every request is unconfirmed or
+  // waits on the user sending it from Gmail. Success chrome (green tick,
+  // emerald) would round that toward "accepted" in exactly the way the
+  // copy refuses to, so the surface stays neutral: D248 puts `unconfirmed`
+  // on equal footing with its neighbours, and the frame is part of the claim.
   const allUnconfirmed =
     receipt.outcomes !== null &&
     receipt.outcomes.endpointAccepted === 0 &&
     receipt.outcomes.failed === 0 &&
-    receipt.outcomes.unconfirmed > 0;
+    receipt.outcomes.unconfirmed + receipt.outcomes.actionRequired > 0;
   const tone: 'failed' | 'neutral' | 'positive' = allFailed
     ? 'failed'
     : allUnconfirmed || inFlight || unreported
@@ -150,7 +151,14 @@ export function UnsubBatchReceipt({
 
       <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.45 }}>
         <strong style={{ fontWeight: 600 }}>
-          {inFlight ? 'Sending unsubscribe requests' : 'Unsubscribe requests sent'}
+          {/* Not "sent": the worker refuses some requests before sending
+              (not one-click, an unsafe URL, a sender Protected since), and
+              `failed` does not say which. The lines below carry the facts. */}
+          {inFlight
+            ? 'Sending unsubscribe requests'
+            : allFailed
+              ? 'Unsubscribe requests failed'
+              : 'Unsubscribe requests'}
         </strong>{' '}
         <span style={{ color: color.fgSoft }}>
           ·{' '}
