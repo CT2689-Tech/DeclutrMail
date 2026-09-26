@@ -346,6 +346,8 @@ export function summarize({ mailboxRows, workerRows, quota, ref, now = Date.now(
       decisions: r.p.result?.decisionsWritten ?? 0,
       llm: r.p.result?.llmExplanations ?? 0,
       template: r.p.result?.templateExplanations ?? 0,
+      // Calls skipped because Anthropic had refused the account.
+      blocked: r.p.result?.llmBlocked ?? 0,
     }));
   // Every other line that names this mailbox. A worker's own failure line
   // carries only an error class; the provider's reason (a Gmail 403
@@ -438,11 +440,19 @@ export function summarize({ mailboxRows, workerRows, quota, ref, now = Date.now(
   }
   const firstReady = scans.find((s) => s.readyAt)?.readyAt;
   for (const run of scoring) {
-    if (run.decisions >= 10 && run.llm === 0) {
+    // Checked first and on its own: reused prose keeps `llm` above 0, so a
+    // refused run can hide behind rows that never needed a call.
+    if (run.blocked > 0) {
+      flag(
+        'user',
+        'LLM_REFUSED',
+        `${run.blocked} of ${run.decisions} recommendations ${stamp(run.at)} got a template without a call — Anthropic was refusing the account; check llm.provider_rejected for the reason`,
+      );
+    } else if (run.decisions >= 10 && run.llm === 0) {
       flag(
         'user',
         'LLM_OFF',
-        `${run.decisions} recommendations ${stamp(run.at)}, 0 from the LLM — every reason is a template; check reasoning.adapter_error`,
+        `${run.decisions} recommendations ${stamp(run.at)}, 0 from the LLM — every reason is a template; check reasoning.adapter_error and llm.provider_rejected`,
       );
     }
   }
