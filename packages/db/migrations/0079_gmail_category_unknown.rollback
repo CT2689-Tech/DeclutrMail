@@ -1,0 +1,32 @@
+-- Rollback for 0079_gmail_category_unknown.sql
+--
+-- Postgres has no `ALTER TYPE ... DROP VALUE`, so the rollback recreates
+-- the enum without 'unknown' (the 0018 / 0031 procedure):
+--
+--   1. Switch `senders.gmail_category` to plain text so the type can be
+--      dropped (`DROP TYPE` on an in-use type errors).
+--   2. Drop the type.
+--   3. Recreate it with the five labels it had before 0079.
+--   4. Switch the column back, casting through text. The cast FAILS while
+--      any sender row holds 'unknown' — the correct safety: you cannot
+--      roll back while data depends on the removed value.
+--
+-- Revert the CODE first; it writes 'unknown' for every sender Gmail never
+-- filed under a tab. Clearing the remaining 'unknown' rows is an operator
+-- decision: the only pre-0079 value for them is the unverified default
+-- this migration exists to remove —
+--   UPDATE senders SET gmail_category = 'primary' WHERE gmail_category = 'unknown';
+--
+-- NOT restored by any rollback: `gmail_important` protections that the
+-- nightly recount released because their sender was not really Primary.
+-- Pre-0079 code re-protects only senders stored as 'primary', and it
+-- recomputes categories only on a full initial-sync rebuild. Snapshot
+-- `sender_policies` before the first sweep if that must be reversible.
+
+ALTER TABLE "senders" ALTER COLUMN "gmail_category" TYPE text;
+--> statement-breakpoint
+DROP TYPE "public"."gmail_category";
+--> statement-breakpoint
+CREATE TYPE "public"."gmail_category" AS ENUM('primary', 'promotions', 'social', 'updates', 'forums');
+--> statement-breakpoint
+ALTER TABLE "senders" ALTER COLUMN "gmail_category" TYPE "public"."gmail_category" USING gmail_category::"public"."gmail_category";
