@@ -23,6 +23,56 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
+
+**Why:** the MISTAKES.md entry "2026-09-03 — Gmail quota limiter started
+every mailbox's bucket FULL" names two real signups by email address, and
+this repository is public. Their mailbox IDs and first-scan failure dates
+are also public (every `sync-stuck-watchdog` run log, and now
+`scripts/known-stuck-mailboxes.tsv`), so a reader can pair an address
+with "this account's first scan never finished". MISTAKES.md is
+append-only for agents and a history rewrite needs a force-push to main,
+so both calls are yours.
+
+**How:** either (a) replace the two addresses in that entry with "two
+signups (2026-08-06, 2026-08-26)", accepting that git history keeps
+them, or (b) do (a) and also purge them from history (`git filter-repo`
+or GitHub support), or (c) accept the exposure.
+
+**Verifies by:** `git grep -nE '@gmail\.com' -- MISTAKES.md` shows no
+customer address.
+
+**Status:** Open
+
+### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778), session 2026-09-26
+
+**Why:** the new alert definitions ship in code, but Cloud Monitoring only
+changes when the script runs against prod. Until then the old policy
+stays: one alert, open since 2026-09-05, that a newly stuck mailbox
+cannot fire again. Prod metric and policy changes wait for your OK, and
+the stored `admin@declutrmail.ai` gcloud login needs an interactive
+re-auth before anything can run.
+
+**How:** after the PR merges and the worker deploys:
+
+1. `gcloud auth login` as admin@declutrmail.ai.
+2. `node scripts/setup-stuck-mailbox-alert.mjs declutrmail-ai-prod` —
+   review the printed plan.
+3. Same command with `--apply`. Expect one email at admin@declutrmail.ai
+   per mailbox stuck at that moment (three were reported on 2026-09-26);
+   acknowledge each in Monitoring → Alerting.
+4. Same command with `--starve-test` (about 25 minutes, pages nobody).
+
+**Verifies by:** step 4 prints `"result": "PASS"` with a `freshAlert` that
+opened beside the already-stuck ones and a `silentProbe` open time, and
+its `cleanup` lists three deletions.
+
+**Status:** Open
+
 ### 2026-09-26 — Turn on the page for a refused Anthropic account
 
 **Source:** the LLM refusal breaker + alert PR (branch
@@ -162,6 +212,13 @@ is on for this account, so a future `vendor-limits-watchdog` BREACH
 **Verifies by:** a deliberate `workflow_dispatch` re-run of
 `vendor-limits-watchdog` with a low threshold produces a visible
 notification.
+
+**Update 2026-09-26:** a Gmail search of chintan.a.thakkar@gmail.com
+found no `notifications@github.com` "Run failed" or watchdog mail in the
+past 40 days, while `sync-stuck-watchdog` failed 155 scheduled runs in a
+row (2026-09-03 23:21 UTC onward). If GitHub sends these, they go to
+another address or are filtered before that inbox. The account that
+last changed that workflow's `cron:` line is CT2689.
 
 **Status:** Open
 

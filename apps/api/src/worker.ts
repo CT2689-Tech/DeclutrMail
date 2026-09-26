@@ -128,7 +128,7 @@ import {
   WEEKLY_VALUE_RECEIPT_QUEUE,
   WeeklyValueReceiptWorker,
   workerTuningOptions,
-  findStuckMailboxes,
+  reportStuckMailboxes,
 } from '@declutrmail/workers';
 import type {
   ActionRecoveryJobData,
@@ -1451,19 +1451,21 @@ async function bootstrap(): Promise<void> {
    * `readiness_status` still reading `'ready'`) and generalizes to the
    * next one, since neither branch is keyed on a specific error class.
    *
-   * The sweep itself is read-only and lives in
-   * `packages/workers/src/stuck-mailbox-watchdog.ts` so it is testable
-   * without a composition root; this wrapper owns the logging and the
-   * Sentry seam, same split as `reconcileStuckInitialSyncs` above.
+   * The sweep and its log lines live in
+   * `packages/workers/src/stuck-mailbox-watchdog.ts` so they are testable
+   * without a composition root; this wrapper owns the Sentry seam, same
+   * split as `reconcileStuckInitialSyncs` above.
    *
    * A structured `mailbox.stuck_unnoticed` line is emitted once PER
    * STUCK MAILBOX PER TICK — deliberately not deduplicated across
    * ticks, unlike `DeadLetterWorker`'s `alertedIds`. That worker
    * dedupes because repeat Sentry captures burn its error quota; this
-   * is a plain log line, and the log-based Cloud Monitoring alert
-   * (`scripts/setup-stuck-mailbox-alert.sh`) needs the line to recur
-   * across several ticks to satisfy its "sustained" condition in the
-   * first place.
+   * is a plain log line, and the Cloud Monitoring alert
+   * (`scripts/setup-stuck-mailbox-alert.mjs`) keeps one alert open per
+   * mailbox only while its line keeps arriving — so a mailbox that
+   * recovers and breaks again pages again. Each tick ends with
+   * `stuck_mailbox_watchdog.completed`; a second policy pages when that
+   * line stops.
    */
   const STUCK_MAILBOX_INTERVAL_MS = 15 * 60 * 1000;
   let stuckMailboxInFlight: Promise<void> | null = null;
@@ -1471,22 +1473,7 @@ async function bootstrap(): Promise<void> {
   async function sweepStuckMailboxes(): Promise<void> {
     if (shuttingDown) return;
     try {
-      const stuck = await findStuckMailboxes(db);
-      for (const mailbox of stuck) {
-        const stuckSinceHours = Math.floor(
-          (Date.now() - mailbox.stuckSince.getTime()) / (60 * 60 * 1000),
-        );
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            kind: 'mailbox.stuck_unnoticed',
-            mailboxAccountId: mailbox.mailboxAccountId,
-            reason: mailbox.reason,
-            errorCode: mailbox.errorCode,
-            stuckSinceHours,
-          }),
-        );
-      }
+      await reportStuckMailboxes(db, console);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(
