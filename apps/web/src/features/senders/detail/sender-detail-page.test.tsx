@@ -1876,7 +1876,7 @@ describe('SenderDetailRoute', () => {
         });
 
       it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
-        await unsubscribeThenBacklog(apiFailure(500, 'INTERNAL_ERROR'));
+        await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
       });
 

@@ -1187,7 +1187,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
   it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
     // The backlog-archive enqueue fails AFTER the intent succeeded.
-    unsubThenBacklog(() => apiFailure(500, 'INTERNAL_ERROR'));
+    unsubThenBacklog(() => apiFailure(400, 'VALIDATION_FAILED'));
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');

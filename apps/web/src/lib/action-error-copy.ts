@@ -1,5 +1,5 @@
 import type { BulkSkipReason } from '@/lib/api/actions';
-import { ApiError, apiErrorCode, apiErrorDisplayId } from '@/lib/api/client';
+import { ApiError, apiErrorDisplayId } from '@/lib/api/client';
 
 /**
  * Plain-language failure copy for the asynchronous action pipeline — one
@@ -66,11 +66,18 @@ export function getActionFailureCopy(
     switch (phase) {
       case 'preview':
         return ["Couldn't load the preview", NOTHING_CHANGED];
+      // "Can't tell", not "couldn't confirm": right after a Confirm button,
+      // "couldn't confirm" reads as "your click did nothing".
       case 'enqueue':
+        return unconfirmedStart
+          ? [`Can't tell if ${action} started`, CHECK_ACTIVITY]
+          : [`Couldn't start ${action}`, NOTHING_CHANGED];
+      // An undo request is idempotent (the same token answers with the same
+      // reverse job), so trying again is always safe.
       case 'revert-enqueue':
         return unconfirmedStart
-          ? [`Couldn't confirm ${action}`, CHECK_ACTIVITY]
-          : [`Couldn't start ${action}`, NOTHING_CHANGED];
+          ? ["Can't tell if undo started", 'try again']
+          : ["Couldn't start undo", NOTHING_CHANGED];
       case 'status':
       case 'revert-status':
         return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
@@ -85,16 +92,14 @@ export function getActionFailureCopy(
 /**
  * Whether a failed enqueue may still have started its job, which leaves
  * "nothing changed" unproven and a blind retry able to run it twice.
- * `ENQUEUE_FAILED` says so outright: the queue did not confirm the add —
- * a timed-out reply leaves the job running — and a bulk answers it when
- * any one add fails while the rest run. With no response, or a 5xx the
- * API did not write (a gateway timeout), nothing says either way. Only an
- * answer the API wrote proves the request never started.
+ * Only a refusal (4xx) proves the request never started. A 5xx does not:
+ * `ENQUEUE_FAILED` means the queue did not confirm the add — a timed-out
+ * reply leaves the job running — a bulk answers it when any one add fails
+ * while the rest run, and a failure after that write answers 500. With no
+ * response at all, nothing says either way.
  */
 export function enqueueMayHaveStarted(error: unknown): boolean {
-  if (!(error instanceof ApiError)) return true;
-  const code = apiErrorCode(error);
-  return code === 'ENQUEUE_FAILED' || (error.status >= 500 && code === null);
+  return !(error instanceof ApiError) || error.status >= 500;
 }
 
 /**

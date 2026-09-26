@@ -333,7 +333,7 @@ describe('triage_action_taken (D159)', () => {
       {
         method: 'POST',
         path: '/api/actions',
-        respond: () => apiFailure(500, 'INTERNAL_ERROR'),
+        respond: () => apiFailure(400, 'VALIDATION_FAILED'),
       },
     ]);
     renderScreen();

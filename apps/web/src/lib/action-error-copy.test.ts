@@ -16,8 +16,8 @@ function apiError(status: number, code: string | null): ApiError {
     `POST /api/actions failed: ${status}`,
   );
 }
-/** An answer the API wrote that proves nothing started. */
-const refused = apiError(500, 'INTERNAL_ERROR');
+/** A refusal: the API answered before anything started. */
+const refused = apiError(400, 'VALIDATION_FAILED');
 
 const PHASES = [
   'preview',
@@ -54,15 +54,17 @@ describe('getActionFailureCopy', () => {
   it('never says nothing changed when the job may have started', () => {
     for (const error of [
       apiError(503, 'ENQUEUE_FAILED'),
+      // The failure write after a landed add can itself throw.
+      apiError(500, 'INTERNAL_ERROR'),
       new TypeError('Failed to fetch'),
       apiError(504, null),
       undefined,
     ]) {
       expect(getActionFailureCopy('enqueue', { action: 'Archive for Acme', error })).toBe(
-        "Couldn't confirm Archive for Acme — check Activity before retrying.",
+        "Can't tell if Archive for Acme started — check Activity before retrying.",
       );
       expect(getActionFailureCopy('revert-enqueue', { error })).toBe(
-        "Couldn't confirm undo — check Activity before retrying.",
+        "Can't tell if undo started — try again.",
       );
     }
   });
@@ -76,7 +78,7 @@ describe('getActionFailureCopy', () => {
       });
     expect(copy(refused)).toBe("Couldn't start Unsubscribe for Acme — no request was sent.");
     expect(copy(apiError(503, 'ENQUEUE_FAILED'))).toBe(
-      "Couldn't confirm Unsubscribe for Acme — check Activity before retrying.",
+      "Can't tell if Unsubscribe for Acme started — check Activity before retrying.",
     );
   });
 
@@ -135,16 +137,16 @@ describe('technicalErrorDetails', () => {
 });
 
 describe('enqueueMayHaveStarted', () => {
-  it('is false only for an answer the API wrote that says nothing started', () => {
+  it('is false only for a refusal', () => {
     expect(enqueueMayHaveStarted(refused)).toBe(false);
     expect(enqueueMayHaveStarted(apiError(409, 'NO_ACTIONABLE_SENDERS'))).toBe(false);
-    expect(enqueueMayHaveStarted(apiError(400, 'VALIDATION_FAILED'))).toBe(false);
     // A 4xx the API did not write still refused the request.
     expect(enqueueMayHaveStarted(apiError(413, null))).toBe(false);
   });
 
-  it('is true when the queue did not confirm the add, or nothing answered', () => {
+  it('is true for any 5xx, or when nothing answered', () => {
     expect(enqueueMayHaveStarted(apiError(503, 'ENQUEUE_FAILED'))).toBe(true);
+    expect(enqueueMayHaveStarted(apiError(500, 'INTERNAL_ERROR'))).toBe(true);
     expect(enqueueMayHaveStarted(new TypeError('Failed to fetch'))).toBe(true);
     expect(enqueueMayHaveStarted(apiError(502, null))).toBe(true);
     expect(enqueueMayHaveStarted(undefined)).toBe(true);
