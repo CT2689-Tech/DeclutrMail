@@ -88,19 +88,24 @@ export function scanMsLeft(track: ScanTrack, now: number): number | null {
   return (remaining * elapsed) / read;
 }
 
+function sameCounts(a: SyncMessageProgress | null, b: SyncMessageProgress | null): boolean {
+  return (
+    a === b || (a !== null && b !== null && a.processed === b.processed && a.total === b.total)
+  );
+}
+
 export function useScanTimeLeft(progress: SyncMessageProgress | null): number | null {
   const [track, setTrack] = useState(() => startScanTrack(progress));
   const [now, setNow] = useState(() => Date.now());
 
-  const processed = progress?.processed ?? null;
-  const total = progress?.total ?? null;
-  useEffect(() => {
+  // Fold a change in while rendering — React re-renders before it
+  // commits. An effect would commit the new count beside the previous
+  // count's time for a frame (seen live in the 2026-09-26 smoke).
+  if (!sameCounts(track.seen, progress)) {
     const at = Date.now();
-    setTrack((t) =>
-      observeScan(t, processed === null || total === null ? null : { processed, total }, at),
-    );
+    setTrack(observeScan(track, progress, at));
     setNow(at);
-  }, [processed, total]);
+  }
 
   const msLeft = scanMsLeft(track, now);
   const shown = msLeft !== null;

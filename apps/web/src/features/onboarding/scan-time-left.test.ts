@@ -1,7 +1,8 @@
 // Time left on the sync gate (D109 reversal 2026-09-26) — computed only
 // from progress this tab actually watched arrive, never a fixed rate.
 
-import { act, renderHook } from '@testing-library/react';
+import { act, render, renderHook } from '@testing-library/react';
+import { createElement, useLayoutEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { observeScan, scanMsLeft, startScanTrack, useScanTimeLeft } from './scan-time-left';
@@ -158,6 +159,32 @@ describe('useScanTimeLeft', () => {
       vi.advanceTimersByTime(10_000);
     });
     expect(result.current).toBeNull();
+  });
+
+  // Seen live in the 2026-09-26 smoke: "1,000 of 1,345 emails · about 4
+  // min left" reached the DOM for one commit before "about 2 min" — the
+  // new count beside the previous count's time.
+  it("never commits a new count with the previous count's time", () => {
+    const committed: Array<number | null> = [];
+    function Probe({ progress }: { progress: ReturnType<typeof counts> }) {
+      const msLeft = useScanTimeLeft(progress);
+      useLayoutEffect(() => {
+        committed.push(msLeft);
+      });
+      return null;
+    }
+    const { rerender } = render(createElement(Probe, { progress: counts(12_400) }));
+    vi.setSystemTime(10_000);
+    rerender(createElement(Probe, { progress: counts(12_900) }));
+    vi.setSystemTime(20_000);
+    rerender(createElement(Probe, { progress: counts(13_400) }));
+    committed.length = 0;
+
+    vi.setSystemTime(30_000);
+    rerender(createElement(Probe, { progress: counts(13_900) }));
+
+    // 1,000 in 20s → 26,998 left at 50/s, and nothing else ever painted.
+    expect(committed).toEqual([539_960]);
   });
 
   it('has no time while the total is unknown', () => {
