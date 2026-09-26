@@ -58,6 +58,32 @@ test('an alert closes once its mailbox stops being stuck, so breaking again page
   assert.ok(Number.parseInt(policy.alertStrategy.autoClose, 10) <= 1800);
 });
 
+test('every policy it creates obeys the API limits that refused one live', () => {
+  // 2026-09-26: the real API refused duration '0s' with
+  // EVALUATION_MISSING_DATA_INACTIVE (HTTP 400); the fake API in the dry
+  // runs accepted it. The alertPolicies reference: duration is whole
+  // minutes, evaluationMissingData needs duration >= 60s, autoClose >= 30m.
+  const resource = { type: 'cloud_run_revision', labels: {} };
+  const test = starveTestResources('p', 'run1', resource);
+  for (const policy of [
+    stuckMailboxPolicy(),
+    watchdogSilentPolicy(),
+    test.perMailbox,
+    test.silent,
+  ]) {
+    for (const c of policy.conditions) {
+      const { duration } = c.conditionThreshold ?? c.conditionPrometheusQueryLanguage;
+      assert.match(duration, /^\d+s$/, policy.displayName);
+      const seconds = Number.parseInt(duration, 10);
+      assert.equal(seconds % 60, 0, `${policy.displayName}: duration ${duration}`);
+      if (c.conditionThreshold?.evaluationMissingData)
+        assert.ok(seconds >= 60, `${policy.displayName}: duration ${duration} with missing data`);
+    }
+    const autoClose = policy.alertStrategy?.autoClose;
+    if (autoClose) assert.ok(Number.parseInt(autoClose, 10) >= 1800, policy.displayName);
+  }
+});
+
 test('a silent watchdog pages, including one whose heartbeat never arrived', () => {
   // A native metric-absence condition needs one data point before it can
   // ever fire; absent_over_time does not.

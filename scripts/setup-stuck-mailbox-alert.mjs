@@ -101,8 +101,11 @@ function perMailboxCondition(metricName) {
       filter: `metric.type="logging.googleapis.com/user/${metricName}" AND resource.type="cloud_run_revision"`,
       comparison: 'COMPARISON_GT',
       thresholdValue: 0,
-      // The 2-hour grace window already separated transient from stuck.
-      duration: '0s',
+      // The 2-hour grace window already separated transient from stuck, so
+      // wait the least the API allows: it refuses a zero duration once
+      // evaluationMissingData is set. One tick keeps the 30-minute sum above
+      // zero for the whole window, so the alert opens about a minute later.
+      duration: '60s',
       // No line for a mailbox means it recovered: close its alert.
       evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
       aggregations: [
