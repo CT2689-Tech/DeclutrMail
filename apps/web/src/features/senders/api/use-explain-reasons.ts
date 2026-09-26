@@ -27,25 +27,34 @@
  *     the template, which is a correct explanation. Triage asks for its
  *     whole queue but shows one reason at a time, so its queue never polls.
  *
- * Only rows that need it: a stale read is `useRefreshStaleRead`'s — the
- * re-score buys its own sentence, and explaining it first would pay twice. A
- * read with no provenance (an API predating the field, a fixture) makes no
- * claim, so it asks nothing. Failures are silent, like the stale refresh:
- * the template is already on screen, and already true.
+ * Only rows that need it. A read with no provenance (an API predating the
+ * field, a fixture) makes no claim, so it asks nothing. A STALE read is the
+ * caller's call, because only the caller knows whether it is re-scoring it
+ * right now (`useRefreshStaleRead` — the re-score buys its own sentence, so
+ * explaining too would pay twice): pass a stale read only where no re-score
+ * is running, like the action sheet.
+ *
+ * Failures are silent, like the stale refresh — the template is already on
+ * screen, and already true — but not final: a failed ask is forgotten, so
+ * the next change to the rows asks again.
  */
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
-import { EXPLAIN_BATCH_MAX, requestExplanations } from '@/lib/api/senders';
+import { EXPLAIN_BATCH_MAX } from '@declutrmail/shared/contracts';
+import { requestExplanations } from '@/lib/api/senders';
 
-/** When to look again, measured from the ask. */
-export const EXPLAIN_SETTLE_MS: readonly number[] = [4_000, 12_000];
+/**
+ * When to look again, measured from the ask. The last look sits past the
+ * worker's LLM timeout (12s in production) plus queue pickup, so a slow
+ * but successful sentence still lands on an open page.
+ */
+export const EXPLAIN_SETTLE_MS: readonly number[] = [4_000, 12_000, 25_000];
 
 /** A reason, as the surfaces already carry it. */
 export interface ExplainableRead {
   senderId: string;
   generatedBy?: 'llm_haiku' | 'template' | undefined;
-  stale?: boolean | undefined;
   scoredAt?: string | undefined;
 }
 
@@ -68,7 +77,7 @@ function askedFor(client: QueryClient): Map<string, number> {
  */
 function templateVersions(reads: readonly ExplainableRead[]): string {
   return reads
-    .filter((r) => r.senderId.length > 0 && r.generatedBy === 'template' && r.stale !== true)
+    .filter((r) => r.senderId.length > 0 && r.generatedBy === 'template')
     .map((r) => `${r.senderId} ${r.scoredAt ?? ''}`)
     .sort()
     .join('\n');
@@ -84,6 +93,12 @@ export function useExplainReasons(
     enabled?: boolean;
     invalidate: QueryKey;
     /**
+     * Re-read only the query at exactly `invalidate`, not the ones under
+     * it — when the reason lives in a parent whose children (messages,
+     * history, charts) an explanation cannot change.
+     */
+    exact?: boolean;
+    /**
      * The reads whose reason is on screen now. Defaults to `reads`: a
      * surface showing one reason is showing everything it asked about.
      */
@@ -92,7 +107,7 @@ export function useExplainReasons(
   },
 ): void {
   const queryClient = useQueryClient();
-  const { enabled = true, settleMs = EXPLAIN_SETTLE_MS } = options;
+  const { enabled = true, exact = false, settleMs = EXPLAIN_SETTLE_MS } = options;
   // Held in a ref, not a dep — a caller building the key inline hands us a
   // fresh array every render. Read at settle time, so the latest is right.
   const invalidateRef = useRef(options.invalidate);
@@ -112,8 +127,13 @@ export function useExplainReasons(
     for (const version of fresh) asked.set(version, now);
     const ids = [...new Set(fresh.map((version) => version.slice(0, version.indexOf(' '))))];
     for (let i = 0; i < ids.length; i += EXPLAIN_BATCH_MAX) {
-      void requestExplanations(ids.slice(i, i + EXPLAIN_BATCH_MAX)).catch(() => {
-        // Swallowed on purpose — the template on screen is already true.
+      const batch = new Set(ids.slice(i, i + EXPLAIN_BATCH_MAX));
+      void requestExplanations([...batch]).catch(() => {
+        // Nothing shown — the template on screen is already true. But
+        // forgotten, so the next change to the rows asks again.
+        for (const version of fresh) {
+          if (batch.has(version.slice(0, version.indexOf(' ')))) asked.delete(version);
+        }
       });
     }
   }, [askKey, showKey, queryClient]);
@@ -129,8 +149,15 @@ export function useExplainReasons(
       for (const ms of schedule.split(',')) due.add(Math.max(0, askedAt + Number(ms) - now));
     }
     const timers = [...due].map((ms) =>
-      setTimeout(() => void queryClient.invalidateQueries({ queryKey: invalidateRef.current }), ms),
+      setTimeout(
+        () =>
+          void queryClient.invalidateQueries({
+            queryKey: invalidateRef.current,
+            ...(exact ? { exact: true } : {}),
+          }),
+        ms,
+      ),
     );
     return () => timers.forEach(clearTimeout);
-  }, [showKey, schedule, queryClient]);
+  }, [showKey, schedule, exact, queryClient]);
 }

@@ -495,6 +495,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'advancedToHistoryId',
   'enforced',
   'explainCandidates',
+  'explainFailed',
   'explainSkipped',
   'failed',
   'flippedToFailed',

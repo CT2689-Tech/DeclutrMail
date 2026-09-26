@@ -24,6 +24,7 @@ vi.mock('@/features/auth/auth-provider', async (importOriginal) => ({
 }));
 
 let explained: Array<{ senderIds: string[] }>;
+let rescored: Array<Record<string, unknown>>;
 
 /** Every fixture row on a fresh template read. */
 function templateRows(): ScreenerQueueRow[] {
@@ -42,6 +43,8 @@ function templateRows(): ScreenerQueueRow[] {
 
 beforeEach(() => {
   explained = [];
+  rescored = [];
+  window.sessionStorage.clear();
   installFetchStub([
     {
       method: 'POST',
@@ -50,6 +53,14 @@ beforeEach(() => {
         const body = (await req.json()) as { senderIds: string[] };
         explained.push(body);
         return jsonOk({ data: { queued: body.senderIds } });
+      },
+    },
+    {
+      method: 'POST',
+      path: '/api/triage/score-sender',
+      respond: async (req: Request) => {
+        rescored.push((await req.json()) as Record<string, unknown>);
+        return jsonOk({ data: { idempotencyKey: 'k' } });
       },
     },
   ]);
@@ -78,5 +89,27 @@ describe('Screener — explaining a reason when a row is opened', () => {
 
     await waitFor(() => expect(explained).toHaveLength(1));
     expect(explained[0]).toEqual({ senderIds: [opened.senderId] });
+  });
+});
+
+describe('Screener — a stale reason on an opened row', () => {
+  it('is left to the re-score that opening it starts — never both', async () => {
+    const rows = templateRows().map((row) =>
+      row.recommendation ? { ...row, recommendation: { ...row.recommendation, stale: true } } : row,
+    );
+    const opened = rows.find((row) => row.recommendation !== null)!;
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen state={{ kind: 'ready', rows }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: `${opened.senderName} — expand sender detail` }),
+    );
+
+    await waitFor(() => expect(rescored).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 40));
+    expect(explained).toHaveLength(0);
   });
 });

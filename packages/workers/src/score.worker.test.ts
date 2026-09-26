@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import {
   activityLog,
   mailboxAccounts,
@@ -1842,6 +1842,145 @@ describe('ScoreWorker — explanations on demand (D24, founder 2026-09-25)', () 
     expect(row?.generatedBy).toBe('template');
   });
 
+  it('explain does not land prose on a newer version of the same verdict', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'same@first.test', {
+      gmailCategory: 'primary',
+    });
+    // Only the version moves: a verdict check alone would let the old
+    // sentence onto the new row.
+    const racingLlm: ReasoningLlmPort = {
+      explain: async () => {
+        await db
+          .update(triageDecisions)
+          .set({ producedAt: new Date(T0 + 60_000) })
+          .where(eq(triageDecisions.senderKey, senderKey));
+        return 'Prose for the older version.';
+      },
+    };
+    const worker = new ScoreWorker({ db, llm: racingLlm, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+
+    const result = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+
+    expect(result).toMatchObject({ llmCalls: 1, llmExplanations: 0 });
+    expect((await decisionFor(db, senderKey))?.generatedBy).toBe('template');
+  });
+
+  it('explain skips a row whose verdict still matches but whose confidence does not', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'conf@first.test', {
+      gmailCategory: 'primary',
+    });
+    const { llm, asked } = recordingLlm();
+    const worker = new ScoreWorker({ db, llm, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    expect((await decisionFor(db, senderKey))?.confidence).toBe('0.95');
+    // Protected since: still Keep, now at 1.00 for a different reason —
+    // a sentence about Gmail's Primary tab would explain the wrong rule.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey,
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: new Date(),
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+
+    expect(asked).toEqual([]);
+    expect(result).toMatchObject({ llmCalls: 0, explainSkipped: 1 });
+  });
+
+  it('explain writes onto a row stored with microsecond precision', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'micro@first.test', {
+      displayName: 'Micro',
+      gmailCategory: 'primary',
+    });
+    // Microseconds, the way a row written by Postgres itself carries them
+    // (a column default, a seed, a hand fix). Set explicitly: PGlite's own
+    // `now()` happens to land on whole milliseconds.
+    await db.insert(triageDecisions).values({
+      mailboxAccountId,
+      senderKey,
+      verdict: 'keep',
+      confidence: '0.95',
+      reasoning: 'Micro sends 0/mo. Kept because Gmail puts them in your Primary inbox.',
+      generatedBy: 'template',
+      expiresAt: new Date(Date.now() + 7 * 86_400_000),
+    });
+    await db.execute(
+      sql`UPDATE triage_decisions SET produced_at = '2026-09-25 08:30:00.123456+00'::timestamptz`,
+    );
+    const stored = await decisionFor(db, senderKey);
+    expect(stored?.producedAt.toISOString()).toBe('2026-09-25T08:30:00.123Z');
+    const { llm } = recordingLlm();
+    const worker = new ScoreWorker({ db, llm, now: () => NOW });
+
+    // The ask carries the version as the driver reads it: epoch ms.
+    const result = await worker.processJob(
+      {
+        mailboxAccountId,
+        senderKey,
+        trigger: 'explain',
+        producedAtMs: stored!.producedAt.getTime(),
+      },
+      FAKE_CTX,
+    );
+
+    expect(result).toMatchObject({ llmCalls: 1, llmExplanations: 1 });
+    expect((await decisionFor(db, senderKey))?.reasoning).toBe('Prose for Micro.');
+  });
+
+  it('a re-score does not carry prose onto a verdict reached for a different reason', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'reuse-conf@first.test', {
+      gmailCategory: 'primary',
+    });
+    const { llm, asked } = recordingLlm();
+    const worker = new ScoreWorker({ db, llm, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    expect(asked).toHaveLength(1);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey,
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: new Date(),
+    });
+
+    // Keep at 0.95 (Primary) → Keep at 1.00 (protected): the stored
+    // sentence is about the Primary tab, so it must not be reused.
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+
+    const row = await decisionFor(db, senderKey);
+    expect(row?.confidence).toBe('1.00');
+    expect(row?.generatedBy).toBe('template');
+  });
+
   it('explain without a senderKey is refused — never a whole-mailbox run', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
@@ -1855,6 +1994,167 @@ describe('ScoreWorker — explanations on demand (D24, founder 2026-09-25)', () 
 
     expect(asked).toEqual([]);
     expect(await db.select().from(triageDecisions)).toHaveLength(0);
+  });
+
+  /**
+   * An explanation that failed must look different from one nobody needed.
+   * `explainCandidates: 0` is the healthy value for a re-sync, so a sweep
+   * whose sentences all broke has to say so in its own counter and in
+   * Sentry — a `console.warn` reaches nobody (Sentry runs with no
+   * integrations).
+   */
+  describe('when explaining fails', () => {
+    function bgObserver() {
+      const background: Array<{ error: Error; kind: string }> = [];
+      return {
+        background,
+        observer: {
+          captureFailure: () => {},
+          captureBackgroundFailure: (error: Error, ctx: { kind: string }) =>
+            background.push({ error, kind: ctx.kind }),
+          recordBackgroundNotice: () => {},
+        },
+      };
+    }
+
+    /** The real db, except that writing a sentence onto a row throws. */
+    function failingSentenceWrites(db: ScoreWorkerDeps['db']): ScoreWorkerDeps['db'] {
+      return new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === 'update') {
+            return (table: unknown) => {
+              if (table === triageDecisions) throw new Error('write failed');
+              return target.update(table as typeof triageDecisions);
+            };
+          }
+          return Reflect.get(target, prop, receiver) as unknown;
+        },
+      });
+    }
+
+    it('a sentence paid for but not written is counted, reported, and the sweep still succeeds', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      await seedPrimarySenders(db, mailboxAccountId, ['Ada', 'Bea']);
+      const { llm, asked } = recordingLlm();
+      const { background, observer } = bgObserver();
+      const worker = new ScoreWorker({ db: failingSentenceWrites(db), llm, now: () => NOW });
+      worker.setObserver(observer);
+
+      const result = await worker.processJob(
+        { mailboxAccountId, trigger: 'sync_complete', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+
+      expect(asked).toHaveLength(2);
+      expect(result).toMatchObject({
+        decisionsWritten: 2,
+        llmCalls: 2,
+        llmExplanations: 0,
+        explainFailed: 2,
+      });
+      expect(background.map((b) => b.kind)).toEqual(['score.explain_failed']);
+    });
+
+    it('a first-view selection that throws is counted and reported, not read as "nothing to do"', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      await seedPrimarySenders(db, mailboxAccountId, ['Ada']);
+      const { llm } = recordingLlm();
+      const { background, observer } = bgObserver();
+      const worker = new ScoreWorker({ db, llm, now: () => NOW });
+      worker.setObserver(observer);
+      vi.spyOn(
+        worker as unknown as { firstViewTargets: () => Promise<never> },
+        'firstViewTargets',
+      ).mockRejectedValue(new Error('selection failed'));
+
+      const result = await worker.processJob(
+        { mailboxAccountId, trigger: 'sync_complete', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+
+      expect(result).toMatchObject({ decisionsWritten: 1, explainCandidates: 0, explainFailed: 1 });
+      expect(background.map((b) => b.kind)).toEqual(['score.first_view_failed']);
+    });
+
+    it('an explain job whose write fails fails the job — it has one attempt, so it is final', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const senderKey = await seedSender(db, mailboxAccountId, 'wf@first.test', {
+        gmailCategory: 'primary',
+      });
+      const { llm } = recordingLlm();
+      await new ScoreWorker({ db, llm, now: () => NOW }).processJob(
+        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+      const worker = new ScoreWorker({ db: failingSentenceWrites(db), llm, now: () => NOW });
+
+      await expect(
+        worker.processJob(
+          { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 },
+          FAKE_CTX,
+        ),
+      ).rejects.toThrow('write failed');
+    });
+
+    it('with no LLM configured an explain job skips before reading the mailbox, and says so loudly', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const noReads = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === 'select' || prop === 'execute') {
+            throw new Error('explain read the mailbox with nothing to buy');
+          }
+          return Reflect.get(target, prop, receiver) as unknown;
+        },
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const result = await new ScoreWorker({ db: noReads, now: () => NOW }).processJob(
+          { mailboxAccountId, senderKey: 'k', trigger: 'explain', producedAtMs: T0 },
+          FAKE_CTX,
+        );
+
+        expect(result).toMatchObject({ llmCalls: 0, explainSkipped: 1 });
+        const skipped = warnSpy.mock.calls
+          .map((c) => JSON.parse(String(c[0])) as { kind: string; reason?: string })
+          .filter((line) => line.kind === 'score.explain_skipped');
+        expect(skipped).toEqual([expect.objectContaining({ reason: 'no_llm' })]);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it('a model answer with no text is logged by name and never stored as a sentence', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const senderKey = await seedSender(db, mailboxAccountId, 'empty@first.test', {
+        displayName: 'Empty',
+        gmailCategory: 'primary',
+      });
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const worker = new ScoreWorker({ db, llm: { explain: async () => '' }, now: () => NOW });
+
+        const result = await worker.processJob(
+          { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: T0 },
+          FAKE_CTX,
+        );
+
+        expect(result).toMatchObject({ llmCalls: 1, llmExplanations: 0, templateExplanations: 1 });
+        const row = await decisionFor(db, senderKey);
+        expect(row?.generatedBy).toBe('template');
+        expect(row?.reasoning).toContain('Empty');
+        const kinds = warnSpy.mock.calls.map(
+          (c) => (JSON.parse(String(c[0])) as { kind: string }).kind,
+        );
+        expect(kinds).toContain('reasoning.no_text');
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
   });
 
   it('explain does not publish score_run_completed — no verdict moved, so no Autopilot sweep', async () => {

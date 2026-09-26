@@ -3,13 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpException,
   HttpStatus,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ok, type Envelope } from '@declutrmail/shared/contracts';
+import { EXPLAIN_BATCH_MAX, ok, type Envelope } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -22,7 +23,7 @@ import {
   type TriageQueueRow,
   type TriageSessionStats,
 } from './triage.read-service.js';
-import { TRIAGE_QUEUE_MAX, TriageService } from './triage.service.js';
+import { TriageService } from './triage.service.js';
 
 /**
  * Triage routes (D20, D25, D29, D30, D33).
@@ -103,13 +104,16 @@ export class TriageController {
    * the request never waits on a model; the page refetches its own read to
    * pick the sentences up.
    *
-   * At most a queue's worth of ids (the D30 ceiling): a page asks about what
-   * it shows, never about the mailbox. `triage-load`, not `gmail-action`:
-   * the ask rides alongside the reads that show the reasons, and must not
-   * spend the budget a user's Archive needs.
+   * At most `EXPLAIN_BATCH_MAX` ids — a full Triage queue: a page asks about
+   * what it shows, never about the mailbox. Its OWN counter (a route-scoped
+   * limit): not `gmail-action`, whose budget a user's Archive needs, and not
+   * the shared `triage-load` pool, which the reads showing these very
+   * reasons spend. Page loads ask about once per decision; 60/min is an
+   * order of magnitude above that and still a wall for a script.
    */
-  @RateLimit('triage-load')
+  @RateLimit({ bucket: 'triage-load', limit: 60, windowSec: 60 })
   @Post('explain')
+  @HttpCode(HttpStatus.ACCEPTED)
   async explain(
     @CurrentMailbox() mailbox: { id: string },
     @Body() body: { senderIds?: unknown },
@@ -118,10 +122,10 @@ export class TriageController {
     if (
       !Array.isArray(raw) ||
       raw.length === 0 ||
-      raw.length > TRIAGE_QUEUE_MAX ||
+      raw.length > EXPLAIN_BATCH_MAX ||
       !raw.every((id) => typeof id === 'string' && isUuid(id))
     ) {
-      throw new BadRequestException(`senderIds must be 1–${TRIAGE_QUEUE_MAX} sender ids.`);
+      throw new BadRequestException(`senderIds must be 1–${EXPLAIN_BATCH_MAX} sender ids.`);
     }
     const result = await this.triage.explainSenders({
       mailboxAccountId: mailbox.id,

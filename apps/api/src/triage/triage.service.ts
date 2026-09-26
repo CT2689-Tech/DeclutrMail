@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, count, eq, gt, inArray, lt, ne } from 'drizzle-orm';
+import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
@@ -13,14 +13,24 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 export const SCORE_QUEUE_TOKEN = 'SCORE_QUEUE';
 
 /**
- * How long a finished `explain` job keeps its id, in seconds. The id names
- * the row version, so while it exists a repeat ask for the same row is a
- * no-op: at most one attempt per row version per hour. A row whose call
- * failed (a provider outage, a timeout) is tried again on the next ask
- * after that; a row whose call succeeded is never asked for again, because
- * it is no longer on the template.
+ * The `score-explain` queue, on a request-path producer connection —
+ * explanation asks only (see `TriageModule`).
  */
-const EXPLAIN_JOB_RETENTION_S = 60 * 60;
+export const SCORE_EXPLAIN_QUEUE_TOKEN = 'SCORE_EXPLAIN_QUEUE';
+
+/**
+ * How long an ask for one row version suppresses the next, in ms: at most
+ * one explain job per row version per hour. A row whose call failed (an
+ * outage, a timeout) is tried again on the next ask after that; a row
+ * whose call succeeded is never asked for again, because it is no longer
+ * on the template.
+ *
+ * BullMQ deduplication in throttle mode — the key outlives the job for
+ * `ttl` — rather than a fixed job id kept by an age-based
+ * `removeOnComplete`: BullMQ applies an age limit to the queue's WHOLE
+ * finished set, so it would purge whatever else shares the queue.
+ */
+const EXPLAIN_DEDUP_TTL_MS = 60 * 60 * 1000;
 
 /**
  * D30 — minimum daily queue size. The queue is never smaller than 5,
@@ -98,6 +108,12 @@ export class TriageService {
     // case; read-only methods (`getDecision`, `getQueueSize`) work
     // without Redis.
     @Inject(SCORE_QUEUE_TOKEN) private readonly scoreQueue: Queue<ScoreJobData> | null,
+    // Explanation asks only — their own queue, on a request-path
+    // connection (see `TriageModule`). Optional so a harness that never
+    // asks for an explanation can construct the service without it.
+    @Optional()
+    @Inject(SCORE_EXPLAIN_QUEUE_TOKEN)
+    private readonly explainQueue: Queue<ScoreJobData> | null = null,
   ) {}
 
   /**
@@ -185,23 +201,25 @@ export class TriageService {
    * about to see). Enqueues one `explain` job per row that still needs one
    * and returns WITHOUT waiting: no LLM call runs on a request.
    *
-   * Only fresh template rows qualify. A row with LLM prose needs nothing; a
-   * row past its TTL is re-scored when opened (`stale_refresh`), which buys
-   * its own sentence — explaining it first would pay twice. Ids resolve
-   * inside this mailbox, so a guessed id queues nothing.
+   * Only template rows qualify; a row with LLM prose needs nothing. Stale
+   * rows are accepted: the page asks for one only where nothing is
+   * re-scoring it (a re-score buys its own sentence), and only the page
+   * knows which surface it is. Ids resolve inside this mailbox, so a
+   * guessed id queues nothing.
    *
    * ADR-0008 §3 exception: triage reads the senders-owned table (the page
    * holds sender ids, not keys) — same crossing as `resolveSenderKey`.
    *
-   * Returns the ids an explanation is now pending for, so the page knows
-   * which reasons are about to change.
+   * Returns the ids that have an explain job: added now, or kept from an
+   * ask for the same row version within the hour (that job may already
+   * have finished). The page does not branch on it.
    */
   async explainSenders(input: {
     mailboxAccountId: string;
     senderIds: readonly string[];
-    now?: Date;
   }): Promise<{ queued: string[] }> {
-    if (!this.scoreQueue) {
+    const queue = this.explainQueue;
+    if (!queue) {
       throw new Error(
         'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
       );
@@ -226,11 +244,10 @@ export class TriageService {
           eq(senders.mailboxAccountId, input.mailboxAccountId),
           inArray(senders.id, [...input.senderIds]),
           eq(triageDecisions.generatedBy, 'template'),
-          gt(triageDecisions.expiresAt, input.now ?? new Date()),
         ),
       );
     if (rows.length === 0) return { queued: [] };
-    await this.scoreQueue.addBulk(
+    await queue.addBulk(
       rows.map((row) => {
         const producedAtMs = row.producedAt.getTime();
         const data: ScoreJobData = {
@@ -243,13 +260,17 @@ export class TriageService {
           name: SCORE_JOB,
           data,
           opts: {
-            // Hyphens, never colons: BullMQ rejects a custom id containing
-            // `:` unless it has exactly three segments, and throws on add —
-            // how the U14 apply trigger and the domain-icon queue both
-            // shipped a queue that never received a job.
-            jobId: `explain-${input.mailboxAccountId}-${row.senderKey}-${producedAtMs}`,
-            removeOnComplete: { age: EXPLAIN_JOB_RETENTION_S },
-            removeOnFail: { age: EXPLAIN_JOB_RETENTION_S },
+            // Keyed to the row version. Hyphens, never colons — the house
+            // rule since BullMQ's `:` checks broke the U14 apply trigger
+            // and the domain-icon queue.
+            deduplication: {
+              id: `explain-${input.mailboxAccountId}-${row.senderKey}-${producedAtMs}`,
+              ttl: EXPLAIN_DEDUP_TTL_MS,
+            },
+            // THIS job only; the dedup key above carries the hour. A failed
+            // job stays (BullMQ's default) — and it is also parked in
+            // `dead_letter_jobs`, since it gets one attempt.
+            removeOnComplete: true,
           },
         };
       }),

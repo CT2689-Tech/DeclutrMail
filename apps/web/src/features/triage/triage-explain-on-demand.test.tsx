@@ -178,3 +178,62 @@ describe('Triage — picking up the sentence the user is reading', () => {
     expect(queueRefetches()).toBeGreaterThanOrEqual(1);
   });
 });
+
+/**
+ * A stale row is the stale refresh's to fix — but the stale refresh runs
+ * only for the row the user EXPANDS in the daily ritual (founder decision
+ * 2026-08-19) and never in onboarding (D112). Everywhere else a stale
+ * template would never get a sentence, so there the page asks for one.
+ */
+describe('Triage — stale reasons nobody is re-scoring', () => {
+  beforeEach(() => storeTriageMode('list'));
+
+  function staleTemplateQueue(): TriageDecisionRow[] {
+    const [a, b, ...rest] = TRIAGE_QUEUE;
+    const stale = {
+      stale: true,
+      scoredAt: '2026-09-01T08:30:00.000Z',
+      generatedBy: 'template' as const,
+    };
+    return [{ ...a!, ...stale }, { ...b!, ...stale }, ...rest];
+  }
+
+  it('does not ask for stale rows just for being in the queue', async () => {
+    renderScreen(staleTemplateQueue());
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(explained).toHaveLength(0);
+  });
+
+  it('asks for a stale row the action sheet shows', async () => {
+    const rows = staleTemplateQueue();
+    renderScreen(rows);
+
+    act(() => useTriageStore.getState().openPending('Archive', rows[1]!.id, 'sheet'));
+
+    await waitFor(() => expect(explained).toHaveLength(1));
+    expect(explained[0]).toEqual({ senderIds: [rows[1]!.senderId] });
+    expect(rescored).toHaveLength(0);
+  });
+
+  it('leaves the stale row the user expanded to its re-score — never both', async () => {
+    const rows = staleTemplateQueue();
+    renderScreen(rows);
+
+    act(() => useTriageStore.getState().setExpandedRow(rows[0]!.id));
+
+    await waitFor(() => expect(rescored).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 40));
+    expect(explained).toHaveLength(0);
+  });
+
+  it('asks for stale rows in onboarding, where nothing re-scores', async () => {
+    const rows = staleTemplateQueue();
+    renderScreen(rows, 'first_relief');
+
+    await waitFor(() => expect(explained).toHaveLength(1));
+    expect([...explained[0]!.senderIds].sort()).toEqual(
+      [rows[0]!.senderId, rows[1]!.senderId].sort(),
+    );
+  });
+});

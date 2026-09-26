@@ -17,11 +17,13 @@ function Harness({
   reads,
   showing,
   enabled,
+  exact,
   settleMs = [10, 30],
 }: {
   reads: ExplainableRead[];
   showing?: ExplainableRead[];
   enabled?: boolean;
+  exact?: boolean;
   settleMs?: number[];
 }) {
   useExplainReasons(reads, {
@@ -29,6 +31,7 @@ function Harness({
     settleMs,
     ...(showing === undefined ? {} : { showing }),
     ...(enabled === undefined ? {} : { enabled }),
+    ...(exact === undefined ? {} : { exact }),
   });
   return null;
 }
@@ -69,7 +72,6 @@ function renderHarness2(props: { reads: ExplainableRead[]; showing: ExplainableR
 const template = (senderId: string, scoredAt = '2026-09-25T08:30:00.000Z'): ExplainableRead => ({
   senderId,
   generatedBy: 'template',
-  stale: false,
   scoredAt,
 });
 
@@ -99,17 +101,57 @@ describe('useExplainReasons', () => {
   it('asks once, in one request, for every reason still on the template', async () => {
     renderHarness([
       template('s-template'),
-      { senderId: 's-prose', generatedBy: 'llm_haiku', stale: false, scoredAt: 't' },
-      // Past its TTL: opening it re-scores, which buys its own sentence.
-      { senderId: 's-stale', generatedBy: 'template', stale: true, scoredAt: 't' },
+      { senderId: 's-prose', generatedBy: 'llm_haiku', scoredAt: 't' },
       // An API that predates the field says nothing about provenance —
       // no claim, so no ask.
-      { senderId: 's-unknown', stale: false, scoredAt: 't' },
+      { senderId: 's-unknown', scoredAt: 't' },
       template('s-template-2'),
     ]);
 
     await waitFor(() => expect(posted).toHaveLength(1));
     expect([...posted[0]!.senderIds].sort()).toEqual(['s-template', 's-template-2']);
+  });
+
+  it('asks again after a failed ask, once the rows it is given change', async () => {
+    let fail = true;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/triage/explain',
+        respond: async (req: Request) => {
+          const body = (await req.json()) as { senderIds: string[] };
+          posted.push(body);
+          if (fail) {
+            return new Response(JSON.stringify({ error: { code: 'INTERNAL' } }), {
+              status: 500,
+              headers: { 'content-type': 'application/json' },
+            });
+          }
+          return jsonOk({ data: { queued: body.senderIds } });
+        },
+      },
+    ]);
+    const { rerender } = renderHarness([template('s-1')]);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    await tick(20);
+    fail = false;
+
+    rerender(<Harness reads={[template('s-1'), template('s-2')]} />);
+
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect([...posted[1]!.senderIds].sort()).toEqual(['s-1', 's-2']);
+  });
+
+  it('re-reads only the exact query when told to — not its children', async () => {
+    const client = new QueryClient();
+    const invalidated = vi.spyOn(client, 'invalidateQueries');
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    render(<Harness reads={[template('s-1')]} exact />, { wrapper });
+
+    await waitFor(() => expect(invalidated).toHaveBeenCalled());
+    expect(invalidated).toHaveBeenCalledWith({ queryKey: KEY, exact: true });
   });
 
   it('does not ask twice for the same row version — re-render, remount or another surface', async () => {
@@ -157,7 +199,7 @@ describe('useExplainReasons', () => {
 
     rerender(
       <Harness
-        reads={[{ senderId: 's-1', generatedBy: 'llm_haiku', stale: false, scoredAt: 't' }]}
+        reads={[{ senderId: 's-1', generatedBy: 'llm_haiku', scoredAt: 't' }]}
         settleMs={WIDE}
       />,
     );
@@ -176,10 +218,7 @@ describe('useExplainReasons', () => {
 
     rerender(
       <Harness
-        reads={[
-          { senderId: 's-1', generatedBy: 'llm_haiku', stale: false, scoredAt: 't' },
-          template('s-2'),
-        ]}
+        reads={[{ senderId: 's-1', generatedBy: 'llm_haiku', scoredAt: 't' }, template('s-2')]}
         settleMs={WIDE}
       />,
     );
@@ -230,26 +269,32 @@ describe('useExplainReasons', () => {
     expect(posted).toHaveLength(0);
   });
 
+  /**
+   * "Silent" is checked where it can fail: the request must actually have
+   * been made and refused — otherwise nothing here exercised the failure —
+   * and vitest itself fails the run on an unhandled rejection, which a
+   * missing `.catch` would produce. (A `window` `unhandledrejection`
+   * listener cannot: jsdom does not fire it for native promises.)
+   */
   it('stays silent when the request fails — the template still reads correctly', async () => {
+    let refused = 0;
     installFetchStub([
       {
         method: 'POST',
         path: '/api/triage/explain',
-        respond: () =>
-          new Response(JSON.stringify({ error: { code: 'RATE_LIMITED' } }), {
+        respond: () => {
+          refused += 1;
+          return new Response(JSON.stringify({ error: { code: 'RATE_LIMITED' } }), {
             status: 429,
             headers: { 'content-type': 'application/json' },
-          }),
+          });
+        },
       },
     ]);
-    const onError = vi.fn();
-    window.addEventListener('unhandledrejection', onError);
-    try {
-      expect(() => renderHarness([template('s-1')])).not.toThrow();
-      await tick(40);
-      expect(onError).not.toHaveBeenCalled();
-    } finally {
-      window.removeEventListener('unhandledrejection', onError);
-    }
+
+    expect(() => renderHarness([template('s-1')])).not.toThrow();
+
+    await waitFor(() => expect(refused).toBe(1));
+    await tick(40);
   });
 });

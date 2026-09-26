@@ -2183,6 +2183,91 @@ describe('SenderDetailRoute — explaining a template reason on open (D24)', () 
   });
 
   /**
+   * The whole chain the page owns: the template shows at once, the page
+   * asks, and a later read of the SAME query brings the sentence — with
+   * no re-fetch of the messages, history or chart under it.
+   */
+  it('shows the template, then the sentence once a re-read finds it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let detailReads = 0;
+      let messageReads = 0;
+      stubWithRecommendation(TEMPLATE_READ);
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () => {
+            detailReads += 1;
+            const reasoning =
+              detailReads === 1
+                ? TEMPLATE_READ.reasoning
+                : 'LinkedIn mail goes unread; unsubscribing stops it.';
+            return jsonOk({
+              data: {
+                ...DETAIL,
+                recommendation: {
+                  ...TEMPLATE_READ,
+                  reasoning,
+                  generatedBy: detailReads === 1 ? 'template' : 'llm_haiku',
+                },
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/messages$/,
+          respond: () => {
+            messageReads += 1;
+            return jsonOk({
+              data: [MESSAGE],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: TIMESERIES }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/history$/,
+          respond: () =>
+            jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/triage/explain',
+          respond: async (req: Request) => {
+            const body = (await req.json()) as { senderIds: string[] };
+            explained.push(body);
+            return jsonOk({ data: { queued: body.senderIds } });
+          },
+        },
+      ]);
+      renderDetail();
+      await screen.findByRole('group', { name: /Optional suggestion/ });
+      expect(screen.getByText(TEMPLATE_READ.reasoning)).toBeInTheDocument();
+      await waitFor(() => expect(explained).toHaveLength(1));
+      const messageReadsBeforeLook = messageReads;
+
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+      expect(
+        await screen.findByText('LinkedIn mail goes unread; unsubscribing stops it.'),
+      ).toBeInTheDocument();
+      expect(messageReads).toBe(messageReadsBeforeLook);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
    * A stale read is re-scored on open, and the re-score buys its own
    * sentence. Asking for an explanation too would pay twice for one look.
    */

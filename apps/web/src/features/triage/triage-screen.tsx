@@ -527,20 +527,37 @@ export function TriageScreen({
   // IS what the user is about to read — every decision opens its reason —
   // so the whole queue asks for the sentences still on the template, and a
   // row entering after a decision asks as it arrives, well before the user
-  // reaches it. Only the reason on screen (the expanded row or the card's
-  // "Why?", and the sheet's "Why suggested") is re-read until its sentence
-  // lands; the rest ride the re-read every decision already makes.
+  // reaches it. Only the reason in front of the user (the expanded row or
+  // the card's "Why?", and the sheet's "Why suggested", one tap into its
+  // Details) is re-read until its sentence lands; the rest ride the re-read
+  // every decision already makes.
+  //
+  // A STALE row belongs to the stale refresh above — but that runs only for
+  // the row expanded in the daily ritual. So the queue does not ask for
+  // stale rows just for being listed; the sheet asks for its row unless
+  // that re-score owns it; and onboarding, where nothing re-scores, asks
+  // for all of them.
   //
   // Unlike a re-score, an explanation never moves verdict, confidence or
-  // age, so it cannot re-sort the queue — which is why it runs in
-  // onboarding (D112) too. The key's prefix covers onboarding's
-  // first-triage read as well.
-  useExplainReasons(state.kind === 'ready' ? state.rows : [], {
-    invalidate: TRIAGE_BOOTSTRAP_KEY,
-    showing: [expandedRow, pendingAction?.surface === 'sheet' ? pendingRow : null].filter(
-      (row): row is TriageDecisionRow => row !== null,
-    ),
-  });
+  // age, so it cannot change which rows the practice set holds — which is
+  // why it runs in onboarding (D112) too. The key's prefix covers
+  // onboarding's first-triage read as well.
+  const reScoring = (row: TriageDecisionRow | null): boolean =>
+    journey === 'daily' && row !== null && row.id === expandedRowId && row.stale === true;
+  const sheetRow = pendingAction?.surface === 'sheet' ? pendingRow : null;
+  useExplainReasons(
+    state.kind !== 'ready'
+      ? []
+      : journey === 'daily'
+        ? state.rows.filter((row) => row.stale !== true)
+        : state.rows,
+    {
+      invalidate: TRIAGE_BOOTSTRAP_KEY,
+      showing: [expandedRow, sheetRow].filter(
+        (row): row is TriageDecisionRow => row !== null && !reScoring(row),
+      ),
+    },
+  );
 
   // D226 real-count preview: the confirm surface states what actually
   // moves (the sender's current-inbox count from

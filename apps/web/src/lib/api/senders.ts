@@ -791,8 +791,9 @@ export function requestSenderRescore(
  * POST /api/triage/explain — ask for the LLM sentences behind reasons that
  * are still the deterministic template (D24, founder decision 2026-09-25).
  * Returns at once: the sentences are written by a background job, and
- * `queued` names the senders one is now pending for. At most
- * {@link EXPLAIN_BATCH_MAX} ids per request.
+ * `queued` names the senders that have one (added now, or already asked
+ * for within the hour). At most `EXPLAIN_BATCH_MAX` (shared contract) ids
+ * per request.
  */
 export function requestExplanations(
   senderIds: readonly string[],
@@ -800,6 +801,3 @@ export function requestExplanations(
 ): Promise<Envelope<{ queued: string[] }, unknown>> {
   return apiPost<{ queued: string[] }>('/api/triage/explain', { senderIds }, { signal });
 }
-
-/** The endpoint's per-request ceiling — a Triage queue's worth (D30). */
-export const EXPLAIN_BATCH_MAX = 12;
