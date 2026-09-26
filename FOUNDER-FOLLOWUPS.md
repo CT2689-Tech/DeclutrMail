@@ -23,6 +23,29 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
+
+**Why:** the MISTAKES.md entry "2026-09-03 — Gmail quota limiter started
+every mailbox's bucket FULL" names two real signups by email address, and
+this repository is public. Their mailbox IDs and first-scan failure dates
+are also public (every `sync-stuck-watchdog` run log, and now
+`scripts/known-stuck-mailboxes.tsv`), so a reader can pair an address
+with "this account's first scan never finished". MISTAKES.md is
+append-only for agents and a history rewrite needs a force-push to main,
+so both calls are yours.
+
+**How:** either (a) replace the two addresses in that entry with "two
+signups (2026-08-06, 2026-08-26)", accepting that git history keeps
+them, or (b) do (a) and also purge them from history (`git filter-repo`
+or GitHub support), or (c) accept the exposure.
+
+**Verifies by:** `git grep -nE '@gmail\.com' -- MISTAKES.md` shows no
+customer address.
+
+**Status:** Open
+
 ### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
 
 **Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778), session 2026-09-26
