@@ -83,6 +83,8 @@ import {
   type FilterFieldsProps,
   type GroupMode,
 } from './activity-filter-fields';
+// Type-only: erased at build, so the dialog stays out of first load.
+import type { RecoveryConfirmation } from './action-recovery-dialog';
 
 // Click-only dialogs: loaded on first open so their code stays out of the
 // /activity first-load bundle (180 kB budget).
@@ -2370,7 +2372,7 @@ function RecoveryCell({
     resetConfirmation();
   };
 
-  const confirm = async (wakeAt?: string) => {
+  const confirm = async ({ wakeAt, senderProtected }: RecoveryConfirmation) => {
     if (!preview || preview.status !== 'ready' || confirmationLockedRef.current) return;
     confirmationLockedRef.current = true;
     const identity = confirmationRef.current;
@@ -2389,8 +2391,8 @@ function RecoveryCell({
         previewId: preview.previewId,
         idempotencyKey,
         ...(wakeAt ? { wakeAt } : {}),
-        // The review named the Protected sender; confirming is the consent.
-        ...(preview.senderProtected === true ? { senderProtected: true } : {}),
+        // Only a review that showed the Protected line sends its consent.
+        ...(senderProtected ? { senderProtected: true } : {}),
       });
       setOpen(false);
       setPreviewId(null);
@@ -2460,7 +2462,7 @@ function RecoveryCell({
               confirmError={confirmRecovery.error}
               isConfirming={confirmRecovery.isPending || confirmationLockedRef.current}
               onRetryVerification={() => void retryVerification()}
-              onConfirm={(wakeAt) => void confirm(wakeAt)}
+              onConfirm={(confirmation) => void confirm(confirmation)}
               onReconnect={() => startMailboxConnect(mailboxId ?? undefined)}
               onClose={close}
             />,

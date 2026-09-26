@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react';
 
 import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
+import {
+  normalizeProtectionReason,
+  protectionReasonClause,
+  type ProtectionReasonId,
+} from '@declutrmail/shared/copy';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { apiErrorCode } from '@/lib/api/client';
@@ -19,6 +24,16 @@ import { numeralStyle } from './activity-filter-fields';
  */
 
 const { color, font, radius, shadow, text } = tokens;
+
+/**
+ * What the reader confirmed. `senderProtected` is true only when the
+ * review they saw said the sender is Protected — the consent the retry
+ * carries (D245).
+ */
+export interface RecoveryConfirmation {
+  wakeAt?: string;
+  senderProtected: boolean;
+}
 
 export function ActionRecoveryDialog({
   row,
@@ -39,7 +54,7 @@ export function ActionRecoveryDialog({
   confirmError: Error | null;
   isConfirming: boolean;
   onRetryVerification: () => void;
-  onConfirm: (wakeAt?: string) => void;
+  onConfirm: (confirmation: RecoveryConfirmation) => void;
   onReconnect: () => void;
   onClose: () => void;
 }) {
@@ -69,9 +84,11 @@ export function ActionRecoveryDialog({
     (wakeAt !== null && Number.isFinite(wakeAt.getTime()) && wakeAt.getTime() > Date.now());
   const ready = preview?.status === 'ready';
   // D245: bulk skips Protected senders, but a retry is one reviewed
-  // decision — said here, and the button that carries it says "anyway".
-  // Nothing left to change in Gmail means nothing to consent to.
-  const protectedNow = preview?.senderProtected === true && preview.remainingCount > 0;
+  // decision. This one value draws the line, words the button and is the
+  // consent sent. An already-applied review asks too: the retry re-applies
+  // its whole set, so mail moved back since the check would change.
+  const protectedNow = ready && preview?.senderProtected === true;
+  const senderName = row.sender?.displayName || row.sender?.email || null;
   const confirmNeedsRecheck = confirmError ? recoveryConfirmNeedsRecheck(confirmError) : false;
   const canConfirm = ready && wakeAtValid && !isConfirming && !confirmNeedsRecheck;
 
@@ -140,7 +157,10 @@ export function ActionRecoveryDialog({
                 preview={preview}
                 protectedLine={
                   protectedNow
-                    ? protectedSenderLine(row.sender?.displayName || row.sender?.email || null)
+                    ? protectedSenderLine(
+                        senderName,
+                        normalizeProtectionReason(preview.protectionReason),
+                      )
                     : null
                 }
               />
@@ -191,7 +211,7 @@ export function ActionRecoveryDialog({
                 padding: '12px 14px',
               }}
             >
-              {recoveryConfirmErrorMessage(confirmError)}
+              {recoveryConfirmErrorMessage(confirmError, senderName !== null)}
               {confirmNeedsRecheck && (
                 <div style={{ marginTop: 8 }}>
                   <Button tone="default" onClick={onRetryVerification}>
@@ -221,17 +241,20 @@ export function ActionRecoveryDialog({
             <Button
               tone="primary"
               onClick={() =>
-                onConfirm(preview.requiresNewWakeAt && wakeAt ? wakeAt.toISOString() : undefined)
+                onConfirm({
+                  ...(preview.requiresNewWakeAt && wakeAt ? { wakeAt: wakeAt.toISOString() } : {}),
+                  senderProtected: protectedNow,
+                })
               }
               disabled={!canConfirm}
             >
               {isConfirming
                 ? 'Starting…'
-                : preview.outcome === 'already_applied'
-                  ? 'Update this record'
-                  : protectedNow
-                    ? `${failedActionNoun(preview.verb)} anyway`
-                    : 'Try this action again'}
+                : protectedNow
+                  ? `${failedActionNoun(preview.verb)} anyway`
+                  : preview.outcome === 'already_applied'
+                    ? 'Update this record'
+                    : 'Try again'}
             </Button>
           )}
         </div>
@@ -406,11 +429,12 @@ function RecoveryConsequence({
   );
 }
 
-/** D245 — said once, at the decision point. */
-function protectedSenderLine(senderName: string | null): string {
-  return senderName !== null
-    ? `${senderName} is Protected — this action applies anyway.`
-    : 'A Protected sender is included — this action applies anyway.';
+/** D245 — said once, at the decision point, with the exact reason. */
+function protectedSenderLine(senderName: string | null, reason: ProtectionReasonId | null): string {
+  if (senderName === null) return 'A Protected sender is included — this action applies anyway.';
+  return reason !== null
+    ? `${senderName} is Protected because ${protectionReasonClause(reason)}. This action applies anyway.`
+    : `${senderName} is Protected — this action applies anyway.`;
 }
 
 function toLocalDateTimeInput(date: Date): string {
@@ -428,7 +452,7 @@ function formatRecoveryDate(iso: string): string {
       'an unknown time';
 }
 
-function recoveryConfirmErrorMessage(error: Error): string {
+function recoveryConfirmErrorMessage(error: Error, oneSender: boolean): string {
   const code = apiErrorCode(error);
   if (code === 'RECOVERY_PREVIEW_EXPIRED') {
     return 'This review expired. Check Gmail again before trying the action.';
@@ -443,7 +467,9 @@ function recoveryConfirmErrorMessage(error: Error): string {
     return 'This action no longer needs recovery. Refresh Activity to see its current state.';
   }
   if (code === 'RECOVERY_SENDER_PROTECTED') {
-    return 'This sender is Protected now — check Gmail again to review it.';
+    return oneSender
+      ? 'This sender is Protected now — check Gmail again to confirm anyway.'
+      : 'One of these senders is Protected now — check Gmail again to confirm anyway.';
   }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';

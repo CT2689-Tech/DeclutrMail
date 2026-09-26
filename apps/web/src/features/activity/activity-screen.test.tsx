@@ -106,14 +106,15 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
     action: partial.action ?? 'archive',
     affectedCount: partial.affectedCount ?? 1,
     sender:
-      partial.sender ??
-      ({
-        senderKey: 'sk-1',
-        displayName: 'Sender One',
-        email: 'one@example.com',
-        domain: 'example.com',
-        brandMark: false,
-      } as ActivityRowWire['sender']),
+      partial.sender === undefined
+        ? {
+            senderKey: 'sk-1',
+            displayName: 'Sender One',
+            email: 'one@example.com',
+            domain: 'example.com',
+            brandMark: false,
+          }
+        : partial.sender,
     rule: partial.rule ?? null,
     feedbackRating: partial.feedbackRating ?? null,
     undoState: partial.undoState ?? { kind: 'unavailable' },
@@ -1727,7 +1728,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     expect(within(dialog).getByText('1')).toBeInTheDocument();
     expect(within(dialog).queryByText(/is Protected/)).not.toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: 'Try this action again' });
+    const confirm = within(dialog).getByRole('button', { name: 'Try again' });
     await userEvent.dblClick(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
@@ -1760,24 +1761,27 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     function stub(
       ready: ActionRecoveryPreviewResult,
-      retry: (body: unknown) => Response = () =>
-        jsonOk({
-          data: {
-            previewId: ready.previewId,
-            rootActionId: ready.rootActionId,
-            actionId: '33333333-3333-3333-3333-333333333333',
-            attempt: 1,
-            status: 'queued',
-            replayed: false,
-          },
-        }),
+      {
+        retry = () =>
+          jsonOk({
+            data: {
+              previewId: ready.previewId,
+              rootActionId: ready.rootActionId,
+              actionId: '33333333-3333-3333-3333-333333333333',
+              attempt: 1,
+              status: 'queued',
+              replayed: false,
+            },
+          }),
+        listed = failedDelete,
+      }: { retry?: (body: unknown) => Response; listed?: ActivityRowWire } = {},
     ) {
       const bodies: unknown[] = [];
       installFetchStub([
         {
           method: 'GET',
           path: '/api/activity',
-          respond: () => jsonOk({ data: [failedDelete], meta: META_BASE }),
+          respond: () => jsonOk({ data: [listed], meta: META_BASE }),
         },
         {
           method: 'POST',
@@ -1802,58 +1806,105 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       return bodies;
     }
 
+    const protectedNow = () =>
+      new Response(
+        JSON.stringify({
+          error: { code: 'RECOVERY_SENDER_PROTECTED', message: 'Protected now.' },
+        }),
+        { status: 409, headers: { 'content-type': 'application/json' } },
+      );
+
     async function openReview() {
       renderScreen();
       await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
       return screen.findByRole('dialog', { name: /review this failed delete/i });
     }
 
-    it('says so, and "Delete anyway" carries the consent', async () => {
-      const bodies = stub(recoveryPreview({ verb: 'delete', senderProtected: true }));
+    it('names the sender and why, and "Delete anyway" carries the consent', async () => {
+      const bodies = stub(
+        recoveryPreview({ verb: 'delete', senderProtected: true, protectionReason: 'starred' }),
+      );
       const dialog = await openReview();
       expect(
-        await within(dialog).findByText('Sender One is Protected — this action applies anyway.'),
+        await within(dialog).findByText(
+          'Sender One is Protected because you starred a message. This action applies anyway.',
+        ),
       ).toBeInTheDocument();
       await userEvent.click(within(dialog).getByRole('button', { name: 'Delete anyway' }));
       await waitFor(() => expect(bodies).toEqual([{ senderProtected: true }]));
     });
 
-    it('says nothing about it when Gmail already reflects the action', async () => {
-      stub(
+    it('still says so when no reason comes with the review', async () => {
+      stub(recoveryPreview({ verb: 'delete', senderProtected: true }));
+      const dialog = await openReview();
+      expect(
+        await within(dialog).findByText('Sender One is Protected — this action applies anyway.'),
+      ).toBeInTheDocument();
+    });
+
+    // The retry re-applies its whole set, so mail moved back since the check
+    // would change: the consent it sends is one the reader has seen.
+    it('asks for the consent it sends when Gmail already reflects the action', async () => {
+      const bodies = stub(
         recoveryPreview({
           verb: 'delete',
           senderProtected: true,
+          protectionReason: 'replied',
           outcome: 'already_applied',
           remainingCount: 0,
           alreadyAppliedCount: 3,
         }),
       );
       const dialog = await openReview();
-      await within(dialog).findByRole('button', { name: 'Update this record' });
-      expect(within(dialog).queryByText(/is Protected/)).not.toBeInTheDocument();
+      expect(
+        await within(dialog).findByText(
+          'Sender One is Protected because you wrote to them at least 3 times. This action applies anyway.',
+        ),
+      ).toBeInTheDocument();
+      expect(within(dialog).queryByRole('button', { name: 'Update this record' })).toBeNull();
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Delete anyway' }));
+      await waitFor(() => expect(bodies).toEqual([{ senderProtected: true }]));
     });
 
     it('sends the review back to Gmail when the sender turned Protected after it was shown', async () => {
-      const bodies = stub(
-        recoveryPreview({ verb: 'delete', senderProtected: false }),
-        () =>
-          new Response(
-            JSON.stringify({
-              error: { code: 'RECOVERY_SENDER_PROTECTED', message: 'Protected now.' },
-            }),
-            { status: 409, headers: { 'content-type': 'application/json' } },
-          ),
-      );
+      const bodies = stub(recoveryPreview({ verb: 'delete', senderProtected: false }), {
+        retry: protectedNow,
+      });
       const dialog = await openReview();
-      await userEvent.click(
-        await within(dialog).findByRole('button', { name: 'Try this action again' }),
-      );
+      await userEvent.click(await within(dialog).findByRole('button', { name: 'Try again' }));
       await waitFor(() => expect(bodies).toEqual([{}]));
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-        'This sender is Protected now — check Gmail again to review it.',
+        'This sender is Protected now — check Gmail again to confirm anyway.',
       );
       expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
-      expect(within(dialog).getByRole('button', { name: 'Try this action again' })).toBeDisabled();
+      expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
+    });
+
+    // A legacy message-list action has no single sender to name.
+    describe('with no single sender', () => {
+      const listed = { ...failedDelete, sender: null };
+
+      it('says a Protected sender is included', async () => {
+        stub(recoveryPreview({ verb: 'delete', senderProtected: true }), { listed });
+        const dialog = await openReview();
+        expect(
+          await within(dialog).findByText(
+            'A Protected sender is included — this action applies anyway.',
+          ),
+        ).toBeInTheDocument();
+      });
+
+      it('does not call it "this sender" when refused', async () => {
+        stub(recoveryPreview({ verb: 'delete', senderProtected: false }), {
+          retry: protectedNow,
+          listed,
+        });
+        const dialog = await openReview();
+        await userEvent.click(await within(dialog).findByRole('button', { name: 'Try again' }));
+        expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+          'One of these senders is Protected now — check Gmail again to confirm anyway.',
+        );
+      });
     });
   });
 
@@ -1931,7 +1982,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     const dialog = await screen.findByRole('dialog', { name: /review this failed later/i });
     const wakeInput = within(dialog).getByLabelText(/new return time/i);
     expect((wakeInput as HTMLInputElement).value.length).toBeGreaterThan(0);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Try this action again' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(confirmedWakeAt).toBeDefined());
     expect(new Date(confirmedWakeAt!).getTime()).toBeGreaterThan(Date.now());
   });
@@ -2005,11 +2056,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog', { name: /review this failed later/i });
-    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /saved return time has passed.*choose a new return time/i,
     );
-    expect(within(dialog).getByRole('button', { name: 'Try this action again' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /check Gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
@@ -2073,7 +2124,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog', { name: /review this failed archive/i });
-    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
 
     // The generic copy invites a retry that would 409 identically. An
     // expired review has to say so, close the retry, and offer the only
@@ -2081,7 +2132,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /this review expired\. check gmail again/i,
     );
-    expect(within(dialog).getByRole('button', { name: 'Try this action again' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
     await userEvent.click(within(dialog).getByRole('button', { name: /check gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
   });
@@ -2144,7 +2195,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/nothing is left to retry/i)).toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Try this action again' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
   it('never exposes generic recovery for an unsubscribe failure', async () => {

@@ -95,6 +95,11 @@ export interface ActionRecoveryPreviewResult {
    * the consent. Optional on the wire: web and API deploy separately.
    */
   senderProtected?: boolean;
+  /**
+   * Why, in `sender_policies.protection_reason` spelling; null for a
+   * message list, which has no single sender. Optional for the same skew.
+   */
+  protectionReason?: string | null;
 }
 
 export interface ActionRecoveryEnqueueResult {

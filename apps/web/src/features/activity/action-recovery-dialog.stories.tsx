@@ -9,6 +9,7 @@ import type { ComponentProps } from 'react';
 
 import type { ActivityRowWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
+import { ApiError } from '@/lib/api/client';
 
 import { ActionRecoveryDialog } from './action-recovery-dialog';
 
@@ -57,7 +58,7 @@ const ROW: ActivityRowWire = {
     email: 'news@yankeecandle.example',
     domain: 'yankeecandle.example',
     brandMark: false,
-  } as ActivityRowWire['sender'],
+  },
   rule: null,
   feedbackRating: null,
   undoState: { kind: 'unavailable' },
@@ -104,14 +105,38 @@ export const Ready: Story<typeof ActionRecoveryDialog> = {
 
 /**
  * D245 — the sender became Protected. Bulk actions skip it; a retry is one
- * reviewed decision, so the review says so and the button carries it.
+ * reviewed decision, so the review says so, with the reason, and the
+ * button carries the consent.
  */
 export const ProtectedSender: Story<typeof ActionRecoveryDialog> = {
-  args: { ...base, preview: { ...READY, senderProtected: true } } satisfies DialogArgs,
+  args: {
+    ...base,
+    preview: { ...READY, senderProtected: true, protectionReason: 'starred' },
+  } satisfies DialogArgs,
 };
 
-/** Gmail already reflects it: confirming only updates the record, so no consent line. */
+/** A legacy message-list action has no single sender to name. */
+export const ProtectedNoSingleSender: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    row: { ...ROW, sender: null },
+    preview: { ...READY, senderProtected: true, protectionReason: null },
+  } satisfies DialogArgs,
+};
+
+/** Gmail already reflects it: confirming only updates the record. */
 export const AlreadyApplied: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: { ...READY, outcome: 'already_applied', remainingCount: 0, alreadyAppliedCount: 42 },
+  } satisfies DialogArgs,
+};
+
+/**
+ * …unless the sender is Protected: the retry re-applies its whole set, so
+ * mail moved back since would change — the consent is asked here too.
+ */
+export const AlreadyAppliedProtected: Story<typeof ActionRecoveryDialog> = {
   args: {
     ...base,
     preview: {
@@ -120,6 +145,43 @@ export const AlreadyApplied: Story<typeof ActionRecoveryDialog> = {
       remainingCount: 0,
       alreadyAppliedCount: 42,
       senderProtected: true,
+      protectionReason: 'replied',
     },
+  } satisfies DialogArgs,
+};
+
+/** The sender turned Protected after this review loaded: back to Gmail, no dead retry. */
+export const RefusedProtectedSince: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: READY,
+    confirmError: new ApiError(
+      409,
+      { error: { code: 'RECOVERY_SENDER_PROTECTED', message: 'Protected now.' } },
+      'Protected now.',
+    ),
+  } satisfies DialogArgs,
+};
+
+/** A Later whose saved return time has passed asks for a new one. */
+export const LaterNeedsNewTime: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    row: { ...ROW, action: 'later' },
+    preview: { ...READY, verb: 'later', requiresNewWakeAt: true },
+  } satisfies DialogArgs,
+};
+
+/** Checking Gmail. */
+export const Checking: Story<typeof ActionRecoveryDialog> = {
+  args: { ...base, preview: undefined, isStarting: true } satisfies DialogArgs,
+};
+
+/** The check itself failed: nothing changed, and it can be run again. */
+export const CheckFailed: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: undefined,
+    startError: new Error('Network request failed'),
   } satisfies DialogArgs,
 };
