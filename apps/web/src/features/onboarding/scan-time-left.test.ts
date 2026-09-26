@@ -1,50 +1,86 @@
 // Time left on the sync gate (D109 reversal 2026-09-26) — computed only
-// from progress this tab actually watched arrive, never a fixed rate.
+// from batches the worker wrote, timed by when it wrote them.
 
 import { act, render, renderHook } from '@testing-library/react';
 import { createElement, useLayoutEffect } from 'react';
+import type { SyncMessageProgress } from '@declutrmail/shared/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { observeScan, scanMsLeft, startScanTrack, useScanTimeLeft } from './scan-time-left';
 
-const counts = (processed: number, total = 40_898) => ({ processed, total });
+const counts = (processed: number, age_ms = 0, total = 40_898): SyncMessageProgress => ({
+  processed,
+  total,
+  age_ms,
+});
 
-/** Replay `[at, processed]` changes, observed live, from a first render with no counts. */
-function watched(total: number, changes: Array<[number, number]>) {
+/** Replay `[seenAt, processed, age]` observations from a first render with no counts. */
+function watched(total: number, seen: Array<[number, number, number?]>) {
   let track = startScanTrack(null);
-  for (const [at, processed] of changes) {
-    track = observeScan(track, counts(processed, total), at);
+  for (const [at, processed, age = 0] of seen) {
+    track = observeScan(track, counts(processed, age, total), at);
   }
   return track;
 }
 
-describe('scanMsLeft — observed progress only', () => {
-  it('counts already on screen at first render are not a point: their age is unknown', () => {
-    let track = startScanTrack(counts(12_400));
+describe('scanMsLeft — from what the worker wrote, when it wrote it', () => {
+  it('counts already on screen at first render are not a point: when they were seen is unknown', () => {
+    let track = startScanTrack(counts(12_400, 1_000));
     track = observeScan(track, counts(12_900), 10_000);
 
     expect(scanMsLeft(track, 10_000)).toBeNull();
   });
 
-  it('gives a time after two observed changes, at the rate between them', () => {
-    let track = startScanTrack(counts(12_400));
-    track = observeScan(track, counts(12_900), 10_000);
-    track = observeScan(track, counts(13_400), 20_000); // 500 in 10s
+  it('times each count by its write, not by when the poll saw it', () => {
+    // Batches written at 10s and 20s. Seen promptly, or the first one seen
+    // 2.9s late: the same time left either way.
+    const prompt = watched(40_898, [
+      [10_000, 12_900],
+      [20_000, 13_400],
+    ]);
+    const late = watched(40_898, [
+      [12_900, 12_900, 2_900],
+      [20_000, 13_400],
+    ]);
 
-    // 27,498 left at 50/s.
+    // 27,498 left at 500 per 10s.
+    expect(scanMsLeft(prompt, 20_000)).toBe(549_960);
+    expect(scanMsLeft(late, 20_000)).toBe(549_960);
+  });
+
+  it('places the first count after mount by its write, so one more batch gives a time', () => {
+    let track = startScanTrack(counts(12_400, 4_000));
+    // The first poll after mount: same batch, now with a trustworthy age.
+    track = observeScan(track, counts(12_400, 7_000), 3_000); // written at -4,000
+    track = observeScan(track, counts(12_900), 6_000); // written at 6,000
+
+    // 500 in 10s → 27,998 left at 50/s.
+    expect(scanMsLeft(track, 6_000)).toBe(559_960);
+  });
+
+  it('does not move a batch already placed when it is seen again, older', () => {
+    let track = watched(40_898, [[10_000, 12_900]]);
+    track = observeScan(track, counts(12_900, 3_000), 13_000);
+    track = observeScan(track, counts(13_400), 20_000);
+
     expect(scanMsLeft(track, 20_000)).toBe(549_960);
   });
 
-  it('counts that appear while watching (the total just became known) are a first point', () => {
-    const track = watched(1_200, [
-      [0, 0],
-      [10_000, 500],
+  it('counts that return after a failed read keep their write time', () => {
+    let track = watched(40_898, [
+      [0, 12_400],
+      [10_000, 12_900],
     ]);
+    track = observeScan(track, null, 13_000); // the read failed once
+    // Back 8s after it was written, then the next batch.
+    track = observeScan(track, counts(13_400, 8_000), 28_000); // written at 20,000
+    track = observeScan(track, counts(13_900), 30_000);
 
-    expect(scanMsLeft(track, 10_000)).toBe(14_000); // 700 left at 50/s
+    // Restarted at the returning count: 500 in 10s, not 500 in 2s.
+    expect(scanMsLeft(track, 30_000)).toBe(539_960);
   });
 
-  it('averages everything watched, not just the latest batch', () => {
+  it('averages every batch since the track started', () => {
     const track = watched(10_000, [
       [0, 0],
       [10_000, 500],
@@ -55,45 +91,66 @@ describe('scanMsLeft — observed progress only', () => {
   });
 
   it.each([
-    [
-      'the counts go away (the next attempt is listing again)',
-      [
-        [20_000, null],
-        [25_000, counts(12_000)],
-      ],
-      [35_000, counts(12_100)],
-      2_879_800, // 28,798 left at 10/s
-    ],
-    [
-      'the count drops (a new attempt resumed from what was saved)',
-      [[20_000, counts(12_000)]],
-      [30_000, counts(12_100)],
-      2_879_800,
-    ],
-    [
-      'the total changes (a different scan)',
-      [[20_000, counts(13_900, 41_000)]],
-      [30_000, counts(14_000, 41_000)],
-      2_700_000, // 27,000 left at 10/s
-    ],
-  ] as const)('starts over when %s', (_label, restart, next, expectedMs) => {
+    ['the count drops (a new attempt resumed from what was saved)', counts(12_000), counts(12_100)],
+    ['the total changes (a different scan)', counts(13_900, 0, 41_000), counts(14_000, 0, 41_000)],
+  ])('starts over when %s', (_label, restart, next) => {
     let track = watched(40_898, [
       [0, 12_900],
       [10_000, 13_400],
     ]);
-    expect(scanMsLeft(track, 10_000)).not.toBeNull();
+    track = observeScan(track, restart, 20_000);
+    expect(scanMsLeft(track, 20_000)).toBeNull();
 
-    for (const [at, progress] of restart) track = observeScan(track, progress, at);
-    // One point since the restart: nothing backs a time yet.
-    expect(scanMsLeft(track, restart.at(-1)![0])).toBeNull();
+    track = observeScan(track, next, 30_000);
+    // Timed from the restart only: 100 in 10s.
+    expect(scanMsLeft(track, 30_000)).toBe(((next.total - next.processed) * 10_000) / 100);
+  });
 
-    // The next change times the rate from the restart, not from before it.
-    track = observeScan(track, next[1], next[0]);
-    expect(scanMsLeft(track, next[0])).toBe(expectedMs);
+  it('starts over when a batch lands after a stall, so the pause is not averaged in', () => {
+    let track = watched(40_898, [
+      [0, 12_400],
+      [10_000, 12_900],
+      [20_000, 13_400],
+    ]);
+    // 90s with no batch — longer than the minute a stall is allowed.
+    track = observeScan(track, counts(13_900), 110_000);
+    expect(scanMsLeft(track, 110_000)).toBeNull();
+
+    track = observeScan(track, counts(14_400), 120_000);
+    // 500 per 10s again, not 2,000 per 120s.
+    expect(scanMsLeft(track, 120_000)).toBe(529_960);
+  });
+
+  it('a tab hidden for minutes starts over on return instead of stretching the stall window', () => {
+    // Polls stop while hidden; the worker keeps writing.
+    let track = watched(40_898, [
+      [0, 12_400],
+      [12_500, 12_900],
+    ]);
+    track = observeScan(track, counts(36_900, 1_000), 613_500); // written at 612,500
+    expect(scanMsLeft(track, 613_500)).toBeNull();
+
+    track = observeScan(track, counts(37_400), 625_000);
+    // Fresh rate after return: 500 per 12.5s.
+    expect(scanMsLeft(track, 625_000)).toBe(87_450);
+    // …and a stall after return drops it within the minute floor.
+    expect(scanMsLeft(track, 625_000 + 60_001)).toBeNull();
+  });
+
+  it('counts down between batches and drops the time once it has run out', () => {
+    const track = watched(1_000, [
+      [0, 0],
+      [10_000, 500],
+    ]);
+
+    expect(scanMsLeft(track, 10_000)).toBe(10_000);
+    expect(scanMsLeft(track, 14_000)).toBe(6_000);
+    // Spent with no new batch: nothing backs a number any more.
+    expect(scanMsLeft(track, 20_001)).toBeNull();
   });
 
   it('drops the time once batches stop arriving at their usual pace', () => {
-    const track = watched(10_000, [
+    const track = watched(100_000, [
       [0, 0],
       [30_000, 500],
       [60_000, 1_000],
@@ -104,17 +161,6 @@ describe('scanMsLeft — observed progress only', () => {
     expect(scanMsLeft(track, 150_001)).toBeNull();
   });
 
-  it('does not call a fast scan stalled inside a minute', () => {
-    const track = watched(10_000, [
-      [0, 0],
-      [5_000, 500],
-      [10_000, 1_000],
-    ]);
-
-    expect(scanMsLeft(track, 70_000)).not.toBeNull();
-    expect(scanMsLeft(track, 70_001)).toBeNull();
-  });
-
   it('has no time left to show once every message is read', () => {
     const track = watched(1_000, [
       [0, 0],
@@ -123,6 +169,15 @@ describe('scanMsLeft — observed progress only', () => {
     ]);
 
     expect(scanMsLeft(track, 20_000)).toBeNull();
+  });
+
+  it('never turns a malformed age into a number', () => {
+    const track = watched(40_898, [
+      [0, 12_400],
+      [10_000, 12_900, Number.NaN],
+    ]);
+
+    expect(scanMsLeft(track, 10_000)).toBeNull();
   });
 });
 
@@ -135,25 +190,25 @@ describe('useScanTimeLeft', () => {
     vi.useRealTimers();
   });
 
-  it('shows a time only after two watched changes, and drops it when the scan stalls', () => {
+  it('shows a time one batch after mount, and drops it when the scan stalls', () => {
     const { result, rerender } = renderHook(({ progress }) => useScanTimeLeft(progress), {
-      initialProps: { progress: counts(12_400) as ReturnType<typeof counts> | null },
+      initialProps: { progress: counts(12_400, 4_000) as SyncMessageProgress | null },
     });
     expect(result.current).toBeNull();
 
-    vi.setSystemTime(10_000);
-    rerender({ progress: counts(12_900) });
+    vi.setSystemTime(3_000);
+    rerender({ progress: counts(12_400, 7_000) }); // first poll: written at -4,000
     expect(result.current).toBeNull();
 
-    vi.setSystemTime(20_000);
-    rerender({ progress: counts(13_400) });
-    expect(result.current).toBe(549_960);
+    vi.setSystemTime(6_000);
+    rerender({ progress: counts(12_900) });
+    expect(result.current).toBe(559_960);
 
-    // Under a minute without a batch: still backed.
+    // Under a minute without a batch: still backed, counting down.
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(result.current).toBe(549_960);
+    expect(result.current).toBe(499_960);
     // Over a minute: the next re-check (every 10s) drops it.
     act(() => {
       vi.advanceTimersByTime(10_000);
@@ -166,7 +221,7 @@ describe('useScanTimeLeft', () => {
   // new count beside the previous count's time.
   it("never commits a new count with the previous count's time", () => {
     const committed: Array<number | null> = [];
-    function Probe({ progress }: { progress: ReturnType<typeof counts> }) {
+    function Probe({ progress }: { progress: SyncMessageProgress }) {
       const msLeft = useScanTimeLeft(progress);
       useLayoutEffect(() => {
         committed.push(msLeft);
@@ -189,7 +244,7 @@ describe('useScanTimeLeft', () => {
 
   it('has no time while the total is unknown', () => {
     const { result, rerender } = renderHook(({ progress }) => useScanTimeLeft(progress), {
-      initialProps: { progress: null as ReturnType<typeof counts> | null },
+      initialProps: { progress: null as SyncMessageProgress | null },
     });
 
     vi.setSystemTime(10_000);

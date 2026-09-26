@@ -11,8 +11,10 @@
 //   • SyncingReadyEmailOff — mid-scan; leave line without the email promise
 //   • RescanNoReadyEmail   — re-scan of a mailbox that finished before; no email promise
 //   • ReadingBeforeTotal   — reading, mailbox not listed yet: the stage sentence
+//   • ReadingListed        — listed, first batch not in: "Found 40,898 emails"
 //   • ReadingCount         — reading: "12,400 of 40,898 emails", no time yet
 //   • ReadingTimeLeft      — live batches; time left appears after the second
+//   • ReadingLongestLine   — live, 7-digit total and the hour form (wrap check)
 //   • Ready                — scan done, shown until the route navigates away
 //   • Failed               — terminal error with a known error_code
 //   • FailedPermanent      — the longest failed copy; names the support address
@@ -134,7 +136,7 @@ const READING: SyncStatus = {
   progress_pct: 26,
   is_ready_for_triage: false,
   last_synced_at: null,
-  message_progress: { processed: 12_400, total: 40_898 },
+  message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
 };
 
 /** Reading, before the mailbox is listed — no total yet, so no count. */
@@ -143,40 +145,77 @@ export const ReadingBeforeTotal: Story<typeof SyncGate> = {
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
+/** Listed, first batch not in yet — what the listing found, not a zero. */
+export const ReadingListed: Story<typeof SyncGate> = {
+  args: {
+    status: {
+      ...READING,
+      progress_pct: 5,
+      message_progress: { processed: 0, total: 40_898, age_ms: 0 },
+    },
+    readyEmail: true,
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
 /**
  * Reading — emails read of emails in the mailbox, from the worker's
- * batches. No time left yet: this render has not watched a batch arrive.
+ * batches. No time left yet: counts on screen at first render are not
+ * timed.
  */
 export const ReadingCount: Story<typeof SyncGate> = {
   args: { status: READING, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
-/** Feeds a 500-email batch every 2s, the way the poll sees the worker's. */
+/**
+ * Feeds a 500-email batch every 2s from the story's own counts, the way
+ * the poll sees the worker's, and starts over at the end so the story
+ * never runs dry.
+ */
 function LiveReading(args: GateArgs) {
-  const [processed, setProcessed] = useState(12_400);
+  const start = args.status.message_progress ?? { processed: 12_400, total: 40_898, age_ms: 0 };
+  const [processed, setProcessed] = useState(start.processed);
   useEffect(() => {
-    const id = setInterval(() => setProcessed((p) => Math.min(p + 500, 40_898)), 2_000);
+    const id = setInterval(
+      () => setProcessed((p) => (p + 500 >= start.total ? start.processed : p + 500)),
+      2_000,
+    );
     return () => clearInterval(id);
-  }, []);
+  }, [start.processed, start.total]);
   return (
     <SyncGate
       {...args}
       status={{
-        ...READING,
-        progress_pct: 5 + Math.round((70 * processed) / 40_898),
-        message_progress: { processed, total: 40_898 },
+        ...args.status,
+        progress_pct: 5 + Math.round((70 * processed) / start.total),
+        message_progress: { processed, total: start.total, age_ms: 0 },
       }}
     />
   );
 }
 
 /**
- * Reading, live — "about N min left" joins the count after the second
- * batch, at the rate watched between them.
+ * Reading, live — "about N min left" joins the count once a second batch
+ * lands, at the rate between them.
  */
 export const ReadingTimeLeft: Story<typeof SyncGate> = {
   args: { status: READING, readyEmail: true },
+  render: (args: GateArgs) => frame(<LiveReading {...args} />),
+};
+
+/**
+ * The longest realistic line — a 7-digit mailbox in the hour form. At
+ * phone width it may break only after the dot.
+ */
+export const ReadingLongestLine: Story<typeof SyncGate> = {
+  args: {
+    status: {
+      ...READING,
+      message_progress: { processed: 12_345, total: 1_234_567, age_ms: 0 },
+    },
+    readyEmail: true,
+  },
   render: (args: GateArgs) => frame(<LiveReading {...args} />),
 };
 

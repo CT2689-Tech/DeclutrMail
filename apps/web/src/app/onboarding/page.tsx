@@ -284,7 +284,15 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         // this cached `me.activeMailboxId` (another tab switched, a
         // disconnect auto-selected another) — the button would then act
         // on a mailbox other than the one this gate is describing.
-        return <SyncGate status={status} mailboxId={activeMailboxId} readyEmail={readyEmail} />;
+        // Keyed by mailbox: another mailbox's scan starts a fresh gate.
+        return (
+          <SyncGate
+            key={activeMailboxId}
+            status={status}
+            mailboxId={activeMailboxId}
+            readyEmail={readyEmail}
+          />
+        );
       }
       case 'preset-pick':
         return hasCapability(me.tier, 'autopilot') ? (
@@ -415,16 +423,25 @@ function SecondaryConnectGate({
     );
   }
 
-  const status = sync.data ?? {
-    readiness_status: 'queued' as const,
-    current_stage: 'queued' as const,
-    progress_pct: 0,
-    is_ready_for_triage: false,
-  };
+  // Nothing read yet (the server seeds only the ACTIVE mailbox's status,
+  // and this target need not be it): say so, instead of a "Waiting to
+  // start." at 0% that the gate has not seen.
+  if (!sync.data) {
+    return <FlowSkeleton label="Checking your inbox scan…" />;
+  }
 
   // `mailboxId` — this gate watches the ?mailbox= target, NOT the
-  // active mailbox, so the retry has to name it explicitly.
-  return <SyncGate status={status} escape={escape} mailboxId={mailboxId} readyEmail={readyEmail} />;
+  // active mailbox, so the retry has to name it explicitly. Keyed by it:
+  // another mailbox's scan starts a fresh gate, never a continued one.
+  return (
+    <SyncGate
+      key={mailboxId}
+      status={sync.data}
+      escape={escape}
+      mailboxId={mailboxId}
+      readyEmail={readyEmail}
+    />
+  );
 }
 
 /**

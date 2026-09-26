@@ -22,8 +22,8 @@ const { color, font, text, radius, motion } = tokens;
  * connect, before the app opens. D109's one line saying the user may
  * leave, ONE progress bar bound to the real `progress_pct` and ONE
  * line under it: while the scan reads the mailbox, the real counts
- * ("12,400 of 40,898 emails", plus time left once this tab has watched
- * two batches arrive); otherwise a sentence naming the real
+ * ("12,400 of 40,898 emails", plus time left from the worker's own
+ * batches); otherwise a sentence naming the real
  * `current_stage` — no fake ticking (D109 hard rule), no aspirational
  * stage list.
  *
@@ -32,8 +32,8 @@ const { color, font, text, radius, motion } = tokens;
  * (`app/onboarding/page.tsx`) so Storybook can drive every state
  * (queued / syncing / ready / failed) without a network.
  *
- * Privacy (D7 / D228): the gate shows a stage sentence + a percentage
- * and never renders message-derived data. The trust badge is NOT here:
+ * Privacy (D7 / D228): the gate shows a stage sentence, a percentage and
+ * message counts — no message content. The trust badge is NOT here:
  * a waiting screen is not a decision point — it renders on the promise
  * step, directly above the button that starts Google consent.
  */
@@ -57,10 +57,10 @@ const STAGE_SENTENCE: Record<SyncStage, string> = {
 /**
  * The sentence under the bar. "Your inbox is ready" is reachable ONLY
  * from `readiness_status === 'ready'` — the one signal that means it.
- * The worker writes late stages at 90–97% while the app is still gated
- * (the score cascade over every sender, minutes on a large mailbox), and
- * a stage/readiness disagreement must never read as done (audit
- * 2026-08-21).
+ * The worker writes late stages at 80–97% while the app is still gated —
+ * seconds on a 101k-message mailbox (dev `sync_runs`, 2026-09; scoring is
+ * queued, not run, in that stage) — and a stage/readiness disagreement
+ * must never read as done (audit 2026-08-21).
  */
 function stageSentence(status: SyncStatus): string {
   if (status.readiness_status === 'ready') return STAGE_SENTENCE.ready;
@@ -80,20 +80,26 @@ function readingCounts(status: SyncStatus): SyncMessageProgress | null {
   return status.message_progress ?? null;
 }
 
-/** "about 10 min left" — minutes rounded up, so it errs long, never short. */
+/** "about 10 min left" — minutes rounded up; past an hour, up to the next 5. */
 function timeLeftPhrase(msLeft: number): string {
   const minutes = Math.max(1, Math.ceil(msLeft / 60_000));
   if (minutes < 60) return `about ${minutes} min left`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
+  const rounded = Math.ceil(minutes / 5) * 5;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
   return rest === 0 ? `about ${hours} hr left` : `about ${hours} hr ${rest} min left`;
 }
 
-function countLine(counts: SyncMessageProgress, msLeft: number | null): string {
-  const read = `${counts.processed.toLocaleString('en-US')} of ${counts.total.toLocaleString(
-    'en-US',
-  )} ${counts.total === 1 ? 'email' : 'emails'}`;
-  return msLeft === null ? read : `${read} · ${timeLeftPhrase(msLeft)}`;
+/**
+ * "12,400 of 40,898 emails" — or, before the first batch lands, what the
+ * listing found: a zero that sits for a whole batch reads as stuck. The
+ * no-break space keeps "40,898 emails" whole when the line wraps.
+ */
+function countText(counts: SyncMessageProgress): string {
+  const total = `${counts.total.toLocaleString('en-US')}\u00A0${counts.total === 1 ? 'email' : 'emails'}`;
+  return counts.processed === 0
+    ? `Found ${total}`
+    : `${counts.processed.toLocaleString('en-US')} of ${total}`;
 }
 
 /**
@@ -300,7 +306,14 @@ function SyncProgress({
       )}
       {counts && (
         <p data-testid="sync-count" style={UNDER_BAR_LINE}>
-          {countLine(counts, msLeft)}
+          {countText(counts)}
+          {/* The line may break only after the dot, never inside the time. */}
+          {msLeft !== null && (
+            <>
+              {'\u00A0· '}
+              <span style={{ whiteSpace: 'nowrap' }}>{timeLeftPhrase(msLeft)}</span>
+            </>
+          )}
         </p>
       )}
 

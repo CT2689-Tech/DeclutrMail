@@ -125,7 +125,7 @@ const syncStatusReading: FetchStubHandler = {
         progress_pct: 26,
         is_ready_for_triage: false,
         last_synced_at: null,
-        message_progress: { processed: 12_400, total: 40_898 },
+        message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
       },
     }),
 };
@@ -443,6 +443,33 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
+  });
+
+  it('the secondary gate claims no scan state before it has read one', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      secondaryMe(),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: async (req, url) => {
+          await held;
+          return syncStatusReading.respond(req, url);
+        },
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Checking your inbox scan…')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+
+    release();
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   it('the secondary gate shows how far the scan has read too', async () => {

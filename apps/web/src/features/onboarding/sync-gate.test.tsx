@@ -255,11 +255,11 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     progress_pct: 26,
     is_ready_for_triage: false,
     last_synced_at: null,
-    message_progress: { processed: 12_400, total: 40_898 },
+    message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
   };
   const reading = (processed: number): SyncStatus => ({
     ...READING,
-    message_progress: { processed, total: 40_898 },
+    message_progress: { processed, total: 40_898, age_ms: 0 },
   });
 
   it('shows emails read of emails in the mailbox, in place of the stage sentence', () => {
@@ -327,7 +327,7 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     }
   });
 
-  it('adds time left once two batches have been watched arriving', () => {
+  it('adds time left once a second batch is seen after the first poll', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
@@ -338,19 +338,49 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
 
       vi.setSystemTime(20_000);
       rerender(<SyncGate status={reading(13_400)} />);
-      // 27,498 left at the watched 50/s ≈ 9.2 min, rounded up.
-      expect(screen.getByTestId('sync-count')).toHaveTextContent(
-        '13,400 of 40,898 emails · about 10 min left',
-      );
+      // 27,498 left at 500 per 10s ≈ 9.2 min, rounded up.
+      const line = screen.getByTestId('sync-count');
+      expect(line).toHaveTextContent('13,400');
+      expect(line).toHaveTextContent('about 10 min left');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('counts one email as "email"', () => {
-    render(<SyncGate status={{ ...READING, message_progress: { processed: 0, total: 1 } }} />);
+  it('says what the listing found before the first batch lands, not a zero', () => {
+    render(<SyncGate status={reading(0)} />);
 
-    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^0 of 1 email$/);
+    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^Found 40,898 emails$/);
+  });
+
+  it('counts one email as "email"', () => {
+    render(
+      <SyncGate status={{ ...READING, message_progress: { processed: 0, total: 1, age_ms: 0 } }} />,
+    );
+
+    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^Found 1 email$/);
+  });
+
+  it('keeps each fact whole when the line wraps — it may break only after "·"', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { rerender } = render(<SyncGate status={reading(12_400)} />);
+      vi.setSystemTime(10_000);
+      rerender(<SyncGate status={reading(12_900)} />);
+      vi.setSystemTime(20_000);
+      rerender(<SyncGate status={reading(13_400)} />);
+
+      const line = screen.getByTestId('sync-count');
+      // No break inside "40,898 emails" or before the dot…
+      expect(line.textContent).toContain('40,898\u00a0emails\u00a0·');
+      // …and the time is one unbreakable phrase.
+      const time = line.querySelector('span');
+      expect(time).toHaveTextContent('about 10 min left');
+      expect(time).toHaveStyle({ whiteSpace: 'nowrap' });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -360,9 +390,10 @@ describe('timeLeftPhrase', () => {
     [549_960, 'about 10 min left'],
     [59 * 60_000, 'about 59 min left'],
     [60 * 60_000, 'about 1 hr left'],
-    [65 * 60_000, 'about 1 hr 5 min left'],
-    [150 * 60_000 + 1, 'about 2 hr 31 min left'],
-  ])('%i ms → %s (minutes rounded up)', (ms, phrase) => {
+    [61 * 60_000, 'about 1 hr 5 min left'],
+    [119 * 60_000, 'about 2 hr left'],
+    [150 * 60_000 + 1, 'about 2 hr 35 min left'],
+  ])('%i ms → %s (minutes up; past an hour, up to 5)', (ms, phrase) => {
     expect(timeLeftPhrase(ms)).toBe(phrase);
   });
 });
