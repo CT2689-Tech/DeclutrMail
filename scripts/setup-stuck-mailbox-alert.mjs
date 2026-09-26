@@ -346,7 +346,20 @@ export async function starveTest(project) {
   try {
     await gcpRequest(`${metrics}/${r.metric.name}`, token, 'PUT', r.metric);
     created.push(`${metrics}/${r.metric.name}`);
-    const perMailbox = await gcpRequest(`${root}/alertPolicies`, token, 'POST', r.perMailbox);
+    // A new log metric's descriptor can lag its creation; the policy that
+    // filters on it may be refused until it exists.
+    let refused;
+    const perMailbox = await waitFor(
+      'the test metric to accept a policy',
+      () =>
+        gcpRequest(`${root}/alertPolicies`, token, 'POST', r.perMailbox).catch((err) => {
+          refused = err;
+          return null;
+        }),
+      3 * 60 * 1000,
+    ).catch((err) => {
+      throw refused ?? err;
+    });
     created.push(`${MONITORING}/${perMailbox.name}`);
     const silent = await gcpRequest(`${root}/alertPolicies`, token, 'POST', r.silent);
     created.push(`${MONITORING}/${silent.name}`);
