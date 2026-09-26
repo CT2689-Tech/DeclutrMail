@@ -63,8 +63,10 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  * carry status code + truncated response body only.
  *
  * Known issues: a failing row listed in scripts/known-vendor-issues.tsv
- * (vendor + status, until a date) prints as a warning and does not fail
- * the run, so red means a failure nobody has acknowledged yet. Before the
+ * (vendor + status + the text its detail contains, until a date at most
+ * 30 days out) prints as a warning and does not fail the run, so red
+ * means a failure nobody has acknowledged yet. An acknowledgment that
+ * expires turns the run red again until the line is renewed or removed. Before the
  * list, Anthropic's standing ERROR (no Admin API key) held the run red
  * every day from at least 2026-09-21, and the Sentry and Google Cloud
  * budget breaches of 2026-09-24/25 changed nothing anyone saw.
@@ -748,21 +750,30 @@ async function runVendor(vendor) {
 // ---------------------------------------------------------- known issues
 
 const FAILING_STATUSES = ['WARN', 'BREACH', 'ERROR'];
+/** Longest an acknowledgment may run: long enough to fix, short enough to re-read. */
+const MAX_ACK_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Parses scripts/known-vendor-issues.tsv. Refuses anything it cannot use:
- * a misspelt vendor or an OK status would never match a row, so it would
- * read as an acknowledgment while acknowledging nothing.
+ * Parses scripts/known-vendor-issues.tsv. Refuses anything it cannot use: a
+ * misspelt vendor or an OK status never matches a row, an empty
+ * `detail_contains` matches every cause, and a date years out never
+ * expires — each would read as a careful acknowledgment while muting
+ * more than anyone looked at.
  */
-export function parseKnownIssues(text, vendorNames) {
-  const known = new Map();
+export function parseKnownIssues(text, vendorNames, { today }) {
+  const known = [];
+  const latest = new Date(Date.parse(`${today}T00:00:00Z`) + MAX_ACK_DAYS * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
   text.split('\n').forEach((line, i) => {
     if (!line.trim() || line.startsWith('#')) return;
-    const [vendor, status, until, note, ...extra] = line.split('\t');
+    const [vendor, status, contains, until, note, ...extra] = line.split('\t');
     const date = /^\d{4}-\d{2}-\d{2}$/.test(until ?? '') ? new Date(`${until}T00:00:00Z`) : null;
     const valid =
       vendorNames.includes(vendor) &&
       FAILING_STATUSES.includes(status) &&
+      Boolean(contains?.trim()) &&
       date !== null &&
       !Number.isNaN(date.getTime()) &&
       date.toISOString().slice(0, 10) === until &&
@@ -770,27 +781,43 @@ export function parseKnownIssues(text, vendorNames) {
       extra.length === 0;
     if (!valid)
       throw new Error(
-        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
+        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>detail_contains<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
       );
-    const key = `${vendor}\t${status}`;
-    if (known.has(key)) throw new Error(`line ${i + 1}: ${vendor} ${status} is listed twice`);
-    known.set(key, { until, note: note.trim() });
+    if (until > latest)
+      throw new Error(
+        `line ${i + 1}: acknowledged_until ${until} is more than ${MAX_ACK_DAYS} days after ${today}`,
+      );
+    if (known.some((k) => k.vendor === vendor && k.status === status && k.contains === contains))
+      throw new Error(`line ${i + 1}: ${vendor} ${status} "${contains}" is listed twice`);
+    known.push({ line: i + 1, vendor, status, contains, until, note: note.trim() });
   });
   return known;
 }
 
-/** Splits failing rows into acknowledged (through `until`, inclusive) and not. */
+/**
+ * Splits failing rows into acknowledged and not. An entry covers a row only
+ * for its vendor and status, only while the row's detail contains its text
+ * (the cause someone looked at), and only through its date. Entries that
+ * matched no failing row come back as `unmatched`, to be deleted.
+ */
 export function triage(results, known, { today, warnIsFailure = false }) {
   const failing = [];
   const acknowledged = [];
+  const used = new Set();
   for (const r of results) {
     if (!(r.status === 'BREACH' || r.status === 'ERROR' || (warnIsFailure && r.status === 'WARN')))
       continue;
-    const ack = known.get(`${r.name}\t${r.status}`);
-    if (ack && today <= ack.until) acknowledged.push({ ...r, ...ack });
-    else failing.push(ack ? { ...r, expired: ack.until } : r);
+    const matches = known.filter(
+      (k) =>
+        k.vendor === r.name && k.status === r.status && String(r.detail ?? '').includes(k.contains),
+    );
+    for (const k of matches) used.add(k);
+    const live = matches.find((k) => today <= k.until);
+    if (live) acknowledged.push({ ...r, until: live.until, note: live.note });
+    else if (matches.length) failing.push({ ...r, expired: matches[0].until });
+    else failing.push(r);
   }
-  return { failing, acknowledged };
+  return { failing, acknowledged, unmatched: known.filter((k) => !used.has(k)) };
 }
 
 // ---------------------------------------------------------------- output
@@ -846,29 +873,39 @@ async function main() {
   }
 
   // Read on every run, failing rows or not, so a broken list fails the day
-  // it lands instead of the day the next vendor breaches.
+  // it lands instead of the day the next vendor breaches. A broken list
+  // acknowledges nothing: the failing rows are still named below.
+  const today = new Date().toISOString().slice(0, 10);
   const listPath =
-    process.env.KNOWN_VENDOR_ISSUES_FILE ??
+    process.env.KNOWN_VENDOR_ISSUES_FILE ||
     fileURLToPath(new URL('./known-vendor-issues.tsv', import.meta.url));
-  let known;
+  let known = [];
+  let listBroken = false;
   try {
     known = parseKnownIssues(
       readFileSync(listPath, 'utf8'),
       VENDORS.map((v) => v.name),
+      { today },
     );
   } catch (err) {
+    listBroken = true;
     console.log(
       `::error title=Known vendor issues list unreadable::${listPath}: ${err.message} — the watchdog cannot tell known vendor issues from new ones.`,
     );
-    process.exit(2);
   }
-  const { failing, acknowledged } = triage(results, known, {
-    today: new Date().toISOString().slice(0, 10),
+  const { failing, acknowledged, unmatched } = triage(results, known, {
+    today,
     warnIsFailure: process.env.WARN_IS_FAILURE === 'true',
   });
   for (const r of acknowledged) {
     console.log(
       `::warning title=Known vendor issue::${r.name} (${r.status}) — acknowledged until ${r.until}: ${r.note}`,
+    );
+  }
+  // A leftover entry would quietly cover the same cause if it came back.
+  for (const k of unmatched) {
+    console.log(
+      `::warning title=Known vendor issue not failing::line ${k.line} (${k.vendor} ${k.status}) matched nothing this run — delete it once the issue is fixed.`,
     );
   }
   if (acknowledged.length > 0 && process.env.GITHUB_STEP_SUMMARY) {
@@ -888,8 +925,9 @@ async function main() {
         )
         .join('; ')}`,
     );
-    process.exit(1);
   }
+  if (listBroken) process.exit(2);
+  if (failing.length > 0) process.exit(1);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

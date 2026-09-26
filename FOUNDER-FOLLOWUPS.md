@@ -36,8 +36,9 @@ rows are new since 2026-09-24/25 and were hidden behind it: Google Cloud
 — errors dropped for quota or rate limits.
 
 **How:** for each, fix it (budget, spend, Sentry quota) or acknowledge it
-with a line in `scripts/known-vendor-issues.tsv` and a date to look again
-by. Confirm or delete the Anthropic line too.
+with a line in `scripts/known-vendor-issues.tsv`: the text of the cause
+you looked at (so a different cause for the same vendor still fails) and
+a date at most 30 days out. Confirm or delete the Anthropic line too.
 
 **Verifies by:** the next scheduled vendor-limits run is green, or red only
 for something new.
