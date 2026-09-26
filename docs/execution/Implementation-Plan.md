@@ -10939,3 +10939,34 @@ empty state. It was enforced nowhere, its wording appeared nowhere in
 source, and ADR-0030 now bans both halves (a blanket reversibility claim;
 a compressed privacy claim). Trust and privacy copy renders once per
 flow, at the decision point. See the struck line in the ADR itself.
+
+---
+
+### [REVERSAL 2026-09-26 on D109 — the scan count and time left]
+
+**Founder-directed, 2026-09-26.** D109 titles Step 3 *"strict gate, no
+time promise, no live counters"* and parks a live counter (*"Headers
+read: 2,847 of ~18,000"*) and a sync ETA estimator behind D111's
+devPreference keys `show_sync_live_counters` / `show_sync_eta`. Both now
+show to every user, as one line under the progress bar while the scan
+reads the mailbox: *"12,400 of 40,898 emails · about 5 min left"*.
+
+**Why.** On 2026-09-24/25 a new user's first scan of 40,898 emails
+showed only a bar creeping about a point a minute over "Reading sender
+info." — no count, no time. They left twice; it looked stuck. The worker
+knew both numbers the whole time.
+
+**What keeps it honest.**
+- The counts are the worker's own, written per 500-message batch and as
+  soon as the mailbox is listed. D224's field set gains
+  `message_progress`, read from the initial-sync BullMQ job (no
+  migration). No count before the mailbox is listed, outside the reading
+  stage, or when the job cannot be read.
+- Time left is never a fixed rate. It is the average rate between two
+  batches the tab watched arrive — counts already on screen at first
+  render are not a point — and it is dropped when batches stop arriving
+  at their usual pace. Minutes round up.
+- The "you can close this tab" line still promises no time.
+
+`show_sync_live_counters` and `show_sync_eta` are retired with this. In
+source checked 2026-09-26 no code read either key.
