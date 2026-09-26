@@ -4,11 +4,13 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import {
   OnboardingFirstTriageMetaSchema,
+  type MeSettings,
   type OnboardingState,
   type SyncStatus,
 } from '@declutrmail/shared/contracts';
 
 import { autopilotRulesQueryOptions } from '@/features/autopilot/api/query-options';
+import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { getServerMe } from '@/features/auth/api/server-me';
@@ -41,6 +43,13 @@ export async function ServerOnboardingBoundary({
       queryClient.fetchQuery(
         onboardingStateQueryOptions((signal) =>
           serverGet<OnboardingState>('/api/onboarding/state', cookieHeader, signal),
+        ),
+      ),
+      // The sync gate's "we'll email you" line reads emailPrefs; seeded here
+      // so its first render already shows the right sentence, not a swap.
+      queryClient.fetchQuery(
+        meSettingsQueryOptions((signal) =>
+          serverGet<MeSettings>('/api/me/settings', cookieHeader, signal),
         ),
       ),
     ];

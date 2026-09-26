@@ -29,7 +29,7 @@ vi.mock('@/lib/api/client', async () => {
 import { ApiError } from '@/lib/api/client';
 import { MAILBOX_SWITCH_STORAGE_KEY } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { AuthProvider } from './auth-provider';
-import { ME_QUERY_KEY } from './api/use-me';
+import { ME_ERROR_RETRY_MS, ME_QUERY_KEY } from './api/use-me';
 
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const ME = {
@@ -117,13 +117,39 @@ describe('AuthProvider', () => {
     await waitFor(() => expect(screen.getByTestId('app')).toBeTruthy());
   });
 
-  it('never renders the raw error text', async () => {
+  it('heals by itself — the automatic retry the screen promises is real', async () => {
+    // The screen promises an automatic retry. Pin the mechanism behind
+    // the words: with no click, the error-state refetch must bring the
+    // app back once the API answers again.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      apiGet.mockRejectedValue(new ApiError(503, {}, 'GET /api/auth/me failed: 503'));
+      mount();
+      await screen.findByRole('alert', {}, { timeout: 8000 });
+      expect(screen.queryByTestId('app')).toBeNull();
+
+      apiGet.mockResolvedValue({ data: ME });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ME_ERROR_RETRY_MS);
+      });
+      await waitFor(() => expect(screen.getByTestId('app')).toBeTruthy());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never renders the raw error text, or a cause it did not check', async () => {
     apiGet.mockRejectedValue(new Error(`Missing queryFn: '["auth","me"]'`));
     mount();
 
     await screen.findByRole('alert', {}, { timeout: 8000 });
     expect(document.body.textContent).not.toContain('Missing queryFn');
     expect(document.body.textContent).not.toContain('Auth check failed');
+    // Nothing here knows why the read failed — this very test fails it
+    // with a missing queryFn — so "usually a brief connection problem"
+    // was a guess. The screen states what it IS doing instead.
+    expect(document.body.textContent).not.toMatch(/usually|connection problem/i);
+    expect(document.body.textContent).toContain('retrying automatically');
   });
 
   it('shows the skeleton, not a failure, while the first read is in flight', () => {
