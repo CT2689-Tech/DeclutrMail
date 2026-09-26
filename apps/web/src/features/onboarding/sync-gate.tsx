@@ -18,9 +18,10 @@ const { color, font, text, radius, motion } = tokens;
  * Onboarding sync gate (D109, D224).
  *
  * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
- * connect, before the app opens. ONE progress bar bound to the real
- * `progress_pct` and ONE sentence naming the real `current_stage` —
- * no fake ticking (D109 hard rule), no aspirational stage list.
+ * connect, before the app opens. D109's one line saying the user may
+ * leave, ONE progress bar bound to the real `progress_pct` and ONE
+ * sentence naming the real `current_stage` — no fake ticking (D109 hard
+ * rule), no aspirational stage list.
  *
  * This file is the PRESENTATIONAL view: it takes a `SyncStatus` and
  * renders. Polling + the ready→advance redirect live in the route
@@ -96,10 +97,28 @@ const ERROR_COPY: Record<string, string> = {
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
-  PermanentError: 'Gmail refused part of the scan. Try again — if it fails twice, contact support.',
+  // The address, not "contact support": on a first run the onboarding
+  // guard bounces every in-app route back here, so Help is unreachable.
+  PermanentError:
+    'Gmail refused part of the scan. Try again — if it fails twice, email support@declutrmail.com.',
   ValidationError:
-    'The scan stopped on something we could not process. Try again — if it fails twice, contact support.',
+    'The scan stopped on something we could not process. Try again — if it fails twice, email support@declutrmail.com.',
 };
+
+/**
+ * "Go back to <address>" can run past a phone-width card: Button is
+ * nowrap at a fixed height, and an address has no spaces to break on.
+ * Let this one label wrap, anywhere, at the default button's height.
+ */
+export const ESCAPE_BUTTON_STYLE = {
+  whiteSpace: 'normal',
+  overflowWrap: 'anywhere',
+  height: 'auto',
+  minHeight: 36,
+  paddingBlock: 8,
+  maxWidth: '100%',
+  textAlign: 'center',
+} as const;
 
 /**
  * Escape-hatch wiring for a SECONDARY-mailbox sync (D116). The route
@@ -116,10 +135,30 @@ export interface SyncGateEscape {
   returning?: boolean;
 }
 
+/**
+ * The D109 reassurance line: the scan runs without this tab, so the user
+ * may leave. The email clause is stated only when the "Your inbox is
+ * ready" email will actually go — `emailPrefs.syncComplete` is the
+ * send-time switch (unsubscribing from all mail turns it off too), and
+ * once #771 lands the email goes only for a mailbox's FIRST finished
+ * scan (`firstReady` in `sync-ready-email.trigger.ts`). A re-scan of a
+ * mailbox that finished before — a retry after a failed re-scan, a
+ * reconnect — gets no promise: until #771 it still sends, so this line
+ * under-promises, never over.
+ * (D109's "This is a one-time scan." is gone: a reconnect or a retry
+ * re-runs the scan, and nobody acts on the sentence.)
+ */
+function leaveSentence(readyEmail: boolean): string {
+  return readyEmail
+    ? 'You can close this tab — we’ll email you when your inbox is ready.'
+    : 'You can close this tab and come back later.';
+}
+
 export function SyncGate({
   status,
   escape,
   mailboxId,
+  readyEmail = false,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
@@ -132,19 +171,23 @@ export function SyncGate({
    * rather than aimed at whatever happens to be active.
    */
   mailboxId?: string | null | undefined;
+  /** True only when the sync-complete email is switched on for this user. */
+  readyEmail?: boolean | undefined;
 }) {
   if (status.readiness_status === 'failed') {
     return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
   }
-  return <SyncProgress status={status} escape={escape} />;
+  return <SyncProgress status={status} escape={escape} readyEmail={readyEmail} />;
 }
 
 function SyncProgress({
   status,
   escape,
+  readyEmail,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
+  readyEmail: boolean;
 }) {
   // A non-finite percentage must not defeat the clamp: every comparison
   // against NaN is false, so Math.min/max would propagate it into the
@@ -152,10 +195,33 @@ function SyncProgress({
   const pct = Number.isFinite(status.progress_pct)
     ? Math.min(100, Math.max(0, status.progress_pct))
     : 0;
+  // `ready` renders only until the route navigates away (the secondary
+  // gate's effect-driven replace). Say so plainly — no "Reading…" title
+  // over a finished scan, and no "close this tab" once there is nothing
+  // left to wait for.
+  const ready = status.readiness_status === 'ready';
+  // Strictly null: the API always sends the field, so a missing one is
+  // unknown, and unknown promises nothing.
+  const emailOnReady = readyEmail && status.last_synced_at === null;
 
   return (
     <Shell>
-      <h1 style={titleStyle}>Reading your inbox…</h1>
+      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your inbox…'}</h1>
+      {!ready && (
+        // Same sub-line treatment as StepShell on the sibling steps.
+        <p
+          data-testid="sync-leave"
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            maxWidth: 460,
+            margin: '14px 0 0',
+          }}
+        >
+          {leaveSentence(emailOnReady)}
+        </p>
+      )}
 
       {/* Progress bar — width is the real progress_pct. */}
       <div
@@ -185,26 +251,33 @@ function SyncProgress({
         />
       </div>
 
-      {/* The real current_stage, as one sentence. */}
-      <p
-        role="status"
-        data-testid="sync-stage"
-        style={{
-          color: color.fgMuted,
-          fontSize: text.lg,
-          lineHeight: 1.45,
-          margin: '16px 0 0',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {stageSentence(status)}
-      </p>
+      {/* The real current_stage, as one sentence. Ready says it in the title. */}
+      {!ready && (
+        <p
+          role="status"
+          data-testid="sync-stage"
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '16px 0 0',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {stageSentence(status)}
+        </p>
+      )}
 
       {/* The secondary keeps syncing in the background after the hop; the
           account-switcher badge + ready-toast (D116) announce completion. */}
       {escape && (
         <div style={{ marginTop: 24 }}>
-          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+          <Button
+            tone="ghost"
+            onClick={escape.onReturn}
+            disabled={escape.returning ?? false}
+            style={ESCAPE_BUTTON_STYLE}
+          >
             {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
           </Button>
         </div>
@@ -283,7 +356,12 @@ function SyncFailed({
         {/* Don't strand a secondary connect on a failed gate — let them
             hop back to their (working) primary mailbox (D116). */}
         {escape && (
-          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+          <Button
+            tone="ghost"
+            onClick={escape.onReturn}
+            disabled={escape.returning ?? false}
+            style={ESCAPE_BUTTON_STYLE}
+          >
             {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
           </Button>
         )}

@@ -288,6 +288,16 @@ export const MailboxSyncReadyPayloadSchema = z
     readyAt: z.string().datetime(),
     /** Total messages the initial sync mirrored (metric). */
     messageCount: z.number().int().nonnegative(),
+    /**
+     * True when this is the mailbox's FIRST completed scan
+     * (`provider_sync_state.last_synced_at` was null before it). The
+     * event also fires on re-scans (a reconnect, a failed-scan retry, a
+     * cursor-too-old recovery), so consumers that must act once per
+     * mailbox (the "Your inbox is ready" email) read this. Optional: events
+     * published before it existed carry none, and readers treat absent
+     * as the old behaviour.
+     */
+    firstReady: z.boolean().optional(),
   })
   .strict();
 export type MailboxSyncReadyPayload = z.infer<typeof MailboxSyncReadyPayloadSchema>;

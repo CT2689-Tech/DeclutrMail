@@ -202,7 +202,7 @@ describe('SnoozedScreen — wake now flow', () => {
     // Step 1 — the click opens a confirm; nothing has mutated yet.
     await user.click(screen.getByRole('button', { name: 'Bring back now' }));
     expect(wakePosted).toBe(0);
-    expect(screen.getByText(/12 messages return to your inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/12 emails return to your inbox/i)).toBeInTheDocument();
     // Wake-now has no Activity undo, so the confirm must say the scheduled
     // return is discarded — on the populated branch, not only the empty one.
     expect(screen.getByText(/return time clears/i)).toBeInTheDocument();
