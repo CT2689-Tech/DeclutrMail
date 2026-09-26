@@ -13,6 +13,10 @@
 # min was tight enough to page this watchdog for a mailbox correctly
 # backing off, not actually stuck).
 #
+# Known vs new: rows acknowledged in scripts/known-stuck-mailboxes.tsv
+# print as warnings; only an unacknowledged row fails the run — see
+# scripts/filter-known-stuck.sh.
+#
 # Privacy (D7 / D228): reads ONLY `provider_sync_state` rows. Surfaces
 # `mailbox_account_id`, `current_stage`, `progress_pct`, `updated_at`
 # in the alert. NEVER reads `mail_messages` / `senders` rows.
@@ -46,9 +50,9 @@ fi
 QUERY=$(cat <<EOF
 SELECT
   mailbox_account_id,
+  to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS stuck_since,
   current_stage,
   progress_pct,
-  updated_at,
   EXTRACT(EPOCH FROM (NOW() - updated_at))::int AS stuck_seconds
 FROM provider_sync_state
 WHERE current_stage NOT IN ('ready', 'failed')
@@ -86,19 +90,28 @@ if [ "$RC" -ne 0 ]; then
 fi
 rm -f "$PSQL_ERR"
 
-if [ -z "$OUT" ]; then
-  echo "OK — no stuck syncs found (threshold ${STUCK_MINUTES} min)."
-  exit 0
-fi
+# Every run goes through the known-stuck filter, rows or not, so a broken
+# scripts/known-stuck-mailboxes.tsv fails the run the day it lands. Red
+# means a stuck sync nobody has acknowledged yet; acknowledged ones stay
+# listed as warnings.
+set +e
+if [ -n "$OUT" ]; then printf '%s\n' "$OUT"; fi | "$(dirname "$0")/filter-known-stuck.sh"
+RC=$?
+set -e
 
-# Emit a structured log line that Cloud Logging can pick up if this
-# script also runs as a Cloud Run Job. The leading `::error::` token
-# also surfaces as a red annotation in GH Actions runs.
-echo "::error::Stuck sync detected — ${STUCK_MINUTES} min threshold exceeded"
-echo ""
-echo "Stuck rows:"
-printf "%s\n" "$OUT"
-echo ""
-echo "Each row: mailbox_account_id | current_stage | progress_pct | updated_at | stuck_seconds"
-
-exit 1
+case "$RC" in
+  0)
+    if [ -z "$OUT" ]; then
+      echo "OK — no stuck syncs found (threshold ${STUCK_MINUTES} min)."
+    else
+      echo "OK — no NEW stuck sync (threshold ${STUCK_MINUTES} min); every one above is acknowledged in scripts/known-stuck-mailboxes.tsv."
+    fi
+    exit 0
+    ;;
+  1)
+    echo "::error::New stuck sync — ${STUCK_MINUTES} min threshold exceeded"
+    echo "Details per row: current_stage | progress_pct | stuck_seconds"
+    exit 1
+    ;;
+  *) exit 2 ;;
+esac

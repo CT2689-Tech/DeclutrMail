@@ -266,6 +266,8 @@ jobs:
         run: node --test scripts/check-pr-body-d-ref.test.mjs
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
+      - name: Stuck-mailbox alert and sync watchdog contracts
+        run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
       - name: No personal email addresses in tracked files (D7)
         run: node --test scripts/personal-email-guard.test.mjs
       - name: Performance probes and release contract
