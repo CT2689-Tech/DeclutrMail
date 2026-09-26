@@ -164,6 +164,52 @@ export async function reconcileSenderCategories(
 }
 
 /**
+ * Mark stale every Primary Keep the current rule no longer backs.
+ *
+ * Cascade rule 3 keeps a sender (verdict `keep` at exactly 0.95 — no
+ * other rule produces that pair) only while its tab is Primary AND it
+ * offers no unsubscribe channel (founder decision 2026-09-26). The tab
+ * half is covered by `reconcileSenderCategories`; this covers the other
+ * half, which changes without any tab moving — every Keep written before
+ * the decision, and a Primary sender that later starts sending a
+ * List-Unsubscribe header. "Channel" is read exactly as the score worker
+ * reads it (`hasAnyUnsub`): any stored message with an unsubscribe URL
+ * or mailto. Marked the same way, so `sendersAwaitingRescore` picks them
+ * up and Autopilot ignores them until the new verdict lands.
+ */
+export async function expireUnbackedPrimaryKeeps(
+  tx: OutboxTx,
+  mailboxAccountId: string,
+): Promise<number> {
+  const marked = await tx.execute(sql`
+    UPDATE ${triageDecisions} AS td
+    SET ${sql.identifier('expires_at')} = td.${sql.identifier('produced_at')},
+        ${sql.identifier('updated_at')} = now()
+    FROM ${senders} AS s
+    WHERE td.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+      AND s.${sql.identifier('mailbox_account_id')} = td.${sql.identifier('mailbox_account_id')}
+      AND s.${sql.identifier('sender_key')} = td.${sql.identifier('sender_key')}
+      AND td.${sql.identifier('verdict')} = 'keep'
+      AND td.${sql.identifier('confidence')} = 0.95
+      AND td.${sql.identifier('expires_at')} > td.${sql.identifier('produced_at')}
+      AND (
+        s.${sql.identifier('gmail_category')} <> 'primary'
+        OR EXISTS (
+          SELECT 1 FROM ${mailMessages} AS m
+          WHERE m.${sql.identifier('mailbox_account_id')} = td.${sql.identifier('mailbox_account_id')}
+            AND m.${sql.identifier('sender_key')} = td.${sql.identifier('sender_key')}
+            AND (
+              m.${sql.identifier('unsubscribe_url')} IS NOT NULL
+              OR m.${sql.identifier('unsubscribe_mailto_url')} IS NOT NULL
+            )
+        )
+      )
+    RETURNING td.${sql.identifier('sender_key')}
+  `);
+  return rowsOf<{ sender_key: string }>(marked).length;
+}
+
+/**
  * Senders the recount marked stale that no score job has re-scored yet.
  *
  * `reconcileSenderCategories` expires a changed sender's decision AS OF

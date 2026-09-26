@@ -143,7 +143,7 @@ describe('Gmail tab recount → re-score', () => {
   });
 
   it('rewrites the sentence even when the new verdict is still Keep', async () => {
-    // Read every message: rule 5 ("you open more than half") keeps it.
+    // Read every message: rule 5 (at least half marked read) keeps it.
     // Same verdict — the reuse path would have kept the Primary sentence
     // if the recount had not expired the decision.
     await seedGuessedPrimary('friend', [

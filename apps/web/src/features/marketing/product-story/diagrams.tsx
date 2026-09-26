@@ -316,8 +316,8 @@ export function RecommendationCascadeFigure() {
       'A sender you protect is excluded. Writing to a sender, starring their email, or Gmail marking it important can also protect a sender automatically.',
     ],
     [
-      'Real conversations kept',
-      'A sender you recently wrote to, starred, or mostly read is kept. So is one Gmail files in Primary that offers no unsubscribe link.',
+      'Reasons to Keep',
+      'A sender you recently wrote to, or whose mail is mostly marked read, is kept. So is a Primary sender with no unsubscribe link.',
     ],
     [
       'Enough information?',
@@ -325,7 +325,7 @@ export function RecommendationCascadeFigure() {
     ],
     [
       'Compare Archive and Unsubscribe',
-      'DeclutrMail uses facts such as volume, read rate, previous archives, and whether the sender offers unsubscribe.',
+      'DeclutrMail uses facts such as volume, marked-read rate, previous archives, and whether the sender offers unsubscribe.',
     ],
     [
       'Show why',

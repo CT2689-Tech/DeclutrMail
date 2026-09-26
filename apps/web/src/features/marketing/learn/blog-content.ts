@@ -170,7 +170,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'External processors are part of the boundary',
         paragraphs: [
           'It is not enough to say what is stored in the primary database. Users also deserve to know what reaches an error service, analytics system, email provider, or language model. The answer may differ by feature.',
-          'DeclutrMail can send Anthropic sender totals and read rates without subject lines or snippets to explain a suggestion. Daily Brief works differently: it can send the sender, subject line, and Gmail preview snippet. Full email contents and attachments are never included, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
+          'To explain a suggestion, DeclutrMail can send Anthropic the sender’s name and domain and the facts behind it, without subject lines or snippets. Daily Brief works differently: it can send the sender, subject line, and Gmail preview snippet. Full email contents and attachments are never included, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
           'Those two paths should never be compressed into “AI never sees email data” or “AI reads your inbox.” Both slogans are false. Field-level disclosure is the useful middle.',
         ],
         callout: {

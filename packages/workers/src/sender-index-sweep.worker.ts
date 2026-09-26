@@ -5,7 +5,11 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
-import { reconcileSenderCategories, sendersAwaitingRescore } from './gmail-category.js';
+import {
+  expireUnbackedPrimaryKeeps,
+  reconcileSenderCategories,
+  sendersAwaitingRescore,
+} from './gmail-category.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import type { WorkerContext } from './worker-context.js';
@@ -225,6 +229,8 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
             // protection it granted survives another night.
             step = 'categories';
             const changedKeys = await reconcileSenderCategories(tx, mailboxAccountId);
+            ctx.signal?.throwIfAborted();
+            await expireUnbackedPrimaryKeeps(tx, mailboxAccountId);
             ctx.signal?.throwIfAborted();
             // UNSCOPED on purpose. This call is the entire reason the
             // per-push path is allowed to be scoped.

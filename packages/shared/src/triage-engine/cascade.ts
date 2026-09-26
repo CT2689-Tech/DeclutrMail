@@ -90,8 +90,7 @@ export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   protect_starred: 'the user starred a message from this sender in the past year',
   protect_gmail_important: 'Gmail marked several recent messages from this sender important',
   wrote_to_at_least_once: 'the user has written to this sender',
-  gmail_primary:
-    "Gmail files most of this sender's mail in Primary and it offers no unsubscribe link",
+  gmail_primary: "this sender is in Gmail's Primary inbox and offers no unsubscribe link",
   starred_recently: 'the user starred a message from this sender recently',
   high_read_rate: 'the user reads most of what this sender sends',
   long_relationship_engaged: 'this is a long relationship the user still engages with',
@@ -99,7 +98,7 @@ export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   score_archive: 'the volume and read rate point at archiving',
   score_unsubscribe: 'the volume and read rate point at unsubscribing',
   score_inconclusive: 'the signals point in different directions',
-  score_no_unsub_channel: 'this sender offers no unsubscribe channel to use',
+  score_no_unsub_channel: 'this sender offers no unsubscribe link',
   score_quiet_stream: 'this sender is too quiet to be worth unsubscribing from',
 };
 

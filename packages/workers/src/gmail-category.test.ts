@@ -5,6 +5,7 @@ import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  expireUnbackedPrimaryKeeps,
   messageGmailCategory,
   reconcileSenderCategories,
   rowsOf,
@@ -123,7 +124,7 @@ describe('reconcileSenderCategories', () => {
     senderKey: string,
     stored: (typeof schema.gmailCategory.enumValues)[number],
     labelSets: string[][],
-    opts: { isOutbound?: boolean } = {},
+    opts: { isOutbound?: boolean; unsubscribeUrl?: string } = {},
   ): Promise<void> {
     await db.insert(senders).values({
       mailboxAccountId: mailboxId,
@@ -147,6 +148,7 @@ describe('reconcileSenderCategories', () => {
         labelIds,
         isUnread: false,
         isOutbound: opts.isOutbound ?? false,
+        ...(opts.unsubscribeUrl ? { unsubscribeUrl: opts.unsubscribeUrl } : {}),
       });
     }
   }
@@ -255,6 +257,61 @@ describe('reconcileSenderCategories', () => {
     expect(expiry.get('guessed')!).toBeLessThanOrEqual(Date.now());
     // Untouched: its category did not move, so its explanation still holds.
     expect(expiry.get('person')).toBe(future.getTime());
+  });
+
+  describe('expireUnbackedPrimaryKeeps', () => {
+    /** A decision exactly as rule 3 (the Primary Keep) wrote it, still unexpired. */
+    async function decide(senderKey: string, confidence = '0.95'): Promise<void> {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        verdict: 'keep',
+        confidence,
+        reasoning: 'Kept because Gmail puts them in your Primary inbox.',
+        generatedBy: 'template',
+        expiresAt: new Date(Date.now() + 5 * DAY),
+      });
+    }
+    async function marked(senderKey: string) {
+      const [row] = await db
+        .select({ p: triageDecisions.producedAt, e: triageDecisions.expiresAt })
+        .from(triageDecisions)
+        .where(eq(triageDecisions.senderKey, senderKey));
+      return row!.e.getTime() === row!.p.getTime();
+    }
+    const expire = () => db.transaction((tx) => expireUnbackedPrimaryKeeps(tx as never, mailboxId));
+
+    it('marks a Primary Keep whose sender offers an unsubscribe link — the rule no longer backs it', async () => {
+      await seedSender('primary-newsletter', 'primary', [['INBOX', 'CATEGORY_PERSONAL']], {
+        unsubscribeUrl: 'https://brand.test/unsub',
+      });
+      await decide('primary-newsletter');
+
+      expect(await expire()).toBe(1);
+      expect(await marked('primary-newsletter')).toBe(true);
+    });
+
+    it('leaves a Primary Keep with no unsubscribe link, and any other Keep, alone', async () => {
+      await seedSender('person', 'primary', [['INBOX', 'CATEGORY_PERSONAL']]);
+      await decide('person');
+      // Written-to Keep (0.98) with a channel: not rule 3, not this pass's business.
+      await seedSender('wrote-to', 'primary', [['INBOX', 'CATEGORY_PERSONAL']], {
+        unsubscribeUrl: 'https://brand.test/unsub',
+      });
+      await decide('wrote-to', '0.98');
+
+      expect(await expire()).toBe(0);
+      expect(await marked('person')).toBe(false);
+      expect(await marked('wrote-to')).toBe(false);
+    });
+
+    it('marks a Primary Keep whose sender is no longer stored as Primary', async () => {
+      await seedSender('was-primary', 'unknown', [['INBOX']]);
+      await decide('was-primary');
+
+      expect(await expire()).toBe(1);
+      expect(await marked('was-primary')).toBe(true);
+    });
   });
 
   it('is a no-op on a second run', async () => {

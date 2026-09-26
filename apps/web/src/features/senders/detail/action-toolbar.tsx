@@ -59,7 +59,7 @@ function primaryVerbReason(sender: Sender, highlight: Verdict): string | null {
   // there genuinely isn't a fact driving the pick, only the absence of
   // the other three.
   if (highlight === 'keep') {
-    return 'Highlighted because there’s no strong signal to Archive or Unsubscribe yet.';
+    return 'Highlighted because they’ve emailed you in the last 180 days and offer no one-click unsubscribe.';
   }
   return null;
 }
