@@ -432,24 +432,37 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // registry speaks label NAMES. Everything downstream (batchModify,
     // the local mirror) uses the RESOLVED change.
     const resolved = await resolveLabelChange(client, change);
+    // One request per chunk, sent from here rather than left to the client,
+    // so the worker knows whether any of them landed.
+    let landed = 0;
+    let hookRan = false;
     try {
-      await client.batchModify(ids, resolved, {
-        beforeFirstRequest: () => this.markExecuting(job.id, mailboxAccountId, subject),
-      });
+      for (let start = 0; start < ids.length; start += GMAIL_BATCH_MODIFY_MAX_IDS) {
+        const first = start === 0;
+        await client.batchModify(
+          ids.slice(start, start + GMAIL_BATCH_MODIFY_MAX_IDS),
+          resolved,
+          first
+            ? {
+                beforeFirstRequest: async () => {
+                  hookRan = true;
+                  await this.markExecuting(job.id, mailboxAccountId, subject);
+                },
+              }
+            : {},
+        );
+        if (first && !hookRan) await this.recordHookSkipped(job);
+        landed += 1;
+      }
     } catch (err) {
       if (err instanceof SenderProtectedAtSend) {
         return this.recordProtected(job);
       }
-      // Gmail refused the only request, so nothing was applied: back to
-      // `queued`, and the retry is re-checked like a first attempt. With
-      // more than one request an earlier one may have landed, and a job
-      // that was already in flight may have changed Gmail before — both
-      // stay `executing` and finish.
-      if (
-        neverReachedGmail(job) &&
-        ids.length <= GMAIL_BATCH_MODIFY_MAX_IDS &&
-        isRefusedBeforeApply(err)
-      ) {
+      // Gmail refused before any request landed, so nothing was applied:
+      // back to `queued`, and the retry is re-checked like a first attempt.
+      // Once one has landed — or when an earlier attempt may have changed
+      // Gmail — the job stays `executing` and finishes.
+      if (neverReachedGmail(job) && landed === 0 && isRefusedBeforeApply(err)) {
         await db
           .update(actionJobs)
           .set({ status: 'queued', updatedAt: sql`now()` })
@@ -800,6 +813,26 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         }),
       );
     return { affectedCount: 0, undoToken: null, alreadyDone: false, stoppedProtected: true };
+  }
+
+  /**
+   * The client answered its first request without running
+   * `beforeFirstRequest` — Gmail may have changed while the job still reads
+   * `queued`, which a retry would take for "never reached Gmail". Mark it
+   * now, and say so: that client is broken.
+   */
+  private async recordHookSkipped(job: typeof actionJobs.$inferSelect): Promise<void> {
+    console.error(
+      JSON.stringify({
+        severity: 'ERROR',
+        level: 'error',
+        kind: 'label_action.before_first_request_skipped',
+        actionId: job.id,
+        mailboxAccountId: job.mailboxAccountId,
+        message: 'The Gmail client sent a request without running beforeFirstRequest.',
+      }),
+    );
+    await this.markExecuting(job.id, job.mailboxAccountId, null);
   }
 
   /** Is this job's sender (or, for a message list, any of its senders) Protected right now? */

@@ -126,6 +126,10 @@ class FakeMutationClient implements GmailMutationClient {
   duringQuotaWait: (() => Promise<void>) | null = null;
   /** Runs at the moment the request would leave. */
   onSend: (() => Promise<void>) | null = null;
+  /** `shouldThrow` fires only once this many calls have gone through. */
+  failAfterCalls = 0;
+  /** A client that drops the option — what a careless wrapper would do. */
+  ignoreHook = false;
   /** User labels known to the fake "Gmail" (name → id). */
   labelIdsByName = new Map<string, string>();
   ensureLabelIdCalls: string[] = [];
@@ -137,9 +141,9 @@ class FakeMutationClient implements GmailMutationClient {
   ): Promise<void> {
     if (this.duringQuotaWait) await this.duringQuotaWait();
     if (this.throwBeforeSend) throw this.throwBeforeSend;
-    await opts.beforeFirstRequest?.();
+    if (!this.ignoreHook) await opts.beforeFirstRequest?.();
     if (this.onSend) await this.onSend();
-    if (this.shouldThrow) throw this.shouldThrow;
+    if (this.shouldThrow && this.calls.length >= this.failAfterCalls) throw this.shouldThrow;
     this.calls.push({ ids: [...messageIds], change });
   }
   async ensureLabelId(name: string): Promise<string> {
@@ -1455,6 +1459,49 @@ describe('LabelActionWorker', () => {
         status: 'done',
         errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
       });
+    });
+
+    /** A job whose frozen set needs more than one Gmail request. */
+    const manyIds = Array.from({ length: 1500 }, (_, i) => `big-${i}`);
+
+    it('goes back to queued when Gmail refuses the first of several requests', async () => {
+      const job = await forwardJob({ resolvedMessageIds: manyIds });
+      gmail.shouldThrow = new RateLimitError('Gmail returned 429', 65_000);
+
+      await expect(run(job)).rejects.toBeInstanceOf(RateLimitError);
+      expect(await statusOf(job.id)).toMatchObject({ status: 'queued' });
+
+      await protect();
+      gmail.shouldThrow = null;
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(0);
+      expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
+    });
+
+    it('stays executing when a later request is refused — the first one already landed', async () => {
+      const job = await forwardJob({ resolvedMessageIds: manyIds });
+      gmail.shouldThrow = new RateLimitError('Gmail returned 429', 65_000);
+      gmail.failAfterCalls = 1;
+
+      await expect(run(job)).rejects.toBeInstanceOf(RateLimitError);
+
+      expect(gmail.calls).toHaveLength(1);
+      expect(await statusOf(job.id)).toMatchObject({ status: 'executing' });
+    });
+
+    it('says so loudly when the client never ran the hook, and still marks the job in flight', async () => {
+      const job = await forwardJob();
+      gmail.ignoreHook = true;
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      let logged: unknown[][] = [];
+      await run(job).finally(() => {
+        logged = [...error.mock.calls];
+        error.mockRestore();
+      });
+
+      expect(structuredLines(logged, 'label_action.before_first_request_skipped')).toHaveLength(1);
+      expect(await statusOf(job.id)).toMatchObject({ status: 'done' });
     });
 
     it('goes back to queued when Gmail refuses the only request, so the retry is re-checked', async () => {
