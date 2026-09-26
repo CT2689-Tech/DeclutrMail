@@ -2354,6 +2354,81 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   });
 
+  // The parked twin (ACTION_OVERDUE_MS): the late terminal read counts
+  // only what the server says ran.
+  it('does not count a member skipped while a PARKED batch waited as decided', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '77777777-7777-4777-8777-777777777777';
+      let finished = false;
+      let skippedId = '';
+      const trio = domainBatch(
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 90,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+        () =>
+          jsonOk({
+            data: finished
+              ? {
+                  batchId: BATCH_ID,
+                  status: 'done',
+                  total: 2,
+                  done: 2,
+                  failed: 0,
+                  requestedCount: 60,
+                  affectedCount: 60,
+                  undoToken: null,
+                  unsubscribeOutcomes: null,
+                  skippedProtectedSenderIds: [skippedId],
+                }
+              : {
+                  batchId: BATCH_ID,
+                  status: 'executing',
+                  total: 3,
+                  done: 0,
+                  failed: 0,
+                  requestedCount: 90,
+                  affectedCount: 0,
+                  undoToken: null,
+                  unsubscribeOutcomes: null,
+                },
+          }),
+      );
+      skippedId = trio[0]!.senderId;
+      const decidedBefore = useTriageStore.getState().sessionDecidedCount;
+      await confirmDomainBatch();
+      // The batch handle is live once its card reads busy.
+      await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).not.toBeNull());
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is still running — see Activity.',
+          'info',
+        ),
+      );
+
+      finished = true;
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_POLL_MS * 2);
+      });
+      await waitFor(() =>
+        expect(useTriageStore.getState().sessionDecidedCount).toBe(decidedBefore + 2),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // D245: a sender protected while the batch waited is skipped exactly
   // like one protected at the click — it stays in the queue, so it is
   // not counted as decided.

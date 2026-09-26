@@ -1171,6 +1171,132 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
+  // The parked twins of the skips above: a handle past ACTION_OVERDUE_MS
+  // runs the same terminal branch when it finally lands.
+  describe('a parked archive that ends skipped as Protected (D245)', () => {
+    const tick = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+
+    it('says nothing was archived when every sender was skipped', async () => {
+      vi.useFakeTimers();
+      try {
+        let finished = false;
+        const skippedBoth = batchStatusHandler({
+          total: 0,
+          done: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: [ID_NEWS, ID_SHOP],
+        });
+        installFetchStub([
+          briefHandler(),
+          bulkPreviewHandler(),
+          enqueueHandler(),
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/batch\//,
+            respond: (req, url) =>
+              finished
+                ? skippedBoth.respond(req, url)
+                : jsonOk({
+                    data: {
+                      batchId: 'batch-1',
+                      status: 'executing',
+                      total: 2,
+                      done: 0,
+                      failed: 0,
+                      requestedCount: 351,
+                      affectedCount: 0,
+                      undoToken: null,
+                    },
+                  }),
+          },
+        ]);
+        renderScreen();
+        await tick(200);
+        fireEvent.click(archiveButton());
+        await tick(200);
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: /^Archive/ }),
+        );
+        await tick(200);
+        // The toast store outlives a test: count, don't just find.
+        const parked = () =>
+          screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+        const before = parked();
+        await tick(ACTION_OVERDUE_MS);
+        expect(parked()).toBe(before + 1);
+
+        finished = true;
+        await tick(2_500);
+        screen.getByText('Nothing archived — 2 Protected senders skipped.');
+        expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says nothing was archived when its one sender was skipped', async () => {
+      vi.useFakeTimers();
+      try {
+        let finished = false;
+        installFetchStub([
+          briefHandler(),
+          singlePreviewHandler(),
+          singleEnqueueHandler(),
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () =>
+              jsonOk({
+                data: {
+                  actionId: 'act-news',
+                  verb: 'archive',
+                  direction: 'forward',
+                  status: finished ? 'done' : 'executing',
+                  requestedCount: 210,
+                  affectedCount: 0,
+                  wakeAt: null,
+                  undoToken: null,
+                  undoExpiresAt: null,
+                  undoExecutedAt: null,
+                  undoRevertedAt: null,
+                  errorCode: finished ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+                },
+              }),
+          },
+        ]);
+        renderScreen();
+        await tick(200);
+        fireEvent.click(screen.getByRole('checkbox', { name: /include old navy in the archive/i }));
+        await tick(50);
+        expect(archiveButton()).toHaveAccessibleName('Archive 1 sender');
+        fireEvent.click(archiveButton());
+        await tick(200);
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: /^Archive/ }),
+        );
+        await tick(200);
+        // The toast store outlives a test: count, don't just find.
+        const parked = () =>
+          screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+        const before = parked();
+        await tick(ACTION_OVERDUE_MS);
+        expect(parked()).toBe(before + 1);
+
+        finished = true;
+        await tick(2_500);
+        screen.getByText('Nothing archived — 1 Protected sender skipped.');
+        expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
     // The worker hangs >2 min. The handle parks with the info toast —
     // but on THIS surface `busy` deliberately keeps covering the parked
@@ -1241,8 +1367,12 @@ describe('Brief Noise bulk archive (D65)', () => {
       // At the deadline the handle parks: overdue toast fires, and busy
       // deliberately STAYS — the section must not assert idle while the
       // parked archive may still be moving these very senders.
+      // The toast store outlives a test: count, don't just find.
+      const parked = () =>
+        screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+      const before = parked();
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText('The Noise archive is still running — see Activity.');
+      expect(parked()).toBe(before + 1);
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real

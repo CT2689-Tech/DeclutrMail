@@ -3216,6 +3216,102 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(rowOf(/select sender b/i)).toHaveAttribute('aria-busy', 'true');
     });
 
+    // The parked twin (ACTION_OVERDUE_MS): the late terminal read runs the
+    // same skip filter.
+    it('leaves a sender skipped while a PARKED bulk waited unmarked', async () => {
+      vi.useFakeTimers();
+      try {
+        let finished = false;
+        bulkStub(() =>
+          finished
+            ? {
+                status: 'done',
+                total: 1,
+                done: 1,
+                failed: 0,
+                requestedCount: 18,
+                affectedCount: 18,
+                skippedProtectedSenderIds: ['a'],
+              }
+            : running,
+        );
+        const tick = (ms: number) =>
+          act(async () => {
+            await vi.advanceTimersByTimeAsync(ms);
+          });
+        renderScreen();
+        await tick(200);
+        fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+        fireEvent.keyDown(document.body, { key: 'a' });
+        await tick(200);
+        screen.getByText(/rechecked when it runs/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        await tick(ACTION_OVERDUE_MS);
+        expect(document.querySelectorAll('[data-dm-row-activity="unconfirmed"]')).toHaveLength(2);
+
+        finished = true;
+        await tick(2_500);
+        expect(donePills()).toEqual(['Archived']);
+        expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // Unsubscribe + "archive the past" runs the backlog as its own batch:
+    // a sender it refused at the click has no job there either.
+    it('never shows a sender the backlog batch refused at the click as running', async () => {
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            const body = (await req.json()) as { primary: { type: string } };
+            return jsonOk({
+              data:
+                body.primary.type === 'unsubscribe'
+                  ? {
+                      batchId: 'batch-unsub',
+                      status: 'queued',
+                      senderCount: 2,
+                      requestedTotal: 0,
+                      skipped: [],
+                    }
+                  : {
+                      batchId: 'batch-past',
+                      status: 'queued',
+                      senderCount: 1,
+                      requestedTotal: 18,
+                      skipped: [{ senderId: 'a', reason: 'protected' }],
+                    },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: () => jsonOk({ data: { batchId: 'batch-past', undoToken: null, ...running } }),
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: /Unsubscribe.*Archive/i,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await waitFor(() => expect(rowOf(/select sender b/i)).toHaveAttribute('aria-busy', 'true'));
+      expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy', 'true');
+      expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+    });
+
     it('releases a held "done" row once the list is asked a different question', async () => {
       // After the action the server stops listing Sender A (nothing left).
       let acted = false;
@@ -3650,6 +3746,95 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
     expect(receipt).toHaveTextContent('Not sent: 1 Protected sender');
     expect(receipt).not.toHaveTextContent(/failed/i);
+  });
+
+  // The parked twin: a batch past ACTION_OVERDUE_MS still names the
+  // sender refused when its request was due.
+  it('lists a sender refused as Protected under "Not sent" when a PARKED batch lands', async () => {
+    vi.useFakeTimers();
+    try {
+      let finished = false;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-unsub-skip',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 2,
+                wakeAt: null,
+                skipped: [],
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/batch/batch-unsub-skip',
+          respond: () =>
+            jsonOk({
+              data: finished
+                ? {
+                    batchId: 'batch-unsub-skip',
+                    status: 'done',
+                    undoToken: null,
+                    total: 1,
+                    done: 1,
+                    failed: 0,
+                    requestedCount: 1,
+                    affectedCount: 1,
+                    skippedProtectedSenderIds: ['a'],
+                    unsubscribeOutcomes: {
+                      endpointAccepted: 1,
+                      unconfirmed: 0,
+                      failed: 0,
+                      pending: 0,
+                    },
+                  }
+                : {
+                    batchId: 'batch-unsub-skip',
+                    status: 'executing',
+                    undoToken: null,
+                    total: 2,
+                    done: 0,
+                    failed: 0,
+                    requestedCount: 2,
+                    affectedCount: 0,
+                    unsubscribeOutcomes: null,
+                  },
+            }),
+        },
+      ]);
+      const tick = (ms: number) =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(ms);
+        });
+      renderScreen();
+      await tick(200);
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
+      fireEvent.keyDown(document.body, { key: 'u' });
+      await tick(200);
+      expect(
+        within(screen.getByRole('dialog')).getByRole('button', { name: /Unsubscribe/ }),
+      ).toBeEnabled();
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await tick(200);
+      await tick(ACTION_OVERDUE_MS);
+
+      finished = true;
+      await tick(2_500);
+      const receipt = screen.getByRole('status');
+      expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
+      expect(receipt).toHaveTextContent('Not sent: 1 Protected sender');
+      expect(receipt).not.toHaveTextContent(/failed/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('never ticks a batch that sent nothing because every sender turned Protected', async () => {
