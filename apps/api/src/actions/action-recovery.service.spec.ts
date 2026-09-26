@@ -190,13 +190,15 @@ describe('ActionRecoveryService', () => {
       mailboxAccountId: mailbox.mailboxId,
       actionId: action.id,
     });
-    expect(preview.senderProtected).toBe(false);
+    expect(preview).toMatchObject({ senderProtected: false, protectionReason: null });
 
     // Protected after the action failed: the next read of the review
-    // must say so, not a value frozen when the review opened.
+    // must say so, not a value frozen when the review opened — and why
+    // (CLAUDE.md §2.6: the exact reason wherever protection is shown).
     await protect(db, mailbox);
     await expect(service.getPreview(mailbox.mailboxId, preview.previewId)).resolves.toMatchObject({
       senderProtected: true,
+      protectionReason: 'starred',
     });
   });
 

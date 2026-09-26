@@ -221,11 +221,18 @@ export interface ActionRecoveryPreviewResult {
   recoveryActionId: string | null;
   /**
    * A sender of this action is Protected right now (D245) — for a legacy
-   * message-list action, any of its senders. Confirm still proceeds, so
-   * the review must say it, and Confirm echoes it back
-   * (`actionRecoveryConfirmRequestSchema.senderProtected`).
+   * message-list action, any of its senders. The review must say it, and
+   * Confirm echoes it back (`actionRecoveryConfirmRequestSchema
+   * .senderProtected`) as the consent the retry carries; without it the
+   * worker stops the retry (founder decision 2026-09-26).
    */
   senderProtected: boolean;
+  /**
+   * Why (`sender_policies.protection_reason`), so the review can say so
+   * (CLAUDE.md §2.6). Null when not Protected, and for a message list,
+   * whose senders are many.
+   */
+  protectionReason: string | null;
 }
 
 export const actionRecoveryConfirmRequestSchema = z

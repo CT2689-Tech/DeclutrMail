@@ -1,5 +1,6 @@
 import {
   actionJobs,
+  actionRecoveryPreviews,
   activityLog,
   mailMessages,
   mailboxAccounts,
@@ -15,6 +16,8 @@ import {
   LabelActionWorker,
   OutboxPublisher,
   PASSTHROUGH_MAILBOX_LOCK,
+  RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+  type BatchModifyOptions,
   type GmailMutationAccess,
   type GmailMutationClient,
   type LabelActionJobData,
@@ -25,6 +28,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { ActionRecoveryService } from './action-recovery.service.js';
 import { ActionsService } from './actions.service.js';
 
 /**
@@ -117,11 +121,16 @@ async function seedSecondSender(db: Db, mailboxAccountId: string): Promise<strin
   return s!.id;
 }
 
-/** Records batchModify calls; never talks to Gmail. */
+/** Records batchModify calls; never talks to Gmail. Runs the hook as the real client does. */
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change?: unknown }[] = [];
   async modifyLabels(): Promise<void> {}
-  async batchModify(messageIds: string[], change?: unknown): Promise<void> {
+  async batchModify(
+    messageIds: string[],
+    change?: unknown,
+    opts: BatchModifyOptions = {},
+  ): Promise<void> {
+    await opts.beforeFirstRequest?.();
     this.calls.push({ ids: [...messageIds], change });
   }
   async ensureLabelId(name: string): Promise<string> {
@@ -431,5 +440,124 @@ describe('action pipeline contract — a sender protected while its job waits', 
     await drain();
 
     expect(gmail.calls.flatMap((c) => c.ids)).toEqual(['a-1']);
+  });
+});
+
+/**
+ * Founder decision 2026-09-26, end to end: a retry from Activity whose
+ * sender turned Protected after its review said "not Protected" never
+ * touches Gmail — it fails and stays reviewable; the next review says
+ * Protected, and its Confirm carries the consent the worker honours.
+ * Real ActionRecoveryService → the payload it enqueues → real worker.
+ */
+describe('action pipeline contract — a retry whose sender turned Protected after review', () => {
+  let db: Db;
+  let mailboxId: string;
+  let senderId: string;
+  let recovery: ActionRecoveryService;
+  let policy: SendersPolicyService;
+  let gmail: FakeMutationClient;
+  let worker: LabelActionWorker;
+  let enqueued: LabelActionJobData[];
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db);
+    senderId = await seedSender(db, mailboxId);
+    enqueued = [];
+    const actionQueue = {
+      add: async (_name: string, data: LabelActionJobData) => {
+        enqueued.push(data);
+      },
+    };
+    const verificationQueue = { add: async () => undefined };
+    recovery = new ActionRecoveryService(
+      db as never,
+      actionQueue as never,
+      verificationQueue as never,
+    );
+    policy = new SendersPolicyService(db as never);
+    gmail = new FakeMutationClient();
+    worker = new LabelActionWorker({
+      db: db as never,
+      gmailMutation: { getClient: async () => gmail },
+      outbox: new OutboxPublisher(),
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+    });
+  });
+
+  /** A verified, ready review of `actionId` whose retry re-applies ['r-1']. */
+  async function readyReview(actionId: string): Promise<string> {
+    const started = await recovery.createPreview({ mailboxAccountId: mailboxId, actionId });
+    await db
+      .update(actionRecoveryPreviews)
+      .set({
+        status: 'ready',
+        outcome: 'not_applied',
+        targetMessageIds: ['r-1'],
+        remainingMessageIds: ['r-1'],
+        verifiedCount: 1,
+        verifiedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(actionRecoveryPreviews.id, started.previewId));
+    return started.previewId;
+  }
+
+  it('stops the unconsented retry, and runs the one the review said was Protected', async () => {
+    await seedMessage(db, mailboxId, 'r-1', ['INBOX'], daysAgo(5));
+    const [failed] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        resolvedMessageIds: ['r-1'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'failed-archive',
+      })
+      .returning();
+
+    // The review says "not Protected"; Confirm carries no consent.
+    const first = await readyReview(failed!.id);
+    await expect(recovery.getPreview(mailboxId, first)).resolves.toMatchObject({
+      senderProtected: false,
+    });
+    const retry = await recovery.confirmPreview({
+      mailboxAccountId: mailboxId,
+      previewId: first,
+      idempotencyKey: 'retry-1',
+      wakeAt: null,
+    });
+    // Protected while the retry waits its turn.
+    await policy.setPolicy({ mailboxAccountId: mailboxId, senderId, patch: { isProtected: true } });
+    for (const job of enqueued.splice(0)) await worker.processJob(job, CTX);
+
+    expect(gmail.calls).toEqual([]);
+    const [stopped] = await db.select().from(actionJobs).where(eq(actionJobs.id, retry.actionId));
+    expect(stopped).toMatchObject({
+      status: 'failed',
+      errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+    });
+
+    // Reviewed again: the review names the protection, and "…anyway"
+    // carries the consent through to the worker.
+    const second = await readyReview(retry.actionId);
+    await expect(recovery.getPreview(mailboxId, second)).resolves.toMatchObject({
+      senderProtected: true,
+    });
+    await recovery.confirmPreview({
+      mailboxAccountId: mailboxId,
+      previewId: second,
+      idempotencyKey: 'retry-2',
+      wakeAt: null,
+      senderProtected: true,
+    });
+    for (const job of enqueued.splice(0)) await worker.processJob(job, CTX);
+
+    expect(gmail.calls.map((call) => call.ids)).toEqual([['r-1']]);
   });
 });

@@ -155,7 +155,7 @@ export class ActionRecoveryService {
       row.preview,
       row.verb,
       row.wakeAt,
-      await this.senderProtected(this.db, mailboxAccountId, row.selector, retrySet),
+      await this.senderProtection(this.db, mailboxAccountId, row.selector, retrySet),
     );
   }
 
@@ -173,10 +173,28 @@ export class ActionRecoveryService {
     selector: LabelActionSelector,
     messageIds: string[],
   ): Promise<boolean> {
+    return (await this.senderProtection(executor, mailboxAccountId, selector, messageIds))
+      .isProtected;
+  }
+
+  /**
+   * As `senderProtected`, with why: the sender's recorded reason, so the
+   * review can state it (CLAUDE.md §2.6). A message list has many senders
+   * and so no single reason.
+   */
+  private async senderProtection(
+    executor: Pick<DrizzleDb, 'select'>,
+    mailboxAccountId: string,
+    selector: LabelActionSelector,
+    messageIds: string[],
+  ): Promise<{ isProtected: boolean; reason: string | null }> {
     // ADR-0008 §3 exception: actions → senders (read).
     if (selector.type === 'sender') {
       const [policy] = await executor
-        .select({ isProtected: senderPolicies.isProtected })
+        .select({
+          isProtected: senderPolicies.isProtected,
+          reason: senderPolicies.protectionReason,
+        })
         .from(senderPolicies)
         .where(
           and(
@@ -185,9 +203,11 @@ export class ActionRecoveryService {
           ),
         )
         .limit(1);
-      return policy?.isProtected === true;
+      return policy?.isProtected === true
+        ? { isProtected: true, reason: policy.reason ?? null }
+        : { isProtected: false, reason: null };
     }
-    if (messageIds.length === 0) return false;
+    if (messageIds.length === 0) return { isProtected: false, reason: null };
     const [hit] = await executor
       .select({ one: sql<number>`1` })
       .from(mailMessages)
@@ -206,7 +226,7 @@ export class ActionRecoveryService {
         ),
       )
       .limit(1);
-    return hit !== undefined;
+    return { isProtected: hit !== undefined, reason: null };
   }
 
   async confirmPreview(input: {
@@ -723,7 +743,7 @@ function projectPreview(
   preview: typeof actionRecoveryPreviews.$inferSelect,
   verb: RecoverableVerb,
   wakeAt: Date | null,
-  senderProtected: boolean,
+  protection: { isProtected: boolean; reason: string | null },
 ): ActionRecoveryPreviewResult {
   const unavailableCount = preview.unavailableCount;
   const alreadyAppliedCount = Math.max(
@@ -747,7 +767,8 @@ function projectPreview(
     requiresNewWakeAt: verb === 'later' && (!wakeAt || wakeAt.getTime() <= Date.now()),
     expiresAt: preview.expiresAt.toISOString(),
     recoveryActionId: preview.recoveryActionId,
-    senderProtected,
+    senderProtected: protection.isProtected,
+    protectionReason: protection.reason,
   };
 }
 
