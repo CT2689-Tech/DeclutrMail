@@ -181,22 +181,6 @@ describe('BaseDeclutrWorker', () => {
   });
 
   describe('success path', () => {
-    it('writes what processJob reports onto its own BullMQ job', async () => {
-      const updateProgress = vi.fn(async () => {});
-      const job = {
-        ...fakeJob<TestPayload, { ok: true }>({ data: { mailboxAccountId: 'mb-1' } }),
-        updateProgress,
-      } as unknown as Job<TestPayload, { ok: true }>;
-      const worker = new TestWorker(async (_payload, ctx) => {
-        await ctx.reportProgress?.({ processed: 500, total: 1_200 });
-        return { ok: true };
-      });
-
-      await worker.run(job);
-
-      expect(updateProgress).toHaveBeenCalledWith({ processed: 500, total: 1_200 });
-    });
-
     it('emits worker.started then worker.succeeded with the result metric', async () => {
       const worker = new TestWorker(async () => ({ ok: true }));
       const obs = recordingObserver();

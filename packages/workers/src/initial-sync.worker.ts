@@ -38,6 +38,7 @@ import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from '.
 import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { InitialSyncJobData } from './queue.js';
+import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -101,6 +102,11 @@ export interface InitialSyncDeps {
    * gap. The integration PR passes `outbox: new OutboxPublisher()`.
    */
   outbox?: OutboxPublisher;
+  /**
+   * Where the read's counts go for the sync gate's "N of M emails" line.
+   * Absent, the line never shows; the scan is unaffected either way.
+   */
+  scanProgress?: ScanProgressStore;
 }
 
 /**
@@ -156,16 +162,6 @@ export interface InitialSyncResult {
    * passes this guard.
    */
   alreadyReady?: boolean;
-}
-
-/**
- * The metadata read's counts: messages read (including ones an earlier
- * attempt saved) of the messages Gmail listed. The shape of the job's
- * progress that `GET /api/v1/sync/status` reads (`SyncMessageProgress`).
- */
-interface ScanCounts {
-  processed: number;
-  total: number;
 }
 
 /** Three values of the `gmail_unsubscribe_method` enum (D9, RFC 8058). */
@@ -413,9 +409,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // slow?" unanswerable. Each emit costs ~1 line; benign.
     initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
     // Clear a retried attempt's counts BEFORE the row drops back to 5%:
-    // the status route reads the row, then the job, and must never pair
-    // this attempt's bar with the last attempt's numbers.
-    await this.reportScanProgress(ctx, null);
+    // the status route reads the row, then the counts, so this attempt's
+    // bar is never paired with the last attempt's numbers.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null);
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
@@ -440,7 +436,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       unreadable,
     } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
       await this.updateProgress(mailboxAccountId, counts.processed, counts.total);
-      await this.reportScanProgress(ctx, counts);
+      // An empty mailbox has nothing to count against.
+      if (counts.total > 0) await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts);
     });
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
@@ -452,6 +449,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     ctx.signal?.throwIfAborted();
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
+    // The read is over; its counts describe nothing the gate shows now.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null);
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
     lap('building_sender_index');
 
@@ -829,6 +828,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         return meta;
       });
       gmailApiCalls += chunk.length;
+      // Every id fetched counts as read — stored, or skipped as unreadable,
+      // deleted since the list, or unkeyable — so the gate's count reaches
+      // the total when the read does.
+      processed += chunk.length;
       chunk = [];
 
       for (const meta of metas) {
@@ -846,7 +849,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         if (!row.facts.isOutbound && !pendingSenders.has(row.senderKey)) {
           pendingSenders.set(row.senderKey, this.toIdentityRow(mailboxAccountId, row));
         }
-        processed += 1;
       }
 
       if (pendingMessages.length >= UPSERT_BATCH) {
@@ -1534,29 +1536,45 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     await this.deps.db
       .update(providerSyncState)
       .set({ progressPct: Math.min(pct, 75), updatedAt: sql`now()` })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      // Only while the row still says this read is running: a reconnect
+      // resets it to `queued` while this attempt finishes, and the bar
+      // must not climb under "Waiting to start."
+      .where(
+        and(
+          eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          eq(providerSyncState.currentStage, 'fetching_metadata'),
+        ),
+      );
   }
 
   /**
-   * Put the scan's counts on this run's BullMQ job — `null` clears them
-   * back to BullMQ's own "no progress" (0). Display-only, so a failed
-   * write is logged and the scan carries on: a missing "N of M" line is
-   * the only cost, and the status route already reads a missing or
-   * unreadable value as no line at all.
+   * Put the read's counts where the status route reads them; `null` clears
+   * them (an attempt starting, the read ending). Display-only, on a
+   * fail-fast store: a failed write is logged and the scan carries on — a
+   * missing "N of M emails" line is the only cost. A failed clear can leave
+   * the previous attempt's counts beside this attempt's bar until its first
+   * count lands, which is why `phase` is logged.
    */
-  private async reportScanProgress(ctx: WorkerContext, counts: ScanCounts | null): Promise<void> {
-    if (!ctx.reportProgress) {
+  private async reportScanProgress(
+    mailboxAccountId: string,
+    attempt: number,
+    counts: ScanCounts | null,
+  ): Promise<void> {
+    const store = this.deps.scanProgress;
+    if (!store) {
       return;
     }
     try {
-      await ctx.reportProgress(counts ?? 0);
+      await store.write(mailboxAccountId, counts);
     } catch (err) {
       console.warn(
         JSON.stringify({
           level: 'warn',
-          kind: 'sync.scan_progress_report_failed',
+          kind: 'sync.scan_progress_write_failed',
           worker: this.workerName,
-          mailboxAccountId: ctx.mailboxAccountId,
+          mailboxAccountId,
+          attempt,
+          phase: counts === null ? 'clear' : 'count',
           message: err instanceof Error ? err.message : String(err),
         }),
       );

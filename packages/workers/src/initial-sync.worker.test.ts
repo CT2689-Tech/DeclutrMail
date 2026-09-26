@@ -23,6 +23,7 @@ import { applyAutomaticProtection } from './automatic-protection.js';
 import { InitialSyncWorker } from './initial-sync.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
+import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
@@ -707,44 +708,52 @@ describe('InitialSyncWorker', () => {
     }
   });
 
-  describe('scan counts on the job (the gate line "12,400 of 40,898 emails")', () => {
-    type Report = { progress: unknown; stage: string | undefined; pct: number | undefined };
+  describe('scan counts for the gate line ("12,400 of 40,898 emails")', () => {
+    type Write = {
+      counts: ScanCounts | null;
+      stage: string | undefined;
+      pct: number | undefined;
+    };
 
-    /** Records each progress report with the gate row as it stood at that instant. */
-    function recorder() {
-      const reports: Report[] = [];
-      const reportProgress = async (progress: object | number): Promise<void> => {
-        const [row] = await db
-          .select({ stage: providerSyncState.currentStage, pct: providerSyncState.progressPct })
-          .from(providerSyncState)
-          .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
-        reports.push({ progress, stage: row?.stage, pct: row?.pct });
+    /** A store that records each write with the gate row as it stood at that instant. */
+    function recorder(): { writes: Write[]; scanProgress: ScanProgressStore } {
+      const writes: Write[] = [];
+      const scanProgress: ScanProgressStore = {
+        write: async (_mailbox, counts) => {
+          const [row] = await db
+            .select({ stage: providerSyncState.currentStage, pct: providerSyncState.progressPct })
+            .from(providerSyncState)
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          writes.push({ counts, stage: row?.stage, pct: row?.pct });
+        },
       };
-      return { reports, reportProgress };
+      return { writes, scanProgress };
     }
 
-    it('reports the total once the mailbox is listed, then every saved batch', async () => {
-      const client = new FakeGmailClient(makeMessages(1_200, 7));
-      const { reports, reportProgress } = recorder();
+    it('writes the total once the mailbox is listed, every saved batch, then clears', async () => {
+      const { writes, scanProgress } = recorder();
 
-      await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-        { mailboxAccountId },
-        { ...CTX, reportProgress },
-      );
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(1_200, 7))),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
 
-      expect(reports.map((r) => r.progress)).toEqual([
-        0, // cleared first — see the retry test below
+      expect(writes.map((w) => w.counts)).toEqual([
+        null, // an attempt starts clean — see the retry test below
         { processed: 0, total: 1_200 },
         { processed: 500, total: 1_200 },
         { processed: 1_000, total: 1_200 },
+        null, // the read is over
       ]);
       // The bar and the line agree at every count: the row is already
-      // written for the same `processed` when the job hears it.
-      for (const r of reports.slice(1)) {
-        const { processed, total } = r.progress as { processed: number; total: number };
-        expect(r.stage).toBe('fetching_metadata');
-        expect(r.pct).toBe(5 + Math.round((70 * processed) / total));
+      // written for the same `processed` when the store hears it.
+      for (const w of writes.filter((x) => x.counts !== null)) {
+        const { processed, total } = w.counts!;
+        expect(w.stage).toBe('fetching_metadata');
+        expect(w.pct).toBe(5 + Math.round((70 * processed) / total));
       }
+      expect(writes.at(-1)!.stage).toBe('building_sender_index');
     });
 
     it("clears a retried attempt's counts before the row drops back to 5%", async () => {
@@ -755,54 +764,109 @@ describe('InitialSyncWorker', () => {
         readinessStatus: 'syncing',
         progressPct: 34,
       });
-      const { reports, reportProgress } = recorder();
+      const { writes, scanProgress } = recorder();
 
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(makeMessages(10, 2))),
-      }).processJob({ mailboxAccountId }, { ...CTX, attempt: 2, reportProgress });
+        scanProgress,
+      }).processJob({ mailboxAccountId }, { ...CTX, attempt: 2 });
 
       // Cleared while the row still showed attempt 1's 34% — so no read
       // can pair attempt 1's counts with attempt 2's reset bar.
-      expect(reports[0]).toEqual({ progress: 0, stage: 'fetching_metadata', pct: 34 });
+      expect(writes[0]).toEqual({ counts: null, stage: 'fetching_metadata', pct: 34 });
     });
 
     it('a resumed scan counts what is already saved as read', async () => {
-      const worker = new InitialSyncWorker({
+      await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(makeMessages(700, 5))),
-      });
-      await worker.processJob({ mailboxAccountId }, CTX);
+      }).processJob({ mailboxAccountId }, CTX);
       await resetToQueued(db, mailboxAccountId);
-      const { reports, reportProgress } = recorder();
+      const { writes, scanProgress } = recorder();
 
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(makeMessages(1_200, 5))),
-      }).processJob({ mailboxAccountId }, { ...CTX, reportProgress });
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
 
-      expect(reports.map((r) => r.progress)).toEqual([
-        0,
+      expect(writes.map((w) => w.counts)).toEqual([
+        null,
         { processed: 700, total: 1_200 },
         { processed: 1_200, total: 1_200 },
+        null,
       ]);
     });
 
-    it('finishes the scan when a progress report fails', async () => {
+    it('counts every message it fetched as read, stored or skipped, so the count reaches the total', async () => {
+      // Oldest first: the first five fetched are ones Gmail will not render.
+      const messages = makeMessages(1_200, 7);
+      const unreadable = new Set(messages.slice(-5).map((m) => m.id));
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(messages, '987654', unreadable)),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      // The first save lands after the second chunk (only 495 stored after
+      // the first): 1,000 fetched, not 995 stored.
+      const counted = writes.flatMap((w) => (w.counts ? [w.counts.processed] : []));
+      expect(counted).toEqual([0, 1_000]);
+    });
+
+    it('writes no count for an empty mailbox', async () => {
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient([])),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      expect(writes.map((w) => w.counts)).toEqual([null, null]);
+    });
+
+    it('stops moving the bar once a reconnect has reset the row mid-read', async () => {
+      const client = new FakeGmailClient(makeMessages(1_200, 7));
+      const original = client.getMessageMetadata.bind(client);
+      let seen = 0;
+      client.getMessageMetadata = async (id) => {
+        seen += 1;
+        // After the first batch is saved, a reconnect's `markQueued`
+        // resets the row while this attempt keeps reading.
+        if (seen === 501) await resetToQueued(db, mailboxAccountId);
+        return original(id);
+      };
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client), scanProgress }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      // The second batch lands on a queued row: "Waiting to start." at 0%,
+      // not a bar climbing under it.
+      expect(writes.find((w) => w.counts?.processed === 1_000)).toMatchObject({
+        stage: 'queued',
+        pct: 0,
+      });
+    });
+
+    it('finishes the scan when a write fails, naming what failed', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         const result = await new InitialSyncWorker({
           db,
           gmailAccess: accessFor(new FakeGmailClient(makeMessages(600, 3))),
-        }).processJob(
-          { mailboxAccountId },
-          {
-            ...CTX,
-            reportProgress: async () => {
+          scanProgress: {
+            write: async () => {
               throw new Error('redis down');
             },
           },
-        );
+        }).processJob({ mailboxAccountId }, { ...CTX, attempt: 3 });
 
         expect(result.messagesSynced).toBe(600);
         const [state] = await db
@@ -810,10 +874,13 @@ describe('InitialSyncWorker', () => {
           .from(providerSyncState)
           .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
         expect(state!.readiness).toBe('ready');
-        const kinds = warn.mock.calls.map(
-          (c) => (JSON.parse(String(c[0])) as { kind: string }).kind,
-        );
-        expect(kinds).toContain('sync.scan_progress_report_failed');
+        const failures = warn.mock.calls
+          .map(
+            (c) => JSON.parse(String(c[0])) as { kind: string; phase?: string; attempt?: number },
+          )
+          .filter((l) => l.kind === 'sync.scan_progress_write_failed');
+        expect(failures.map((l) => l.phase)).toEqual(['clear', 'count', 'count', 'clear']);
+        expect(failures.every((l) => l.attempt === 3)).toBe(true);
       } finally {
         warn.mockRestore();
       }

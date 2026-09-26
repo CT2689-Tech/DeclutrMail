@@ -109,9 +109,9 @@ describe('SyncStatusSchema', () => {
     it('accepts processed and total while the scan reads the mailbox', () => {
       const parsed = SyncStatusSchema.parse({
         ...VALID_SYNCING,
-        message_progress: { processed: 12_400, total: 40_898 },
+        message_progress: { processed: 12_400, total: 40_898, age_ms: 2_500 },
       });
-      expect(parsed.message_progress).toEqual({ processed: 12_400, total: 40_898 });
+      expect(parsed.message_progress).toEqual({ processed: 12_400, total: 40_898, age_ms: 2_500 });
     });
 
     it('accepts null (total not known yet) and an OMITTED field (pre-field API)', () => {
@@ -125,18 +125,23 @@ describe('SyncStatusSchema', () => {
       expect(
         SyncStatusSchema.safeParse({
           ...VALID_SYNCING,
-          message_progress: { processed: 500, total: 500 },
+          message_progress: { processed: 500, total: 500, age_ms: 0 },
         }).success,
       ).toBe(true);
     });
 
     it.each([
-      ['more processed than the mailbox holds', { processed: 501, total: 500 }],
-      ['a zero total (nothing to count against)', { processed: 0, total: 0 }],
-      ['a negative count', { processed: -1, total: 500 }],
-      ['a fractional count', { processed: 1.5, total: 500 }],
-      ['half the pair', { processed: 10 }],
-      ['an extra key', { processed: 10, total: 500, subject: 'Hello' }],
+      ['more processed than the mailbox holds', { processed: 501, total: 500, age_ms: 0 }],
+      ['a zero total (nothing to count against)', { processed: 0, total: 0, age_ms: 0 }],
+      ['a negative count', { processed: -1, total: 500, age_ms: 0 }],
+      ['a fractional count', { processed: 1.5, total: 500, age_ms: 0 }],
+      ['half the pair', { processed: 10, age_ms: 0 }],
+      [
+        'no age (when the counts were written is how time left is measured)',
+        { processed: 10, total: 500 },
+      ],
+      ['a negative age', { processed: 10, total: 500, age_ms: -1 }],
+      ['an extra key', { processed: 10, total: 500, age_ms: 0, subject: 'Hello' }],
     ])('rejects %s', (_label, message_progress) => {
       expect(SyncStatusSchema.safeParse({ ...VALID_SYNCING, message_progress }).success).toBe(
         false,

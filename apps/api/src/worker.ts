@@ -42,6 +42,7 @@ import {
   createAutopilotExecutionChain,
   createRedisConnection,
   createRedisProducerConnection,
+  createRedisScanProgressStore,
   GMAIL_QUOTA_SCRIPT,
   type GmailQuotaLimiter,
   DEAD_LETTER_INTERVAL_MS,
@@ -861,9 +862,18 @@ async function bootstrap(): Promise<void> {
   // idempotency key for the all-senders sweep.
   const scoreProducerQueue = new Queue<ScoreJobData>(SCORE_QUEUE, { connection });
 
+  // The sync gate's "N of M emails" counts: display-only, so on their own
+  // fail-fast, bounded connection. A Redis outage costs the line, never the
+  // scan — on the Worker's connection a write would wait the outage out.
+  const scanProgressConnection = createRedisProducerConnection(requireEnv('REDIS_URL'), {
+    commandTimeout: 2_000,
+  });
+  // Failures surface at the write, as `sync.scan_progress_write_failed`.
+  scanProgressConnection.on('error', () => undefined);
   const initialSync = new InitialSyncWorker({
     db,
     gmailAccess,
+    scanProgress: createRedisScanProgressStore(scanProgressConnection),
     // U14/U-WIRE: publish `mailbox.sync_ready` in the ready transition
     // (transactional outbox) — drives preset seeding, the Autopilot
     // apply sweep, and the D6 sync-complete email via the consumer
@@ -2993,6 +3003,7 @@ async function bootstrap(): Promise<void> {
       // doesn't race a fresh dispatch tick that touched the same db.
       await outboxDispatcher.stop();
       await bullWorker.close();
+      await scanProgressConnection.quit().catch(() => undefined);
       await incrementalBullWorker.close();
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();

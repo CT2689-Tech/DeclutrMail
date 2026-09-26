@@ -86,6 +86,8 @@ describe('SyncController.getStatus', () => {
     await expect(controller.getStatus(MAILBOX)).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
+    // The 5xx log names the field; the client body stays generic.
+    await expect(controller.getStatus(MAILBOX)).rejects.toThrow('progress_pct:too_big');
   });
 
   it('passes through the error_code when present (failed readiness)', async () => {
@@ -107,12 +109,16 @@ describe('SyncController.getStatus', () => {
     const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
     const readProgress = vi
       .fn<InitialSyncProgressReader['read']>()
-      .mockResolvedValue({ processed: 12_400, total: 40_898 });
+      .mockResolvedValue({ processed: 12_400, total: 40_898, age_ms: 2_500 });
     const controller = makeController({ getStatus, readProgress });
 
     const result = await controller.getStatus(MAILBOX);
 
-    expect(result.data.message_progress).toEqual({ processed: 12_400, total: 40_898 });
+    expect(result.data.message_progress).toEqual({
+      processed: 12_400,
+      total: 40_898,
+      age_ms: 2_500,
+    });
     expect(readProgress).toHaveBeenCalledWith('mailbox-uuid-1', VALID_STATUS);
     expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
   });

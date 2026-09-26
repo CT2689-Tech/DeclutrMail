@@ -46,9 +46,8 @@ import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.
  * The pre-session `?mailboxAccountId=` query param is gone.
  *
  * Privacy posture (§2.1): both responses carry only stage enums + a
- * numeric percentage + two message counts + an allowlisted boolean + a
- * string cursor id. No body content, no headers, no message-derived
- * data of any kind.
+ * numeric percentage + message counts + an allowlisted boolean + a
+ * string cursor id. No body content, no headers, no message content.
  * `privacy-auditor` verifies this.
  */
 @Controller('v1/sync')
@@ -83,7 +82,9 @@ export class SyncController {
     // truth (D224).
     const result = SyncStatusSchema.safeParse({ ...status, message_progress });
     if (!result.success) {
-      throw new InternalServerErrorException('Sync state failed contract validation.');
+      // The failing fields reach the 5xx log; the client body stays generic.
+      const fields = result.error.issues.map((i) => `${i.path.join('.')}:${i.code}`).join(',');
+      throw new InternalServerErrorException(`Sync state failed contract validation (${fields}).`);
     }
     return ok(result.data);
   }

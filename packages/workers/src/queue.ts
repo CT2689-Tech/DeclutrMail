@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Job, type JobsOptions, type Queue } from 'bullmq';
-import { Redis } from 'ioredis';
+import { Redis, type RedisOptions } from 'ioredis';
 
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -281,9 +281,16 @@ export function createRedisConnection(redisUrl: string): Redis {
  * BLOCKING connections, and only when it constructs the client itself
  * — a raw instance like this one is passed through untouched
  * (`redis-connection.js`).
+ *
+ * Neither flag bounds a command sent to a Redis that stays connected but
+ * never answers (a blackhole emits no `close`). A caller that must not
+ * wait on that passes `commandTimeout`; the two flags always win.
  */
-export function createRedisProducerConnection(redisUrl: string): Redis {
-  return new Redis(redisUrl, { maxRetriesPerRequest: 0, enableOfflineQueue: false });
+export function createRedisProducerConnection(
+  redisUrl: string,
+  bounds: Pick<RedisOptions, 'commandTimeout' | 'connectTimeout'> = {},
+): Redis {
+  return new Redis(redisUrl, { ...bounds, maxRetriesPerRequest: 0, enableOfflineQueue: false });
 }
 
 /**

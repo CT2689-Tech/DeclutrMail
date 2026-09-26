@@ -167,6 +167,13 @@ export {
 } from './gmail-quota-limiter.js';
 export type { GmailQuotaClock, GmailQuotaLimiter, GmailQuotaRedis } from './gmail-quota-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
+export {
+  createRedisScanProgressStore,
+  parseScanProgressRecord,
+  SCAN_PROGRESS_TTL_SECONDS,
+  scanProgressKey,
+} from './scan-progress.js';
+export type { ScanCounts, ScanProgressRecord, ScanProgressStore } from './scan-progress.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
 export {
   IncrementalSyncWorker,

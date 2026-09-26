@@ -30,10 +30,4 @@ export interface WorkerContext {
   startedAt: Date;
   /** The policy this worker declared. */
   policy: WorkerPolicy;
-  /**
-   * Write this run's progress onto its BullMQ job, where a reader can
-   * fetch it by job id (the sync gate's "N of M emails" line). Absent
-   * outside a BullMQ run.
-   */
-  reportProgress?: (progress: number | object) => Promise<void>;
 }

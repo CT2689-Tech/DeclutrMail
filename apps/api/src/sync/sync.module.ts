@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
 import {
   createRedisConnection,
   createRedisProducerConnection,
@@ -11,8 +12,8 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import {
-  INITIAL_SYNC_PROGRESS_QUEUE_TOKEN,
   InitialSyncProgressReader,
+  SCAN_PROGRESS_REDIS_TOKEN,
 } from './initial-sync-progress.reader.js';
 import { SyncController } from './sync.controller.js';
 import {
@@ -79,17 +80,19 @@ import {
       },
     },
     {
-      // Read-only, for the status poll: fail-fast, so a Redis outage drops
-      // the "N of M emails" line instead of hanging the gate's poll.
-      provide: INITIAL_SYNC_PROGRESS_QUEUE_TOKEN,
-      useFactory: (): Queue<InitialSyncJobData> => {
+      // The status poll's one Redis read (the gate's "N of M emails"):
+      // fail-fast and deadline-bound, so an outage or a silent Redis drops
+      // the line instead of holding the poll.
+      provide: SCAN_PROGRESS_REDIS_TOKEN,
+      useFactory: (): Redis => {
         const url = process.env.REDIS_URL;
         if (!url) {
           throw new Error('REDIS_URL is not set — see .env.example.');
         }
-        return new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, {
-          connection: createRedisProducerConnection(url),
-        });
+        const redis = createRedisProducerConnection(url, { commandTimeout: 500 });
+        // Failures surface at the read, as `sync.scan_progress_read_failed`.
+        redis.on('error', () => undefined);
+        return redis;
       },
     },
     InitialSyncProgressReader,
