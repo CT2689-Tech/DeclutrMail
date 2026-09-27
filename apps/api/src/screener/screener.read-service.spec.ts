@@ -540,3 +540,31 @@ describe('ScreenerReadService — the badge counts only what the queue can rende
     expect(count.pending).toBe(rows.length);
   });
 });
+
+describe('ScreenerReadService — whose sentence the reason is (D24)', () => {
+  /**
+   * Explanations are bought on demand (founder decision 2026-09-25): a
+   * Screener sender's reason is usually the template until someone opens
+   * the row. The page asks for the LLM sentence only when the reason still
+   * needs one, which only the provenance can tell it.
+   */
+  it('reports whether a recommendation reason is the template or LLM prose', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'provenance');
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'alpha@new.example');
+    await seedQueuedSender(db, mailboxId, SENDER_B, 'beta@fresh.example');
+    await db
+      .update(triageDecisions)
+      .set({ generatedBy: 'llm_haiku', reasoning: 'Two messages so far; too early to judge.' })
+      .where(eq(triageDecisions.senderKey, SENDER_B));
+
+    const rows = await new ScreenerReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 50,
+    });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+
+    expect(byKey.get(SENDER_A)?.recommendation?.generatedBy).toBe('template');
+    expect(byKey.get(SENDER_B)?.recommendation?.generatedBy).toBe('llm_haiku');
+  });
+});

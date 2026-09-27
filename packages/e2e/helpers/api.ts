@@ -113,6 +113,9 @@ export interface TriageQueueRow {
   senderName: string;
   senderDomain: string;
   protectionReason: string | null;
+  /** Whose sentence the reason is (D24) — the page asks for a template's. */
+  generatedBy: 'llm_haiku' | 'template';
+  stale: boolean;
 }
 
 /** Composite preview counts (subset) — `GET /api/actions/preview`. */

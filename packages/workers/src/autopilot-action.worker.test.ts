@@ -1,4 +1,5 @@
 import { and, eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 import {
   actionJobs,
   activityLog,
@@ -7,13 +8,14 @@ import {
   mailMessages,
   outboxEvents,
   ruleMatchLog,
+  schema,
   senderPolicies,
   senders,
   undoJournal,
   users,
   workspaces,
 } from '@declutrmail/db';
-import { freshTestDb } from '@declutrmail/db/testing';
+import { freshTestDb, freshTestPglite } from '@declutrmail/db/testing';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -228,8 +230,11 @@ async function seedApprovedMatch(
 class FakeMutationClient implements GmailMutationClient {
   calls: { ids: string[]; change: LabelChange }[] = [];
   labelIdsByName = new Map<string, string>();
+  /** Runs before each mutation — lets a test commit a concurrent write mid-sweep. */
+  beforeBatchModify: (() => Promise<void>) | null = null;
   async modifyLabels(): Promise<void> {}
   async batchModify(messageIds: string[], change: LabelChange): Promise<void> {
+    await this.beforeBatchModify?.();
     this.calls.push({ ids: [...messageIds], change });
   }
   async ensureLabelId(name: string): Promise<string> {
@@ -814,6 +819,82 @@ describe('AutopilotActionWorker', () => {
       .where(eq(outboxEvents.topic, TOPICS.ACTION_LABEL_APPLIED));
     expect(events).toHaveLength(1);
     expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
+  });
+
+  // The wake sweep and the Later page read ONLY `sender_policies`. The
+  // manual pipeline writes the timer in its terminal transaction; an
+  // approved Autopilot Later that did not moved mail with no way back.
+  it('schedules the return of an approved Later in the transaction that records the move (D245)', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders', 'observe');
+    const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 2 });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+
+    await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      );
+    expect(policy?.snoozedUntil?.toISOString()).toBe('2026-06-17T08:00:00.000Z');
+    expect(policy?.snoozedAt?.toISOString()).toBe(NOW.toISOString());
+    // A return timer is not a verdict and not Protect.
+    expect(policy?.policyType).toBe('keep');
+    expect(policy?.isProtected).toBe(false);
+  });
+
+  // The user's own Later on this sender keeps its time, note and any
+  // queued Wake now: the new mail simply returns with it (D78 — one timer
+  // per sender). Replacing it would also let undoing this Later clear a
+  // timer the user's earlier Later still depends on.
+  it('keeps a return the user already scheduled for the sender', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders', 'observe');
+    const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 1 });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+    const userTimer = new Date('2026-06-12T09:00:00Z');
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      snoozedUntil: userTimer,
+      snoozedAt: new Date('2026-06-09T09:00:00Z'),
+      snoozedReason: 'after the sale',
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(1);
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      );
+    expect(policy?.snoozedUntil?.toISOString()).toBe(userTimer.toISOString());
+    expect(policy?.snoozedReason).toBe('after the sale');
+  });
+
+  it('schedules no return for a Later that moved nothing', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders', 'observe');
+    const { senderKey } = await seedSender(db, mailboxId, 'quiet@shop.com', { inboxMessages: 0 });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(await db.select().from(senderPolicies)).toHaveLength(0);
   });
 
   it('retires a legacy unattended new-sender match before any Gmail mutation', async () => {
@@ -1489,6 +1570,219 @@ describe('AutopilotActionWorker', () => {
 
     expect(result.matchesConsidered).toBe(0);
     expect(gmail.calls).toHaveLength(0);
+  });
+
+  // The sweep releases the mailbox lock between matches, so other lock
+  // holders — an incremental sync that auto-protects a sender, another
+  // sweep for the same mailbox — commit in the gaps. Every input a
+  // match's decision reads has to be read inside that match's hold.
+
+  /** Two archive matches whose execution order is pinned (first, second). */
+  async function seedTwoArchiveMatches() {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const first = await seedSender(db, mailboxId, 'first@shop.com', { inboxMessages: 1 });
+    const second = await seedSender(db, mailboxId, 'second@shop.com', { inboxMessages: 1 });
+    await seedApprovedMatch(db, mailboxId, ruleId, first.senderKey);
+    const secondMatchId = await seedApprovedMatch(db, mailboxId, ruleId, second.senderKey);
+    await db
+      .update(ruleMatchLog)
+      .set({ matchedAt: new Date(NOW.getTime() + 1_000) })
+      .where(eq(ruleMatchLog.id, secondMatchId));
+    return { first, second, secondMatchId };
+  }
+
+  async function protect(senderKey: string) {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      policyType: 'keep',
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: NOW,
+    });
+  }
+
+  it('re-reads Protected per match: a sender protected mid-sweep is dismissed, not archived', async () => {
+    const { first, second, secondMatchId } = await seedTwoArchiveMatches();
+    let protectedSecond = false;
+    gmail.beforeBatchModify = async () => {
+      if (protectedSecond) return;
+      protectedSecond = true;
+      await protect(second.senderKey);
+    };
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(result.skippedProtected).toBe(1);
+    expect(gmail.calls.map((c) => c.ids)).toEqual([[`${first.senderKey.slice(0, 8)}-0`]]);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, secondMatchId));
+    expect(match!.resolution).toBe('dismissed');
+    expect(match!.dismissReason).toBe('protected');
+  });
+
+  it('finishes a claim another sweep left in flight mid-sweep, even once its sender is Protected', async () => {
+    const { second, secondMatchId } = await seedTwoArchiveMatches();
+    let injected = false;
+    gmail.beforeBatchModify = async () => {
+      if (injected) return;
+      injected = true;
+      // Another sweep claimed the second match, moved its mail, and died
+      // before its terminal transaction; the sender was protected since.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: second.senderId, senderKey: second.senderKey },
+        resolvedMessageIds: [`${second.senderKey.slice(0, 8)}-0`],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-${secondMatchId}`,
+      });
+      await protect(second.senderKey);
+    };
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    // The mail already moved: the only correct outcome is to record it
+    // (Activity row + undo token). Dismissing would strand it.
+    expect(result.skippedProtected).toBe(0);
+    expect(result.labelActionsExecuted).toBe(2);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, secondMatchId));
+    expect(match!.resolution).toBe('approved');
+    expect(match!.intentApplied).toBe(true);
+    expect(match!.intentToken).not.toBeNull();
+  });
+
+  it('charges intents another sweep records between our holds against the daily cap', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy'); // cap 25
+    for (let i = 0; i < 25; i += 1) {
+      const { senderKey } = await seedSender(db, mailboxId, `list${i}@news.com`, {
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://news.com/unsub',
+      });
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    }
+    // A concurrent sweep for the same mailbox records one intent for the
+    // same rule after each of ours.
+    worker = buildWorker({
+      enqueueUnsubExecution: async (data) => {
+        unsubJobs.push(data);
+        await db.insert(activityLog).values({
+          mailboxAccountId: mailboxId,
+          senderKey: 'another-sweep',
+          source: 'autopilot',
+          action: 'unsubscribe',
+          affectedCount: 0,
+          ruleId,
+          occurredAt: NOW,
+        });
+      },
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    // Match k sees 2(k-1) intents already spent: 13 fit under 25.
+    expect(result.unsubscribeIntentsRecorded).toBe(13);
+    expect(result.skippedCapped).toBe(12);
+  });
+
+  it('charges one unsubscribe intent once against the cap, not once per outcome row', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy'); // cap 25
+    const { senderKey } = await seedSender(db, mailboxId, 'list@news.com', {
+      unsubscribeMethod: 'mailto',
+    });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    // 24 intents already today, each with the outcome row that mailto,
+    // none and every one-click execution append under the same rule.
+    const earlier = new Date(NOW.getTime() - 60 * 60 * 1000);
+    await db.insert(activityLog).values(
+      Array.from({ length: 24 }, () =>
+        (['unsubscribe', 'unsubscribe_action_required'] as const).map((action) => ({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          source: 'autopilot' as const,
+          action,
+          affectedCount: 0,
+          ruleId,
+          occurredAt: earlier,
+        })),
+      ).flat(),
+    );
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.skippedCapped).toBe(0);
+    expect(result.unsubscribeIntentsRecorded).toBe(1);
+  });
+});
+
+describe('AutopilotActionWorker — mailbox lock scope', () => {
+  // 2026-09-25: an "Approve all" sweep held the mailbox lock across every
+  // match — ~20 statements per match at ~55 ms each in production — so
+  // label actions and syncs for the mailbox timed out (45 s) behind it.
+  // What they wait on is ONE hold, so that is what this pins.
+  it('holds the mailbox lock per match, so no hold grows with the batch', async () => {
+    let inHold: number | null = null;
+    const statementsPerHold: number[] = [];
+    const db = drizzle(await freshTestPglite(), {
+      schema,
+      logger: {
+        logQuery: () => {
+          if (inHold !== null) inHold += 1;
+        },
+      },
+    });
+    const mailboxId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mailboxId);
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    for (let i = 0; i < 12; i += 1) {
+      const { senderKey } = await seedSender(db, mailboxId, `bulk${i}@shop.com`, {
+        inboxMessages: 2,
+      });
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    }
+    const gmail = new FakeMutationClient();
+    const worker = new AutopilotActionWorker({
+      db: db as never,
+      gmailMutation: fakeAccess(gmail),
+      outbox: new OutboxPublisher(),
+      lock: {
+        run: async (_mailboxAccountId, fn) => {
+          inHold = 0;
+          try {
+            return await fn();
+          } finally {
+            statementsPerHold.push(inHold);
+            inHold = null;
+          }
+        },
+      },
+      enqueueUnsubExecution: async () => {},
+      now: () => NOW,
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(12);
+    expect(gmail.calls).toHaveLength(12);
+    // One archive is ~16 statements. The whole sweep under one hold was ~200.
+    expect(Math.max(...statementsPerHold)).toBeLessThan(25);
   });
 });
 

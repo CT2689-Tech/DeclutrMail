@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -24,6 +24,7 @@ import type {
   GmailMutationClient,
   LabelChange,
 } from './gmail-mutation-client.js';
+import { scheduleLaterReturn } from './later-return-timer.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import { ValidationError } from './worker-errors.js';
@@ -469,28 +470,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       // terminal state. Persist them in the same transaction so the
       // Later page and wake sweep cannot lose a Gmail-applied action.
       if (labelVerb === 'later' && job.selector.type === 'sender' && job.wakeAt !== null) {
-        const snoozedAt = new Date(appliedAt);
-        await tx
-          .insert(senderPolicies)
-          .values({
-            mailboxAccountId,
-            senderKey: job.selector.senderKey,
-            snoozedUntil: job.wakeAt,
-            snoozedAt,
-          })
-          .onConflictDoUpdate({
-            target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
-            set: {
-              snoozedUntil: job.wakeAt,
-              snoozedAt,
-              snoozedReason: null,
-              snoozeWakeLastAttemptAt: null,
-              snoozeWakeLastFailedAt: null,
-              snoozeWakeFailureCount: 0,
-              snoozeWakeFailureKind: null,
-              updatedAt: sql`now()`,
-            },
-          });
+        await scheduleLaterReturn(tx, {
+          mailboxAccountId,
+          senderKey: job.selector.senderKey,
+          wakeAt: job.wakeAt,
+          setAt: new Date(appliedAt),
+        });
       }
 
       await this.deps.outbox.publish(tx, {
@@ -615,7 +600,16 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       // Undoing a Later action cancels only THAT action's projected
       // schedule. If the user has since picked a newer wake time, the
       // timestamp guard preserves it instead of an old Undo clearing it.
+      //
+      // And only once none of the sender's mail is left in Later: a sender
+      // has ONE timer (D78), shared by every Later that moved its mail, so
+      // clearing it while another Later's mail still waits on it would
+      // leave that mail labelled with no way back. The mirror update above
+      // already took this undo's messages out of Later.
       if (job.verb === 'later' && job.selector.type === 'sender' && job.wakeAt !== null) {
+        const laterLabelId = groups
+          .flatMap((group) => group.change.removeLabelIds ?? [])
+          .find((label) => !SYSTEM_LABEL_IDS.has(label));
         await tx
           .update(senderPolicies)
           .set({
@@ -633,6 +627,24 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
               eq(senderPolicies.mailboxAccountId, mailboxAccountId),
               eq(senderPolicies.senderKey, job.selector.senderKey),
               eq(senderPolicies.snoozedUntil, job.wakeAt),
+              // Resolved only when this undo moved mail; one that moved
+              // nothing took nothing out of Later.
+              ...(ids.length > 0 && laterLabelId
+                ? [
+                    notExists(
+                      tx
+                        .select({ one: sql`1` })
+                        .from(mailMessages)
+                        .where(
+                          and(
+                            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+                            eq(mailMessages.senderKey, job.selector.senderKey),
+                            sql`${laterLabelId} = ANY(${mailMessages.labelIds})`,
+                          ),
+                        ),
+                    ),
+                  ]
+                : []),
             ),
           );
       }

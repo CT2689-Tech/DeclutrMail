@@ -24,6 +24,7 @@ export {
 } from './mailbox-reconnect.js';
 export {
   findStuckMailboxes,
+  reportStuckMailboxes,
   STUCK_MAILBOX_GRACE_MS,
   type StuckMailbox,
   type StuckMailboxReason,
@@ -341,7 +342,13 @@ export {
   followupCheckJobOptions,
   scheduledAtMinute as followupCheckScheduledAtMinute,
 } from './followup-check.queue.js';
-export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
+export {
+  FIRST_VIEW_QUEUE_ROWS,
+  SCORE_EXPLAIN_QUEUE,
+  SCORE_JOB,
+  SCORE_QUEUE,
+  ScoreWorker,
+} from './score.worker.js';
 export type {
   ScoreJobData,
   ScoreJobResult,
