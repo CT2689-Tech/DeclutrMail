@@ -4845,9 +4845,25 @@ The declarations came back out.
 **Enforcement update:** `scripts/personal-email-guard.test.mjs` in the CI Lint job fails on any consumer-domain address that is not a listed placeholder (negative-controlled against the original lines; refuses to pass when it sees no files).
 
 ## 2026-09-26 — The vendor watchdog stayed red for a known gap, so three new breaches changed nothing
-**PR:** TBD
+**PR:** #782 (https://github.com/CT2689-Tech/DeclutrMail/pull/782)
 **Caught by:** class sweep after the stuck-mailbox fix (#778)
 **What happened:** `check-vendor-limits.mjs` exits 1 on any BREACH or ERROR. Anthropic returned ERROR (no Admin API key) on every scheduled run from at least 2026-09-21, so the run was red daily. Sentry's BREACH (2026-09-24) and the Google Cloud budget and Upstash BREACHes (2026-09-25) arrived in a run that was already red, and nothing anyone saw changed.
 **Correct approach:** The same shape as the stuck-mailbox fix: a committed list of acknowledged causes (vendor, status, and text the row's detail must contain), each with an expiry at most 30 days out. Listed causes warn, anything else fails, an entry that matched nothing is flagged for deletion, and a missing or malformed list fails closed. The first draft keyed on (vendor, status) alone; review showed one line then muted every cause for that vendor, such as an Upstash volume acknowledgment hiding a suspended database.
 **Rule:** A watchdog that is red for a known reason has stopped reporting; acknowledge the known member explicitly so red means news again (see the 2026-09-26 stuck-mailbox entry).
 **Enforcement update:** `scripts/check-vendor-limits.test.mjs` replays the 2026-09-26 run's rows; each assertion was verified red against a negative control.
+
+## 2026-09-26 — Both alert scripts passed dry runs against a fake GCP that accepted requests the real API refuses
+**PR:** #778 and #779 shipped the requests; #785, #787 and #788 fix them
+**Caught by:** production (the LLM-refusal `--apply` got HTTP 400 on its policy after creating its metric) and a read-only live probe of the stuck-mailbox starve test's calls before its prod run
+**What happened:** `setup-stuck-mailbox-alert.mjs` and `setup-llm-rejection-alert.mjs` were each proven with `--apply`/`--starve-test` dry runs against a fake API that accepted every body and query. Three requests the real API refuses got through. Both scripts paired `evaluationMissingData: EVALUATION_MISSING_DATA_INACTIVE` with `duration: '0s'`: 400, "Conditions setting evaluation_missing_data must have a non-zero duration". The starve test polled `alerts.list` with `orderBy: 'openTime desc'`: 400, because orderBy takes the field names `open_time`/`close_time` while the Alert JSON it returns spells `openTime`. Run in prod, that starve test would have created its three test resources, thrown on its first poll and deleted them, proving nothing. The API reference documents both limits; the scripts were written from memory of it.
+**Correct approach:** A fake that accepts everything proves nothing about request validity. Before a script's first real run, send every read-only call it makes to the live API with the exact query or body it builds, and pin each write's documented limits (the discovery document states them) in a contract test.
+**Rule:** Mark a dry run against an accept-everything fake UNVERIFIED for request shape. Same shape as the PGlite/postgres.js rule (CLAUDE.md §2.6) and the 2026-06-10 "Later" label-name entry: the test double is more permissive than production.
+**Enforcement update:** Both scripts' contract tests pin the reference's duration limits (whole minutes; at least 60s with missing-data handling) over every policy each creates. The stuck script's tests also pin autoClose at 30 minutes or more, and the alerts sort grammar through an exported `alertsPageQuery()`. #787 also made the LLM script's fake refuse the pair with the API's own 400. Each test went red on the shipped value. No hook: which requests a fake lets through needs a reading, not a match.
+
+## 2026-09-26 — ct-gates returned NO_BLOCKERS for a diff no gate reviewed
+**PR:** branch `claude/ct-gates-zero-gate`
+**Caught by:** manual review while gating #782: ct-gates on its scripts-and-workflow files returned `gatesRun: []` and `NO_BLOCKERS` in 99 ms
+**What happened:** ct-gates picks gates by path from the CLAUDE.md §7 table. A diff touching only `scripts/*.mjs`, `*.sh`, `.github/workflows/` or `.husky/` matched no gate, ran zero agents and returned `NO_BLOCKERS`, the verdict a clean review gets. Those are the paths where this repo's watchdogs and guards live. #782 was that shape; its silent-failure review happened only because the agent was launched by hand.
+**Correct approach:** Report "nothing reviewed" as its own verdict, `NO_GATES_IN_SCOPE`, never `NO_BLOCKERS`. List the files no gate routes on every run. Route scripts, hooks and workflows to silent-failure-hunter.
+**Rule:** A review fan-out whose selection can come back empty must say so in its verdict (CLAUDE.md §8, "a guard that cannot fail", applied to the gate network itself).
+**Enforcement update:** `.claude/workflows/ct-gates.js` returns `NO_GATES_IN_SCOPE` and `unrouted`. Starve-tested with a docs-and-list diff and with #782's real diff (see the PR). No automated test: the workflow runs only inside the Workflow harness.
