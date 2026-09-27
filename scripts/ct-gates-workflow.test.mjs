@@ -67,6 +67,7 @@ const scout = (files, ref = REF) => ({
   toplevel: '/repo/worktree',
   head: 'my-branch',
   files,
+  count: files.length,
 });
 
 /** A run over `files`, whose scout lists exactly them; `gate` answers every other agent. */
@@ -321,10 +322,29 @@ test('a CLAUDE.md §9 stop condition reaches the verdict', async () => {
   ]);
 });
 
-test('a scout path that is not repo-relative fails the scout, since no route could match it', async () => {
-  for (const path of ['/repo/worktree/apps/api/src/gmail/x.ts', '../apps/api/src/gmail/x.ts']) {
+test("a scout path not in git's repo-relative form fails the scout", async () => {
+  // `./x` or a stray space still matches the extension-only advisory routes
+  // but no anchored must-pass one, so privacy-auditor would never run.
+  for (const path of [
+    '/repo/worktree/apps/api/src/gmail/x.ts',
+    '../apps/api/src/gmail/x.ts',
+    './apps/api/src/gmail/x.ts',
+    ' apps/api/src/gmail/x.ts',
+    'apps//api/src/gmail/x.ts',
+  ]) {
     const { result, calls } = await runGates({ diffRef: REF }, () => scout([path]));
-    assert.equal(result.verdict, 'SCOUT_FAILED', path);
+    assert.equal(result.verdict, 'SCOUT_FAILED', JSON.stringify(path));
     assert.deepEqual(calls, ['scout:changed-files']);
   }
+});
+
+test('a scout list cut short by a tool preview fails the scout', async () => {
+  // Paths past the preview would route no gate and appear nowhere.
+  const { result, calls } = await runGates({ diffRef: REF }, () => ({
+    ...scout(['scripts/a.mjs']),
+    count: 400,
+  }));
+  assert.equal(result.verdict, 'SCOUT_FAILED');
+  assert.match(result.error, /listed 1 paths but the diff has 400/);
+  assert.deepEqual(calls, ['scout:changed-files']);
 });

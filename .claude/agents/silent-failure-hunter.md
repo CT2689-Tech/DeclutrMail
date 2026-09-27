@@ -55,9 +55,12 @@ git diff --name-only origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js'
 #### Empty catch blocks
 
 ```bash
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*(\([^)]*\))?\s*\{\s*(/\*.*\*/\s*)?\}'
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*(\([^)]*\))?\s*\{\s*//'
+git diff --name-only origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | xargs -r rg -U -n 'catch\s*(\([^)]*\))?\s*\{(\s*(//[^\n]*|/\*[\s\S]*?\*/))*\s*\}'
 ```
+
+This reads the changed files whole: Prettier puts a catch's comment and
+closing brace on their own lines, which no single-line pattern over a diff
+can see. Keep only the hits the diff adds.
 
 Empty catch = **[SUGGESTION]**. Empty catch in a security or privacy
 code path = **[BLOCKING]**.
@@ -74,7 +77,7 @@ production path, **[SUGGESTION]** — should call Sentry / structured logger.
 #### Bare `.catch()` that swallows
 
 ```bash
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n '\.catch\(\(\)\s*=>\s*\{?\s*\}?\)|\.catch\(_?\s*=>\s*\{?\s*\}?\)|\.catch\(null\)'
+git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n '\.catch\(\s*(null|(\(\s*\w*\s*\)|\w+)\s*=>\s*(\{\s*\}|null|undefined|false|true|0|\[\]))\s*\)'
 ```
 
 Swallowing a rejected promise without any handling. **[SUGGESTION]** —

@@ -26,7 +26,9 @@
 // declines a file another gate reviewed is listed in gatesDeclined only.
 // Agents run git; the scout and every gate echo the command they ran and
 // this script compares it. That is the limit of what it can check: an agent
-// that misreports its own command passes.
+// that misreports its own command or its result passes. A scout that drops a
+// git error reads as NO_DIFF; a gate that says it read a diff it saw only a
+// preview of reads as reviewed.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -98,9 +100,10 @@ let verifyBudget = VERIFY_BUDGET
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['ran', 'toplevel', 'head', 'files'],
+  required: ['ran', 'toplevel', 'head', 'files', 'count'],
   properties: {
     ran: { type: 'string', description: 'The diff command you executed, verbatim' },
+    count: { type: 'integer', description: 'The number that command piped to `wc -l` prints' },
     toplevel: { type: 'string', description: 'Output of `git rev-parse --show-toplevel`' },
     head: { type: 'string', description: 'Output of `git rev-parse --abbrev-ref HEAD`' },
     files: { type: 'array', items: { type: 'string' }, description: 'Repo-relative changed paths' },
@@ -198,8 +201,9 @@ let checkedIn
     `Run exactly \`${command}\`, then \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\`.\n` +
       `Do not change, correct or substitute the ref, even if it looks mistyped: its failure is the answer.\n` +
       `Return \`ran\` as the diff command you executed, verbatim; \`toplevel\` and \`head\` as git printed them;\n` +
-      `and the changed paths exactly as git printed them. If the diff command fails, put its error output in\n` +
-      `\`error\` and return an empty array. Do not read or review the files.`,
+      `and the changed paths exactly as git printed them. Then run \`${command} | wc -l\` and return its number\n` +
+      `as \`count\`. If the diff command fails, put its error output in \`error\` and return an empty array.\n` +
+      `Do not read or review the files.`,
     { label: 'scout:changed-files', phase: 'Scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   )
   // A failed git command, a dead scout or a scout that ran some other ref is
@@ -210,9 +214,15 @@ let checkedIn
       ? scouted.error
       : !exactGit(command.slice(4)).test(scouted.ran.trim())
         ? `the scout ran \`${scouted.ran}\`, not \`${command}\``
-        : scouted.files.some((f) => !f || f.startsWith('/') || f.split('/').includes('..'))
-          ? 'the scout returned paths that are not repo-relative, which no route would match'
-          : null
+        : // A tool can show a long list as a preview. The count is too short
+          // to be cut, so a list shorter than it was truncated.
+          scouted.count !== scouted.files.length
+          ? `the scout listed ${scouted.files.length} paths but the diff has ${scouted.count}`
+          : // Only git's own form routes as intended: \`./x\`, \`a//b\` or a stray
+            // space match the extension-only routes but no anchored must-pass one.
+            scouted.files.some((f) => f !== f.trim() || f.split('/').some((seg) => ['', '.', '..'].includes(seg)))
+            ? 'the scout returned paths not in git\'s repo-relative form, which the must-pass routes would not match'
+            : null
   if (error) {
     log(`Could not list the changed files for ${diffRef}: ${error}. SCOUT_FAILED is not a pass.`)
     return { diffRef, files: [], gatesRun: [], findings: [], error, verdict: 'SCOUT_FAILED' }
@@ -271,7 +281,9 @@ if (applicable.length === 0) {
 const chargeFor = (g) =>
   `Review the diff \`${diffRef}\` per your charter in .claude/agents/${g.type}.md.\n\n` +
   `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n` +
-  `Do not change or substitute the ref. Return \`ran\` as that whole-diff command, verbatim, with no\n` +
+  `Do not change or substitute the ref. If your tool shows only a preview of the output, read the saved\n` +
+  `output in full before reviewing; if you cannot, set diffRead=false.\n` +
+  `Return \`ran\` as that whole-diff command, verbatim, with no\n` +
   `options or paths (you may prefix it with \`git -C <dir>\` or \`cd <dir> &&\`).\n` +
   `If it fails or prints nothing, set diffRead=false, put what git printed in diffError, and return no\n` +
   `findings: a review of some other diff is not this one.\n\n` +
