@@ -135,6 +135,16 @@ describe('QuietHoursCard — form contract', () => {
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
   });
 
+  it('says Saved only when quiet hours are stored', () => {
+    renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+  });
+
+  it('says Saved for a stored config the form still matches', () => {
+    renderCard();
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+
   it('hydrates before loading the browser timezone catalog', async () => {
     const supportedValues = vi.spyOn(Intl, 'supportedValuesOf');
     supportedValues.mockReturnValue(['Etc/GMT']);

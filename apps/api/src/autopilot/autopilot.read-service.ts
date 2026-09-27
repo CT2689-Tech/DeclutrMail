@@ -37,6 +37,7 @@ import type { SQL } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESET_KEYS,
   activityLog,
   type AutopilotPresetKey,
@@ -59,7 +60,6 @@ import {
 import {
   addCoalescedJob,
   AUTOPILOT_ACTION_JOB,
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESETS,
   autopilotActionSweepJobOptions,
   materializeAutopilotSignals,
@@ -108,11 +108,10 @@ const PATTERN_EVIDENCE_MIN_SENDERS = 3;
 const PATTERN_PRESET_KEYS = ['auto_archive_low_engagement', 'auto_unsubscribe_noisy'] as const;
 
 /**
- * `'<prefix>' || rule_match_log.id::text` for each exported worker
- * claim-key prefix — the correlated forms the D251 demotion matches
- * `action_jobs.idempotency_key` against. Built from
- * `AUTOPILOT_CLAIM_KEY_PREFIXES` so the SQL cannot drift from
- * `claimKey` in the action worker.
+ * `'<prefix>' || rule_match_log.id::text` for each claim-key prefix — the
+ * correlated forms the D251 demotion matches `action_jobs.idempotency_key`
+ * against. Built from `AUTOPILOT_CLAIM_KEY_PREFIXES` (`@declutrmail/db`)
+ * so the SQL cannot drift from `claimKey` in the action worker.
  */
 function claimKeySqlForms(): SQL {
   return sql.join(
@@ -704,8 +703,8 @@ export class AutopilotReadService {
    * (the `abandonStaleClaim` pattern) — excluding those rows left them
    * `approved, intent_applied=false` forever, primed to execute on a
    * re-upgrade (arch-gate finding, 2026-08-04). Claim keys build from
-   * the worker's exported `AUTOPILOT_CLAIM_KEY_PREFIXES`, so the two
-   * sides cannot drift. A sweep already in flight during the downgrade
+   * `AUTOPILOT_CLAIM_KEY_PREFIXES` (`@declutrmail/db`), so the two sides
+   * cannot drift. A sweep already in flight during the downgrade
    * can still claim a just-dismissed row; its completion only flips
    * `intent_applied`/`intent_token`, so the row stays consistent and
    * the applied action keeps its undo path.

@@ -92,18 +92,21 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
   const query = useQuietHours(mailbox.id);
   const update = useUpdateQuietHours(mailbox.id);
 
-  const state: QuietHoursCardState = query.isLoading
-    ? { kind: 'loading' }
-    : query.isError
+  // No data yet — the first fetch, or one waiting to go back online — is
+  // loading. It used to fall through to an unconfigured form showing the
+  // defaults, and saving that form would replace the stored window.
+  const state: QuietHoursCardState = query.isError
+    ? {
+        kind: 'error',
+        message: "We couldn't load quiet hours right now.",
+      }
+    : query.data
       ? {
-          kind: 'error',
-          message: "We couldn't load quiet hours right now.",
-        }
-      : {
           kind: 'ready',
-          config: query.data?.config ?? null,
-          activeNow: query.data?.activeNow ?? false,
-        };
+          config: query.data.config,
+          activeNow: query.data.activeNow,
+        }
+      : { kind: 'loading' };
 
   const onSave = (config: QuietHoursConfig) => {
     addBreadcrumb({
@@ -141,7 +144,8 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
         onSave={onSave}
         onRetry={() => void query.refetch()}
       />
-      {query.data && (
+      {/* A failed refresh shows the error card; a count from the last good read would contradict it. */}
+      {state.kind === 'ready' && query.data && (
         <QuietQueueSummary
           activeInbox={active}
           activeNow={query.data.activeNow}
