@@ -74,9 +74,10 @@ export function isNonMail(labelIds: readonly string[]): boolean {
  * SQL form of `isNonMail` over `mail_messages.label_ids`.
  *
  * The same predicate as `mail_messages_non_mail_idx` (migration 0080),
- * which holds only non-mail rows and so is empty on a clean mailbox.
- * Tests pin both to `NON_MAIL_LABELS` and check the purge is planned on
- * that index.
+ * which holds only non-mail rows and so is empty on a clean mailbox. The
+ * planner uses that partial index only for the identical array literal,
+ * so `NON_MAIL_LABELS`' order is part of the contract. Tests pin both to
+ * `NON_MAIL_LABELS` and check the purge is planned on that index.
  */
 export function nonMailRowWhere(): SQL {
   return sql`${mailMessages.labelIds} && ${nonMailLabelsArray()}`;
