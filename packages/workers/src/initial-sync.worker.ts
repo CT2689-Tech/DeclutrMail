@@ -1540,13 +1540,14 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * Advance `progress_pct` across the fetching_metadata stage (5 → 75).
    *
    * A sign-in or connect while this read runs resets the row to `queued`
-   * — clearing its cursor — but starts no attempt: this job is already
-   * active (`ensureInitialSyncJob`). So the read takes the row back at its
-   * next count, cursor included (the snapshot is older, so replaying from
-   * it is safe); otherwise the gate would sit on "Waiting to start." at 0%
-   * for the rest of the read, and a retry would re-snapshot past changes
-   * to mail already saved. Any other state — ready, failed — moved on
-   * without this read: leave it.
+   * but starts no attempt: this job is already active
+   * (`ensureInitialSyncJob`). So the read takes the row back at its next
+   * count; otherwise the gate would sit on "Waiting to start." at 0% for
+   * the rest of the read. Should anything have cleared the cursor, this
+   * read's snapshot fills it (`COALESCE` — never over a set one; the
+   * snapshot is older, so replaying from it is safe). A ready or failed row
+   * is not this write's to change — though the read's later stage writes
+   * (`upsertSyncState`, `markReady`) still are unconditional.
    */
   private async updateProgress(
     mailboxAccountId: string,
@@ -1622,7 +1623,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const [row] = await this.deps.db
       .update(providerSyncState)
       .set({
-        // First attempt wins. A BullMQ retry resumes persisted messages,
+        // First attempt wins. A BullMQ retry — or a re-queue, which keeps
+        // the cursor (SyncService.markQueued) — resumes persisted messages,
         // so it must also resume from the original pre-fetch snapshot.
         lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate}::bigint)`,
         updatedAt: sql`now()`,

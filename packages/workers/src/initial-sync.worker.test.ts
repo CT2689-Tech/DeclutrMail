@@ -456,6 +456,58 @@ describe('InitialSyncWorker', () => {
     }
   });
 
+  // Independent review (2026-09-27): a sign-in during a retry's backoff, or
+  // "Try again" after a failure, re-queued the row and cleared the cursor,
+  // so the next attempt re-snapshotted past mail the first one had saved.
+  it('a re-queue between attempts keeps the first snapshot', async () => {
+    const proto = InitialSyncWorker.prototype as unknown as Record<
+      string,
+      (this: InitialSyncWorker, ...args: unknown[]) => Promise<unknown>
+    >;
+    const originalBuild = proto.buildSenderIndex!;
+    const buildSpy = vi
+      .spyOn(proto, 'buildSenderIndex')
+      .mockImplementationOnce(async (): Promise<never> => {
+        throw new Error('simulated crash after metadata fetch');
+      })
+      .mockImplementation(async function (
+        this: InitialSyncWorker,
+        ...args: unknown[]
+      ): Promise<unknown> {
+        return originalBuild.apply(this, args);
+      });
+
+    try {
+      const messages = makeMessages(10, 3);
+      await expect(
+        new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(messages, '1000')),
+        }).processJob({ mailboxAccountId }, CTX),
+      ).rejects.toThrow(/simulated crash/);
+
+      // What SyncService.markQueued now writes to a row that is not ready:
+      // queued again, the snapshot kept.
+      await db
+        .update(providerSyncState)
+        .set({ readinessStatus: 'queued', currentStage: 'queued', progressPct: 0 })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(messages, '2000')),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const [state] = await db
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      expect(state!.readinessStatus).toBe('ready');
+      expect(state!.lastHistoryId).toBe(1000n);
+    } finally {
+      buildSpy.mockRestore();
+    }
+  });
+
   it('orphan heal — a stored message lacking sender identity is re-fetched, not dropped', async () => {
     const orphanMsg = makeMessages(1, 1)[0]!;
     orphanMsg.id = 'orphan-msg';
@@ -833,15 +885,30 @@ describe('InitialSyncWorker', () => {
     // Round-2 review (2026-09-26): a sign-in or connect mid-read resets the
     // row to `queued` and starts no attempt — the job is already active —
     // so the gate sat on "Waiting to start." at 0% for the rest of the read.
-    it('takes the row back, cursor included, after a sign-in resets it mid-read', async () => {
+    it.each([
+      // What `markQueued` does to a row mid-scan: the snapshot stays.
+      ['a sign-in re-queues it mid-read', false],
+      // Whatever else might clear it: the read's own snapshot fills it.
+      ['the cursor is cleared too', true],
+    ] as const)('takes the row back, cursor included, when %s', async (_label, clearCursor) => {
       const client = new FakeGmailClient(makeMessages(1_200, 7), '555');
       const original = client.getMessageMetadata.bind(client);
       let seen = 0;
       client.getMessageMetadata = async (id) => {
         seen += 1;
-        // After the first 500 are read, a sign-in's `markQueued` resets
-        // the row while this attempt keeps reading.
-        if (seen === 501) await resetToQueued(db, mailboxAccountId);
+        // After the first 500 are read, the row is reset while this
+        // attempt keeps reading.
+        if (seen === 501) {
+          await db
+            .update(providerSyncState)
+            .set({
+              readinessStatus: 'queued',
+              currentStage: 'queued',
+              progressPct: 0,
+              ...(clearCursor ? { lastHistoryId: null, historyIdUpdatedAt: null } : {}),
+            })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
         return original(id);
       };
       const rows: Array<{ counts: ScanCounts; row: Record<string, unknown> | undefined }> = [];
@@ -876,7 +943,7 @@ describe('InitialSyncWorker', () => {
       });
     });
 
-    it('leaves a row that moved on without this read — failed stays failed', async () => {
+    it('the take-back leaves a failed row alone', async () => {
       const client = new FakeGmailClient(makeMessages(1_200, 7));
       const original = client.getMessageMetadata.bind(client);
       let seen = 0;
