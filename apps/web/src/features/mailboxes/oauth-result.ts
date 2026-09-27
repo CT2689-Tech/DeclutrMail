@@ -75,7 +75,7 @@ export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCo
     liveRole: 'alert',
   },
   inbox_limit: {
-    message: 'Your plan’s Gmail limit is in use, so no account was added.',
+    message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
     tone: 'warn',
     liveRole: 'status',
   },

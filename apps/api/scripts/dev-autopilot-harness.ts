@@ -36,7 +36,6 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { Queue, Worker } from 'bullmq';
-import { OAuth2Client } from 'google-auth-library';
 
 import { mailboxAccounts, schema } from '@declutrmail/db';
 import {
@@ -74,6 +73,7 @@ import type {
 import { createKmsProvider } from '../src/adapters/gcp-kms/kms-provider.factory.js';
 import { toSessionPoolUrl } from '../src/db/session-pool-url.js';
 import { TokenCryptoService } from '../src/auth/token-crypto.service.js';
+import { googleOAuthClient } from '../src/gmail/google-oauth-client.js';
 import { GmailClientService } from '../src/gmail/gmail-client.service.js';
 import { GMAIL_QUOTA_WINDOW_MS, resolveGmailQuotaConfig } from '../src/gmail/gmail-quota-config.js';
 import { buildOutboxConsumer } from '../src/outbox/outbox-consumer-router.js';
@@ -180,7 +180,7 @@ async function main(): Promise<void> {
       account.encryptedRefreshToken,
       account.dekEncrypted,
     );
-    const oauth = new OAuth2Client(clientId, clientSecret);
+    const oauth = googleOAuthClient({ clientId, clientSecret });
     oauth.setCredentials({ refresh_token: refreshToken });
     let limiter = limiterByMailbox.get(mailboxAccountId);
     if (!limiter) {

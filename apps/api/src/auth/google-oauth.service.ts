@@ -4,7 +4,9 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { type Credentials, OAuth2Client } from 'google-auth-library';
+import type { Credentials, OAuth2Client } from 'google-auth-library';
+
+import { googleOAuthClient } from '../gmail/google-oauth-client.js';
 
 /**
  * Gmail OAuth scopes (D4).
@@ -17,8 +19,6 @@ import { type Credentials, OAuth2Client } from 'google-auth-library';
  */
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
 const SCOPES = [GMAIL_SCOPE, 'openid', 'https://www.googleapis.com/auth/userinfo.email'];
-/** Per request to Google, each retry included. */
-const GOOGLE_TIMEOUT_MS = 10_000;
 
 /** Result of `exchangeCode` — what the orchestrator needs to proceed. */
 export interface OAuthExchangeResult {
@@ -62,14 +62,10 @@ export class GoogleOAuthService {
           'GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI — see .env.example.',
       );
     }
-    return new OAuth2Client({
+    return googleOAuthClient({
       clientId: GOOGLE_CLIENT_ID,
       clientSecret: GOOGLE_CLIENT_SECRET,
       redirectUri: GOOGLE_REDIRECT_URI,
-      // Nothing else bounds a Google call: `getToken` retries its POST, so
-      // a stalled endpoint could hold the callback until Cloud Run's own
-      // timeout answered with a 504 instead of the failure page.
-      transporterOptions: { timeout: GOOGLE_TIMEOUT_MS },
     });
   }
 

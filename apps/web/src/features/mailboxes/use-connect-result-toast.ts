@@ -49,8 +49,6 @@ export function useConnectResultToast(): void {
 
     // Strip the one-shot param without a navigation, through Next's router
     // so a later refresh cannot write it back (see replaceUrl).
-    params.delete('connect_error');
-    const qs = params.toString();
-    replaceUrl(window.location.pathname + (qs ? `?${qs}` : ''));
+    replaceUrl((url) => url.searchParams.delete('connect_error'));
   }, [onboarded]);
 }

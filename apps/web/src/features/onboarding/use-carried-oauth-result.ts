@@ -41,10 +41,9 @@ export function useCarriedOAuthResult(signedIn: boolean): OAuthResultCopy | null
     setCopy(result.copy);
     toast(result.copy.message, result.copy.tone);
 
-    const params = new URLSearchParams(window.location.search);
-    for (const param of OAUTH_RESULT_PARAMS) params.delete(param);
-    const search = params.toString();
-    replaceUrl(`${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+    replaceUrl((url) => {
+      for (const param of OAUTH_RESULT_PARAMS) url.searchParams.delete(param);
+    });
   }, [signedIn]);
   return copy;
 }

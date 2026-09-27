@@ -1,5 +1,5 @@
 /**
- * Change the address bar in place, with no navigation, and keep Next's
+ * Edit the address bar in place, with no navigation, and keep Next's
  * router in step with it. For effects that clear a one-shot param on the
  * first render.
  *
@@ -12,7 +12,21 @@
  * it back, so a reload replayed the result and put the mailbox id back in
  * history. Waiting a microtask and passing `null`, as Next's docs do,
  * closes both; Next copies its own history state across.
+ *
+ * `update` edits the URL as it stands when the write runs, so two edits
+ * queued in one tick (Settings and the chrome each clearing their own
+ * param) both land instead of the later one restoring what the earlier
+ * removed.
+ *
+ * Next applies the write as a restore, which discards a router navigation
+ * still in flight. Call this only where no `router.push`/`replace` can be
+ * pending, as every current caller does: once on a settled page, or from
+ * a click.
  */
-export function replaceUrl(url: string | URL): void {
-  queueMicrotask(() => window.history.replaceState(null, '', url));
+export function replaceUrl(update: (url: URL) => void): void {
+  queueMicrotask(() => {
+    const url = new URL(window.location.href);
+    update(url);
+    window.history.replaceState(null, '', url);
+  });
 }

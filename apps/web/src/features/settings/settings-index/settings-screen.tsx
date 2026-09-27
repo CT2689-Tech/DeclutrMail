@@ -134,7 +134,6 @@ export function SettingsScreen({
   // toast or retain a mailbox id in browser history.
   const reconnectResultParam = searchParams.get('reconnect_result');
   const connectStartResultParam = searchParams.get('connect_start_result');
-  const reconnectSearch = searchParams.toString();
   const didHandleReconnectResult = useRef(false);
   const [highlightMailboxId, setHighlightMailboxId] = useState<string | null>(null);
   const [reconnectAnnouncement, setReconnectAnnouncement] = useState<OAuthResultCopy | null>(null);
@@ -172,13 +171,12 @@ export function SettingsScreen({
     scrollTarget?.focus({ preventScroll: true });
     scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    const nextParams = new URLSearchParams(reconnectSearch);
-    nextParams.delete('reconnect_result');
-    nextParams.delete('connect_start_result');
-    const nextSearch = nextParams.toString();
-    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#mailboxes`;
-    replaceUrl(nextUrl);
-  }, [connectStartResultParam, onboarded, reconnectResultParam, reconnectSearch]);
+    replaceUrl((url) => {
+      url.searchParams.delete('reconnect_result');
+      url.searchParams.delete('connect_start_result');
+      url.hash = 'mailboxes';
+    });
+  }, [connectStartResultParam, onboarded, reconnectResultParam]);
 
   // Keep highlight lifetime independent from the URL effect: Next's
   // native-history integration updates useSearchParams after replaceState.
