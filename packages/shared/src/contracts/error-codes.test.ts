@@ -14,6 +14,18 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     }
   });
 
+  it('every message that sends the user to support names the address', () => {
+    // "contact support" alone is a step the user cannot take from an
+    // error string; the siblings in this map all name the inbox.
+    const toSupport = Object.entries(ERROR_CODES).filter(([, spec]) =>
+      /\bsupport\b/i.test(spec.message),
+    );
+    expect(toSupport.length).toBeGreaterThan(0);
+    for (const [code, spec] of toSupport) {
+      expect(spec.message, code).toContain('support@declutrmail.com');
+    }
+  });
+
   it('classifies the known domain + trust codes', () => {
     expect(ERROR_CODES.NO_ACTIVE_MAILBOX).toMatchObject({
       status: 409,

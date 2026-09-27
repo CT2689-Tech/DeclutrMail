@@ -8,7 +8,7 @@ and re-read the draft against the constraint block below.
 `docs/adr/0030-positioning-preview-guarantee.md` (positioning rules),
 `packages/shared/src/copy/privacy.ts` + `packages/shared/src/copy/action-safety.ts` (locked claims),
 `apps/web/src/features/marketing/` (voice). Reddit drafts follow the
-`reddit-comments-declutrmail` skill's voice rules.
+`ct-reddit` skill's voice rules.
 **Domain note:** the canonical URL is **declutrmail.com** (D128 — the `.ai` site 301s to it). The
 reddit skill's context bank still says `.ai`; that guidance is stale, use `.com` everywhere.
 

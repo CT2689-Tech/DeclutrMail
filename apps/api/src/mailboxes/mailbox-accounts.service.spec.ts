@@ -459,7 +459,9 @@ describe('MailboxAccountsService.upsertConnect', () => {
         }),
       );
 
-      expect(result).toEqual({ id: mailbox!.id });
+      // `wasActive` is the prior status: only an already-active mailbox
+      // may keep its synced state on connect (SyncService.markConnected).
+      expect(result).toEqual({ id: mailbox!.id, wasActive: status === 'active' });
       const [persisted] = await db
         .select()
         .from(mailboxAccounts)
@@ -503,6 +505,8 @@ describe('MailboxAccountsService.upsertConnect', () => {
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, result.id));
     expect(persisted?.providerAccountId).toBe('new.mailbox@example.com');
+    // A brand-new mailbox was not active before this connect.
+    expect(result.wasActive).toBe(false);
   });
 
   it('rejects a new activation when every inbox slot is already active', async () => {

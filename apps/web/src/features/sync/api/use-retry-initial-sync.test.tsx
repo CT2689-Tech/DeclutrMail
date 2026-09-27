@@ -56,10 +56,11 @@ describe('useRetryInitialSync', () => {
     // the BullMQ enqueue behind it is best-effort and can fail silently,
     // with the reconciler picking it up later. "Started" would claim an
     // in-flight worker this response never confirmed.
-    expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      'Scan queued — this can take a few minutes.',
-      'success',
-    );
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.stringMatching(/^Scan queued/), 'success');
+    // No duration (D109): nothing measures how long a scan takes, and the
+    // gate the retry returns to promises none either.
+    const [message] = vi.mocked(toast).mock.calls.at(-1)!;
+    expect(message).not.toMatch(/minute|usually|few/i);
   });
 
   it('invalidates `me`, not just the per-mailbox sync-status query, on success (design-system-agent review)', async () => {

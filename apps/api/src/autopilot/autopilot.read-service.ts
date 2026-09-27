@@ -54,10 +54,11 @@ import {
   undoJournal,
 } from '@declutrmail/db';
 import {
+  addCoalescedJob,
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESETS,
-  autopilotActionJobOptions,
+  autopilotActionSweepJobOptions,
   materializeAutopilotSignals,
   OutboxPublisher,
   type AutopilotActionJobData,
@@ -1382,16 +1383,17 @@ export class AutopilotReadService {
   /**
    * Enqueue one `autopilot-action` sweep for the mailbox. The sweep
    * picks up EVERY approved-unapplied match, so concurrent approvals
-   * collapsing onto one job is correct. `-` separator in the jobId —
-   * BullMQ rejects custom ids containing `:` (U14 smoke).
+   * collapse onto the mailbox's queued sweep — or onto one follow-up
+   * behind a running one (`autopilotActionSweepJobOptions`).
    */
   private async enqueueActionSweep(mailboxAccountId: string): Promise<boolean> {
     if (!this.actionQueue) return false;
     const triggeredAtMs = Date.now();
-    await this.actionQueue.add(
+    await addCoalescedJob(
+      this.actionQueue,
       AUTOPILOT_ACTION_JOB,
       { mailboxAccountId, triggeredAtMs },
-      autopilotActionJobOptions(`${mailboxAccountId}-${triggeredAtMs}`),
+      autopilotActionSweepJobOptions(mailboxAccountId, triggeredAtMs),
     );
     return true;
   }

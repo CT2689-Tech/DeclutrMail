@@ -108,8 +108,13 @@ interface SignalBatch {
 
 /**
  * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`;
- * the weekly safety-net cron re-computes any row past `expires_at`.
- * Seven days matches D25's stated "weekly safety-net rebuild" cadence.
+ * a read past it counts as stale. Nothing re-scores on a timer: the
+ * founder chose lazy refresh on attention (`stale_refresh`, 2026-08-19)
+ * over D25's weekly sweep, and `cron_sweep` has no producer. Scoring runs
+ * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
+ * longer re-scans),
+ * `signal_change` (first-seen senders), `stale_refresh` and
+ * `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -156,9 +161,27 @@ export interface ScoreJobData {
 export interface ScoreJobResult {
   /** Number of senders scored this run. */
   decisionsWritten: number;
-  /** Number of those that hit the LLM successfully vs the template fallback. */
+  /**
+   * Rows carrying LLM prose vs the template fallback — what the user sees.
+   * `llmExplanations` includes prose REUSED from a stored row, so it is not
+   * what this run bought; read `llmCalls` / `llmReused` for that.
+   */
   llmExplanations: number;
   templateExplanations: number;
+  /**
+   * `explain()` calls this run started. The provider bills a call that
+   * produced output even when the worker then discards it (timeout, word
+   * ceiling, internal vocabulary); a call refused up front (for example,
+   * credit balance) is not billed but still counts here.
+   */
+  llmCalls: number;
+  /** Rows that kept stored LLM prose instead of calling `explain()`. */
+  llmReused: number;
+  /**
+   * Rows that needed a call but got the template without one, because the
+   * provider was refusing the account (`ReasoningLlmPort.isBlocked`).
+   */
+  llmBlocked: number;
   /**
    * Number of LLM calls that hit the per-call timeout (subset of
    * `templateExplanations`). Surfaced so the success log carries enough
@@ -386,6 +409,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmExplanations = 0;
     let templateExplanations = 0;
     let llmTimeouts = 0;
+    let llmCalls = 0;
+    let llmReused = 0;
+    let llmBlocked = 0;
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
@@ -432,6 +458,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
         else templateExplanations += 1;
         if (written.timedOut) llmTimeouts += 1;
+        if (written.called) llmCalls += 1;
+        if (written.reused) llmReused += 1;
+        if (written.blocked) llmBlocked += 1;
         if (written.screenerFlagged) screenerFlagged += 1;
       }
     }
@@ -485,6 +514,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmExplanations,
       templateExplanations,
       llmTimeouts,
+      llmCalls,
+      llmReused,
+      llmBlocked,
       screenerFlagged,
       sendersFailed,
       chunksFailed,
@@ -507,6 +539,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     generatedBy: 'llm_haiku' | 'template';
     timedOut: boolean;
     screenerFlagged: boolean;
+    reused: boolean;
+    called: boolean;
+    blocked: boolean;
   } | null> {
     const signals = this.loadSignals(mailboxAccountId, senderKey, batch);
     if (!signals) return null;
@@ -519,6 +554,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // contract is preserved from the consumer side.
     let reasoning: string | null = null;
     let timedOut = false;
+    let reused = false;
+    let called = false;
+    let blocked = false;
     if (this.deps.llm) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
@@ -543,16 +581,16 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         // Falls through to the monotonic upsert below so produced_at /
         // expires_at still advance — only the LLM call is skipped.
         reasoning = existing.reasoning;
+        reused = true;
+      } else if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
+        // The provider refused the account (credit, spend limit, key),
+        // before this row's turn or while it waited for it: this call
+        // would be refused too. Template now, without the rate-limit wait
+        // — on 2026-09-24 each refused call still waited its turn, 2,927
+        // of them in 431 s for one mailbox.
+        blocked = true;
       } else {
-        // Pace BEFORE the timeout race starts. If pacing were inside the
-        // raced task, the wall-clock budget would include rate-limiter
-        // wait time and a short timeout (e.g. 5_000ms) could surface as a
-        // `reasoning.timeout` even though the port itself never started.
-        // Pacing OUTSIDE the race makes the timeout measure only the
-        // port's own latency, which is what the budget is meant to bound.
-        if (this.rateLimiter) {
-          await this.rateLimiter.acquire(1);
-        }
+        called = true;
         const raced = await runWithTimeout(
           () =>
             port.explain({
@@ -703,7 +741,33 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         );
     }
 
-    return { verdict: result.verdict, generatedBy, timedOut, screenerFlagged };
+    return {
+      verdict: result.verdict,
+      generatedBy,
+      timedOut,
+      screenerFlagged,
+      reused,
+      called,
+      blocked,
+    };
+  }
+
+  /**
+   * Wait for this row's rate-limit slot; `false` when the provider started
+   * refusing the account meanwhile.
+   *
+   * Pace BEFORE the timeout race starts. If pacing were inside the raced
+   * task, the wall-clock budget would include rate-limiter wait time and a
+   * short timeout (e.g. 5_000ms) could surface as a `reasoning.timeout`
+   * even though the port itself never started. Pacing OUTSIDE the race
+   * makes the timeout measure only the port's own latency, which is what
+   * the budget is meant to bound.
+   */
+  private async waitForSlot(port: ReasoningLlmPort): Promise<boolean> {
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire(1);
+    }
+    return !port.isBlocked?.();
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */

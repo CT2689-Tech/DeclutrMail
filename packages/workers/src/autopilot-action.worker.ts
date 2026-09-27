@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, inArray, ne, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -44,8 +44,10 @@ import {
   SenderProtectedAtSend,
   type MailboxActionLock,
 } from './label-action.worker.js';
+import { scheduleLaterReturn } from './later-return-timer.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import type { CoalescedJobOptions } from './queue.js';
 import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import { unsubSendsEnabled } from './unsub-execution.worker.js';
@@ -66,8 +68,8 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *
  *   - `archive` / `later` — the label-modify terminal-tx pattern
  *     (modelled on `LabelActionWorker.executeForward`, see "Seam
- *     choice" below): durable `action_jobs` row + resolved-id
- *     persistence BEFORE the Gmail mutation, `batchModify`, then one
+ *     choice" below): durable `action_jobs` row, resolved ids persisted
+ *     as the first request leaves, `batchModify`, then one
  *     transaction issuing `undo_journal` + `activity_log`
  *     (`source='autopilot'`, `rule_id` set) + local label mirror +
  *     `autopilot.action_intent_emitted` outbox event + `action_jobs`
@@ -103,7 +105,8 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  * (`ActionsService.enqueueCompositeRevert` → reverse `label-action`
  * job) reverses an autopilot action exactly like a manual one.
  *
- * GUARDS (in evaluation order, all per sweep):
+ * GUARDS (in evaluation order). 1–2 are read once per sweep; 3–6 per
+ * match, inside that match's lock hold (`reloadMatch`):
  *   1. ENTITLEMENT: the mailbox workspace must currently grant
  *      `autopilot` (the review capability). Matches with
  *      `modeAtMatch='active'` additionally require `autopilot-active`
@@ -135,13 +138,14 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *   6. PER-RULE DAILY CAP: `dailyActionCap` from the preset definition,
  *      counted against `activity_log` rows (`source='autopilot'`,
  *      `rule_id`) in a rolling 24h window — verb-aware, see
- *      `countRuleActionsInWindow`. Over-cap matches stay
+ *      `ruleActionsInWindow`. Over-cap matches stay
  *      `intent_applied=false` and execute on a later sweep.
  *
- * Policy: `perMailboxPolicy` (D203/D225). The whole sweep additionally
- * runs inside the per-mailbox advisory lock shared with
- * `LabelActionWorker`, so an autopilot archive can never interleave
- * with a user-initiated action on the same mailbox.
+ * Policy: `perMailboxPolicy` (D203/D225). Each MATCH additionally runs
+ * inside the per-mailbox advisory lock shared with `LabelActionWorker` —
+ * one hold per match, not per sweep (see `sweep`) — so an autopilot
+ * archive never interleaves with a user-initiated action on the same
+ * mailbox, and a user action never waits on more than one match.
  *
  * Privacy (D7, D228): reads are metadata only (ids, sender_key, label
  * ids). The outbox payloads are Zod-gated; no body / snippet / subject.
@@ -193,8 +197,9 @@ const MATCH_EVIDENCE_CURRENT: SQL = sql`(
  * Does this claim mean Gmail may ALREADY have been mutated?
  *
  * The worker persists `resolvedMessageIds` and flips the row to
- * `executing` immediately BEFORE `batchModify`, precisely so a crashed
- * attempt can re-apply the same set. `done` is excluded: its terminal
+ * `executing` as the first request leaves (`beforeFirstRequest`, after
+ * the quota wait and token refresh), precisely so a crashed attempt can
+ * re-apply the same set. `done` is excluded: its terminal
  * transaction committed, so the action is already audited and undoable.
  *
  * A pure function so the batched sweep lookup and the single-claim
@@ -229,6 +234,17 @@ function claimKey(match: { matchId: string; actionKind: string }): string {
 /** Bind-parameter chunk for the sweep's batched claim lookup. */
 const CLAIM_LOOKUP_CHUNK = 500;
 
+/**
+ * The claim was retired outside the mailbox lock before its first request
+ * left — a D251 demotion or a sender-index rebuild. Nothing reached Gmail.
+ */
+class ClaimRetired extends Error {
+  constructor(jobId: string) {
+    super(`claim ${jobId} was retired before its Gmail request`);
+    this.name = 'ClaimRetired';
+  }
+}
+
 /** Rolling window for the per-rule daily action cap. */
 const DAILY_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -236,9 +252,10 @@ const DAILY_CAP_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * One Autopilot action sweep over a mailbox. `triggeredAtMs` forms the
- * BullMQ `jobId` so duplicate adds within the same trigger window are
- * deduped; per-match idempotency is the `action_jobs` row keyed
+ * One Autopilot action sweep over a mailbox. Immediate sweeps coalesce per
+ * mailbox (`autopilotActionSweepJobOptions`); `triggeredAtMs` prefixes
+ * their job id for log search and keys the delayed quiet-resume sweep's
+ * id. Per-match idempotency is the `action_jobs` row keyed
  * `autopilot-<matchId>` plus the `intent_applied` flag.
  */
 export interface AutopilotActionJobData {
@@ -285,6 +302,13 @@ export interface AutopilotActionResult {
    * mutation executed on evidence it just deleted.
    */
   skippedIndexRebuilt: number;
+  /**
+   * Matches that no longer needed this sweep when their turn came — the
+   * lock is taken per match, so other holders run in between: applied
+   * or dismissed elsewhere, removed by a sender-index rebuild, or, on a
+   * sweep that may only finish work in flight, no longer in flight.
+   */
+  skippedNoLongerPending: number;
   /** True when the whole sweep deferred for an active quiet window. */
   deferredQuiet: boolean;
   durationMs: number;
@@ -336,6 +360,34 @@ export function autopilotActionJobOptions(jobId: string): JobsOptions {
     ...backoffJobOptions(policy.backoff),
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
+  };
+}
+
+/**
+ * Options for an IMMEDIATE action sweep, coalesced per mailbox — at most
+ * one queued and one running (`addCoalescedJob`). A sweep walks every
+ * approved-unapplied match for its mailbox, so a second sweep running
+ * beside it walks the same list. That is safe — each match is decided
+ * under its own hold of the mailbox lock (see `sweep`) — but every match
+ * it reaches second costs a lock acquisition and a re-read for nothing.
+ * Every trigger used to enqueue its own (`${mailbox}-${ms}`): an approve,
+ * and every apply run that found pending matches — which runs once per
+ * first-seen sender. That is the shape that dead-lettered eight
+ * incremental syncs on 2026-09-25.
+ *
+ * The quiet-resume sweep stays on `autopilotActionJobOptions`: it is
+ * DELAYED until quiet ends, and absorbing an immediate trigger into it
+ * would hold that trigger for hours.
+ */
+export function autopilotActionSweepJobOptions(
+  mailboxAccountId: string,
+  triggeredAtMs: number,
+): CoalescedJobOptions {
+  const jobId = `${mailboxAccountId}-${triggeredAtMs}`;
+  return {
+    ...autopilotActionJobOptions(jobId),
+    jobId,
+    deduplication: { id: mailboxAccountId, keepLastIfActive: true },
   };
 }
 
@@ -423,6 +475,90 @@ interface EligibleMatch {
   unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
 }
 
+/**
+ * The match + rule + sender columns a sweep decides on, and the sender
+ * join they need. Shared by `loadEligibleMatches` and `reloadMatch`: the
+ * sweep-start snapshot and the in-hold re-read must describe the same
+ * match.
+ */
+const MATCH_COLUMNS = {
+  matchId: ruleMatchLog.id,
+  ruleId: ruleMatchLog.ruleId,
+  senderKey: ruleMatchLog.senderKey,
+  presetKey: automationRules.presetKey,
+  actionKind: automationRules.actionKind,
+  ruleEnabled: automationRules.enabled,
+  ruleMode: automationRules.mode,
+  modeAtMatch: ruleMatchLog.modeAtMatch,
+  senderId: senders.id,
+  unsubscribeMethod: senders.unsubscribeMethod,
+};
+const SENDER_OF_MATCH = and(
+  eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+  eq(senders.senderKey, ruleMatchLog.senderKey),
+);
+
+/**
+ * Rolling-window executed-action count for the outer row's rule — the
+ * basis of the per-rule daily cap (Guard 6). A scalar subquery
+ * correlated to `rule_match_log`, so `reloadMatch` reads it in the same
+ * statement as the rest of the match. The cap bounds REAL work, so the
+ * count is verb-aware:
+ *
+ *   - label verbs (archive/later): only rows that MOVED messages
+ *     (`affected_count > 0`) count. 0-affected decisions (the rule
+ *     fired but the sender had nothing in INBOX — the common case on
+ *     re-sweeps, since active-mode matching re-runs per trigger by
+ *     design) mutate nothing and must not starve the budget.
+ *   - unsubscribe: every DECISION row (`action = 'unsubscribe'`) counts —
+ *     always `affected_count=0` (no messages move), but each IS the
+ *     action. Not the outcome rows the same intent also writes under the
+ *     same `rule_id` (`unsubscribe_action_required` /
+ *     `unsubscribe_unavailable` here, the terminal outcome from
+ *     `UnsubExecutionWorker`): counting those charged one intent twice.
+ *
+ * `sql.raw` for the outer column (LEARNINGS — correlated-subquery
+ * pitfall), and the window bound goes in as an ISO string with an
+ * explicit cast: a JS `Date` in a raw template breaks on postgres.js.
+ */
+function ruleActionsInWindow(actionKind: string, windowStart: Date): SQL<number> {
+  const realWork =
+    actionKind === 'unsubscribe' ? sql`al.action = 'unsubscribe'` : sql`al.affected_count > 0`;
+  return sql<number>`(
+    select count(*)::int
+    from activity_log al
+    where al.rule_id = ${sql.raw('rule_match_log.rule_id')}
+      and al.source = 'autopilot'
+      and al.occurred_at >= ${windowStart.toISOString()}::timestamptz
+      and ${realWork}
+  )`;
+}
+
+/** A match as `reloadMatch` re-read it, inside that match's lock hold. */
+interface FreshMatch {
+  match: EligibleMatch;
+  /** May this match's claim already have mutated Gmail? (`claimIsInFlight`) */
+  inFlight: boolean;
+  /** `MATCH_EVIDENCE_CURRENT` for this row. */
+  evidenceCurrent: boolean;
+  isProtected: boolean;
+  /** The sender carries the `policy_type='unsubscribe'` projection of an intent. */
+  alreadyUnsubscribed: boolean;
+  /** The rule's executed actions in the cap window (`ruleActionsInWindow`). */
+  executedInWindow: number;
+}
+
+/** Per-sweep state `processMatch` reads and updates. */
+interface SweepContext {
+  mailboxAccountId: string;
+  now: Date;
+  gatedBy: 'entitlement' | 'quiet' | null;
+  mayActUnattended: boolean;
+  result: AutopilotActionResult;
+  /** Per-rule running daily budget (Guard 6). */
+  remainingByRule: Map<string, number>;
+}
+
 export class AutopilotActionWorker extends BaseDeclutrWorker<
   AutopilotActionJobData,
   AutopilotActionResult
@@ -445,7 +581,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     if (!payload?.mailboxAccountId) {
       throw new ValidationError('AutopilotActionJobData.mailboxAccountId is required');
     }
-    return this.deps.lock.run(payload.mailboxAccountId, () => this.sweep(payload));
+    return this.sweep(payload);
   }
 
   private async sweep(payload: AutopilotActionJobData): Promise<AutopilotActionResult> {
@@ -465,6 +601,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       skippedRuleInactive: 0,
       skippedMissingSender: 0,
       skippedIndexRebuilt: 0,
+      skippedNoLongerPending: 0,
       abandonedStaleClaim: 0,
       deferredQuiet: false,
       durationMs: 0,
@@ -589,297 +726,381 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     }
     result.matchesConsidered = matches.length;
     if (matches.length === 0) {
-      await this.releaseUntouchedClaims(loaded);
+      await this.deps.lock.run(mailboxAccountId, () =>
+        this.releaseUntouchedClaims(mailboxAccountId, loaded),
+      );
       result.durationMs = Date.now() - startedAt;
       return result;
     }
 
-    // Already-unsubscribed guard input, one query for the whole sweep's
-    // senders (policy_type='unsubscribe' is the senders-owned projection
-    // of a recorded intent). Protection is NOT read here: guard 4 reads
-    // it per match, below.
-    const senderKeys = [...new Set(matches.map((m) => m.senderKey))];
-    const policyRows = await this.deps.db
-      .select({
-        senderKey: senderPolicies.senderKey,
-        policyType: senderPolicies.policyType,
-      })
-      .from(senderPolicies)
-      .where(
-        and(
-          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-          inArray(senderPolicies.senderKey, senderKeys),
-        ),
-      );
-    const alreadyUnsubscribed = new Set(
-      policyRows.filter((r) => r.policyType === 'unsubscribe').map((r) => r.senderKey),
-    );
-
-    // Guard 6 — per-rule remaining daily budget (rolling 24h).
+    // Guard 6's per-rule running budget — see `processMatch`.
     const remainingByRule = new Map<string, number>();
+    const sweep: SweepContext = {
+      mailboxAccountId,
+      now,
+      gatedBy,
+      mayActUnattended,
+      result,
+      remainingByRule,
+    };
 
+    // ONE LOCK HOLD PER MATCH. The whole sweep used to run inside the
+    // mailbox lock. A match is ~20 sequential statements plus a Gmail
+    // call, and a statement costs ~55 ms in production, so an "Approve
+    // all" of a large batch held the lock for minutes — every label
+    // action, incremental sync and Later reschedule for the mailbox
+    // timed out behind it (45 s `lock_timeout`; 10 s on the reschedule
+    // PATCH) and burned retry attempts. Each match is an independent
+    // resolve → mutate → commit unit, so it is also the unit of mutual
+    // exclusion: another holder now waits on one match, not the batch.
+    //
+    // The price is that other holders commit BETWEEN our matches — an
+    // incremental sync auto-protecting a sender, another sweep for this
+    // mailbox claiming a match or spending a rule's cap — so no decision
+    // may rest on a sweep-start read of anything a lock holder writes.
+    // `processMatch` re-reads those inside its own hold. The entitlement
+    // and quiet gates above are still read once per sweep, as before: no
+    // lock holder writes them (billing and the quiet toggle take no lock),
+    // so the lock never made them fresher. The snapshot is used here only to
+    // SKIP without taking the lock, and a skip is the one decision a
+    // stale read cannot make wrong: the match stays pending and a later
+    // sweep retries it. A rule found capped therefore defers its remaining
+    // matches whole — including the bookkeeping a hold would do first
+    // (dismissing a now-Protected or superseded match, retiring a stale
+    // claim) — until a sweep with budget. None of those can act while
+    // deferred: each is a guard in front of execution. A lock that cannot
+    // be taken (its 45 s `lock_timeout`) fails the sweep, as it always has:
+    // BullMQ retries it with backoff, and every match already applied
+    // stays applied.
     for (const match of matches) {
-      // Guard 3 — rule must still be enabled + not paused (D105).
-      // BEFORE every start-gating guard: has this match already moved
-      // mail?
-      //
-      // `resolvedMessageIds` + `status='executing'` are persisted
-      // immediately before `batchModify`, so a claim past that point may
-      // have mutated Gmail and died before its terminal transaction. The
-      // guards below — rule paused, sender newly Protected, daily cap,
-      // missing sender row — all answer "should we START this action?".
-      // None of them may answer "should we RECORD one that already
-      // happened": skipping leaves the change stranded with no Activity
-      // row (and a paused rule never retries), and dismissing retires it
-      // outright. Either way the user's mail moved, invisibly and
-      // unrecoverably. An in-flight claim has exactly one correct
-      // outcome — finish it — and it can, because the execution set is
-      // persisted Gmail ids and the audit row keys off `senderKey`.
-      const inFlight = inFlightBy.get(match.matchId) ?? false;
-
-      if (!inFlight && (!match.ruleEnabled || match.ruleMode === 'paused')) {
-        result.skippedRuleInactive += 1;
-        continue;
-      }
-      // Custom rules never execute at V2 (D197/D234) — and an unknown
-      // preset key has no cap definition, so fail closed.
-      if (!isPresetKey(match.presetKey)) {
-        // No preset definition means no cap and no verb semantics, so
-        // this one cannot be completed even in flight — surface it
-        // rather than silently skipping a possible mutation.
-        if (inFlight) {
-          console.error(
-            JSON.stringify({
-              level: 'error',
-              kind: 'autopilot.in_flight_claim_unresolvable',
-              worker: this.workerName,
-              matchId: match.matchId,
-              presetKey: match.presetKey,
-            }),
-          );
+      if (!inFlightBy.get(match.matchId)) {
+        if (!match.ruleEnabled || match.ruleMode === 'paused' || !isPresetKey(match.presetKey)) {
+          result.skippedRuleInactive += 1;
+          continue;
         }
-        result.skippedRuleInactive += 1;
-        continue;
-      }
-
-      // A rule that was Active before review became mandatory
-      // may already have auto-approved matches waiting in the queue.
-      // Retire those before Gmail is touched. A claim that is already
-      // in flight still completes so its mutation receives an Activity
-      // record and undo token.
-      if (
-        !inFlight &&
-        (match.presetKey === 'auto_screen_new_senders' ||
-          match.presetKey === 'auto_archive_low_engagement') &&
-        match.modeAtMatch === 'active'
-      ) {
-        await this.deps.db
-          .update(ruleMatchLog)
-          .set({ resolution: 'dismissed', resolvedAt: now, dismissReason: 'superseded' })
-          .where(and(eq(ruleMatchLog.id, match.matchId), eq(ruleMatchLog.intentApplied, false)));
-        result.skippedRuleInactive += 1;
-        continue;
-      }
-
-      // Guard 4, read fresh for EACH match: "Approve all" runs every match
-      // serially in one sweep, and a Protect click takes no lock, so a
-      // snapshot from the sweep's start goes stale while earlier matches
-      // are still in Gmail.
-      if (!inFlight && (await this.senderIsProtected(mailboxAccountId, match.senderKey))) {
-        await this.dismissShieldedMatch(match, now);
-        result.skippedProtected += 1;
-        continue;
-      }
-
-      if (!match.senderId) {
-        // A missing sender row is one of THREE very different things.
-        //
-        // Normally it is the `building_sender_index` race — the row is
-        // coming, so leave the match pending and retry on a later sweep.
-        //
-        // But once the index has been REBUILT since this match was
-        // recorded, the sender's absence is final: the rebuild
-        // re-materialises every sender that still has mail, so one that
-        // did not come back is gone for good. Retrying that forever is
-        // the zombie this worker would otherwise farm — the row survives
-        // the rebuild's cleanup because it carries a durable claim, and
-        // `MATCH_EVIDENCE_CURRENT` keeps passing it for the same reason,
-        // so nothing else would ever retire it. Terminate the match as a
-        // no-op (no Gmail change was made, so no undo token) and fail
-        // the claim so the abandoned `action_jobs` row is visible rather
-        // than sitting at `queued` forever.
-        //
-        // And before either of those: the claim may already have MUTATED
-        // Gmail. `resolvedMessageIds` + `status='executing'` are written
-        // immediately BEFORE `batchModify`, so a job past that point may
-        // have moved real mail and died before its terminal transaction.
-        // Retiring one of those would leave the user's messages archived
-        // or trashed with no Activity row and no undo token — the one
-        // outcome this product must never produce. Such an action has to
-        // finish: the execution set is persisted Gmail message ids and
-        // the audit row keys off `senderKey`, so neither needs the
-        // senders row the guard is missing. Fall through and complete it.
-        if (!inFlight) {
-          if (await this.senderIndexRebuiltSince(mailboxAccountId, match.matchId)) {
-            await this.abandonStaleClaim(match, now);
-            result.abandonedStaleClaim += 1;
-            continue;
-          }
-          result.skippedMissingSender += 1;
+        if ((remainingByRule.get(match.ruleId) ?? 1) <= 0) {
+          result.skippedCapped += 1;
           continue;
         }
       }
+      await this.deps.lock.run(mailboxAccountId, () => this.processMatch(match, sweep));
+    }
 
-      // Re-check currency as late as possible. `loadEligibleMatches`
-      // already excluded matches a rebuild invalidated, but that read
-      // happened before this loop and before any Gmail call — a rebuild
-      // committing in between would otherwise get its deleted evidence
-      // acted on for real. This narrows the window to the gap between
-      // this statement and the mutation; it cannot close it, because an
-      // external side effect can never be transactional with a database
-      // predicate. `flipMatchApplied` reports the residue.
-      if (!inFlight && !(await this.matchStillCurrent(match.matchId))) {
-        result.skippedIndexRebuilt += 1;
-        continue;
-      }
+    // One release for the whole sweep, in its own hold. It covers every
+    // loaded match, including those that never entered a hold (gated,
+    // capped or paused before the lock was taken), whose claims an earlier
+    // sweep may have left untouched.
+    await this.deps.lock.run(mailboxAccountId, () =>
+      this.releaseUntouchedClaims(mailboxAccountId, loaded),
+    );
+    result.durationMs = Date.now() - startedAt;
+    return result;
+  }
 
-      // Already-unsubscribed guard: active-mode rules re-match a sender
-      // on EVERY sweep (no active-mode dedup by design — new mail must
-      // re-trigger), but an unsubscribe intent is one-way (D58). When
-      // the sender already carries the `policy_type='unsubscribe'`
-      // projection, the match terminates as a no-op — no duplicate
-      // intent row, no duplicate one-click POST.
-      if (match.actionKind === 'unsubscribe' && alreadyUnsubscribed.has(match.senderKey)) {
-        await this.flipMatchApplied(match.matchId, null, now);
-        result.skippedAlreadyUnsubscribed += 1;
-        continue;
-      }
+  /**
+   * One match, start to finish, inside ONE hold of the mailbox lock (see
+   * the loop in `sweep`). Every guard reads `reloadMatch`, taken at the
+   * top of this hold — never the sweep-start `snapshot`, which another
+   * holder may have made stale: a sender protected since, a match
+   * claimed or finished by another sweep, a daily cap spent.
+   */
+  private async processMatch(snapshot: EligibleMatch, sweep: SweepContext): Promise<void> {
+    const { mailboxAccountId, now, result, remainingByRule } = sweep;
+    const fresh = await this.reloadMatch(snapshot, now);
+    if (!fresh) {
+      result.skippedNoLongerPending += 1;
+      return;
+    }
+    const { match, inFlight } = fresh;
+    // The claim key and the cap predicate were built from the snapshot's
+    // verb. A rule's verb never changes today. If one ever did, those reads
+    // were keyed wrong — an in-flight claim could read as not in flight —
+    // so decide nothing here, say so loudly, and leave the match to the
+    // next sweep, which loads the new verb.
+    if (match.actionKind !== snapshot.actionKind) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'autopilot.action.verb_changed',
+          worker: this.workerName,
+          matchId: match.matchId,
+          from: snapshot.actionKind,
+          to: match.actionKind,
+        }),
+      );
+      this.observer.captureBackgroundFailure(
+        new Error(`rule verb changed mid-sweep: ${snapshot.actionKind} -> ${match.actionKind}`),
+        {
+          kind: 'autopilot.action.verb_changed',
+          tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+        },
+      );
+      return;
+    }
+    // The sweep-level gates filtered on the SNAPSHOT's in-flight flag.
+    // Re-apply them on the fresh one: a gated sweep, and an unattended
+    // match on a tier without `autopilot-active`, may only COMPLETE a
+    // claim that is in flight — never start one.
+    if (
+      !inFlight &&
+      (sweep.gatedBy !== null || (!sweep.mayActUnattended && match.modeAtMatch !== 'observe'))
+    ) {
+      result.skippedNoLongerPending += 1;
+      return;
+    }
 
-      let remaining = remainingByRule.get(match.ruleId);
-      if (remaining === undefined) {
-        const cap = AUTOPILOT_PRESETS[match.presetKey].dailyActionCap;
-        const executed24h = await this.countRuleActionsInWindow(
-          match.ruleId,
-          match.actionKind,
-          now,
-        );
-        remaining = Math.max(0, cap - executed24h);
-        remainingByRule.set(match.ruleId, remaining);
-      }
-      if (!inFlight && remaining <= 0) {
-        // The cap bounds NEW work. An in-flight claim is not new work —
-        // holding it back would strand a mutation that already ran.
-        result.skippedCapped += 1;
-        continue;
-      }
-
-      try {
-        if (match.actionKind === 'archive' || match.actionKind === 'later') {
-          const outcome = await this.executeLabelAction(mailboxAccountId, match, now);
-          // 'stale' means the rebuild won the race for the claim — the
-          // match was invalidated before Gmail was touched.
-          if (outcome === 'stale') {
-            result.skippedIndexRebuilt += 1;
-            continue;
-          }
-          // Protected by the time the request was about to leave.
-          if (outcome === 'protected') {
-            result.skippedProtected += 1;
-            continue;
-          }
-          result.labelActionsExecuted += 1;
-        } else if (match.actionKind === 'unsubscribe') {
-          const outcome = await this.executeUnsubscribeIntent(
-            mailboxAccountId,
-            match,
-            now,
-            inFlight,
-          );
-          if (outcome === 'stale') {
-            result.skippedIndexRebuilt += 1;
-            continue;
-          }
-          // Nothing was recorded and nothing was sent, so this must not
-          // count as an intent NOR spend the rule's daily cap — the
-          // `continue` skips the decrement below. Counting a refusal as work
-          // done is how a sweep reports having handled a sender it did not
-          // touch, and how a cap gets consumed by matches that will be
-          // retried in full on the next run.
-          if (outcome === 'send_disabled') {
-            result.skippedUnsubSendDisabled += 1;
-            continue;
-          }
-          result.unsubscribeIntentsRecorded += 1;
-          if (outcome.executionEnqueued) result.unsubscribeExecutionsEnqueued += 1;
-        } else {
-          // 'keep' (or a future verb) — Autopilot never fires on Keep;
-          // a row like this is data drift. Fail closed: skip + log. A
-          // claim cannot exist for a verb that never reaches the claim
-          // paths, so `inFlight` here would itself be the drift — say so
-          // at error level rather than trusting the construction, which
-          // is the reasoning that hid two earlier stranding bugs.
-          console[inFlight ? 'error' : 'warn'](
-            JSON.stringify({
-              level: inFlight ? 'error' : 'warn',
-              kind: inFlight
-                ? 'autopilot.in_flight_claim_unresolvable'
-                : 'autopilot.action.unknown_action_kind',
-              worker: this.workerName,
-              matchId: match.matchId,
-              actionKind: match.actionKind,
-            }),
-          );
-          continue;
-        }
-        remainingByRule.set(match.ruleId, remaining - 1);
-      } catch (err) {
-        // One match's failure (Gmail quota, transient DB error) must
-        // not kill the sweep — the match stays `intent_applied=false`
-        // and retries on the next trigger; the count surfaces here.
+    // Guard 3 — rule must still be enabled + not paused (D105).
+    // BEFORE every start-gating guard: has this match already moved
+    // mail?
+    //
+    // `resolvedMessageIds` + `status='executing'` are persisted as the
+    // first request leaves (`beforeFirstRequest`), so a claim past that point may
+    // have mutated Gmail and died before its terminal transaction. The
+    // guards below — rule paused, sender newly Protected, daily cap,
+    // missing sender row — all answer "should we START this action?".
+    // None of them may answer "should we RECORD one that already
+    // happened": skipping leaves the change stranded with no Activity
+    // row (and a paused rule never retries), and dismissing retires it
+    // outright. Either way the user's mail moved, invisibly and
+    // unrecoverably. An in-flight claim has exactly one correct
+    // outcome — finish it — and it can, because the execution set is
+    // persisted Gmail ids and the audit row keys off `senderKey`.
+    if (!inFlight && (!match.ruleEnabled || match.ruleMode === 'paused')) {
+      result.skippedRuleInactive += 1;
+      return;
+    }
+    // Custom rules never execute at V2 (D197/D234) — and an unknown
+    // preset key has no cap definition, so fail closed.
+    if (!isPresetKey(match.presetKey)) {
+      // No preset definition means no cap and no verb semantics, so
+      // this one cannot be completed even in flight — surface it
+      // rather than silently skipping a possible mutation.
+      if (inFlight) {
         console.error(
           JSON.stringify({
             level: 'error',
-            kind: 'autopilot.action.match_failed',
+            kind: 'autopilot.in_flight_claim_unresolvable',
             worker: this.workerName,
             matchId: match.matchId,
-            ruleId: match.ruleId,
-            mailboxAccountId,
-            error: err instanceof Error ? err.message : String(err),
+            presetKey: match.presetKey,
           }),
         );
-        // The sweep counts this failure and then returns SUCCESS, so
-        // BullMQ records a clean run and the D203/D225 retry and
-        // dead-letter policy never engages. That is right for isolation
-        // and wrong for visibility: the console line is the only trace,
-        // and `console.error` is not observability here — Sentry runs
-        // with `integrations: []`, so nothing forwards it (audit
-        // 2026-08-21).
-        //
-        // The user-visible shape this hid: you approve an Autopilot
-        // suggestion, the Gmail mutation fails in a way that will not
-        // self-correct, and the match is retried every sweep forever,
-        // never marked failed, with no Activity row and no alert — so
-        // an Archive you approved simply never happens and nothing says
-        // so. Making it terminal after N attempts needs an attempts
-        // column on `rule_match_log`, which is a migration and is NOT
-        // in this change; the silence is fixed here, the infinite retry
-        // is not.
-        this.observer.captureBackgroundFailure(
-          err instanceof Error ? err : new Error(String(err)),
-          {
-            kind: 'autopilot.action.match_failed',
-            tags: {
-              worker: this.workerName,
-              mailbox_account_id: mailboxAccountId,
-            },
-          },
-        );
+      }
+      result.skippedRuleInactive += 1;
+      return;
+    }
+
+    // A rule that was Active before review became mandatory
+    // may already have auto-approved matches waiting in the queue.
+    // Retire those before Gmail is touched. A claim that is already
+    // in flight still completes so its mutation receives an Activity
+    // record and undo token.
+    if (
+      !inFlight &&
+      (match.presetKey === 'auto_screen_new_senders' ||
+        match.presetKey === 'auto_archive_low_engagement') &&
+      match.modeAtMatch === 'active'
+    ) {
+      await this.deps.db
+        .update(ruleMatchLog)
+        .set({ resolution: 'dismissed', resolvedAt: now, dismissReason: 'superseded' })
+        .where(and(eq(ruleMatchLog.id, match.matchId), eq(ruleMatchLog.intentApplied, false)));
+      result.skippedRuleInactive += 1;
+      return;
+    }
+
+    // Guard 4 — Protect, read in this hold: a rule must NEVER act on a
+    // protected sender (D43), and protection can land between matches.
+    if (!inFlight && fresh.isProtected) {
+      await this.dismissShieldedMatch(match, now);
+      result.skippedProtected += 1;
+      return;
+    }
+
+    if (!match.senderId) {
+      // A missing sender row is one of THREE very different things.
+      //
+      // Normally it is the `building_sender_index` race — the row is
+      // coming, so leave the match pending and retry on a later sweep.
+      //
+      // But once the index has been REBUILT since this match was
+      // recorded, the sender's absence is final: the rebuild
+      // re-materialises every sender that still has mail, so one that
+      // did not come back is gone for good. Retrying that forever is
+      // the zombie this worker would otherwise farm — the row survives
+      // the rebuild's cleanup because it carries a durable claim, and
+      // `MATCH_EVIDENCE_CURRENT` keeps passing it for the same reason,
+      // so nothing else would ever retire it. Terminate the match as a
+      // no-op (no Gmail change was made, so no undo token) and fail
+      // the claim so the abandoned `action_jobs` row is visible rather
+      // than sitting at `queued` forever.
+      //
+      // And before either of those: the claim may already have MUTATED
+      // Gmail. `resolvedMessageIds` + `status='executing'` are written as
+      // the first request leaves (`beforeFirstRequest`), so a job past that point may
+      // have moved real mail and died before its terminal transaction.
+      // Retiring one of those would leave the user's messages archived
+      // or trashed with no Activity row and no undo token — the one
+      // outcome this product must never produce. Such an action has to
+      // finish: the execution set is persisted Gmail message ids and
+      // the audit row keys off `senderKey`, so neither needs the
+      // senders row the guard is missing. Fall through and complete it.
+      if (!inFlight) {
+        if (await this.senderIndexRebuiltSince(mailboxAccountId, match.matchId)) {
+          await this.abandonStaleClaim(match, now);
+          result.abandonedStaleClaim += 1;
+          return;
+        }
+        result.skippedMissingSender += 1;
+        return;
       }
     }
 
-    await this.releaseUntouchedClaims(loaded);
-    result.durationMs = Date.now() - startedAt;
-    return result;
+    // Re-check currency as late as possible. `loadEligibleMatches`
+    // already excluded matches a rebuild invalidated, but that read
+    // happened before this hold and before any Gmail call — a rebuild
+    // committing in between would otherwise get its deleted evidence
+    // acted on for real. `reloadMatch` read it at the top of this hold;
+    // that narrows the window to the gap between that read and the
+    // mutation; it cannot close it, because an external side effect can
+    // never be transactional with a database predicate.
+    // `flipMatchApplied` reports the residue.
+    if (!inFlight && !fresh.evidenceCurrent) {
+      result.skippedIndexRebuilt += 1;
+      return;
+    }
+
+    // Already-unsubscribed guard: active-mode rules re-match a sender
+    // on EVERY sweep (no active-mode dedup by design — new mail must
+    // re-trigger), but an unsubscribe intent is one-way (D58). When
+    // the sender already carries the `policy_type='unsubscribe'`
+    // projection, the match terminates as a no-op — no duplicate
+    // intent row, no duplicate one-click POST.
+    if (match.actionKind === 'unsubscribe' && fresh.alreadyUnsubscribed) {
+      await this.flipMatchApplied(match.matchId, null, now);
+      result.skippedAlreadyUnsubscribed += 1;
+      return;
+    }
+
+    // Guard 6 — the rule's remaining daily budget: the tighter of this
+    // sweep's running budget and the FRESH count `reloadMatch` read.
+    // Within one sweep the running budget is always the tighter (it
+    // charges every execution; the count only real work), so the count
+    // changes nothing — until another sweep for this mailbox spends the
+    // same rule between our holds, which the running budget cannot see.
+    const cap = AUTOPILOT_PRESETS[match.presetKey].dailyActionCap;
+    const remaining = Math.min(
+      remainingByRule.get(match.ruleId) ?? Number.POSITIVE_INFINITY,
+      cap - fresh.executedInWindow,
+    );
+    remainingByRule.set(match.ruleId, remaining);
+    if (!inFlight && remaining <= 0) {
+      // The cap bounds NEW work. An in-flight claim is not new work —
+      // holding it back would strand a mutation that already ran.
+      result.skippedCapped += 1;
+      return;
+    }
+
+    try {
+      if (match.actionKind === 'archive' || match.actionKind === 'later') {
+        const outcome = await this.executeLabelAction(mailboxAccountId, match, now);
+        // 'stale' means the rebuild won the race for the claim — the
+        // match was invalidated before Gmail was touched.
+        if (outcome === 'stale') {
+          result.skippedIndexRebuilt += 1;
+          return;
+        }
+        // Protected by the time the first request was about to leave.
+        if (outcome === 'protected') {
+          result.skippedProtected += 1;
+          return;
+        }
+        // Retired outside the lock (a demotion or a rebuild) before any
+        // request left.
+        if (outcome === 'retired') {
+          result.skippedNoLongerPending += 1;
+          return;
+        }
+        result.labelActionsExecuted += 1;
+      } else if (match.actionKind === 'unsubscribe') {
+        const outcome = await this.executeUnsubscribeIntent(mailboxAccountId, match, now, inFlight);
+        if (outcome === 'stale') {
+          result.skippedIndexRebuilt += 1;
+          return;
+        }
+        // Nothing was recorded and nothing was sent, so this must not
+        // count as an intent NOR spend the rule's daily cap — the
+        // `return` skips the decrement below. Counting a refusal as work
+        // done is how a sweep reports having handled a sender it did not
+        // touch, and how a cap gets consumed by matches that will be
+        // retried in full on the next run.
+        if (outcome === 'send_disabled') {
+          result.skippedUnsubSendDisabled += 1;
+          return;
+        }
+        result.unsubscribeIntentsRecorded += 1;
+        if (outcome.executionEnqueued) result.unsubscribeExecutionsEnqueued += 1;
+      } else {
+        // 'keep' (or a future verb) — Autopilot never fires on Keep;
+        // a row like this is data drift. Fail closed: skip + log. A
+        // claim cannot exist for a verb that never reaches the claim
+        // paths, so `inFlight` here would itself be the drift — say so
+        // at error level rather than trusting the construction, which
+        // is the reasoning that hid two earlier stranding bugs.
+        console[inFlight ? 'error' : 'warn'](
+          JSON.stringify({
+            level: inFlight ? 'error' : 'warn',
+            kind: inFlight
+              ? 'autopilot.in_flight_claim_unresolvable'
+              : 'autopilot.action.unknown_action_kind',
+            worker: this.workerName,
+            matchId: match.matchId,
+            actionKind: match.actionKind,
+          }),
+        );
+        return;
+      }
+      remainingByRule.set(match.ruleId, remaining - 1);
+    } catch (err) {
+      // One match's failure (Gmail quota, transient DB error) must
+      // not kill the sweep — the match stays `intent_applied=false`
+      // and retries on the next trigger; the count surfaces here.
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'autopilot.action.match_failed',
+          worker: this.workerName,
+          matchId: match.matchId,
+          ruleId: match.ruleId,
+          mailboxAccountId,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      // The sweep counts this failure and then returns SUCCESS, so
+      // BullMQ records a clean run and the D203/D225 retry and
+      // dead-letter policy never engages. That is right for isolation
+      // and wrong for visibility: the console line is the only trace,
+      // and `console.error` is not observability here — Sentry runs
+      // with `integrations: []`, so nothing forwards it (audit
+      // 2026-08-21).
+      //
+      // The user-visible shape this hid: you approve an Autopilot
+      // suggestion, the Gmail mutation fails in a way that will not
+      // self-correct, and the match is retried every sweep forever,
+      // never marked failed, with no Activity row and no alert — so
+      // an Archive you approved simply never happens and nothing says
+      // so. Making it terminal after N attempts needs an attempts
+      // column on `rule_match_log`, which is a migration and is NOT
+      // in this change; the silence is fixed here, the infinite retry
+      // is not.
+      this.observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), {
+        kind: 'autopilot.action.match_failed',
+        tags: {
+          worker: this.workerName,
+          mailbox_account_id: mailboxAccountId,
+        },
+      });
+    }
   }
 
   /**
@@ -901,27 +1122,10 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    */
   private async loadEligibleMatches(mailboxAccountId: string): Promise<EligibleMatch[]> {
     const rows = await this.deps.db
-      .select({
-        matchId: ruleMatchLog.id,
-        ruleId: ruleMatchLog.ruleId,
-        senderKey: ruleMatchLog.senderKey,
-        presetKey: automationRules.presetKey,
-        actionKind: automationRules.actionKind,
-        ruleEnabled: automationRules.enabled,
-        ruleMode: automationRules.mode,
-        modeAtMatch: ruleMatchLog.modeAtMatch,
-        senderId: senders.id,
-        unsubscribeMethod: senders.unsubscribeMethod,
-      })
+      .select(MATCH_COLUMNS)
       .from(ruleMatchLog)
       .innerJoin(automationRules, eq(automationRules.id, ruleMatchLog.ruleId))
-      .leftJoin(
-        senders,
-        and(
-          eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
-          eq(senders.senderKey, ruleMatchLog.senderKey),
-        ),
-      )
+      .leftJoin(senders, SENDER_OF_MATCH)
       .where(
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
@@ -935,57 +1139,90 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * Rolling-24h executed-action count for one rule (cap basis). The
-   * cap bounds REAL work, so the count is verb-aware:
+   * Everything one match's decision reads — its row, rule, sender,
+   * Protect and unsubscribe policy, durable claim, and the rule's cap
+   * count — in ONE statement, at the top of that match's lock hold.
    *
-   *   - label verbs (archive/later): only rows that MOVED messages
-   *     (`affected_count > 0`) count. 0-affected decisions (the rule
-   *     fired but the sender had nothing in INBOX — the common case on
-   *     re-sweeps, since active-mode matching re-runs per trigger by
-   *     design) mutate nothing and must not starve the budget.
-   *   - unsubscribe: every intent row counts — intent rows are always
-   *     `affected_count=0` (no messages move) but each IS the action.
+   * The sweep releases the lock between matches, so any of these may
+   * have changed since `loadEligibleMatches` read them, and every
+   * reader of them in `processMatch` is destructive: Protect gates a
+   * Gmail mutation, the in-flight flag decides whether a match may be
+   * dismissed or must be finished, the count decides whether the rule
+   * may act again today. Read here, no other LOCK holder can change them
+   * before this match's decision commits. Writers that take no lock — the
+   * API's Protect, a user's dismiss, the D251 demotion — still can, in the
+   * gap between this read and the Gmail call, as they always could. The
+   * claim transaction re-checks approved / unapplied / evidence-current,
+   * which narrows that gap for a dismiss, a demotion or a rebuild — not
+   * for Protect.
+   *
+   * `null` when the match is no longer approved-and-unapplied: applied
+   * by another sweep, dismissed, or deleted by a sender-index rebuild.
    */
-  private async countRuleActionsInWindow(
-    ruleId: string,
-    actionKind: string,
-    now: Date,
-  ): Promise<number> {
-    const windowStart = new Date(now.getTime() - DAILY_CAP_WINDOW_MS);
+  private async reloadMatch(snapshot: EligibleMatch, now: Date): Promise<FreshMatch | null> {
     const [row] = await this.deps.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(activityLog)
-      .where(
-        and(
-          eq(activityLog.ruleId, ruleId),
-          eq(activityLog.source, 'autopilot'),
-          gte(activityLog.occurredAt, windowStart),
-          ...(actionKind === 'unsubscribe' ? [] : [gt(activityLog.affectedCount, 0)]),
+      .select({
+        ...MATCH_COLUMNS,
+        evidenceCurrent: sql<boolean>`${MATCH_EVIDENCE_CURRENT}`,
+        isProtected: senderPolicies.isProtected,
+        policyType: senderPolicies.policyType,
+        claimStatus: actionJobs.status,
+        claimResolvedMessageIds: actionJobs.resolvedMessageIds,
+        executedInWindow: ruleActionsInWindow(
+          snapshot.actionKind,
+          new Date(now.getTime() - DAILY_CAP_WINDOW_MS),
         ),
-      );
-    return row?.n ?? 0;
-  }
-
-  /** Guard 4 — is this sender Protected right now? */
-  private async senderIsProtected(mailboxAccountId: string, senderKey: string): Promise<boolean> {
-    const [row] = await this.deps.db
-      .select({ isProtected: senderPolicies.isProtected })
-      .from(senderPolicies)
+      })
+      .from(ruleMatchLog)
+      .innerJoin(automationRules, eq(automationRules.id, ruleMatchLog.ruleId))
+      .leftJoin(senders, SENDER_OF_MATCH)
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+          eq(senderPolicies.senderKey, ruleMatchLog.senderKey),
+        ),
+      )
+      .leftJoin(actionJobs, eq(actionJobs.idempotencyKey, claimKey(snapshot)))
       .where(
         and(
-          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-          eq(senderPolicies.senderKey, senderKey),
+          eq(ruleMatchLog.id, snapshot.matchId),
+          eq(ruleMatchLog.resolution, 'approved'),
+          eq(ruleMatchLog.intentApplied, false),
         ),
       )
       .limit(1);
-    return row?.isProtected === true;
+    if (!row) return null;
+    const {
+      evidenceCurrent,
+      isProtected,
+      policyType,
+      claimStatus,
+      claimResolvedMessageIds,
+      executedInWindow,
+      ...match
+    } = row;
+    return {
+      match,
+      inFlight: claimIsInFlight(
+        claimStatus === null
+          ? null
+          : { status: claimStatus, resolvedMessageIds: claimResolvedMessageIds ?? [] },
+      ),
+      evidenceCurrent,
+      isProtected: isProtected === true,
+      alreadyUnsubscribed: policyType === 'unsubscribe',
+      executedInWindow,
+    };
   }
 
   /**
    * Mark a claim `executing` (with its fresh id set) as the first request
-   * leaves — the `beforeFirstRequest` hook. For a claim not yet in flight,
-   * the same statement refuses when the sender is Protected right now
-   * (guard 4, closed to the send).
+   * leaves — the `beforeFirstRequest` hook. A claim not yet in flight starts
+   * only while it is still untouched and its sender is not Protected, in the
+   * same statement: a Protect click takes no lock, and a D251 demotion or a
+   * sender-index rebuild can retire the claim outside the mailbox lock.
+   * When the statement matches nothing, the row says which of those it was.
    */
   private async markClaimExecuting(
     jobId: string,
@@ -1006,34 +1243,106 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       .where(
         and(
           eq(actionJobs.id, jobId),
-          ...(inFlight ? [] : [notExists(protectedSenderRow(db, mailboxAccountId, senderKey))]),
+          ...(inFlight
+            ? []
+            : [
+                eq(actionJobs.status, 'queued'),
+                notExists(protectedSenderRow(db, mailboxAccountId, senderKey)),
+              ]),
         ),
       )
       .returning({ id: actionJobs.id });
     if (marked) return;
-    if (!inFlight) throw new SenderProtectedAtSend(senderKey);
-    throw new ValidationError(`claim ${jobId} vanished before its Gmail request`);
+    const [row] = await db
+      .select({ status: actionJobs.status })
+      .from(actionJobs)
+      .where(eq(actionJobs.id, jobId))
+      .limit(1);
+    if (!row) throw new ValidationError(`claim ${jobId} vanished before its Gmail request`);
+    if (inFlight || row.status !== 'queued') throw new ClaimRetired(jobId);
+    throw new SenderProtectedAtSend(senderKey);
   }
 
   /**
-   * Release every label claim of this sweep's matches that never reached
-   * Gmail (`queued`, no persisted ids) — a gated, refused or failed start
-   * must not leave a row Activity lists as running, or one that outlives
-   * its dismissed match. The next sweep re-claims the match under the
-   * currency check. A claim that may have reached Gmail is never touched.
+   * The client answered its first request without running
+   * `beforeFirstRequest`: Gmail may have changed while the claim still
+   * reads untouched, which the next sweep would take for "never started".
+   * Mark it now, and say so — that client is broken.
    */
-  private async releaseUntouchedClaims(matches: EligibleMatch[]): Promise<void> {
+  private async recordClaimHookSkipped(
+    jobId: string,
+    mailboxAccountId: string,
+    freshIds: string[] | null,
+  ): Promise<void> {
+    console.error(
+      JSON.stringify({
+        severity: 'ERROR',
+        level: 'error',
+        kind: 'autopilot.action.before_first_request_skipped',
+        actionId: jobId,
+        mailboxAccountId,
+        message: 'The Gmail client sent a request without running beforeFirstRequest.',
+      }),
+    );
+    this.observer.captureBackgroundFailure(new Error('Gmail client skipped beforeFirstRequest'), {
+      kind: 'autopilot.action.before_first_request_skipped',
+      tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+    });
+    await this.deps.db
+      .update(actionJobs)
+      .set({
+        ...(freshIds ? { resolvedMessageIds: freshIds, requestedCount: freshIds.length } : {}),
+        status: 'executing',
+        errorCode: null,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(actionJobs.id, jobId));
+  }
+
+  /**
+   * Release every label claim of these matches that never reached Gmail
+   * (`queued`, no persisted ids): a gated, refused, Protected or failed
+   * start must not leave a row the in-flight list shows as running, or one
+   * that outlives its dismissed match. A claim that may have reached Gmail
+   * is never touched. Callers hold the mailbox lock.
+   *
+   * Under the sender-index lock, like the claim itself. A rebuild spares
+   * an unexecuted match only while its claim exists, so once the claim is
+   * gone a match whose evidence the rebuild replaced would sit approved
+   * and never run (`MATCH_EVIDENCE_CURRENT` excludes it). Such a match is
+   * deleted here exactly as the rebuild would have deleted it.
+   */
+  private async releaseUntouchedClaims(
+    mailboxAccountId: string,
+    matches: EligibleMatch[],
+  ): Promise<void> {
     const keys = matches.filter((m) => m.actionKind !== 'unsubscribe').map(claimKey);
     for (let i = 0; i < keys.length; i += CLAIM_LOOKUP_CHUNK) {
-      await this.deps.db
-        .delete(actionJobs)
-        .where(
+      await this.deps.db.transaction(async (tx) => {
+        await lockSenderIndex(tx, mailboxAccountId);
+        const released = await tx
+          .delete(actionJobs)
+          .where(
+            and(
+              inArray(actionJobs.idempotencyKey, keys.slice(i, i + CLAIM_LOOKUP_CHUNK)),
+              eq(actionJobs.status, 'queued'),
+              sql`cardinality(${actionJobs.resolvedMessageIds}) = 0`,
+            ),
+          )
+          .returning({ key: actionJobs.idempotencyKey });
+        if (released.length === 0) return;
+        await tx.delete(ruleMatchLog).where(
           and(
-            inArray(actionJobs.idempotencyKey, keys.slice(i, i + CLAIM_LOOKUP_CHUNK)),
-            eq(actionJobs.status, 'queued'),
-            sql`cardinality(${actionJobs.resolvedMessageIds}) = 0`,
+            inArray(
+              ruleMatchLog.id,
+              released.map((r) => r.key.slice(AUTOPILOT_CLAIM_KEY_PREFIXES[0].length)),
+            ),
+            eq(ruleMatchLog.intentApplied, false),
+            inArray(ruleMatchLog.resolution, ['pending', 'approved']),
+            sql`not ${MATCH_EVIDENCE_CURRENT}`,
           ),
         );
+      });
     }
   }
 
@@ -1063,7 +1372,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * Archive / Later execution — the label-modify terminal-tx pattern
    * with `source='autopilot'` attribution. Invariants mirrored from
    * `LabelActionWorker.executeForward`:
-   *   - durable execution set persisted BEFORE the Gmail mutation
+   *   - durable execution set persisted as the first request leaves
    *   - idempotent batchModify (re-removing INBOX is a no-op)
    *   - one terminal tx for undo + activity + mirror + event + flips
    */
@@ -1071,7 +1380,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     mailboxAccountId: string,
     match: EligibleMatch,
     now: Date,
-  ): Promise<'executed' | 'stale' | 'protected'> {
+  ): Promise<'executed' | 'stale' | 'protected' | 'retired'> {
     const { db } = this.deps;
     const verb = match.actionKind as 'archive' | 'later';
     const idempotencyKey = `autopilot-${match.matchId}`;
@@ -1181,25 +1490,47 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     const client = await this.deps.gmailMutation.getClient(mailboxAccountId);
     const change = labelChangeForVerb(verb);
     const resolved = await resolveLabelChange(client, change.forward);
+    // One request per chunk, as the label worker sends them. The hook runs
+    // once, as the first request leaves. A refusal of that first request —
+    // nothing applied anywhere — puts the claim back; a refusal of a later
+    // chunk cannot, because the first chunk already moved mail.
+    const freshIds = persistedIds.length === 0 ? ids : null;
+    let landed = 0;
+    let hookRan = false;
     try {
-      await client.batchModify(ids, resolved, {
-        beforeFirstRequest: () =>
-          this.markClaimExecuting(
-            job.id,
-            mailboxAccountId,
-            match.senderKey,
-            persistedIds.length === 0 ? ids : null,
-            inFlight,
-          ),
-      });
+      for (let start = 0; start < ids.length; start += GMAIL_BATCH_MODIFY_MAX_IDS) {
+        const first = start === 0;
+        await client.batchModify(
+          ids.slice(start, start + GMAIL_BATCH_MODIFY_MAX_IDS),
+          resolved,
+          first
+            ? {
+                beforeFirstRequest: async () => {
+                  hookRan = true;
+                  await this.markClaimExecuting(
+                    job.id,
+                    mailboxAccountId,
+                    match.senderKey,
+                    freshIds,
+                    inFlight,
+                  );
+                },
+              }
+            : {},
+        );
+        if (first && !hookRan)
+          await this.recordClaimHookSkipped(job.id, mailboxAccountId, freshIds);
+        landed += 1;
+      }
     } catch (err) {
       if (err instanceof SenderProtectedAtSend) {
         await this.dismissShieldedMatch(match, now);
         return 'protected';
       }
-      // Gmail refused the only request, so nothing was applied: the claim
+      if (err instanceof ClaimRetired) return 'retired';
+      // Gmail refused the first request, so nothing was applied: the claim
       // goes back to untouched, and the sweep's end releases it.
-      if (!inFlight && ids.length <= GMAIL_BATCH_MODIFY_MAX_IDS && isRefusedBeforeApply(err)) {
+      if (!inFlight && landed === 0 && isRefusedBeforeApply(err)) {
         await db
           .update(actionJobs)
           .set({
@@ -1212,6 +1543,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       }
       throw err;
     }
+    // When Gmail confirmed the move — not the sweep's start, which with
+    // one lock hold per match can be minutes earlier.
+    const appliedAt = (this.deps.now ?? (() => new Date()))();
 
     const expiresAt = await this.undoExpiresAt(mailboxAccountId);
 
@@ -1254,6 +1588,17 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           ),
         );
 
+      // A Later and its return timer are one terminal state — the same
+      // writer the manual pipeline uses. A timer the sender already has is
+      // kept: the new mail returns with it (`scheduleLaterReturn`).
+      if (verb === 'later' && job.wakeAt !== null) {
+        await scheduleLaterReturn(
+          tx,
+          { mailboxAccountId, senderKey: match.senderKey, wakeAt: job.wakeAt, setAt: appliedAt },
+          { keepExisting: true },
+        );
+      }
+
       await this.deps.outbox.publish(tx, {
         topic: TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED,
         aggregateId: match.matchId,
@@ -1268,8 +1613,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         schema: AutopilotActionIntentEmittedPayloadSchema,
       });
 
-      // The sender-owned Later timer is projected only after Gmail has
-      // confirmed the move, matching the manual action pipeline (D245).
+      // Published only after Gmail has confirmed the move, matching the
+      // manual action pipeline (D245); the Screener projection resolves
+      // the sender's pending quarantine row from it.
       await this.deps.outbox.publish(tx, {
         topic: TOPICS.ACTION_LABEL_APPLIED,
         aggregateId: job.id,
@@ -1282,7 +1628,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           affectedCount: ids.length,
           compositeId: job.compositeId,
           wakeAt: verb === 'later' ? (job.wakeAt?.toISOString() ?? null) : null,
-          appliedAt: now.toISOString(),
+          appliedAt: appliedAt.toISOString(),
         },
         schema: ActionLabelAppliedPayloadSchema,
       });
@@ -1581,8 +1927,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * May this match already have mutated Gmail?
    *
    * True once its durable claim has advanced past creation — the worker
-   * persists `resolvedMessageIds` and flips the row to `executing`
-   * immediately BEFORE `batchModify`, precisely so a crashed attempt can
+   * persists `resolvedMessageIds` and flips the row to `executing` as the
+   * first request leaves (`beforeFirstRequest`), precisely so a crashed attempt can
    * re-apply the same set. A `done` claim is excluded: its terminal
    * transaction committed, so the action is already audited and undoable
    * and the normal replay path handles it.

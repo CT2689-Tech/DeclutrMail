@@ -1298,7 +1298,7 @@ function buildSignals(input: {
     input.readRate === null
       ? 'Marked read: no mail in the last 90 days, so there is nothing to measure'
       : `Marked read: ${Math.round(input.readRate * 100)}% over the last 90 days`,
-    `Volume: ${input.monthlyVolume} messages/month (90-day average)`,
+    `Volume: ${input.monthlyVolume} emails/month (90-day average)`,
   ];
   if (input.unsubscribeMethod === 'one_click') {
     signals.push('List-Unsubscribe header present (RFC 8058 one-click)');

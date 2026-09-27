@@ -617,11 +617,14 @@ describe('ScoreWorker — LLM port', () => {
     // Run 2 (re-score, same signals → same verdict, row unexpired) —
     // the reasoning is reused, no second bill; the row still refreshes
     // (produced_at advances via the monotonic upsert).
-    await worker.processJob(
+    const second = await worker.processJob(
       { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: T0 + 60_000 },
       FAKE_CTX,
     );
     expect(calls).toBe(1);
+    // What the run bought vs what the user sees: reused prose is still
+    // LLM prose, but it cost nothing.
+    expect(second).toMatchObject({ llmExplanations: 1, llmCalls: 0, llmReused: 1 });
 
     const [row] = await db
       .select()
@@ -630,6 +633,42 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.reasoning).toBe('LLM prose #1');
     expect(row?.generatedBy).toBe('llm_haiku');
     expect(Number(row?.producedAt)).toBe(T0 + 60_000);
+  });
+
+  it('reports llmCalls and llmReused on worker.succeeded — the allowlist drops silently', async () => {
+    // `SAFE_WORKER_RESULT_KEYS` is a denylist by omission: a counter missing
+    // from it vanishes from the ops line with no error anywhere, and these
+    // two are how a re-scan's Haiku spend is read back from the logs.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'logged@test.test', {
+      gmailCategory: 'primary',
+    });
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Stays in Primary and gets marked read.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await worker.run({
+        id: 'job-1',
+        data: {
+          mailboxAccountId,
+          senderKey,
+          trigger: 'sync_complete',
+          producedAtMs: Date.parse('2026-05-22T00:00:00Z'),
+        },
+        attemptsMade: 0,
+        queueName: 'score',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind: string; result?: unknown })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ llmCalls: 1, llmReused: 0, llmExplanations: 1 });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('does NOT reuse stored LLM reasoning that runs past the word ceiling', async () => {
@@ -942,6 +981,157 @@ describe('ScoreWorker — LLM port', () => {
     // A finite limiter at very low rate could push this over 200ms;
     // Infinity must not. Generous bound — test-runner jitter friendly.
     expect(elapsed).toBeLessThan(2_000);
+  });
+});
+
+describe('ScoreWorker — the provider is refusing the account', () => {
+  /**
+   * A port whose first call is refused (credit balance, spend limit, key)
+   * and which reports itself blocked from then on — what the Anthropic
+   * adapter's breaker does.
+   */
+  function refusingPort(): { llm: ReasoningLlmPort; calls: () => number } {
+    let calls = 0;
+    let blocked = false;
+    return {
+      llm: {
+        isBlocked: () => blocked,
+        explain: async () => {
+          calls += 1;
+          blocked = true;
+          return null;
+        },
+      },
+      calls: () => calls,
+    };
+  }
+
+  it('skips every later call — and its rate-limit wait — once the port is blocked', async () => {
+    // 2026-09-24: after the balance hit zero the sweep still made one
+    // refused call per sender, each paced at 400/min — 2,927 in 431 s.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    for (let i = 0; i < 5; i += 1) {
+      await seedSender(db, mailboxAccountId, `s${i}@refused.test`, {});
+    }
+    const { llm, calls } = refusingPort();
+    const worker = new ScoreWorker({
+      db,
+      llm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      reasoningConcurrency: 1,
+      // One call a minute: a second PACED call would wait ~60 s.
+      reasoningRatePerMin: 1,
+      explainTimeoutMs: 60_000,
+    });
+
+    const startedAt = Date.now();
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+
+    expect(calls()).toBe(1);
+    expect(result).toMatchObject({
+      decisionsWritten: 5,
+      templateExplanations: 5,
+      llmCalls: 1,
+      llmBlocked: 4,
+    });
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
+  }, 20_000);
+
+  it('keeps stored LLM prose while blocked — reuse needs no call', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'kept@refused.test', {
+      gmailCategory: 'primary',
+    });
+    const T0 = Date.parse('2026-05-22T00:00:00Z');
+    const now = () => new Date('2026-05-23T00:00:00Z');
+
+    await new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Stays in Primary and gets marked read.' },
+      now,
+    }).processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+
+    const { llm } = refusingPort();
+    await llm.explain({} as never); // the account is now refused
+    const second = await new ScoreWorker({ db, llm, now }).processJob(
+      { mailboxAccountId, senderKey, trigger: 'stale_refresh', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+
+    expect(second).toMatchObject({ llmReused: 1, llmBlocked: 0, llmExplanations: 1 });
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).toBe('Stays in Primary and gets marked read.');
+    expect(row?.generatedBy).toBe('llm_haiku');
+  });
+
+  it('a pause that starts while a row waits for its rate-limit slot skips that row too', async () => {
+    // Up to four rows pass the first check at once. When a sibling's
+    // refusal pauses calls while this row waits its turn, the row must not
+    // reach explain() — and counts as blocked, not as a call.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, 'waited@refused.test', {});
+    let checks = 0;
+    const explain = vi.fn(async () => null);
+    const llm: ReasoningLlmPort = {
+      // Clear at the row's first check, paused by the time its slot comes.
+      isBlocked: () => (checks += 1) > 1,
+      explain,
+    };
+    const worker = new ScoreWorker({
+      db,
+      llm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      reasoningRatePerMin: 1000,
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+
+    expect(explain).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ llmCalls: 0, llmBlocked: 1, templateExplanations: 1 });
+  });
+
+  it('reports llmBlocked on worker.succeeded — the allowlist drops silently', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedSender(db, mailboxAccountId, 'a@refused.test', {});
+    await seedSender(db, mailboxAccountId, 'b@refused.test', {});
+    const { llm } = refusingPort();
+    const worker = new ScoreWorker({
+      db,
+      llm,
+      now: () => new Date('2026-05-23T00:00:00Z'),
+      reasoningConcurrency: 1,
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await worker.run({
+        id: 'job-blocked',
+        data: { mailboxAccountId, trigger: 'sync_complete', producedAtMs: 60_000 },
+        attemptsMade: 0,
+        queueName: 'score',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind: string; result?: unknown })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ llmCalls: 1, llmBlocked: 1 });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });
 

@@ -19,7 +19,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, type FetchStubHandler } from '@/test/fetch-stub';
 import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
@@ -107,6 +107,8 @@ const syncStatus = (ready: boolean): FetchStubHandler => ({
         current_stage: ready ? 'ready' : 'fetching_metadata',
         progress_pct: ready ? 100 : 40,
         is_ready_for_triage: ready,
+        // As the API sends it: null until a first scan finishes.
+        last_synced_at: ready ? '2026-09-01T10:00:00.000Z' : null,
       },
     }),
 });
@@ -296,6 +298,31 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
+  // Asserted at the page: the gate renders the promise correctly on its own,
+  // so the join to worry about is whether the route passes the setting in.
+  it('the first-run gate promises the ready email when the user will get it (D109)', async () => {
+    installFetchStub([
+      meAuthed('syncing'),
+      onboardingState(),
+      syncStatus(false),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () =>
+          jsonOk({
+            data: { emailPrefs: { syncComplete: true, reminders: true, weeklyReceipt: false } },
+          }),
+      },
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /You can close this tab — we’ll email you when your inbox is ready\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
   // The skip affordance was briefly dropped from step 5 only. It is the
   // last step and its own error/loading panels carry no other control,
   // so without it a failing first-triage read strands the user inside
@@ -394,6 +421,29 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
 
+  it('the secondary gate passes the ready-email setting through too (D109)', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    installFetchStub([
+      secondaryMe(),
+      syncStatus(false),
+      {
+        method: 'GET',
+        path: '/api/me/settings',
+        respond: () =>
+          jsonOk({
+            data: { emailPrefs: { syncComplete: true, reminders: true, weeklyReceipt: false } },
+          }),
+      },
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /You can close this tab — we’ll email you when your inbox is ready\./,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it('keeps the normal secondary-connect ready exit on /home', async () => {
     searchParams = new URLSearchParams({ mailbox: 'mb2' });
     installFetchStub([secondaryMe(), syncStatus(true)]);
@@ -485,7 +535,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check your inbox scan. Try checking again.");
+      await screen.findByText("We couldn't check your inbox scan.");
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -514,7 +564,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check your inbox scan. Try checking again.");
+    await screen.findByText("We couldn't check your inbox scan.");
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });

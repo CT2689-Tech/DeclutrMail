@@ -45,8 +45,10 @@ const ConfidenceSchema = z.number().min(0).max(1);
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Emitted by the score worker after a per-mailbox sweep finishes
- * (`ScoreTrigger='sync_complete' | 'cron_sweep'`). Drives the
+ * Emitted by the score worker after EVERY score job — a whole-mailbox
+ * `sync_complete` sweep or a single-sender `signal_change` /
+ * `stale_refresh` / `manual_rescore` run (`cron_sweep` is declared but
+ * has no producer). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */
@@ -74,8 +76,10 @@ export type TriageScoreRunCompletedPayload = z.infer<typeof TriageScoreRunComple
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Emitted by the score worker when a single sender's decision row was
- * upserted (`ScoreTrigger='manual_rescore' | 'signal_change'`).
+ * Declared for a single sender's decision row being upserted
+ * (`ScoreTrigger='manual_rescore' | 'signal_change'`), but NOTHING
+ * publishes it: the score worker emits only `score_run_completed`, after
+ * every job.
  * Finer-grained than `score_run_completed`; consumers that only care
  * about one sender at a time (e.g. a future Autopilot
  * apply-on-change variant) subscribe here.
@@ -284,6 +288,16 @@ export const MailboxSyncReadyPayloadSchema = z
     readyAt: z.string().datetime(),
     /** Total messages the initial sync mirrored (metric). */
     messageCount: z.number().int().nonnegative(),
+    /**
+     * True when this is the mailbox's FIRST completed scan
+     * (`provider_sync_state.last_synced_at` was null before it). The
+     * event also fires on re-scans (a reconnect, a failed-scan retry, a
+     * cursor-too-old recovery), so consumers that must act once per
+     * mailbox (the "Your inbox is ready" email) read this. Optional: events
+     * published before it existed carry none, and readers treat absent
+     * as the old behaviour.
+     */
+    firstReady: z.boolean().optional(),
   })
   .strict();
 export type MailboxSyncReadyPayload = z.infer<typeof MailboxSyncReadyPayloadSchema>;

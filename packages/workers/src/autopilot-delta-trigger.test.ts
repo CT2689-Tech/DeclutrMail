@@ -205,7 +205,10 @@ function knownSenderDelta(): {
 }
 
 function buildChain(db: Awaited<ReturnType<typeof freshDb>>) {
-  const add = vi.fn().mockResolvedValue(undefined);
+  // BullMQ's `add` returns the job it created, whose id is the one requested.
+  const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+    id: opts?.jobId,
+  }));
   const chain = createAutopilotExecutionChain({
     db: db as never,
     gmailMutation: UNUSED_GMAIL_MUTATION,

@@ -1,6 +1,6 @@
-// gate-network-verify-test — does the adversarial-verify stage actually work?
+// ct-gates-verify-test — does the adversarial-verify stage actually work?
 //
-// gate-network.js sends two refuters at every BLOCKING finding and demotes it
+// ct-gates.js sends two refuters at every BLOCKING finding and demotes it
 // only on unanimous refutation. That stage is the difference between a review
 // you can act on and one that just sounds confident — and "the refuters agreed"
 // is NOT evidence it works, because agreement is exactly what correlated models
@@ -8,15 +8,15 @@
 //
 // So this feeds the stage a mix it cannot distinguish by shape: three
 // FABRICATED findings that are plausible, well-formed, and verifiably false,
-// plus two findings gate-network genuinely confirmed on 5cba789. The refuters
+// plus two findings ct-gates genuinely confirmed on 5cba789. The refuters
 // see identical prompts and no provenance. A stage worth keeping refutes all
 // three fabrications and spares both real findings.
 //
 // Run this whenever the refuter prompt or its model changes:
-//   Workflow({ scriptPath: '.claude/workflows/gate-network-verify-test.js' })
+//   Workflow({ scriptPath: '.claude/workflows/ct-gates-verify-test.js' })
 //
 // The refuters here MUST stay on the same tier as the refuters in
-// gate-network.js — a baseline measured on a different model tests nothing.
+// ct-gates.js — a baseline measured on a different model tests nothing.
 // Both are `opus`: adversarial verification is the one stage where a cheaper
 // tier buys nothing, since its whole job is to be harder to fool than the
 // finder that produced the claim.
@@ -35,11 +35,11 @@
 // Anything below 5/5 means the stage stopped earning its cost.
 
 export const meta = {
-  name: 'gate-network-verify-test',
-  description: 'Regression test: can gate-network refuters tell fabricated findings from real ones?',
-  whenToUse: 'After changing the refuter prompt, its model, or the unanimity rule in gate-network.js.',
+  name: 'ct-gates-verify-test',
+  description: 'Regression test: can ct-gates refuters tell fabricated findings from real ones?',
+  whenToUse: 'After changing the refuter prompt, its model, or the unanimity rule in ct-gates.js.',
   phases: [
-    { title: 'Drift', detail: 'confirm the prompt under test still matches gate-network.js' },
+    { title: 'Drift', detail: 'confirm the prompt under test still matches ct-gates.js' },
     { title: 'Refute', detail: 'two refuters per finding, blind to which are fabricated' },
   ],
 }
@@ -108,7 +108,7 @@ const FINDINGS = [
   },
 ]
 
-// VERBATIM COPY of refutePrompt from gate-network.js. Workflow scripts cannot
+// VERBATIM COPY of refutePrompt from ct-gates.js. Workflow scripts cannot
 // import, so this cannot be shared by reference — which means it can silently
 // drift from the prompt actually in use, and a green test on a stale prompt is
 // worth nothing. The Drift phase below exists solely to make that failure loud.
@@ -145,8 +145,8 @@ const DRIFT = {
 phase('Drift')
 const drift = await agent(
   `Compare two prompt templates for semantic identity.\n\n` +
-    `A: the \`refutePrompt\` arrow function in .claude/workflows/gate-network.js\n` +
-    `B: the \`refutePrompt\` arrow function in .claude/workflows/gate-network-verify-test.js\n\n` +
+    `A: the \`refutePrompt\` arrow function in .claude/workflows/ct-gates.js\n` +
+    `B: the \`refutePrompt\` arrow function in .claude/workflows/ct-gates-verify-test.js\n\n` +
     `Read both files. Ignore differences that cannot change what a model is asked to do:\n` +
     `whitespace, and how the diff ref is interpolated (A uses a \`diffRef\` variable, B a\n` +
     `\`DIFF_REF\` constant). Also ignore that A renders the line as \`\${f.line ? ':'+f.line : ''}\`\n` +
@@ -168,7 +168,7 @@ const drift = await agent(
 
 const drifted = drift ? !drift.identical || !drift.sameModelTier : null
 if (drifted) {
-  log(`⚠ DRIFT — this test no longer measures what gate-network actually runs: ${drift.detail}`)
+  log(`⚠ DRIFT — this test no longer measures what ct-gates actually runs: ${drift.detail}`)
 } else if (!drift) {
   log('⚠ drift check returned nothing — treat the result below as UNVALIDATED')
 }
@@ -181,7 +181,7 @@ const results = await parallel(
       () => agent(refutePrompt(f), { label: `r2:${f.id}`, phase: 'Refute', model: 'opus', schema: VERDICT }),
     ]).then((votes) => {
       const cast = votes.filter(Boolean)
-      // gate-network's own rule: demote only on UNANIMOUS refutation.
+      // ct-gates's own rule: demote only on UNANIMOUS refutation.
       const demoted = cast.length === 2 && cast.every((v) => v.refuted)
       return {
         id: f.id,
@@ -208,7 +208,7 @@ log(
 const incomplete = scored.length !== FINDINGS.length || scored.some((r) => r.votes.length !== 2)
 
 // A drifted or unvalidated run cannot report a pass, however well the refuters
-// scored: it measured a prompt or tier gate-network does not use, and "5/5 on
+// scored: it measured a prompt or tier ct-gates does not use, and "5/5 on
 // the wrong thing" is the blind-guard failure this repo keeps relearning.
 return {
   verdict: incomplete

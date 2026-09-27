@@ -350,7 +350,8 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Another plan change is still being confirmed. Please wait or contact support.',
+    message:
+      'Another plan change is still being confirmed. Please wait, or email support@declutrmail.com.',
   },
   PLAN_CHANGE_TOO_LATE: {
     status: 409,

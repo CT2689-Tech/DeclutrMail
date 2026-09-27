@@ -287,29 +287,59 @@ when `apps/api` first ships to Cloud Run.
 
 ## Gmail API quota — `declutrmail-ai-prod`
 
-The project console showed 15,000 units/user/minute in May 2026, and
-an earlier test observed `messages.get` consuming 5 units. On
-2026-09-23, the authenticated `declutrmail-ai-prod` Gmail API quota page
-still showed **Previous quota: Units per minute per user = 15,000**.
-It also showed a separate newer unlimited entry; use the 15,000-unit
-legacy ceiling when pacing this project. **Do not use the historical
-5-unit method cost to configure a new deployment.** Google's
-[current quota table](https://developers.google.com/workspace/gmail/api/reference/quota)
-(updated 2026-09-10) lists 6,000 units/user/minute for newer projects
-and 20 units for `messages.get`; projects with qualifying pre-May usage
-may retain older quotas. The release notes say the `messages.get` cost
-changed on 2026-05-01, so we continue charging the current 20 units.
+Google meters every Gmail call on **two quota metrics at once**, and a
+budget is only meaningful against the metric that prices it:
 
-The worker budgets each API method at its current published cost. It
-defaults to **4,800 units/user/minute** with a 400-unit burst for newer
-projects. The production deploy manifest sets
-`GMAIL_QUOTA_UNITS_PER_MIN=12000` (80% of the observed legacy limit),
-giving a 1,000-unit five-second burst and approximately 600 metadata
-reads/minute. Large first scans still take time; show progress and allow
-the resumable backfill to complete. The one-shot API-side watch/stop
-path uses the conservative default. A
-quota error remains retryable with backoff, while an insufficient-scope
-403 requires reconnect rather than another scan.
+| Metric                                  | `messages.get` | Per-user limit                     | Per-project limit                  |
+| --------------------------------------- | -------------- | ---------------------------------- | ---------------------------------- |
+| `gmail.googleapis.com/default`          | 5 units        | **15,000 / minute** (enforced)     | 1,200,000 / minute                 |
+| `gmail.googleapis.com/total_query_cost` | 20 units       | unlimited (grandfathered override) | unlimited (grandfathered override) |
+
+Limits are for `declutrmail-ai-prod`. The per-project limit bounds how
+many mailboxes can sync at once: each first sync at full pace draws
+12,000 `default` units a minute, so 1,200,000 allows about 100 at the
+same moment.
+
+On the days both metrics were metered (2026-09-04 to 2026-09-25 UTC), every
+other method production called cost the same on both (profile 1,
+history.list 2, labels.list 1, labels.create 5, messages.list 5,
+batchModify 50, watch 100); `messages.modify` and `stop` were not called
+in that window. Google's
+[current quota table](https://developers.google.com/workspace/gmail/api/reference/quota)
+(updated 2026-09-10) documents `total_query_cost`: 20 units for
+`messages.get` and 6,000 units/user/minute for projects created on or
+after 2026-05-01. Projects that used the API between November 2025 and
+April 2026 keep their earlier limit, which on this project lives on
+`default`.
+
+**Measured 2026-09-25 (UTC)** during a 40,898-message first sync: Cloud
+Monitoring `serviceruntime.googleapis.com/quota/rate/net_usage` showed
+6,000 `GetMessage` calls per 10 minutes drawing 30,000 units on
+`default` and 120,000 on `total_query_cost`, and the Service Usage API
+(`consumerQuotaMetrics`) reported the per-user limits above. Re-check both
+before changing either setting:
+
+```bash
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "X-Goog-User-Project: declutrmail-ai-prod" https://serviceusage.googleapis.com/v1beta1/projects/declutrmail-ai-prod/services/gmail.googleapis.com/consumerQuotaMetrics
+```
+
+The worker's budget and prices must come from the same metric. The
+production deploy manifest sets `GMAIL_QUOTA_METRIC=gmail.googleapis.com/default`
+and `GMAIL_QUOTA_UNITS_PER_MIN=12000` (80% of the 15,000 limit), giving a
+1,000-unit five-second burst and approximately 2,400 metadata
+reads/minute. From 2026-09-24 (UTC) until this correction the worker charged
+the `total_query_cost` price against the `default` budget, which ran
+first syncs at a quarter of that (600 reads/minute; a 40,898-message
+sync took 68 minutes instead of about 17).
+
+Unset, the worker assumes a newer project: `total_query_cost` pricing
+with a **4,800 units/user/minute** budget and a 400-unit burst. **Do not
+copy production's two settings to another Google Cloud project without
+checking which metric carries its per-user limit.** The one-shot API-side
+watch/stop path uses the conservative default (it never calls
+`messages.get`). A quota error remains retryable with backoff,
+while an insufficient-scope 403 requires reconnect rather than another
+scan.
 
 ---
 

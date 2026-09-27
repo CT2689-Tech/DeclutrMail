@@ -7,14 +7,17 @@ import { MAILBOX_ACTION_LOCK_NS, type MailboxActionLock } from '@declutrmail/wor
  *
  * MUST stay BELOW the smallest job-level cap of any lock consumer:
  * `SnoozeWakeWorker` and `AccountDeletionPurgeWorker` run under
- * `cronPolicy.timeoutMs = 60_000`, and `BaseDeclutrWorker.withTimeout`
- * is a bare `Promise.race` that does NOT cancel the racing promise — a
- * lock wait longer than the job cap would fail-and-retry the job while
- * the original acquire kept waiting, then acquired and ran its body
- * DETACHED from any job (on the deletion path, after the request row
- * was already claimed — a duplicate-purge shape). 45s < 60s closes
- * that; five BullMQ attempts give a stuck lock ~4 minutes of total
- * patience before the dead-letter alert fires.
+ * `cronPolicy.timeoutMs = 60_000`, so one wait never outlasts its job.
+ * (`BaseDeclutrWorker.withTimeout` was once a bare `Promise.race`: a
+ * longer wait failed-and-retried the job while the acquire kept waiting,
+ * then ran its body DETACHED from any job — on the deletion path, a
+ * duplicate-purge shape. It now signals the deadline and waits for the
+ * attempt to settle.) A consumer that takes the lock per item — Autopilot
+ * per match, the Later wake per sender — can wait more than once per
+ * job; the wake stops a mailbox at its first failed acquisition, so a
+ * stuck lock costs it one wait per mailbox, not one per sender. Five
+ * BullMQ attempts give a stuck lock ~4 minutes of total patience before
+ * the dead-letter alert fires.
  */
 export const MAILBOX_LOCK_TIMEOUT = '45s';
 
@@ -70,7 +73,7 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
       // no log line of its own, which is why 26.5 h of accumulated lock
       // wait showed up as "slow sync" and never as "pool too small".
       //
-      // Peak demand across the six lock-taking workers is 38 against a
+      // Peak demand across the six lock-taking workers is 41 against a
       // pool of 10 (see `LOCK_POOL_MAX` in worker.ts). That overcommit
       // is survivable rather than deadlocking — a holder's inner queries
       // run on the separate main pool, so it always completes and
