@@ -28,11 +28,12 @@ const UnsubMailtoCallout = dynamic(
     import('@/features/senders/unsub-mailto-callout').then((module) => module.UnsubMailtoCallout),
   { loading: () => <p role="status">Loading the remaining email unsubscribe step…</p> },
 );
-import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import {
   isTerminalStatus,
+  UNSUB_AMBIGUOUS_ERROR_CODE,
+  UNSUB_MANUAL_ERROR_CODE,
   type ActionReach,
   type CompositeActionPreviewResult,
 } from '@/lib/api/actions';
@@ -452,9 +453,28 @@ export function ScreenerScreen({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    const outcome = unsubscribeOutcomeToast(unsubWatch.senderName, data);
-    toast(outcome.message, outcome.tone);
-    if (data.status === 'done') invalidateAfterDecision(qc);
+    // The same sentences as `unsubscribeOutcomeToast` (Senders), inline on
+    // purpose: importing that shared module pulled a five-route chunk into
+    // this route and over its bundle budget. A test pins the two equal.
+    if (data.status === 'done') {
+      toast(
+        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
+        'success',
+      );
+      invalidateAfterDecision(qc);
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
+        'warn',
+      );
+    } else if (data.errorCode === UNSUB_MANUAL_ERROR_CODE) {
+      toast(
+        `${unsubWatch.senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
+        'warn',
+      );
+    } else {
+      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
+    }
     setUnsubWatch(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
 

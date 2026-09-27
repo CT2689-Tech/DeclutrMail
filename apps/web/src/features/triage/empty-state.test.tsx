@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { TRIAGE_SESSION_STATS } from './data';
 import { TriageEmptyState } from './empty-state';
 
@@ -60,6 +61,22 @@ describe('TriageEmptyState', () => {
     // have acted from Senders, so it is not a fact this state can see.
     expect(screen.queryByText(/untouched/i)).not.toBeInTheDocument();
   });
+
+  it.each([true, false])(
+    'says exactly what failedScanSettingsStep says (needsReconnect=%s)',
+    (needsReconnect) => {
+      // The sentences are inline here for the bundle budget; this pins
+      // them to the one helper Home, Senders and the scan toast use.
+      render(
+        <TriageEmptyState
+          stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
+          syncFailed={true}
+          syncNeedsReconnect={needsReconnect}
+        />,
+      );
+      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+    },
+  );
 
   it('does not render the sync-failed copy once the user has decided something today', () => {
     // `decidedToday > 0` is the D33 celebration state, unconditional on

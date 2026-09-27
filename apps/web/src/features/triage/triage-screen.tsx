@@ -20,7 +20,11 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isTerminalStatus } from '@/lib/api/actions';
+import {
+  isTerminalStatus,
+  UNSUB_AMBIGUOUS_ERROR_CODE,
+  UNSUB_MANUAL_ERROR_CODE,
+} from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -33,7 +37,6 @@ import { captureFeatureException } from '@/lib/sentry';
 // packages/shared promotion, so triage imports across the boundary
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
-import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { mailLocationCopy } from '@declutrmail/shared/actions';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -493,9 +496,28 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    const outcome = unsubscribeOutcomeToast(unsubWatch.senderName, data);
-    toast(outcome.message, outcome.tone);
-    if (data.status === 'done') invalidateAfterDecision(qc);
+    // The same sentences as `unsubscribeOutcomeToast` (Senders), inline on
+    // purpose: importing that shared module pulled a five-route chunk into
+    // this route and over its bundle budget. A test pins the two equal.
+    if (data.status === 'done') {
+      toast(
+        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
+        'success',
+      );
+      invalidateAfterDecision(qc);
+    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+      toast(
+        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
+        'warn',
+      );
+    } else if (data.errorCode === UNSUB_MANUAL_ERROR_CODE) {
+      toast(
+        `${unsubWatch.senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
+        'warn',
+      );
+    } else {
+      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
+    }
     setUnsubWatch(null);
   }, [
     actionMailboxId,

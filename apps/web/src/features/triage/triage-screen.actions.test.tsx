@@ -32,6 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
 import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
@@ -1345,6 +1346,25 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
         'warn',
       ),
     );
+  });
+
+  it('one_click → not accepted, sender takes email: names the Gmail step, same words as Senders', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('failed', 'UNSUB_MANUAL_REQUIRED'),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    // Inline here for the bundle budget; pinned to the shared helper.
+    const expected = unsubscribeOutcomeToast(LINKEDIN.senderName, {
+      status: 'failed',
+      errorCode: 'UNSUB_MANUAL_REQUIRED',
+    });
+    await waitFor(() => expect(h.toast).toHaveBeenCalledWith(expected.message, expected.tone));
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/Archive still works/), 'warn');
   });
 
   it('one_click → 3xx redirect: ambiguous copy ("may have worked"), never a claimed success', async () => {

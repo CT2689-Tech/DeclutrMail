@@ -3,7 +3,6 @@
 import type { ReactNode } from 'react';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
-import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import type { TriageSessionStats } from './data';
 
 const { color, font, radius, text } = tokens;
@@ -79,7 +78,14 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="This mailbox's last scan didn't finish."
-        description={failedScanSettingsStep(syncNeedsReconnect)}
+        // `failedScanSettingsStep`'s two sentences, inline: importing
+        // mailbox-health put Triage over its bundle budget. A test pins
+        // them equal to the helper.
+        description={
+          syncNeedsReconnect
+            ? 'Reconnect it in Settings → Gmail accounts.'
+            : 'Scan again in Settings → Gmail accounts.'
+        }
         action={
           <a href="/settings#mailboxes" style={LINK_BUTTON}>
             Open Settings
