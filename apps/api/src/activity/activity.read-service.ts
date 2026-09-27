@@ -414,15 +414,7 @@ export class ActivityReadService {
     }
     if (args.lowerBound) whereParts.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) whereParts.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
-    if (args.cursor) {
-      const cursorTime = timestamptzParam(args.cursor.occurredAt);
-      whereParts.push(
-        or(
-          lt(outcomeTime, cursorTime),
-          and(eq(outcomeTime, cursorTime), lt(current.id, args.cursor.id)),
-        )!,
-      );
-    }
+    if (args.cursor) whereParts.push(afterCursor(outcomeTime, current.id, args.cursor));
     return this.db
       .select({
         id: current.id,
@@ -539,14 +531,7 @@ export class ActivityReadService {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
-    if (cursor) {
-      whereParts.push(
-        or(
-          lt(activityLog.occurredAt, cursor.occurredAt),
-          and(eq(activityLog.occurredAt, cursor.occurredAt), lt(activityLog.id, cursor.id)),
-        )!,
-      );
-    }
+    if (cursor) whereParts.push(afterCursor(activityLog.occurredAt, activityLog.id, cursor));
 
     const rows = await this.db
       .select({
@@ -702,14 +687,7 @@ export class ActivityReadService {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
-    if (cursor) {
-      whereParts.push(
-        or(
-          lt(reviewTime, cursor.occurredAt),
-          and(eq(reviewTime, cursor.occurredAt), lt(ruleMatchLog.id, cursor.id)),
-        )!,
-      );
-    }
+    if (cursor) whereParts.push(afterCursor(reviewTime, ruleMatchLog.id, cursor));
     const rows = await this.db
       .select({
         id: ruleMatchLog.id,
@@ -822,14 +800,7 @@ export class ActivityReadService {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
-    if (cursor) {
-      whereParts.push(
-        or(
-          lt(clickedAt, cursor.occurredAt),
-          and(eq(clickedAt, cursor.occurredAt), lt(actionJobs.id, cursor.id)),
-        )!,
-      );
-    }
+    if (cursor) whereParts.push(afterCursor(clickedAt, actionJobs.id, cursor));
     const rows = await this.db
       .select({
         id: actionJobs.id,
@@ -1586,6 +1557,24 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
  */
 function timestamptzParam(value: Date) {
   return sql`${value.toISOString()}::timestamptz`;
+}
+
+/**
+ * The rows after a page's last row, for a feed ordered by (time, id) desc.
+ * The cursor carries milliseconds (an ISO string) while Postgres keeps
+ * microseconds, and rows written in one transaction share `now()`. So
+ * `time = cursor` never matched such a row and `time < cursor` skipped it:
+ * every row after the page's last one in that millisecond dropped out.
+ * Rows inside the cursor's millisecond continue by id instead.
+ */
+function afterCursor(
+  time: SQLWrapper,
+  id: SQLWrapper,
+  cursor: { readonly occurredAt: Date; readonly id: string },
+): SQL {
+  const start = timestamptzParam(cursor.occurredAt);
+  const end = timestamptzParam(new Date(cursor.occurredAt.getTime() + 1));
+  return or(lt(time, start), and(gte(time, start), lt(time, end), lt(id, cursor.id)))!;
 }
 
 /**

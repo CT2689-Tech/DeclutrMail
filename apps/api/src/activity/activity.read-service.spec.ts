@@ -13,7 +13,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { RECOVERY_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1956,6 +1956,46 @@ describe('ActivityReadService', () => {
 
   // ── D57 — rule attribution (U27) ─────────────────────────────────────
 
+  describe('pages through rows that share one microsecond timestamp', () => {
+    // Rows written in one transaction share `now()` to the microsecond; the
+    // cursor carries milliseconds (see the Protected-skip twin below).
+    it('keeps every activity row sharing the page boundary timestamp', async () => {
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        ids.push(
+          await seedActivity(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+            source: 'manual',
+            action: 'archive',
+          }),
+        );
+      }
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(activityLog)
+        .set({ occurredAt: sql`${shared}::timestamptz` })
+        .where(inArray(activityLog.id, ids));
+
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 4; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit: 1,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(rows[0]!.id);
+        cursor = { occurredAt: new Date(rows[0]!.occurredAt), id: rows[0]!.id };
+      }
+      expect(seen).toEqual([...ids].sort().reverse());
+    });
+  });
+
   describe('D57 — rule attribution', () => {
     it('joins rule id + name for autopilot rows carrying a rule_id', async () => {
       const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Newsletter graveyard');
@@ -2041,6 +2081,48 @@ describe('ActivityReadService', () => {
       });
       return id;
     }
+
+    // A bulk writes every member's job in one transaction, so their skips
+    // share one microsecond timestamp. The page cursor carries milliseconds:
+    // `= cursor` never matched such a row and `< cursor` skipped it, so
+    // every row after the page's last one dropped out of the feed.
+    it('pages through skips that share one microsecond timestamp', async () => {
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        const key = `skip-us-${n}`;
+        const senderId = await seedSender(
+          db,
+          mailboxA.mailboxAccountId,
+          key,
+          `n${n}@skip.com`,
+          `Skip ${n}`,
+        );
+        ids.push(await seedSkippedLabelJob(key, senderId));
+      }
+      // PGlite's clock lands on whole milliseconds: force the sub-ms part.
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(actionJobs)
+        .set({ createdAt: sql`${shared}::timestamptz` })
+        .where(inArray(actionJobs.id, ids));
+
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 4; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit: 1,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(rows[0]!.id);
+        cursor = { occurredAt: new Date(rows[0]!.occurredAt), id: rows[0]!.id };
+      }
+      expect(seen).toEqual([...ids].sort().reverse());
+    });
 
     it('lists a skipped Delete in the default feed as "skipped — Protected", with no Undo', async () => {
       const senderId = await seedSender(
