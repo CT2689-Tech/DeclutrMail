@@ -191,14 +191,26 @@ export class TriageService {
    * web client so the row payload (which is shipped in a follow-up PR)
    * never over-fetches: the FE asks for N rows, gets exactly N.
    *
+   * Only verdicts whose sender still exists count: the queue joins
+   * `senders`, so a verdict left behind when the index dropped its
+   * sender can never be shown and must not size the session.
+   *
    * Privacy (D7 / D228): the SELECT touches only `mailbox_account_id`,
-   * `verdict`, and `produced_at` — all metadata, no body content.
+   * `sender_key`, `verdict`, and `produced_at` — all metadata, no body
+   * content.
    */
   async getQueueSize(mailboxAccountId: string, now: Date = new Date()): Promise<number> {
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const [row] = await this.db
       .select({ backlog: count() })
       .from(triageDecisions)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, triageDecisions.mailboxAccountId),
+          eq(senders.senderKey, triageDecisions.senderKey),
+        ),
+      )
       .where(
         and(
           eq(triageDecisions.mailboxAccountId, mailboxAccountId),
