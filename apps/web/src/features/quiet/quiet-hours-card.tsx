@@ -37,6 +37,8 @@ export interface QuietHoursCardProps {
   state: QuietHoursCardState;
   /** True while the PUT is in flight — disables the form. */
   saving: boolean;
+  /** True once the latest save succeeded — announced by the save status region. */
+  justSaved?: boolean;
   onSave: (config: QuietHoursConfig) => void;
   onRetry?: () => void;
 }
@@ -60,6 +62,16 @@ function timeZoneOptions(current: string): string[] {
   }
 }
 
+/** Present for assistive tech, invisible on screen. */
+const visuallyHidden = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  overflow: 'hidden',
+  clip: 'rect(0 0 0 0)',
+  whiteSpace: 'nowrap',
+} as const;
+
 const DEFAULT_DRAFT: QuietHoursConfig = {
   enabled: false,
   startLocal: '22:00',
@@ -68,7 +80,7 @@ const DEFAULT_DRAFT: QuietHoursConfig = {
 };
 
 export function QuietHoursCard(props: QuietHoursCardProps) {
-  const { mailboxEmail, mailboxStatus, state, saving, onSave, onRetry } = props;
+  const { mailboxEmail, mailboxStatus, state, saving, justSaved = false, onSave, onRetry } = props;
 
   return (
     <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
@@ -134,6 +146,12 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
           onSave={onSave}
         />
       )}
+
+      {/* Outside the keyed form, which remounts on every save: a live region
+          has to exist before its text changes to be announced. */}
+      <span role="status" aria-label={`Save status for ${mailboxEmail}`} style={visuallyHidden}>
+        {justSaved ? 'Saved' : ''}
+      </span>
     </section>
   );
 }
@@ -267,7 +285,7 @@ function QuietHoursForm({
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          Crosses midnight — quiet from {draft.startLocal} until {draft.endLocal} the next day.
+          Ends at {draft.endLocal} the next day.
         </span>
       )}
 

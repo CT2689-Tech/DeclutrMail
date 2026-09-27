@@ -52,7 +52,7 @@ export default async function QuietPage() {
       <TierGate
         capability="quiet"
         title="Quiet hours"
-        pitch="A daily window per mailbox where Autopilot waits, then runs after it ends."
+        pitch="A daily window per inbox when Autopilot holds its actions."
       >
         <QuietRoute />
       </TierGate>

@@ -59,13 +59,13 @@ export function QuietRoute() {
       <EditorialKicker>Automations / On your schedule</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
       <EditorialDescription>
-        Schedules for all connected inboxes. Autopilot pauses during each inbox’s quiet hours; Gmail
-        delivery and your own actions continue.
+        Autopilot holds its actions during quiet hours. Gmail delivery and your own actions
+        continue.
       </EditorialDescription>
       <ScreenIntro
         id="quiet"
         title="Quiet hours"
-        body="Autopilot pauses during quiet hours. Your own actions still run."
+        body="Autopilot holds its actions during quiet hours. Your own actions still run."
       />
       {mailboxes.length === 0 ? (
         <EmptyState
@@ -120,7 +120,6 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
           crosses_midnight:
             parseTimeToMinutes(config.startLocal) > parseTimeToMinutes(config.endLocal),
         });
-        toast(`Quiet hours saved for ${mailbox.email}.`, 'success');
       },
       onError: (err) => {
         captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
@@ -138,11 +137,13 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
         mailboxStatus={mailbox.status}
         state={state}
         saving={update.isPending}
+        justSaved={update.isSuccess}
         onSave={onSave}
         onRetry={() => void query.refetch()}
       />
       {query.data && (
         <QuietQueueSummary
+          mailboxEmail={mailbox.email}
           activeInbox={active}
           activeNow={query.data.activeNow}
           heldCount={query.data.heldCount}
@@ -155,59 +156,29 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
 }
 
 function QuietQueueSummary({
+  mailboxEmail,
   activeInbox,
   activeNow,
   heldCount,
   endsAt,
   timezone,
 }: {
+  mailboxEmail: string;
   activeInbox: boolean;
   activeNow: boolean;
   heldCount: number;
   endsAt: string | null;
   timezone: string;
 }) {
-  const actionLabel = heldCount === 1 ? 'Autopilot action' : 'Autopilot actions';
+  // Quiet holds nothing while it is off.
+  if (!activeNow) return null;
   const endLabel = endsAt ? formatQuietEnd(endsAt, timezone) : null;
-
-  // Off with nothing held: the unchecked toggle already says it.
-  if (!activeNow && heldCount === 0) return null;
-
-  let summary = <>No Autopilot actions are held.</>;
-
-  if (!activeNow) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} waiting to run — not held by quiet hours.
-      </>
-    );
-  } else if (activeNow && heldCount === 0 && endLabel) {
-    summary = (
-      <>
-        No Autopilot actions are held. Quiet ends at{' '}
-        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
-      </>
-    );
-  } else if (activeNow && heldCount === 0) {
-    summary = <>No Autopilot actions are held.</>;
-  } else if (activeNow && endLabel) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends at{' '}
-        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
-      </>
-    );
-  } else if (activeNow) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends.
-      </>
-    );
-  }
+  if (heldCount === 0 && !endLabel) return null;
 
   return (
     <p
       role="status"
+      aria-label={`Quiet status for ${mailboxEmail}`}
       style={{
         fontFamily: font.sans,
         fontSize: text.sm,
@@ -218,14 +189,25 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {summary}{' '}
-      {activeInbox ? (
-        <Link href="/autopilot" style={{ color: color.primary }}>
-          Review Autopilot rules →
-        </Link>
-      ) : (
-        <span>Choose this inbox in the account menu to review its rules.</span>
+      {heldCount > 0 && (
+        <>
+          {heldCount} {heldCount === 1 ? 'Autopilot action is' : 'Autopilot actions are'} held.{' '}
+        </>
       )}
+      {/* When quiet ends, not when they run: a rule's daily cap can hold some past it. */}
+      {endLabel && (
+        <>
+          Quiet ends at <time dateTime={endsAt ?? undefined}>{endLabel}</time>.{' '}
+        </>
+      )}
+      {heldCount > 0 &&
+        (activeInbox ? (
+          <Link href="/autopilot" style={{ color: color.primary }}>
+            Review Autopilot rules →
+          </Link>
+        ) : (
+          <span>Choose this inbox in the account menu to review its rules.</span>
+        ))}
     </p>
   );
 }
@@ -234,10 +216,8 @@ function formatQuietEnd(value: string, timezone: string): string | null {
   const end = new Date(value);
   if (Number.isNaN(end.getTime())) return null;
 
+  // Always the window's next end, under a day away: a time is enough.
   return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     timeZoneName: 'short',

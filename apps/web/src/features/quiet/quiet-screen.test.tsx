@@ -10,11 +10,17 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { toast } from '@declutrmail/shared';
 import userEvent from '@testing-library/user-event';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import type { Me } from '@/features/auth/api/use-me';
 import { QuietRoute } from './quiet-screen';
+
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: vi.fn() };
+});
 
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
 const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
@@ -71,6 +77,7 @@ describe('QuietRoute', () => {
   });
   afterEach(() => {
     resetFetchStub();
+    vi.mocked(toast).mockClear();
   });
 
   it('links only the active inbox to its Autopilot rules', async () => {
@@ -153,9 +160,15 @@ describe('QuietRoute', () => {
     expect(putBody).toEqual({ ...CONFIG, enabled: false });
     // Server said activeNow: true → the pill renders from the response.
     await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    // The save is confirmed in place, announced by a live region that
+    // outlives the form's remount — not by a toast.
+    expect(screen.getByRole('status', { name: 'Save status for a@b.com' })).toHaveTextContent(
+      'Saved',
+    );
+    expect(toast).not.toHaveBeenCalled();
   });
 
-  it('shows held actions and the scheduled quiet end', async () => {
+  it('counts held actions and says when quiet ends, without promising a release then', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     const endsAt = '2026-07-15T05:00:00.000Z';
     installFetchStub([
@@ -168,12 +181,19 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('2 Autopilot actions are held until quiet ends at');
-    expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
+    const summary = await screen.findByRole('status', { name: 'Quiet status for a@b.com' });
+    expect(summary).toHaveTextContent(/\b2\b/);
+    expect(summary).toHaveTextContent(/held/);
+    // A rule's daily cap can hold some past the end, so the end is not a release time.
+    expect(summary).not.toHaveTextContent(/until/);
+    const time = summary.querySelector('time');
+    expect(time).toHaveAttribute('datetime', endsAt);
+    // The end is always under a day away: a time, no date.
+    expect(time).toHaveTextContent('10:30');
+    expect(time).not.toHaveTextContent('2026');
   });
 
-  it('explains an indefinite quiet hold without inventing a release time', async () => {
+  it('counts an indefinite quiet hold without inventing an end time', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     installFetchStub([
       {
@@ -186,12 +206,13 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('1 Autopilot action is held until quiet ends.');
+    const summary = await screen.findByRole('status', { name: 'Quiet status for a@b.com' });
+    expect(summary).toHaveTextContent(/\b1\b/);
+    expect(summary).toHaveTextContent(/held/);
     expect(summary.querySelector('time')).toBeNull();
   });
 
-  it('shows the active zero-held state', async () => {
+  it('says only when quiet ends while nothing is held', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     const endsAt = '2026-07-15T05:00:00.000Z';
     installFetchStub([
@@ -204,12 +225,33 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('No Autopilot actions are held. Quiet ends at');
+    const summary = await screen.findByRole('status', { name: 'Quiet status for a@b.com' });
     expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
+    expect(summary).not.toHaveTextContent(/Autopilot/);
+    expect(screen.queryByRole('link', { name: /Autopilot rules/i })).not.toBeInTheDocument();
   });
 
-  it('does not attribute pending actions to quiet when quiet is off', async () => {
+  it('shows no quiet status while nothing is held and no end is known', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0, endsAt: null }),
+      },
+    ]);
+
+    renderRoute();
+
+    await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    expect(
+      screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Autopilot action/)).not.toBeInTheDocument();
+  });
+
+  it('shows no quiet status while quiet is off', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     installFetchStub([
       {
@@ -222,8 +264,10 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      '2 Autopilot actions waiting to run — not held by quiet hours',
-    );
+    expect(await screen.findByLabelText('Quiet window start')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Autopilot action/)).not.toBeInTheDocument();
   });
 });

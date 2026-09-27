@@ -107,7 +107,7 @@ describe('QuietHoursCard — form contract', () => {
 
   it('shows the cross-midnight hint when start > end', () => {
     renderCard();
-    expect(screen.getByText(/Crosses midnight/)).toBeInTheDocument();
+    expect(screen.getByText(/06:00 the next day/)).toBeInTheDocument();
   });
 
   it('hides the cross-midnight hint for a same-day window', () => {
@@ -118,7 +118,7 @@ describe('QuietHoursCard — form contract', () => {
         activeNow: false,
       },
     });
-    expect(screen.queryByText(/Crosses midnight/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/next day/)).not.toBeInTheDocument();
   });
 
   it('disables the whole form while saving', () => {
