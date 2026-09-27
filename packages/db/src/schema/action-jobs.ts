@@ -283,6 +283,11 @@ export const actionJobs = pgTable(
       'action_jobs_reach_verb_check',
       sql`${table.reach} = 'inbox_only' OR ${table.verb} = 'delete'`,
     ),
+    /** Mirrors migration 0020 — ADR-0020's 1–3650 day window; NULL means no time filter. */
+    olderThanDaysRangeCheck: check(
+      'action_jobs_older_than_days_range_chk',
+      sql`${table.olderThanDays} IS NULL OR (${table.olderThanDays} >= 1 AND ${table.olderThanDays} <= 3650)`,
+    ),
   }),
 );
 
