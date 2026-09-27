@@ -43,7 +43,19 @@
  *   DATABASE_URL=... REDIS_URL=... pnpm tsx scripts/rescore-leaked-copy.ts --dry-run
  *   DATABASE_URL=... REDIS_URL=... pnpm tsx scripts/rescore-leaked-copy.ts
  *
- * `--dry-run` prints the counts and enqueues nothing. Run it first.
+ * `--dry-run` prints the counts and enqueues nothing. Run it first, from
+ * an up-to-date main checkout (the selection must match the deployed
+ * worker's checks).
+ *
+ * EXPECTED on production, by this script's own selection run read-only on
+ * 2026-09-26 (before #792 deployed):
+ *
+ *   {"kind":"rescore_leaked_copy.scan","affected":203,"vocabulary":176,"primaryClaims":28,"dryRun":true}
+ *
+ * 203 senders in 2 mailboxes (one sender fails both checks). Rows the
+ * product re-scores in the meantime (a stale read refreshed on open)
+ * drop out, so a smaller count later is expected; a much larger one is
+ * worth reading before enqueueing.
  *
  * COST: one Haiku call per affected sender, bounded by the score
  * worker's rate limiter and the Anthropic per-key caps.
