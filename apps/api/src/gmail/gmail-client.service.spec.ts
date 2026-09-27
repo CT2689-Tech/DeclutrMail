@@ -237,7 +237,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
         order.push('fetch');
         return jsonOk({});
       });
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       const ids = Array.from({ length: 1500 }, (_, i) => `m${i}`);
 
       await client.batchModify(
@@ -256,7 +256,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     it('never runs beforeFirstRequest when the token refresh fails — nothing was sent', async () => {
       vi.mocked(oauth.getAccessToken).mockRejectedValue(new Error('socket hang up'));
       const hook = vi.fn();
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(
         client.batchModify(['m1'], { addLabelIds: ['X'] }, { beforeFirstRequest: hook }),
@@ -267,7 +267,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('sends nothing when beforeFirstRequest refuses', async () => {
       const refusal = new Error('sender is Protected');
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(
         client.batchModify(
