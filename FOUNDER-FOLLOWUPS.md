@@ -23,6 +23,32 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — After #792 deploys, re-score the stored explanations that fail a check
+
+**Source:** PR #792 (https://github.com/CT2689-Tech/DeclutrMail/pull/792), second adversarial review
+
+**Why:** #792 refuses a Haiku sentence that names internal vocabulary or
+puts a sender Gmail files outside Primary in the Primary inbox, both fresh
+and on reuse. Sentences already stored keep their copy until their sender
+is re-scored. A read-only count on 2026-09-26 found 28 Primary claims (1
+mailbox) and 176 leaked-vocabulary rows (2 mailboxes), all past their TTL:
+Sender Detail, an expanded Triage row and an opened Screener row refresh
+them on open, but the action sheet and the collapsed card still show them.
+
+**How:** after #792 is deployed, from a checkout of main with production
+credentials:
+
+```bash
+DATABASE_URL=… REDIS_URL=… pnpm tsx scripts/rescore-leaked-copy.ts --dry-run
+```
+
+then the same command without `--dry-run` (about 204 Haiku calls, once).
+
+**Verifies by:** once the score queue drains, the dry run prints
+`"affected":0`.
+
+**Status:** Open
+
 ### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
 
 **Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
