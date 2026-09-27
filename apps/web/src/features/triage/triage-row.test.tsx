@@ -21,7 +21,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { lastSeenLabel, type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { TriageRow } from './triage-row';
 import { UnprotectButton } from './unprotect-button';
 import { recommendedVerb } from './types';
