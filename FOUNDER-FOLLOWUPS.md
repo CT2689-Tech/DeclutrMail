@@ -23,6 +23,56 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Bump Atlas before Ariga stops serving v1.3.0
+
+**Source:** branch `chore/d152-atlas-community-v1-3` (session 2026-09-26)
+
+**Why:** CI's lint, the production migration apply, and the daily infra
+snapshot all install Atlas v1.3.0 through `scripts/install-atlas.sh`.
+Ariga's published policy removes binaries more than 6 months old from its
+download hosts (https://atlasgo.io/cli-reference#supported-version-policy),
+so v1.3.0 (published 2026-08-02) can disappear from 2027-02-02. Removals
+have not run on schedule: v0.37.0 still downloaded at 12 months old
+(checked 2026-09-26). Once v1.3.0 is gone the installer fails, and
+`migration-apply.yml` stops applying migrations. Merging a bump changes
+the tool that applies production migrations, so it needs your OK.
+
+**How:** set `ATLAS_VERSION` and both checksums in
+`scripts/install-atlas.sh` to the newest release. Each checksum is at
+`https://atlasbinaries.com/atlas/atlas-community-<platform>-<version>.sha256`.
+The bump PR's migration-lint run lints and applies every migration with
+the new binary.
+
+**Verifies by:** migration-lint green on the bump PR, then
+`atlas community version <new>` in the next migration-apply log.
+
+**Status:** Open — due by 2027-01-15
+
+### 2026-09-26 — Decide how a CREATE INDEX without CONCURRENTLY gets caught
+
+**Source:** branch `chore/d152-atlas-community-v1-3` (session 2026-09-26)
+
+**Why:** D152 says Atlas flags "index creation that requires
+CONCURRENTLY". It never has. The `concurrent_index` analyzer is Atlas Pro
+only (https://atlasgo.io/lint/analyzers), and CI has never run it: a
+synthetic `CREATE INDEX` on `senders` with no CONCURRENTLY passed lint on
+v0.37.0 and v1.3.0, with the old config and without it (2026-09-26). The
+59 `atlas:nolint concurrent_index` lines in migrations do nothing. Of 97
+`CREATE INDEX` statements, 24 have neither CONCURRENTLY nor that line,
+including `0063` on `senders`. A plain index build on a large table
+blocks writes to it until the build finishes.
+
+**How:** pick one. (a) Buy Atlas Pro and add its token as a secret. That
+means switching CI back to the default build, which also brings the PG3xx
+blocking-change checks. (b) A repo check that fails any new
+non-concurrent index without an opt-out line, on new tables too. This is
+a text match, free, and adds opt-out lines to new-table indexes.
+(c) Leave it to review. Recommendation: (b).
+
+**Verifies by:** a synthetic non-concurrent index fails the chosen check.
+
+**Status:** Open
+
 ### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
 
 **Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
@@ -2437,8 +2487,12 @@ Then edit `.github/workflows/migration-lint.yml`:
   3. Or pass `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` to setup-atlas
 **Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
 release; lint reports appear at atlas.ariga.io.
-**Status:** Done 2026-08-23 — `ATLAS_CLOUD_TOKEN` is wired in `.github/workflows/`, and
-`migrate lint` has been passing on every migration PR through #617.
+**Status:** Skipped 2026-09-26 — not needed: CI now installs the community
+build of Atlas v1.3.0 (`scripts/install-atlas.sh`, branch
+`chore/d152-atlas-community-v1-3`), which lints without a login.
+**Correction 2026-09-26:** the "Done 2026-08-23" that stood here was wrong.
+`gh secret list` shows no `ATLAS_CLOUD_TOKEN`, and no workflow ever read
+one; lint passed because v0.37.0 needed no login.
 **Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
 
 ---

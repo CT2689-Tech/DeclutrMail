@@ -13,6 +13,10 @@ on:
       - 'packages/db/src/schema/**'
       - 'packages/db/drizzle.config.ts'
       - 'packages/db/atlas.hcl'
+      # The workflow and the Atlas it installs, so a change to either is
+      # exercised before merge rather than on the next migration PR.
+      - '.github/workflows/migration-lint.yml'
+      - 'scripts/install-atlas.sh'
   # MERGE QUEUE — and this one is not bookkeeping. Two PRs can each add
   # migration `0063`, pass this lint independently, and merge cleanly as
   # text. The collision only exists in the combination, which is the one
@@ -72,24 +76,25 @@ jobs:
           echo "✓ Existing forward migrations are unchanged."
 
       - name: Set up Atlas
-        # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a
-        # paid (or login-required) Atlas Pro plan. v0.37.0 is the last
-        # release where the community CLI runs lint unauthenticated.
-        # See https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
-        # If we later add `ATLAS_CLOUD_TOKEN` (see FOUNDER-FOLLOWUPS.md),
-        # bump this back to `v0` and add `atlas login` before `lint`.
-        uses: ariga/setup-atlas@v0
-        with:
-          version: v0.37.0
+        # Pinned community build, checksum-verified before it runs. Since
+        # v0.38 the default build refuses `migrate lint` without an Atlas
+        # Cloud login; scripts/install-atlas.sh has the why and the bump
+        # procedure. Same installer as migration-apply.yml.
+        run: |
+          ./scripts/install-atlas.sh "$RUNNER_TEMP/atlas"
+          echo "$RUNNER_TEMP/atlas" >> "$GITHUB_PATH"
 
       - name: Run atlas migrate lint
         # Postgres 16 runs as a service container above (more reliable than
         # Atlas's `docker://` driver, which spawns its own container per run).
         # Atlas applies each migration against the empty `dev` DB and flags
-        # any dangerous operation per atlas.hcl's lint config:
-        #   destructive / data_depend / incompatible / concurrent_index
+        # dangerous operations per the lint block in packages/db/atlas.hcl.
+        # `--config` is what loads that block. Run from the repo root, Atlas
+        # looks only for ./atlas.hcl and, finding none, lints on defaults —
+        # where data_depend and incompatible are warnings, not failures.
         run: |
           atlas migrate lint \
+            --config 'file://packages/db/atlas.hcl' \
             --dir 'file://packages/db/migrations' \
             --dev-url 'postgres://atlas:atlas@localhost:5432/dev?sslmode=disable' \
             --latest 1
