@@ -20,7 +20,7 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
@@ -411,7 +411,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Clear a retried attempt's counts BEFORE the row drops back to 5%:
     // the status route reads the row, then the counts, so this attempt's
     // bar is never paired with the last attempt's numbers.
-    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null);
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_start');
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
@@ -435,9 +435,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       gmailApiCalls: fetchCalls,
       unreadable,
     } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
-      await this.updateProgress(mailboxAccountId, counts.processed, counts.total);
+      await this.updateProgress(
+        mailboxAccountId,
+        counts.processed,
+        counts.total,
+        snapshotHistoryId,
+      );
       // An empty mailbox has nothing to count against.
-      if (counts.total > 0) await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts);
+      if (counts.total > 0) {
+        await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts, 'count');
+      }
     });
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
@@ -450,7 +457,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
     // The read is over; its counts describe nothing the gate shows now.
-    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null);
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_end');
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
     lap('building_sender_index');
 
@@ -829,8 +836,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       });
       gmailApiCalls += chunk.length;
       // Every id fetched counts as read — stored, or skipped as unreadable,
-      // deleted since the list, or unkeyable — so the gate's count reaches
-      // the total when the read does.
+      // deleted since the list, or unkeyable.
       processed += chunk.length;
       chunk = [];
 
@@ -853,7 +859,6 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
-        await onProgress({ processed, total });
         initialSyncLog('fetch_flush', mailboxAccountId, {
           processed,
           total,
@@ -876,6 +881,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       chunk.push(id);
       if (chunk.length === UPSERT_BATCH) {
         await processChunk();
+        // A count per 500 read, saved or not: a stretch the scan skips
+        // (unreadable, deleted) must not freeze the bar and the line — or
+        // outlive the counts' key. The last, partial chunk goes uncounted;
+        // the stage moves on within one chunk's time.
+        await onProgress({ processed, total });
       }
     }
     await processChunk();
@@ -1526,23 +1536,41 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     return 'primary';
   }
 
-  /** Advance `progress_pct` across the fetching_metadata stage (5 → 75). */
+  /**
+   * Advance `progress_pct` across the fetching_metadata stage (5 → 75).
+   *
+   * A sign-in or connect while this read runs resets the row to `queued`
+   * — clearing its cursor — but starts no attempt: this job is already
+   * active (`ensureInitialSyncJob`). So the read takes the row back at its
+   * next count, cursor included (the snapshot is older, so replaying from
+   * it is safe); otherwise the gate would sit on "Waiting to start." at 0%
+   * for the rest of the read, and a retry would re-snapshot past changes
+   * to mail already saved. Any other state — ready, failed — moved on
+   * without this read: leave it.
+   */
   private async updateProgress(
     mailboxAccountId: string,
     processed: number,
     total: number,
+    snapshotHistoryId: string,
   ): Promise<void> {
     const pct = total === 0 ? 75 : 5 + Math.round((70 * processed) / total);
     await this.deps.db
       .update(providerSyncState)
-      .set({ progressPct: Math.min(pct, 75), updatedAt: sql`now()` })
-      // Only while the row still says this read is running: a reconnect
-      // resets it to `queued` while this attempt finishes, and the bar
-      // must not climb under "Waiting to start."
+      .set({
+        progressPct: Math.min(pct, 75),
+        currentStage: 'fetching_metadata',
+        readinessStatus: 'syncing',
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${snapshotHistoryId}::bigint)`,
+        updatedAt: sql`now()`,
+      })
       .where(
         and(
           eq(providerSyncState.mailboxAccountId, mailboxAccountId),
-          eq(providerSyncState.currentStage, 'fetching_metadata'),
+          or(
+            eq(providerSyncState.currentStage, 'fetching_metadata'),
+            eq(providerSyncState.readinessStatus, 'queued'),
+          ),
         ),
       );
   }
@@ -1551,14 +1579,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * Put the read's counts where the status route reads them; `null` clears
    * them (an attempt starting, the read ending). Display-only, on a
    * fail-fast store: a failed write is logged and the scan carries on — a
-   * missing "N of M emails" line is the only cost. A failed clear can leave
-   * the previous attempt's counts beside this attempt's bar until its first
-   * count lands, which is why `phase` is logged.
+   * missing "N of M emails" line is the only cost. A failed `clear_start`
+   * can leave the previous attempt's counts beside this attempt's bar
+   * until its first count lands, which is why `phase` is logged.
    */
   private async reportScanProgress(
     mailboxAccountId: string,
     attempt: number,
     counts: ScanCounts | null,
+    phase: 'clear_start' | 'count' | 'clear_end',
   ): Promise<void> {
     const store = this.deps.scanProgress;
     if (!store) {
@@ -1574,7 +1603,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           worker: this.workerName,
           mailboxAccountId,
           attempt,
-          phase: counts === null ? 'clear' : 'count',
+          phase,
           message: err instanceof Error ? err.message : String(err),
         }),
       );

@@ -730,7 +730,7 @@ describe('InitialSyncWorker', () => {
       return { writes, scanProgress };
     }
 
-    it('writes the total once the mailbox is listed, every saved batch, then clears', async () => {
+    it('writes the total once the mailbox is listed, every 500 read, then clears', async () => {
       const { writes, scanProgress } = recorder();
 
       await new InitialSyncWorker({
@@ -799,7 +799,7 @@ describe('InitialSyncWorker', () => {
       ]);
     });
 
-    it('counts every message it fetched as read, stored or skipped, so the count reaches the total', async () => {
+    it('counts every message it fetched as read, stored or skipped, every 500 read', async () => {
       // Oldest first: the first five fetched are ones Gmail will not render.
       const messages = makeMessages(1_200, 7);
       const unreadable = new Set(messages.slice(-5).map((m) => m.id));
@@ -811,10 +811,11 @@ describe('InitialSyncWorker', () => {
         scanProgress,
       }).processJob({ mailboxAccountId }, CTX);
 
-      // The first save lands after the second chunk (only 495 stored after
-      // the first): 1,000 fetched, not 995 stored.
+      // Only 495 are saved after the first 500 read, and the first save
+      // lands after the second — the count follows what was read, not
+      // saved, so a stretch of skipped mail cannot freeze the line.
       const counted = writes.flatMap((w) => (w.counts ? [w.counts.processed] : []));
-      expect(counted).toEqual([0, 1_000]);
+      expect(counted).toEqual([0, 500, 1_000]);
     });
 
     it('writes no count for an empty mailbox', async () => {
@@ -829,15 +830,64 @@ describe('InitialSyncWorker', () => {
       expect(writes.map((w) => w.counts)).toEqual([null, null]);
     });
 
-    it('stops moving the bar once a reconnect has reset the row mid-read', async () => {
+    // Round-2 review (2026-09-26): a sign-in or connect mid-read resets the
+    // row to `queued` and starts no attempt — the job is already active —
+    // so the gate sat on "Waiting to start." at 0% for the rest of the read.
+    it('takes the row back, cursor included, after a sign-in resets it mid-read', async () => {
+      const client = new FakeGmailClient(makeMessages(1_200, 7), '555');
+      const original = client.getMessageMetadata.bind(client);
+      let seen = 0;
+      client.getMessageMetadata = async (id) => {
+        seen += 1;
+        // After the first 500 are read, a sign-in's `markQueued` resets
+        // the row while this attempt keeps reading.
+        if (seen === 501) await resetToQueued(db, mailboxAccountId);
+        return original(id);
+      };
+      const rows: Array<{ counts: ScanCounts; row: Record<string, unknown> | undefined }> = [];
+      const scanProgress: ScanProgressStore = {
+        write: async (_mailbox, counts) => {
+          if (counts === null) return;
+          const [row] = await db
+            .select({
+              readiness: providerSyncState.readinessStatus,
+              stage: providerSyncState.currentStage,
+              pct: providerSyncState.progressPct,
+              cursor: providerSyncState.lastHistoryId,
+            })
+            .from(providerSyncState)
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          rows.push({ counts, row });
+        },
+      };
+
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client), scanProgress }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      // The next count lands on a running read again, with the snapshot
+      // this read took — not a queued row at 0% with no cursor.
+      expect(rows.find((r) => r.counts.processed === 1_000)?.row).toEqual({
+        readiness: 'syncing',
+        stage: 'fetching_metadata',
+        pct: 5 + Math.round((70 * 1_000) / 1_200),
+        cursor: 555n,
+      });
+    });
+
+    it('leaves a row that moved on without this read — failed stays failed', async () => {
       const client = new FakeGmailClient(makeMessages(1_200, 7));
       const original = client.getMessageMetadata.bind(client);
       let seen = 0;
       client.getMessageMetadata = async (id) => {
         seen += 1;
-        // After the first batch is saved, a reconnect's `markQueued`
-        // resets the row while this attempt keeps reading.
-        if (seen === 501) await resetToQueued(db, mailboxAccountId);
+        if (seen === 501) {
+          await db
+            .update(providerSyncState)
+            .set({ readinessStatus: 'failed', currentStage: 'failed', progressPct: 34 })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
         return original(id);
       };
       const { writes, scanProgress } = recorder();
@@ -847,11 +897,9 @@ describe('InitialSyncWorker', () => {
         CTX,
       );
 
-      // The second batch lands on a queued row: "Waiting to start." at 0%,
-      // not a bar climbing under it.
       expect(writes.find((w) => w.counts?.processed === 1_000)).toMatchObject({
-        stage: 'queued',
-        pct: 0,
+        stage: 'failed',
+        pct: 34,
       });
     });
 
@@ -879,7 +927,12 @@ describe('InitialSyncWorker', () => {
             (c) => JSON.parse(String(c[0])) as { kind: string; phase?: string; attempt?: number },
           )
           .filter((l) => l.kind === 'sync.scan_progress_write_failed');
-        expect(failures.map((l) => l.phase)).toEqual(['clear', 'count', 'count', 'clear']);
+        expect(failures.map((l) => l.phase)).toEqual([
+          'clear_start',
+          'count',
+          'count',
+          'clear_end',
+        ]);
         expect(failures.every((l) => l.attempt === 3)).toBe(true);
       } finally {
         warn.mockRestore();

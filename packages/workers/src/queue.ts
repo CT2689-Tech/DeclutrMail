@@ -284,7 +284,11 @@ export function createRedisConnection(redisUrl: string): Redis {
  *
  * Neither flag bounds a command sent to a Redis that stays connected but
  * never answers (a blackhole emits no `close`). A caller that must not
- * wait on that passes `commandTimeout`; the two flags always win.
+ * wait on that passes `commandTimeout`; the two flags always win. The
+ * deadline bounds the client's own handshake too (AUTH, the ready check):
+ * set below Redis's round trip, the client never becomes ready, every
+ * command is refused as "not writeable", and only its 'error' event
+ * says why — so log that event, never swallow it.
  */
 export function createRedisProducerConnection(
   redisUrl: string,

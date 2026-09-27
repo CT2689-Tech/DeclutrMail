@@ -868,8 +868,28 @@ async function bootstrap(): Promise<void> {
   const scanProgressConnection = createRedisProducerConnection(requireEnv('REDIS_URL'), {
     commandTimeout: 2_000,
   });
-  // Failures surface at the write, as `sync.scan_progress_write_failed`.
-  scanProgressConnection.on('error', () => undefined);
+  // Writes fail as `sync.scan_progress_write_failed`, but a handshake that
+  // times out (the deadline bounds it too) only says why here. Once a
+  // minute: the client retries every couple of seconds while Redis is down.
+  let scanProgressErrorAt = 0;
+  let scanProgressErrorsHeld = 0;
+  scanProgressConnection.on('error', (err: Error) => {
+    const now = Date.now();
+    if (now - scanProgressErrorAt < 60_000) {
+      scanProgressErrorsHeld += 1;
+      return;
+    }
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'sync.scan_progress_connection_error',
+        message: err.message,
+        ...(scanProgressErrorsHeld > 0 ? { suppressed: scanProgressErrorsHeld } : {}),
+      }),
+    );
+    scanProgressErrorAt = now;
+    scanProgressErrorsHeld = 0;
+  });
   const initialSync = new InitialSyncWorker({
     db,
     gmailAccess,

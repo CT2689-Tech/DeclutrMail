@@ -6,6 +6,7 @@ import {
   parseScanProgressRecord,
   SCAN_PROGRESS_TTL_SECONDS,
   scanProgressKey,
+  type ScanCounts,
 } from './scan-progress.js';
 
 const REDIS_URL = process.env['TEST_REDIS_URL'] ?? 'redis://127.0.0.1:6379';
@@ -55,6 +56,32 @@ describe('scan progress store', () => {
     );
   });
 
+  // Privacy round 2 (2026-09-26): pinned so a later spread of the input
+  // cannot carry anything past the counts into Redis.
+  it('stores only the counts and its write time, whatever else the caller passes', async () => {
+    const fake = { set: vi.fn(async () => 'OK' as const), del: vi.fn(async () => 1) };
+    const wider = { processed: 1, total: 2, subject: 'Hello' } as ScanCounts;
+
+    await createRedisScanProgressStore(fake, () => 7).write('mb-1', wider);
+
+    expect(fake.set).toHaveBeenCalledWith(
+      'declutr:scan-progress:mb-1',
+      '{"processed":1,"total":2,"at":7}',
+      'EX',
+      SCAN_PROGRESS_TTL_SECONDS,
+    );
+  });
+
+  it.each([
+    ['a zero total', { processed: 0, total: 0 }, /total:too_small/],
+    ['more read than listed', { processed: 3, total: 2 }, /:custom/],
+  ])('refuses %s — what the reader would reject — naming what failed', async (_l, counts, why) => {
+    const fake = { set: vi.fn(async () => 'OK' as const), del: vi.fn(async () => 1) };
+
+    await expect(createRedisScanProgressStore(fake).write('mb-1', counts)).rejects.toThrow(why);
+    expect(fake.set).not.toHaveBeenCalled();
+  });
+
   it('clears the counts on null', async () => {
     const fake = { set: vi.fn(async () => 'OK' as const), del: vi.fn(async () => 1) };
 
@@ -65,13 +92,17 @@ describe('scan progress store', () => {
   });
 
   it.each([
-    ['not JSON', 'processed=500'],
-    ['more read than listed', '{"processed":501,"total":500,"at":1}'],
-    ['no write time', '{"processed":1,"total":500}'],
-    ['an extra key', '{"processed":1,"total":500,"at":1,"subject":"Hello"}'],
-    ['a zero total', '{"processed":0,"total":0,"at":1}'],
-  ])('reads %s as no record', (_label, raw) => {
-    expect(parseScanProgressRecord(raw)).toBeNull();
+    ['not JSON', 'processed=500', 'not_json'],
+    ['more read than listed', '{"processed":501,"total":500,"at":1}', ':custom'],
+    ['no write time', '{"processed":1,"total":500}', 'at:invalid_type'],
+    [
+      'an extra key',
+      '{"processed":1,"total":500,"at":1,"subject":"Hello"}',
+      ':unrecognized_keys[subject]',
+    ],
+    ['a zero total', '{"processed":0,"total":0,"at":1}', 'total:too_small'],
+  ])('reads %s as no record, saying which rule failed', (_label, raw, reason) => {
+    expect(parseScanProgressRecord(raw)).toEqual({ ok: false, reason });
   });
 
   // ALWAYS runs: the round trip below is `runIf(live)`, so on its own it
@@ -88,9 +119,8 @@ describe('scan progress store', () => {
     try {
       await store.write(mailbox, { processed: 12_400, total: 40_898 });
       expect(parseScanProgressRecord((await redis!.get(key))!)).toEqual({
-        processed: 12_400,
-        total: 40_898,
-        at: 42,
+        ok: true,
+        record: { processed: 12_400, total: 40_898, at: 42 },
       });
       const ttl = await redis!.ttl(key);
       expect(ttl).toBeGreaterThan(0);
