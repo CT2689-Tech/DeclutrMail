@@ -317,7 +317,7 @@ export function RecommendationCascadeFigure() {
     ],
     [
       'Reasons to Keep',
-      'A sender you recently wrote to, or whose mail is mostly marked read, is kept. So is a Primary sender with no unsubscribe link.',
+      'A sender you recently wrote to, or whose recent mail is mostly marked read, is kept. So is a Primary sender with no unsubscribe link.',
     ],
     [
       'Enough information?',

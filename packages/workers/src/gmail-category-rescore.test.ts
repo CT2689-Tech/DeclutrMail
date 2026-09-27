@@ -24,7 +24,7 @@ import type { WorkerContext } from './worker-context.js';
 /**
  * The whole correction, as a user would meet it: a sender kept at 95%
  * "because Gmail puts them in your Primary inbox" when none of its mail
- * carries a Primary label. The nightly sweep recounts its tab, hands the
+ * carries a Primary label. The sender-index sweep recounts its tab, hands the
  * sender to the score worker, and the stored sentence must not survive —
  * including when the NEW verdict is still Keep, which the explanation
  * reuse (same verdict + unexpired → reuse) would otherwise let through.
@@ -226,7 +226,7 @@ describe('Gmail tab recount → re-score', () => {
     expect(d.reasoning).not.toMatch(/primary/i);
   });
 
-  it('buys no model prose on the nightly path — the new reason is the template', async () => {
+  it('buys no model prose on the sweep path — the new reason is the template', async () => {
     // The recount runs on a timer across every mailbox; the founder's
     // standing choice is no scheduled bulk re-buy (2026-08-19, 09-25).
     await seedGuessedPrimary('newsletter', [
@@ -242,6 +242,40 @@ describe('Gmail tab recount → re-score', () => {
     const d = await decisionOf('newsletter');
     expect(d.generatedBy).toBe('template');
     expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('reports explanationsNotRequested on worker.succeeded — the allowlist drops silently', async () => {
+    // The journey report reads this to tell "no prose was asked for" from
+    // "the model is off" (LLM_OFF); a key missing from
+    // SAFE_WORKER_RESULT_KEYS vanishes from the line with no error.
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('b', [{ labelIds: ['INBOX'], read: false }]);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await new ScoreWorker({ db, llm: { explain: vi.fn(async () => 'x') }, now: () => NOW }).run({
+        id: 'job-subset',
+        data: {
+          mailboxAccountId,
+          senderKeys: ['a', 'b'],
+          trigger: 'signal_change',
+          producedAtMs: NOW.getTime(),
+        },
+        attemptsMade: 0,
+        queueName: 'score',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .flatMap((call) => {
+          try {
+            return [JSON.parse(String(call[0])) as { kind?: string; result?: unknown }];
+          } catch {
+            return [];
+          }
+        })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ explanationsNotRequested: 2, llmCalls: 0 });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('Autopilot does not act on a verdict the recount marked stale', async () => {

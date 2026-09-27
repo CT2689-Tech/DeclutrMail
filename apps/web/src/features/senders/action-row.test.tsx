@@ -59,8 +59,8 @@ describe('derivePrimaryVerbId — ADR-0019 fact-rule primary (D227 verbs)', () =
 
   it("one-click in category 'primary' leads with Unsubscribe — the header outranks the tab", () => {
     // Founder decision 2026-09-26: Primary keeps a sender only when it
-    // offers no unsubscribe link. A one-click header is the sender saying
-    // it is a mailing stream, so the tab gives it no exemption here either.
+    // offers no unsubscribe link. A one-click header marks list or
+    // mailing-system mail, so the tab gives it no exemption here either.
     const row = sender({ unsubscribeMethod: 'one_click', gmailCategory: 'primary' });
     expect(derivePrimaryVerbId(row)).toBe('unsubscribe');
     expect(canUnsubscribe(row)).toBe(true);

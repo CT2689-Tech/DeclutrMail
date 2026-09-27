@@ -53,7 +53,7 @@ describe('applyAutomaticProtection', () => {
 
   async function seedSender(
     key: string,
-    opts: { wroteToCount?: number; gmailCategory?: 'primary' | 'promotions' } = {},
+    opts: { wroteToCount?: number; gmailCategory?: 'primary' | 'promotions' | 'unknown' } = {},
   ) {
     await db.insert(senders).values({
       mailboxAccountId: mailboxId,
@@ -217,6 +217,95 @@ describe('applyAutomaticProtection', () => {
       const protections = await sweep();
       expect(protections.get('touched')).toBe('starred');
       expect(protections.get('untouched')).toBe('starred');
+    });
+  });
+
+  describe('what a pass withdraws', () => {
+    /**
+     * A withdrawn protection re-exposes a sender to bulk and automatic
+     * actions, so the pass returns every NET withdrawal with the reason
+     * it had; the sweep counts and logs them. And the Primary half of an
+     * importance protection is withdrawn only where Primary was a guess
+     * (mig 0079), never where Gmail labelled the mail Primary.
+     */
+    async function protect(key: string, reason: 'starred' | 'replied' | 'gmail_important') {
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        policyType: 'keep',
+        isProtected: true,
+        protectionReason: reason,
+        protectionSetAt: LONG_AGO,
+      });
+    }
+
+    async function pass() {
+      return db.transaction((tx) => applyAutomaticProtection(tx as never, mailboxId));
+    }
+
+    it('reports a withdrawn protection with the reason it had', async () => {
+      await seedSender('old-star', { gmailCategory: 'promotions' });
+      await seedMessage('old-star', 'os1', ['INBOX', 'STARRED'], LONG_AGO);
+      await protect('old-star', 'starred');
+
+      expect((await pass()).released).toEqual([{ senderKey: 'old-star', priorReason: 'starred' }]);
+    });
+
+    it('does not report a reason correction as a withdrawal', async () => {
+      // Demoted by the first statement, re-protected under `replied` by
+      // the upsert: the sender is still protected, so nothing was released.
+      await seedSender('now-replied', { wroteToCount: 5, gmailCategory: 'promotions' });
+      await seedMessage('now-replied', 'nr1', ['INBOX', 'STARRED'], LONG_AGO);
+      await protect('now-replied', 'starred');
+
+      expect((await pass()).released).toEqual([]);
+      expect((await sweep()).get('now-replied')).toBe('replied');
+    });
+
+    it('withdraws an importance protection whose Primary no label ever backed', async () => {
+      await seedSender('unlabelled', { gmailCategory: 'unknown' });
+      for (const n of [1, 2, 3]) await seedMessage('unlabelled', `u-${n}`, ['INBOX', 'IMPORTANT']);
+      await protect('unlabelled', 'gmail_important');
+
+      expect((await pass()).released).toEqual([
+        { senderKey: 'unlabelled', priorReason: 'gmail_important' },
+      ]);
+    });
+
+    it('keeps an importance protection earned on labelled Primary mail, without a majority', async () => {
+      await seedSender('split', { gmailCategory: 'unknown' });
+      await seedMessage('split', 's-1', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('split', 's-2', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('split', 's-3', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+      await seedMessage('split', 's-4', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+      await protect('split', 'gmail_important');
+
+      expect((await pass()).released).toEqual([]);
+      expect((await sweep()).get('split')).toBe('gmail_important');
+    });
+
+    it('still retires an importance protection whose importance decayed, Primary labels or not', async () => {
+      // The exception above is for the tab only; the clock still rules.
+      await seedSender('decayed', { gmailCategory: 'primary' });
+      await seedMessage('decayed', 'd-1', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('decayed', 'd-2', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('decayed', 'd-3', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'], LONG_AGO);
+      await protect('decayed', 'gmail_important');
+
+      expect((await pass()).released).toEqual([
+        { senderKey: 'decayed', priorReason: 'gmail_important' },
+      ]);
+    });
+
+    it('does not grant a new importance protection without a Primary majority', async () => {
+      // Keeping an earned protection is not a licence to grant one.
+      await seedSender('split-new', { gmailCategory: 'unknown' });
+      await seedMessage('split-new', 'sn-1', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('split-new', 'sn-2', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('split-new', 'sn-3', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+      await seedMessage('split-new', 'sn-4', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+
+      expect((await sweep()).get('split-new')).toBeUndefined();
     });
   });
 });

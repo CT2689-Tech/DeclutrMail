@@ -209,8 +209,11 @@ describe('AutopilotReadService', () => {
         protected?: boolean;
         reverted?: boolean;
         pruned?: boolean;
+        /** Marked stale by the Gmail tab recount: expired AS OF production. */
+        marked?: boolean;
       } = {},
     ) {
+      const producedAt = new Date(Date.now() - 86_400_000);
       await db.insert(triageDecisions).values({
         mailboxAccountId,
         senderKey,
@@ -218,7 +221,8 @@ describe('AutopilotReadService', () => {
         confidence: options.confidence ?? '0.95',
         reasoning: 'Archive pattern evidence',
         generatedBy: 'template',
-        expiresAt: new Date(Date.now() + 86_400_000),
+        producedAt,
+        expiresAt: options.marked ? producedAt : new Date(Date.now() + 86_400_000),
       });
       if (options.protected) {
         await db.insert(senderPolicies).values({
@@ -277,6 +281,19 @@ describe('AutopilotReadService', () => {
         dailyActionCap: 100,
       });
       expect(Object.keys(suggestion!)).not.toContain('senderKey');
+    });
+
+    it('does not count a verdict the Gmail tab recount marked stale', async () => {
+      // A marked verdict was computed from a guessed tab. The apply sweep
+      // reads it as "no decision", so it cannot be evidence that the rule
+      // would have acted.
+      await seedArchiveDecision(mailboxA, 'eligible-1');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      await seedArchiveDecision(mailboxA, 'marked', { marked: true });
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({ evidenceCount: 3 });
     });
 
     it('keeps reverted evidence excluded after undo-journal pruning clears its token', async () => {

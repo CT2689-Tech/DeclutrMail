@@ -92,8 +92,9 @@ export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   wrote_to_at_least_once: 'the user has written to this sender',
   gmail_primary: "this sender is in Gmail's Primary inbox and offers no unsubscribe link",
   starred_recently: 'the user starred a message from this sender recently',
-  high_read_rate: 'the user reads most of what this sender sends',
-  long_relationship_engaged: 'this is a long relationship the user still engages with',
+  high_read_rate: "at least half of this sender's mail from the last 90 days is marked read",
+  long_relationship_engaged:
+    "the sender has emailed the user for 5+ years and 30%+ of the last 90 days' mail is marked read",
   insufficient_signal: 'there is not enough mail yet to judge this sender',
   score_archive: 'the volume and read rate point at archiving',
   score_unsubscribe: 'the volume and read rate point at unsubscribing',
@@ -325,12 +326,13 @@ export function runCascade(s: SenderSignals): CascadeResult {
     };
   }
 
-  // Rule 3 — Gmail's own Primary tab, for a sender that does not
-  // declare itself bulk mail. A List-Unsubscribe header is the sender's
-  // own statement that it is a mailing stream (RFC 2369), and people
-  // writing to you do not send one — so a Primary sender WITH a channel
-  // is judged on volume and engagement like everyone else (founder
-  // decision 2026-09-26). `gmailCategory` is 'primary' only when most of
+  // Rule 3 — Gmail's own Primary tab, for a sender whose mail offers no
+  // unsubscribe link. A List-Unsubscribe header marks mail sent
+  // through a list or mailing system (RFC 2369) — person-to-person mail
+  // rarely carries one, though a message relayed by a mailing list such
+  // as a Google Group does — so a Primary sender WITH a channel is judged
+  // on volume and engagement like everyone else (founder decision
+  // 2026-09-26). `gmailCategory` is 'primary' only when most of
   // the sender's labelled mail is in Primary; mail with no tab label
   // never counts (mig 0079).
   if (s.gmailCategory === 'primary' && s.unsubscribeChannel === 'none') {

@@ -110,8 +110,8 @@ describe('runCascade — Phase A (protection / engagement)', () => {
   it.each(['one_click', 'mailto'] as const)(
     'Primary with an unsubscribe channel (%s) is judged on volume and engagement, not kept by the tab',
     (unsubscribeChannel) => {
-      // Founder decision 2026-09-26: a List-Unsubscribe header is the
-      // sender declaring itself a mailing stream, and it outranks the tab.
+      // Founder decision 2026-09-26: a List-Unsubscribe header marks mail
+      // sent through a list or mailing system, and it outranks the tab.
       const result = runCascade({
         ...baseSignals(),
         gmailCategory: 'primary',

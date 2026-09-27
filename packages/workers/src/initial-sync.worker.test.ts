@@ -11,6 +11,7 @@ import {
   schema,
   senders,
   syncRuns,
+  triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -1545,6 +1546,10 @@ describe('InitialSyncWorker', () => {
       // Re-run the worker. Same fixture, same engagement signal — but
       // the WHERE guard (only `protection_reason IS NULL` rows may be
       // auto-protected) must refuse the re-protect.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1583,6 +1588,10 @@ describe('InitialSyncWorker', () => {
         .where(eq(schema.senderPolicies.senderKey, senderKey));
 
       // Re-run — same fixture, same engagement signal (5 replies ≥ 3).
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1625,6 +1634,10 @@ describe('InitialSyncWorker', () => {
       // Run 2 (no new Gmail messages — same fixture). Worker rebuild
       // re-runs the auto-protect UPSERT; the WHERE guard should refuse
       // to overwrite the now-stronger user_defined reason.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1716,6 +1729,54 @@ describe('InitialSyncWorker — gmail_category is Gmail’s own tab label, never
       ]),
     );
     expect(byEmail.get('cat4@example.com')).toBe('primary');
+  });
+
+  it('a rescan that moves a sender’s tab marks its decision for re-score; an unmoved one keeps its own', async () => {
+    // The rebuild rewrites `gmail_category` like the sweep's recount does,
+    // so it owes the same mark: without it the score that follows the
+    // rescan reuses prose written for the old tab ("…your Primary inbox").
+    await categories([
+      ...senderWith(5, [['INBOX', 'CATEGORY_PERSONAL']]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    const moved = deriveSenderKey('cat5@example.com');
+    const steady = deriveSenderKey('cat6@example.com');
+    const producedAt = new Date(Date.now() - 86_400_000);
+    const expiresAt = new Date(Date.now() + 6 * 86_400_000);
+    for (const senderKey of [moved, steady]) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'keep',
+        confidence: '0.95',
+        reasoning:
+          'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
+        generatedBy: 'template',
+        producedAt,
+        expiresAt,
+      });
+    }
+
+    // New mail since the first scan: most of sender 5's is now Promotions.
+    await resetToQueued(db, mailboxAccountId);
+    const byEmail = await categories([
+      ...senderWith(5, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    expect(byEmail.get('cat5@example.com')).toBe('promotions');
+    expect(byEmail.get('cat6@example.com')).toBe('primary');
+
+    const rows = await db
+      .select({ senderKey: triageDecisions.senderKey, expiresAt: triageDecisions.expiresAt })
+      .from(triageDecisions);
+    const expiry = new Map(rows.map((r) => [r.senderKey, r.expiresAt.getTime()]));
+    // Marked: expired as of `produced_at`, the "awaiting re-score" state.
+    expect(expiry.get(moved)).toBe(producedAt.getTime());
+    expect(expiry.get(steady)).toBe(expiresAt.getTime());
   });
 });
 

@@ -179,9 +179,10 @@ export const GROUPS: GroupMeta[] = [
   },
 ];
 
-export const GROUP_BY_KEY: Record<SenderGroup, GroupMeta> = Object.fromEntries(
+// `unknown` (no tab holds most of the sender's labelled mail) has no group.
+export const GROUP_BY_KEY: Record<Exclude<SenderGroup, 'unknown'>, GroupMeta> = Object.fromEntries(
   GROUPS.map((g) => [g.key, g]),
-) as Record<SenderGroup, GroupMeta>;
+) as Record<Exclude<SenderGroup, 'unknown'>, GroupMeta>;
 
 // ─── Capability predicates ──────────────────────────────────────
 // Unsubscribe never applies to people, nothing destructive for a

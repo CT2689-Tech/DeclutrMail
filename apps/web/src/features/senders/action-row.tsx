@@ -57,8 +57,8 @@ export function derivePrimaryVerbId(sender: Sender): VerbId {
     protected: isStandingProtected(sender),
     // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
     // a channel to use?"; this asks "should we put it forward?". There is
-    // no Gmail-tab exemption: a one-click header is the sender declaring
-    // itself a mailing stream, and that outranks the Primary tab — the
+    // no Gmail-tab exemption: a one-click header marks mail sent through
+    // a list or mailing system, and that outranks the Primary tab — the
     // engine's own rule since the founder decision of 2026-09-26 (Primary
     // keeps a sender only when it offers no unsubscribe link). A Primary
     // exemption here could never apply to a sender the engine keeps for

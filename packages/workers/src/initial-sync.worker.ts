@@ -28,6 +28,7 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import {
+  markDecisionsStale,
   messageGmailCategory,
   senderGmailCategory,
   type LabelledGmailCategory,
@@ -1031,6 +1032,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // written below. The declared `perMailbox` concurrency scope does
       // not help: nothing reads that field.
       await lockSenderIndex(tx, mailboxAccountId);
+      // The tab each sender had before this rebuild. A rescan that moves a
+      // sender's tab must mark its decision stale, as the sweep's recount
+      // does, or the sync-complete score reuses prose written for the old
+      // tab (mig 0079).
+      const priorTab = new Map(
+        (
+          await tx
+            .select({ senderKey: senders.senderKey, gmailCategory: senders.gmailCategory })
+            .from(senders)
+            .where(eq(senders.mailboxAccountId, mailboxAccountId))
+        ).map((r) => [r.senderKey, r.gmailCategory]),
+      );
       await tx
         .delete(senderTimeseries)
         .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
@@ -1080,6 +1093,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
         }
       }
+      await markDecisionsStale(
+        tx,
+        mailboxAccountId,
+        senderRows
+          .filter((row) => {
+            const before = priorTab.get(row.senderKey);
+            return before !== undefined && before !== row.gmailCategory;
+          })
+          .map((row) => row.senderKey),
+      );
       if (timeseriesRows.length > 0) {
         for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
           signal?.throwIfAborted();

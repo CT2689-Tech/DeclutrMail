@@ -36,9 +36,9 @@ const RULE_PHRASE = {
   gmail_primary:
     'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
   starred_recently: "Kept because you've starred a message from them this year.",
-  high_read_rate: 'Kept because at least half their mail is marked read.',
+  high_read_rate: 'Kept because at least half their mail from the last 90 days is marked read.',
   long_relationship_engaged:
-    "Kept because they've emailed you for 5+ years and 30%+ is marked read.",
+    "Kept because they've emailed you for 5+ years and 30%+ of the last 90 days is marked read.",
   insufficient_signal: 'Recommended: Later — not enough signal yet.',
   score_archive: 'Recommended: Archive.',
   score_unsubscribe: 'Recommended: Unsubscribe.',

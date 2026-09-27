@@ -1,5 +1,8 @@
 import {
+  accountDeletionRequests,
+  mailboxDataDeletionRequests,
   mailMessages,
+  providerSyncState,
   schema,
   senderPolicies,
   senders,
@@ -7,7 +10,7 @@ import {
   triageDecisions,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -18,6 +21,7 @@ import {
   MAILBOX_BATCH_SIZE,
   SenderIndexSweepWorker,
   type SenderIndexSweepJobData,
+  type SenderIndexSweepResult,
 } from './sender-index-sweep.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -38,6 +42,31 @@ const LONG_AGO = new Date(Date.now() - 400 * 86_400_000);
 const MONTH = '2026-08-01';
 /** For tests that are not about re-scoring — the hook is required. */
 const NO_RESCORE = async () => {};
+/** Lock holds one mailbox takes per sweep: timeseries, categories, protection. */
+const HOLDS_PER_MAILBOX = 3;
+
+/** Run `body` with one console stream captured; returns its JSON lines. */
+async function captureLines(
+  stream: 'log' | 'error',
+  body: () => Promise<unknown>,
+): Promise<Array<Record<string, unknown>>> {
+  const lines: string[] = [];
+  const spy = vi.spyOn(console, stream).mockImplementation((l: unknown) => {
+    lines.push(String(l));
+  });
+  try {
+    await body();
+  } finally {
+    spy.mockRestore();
+  }
+  return lines.flatMap((l) => {
+    try {
+      return [JSON.parse(l) as Record<string, unknown>];
+    } catch {
+      return [];
+    }
+  });
+}
 
 describe('SenderIndexSweepWorker', () => {
   let db: Db;
@@ -438,7 +467,7 @@ describe('SenderIndexSweepWorker', () => {
     it('releases an importance protection that only a guessed Primary granted — in the same pass', async () => {
       // Order matters: protection reads `gmail_category = 'primary'`, so
       // the recount has to land first or the stale protection survives
-      // until the next night.
+      // until the next sweep.
       await seedGuessedPrimary('important-unlabelled', [
         ['INBOX', 'IMPORTANT'],
         ['INBOX', 'IMPORTANT'],
@@ -446,11 +475,54 @@ describe('SenderIndexSweepWorker', () => {
       ]);
       await seedProtection('important-unlabelled', 'gmail_important');
 
-      await run();
+      let result: SenderIndexSweepResult | undefined;
+      const lines = await captureLines('log', async () => {
+        result = await run();
+      });
 
       const policy = await policyFor('important-unlabelled');
       expect(policy?.isProtected).toBe(false);
       expect(policy?.reason).toBeNull();
+      // Withdrawn safety state is counted and logged by the reason it had —
+      // never silent, and never naming the sender.
+      expect(result?.protectionsReleased).toBe(1);
+      const released = lines.find((l) => l.kind === 'sender_index_sweep.protections_released');
+      expect(released).toMatchObject({ released: 1, byReason: { gmail_important: 1 } });
+      // Counts only: exactly these fields, so a field added later has to
+      // come through this test.
+      expect(Object.keys(released!).sort()).toEqual([
+        'byReason',
+        'kind',
+        'level',
+        'mailboxRef',
+        'released',
+        'severity',
+        'worker',
+      ]);
+      expect(JSON.stringify(released)).not.toContain('important-unlabelled');
+    });
+
+    it('keeps an importance protection earned on real Primary mail that no longer has a majority', async () => {
+      // The narrowed release. Primary tied with Updates reads `unknown`
+      // after the recount, but this protection was earned on mail Gmail
+      // itself labelled Primary — only a Primary no label ever backed is
+      // withdrawn.
+      await seedGuessedPrimary('split', [
+        ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES'],
+        ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES'],
+      ]);
+      await seedProtection('split', 'gmail_important');
+
+      const result = await run();
+
+      expect(await categoryOf('split')).toBe('unknown');
+      const policy = await policyFor('split');
+      expect(policy?.isProtected).toBe(true);
+      expect(policy?.reason).toBe('gmail_important');
+      expect(policy?.setAt?.getTime()).toBe(LONG_AGO.getTime());
+      expect(result.protectionsReleased).toBe(0);
     });
 
     it('keeps an importance protection that real Primary mail backs', async () => {
@@ -482,7 +554,7 @@ describe('SenderIndexSweepWorker', () => {
       expect(onSendersRecategorized).not.toHaveBeenCalled();
     });
 
-    it('a failed re-score request is captured, counted, and asked for again the next night', async () => {
+    it('a failed re-score request is captured, counted, and asked for again on the next sweep', async () => {
       await seedGuessedPrimary('guessed', [['INBOX']]);
       const captured: string[] = [];
       const observer = {
@@ -518,7 +590,7 @@ describe('SenderIndexSweepWorker', () => {
       expect(first.rescoresNotRequested).toBe(1);
       expect(captured).toEqual(['sender_index_sweep.rescore_enqueue_failed']);
 
-      // Next night: the tab no longer moves, but the sender is still
+      // Next sweep: the tab no longer moves, but the sender is still
       // marked stale, so it is asked for again.
       fail = false;
       const second = await worker.processJob({ scheduledAtMinute: '2026-09-27T03:00' }, CTX);
@@ -544,6 +616,153 @@ describe('SenderIndexSweepWorker', () => {
       expect(result.categoriesCorrected).toBe(1);
       expect(await categoryOf('guessed')).toBe('unknown');
       expect(onSendersRecategorized).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an account deletion is in its undo window', 'account-deletion'],
+      ['a mailbox data deletion is pending', 'data-deletion'],
+      ['the Gmail grant needs reconnecting', 'reconnect'],
+    ] as const)(
+      'corrects the tab but asks for no re-score while %s — a re-score wakes Autopilot',
+      async (_label, state) => {
+        await seedGuessedPrimary('guessed', [['INBOX']]);
+        if (state === 'account-deletion') {
+          const [owner] = await db
+            .select({ userId: schema.mailboxAccounts.userId })
+            .from(schema.mailboxAccounts)
+            .where(eq(schema.mailboxAccounts.id, mailboxId));
+          await db.insert(accountDeletionRequests).values({
+            userId: owner!.userId,
+            effectiveAt: new Date(Date.now() + 7 * 86_400_000),
+            basis: 'flat-grace',
+            status: 'pending',
+          });
+        } else if (state === 'data-deletion') {
+          await db.insert(mailboxDataDeletionRequests).values({ mailboxAccountId: mailboxId });
+        } else {
+          await db
+            .update(providerSyncState)
+            .set({
+              lastIncrementalErrorAt: new Date(),
+              lastIncrementalErrorCode: 'InvalidGrantError',
+            })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+        }
+        const onSendersRecategorized = vi.fn(async () => {});
+
+        const result = await new SenderIndexSweepWorker({
+          db: db as never,
+          lock: PASSTHROUGH_MAILBOX_LOCK,
+          onSendersRecategorized,
+        }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+        expect(result.categoriesCorrected).toBe(1);
+        expect(await categoryOf('guessed')).toBe('unknown');
+        expect(onSendersRecategorized).not.toHaveBeenCalled();
+        // Still marked, so the first sweep after the mailbox is eligible
+        // again asks for it.
+        expect(await gmailCategory.sendersAwaitingRescore(db as never, mailboxId)).toEqual([
+          'guessed',
+        ]);
+      },
+    );
+
+    it('asks for at most the cap per sweep, largest senders first; the rest wait marked', async () => {
+      // Sizes chosen so largest-first differs from insertion order, its
+      // reverse, and key order — any of which an unordered read may return.
+      const sizes = { a: 10, b: 900, c: 50, d: 500 } as const;
+      for (const [senderKey, totalReceived] of Object.entries(sizes)) {
+        await seedGuessedPrimary(senderKey, [['INBOX']]);
+        await db
+          .update(senders)
+          .set({ totalReceived })
+          .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, senderKey)));
+      }
+      const requests: (readonly string[])[] = [];
+      const worker = new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: async (_mb, keys) => {
+          requests.push(keys);
+        },
+        rescoreSetLimit: 2,
+      });
+
+      const first = await worker.processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+      expect(first.rescoresRequested).toBe(2);
+      expect(requests).toEqual([['b', 'd']]);
+
+      // The score worker re-scores what it was handed (a fresh verdict — no
+      // longer the Primary Keep); the remainder is still marked and goes
+      // out with the next sweep.
+      await db
+        .update(triageDecisions)
+        .set({
+          verdict: 'archive',
+          confidence: '0.80',
+          expiresAt: new Date(Date.now() + 7 * 86_400_000),
+        })
+        .where(
+          and(
+            eq(triageDecisions.mailboxAccountId, mailboxId),
+            inArray(triageDecisions.senderKey, ['b', 'd']),
+          ),
+        );
+      const second = await worker.processJob({ scheduledAtMinute: '2026-09-27T03:00' }, CTX);
+      expect(second.rescoresRequested).toBe(2);
+      expect(requests).toEqual([
+        ['b', 'd'],
+        ['c', 'a'],
+      ]);
+    });
+
+    it('keeps a committed tab correction when a later step fails — each step is its own hold', async () => {
+      // One hold per step, so a user's Archive never queues behind the
+      // whole sweep. The cost to watch: a failure in protection must not
+      // take the recount with it (it commits first, on purpose).
+      await seedGuessedPrimary('guessed', [['INBOX']]);
+      const fail = vi
+        .spyOn(protection, 'applyAutomaticProtection')
+        .mockRejectedValue(new Error('protection broke'));
+      let lines: Array<Record<string, unknown>> = [];
+      try {
+        lines = await captureLines('error', () =>
+          expect(run()).rejects.toThrow(/failed for all 1 eligible/),
+        );
+      } finally {
+        fail.mockRestore();
+      }
+
+      expect(await categoryOf('guessed')).toBe('unknown');
+      expect(await gmailCategory.sendersAwaitingRescore(db as never, mailboxId)).toEqual([
+        'guessed',
+      ]);
+      const failure = lines.find((l) => l.kind === 'sender_index_sweep.mailbox_failed');
+      expect(failure?.step).toBe('protection');
+    });
+
+    it('names a failure to take the lock `lock`, not the step that ran before it', async () => {
+      let acquisitions = 0;
+      const worker = new SenderIndexSweepWorker({
+        db: db as never,
+        lock: {
+          run: async (_id, fn) => {
+            acquisitions += 1;
+            if (acquisitions === 2) throw new Error('lock wait timed out');
+            return fn();
+          },
+        },
+        onSendersRecategorized: NO_RESCORE,
+      });
+
+      const lines = await captureLines('error', () =>
+        expect(worker.processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX)).rejects.toThrow(
+          /failed for all 1 eligible/,
+        ),
+      );
+
+      const failure = lines.find((l) => l.kind === 'sender_index_sweep.mailbox_failed');
+      expect(failure?.step).toBe('lock');
     });
 
     it('names the step that failed, so a broken recount is not an anonymous failure', async () => {
@@ -619,6 +838,16 @@ describe('SenderIndexSweepWorker', () => {
       })
       .find((l) => l?.kind === 'worker.succeeded');
     expect(succeeded?.result).toHaveProperty('mailboxesProcessed');
+    // Same trap for every counter this PR added: each must reach the line.
+    for (const key of [
+      'categoriesCorrected',
+      'primaryKeepsExpired',
+      'protectionsReleased',
+      'rescoresRequested',
+      'rescoresNotRequested',
+    ]) {
+      expect(succeeded?.result).toHaveProperty(key);
+    }
   });
 
   it('bounds each job and queues a continuation rather than dropping overflow', async () => {
@@ -648,9 +877,14 @@ describe('SenderIndexSweepWorker', () => {
       onSendersRecategorized: NO_RESCORE,
     });
     while (pending.length) await worker.processJob(pending.shift()!, CTX);
-    expect(visited).toHaveLength(MAILBOX_BATCH_SIZE + 3);
-    expect(new Set(visited).size).toBe(visited.length);
-    expect(visited).toEqual([...visited].sort());
+    // One short lock hold per step, so each mailbox appears once per step,
+    // back to back; a mailbox swept twice would show twice that.
+    const distinct = [...new Set(visited)];
+    expect(distinct).toHaveLength(MAILBOX_BATCH_SIZE + 3);
+    expect(distinct).toEqual([...distinct].sort());
+    for (const id of distinct) {
+      expect(visited.filter((v) => v === id)).toHaveLength(HOLDS_PER_MAILBOX);
+    }
   });
 
   it('finishes a complete batch without another continuation', async () => {
@@ -713,6 +947,9 @@ describe('SenderIndexSweepWorker', () => {
     );
     expect(continuations).toHaveLength(1);
     await worker.processJob(continuations[0]!, CTX);
-    expect(visited).toEqual([mailboxId, second].sort());
+    expect([...new Set(visited)]).toEqual([mailboxId, second].sort());
+    // The failed mailbox never got past the lock; the next one ran every step.
+    expect(visited.filter((v) => v === firstId)).toHaveLength(1);
+    expect(visited.filter((v) => v !== firstId)).toHaveLength(HOLDS_PER_MAILBOX);
   });
 });

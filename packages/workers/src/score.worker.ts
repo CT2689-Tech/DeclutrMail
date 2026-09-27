@@ -114,7 +114,7 @@ interface SignalBatch {
  * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
  * longer re-scans),
  * `signal_change` (first-seen senders, and senders whose Gmail tab the
- * nightly sweep corrected), `stale_refresh` and `manual_rescore`.
+ * sender-index sweep corrected), `stale_refresh` and `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -158,7 +158,8 @@ export interface ScoreJobData {
    * ones a Gmail tab recount marked stale (`sendersAwaitingRescore`). One
    * job for the set, so the run publishes ONE `score_run_completed` and
    * one Autopilot sweep follows, not one per sender. Their reasoning is
-   * the template: this path runs nightly and buys no model prose.
+   * the template: the sweep runs on a timer (and at every worker boot) and
+   * buys no model prose.
    */
   senderKeys?: readonly string[];
   trigger: ScoreTrigger;
@@ -190,6 +191,13 @@ export interface ScoreJobResult {
    * provider was refusing the account (`ReasoningLlmPort.isBlocked`).
    */
   llmBlocked: number;
+  /**
+   * Rows written with the template BY POLICY — the run was not allowed to
+   * buy prose (a Gmail tab recount re-score, `senderKeys`). Kept apart
+   * from `templateExplanations` so "0 from the LLM" on such a run reads
+   * as the policy it is, not as the provider being down.
+   */
+  explanationsNotRequested: number;
   /**
    * Number of LLM calls that hit the per-call timeout (subset of
    * `templateExplanations`). Surfaced so the success log carries enough
@@ -430,6 +438,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmCalls = 0;
     let llmReused = 0;
     let llmBlocked = 0;
+    let explanationsNotRequested = 0;
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
@@ -462,8 +471,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         chunk.map((senderKey) =>
           this.limiter(() =>
             this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt, batch, {
-              // A named set is the nightly Gmail tab recount, which runs
-              // on a timer across every mailbox; it buys no prose. The
+              // A named set is the Gmail tab recount, which runs on a
+              // timer (and at every worker boot) across every mailbox;
+              // it buys no prose. The
               // founder's standing choice is no bulk re-buy on a
               // schedule (2026-08-19, 2026-09-25), and the template is
               // true by construction — it cannot reuse or re-arm an old
@@ -488,6 +498,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         if (written.called) llmCalls += 1;
         if (written.reused) llmReused += 1;
         if (written.blocked) llmBlocked += 1;
+        if (payload.senderKeys) explanationsNotRequested += 1;
         if (written.screenerFlagged) screenerFlagged += 1;
       }
     }
@@ -544,6 +555,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmCalls,
       llmReused,
       llmBlocked,
+      explanationsNotRequested,
       screenerFlagged,
       sendersFailed,
       chunksFailed,
@@ -1160,9 +1172,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
  * in Primary" — is unreachable for the senders it would be written for:
  * a Primary sender with no unsubscribe link is Phase A rule 3, which
  * returns Keep at 0.95 before Phase B is consulted at all. What CAN reach
- * Phase B is a Primary sender that declares itself bulk mail (an
- * unsubscribe link) and first-contact mail with no Gmail tab label
- * (mig 0079) — neither is the person-to-person case the clause means.
+ * Phase B is a Primary sender whose mail carries an unsubscribe link
+ * (sent through a list or mailing system) and first-contact mail with no
+ * Gmail tab label (mig 0079) — neither is the person-to-person case the
+ * clause means.
  * Writing that clause and watching its test fail is how this comment
  * exists.
  *

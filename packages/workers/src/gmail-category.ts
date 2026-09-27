@@ -20,7 +20,8 @@ import { sqlTextArray } from './sql-text-array.js';
  *
  * Every writer of `senders.gmail_category` goes through this module: the
  * initial-sync rebuild and the incremental insert via the two pure
- * functions, the nightly sweep via {@link reconcileSenderCategories},
+ * functions, the sender-index sweep (at every worker boot, then every 24
+ * hours) via {@link reconcileSenderCategories},
  * whose SQL is generated from the same label table so the two forms
  * cannot disagree about which label wins.
  */
@@ -150,17 +151,33 @@ export async function reconcileSenderCategories(
     RETURNING s.${sql.identifier('sender_key')} AS sender_key
   `);
   const senderKeys = rowsOf<{ sender_key: string }>(changed).map((r) => r.sender_key);
-  if (senderKeys.length > 0) {
-    await tx.execute(sql`
-      UPDATE ${triageDecisions}
-      SET ${sql.identifier('expires_at')} = ${sql.identifier('produced_at')},
-          ${sql.identifier('updated_at')} = now()
-      WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-        AND ${sql.identifier('sender_key')} = ANY(${sqlTextArray(senderKeys)})
-        AND ${sql.identifier('expires_at')} > ${sql.identifier('produced_at')}
-    `);
-  }
+  await markDecisionsStale(tx, mailboxAccountId, senderKeys);
   return senderKeys;
+}
+
+/**
+ * Expire these senders' decisions AS OF `produced_at` — the "awaiting
+ * re-score" mark (`sendersAwaitingRescore`) — because an input their
+ * verdict and explanation were computed from has changed. Every writer
+ * that changes a sender's Gmail tab calls this in the same transaction:
+ * the sweep's recount and the initial-sync rebuild. Without it the score
+ * worker's same-verdict reuse keeps "…your Primary inbox" on a sender
+ * that is no longer Primary.
+ */
+export async function markDecisionsStale(
+  tx: OutboxTx,
+  mailboxAccountId: string,
+  senderKeys: readonly string[],
+): Promise<void> {
+  if (senderKeys.length === 0) return;
+  await tx.execute(sql`
+    UPDATE ${triageDecisions}
+    SET ${sql.identifier('expires_at')} = ${sql.identifier('produced_at')},
+        ${sql.identifier('updated_at')} = now()
+    WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+      AND ${sql.identifier('sender_key')} = ANY(${sqlTextArray(senderKeys)})
+      AND ${sql.identifier('expires_at')} > ${sql.identifier('produced_at')}
+  `);
 }
 
 /**
@@ -215,12 +232,14 @@ export async function expireUnbackedPrimaryKeeps(
  * `reconcileSenderCategories` expires a changed sender's decision AS OF
  * its `produced_at`; the score worker always writes `produced_at + TTL`
  * (7 days), so `expires_at = produced_at` means exactly "expired by a
- * recount, not yet rewritten". Reading the set back each night — rather
- * than only the senders THIS recount changed — is what makes the
+ * recount, not yet rewritten". Reading the set back on every sweep —
+ * rather than only the senders THIS recount changed — is what makes the
  * re-score request durable: a failed enqueue, a killed process between
  * commit and enqueue, or a sender whose scoring threw is asked for again
- * the next night instead of keeping the old verdict until someone opens
- * it. Joined to `senders` so a pruned sender is not re-requested forever.
+ * on the next sweep instead of keeping the old verdict until someone
+ * opens it. Joined to `senders` so a pruned sender is not re-requested
+ * forever. Largest senders first: when a sweep asks for only part of the
+ * set (`MAX_RESCORE_SET`), the part is the mail the user sees most.
  */
 export async function sendersAwaitingRescore(
   tx: OutboxTx,
@@ -234,6 +253,7 @@ export async function sendersAwaitingRescore(
      AND s.${sql.identifier('sender_key')} = td.${sql.identifier('sender_key')}
     WHERE td.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
       AND td.${sql.identifier('expires_at')} = td.${sql.identifier('produced_at')}
+    ORDER BY s.${sql.identifier('total_received')} DESC, td.${sql.identifier('sender_key')}
   `);
   return rowsOf<{ sender_key: string }>(rows).map((r) => r.sender_key);
 }
@@ -241,12 +261,13 @@ export async function sendersAwaitingRescore(
 /**
  * Rows from a Drizzle `execute`: postgres.js returns an array-like,
  * PGlite (the test driver) `{ rows }`. An unrecognised shape THROWS —
- * reading it as "no rows" would report that no category changed on a run
- * that changed hundreds, and skip their re-score.
+ * reading it as "no rows" would report that no category changed (or no
+ * protection was released) on a run that changed hundreds, and skip
+ * their re-score. Shared by the recount and `applyAutomaticProtection`.
  */
 export function rowsOf<T>(result: unknown): T[] {
   if (Array.isArray(result)) return result as T[];
   const rows = (result as { rows?: unknown } | null)?.rows;
   if (Array.isArray(rows)) return rows as T[];
-  throw new Error('reconcileSenderCategories: unrecognised driver result shape');
+  throw new Error('unrecognised driver result shape (expected an array or { rows })');
 }

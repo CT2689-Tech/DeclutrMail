@@ -1704,9 +1704,11 @@ async function bootstrap(): Promise<void> {
   sendersCounterReconciliationSchedulerHandle.unref();
 
   /**
-   * SenderIndexSweepWorker consumer + nightly scheduler (D245, D159 —
-   * cronPolicy). The UNSCOPED half of the derived sender index: full
-   * auto-protection + full `sender_timeseries` reconcile, per mailbox.
+   * SenderIndexSweepWorker consumer + scheduler (D245, D159 — cronPolicy):
+   * once at every worker boot (`enqueueSenderIndexSweep()` below), so a
+   * deploy runs it too, then every 24 hours. The UNSCOPED half of the
+   * derived sender index: full auto-protection + full `sender_timeseries`
+   * reconcile, per mailbox.
    *
    * Both used to run on every Pub/Sub push inside the per-mailbox lock.
    * The push path now runs auto-protection scoped to the senders it
@@ -1717,7 +1719,7 @@ async function bootstrap(): Promise<void> {
    *
    * Takes the same per-mailbox advisory lock as the label actions so a
    * sweep and a sync never write each other's snapshot. concurrency 1 —
-   * it is nightly and holds a lock per mailbox.
+   * it holds a lock per mailbox.
    */
   const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
     SENDER_INDEX_SWEEP_QUEUE,

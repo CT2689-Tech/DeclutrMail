@@ -1500,8 +1500,9 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
  * The category a sender first seen through this message is written with:
  * the tab Gmail filed the message under, or `unknown` when it carries no
  * CATEGORY_* label — never a guessed `primary` (mig 0079). Later mail does
- * not revise it here; the nightly `SenderIndexSweepWorker` recomputes
- * every sender from all its labelled mail (`reconcileSenderCategories`).
+ * not revise it here; `SenderIndexSweepWorker` (at every worker boot,
+ * then every 24 hours) recounts every sender from all its labelled mail
+ * (`reconcileSenderCategories`).
  */
 function pickGmailCategory(labelIds: string[]): GmailCategory {
   return messageGmailCategory(labelIds) ?? 'unknown';
