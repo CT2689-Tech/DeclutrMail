@@ -1260,7 +1260,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       .limit(1);
     if (!row) throw new ValidationError(`claim ${jobId} vanished before its Gmail request`);
     if (inFlight || row.status !== 'queued') throw new ClaimRetired(jobId);
-    throw new SenderProtectedAtSend(senderKey);
+    throw new SenderProtectedAtSend();
   }
 
   /**

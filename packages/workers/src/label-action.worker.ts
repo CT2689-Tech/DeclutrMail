@@ -920,7 +920,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       .where(eq(actionJobs.id, jobId))
       .limit(1);
     if (still && subject !== null) {
-      throw new SenderProtectedAtSend(subject.kind === 'sender' ? subject.senderKey : null);
+      throw new SenderProtectedAtSend();
     }
     throw new ValidationError(`action_jobs row ${jobId} vanished before its Gmail request`);
   }
@@ -1070,8 +1070,7 @@ export const ENQUEUE_FAILED_ERROR_CODE = 'ENQUEUE_FAILED';
 /** Thrown from `beforeFirstRequest` to stop a send whose sender just became Protected. */
 export class SenderProtectedAtSend extends Error {
   override readonly name = 'SenderProtectedAtSend';
-  /** Null for a message list, whose senders are many. */
-  constructor(readonly senderKey: string | null) {
+  constructor() {
     super('sender is Protected');
   }
 }
