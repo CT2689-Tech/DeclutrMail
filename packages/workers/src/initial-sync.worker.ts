@@ -1615,13 +1615,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     mailboxAccountId: string,
     candidateHistoryId: string,
   ): Promise<string> {
-    const candidate = BigInt(candidateHistoryId);
+    // BigInt() still rejects a malformed id; the SQL gets it as text with an
+    // explicit cast — a JS BigInt in a raw `sql` template is what CLAUDE.md
+    // §2.6 bans (PGlite passes it, postgres.js need not).
+    const candidate = BigInt(candidateHistoryId).toString();
     const [row] = await this.deps.db
       .update(providerSyncState)
       .set({
         // First attempt wins. A BullMQ retry resumes persisted messages,
         // so it must also resume from the original pre-fetch snapshot.
-        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate})`,
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate}::bigint)`,
         updatedAt: sql`now()`,
       })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))

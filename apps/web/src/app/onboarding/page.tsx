@@ -268,8 +268,10 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
             <FlowError title="We couldn't check the scan." onRetry={() => void sync.refetch()} />
           );
         }
-        // Nothing read yet: say so, never a "Waiting to start." at 0% the
-        // gate has not seen (the same rule as the secondary gate).
+        // Unreachable today: the step is `sync-gate` only once the status
+        // has been read (`deriveAuthedStep`), so this narrows the type. If
+        // that changes, it claims no scan state — never a "Waiting to
+        // start." at 0% the gate has not seen.
         if (!sync.data) {
           return <FlowSkeleton label="Checking the scan…" />;
         }
