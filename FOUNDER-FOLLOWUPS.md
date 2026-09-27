@@ -1,5 +1,7 @@
 # Founder Follow-ups — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/founder-followups/`](docs/log/founder-followups/) (one file per entry). Existing entries stay here, and items already listed here keep being tracked here until Done.
+
 Single source of truth for actions that only the founder can take —
 repo settings toggles, secrets configuration, third-party account setup,
 domain decisions outside the D-plan, anything that needs human judgment
@@ -110,6 +112,42 @@ a text match, free, and adds opt-out lines to new-table indexes.
 (c) Leave it to review. Recommendation: (b).
 
 **Verifies by:** a synthetic non-concurrent index fails the chosen check.
+
+### 2026-09-26 — After #792 deploys, re-score the stored explanations that fail a check
+
+**Source:** PR #792 (https://github.com/CT2689-Tech/DeclutrMail/pull/792), second adversarial review. Approved by the founder 2026-09-27 UTC, via the orchestrating session.
+
+**Why:** #792 refuses a Haiku sentence that names internal vocabulary or
+puts a sender Gmail files outside Primary in the Primary inbox, both fresh
+and on reuse. Sentences already stored keep their copy until their sender
+is re-scored. A read-only count on 2026-09-26 found 28 Primary claims (1
+mailbox) and 176 leaked-vocabulary rows (2 mailboxes), all past their TTL:
+Sender Detail, an expanded Triage row and an opened Screener row refresh
+them on open, but the action sheet and the collapsed card still show them.
+
+**How:** after #792 is deployed, from an up-to-date main checkout with
+production credentials:
+
+1. Dry run, which enqueues nothing:
+
+   ```bash
+   DATABASE_URL=… REDIS_URL=… pnpm tsx scripts/rescore-leaked-copy.ts --dry-run
+   ```
+
+   Expected, from the script's own selection run read-only on 2026-09-26:
+
+   ```
+   {"kind":"rescore_leaked_copy.scan","affected":203,"vocabulary":176,"primaryClaims":28,"dryRun":true}
+   ```
+
+   A smaller `affected` is fine (rows refreshed on open drop out); a much
+   larger one is worth reading before step 2.
+
+2. The same command without `--dry-run`: one `manual_rescore` job per
+   affected sender, about 203 Haiku calls, once.
+
+**Verifies by:** once the score queue drains, the dry run prints
+`"affected":0`.
 
 **Status:** Open
 

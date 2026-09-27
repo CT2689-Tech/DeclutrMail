@@ -786,3 +786,18 @@ export function requestSenderRescore(
     { signal },
   );
 }
+
+/**
+ * POST /api/triage/explain — ask for the LLM sentences behind reasons that
+ * are still the deterministic template (D24, founder decision 2026-09-25).
+ * Returns at once: the sentences are written by a background job, and
+ * `queued` names the senders that have one (added now, or already asked
+ * for within the hour). At most `EXPLAIN_BATCH_MAX` (shared contract) ids
+ * per request.
+ */
+export function requestExplanations(
+  senderIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<Envelope<{ queued: string[] }, unknown>> {
+  return apiPost<{ queued: string[] }>('/api/triage/explain', { senderIds }, { signal });
+}

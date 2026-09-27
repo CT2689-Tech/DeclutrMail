@@ -259,9 +259,9 @@ export function cleanupCostLine(
  * value of the Details "Why suggested" row.
  *
  * `useNow`, not an ambient `new Date()` — same hydration reasoning as
- * `TriageRowExpanded` (D25, founder 2026-08-19): the reasoning sentence
- * freezes at score time while the count beside it is live
- * (QA-archive-20260828-02).
+ * `TriageRowExpanded` (D25, founder 2026-08-19): the reasoning sentence is
+ * stored — when the read was scored, or when it was first opened (D24 on
+ * demand) — while the count beside it is live (QA-archive-20260828-02).
  */
 export function PreviewReasoning({ row }: { row: TriageDecisionRow }) {
   const now = useNow();

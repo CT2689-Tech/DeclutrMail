@@ -377,9 +377,10 @@ export function ScreenerRow({
                   Why this is suggested:{' '}
                 </span>
                 {row.recommendation.reasoning}
-                {/* The sentence was written at score time; the counts
-                    above it ("N · M in inbox") are recomputed on every
-                    request. Stating the age keeps the two from reading
+                {/* The sentence is stored — written when the read was
+                    scored, or when it was first opened (D24 on demand);
+                    the counts above it ("N · M in inbox") are recomputed
+                    on every request. Stating the age keeps the two from reading
                     as one self-contradicting measurement (D25). Silent
                     when unknown — the fixtures have no engine run. */}
                 {ageLabel !== null && (

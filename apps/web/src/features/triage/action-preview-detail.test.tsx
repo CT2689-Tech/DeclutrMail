@@ -10,7 +10,7 @@ import {
 import { afterLead } from '@/lib/copy/after-lead';
 import { buildPreviewFacts } from './action-preview-presentation';
 import { ActionSheet } from './action-sheet';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { InlinePreviewBlock } from './inline-preview';
 import type { SheetableVerb } from './store';
 

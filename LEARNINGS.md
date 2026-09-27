@@ -1,5 +1,7 @@
 # Learnings — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/learnings/`](docs/log/learnings/) (one file per entry). Existing entries stay here.
+
 Append-only log of what worked, what surprised us, and rules to promote
 into CLAUDE.md when patterns emerge.
 
@@ -2334,3 +2336,15 @@ on the next one, or now at the founder's discretion.
 **Finding:** No write moved: every match already committed its own transactions. What moved was every value the loop read once, before its first iteration — the Protect snapshot, the in-flight claim flags, the per-rule cap budget. Under a sweep-long hold nothing could change them. With the lock released between matches, an incremental sync can auto-protect a sender and a concurrent sweep can claim a match or spend the cap in the gaps, and each of those reads gates a destructive act (archive a Protected sender, dismiss a claim whose Gmail change already ran, overshoot the cap). Re-reading them inside each hold cost nothing net: they folded into the one statement the loop already ran per match (1,927 → 1,920 statements for 100 matches). The snapshot stayed useful for one thing — SKIPPING without taking the lock, the only decision a stale read cannot make wrong. Per-item acquisition itself costs ~3 lock-pool statements (set_config, lock, unlock): +13–21% sweep wall time for Autopilot, +36% on the DB-only wake path. Through the 24 ms-RTT proxy: hold 101 s → max 1.49 s (100 matches), 17.9 s → max 0.39 s (50 wakes); a contender for the same lock went from 2 of 3 attempts timing out at 45 s to 86 of 86 acquired in ≤ 0.88 s.
 **Rule (provisional):** When narrowing a critical section, list every value the loop reads before its first iteration and classify each: used only to SKIP (stale-safe) or to ACT / DISMISS / COUNT (re-read inside every hold).
 **Distillation trigger:** promote to CLAUDE.md §8 "Adversarial review for context-moving changes" if a second lock-narrowing change needs the same read relocation.
+
+## 2026-09-26 — Moving LLM work on-demand: defer only the half whose readers can take a fallback
+**Context:** Haiku explanations moved from the first-scan sweep (every sender) to on-demand (founder decision 2026-09-25).
+**Finding:** The sweep kept computing EVERY verdict (cheap, deterministic) and gave up only the sentence (expensive, optional). Splitting by output made the context move safe by construction: every destructive reader (Autopilot, the queue order) reads verdicts, which never moved; only display readers see the template for a while, and the template is a true explanation. The deferred write is compare-and-set on the row version (`produced_at`), which absorbed every race (re-score mid-call, re-sync, duplicate asks) without a lock. And "who pays" became one exhaustive switch over the trigger union, so a new trigger cannot compile without deciding it.
+**Rule (provisional):** When deferring work off a sweep, split it by who reads each output; defer only outputs whose every reader can act on a correct fallback, and CAS the deferred write on the row version.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second background enrichment moves on-demand.
+
+## 2026-09-26 — A negative control that short-circuits the whole expression proves nothing
+**Context:** Negative-controlling the reuse half of the stale-Primary check in `score.worker.ts`, where `reusable` is one long `&&` chain ending `… && !misplacesInPrimary(…) && …`.
+**Finding:** "Disabling" the conjunct as `false && !misplacesInPrimary(…)` made all of `reusable` false, so reuse never happened and the test named "does NOT reuse …" stayed green. The control had removed the path the test watches, not the guard on it. Replacing the call with its identity element (a predicate that always answers "not misplaced") turned the test red at once.
+**Rule (provisional):** To disable a guard, substitute its identity: `true` for a conjunct, `false` for a disjunct, never a value that decides the whole expression. A control that stays green is a finding about the control before it is evidence about the test.
+**Distillation trigger:** promote to CLAUDE.md §8 "A green test is not evidence" if a second vacuous negative control is found.

@@ -11,7 +11,8 @@
 //   • InlinePreview  — D34 path: the mandatory preview inside the card
 
 import { tokens } from '@declutrmail/shared';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { TriageFocusCard } from './focus-card';
 
 const { color } = tokens;

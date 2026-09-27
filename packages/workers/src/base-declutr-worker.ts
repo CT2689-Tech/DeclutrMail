@@ -246,12 +246,21 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
   async run(job: Job<TPayload, TResult>): Promise<TResult> {
     const config = WORKER_POLICIES[this.policy];
     const deadline = new AbortController();
+    // BullMQ runs a job again only while `attemptsMade + 1 < opts.attempts`,
+    // and a producer that sets no `attempts` gets 0 — one run. So the
+    // JOB's budget, not the policy's, is what makes a failure final.
+    // Reading the policy here called the score queue's failures (no
+    // `attempts`) and unsubscribe execution's (2) "will retry" when nothing
+    // would, so they never reached Sentry, the dead-letter table or
+    // `onTerminalFailure`. The policy stays the fallback for a job object
+    // that carries no options at all.
+    const jobAttempts = (job.opts as { attempts?: unknown } | undefined)?.attempts;
     const ctx: WorkerContext = {
       signal: deadline.signal,
       jobId: job.id ?? 'unknown',
       workerName: this.workerName,
       attempt: job.attemptsMade + 1,
-      maxAttempts: config.maxAttempts,
+      maxAttempts: typeof jobAttempts === 'number' ? Math.max(1, jobAttempts) : config.maxAttempts,
       startedAt: new Date(),
       policy: this.policy,
       ...(job.data && typeof job.data === 'object' && 'mailboxAccountId' in job.data
@@ -485,6 +494,9 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'abortedIndexRebuilt',
   'advancedToHistoryId',
   'enforced',
+  'explainCandidates',
+  'explainFailed',
+  'explainSkipped',
   'failed',
   'flippedToFailed',
   'gmailApiCalls',

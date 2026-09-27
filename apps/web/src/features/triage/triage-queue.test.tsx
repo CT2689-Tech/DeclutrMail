@@ -14,7 +14,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { resetTriageStore } from './store';
 import { TriageQueue } from './triage-queue';
 
