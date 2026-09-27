@@ -207,10 +207,11 @@ to Cloud Run (§7).
 
 ---
 
-## Step 5 — Atlas Cloud token (optional, already tracked)
+## Step 5 — Atlas (nothing to set up)
 
-Not new — see the existing FOUNDER-FOLLOWUPS item "Configure
-ATLAS_CLOUD_TOKEN." Skip unless you want to upgrade Atlas past v0.37.
+CI installs a pinned community build of Atlas with
+`scripts/install-atlas.sh`, which lints and applies migrations without an
+Atlas Cloud account or token.
 
 ---
 
