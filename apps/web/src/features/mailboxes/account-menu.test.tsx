@@ -6,6 +6,7 @@ import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
 import type { MailboxHealth } from '@/features/settings/api/use-mailbox-health';
 import { AccountMenu } from './account-menu';
+import type { loadMailboxDataControls } from './load-mailbox-data-controls';
 
 const MAILBOX_A: MeMailbox = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -82,7 +83,9 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(async () => undefined) }));
 // The dialog's code loads on demand; count each load, then load it for real.
 const { loadDialogSpy } = vi.hoisted(() => ({ loadDialogSpy: vi.fn() }));
 vi.mock('./load-mailbox-data-controls', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./load-mailbox-data-controls')>();
+  const actual = await importOriginal<{
+    loadMailboxDataControls: typeof loadMailboxDataControls;
+  }>();
   return {
     loadMailboxDataControls: () => {
       loadDialogSpy();
