@@ -527,11 +527,13 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const onApproveConfirm = () => {
     if (approveTarget == null || isApproving) return;
     const { rule, matches, kind } = approveTarget;
-    // 'all' is an UNCAPPED server-side update — matches.length is at
-    // most the 50-row page, so the toast/analytics count MUST come from
-    // the server's approvedCount (D226 honesty; 2026-07-16 audit).
+    // The toast/analytics count MUST come from the server's approvedCount
+    // (D226 honesty). 'all' is an UNCAPPED server-side update, so
+    // matches.length is at most the 50-row page (2026-07-16 audit); and a
+    // 'selected' match is skipped when its sender became Protected after
+    // the list loaded, so the selection size overstates that case too.
     const onSuccess = (result: { approvedCount: number }) => {
-      const count = kind === 'all' ? result.approvedCount : matches.length;
+      const count = result.approvedCount;
       void track('autopilot_suggestion_decided', {
         decision: 'accepted',
         suggestion_kind: 'preset_rule',
