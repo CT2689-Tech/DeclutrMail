@@ -63,17 +63,18 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  * carry status code + truncated response body only.
  *
  * Known issues: scripts/known-vendor-issues.tsv acknowledges one failing
- * cause per line (vendor + status + text the cause contains, an optional
- * ceiling on its value, until a date at most 30 days out). A failing row
- * prints as a warning, and does not fail the run, only when every failing
- * cause in it is acknowledged and within its ceiling; so red means a
- * failure nobody has acknowledged yet, at a size nobody has accepted. A
- * check that joins causes into one detail (Upstash spend and volume, each
- * suspended database, each GCP budget, each PostHog quota) reports them
- * separately, so one line cannot mute another cause. Before the list,
- * Anthropic's standing ERROR (no Admin API key) held the run red every day
- * from at least 2026-09-21, and the Sentry and Google Cloud budget breaches
- * of 2026-09-24/25 changed nothing anyone saw.
+ * cause per line (vendor + status + text the cause contains, a ceiling on
+ * its value or `-` for a cause with none, until a date at most 30 days
+ * out). A failing row prints as a warning, and does not fail the run, only
+ * when every failing cause in it is acknowledged and within its ceiling; so
+ * red means a failure nobody has acknowledged yet, at a size nobody has
+ * accepted. A check that joins causes into one detail (Upstash spend and
+ * volume, each suspended database, each GCP budget, each PostHog quota)
+ * reports them separately, so one line cannot mute another cause, and a
+ * read that fails after others succeeded keeps what they measured. Before
+ * the list, Anthropic's standing ERROR (no Admin API key) held the run red
+ * every day from at least 2026-09-21, and the Sentry and Google Cloud
+ * budget breaches of 2026-09-24/25 changed nothing anyone saw.
  *
  * Exit codes: 0 — nothing failing that is not acknowledged · 1 — an
  * unacknowledged BREACH or ERROR (or WARN with WARN_IS_FAILURE=true) ·
@@ -137,6 +138,26 @@ const worstStatus = (causes) =>
  */
 function isTimeout(err) {
   return err?.name === 'TimeoutError' || /timeout|aborted/i.test(String(err?.message));
+}
+
+/**
+ * Runs a read for a check that has already measured `causes`. A failure
+ * still throws, so runVendor still retries a timeout, but the error carries
+ * `causes` and runVendor reports them beside it. Before this, a failed second
+ * read replaced a measured suspension or quota BREACH, and a line
+ * acknowledging the error muted both (#795 review).
+ */
+async function readKeeping(causes, read) {
+  try {
+    return await read();
+  } catch (err) {
+    // A new error each time: a rejected promise can be read twice (the
+    // timeout retry), and mutating it would list its causes twice.
+    const e = new Error(String(err?.message ?? err), { cause: err });
+    e.name = err?.name ?? 'Error';
+    e.measuredCauses = [...causes, ...(err?.measuredCauses ?? [])];
+    throw e;
+  }
 }
 
 /**
@@ -284,7 +305,7 @@ export async function checkUpstash() {
   const active = dbs.find((db) => (db.state ?? 'active') === 'active');
   if (!active)
     return { status: 'BREACH', detail: suspended.map((c) => c.text).join('; '), causes: suspended };
-  const measured = await gaugeDatabase(active);
+  const measured = await readKeeping(suspended, () => gaugeDatabase(active));
   if (!suspended.length) return measured;
   return {
     ...measured,
@@ -297,12 +318,6 @@ export async function checkUpstash() {
     const stats = await httpJson(`https://api.upstash.com/v2/redis/stats/${db.database_id}`, {
       headers,
     });
-    const cmds = latestValue(stats.daily_net_commands, 'daily_net_commands');
-    const storageMb = latestValue(stats.current_storage, 'current_storage') / (1024 * 1024);
-    const volume = {
-      ...gauge(cmds, warnCmds),
-      detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
-    };
 
     // SPEND, projected. Volume alone cannot see this coming: on 2026-07-25
     // this vendor read "🟢 OK 14% — 137,114 commands today" hours before the
@@ -318,26 +333,14 @@ export async function checkUpstash() {
     // The projection is the part that buys warning time. A flat gauge on
     // spend-so-far is green early in the month by construction — day 5 of a
     // $30 budget at $8 reads 27% while the run-rate says $48 by month end.
+    //
+    // Measured before volume, so a volume field Upstash stops reporting
+    // cannot take the spend cause down with it.
     const budget = Number(db.budget ?? 0);
     const monthCost =
       stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);
-    if (!(budget > 0) || !Number.isFinite(monthCost)) {
-      // Fixed/pro plans carry no spend cap to breach, and a plan that does
-      // not report billing cannot be gauged on it — say which, and fall
-      // back to volume rather than inventing a verdict.
-      const why =
-        budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
-      return {
-        ...volume,
-        costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
-        usage: { commands_today: cmds, storage_mb: storageMb },
-        detail: `${db.database_name}: ${volume.detail}, ${why}`,
-        causes: [
-          { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
-        ],
-      };
-    }
-    const projected = monthCost / monthElapsedFraction();
+    const billed = budget > 0 && Number.isFinite(monthCost);
+    const projected = billed ? monthCost / monthElapsedFraction() : NaN;
     // Deliberately NOT `gauge()`. Its BREACH tier is 2x the warn threshold,
     // which for spend would mean "projecting 160% of the cap" — but the
     // damage is done the moment the projection crosses the cap ITSELF:
@@ -373,11 +376,61 @@ export async function checkUpstash() {
     // spend is already modelled to hit the cap; on 2026-07-25 actual usage
     // reached the cap while the projection still sat under it, the 80% line
     // WARNed into a green run, and prod Redis suspended unannounced.
-    const spend = {
+    const spend = billed && {
       status: projected >= warnAt ? 'BREACH' : 'OK',
       // Against the cap, so 100% reads as "projecting exactly the budget".
       usagePct: Math.round((projected / budget) * 100),
     };
+    // A capped database whose spend was not reported is not OK on volume:
+    // the cap is the kill switch, so an unread spend is an ERROR cause of
+    // its own (#795 review). Fixed/pro plans carry no cap to breach.
+    const spendCauses = !(budget > 0)
+      ? []
+      : billed
+        ? [
+            {
+              status: spend.status,
+              text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
+              value: projected,
+            },
+          ]
+        : [
+            {
+              status: 'ERROR',
+              text: `${db.database_name}: no billing reported, so its $${budget.toFixed(2)} cap cannot be gauged`,
+            },
+          ];
+
+    const cmds = await readKeeping(spendCauses, () =>
+      latestValue(stats.daily_net_commands, 'daily_net_commands'),
+    );
+    const volume = {
+      ...gauge(cmds, warnCmds),
+      detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
+    };
+    // Spend and volume fail independently. Acknowledging a volume spike
+    // must not hide the spend projection that predicts a suspension.
+    const causes = [
+      ...spendCauses,
+      { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
+    ];
+    const storageMb =
+      (await readKeeping(causes, () => latestValue(stats.current_storage, 'current_storage'))) /
+      (1024 * 1024);
+
+    if (!billed) {
+      // No cap to breach, or no billing to gauge it on: say which.
+      const why =
+        budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
+      return {
+        ...volume,
+        status: worstStatus(causes),
+        costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
+        usage: { commands_today: cmds, storage_mb: storageMb },
+        detail: `${db.database_name}: ${volume.detail}, ${why}`,
+        causes,
+      };
+    }
 
     // Worst axis wins — a database on track to blow its cap is not "OK"
     // because its command count happens to be low.
@@ -396,16 +449,7 @@ export async function checkUpstash() {
         `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
         `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
         ` — ${volume.detail}, storage ${storageMb.toFixed(1)} MB`,
-      // Spend and volume fail independently. Acknowledging a volume spike
-      // must not hide the spend projection that predicts a suspension.
-      causes: [
-        {
-          status: spend.status,
-          text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
-          value: projected,
-        },
-        { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
-      ],
+      causes,
     };
   }
 }
@@ -561,17 +605,19 @@ export async function checkPosthog() {
     text: `quota-limited (data being dropped): ${resource}`,
   }));
   const warnEvents = envNum('POSTHOG_MTD_EVENTS_WARN', 1_000_000);
-  const res = await httpJson(`${host}/api/projects/${pid}/query/`, {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query: {
-        kind: 'HogQLQuery',
-        query: 'SELECT count() FROM events WHERE timestamp >= toStartOfMonth(now())',
-      },
-    }),
+  const events = await readKeeping(quotaCauses, async () => {
+    const res = await httpJson(`${host}/api/projects/${pid}/query/`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: {
+          kind: 'HogQLQuery',
+          query: 'SELECT count() FROM events WHERE timestamp >= toStartOfMonth(now())',
+        },
+      }),
+    });
+    return finiteNumber(res.results?.[0]?.[0], 'PostHog events');
   });
-  const events = finiteNumber(res.results?.[0]?.[0], 'PostHog events');
   const volume = gauge(events, warnEvents);
   const eventsCause = {
     status: volume.status,
@@ -752,7 +798,19 @@ const VENDORS = [
   },
 ];
 
-async function runVendor(vendor) {
+/**
+ * The row for a check that threw. Causes it measured before the throw
+ * (readKeeping) stay causes of their own beside the error, so a line
+ * acknowledging the error cannot also cover them.
+ */
+function errorRow(name, detail, err) {
+  const measured = err?.measuredCauses ?? [];
+  if (!measured.length) return { name, status: 'ERROR', detail };
+  const causes = [...measured, { status: 'ERROR', text: detail }];
+  return { name, status: 'ERROR', detail: causes.map((c) => c.text).join('; '), causes };
+}
+
+export async function runVendor(vendor) {
   const missing = vendor.requires.filter((k) => !process.env[k]);
   if (missing.length > 0) {
     return { name: vendor.name, status: 'UNCONFIGURED', detail: `missing ${missing.join(', ')}` };
@@ -762,11 +820,7 @@ async function runVendor(vendor) {
   } catch (err) {
     if (!isTimeout(err)) {
       // A genuine config/auth/parse failure. Loud, immediately.
-      return {
-        name: vendor.name,
-        status: 'ERROR',
-        detail: String(err?.message ?? err).slice(0, 300),
-      };
+      return errorRow(vendor.name, String(err?.message ?? err).slice(0, 300), err);
     }
     // A timeout MIGHT be a transient blip — so find out instead of assuming.
     // One retry is the whole test: a real blip succeeds on the second try,
@@ -801,13 +855,11 @@ async function runVendor(vendor) {
       // attempt inside 45s. A double timeout is exceptional again, and
       // failing to read a metered vendor's spend is precisely what should
       // exit 1.
-      return {
-        name: vendor.name,
-        status: 'ERROR',
-        detail: `unreachable — timed out twice, value NOT verified: ${String(
-          err2?.message ?? err2,
-        ).slice(0, 240)}`,
-      };
+      return errorRow(
+        vendor.name,
+        `unreachable — timed out twice, value NOT verified: ${String(err2?.message ?? err2).slice(0, 240)}`,
+        err2,
+      );
     }
   }
 }
@@ -849,7 +901,7 @@ export function parseKnownIssues(text, vendorNames, { today }) {
       extra.length === 0;
     if (!valid)
       throw new Error(
-        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>cause_contains<TAB>up_to (a number, or - for no ceiling)<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
+        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>cause_contains<TAB>up_to (a number, or - for a cause with no measured value)<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
       );
     if (until > latest)
       throw new Error(
@@ -883,9 +935,9 @@ function failingCauses(r, warnIsFailure) {
  * Splits failing rows into acknowledged and not. A row is acknowledged only
  * when every one of its failing causes is: by a line for its vendor and
  * status whose text the cause contains, through the line's date, and at or
- * under the line's ceiling when it has one. A ceiling never holds for a
- * cause with no measured value. Lines that matched no failing cause come
- * back as `unmatched`, to be deleted.
+ * under the line's ceiling. A measured cause needs a numeric ceiling, and a
+ * cause with no measured value needs `-`. Lines that matched no failing
+ * cause come back as `unmatched`, to be deleted.
  */
 export function triage(results, known, { today, warnIsFailure = false }) {
   const failing = [];
@@ -900,25 +952,29 @@ export function triage(results, known, { today, warnIsFailure = false }) {
         (k) => k.vendor === r.name && k.status === cause.status && cause.text.includes(k.contains),
       );
       for (const k of matches) used.add(k);
-      const withinCeiling = (k) =>
-        k.upTo === null || (Number.isFinite(cause.value) && cause.value <= k.upTo);
+      // A ceiling bounds a measured value, and `-` is for a cause with none:
+      // a `-` line on a measured cause would hold at any size (#795 review).
+      const measured = Number.isFinite(cause.value);
+      const holds = (k) => (k.upTo === null ? !measured : measured && cause.value <= k.upTo);
       // When several lines name one cause, the tightest ceiling decides: a
       // broader line must not override a limit someone wrote down.
       const inDate = matches.filter((k) => today <= k.until);
-      const exceeded = inDate.find((k) => !withinCeiling(k));
-      if (inDate.length && !exceeded) {
+      const refusing = inDate.find((k) => !holds(k));
+      if (inDate.length && !refusing) {
         covered.push({ cause, line: inDate[0] });
         continue;
       }
       open.push({
         cause,
-        why: exceeded
-          ? Number.isFinite(cause.value)
-            ? `above the acknowledged ${exceeded.upTo} (line ${exceeded.line})`
-            : `has no measured value, so the ceiling ${exceeded.upTo} on line ${exceeded.line} cannot hold`
-          : matches.length
+        why: !refusing
+          ? matches.length
             ? `acknowledgment expired ${matches[0].until}`
-            : 'not acknowledged',
+            : 'not acknowledged'
+          : refusing.upTo === null
+            ? `is measured, so line ${refusing.line} needs a number in up_to, not -`
+            : measured
+              ? `above the acknowledged ${refusing.upTo} (line ${refusing.line})`
+              : `has no measured value, so the ceiling ${refusing.upTo} on line ${refusing.line} cannot hold`,
       });
     }
     if (open.length) failing.push({ ...r, open });

@@ -219,8 +219,8 @@ rows are new since 2026-09-24/25 and were hidden behind it: Google Cloud
 with a line in `scripts/known-vendor-issues.tsv`: the text of the cause
 you looked at (so a different cause for the same vendor still fails), a
 ceiling (the most you accept, such as 1,000 dropped errors a day or $100
-month-to-date, so a bigger failure fails again), and a date at most 30
-days out. The list's header has both lines written out. Confirm or delete
+month-to-date, so a bigger failure fails again; `-` only for a cause with
+no number, such as an ERROR), and a date at most 30 days out. The list's header has both lines written out. Confirm or delete
 the Anthropic line too.
 
 **Verifies by:** the next scheduled vendor-limits run is green, or red only

@@ -9,6 +9,7 @@ import {
   checkSentry,
   checkUpstash,
   parseKnownIssues,
+  runVendor,
   triage,
 } from './check-vendor-limits.mjs';
 import { budgetStatus } from './gcp-budget-status.mjs';
@@ -163,6 +164,7 @@ async function withFetch(routes, env, check) {
   globalThis.fetch = async (url) => {
     const hit = Object.entries(routes).find(([prefix]) => String(url).startsWith(prefix));
     if (!hit) throw new Error(`no canned response for ${url}`);
+    if (hit[1] instanceof Error) throw hit[1];
     return new Response(JSON.stringify(hit[1]), { status: 200 });
   };
   try {
@@ -209,7 +211,7 @@ test('acknowledging Upstash volume no longer hides the spend projection that pre
   assert.equal(row.status, 'BREACH');
   assert.match(row.detail, /commands today/);
   const known = parse(
-    `${LIST}Upstash Redis\tBREACH\tcommands today\t-\t2026-10-03\tvolume spike, watching\n`,
+    `${LIST}Upstash Redis\tBREACH\tcommands today\t5000000\t2026-10-03\tvolume spike, watching\n`,
   );
   const result = triage([row], known, { today: TODAY });
   assert.equal(openCauses(result).length, 1);
@@ -466,4 +468,118 @@ test('a failing row whose causes name nothing failing is still checked as one ca
     causes: [{ status: 'OK', text: 'fine' }],
   };
   assert.deepEqual(openCauses(triage([row], parse(LIST), { today: TODAY })), ['dropped 5']);
+});
+
+/** A vendor row as the run builds it, errors included, against canned API responses. */
+const runRow = (name, routes, env, check) =>
+  withFetch(routes, env, () => runVendor({ name, requires: Object.keys(env), check }));
+
+test('a failed stats read keeps a suspended database as its own cause', async () => {
+  // #795 review: with prod suspended, a second database's stats read failing
+  // replaced the suspension, and a line for the read error muted both.
+  const routes = {
+    [UPSTASH_DBS]: [
+      { ...prodDb, state: 'suspended' },
+      { ...prodDb, database_id: 'db2', database_name: 'cache' },
+    ],
+    [UPSTASH_STATS]: { total_monthly_billing: 1 },
+  };
+  const row = await runRow('Upstash Redis', routes, UPSTASH, checkUpstash);
+  assert.equal(row.status, 'ERROR');
+  const known = parse(
+    `${LIST}Upstash Redis\tERROR\tUpstash stats response missing numeric\t-\t2026-10-02\tfield renamed, fixing\n`,
+  );
+  assert.deepEqual(openCauses(triage([row], known, { today: TODAY })), [
+    'declutrmail-v2-bullmq: state=suspended',
+  ]);
+  // Two timeouts: the retry's failure keeps the suspension too.
+  const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+    name: 'TimeoutError',
+  });
+  const slow = await runRow(
+    'Upstash Redis',
+    { ...routes, [UPSTASH_STATS]: timeout },
+    UPSTASH,
+    checkUpstash,
+  );
+  const unreachable = parse(
+    `${LIST}Upstash Redis\tERROR\ttimed out twice\t-\t2026-10-02\tUpstash API slow\n`,
+  );
+  assert.deepEqual(openCauses(triage([slow], unreachable, { today: TODAY })), [
+    'declutrmail-v2-bullmq: state=suspended',
+  ]);
+});
+
+test('a missing volume field keeps the causes measured before it', async () => {
+  const known = parse(
+    `${LIST}Upstash Redis\tERROR\tUpstash stats response missing numeric\t-\t2026-10-02\tfield renamed, fixing\n`,
+  );
+  const open = async (stats) =>
+    openCauses(
+      triage(
+        [
+          await runRow(
+            'Upstash Redis',
+            { [UPSTASH_DBS]: [prodDb], [UPSTASH_STATS]: stats },
+            UPSTASH,
+            checkUpstash,
+          ),
+        ],
+        known,
+        { today: TODAY },
+      ),
+    );
+  const spend = /^declutrmail-v2-bullmq: projecting \$[\d.]+ against a \$30\.00 cap$/;
+  const noCommands = await open({ current_storage: 1, total_monthly_billing: 29.99 });
+  assert.equal(noCommands.length, 1);
+  assert.match(noCommands[0], spend);
+  const noStorage = await open({ daily_net_commands: 5_000_000, total_monthly_billing: 29.99 });
+  assert.equal(noStorage.length, 2);
+  assert.match(noStorage[0], spend);
+  assert.equal(noStorage[1], 'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000)');
+});
+
+test('a failed events read keeps each PostHog quota as its own cause', async () => {
+  // #795 review: the events query failing replaced the quota BREACH.
+  const row = await runRow(
+    'PostHog',
+    {
+      'https://us.posthog.com/api/projects/1/quota_limits/': { events: true },
+      'https://us.posthog.com/api/projects/1/query/': { results: [] },
+    },
+    POSTHOG,
+    checkPosthog,
+  );
+  const known = parse(
+    `${LIST}PostHog\tERROR\tMissing PostHog events\t-\t2026-10-02\tquery changed, fixing\n`,
+  );
+  assert.deepEqual(openCauses(triage([row], known, { today: TODAY })), [
+    'quota-limited (data being dropped): events',
+  ]);
+});
+
+test('a capped Upstash database with no billing figure is an ERROR, not OK on volume', async () => {
+  // #795 review: a $30 cap, no billing reported and 137,114 commands read "OK 14%".
+  const stats = { daily_net_commands: 137114, current_storage: 12_900_000 };
+  const row = (db) =>
+    withFetch({ [UPSTASH_DBS]: [db], [UPSTASH_STATS]: stats }, UPSTASH, checkUpstash);
+  const capped = { name: 'Upstash Redis', ...(await row(prodDb)) };
+  assert.equal(capped.status, 'ERROR');
+  assert.deepEqual(openCauses(triage([capped], parse(LIST), { today: TODAY })), [
+    'declutrmail-v2-bullmq: no billing reported, so its $30.00 cap cannot be gauged',
+  ]);
+  // A database with no cap has no spend to gauge, and stays OK on volume.
+  assert.equal((await row({ ...prodDb, budget: 0, type: 'payg' })).status, 'OK');
+});
+
+test('a - line does not hold a measured cause, at any size', async () => {
+  // #795 review: "-" held 23 and 480,112 dropped errors alike.
+  const known = parse(
+    `${LIST}Sentry\tBREACH\tquota/rate limited\t-\t2026-10-26\tno ceiling written\n`,
+  );
+  const row = await sentryRow([outcome('accepted', 500), outcome('rate_limited', 23)]);
+  assert.match(
+    triage([row], known, { today: TODAY }).failing[0].open[0].why,
+    /^is measured, so line \d+ needs a number in up_to, not -$/,
+  );
 });

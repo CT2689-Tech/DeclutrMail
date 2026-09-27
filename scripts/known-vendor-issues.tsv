@@ -9,8 +9,9 @@
 #   status (WARN|BREACH|ERROR)
 #   cause_contains (text the cause must contain: the one you looked at)
 #   up_to (the most you accept, in the cause's own unit: events, dollars,
-#     commands; or - for no ceiling. A cause with no measured value never
-#     holds a ceiling.)
+#     commands. Write - only for a cause with no measured value, such as
+#     an ERROR, a suspended database or a quota flag: a - line never holds
+#     a measured cause, and a number never holds one without a value.)
 #   acknowledged_until (YYYY-MM-DD, UTC, inclusive, at most 30 days out)
 #   note
 # Anything else fails the run again: another status, another cause for
