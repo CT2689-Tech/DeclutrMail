@@ -31,7 +31,7 @@ const RULE_PHRASE = {
     "Protected because you've written to this sender at least three times and heard back.",
   protect_starred: "Protected because you've starred a message from this sender this year.",
   protect_gmail_important:
-    'Protected because Gmail marked at least three messages from this Primary-inbox sender important this year.',
+    'Protected because Gmail marked at least three of their messages important this year.',
   wrote_to_at_least_once: "Kept because you've written to them.",
   gmail_primary:
     'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',

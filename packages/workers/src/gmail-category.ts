@@ -54,9 +54,8 @@ export function messageGmailCategory(labelIds: readonly string[]): LabelledGmail
  * tab holds a majority.
  *
  * A majority, not a plurality, because readers state it as a fact —
- * "Kept because Gmail puts them in your Primary inbox", "Protected
- * because Gmail marked … this Primary-inbox sender important". Two
- * Primary messages beside two Promotions ones back neither sentence.
+ * "Kept because Gmail puts them in your Primary inbox". Two Primary
+ * messages beside two Promotions ones do not back that sentence.
  */
 export function senderGmailCategory(
   counts: ReadonlyMap<LabelledGmailCategory, number>,

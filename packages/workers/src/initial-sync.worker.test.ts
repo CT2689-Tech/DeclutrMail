@@ -1422,10 +1422,10 @@ describe('InitialSyncWorker', () => {
     });
 
     it('gmail importance does not protect a sender whose mail carries no tab label', async () => {
-      // "Protected because Gmail marked … this Primary-inbox sender
-      // important" needs a Primary label behind it. With no CATEGORY_*
-      // label at all, the old default filed the sender under Primary and
-      // the importance rule protected it on nothing (mig 0079).
+      // The importance rule protects Primary senders only, which needs a
+      // Primary label behind it. With no CATEGORY_* label at all, the old
+      // default filed the sender under Primary and the importance rule
+      // protected it on nothing (mig 0079).
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(

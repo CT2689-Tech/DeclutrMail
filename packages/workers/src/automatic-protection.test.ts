@@ -1,4 +1,4 @@
-import { mailMessages, schema, senderPolicies, senders } from '@declutrmail/db';
+import { mailMessages, schema, senderPolicies, senders, triageDecisions } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
@@ -295,6 +295,71 @@ describe('applyAutomaticProtection', () => {
       expect((await pass()).released).toEqual([
         { senderKey: 'decayed', priorReason: 'gmail_important' },
       ]);
+    });
+
+    it('falls back to importance when a lapsed reason leaves importance on Primary-labelled mail', async () => {
+      // A tie-kept importance sender whose reason was corrected to
+      // `starred`: when the star ages out, importance still holds, so the
+      // protection is corrected back in place — not released.
+      await seedSender('tie-starred', { gmailCategory: 'unknown' });
+      await seedMessage('tie-starred', 'ts-1', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('tie-starred', 'ts-2', ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']);
+      await seedMessage('tie-starred', 'ts-3', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+      await seedMessage('tie-starred', 'ts-4', ['INBOX', 'IMPORTANT', 'CATEGORY_UPDATES']);
+      await seedMessage('tie-starred', 'ts-5', ['INBOX', 'STARRED'], LONG_AGO);
+      await protect('tie-starred', 'starred');
+
+      expect((await pass()).released).toEqual([]);
+      const [row] = await db
+        .select({
+          isProtected: senderPolicies.isProtected,
+          reason: senderPolicies.protectionReason,
+          setAt: senderPolicies.protectionSetAt,
+        })
+        .from(senderPolicies)
+        .where(eq(senderPolicies.senderKey, 'tie-starred'));
+      expect(row).toEqual({ isProtected: true, reason: 'gmail_important', setAt: LONG_AGO });
+    });
+
+    it('expires the decision of every sender whose protection changed, and only those', async () => {
+      // Released (star aged out), corrected (star aged out, now replied),
+      // granted (a fresh star) — each decision names the old protection
+      // state. A still-true protection's decision is left alone.
+      await seedSender('released', { gmailCategory: 'promotions' });
+      await seedMessage('released', 'rel-1', ['INBOX', 'STARRED'], LONG_AGO);
+      await protect('released', 'starred');
+      await seedSender('corrected', { wroteToCount: 5, gmailCategory: 'promotions' });
+      await seedMessage('corrected', 'cor-1', ['INBOX', 'STARRED'], LONG_AGO);
+      await protect('corrected', 'starred');
+      await seedSender('granted', { gmailCategory: 'promotions' });
+      await seedMessage('granted', 'gra-1', ['INBOX', 'STARRED']);
+      await seedSender('steady', { gmailCategory: 'promotions' });
+      await seedMessage('steady', 'ste-1', ['INBOX', 'STARRED']);
+      await protect('steady', 'starred');
+      const producedAt = new Date(Date.now() - 86_400_000);
+      for (const senderKey of ['released', 'corrected', 'granted', 'steady']) {
+        await db.insert(triageDecisions).values({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          verdict: 'keep',
+          confidence: '1.00',
+          reasoning: 'Protected because you’ve starred a message from this sender this year.',
+          generatedBy: 'template',
+          producedAt,
+          expiresAt: new Date(Date.now() + 6 * 86_400_000),
+        });
+      }
+
+      await pass();
+
+      const rows = await db
+        .select({ senderKey: triageDecisions.senderKey, expiresAt: triageDecisions.expiresAt })
+        .from(triageDecisions);
+      const marked = rows
+        .filter((r) => r.expiresAt.getTime() === producedAt.getTime())
+        .map((r) => r.senderKey)
+        .sort();
+      expect(marked).toEqual(['corrected', 'granted', 'released']);
     });
 
     it('does not grant a new importance protection without a Primary majority', async () => {

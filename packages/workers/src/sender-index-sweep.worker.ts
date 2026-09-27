@@ -34,6 +34,18 @@ export const MAILBOX_BATCH_SIZE = 1;
 export const MAX_RESCORE_SET = 2_000;
 
 /**
+ * The BullMQ job id for one sweep tick's re-score request for a mailbox.
+ * Every attempt of that sweep job asks with the same id, so a job that
+ * committed its work and then failed late (a lock wait can take 45 s, the
+ * cron budget is 60 s) cannot queue a second re-score on its retry: the
+ * queue ignores an add whose id it already holds. The next tick asks
+ * again under a new id for any sender still marked.
+ */
+export function rescoreJobId(mailboxAccountId: string, sweepTick: string): string {
+  return `${mailboxAccountId}:subset:${sweepTick}`;
+}
+
+/**
  * A mailbox where the chain a re-score starts may act.
  * `triage.score_run_completed` wakes the Autopilot apply sweep, whose
  * Active presets archive and unsubscribe in Gmail, so the mailbox must be
@@ -166,11 +178,13 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
        * timer. Called after the transaction commits and the lock is
        * released, never inside either (CLAUDE.md §2.6). Required: an
        * optional hook left unwired would correct every tab and quietly
-       * keep every verdict computed from the old one.
+       * keep every verdict computed from the old one. `sweepTick` is the
+       * sweep's `scheduledAtMinute`; enqueue under `rescoreJobId`.
        */
       onSendersRecategorized: (
         mailboxAccountId: string,
         senderKeys: readonly string[],
+        sweepTick: string,
       ) => Promise<void>;
       /** Test seam for `MAX_RESCORE_SET`. */
       rescoreSetLimit?: number;
@@ -305,7 +319,11 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
 
         if (pass.awaiting.length > 0) {
           const batch = pass.awaiting.slice(0, this.deps.rescoreSetLimit ?? MAX_RESCORE_SET);
-          const outcome = await this.requestRescore(mailboxAccountId, batch);
+          const outcome = await this.requestRescore(
+            mailboxAccountId,
+            batch,
+            payload.scheduledAtMinute,
+          );
           if (outcome === 'requested') rescoresRequested += batch.length;
           if (outcome === 'failed') rescoresNotRequested += batch.length;
         }
@@ -379,6 +397,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
   private async requestRescore(
     mailboxAccountId: string,
     senderKeys: readonly string[],
+    sweepTick: string,
   ): Promise<'requested' | 'ineligible' | 'failed'> {
     try {
       const [row] = await this.deps.db
@@ -388,7 +407,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
         .where(eq(mailboxAccounts.id, mailboxAccountId))
         .limit(1);
       if (row?.mayAct !== true) return 'ineligible';
-      await this.deps.onSendersRecategorized(mailboxAccountId, senderKeys);
+      await this.deps.onSendersRecategorized(mailboxAccountId, senderKeys, sweepTick);
       return 'requested';
     } catch (err) {
       console.error(

@@ -19,6 +19,7 @@ import * as gmailCategory from './gmail-category.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
 import {
   MAILBOX_BATCH_SIZE,
+  rescoreJobId,
   SenderIndexSweepWorker,
   type SenderIndexSweepJobData,
   type SenderIndexSweepResult,
@@ -706,6 +707,29 @@ describe('SenderIndexSweepWorker', () => {
       expect(result.categoriesCorrected).toBe(1);
       expect(result.rescoresRequested).toBe(0);
       expect(onSendersRecategorized).not.toHaveBeenCalled();
+    });
+
+    it('asks under one job id per sweep tick, so a late retry cannot queue a second re-score', async () => {
+      // A sweep job can commit and still fail its 60 s budget (two lock
+      // waits of up to 45 s each); BullMQ then retries the same payload.
+      await seedGuessedPrimary('guessed', [['INBOX']]);
+      const asks: string[] = [];
+      const worker = new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        onSendersRecategorized: async (mb, _keys, sweepTick) => {
+          asks.push(rescoreJobId(mb, sweepTick));
+        },
+      });
+      const tick = { scheduledAtMinute: '2026-09-27T03:00' };
+
+      await worker.processJob(tick, CTX);
+      await worker.processJob(tick, CTX); // the retry: still marked, asks again
+      await worker.processJob({ scheduledAtMinute: '2026-09-28T03:00' }, CTX);
+
+      expect(asks).toHaveLength(3);
+      expect(asks[1]).toBe(asks[0]);
+      expect(asks[2]).not.toBe(asks[0]);
     });
 
     it('asks for at most the cap per sweep, largest senders first; the rest wait marked', async () => {

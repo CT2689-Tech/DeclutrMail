@@ -102,6 +102,7 @@ import {
   SENDER_INDEX_SWEEP_QUEUE,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   SenderIndexSweepWorker,
+  rescoreJobId,
   SendersCounterReconciliationWorker,
   SNOOZE_WAKE_INTERVAL_MS,
   SNOOZE_WAKE_QUEUE,
@@ -1755,12 +1756,14 @@ async function bootstrap(): Promise<void> {
     statementTimeoutMs: workerBudgets.sweepStatementTimeoutMs,
     // Senders whose Gmail tab the recount changed → ONE score job for
     // the set (mig 0079). Their verdicts were computed from the old tab.
-    onSendersRecategorized: async (mailboxAccountId, senderKeys) => {
-      const producedAtMs = Date.now();
+    // Keyed on the sweep tick, not the clock: a sweep job that committed
+    // and then failed late re-asks under the same id on its retry, which
+    // the queue ignores instead of running a second re-score.
+    onSendersRecategorized: async (mailboxAccountId, senderKeys, sweepTick) => {
       await scoreProducerQueue.add(
         SCORE_JOB,
-        { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs },
-        { jobId: `${mailboxAccountId}:subset:${producedAtMs}` },
+        { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs: Date.now() },
+        { jobId: rescoreJobId(mailboxAccountId, sweepTick) },
       );
     },
   });
