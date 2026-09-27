@@ -58,29 +58,32 @@ async function runGates(args, respond) {
   return { result, calls, logs };
 }
 
+const REF = 'origin/main...my-branch';
 // Gates echo the diff command they ran; the workflow checks it against the ref.
-const reviewed = {
-  ran: 'git diff origin/main...HEAD',
-  diffRead: true,
-  inScope: true,
-  findings: [],
-};
+const reviewed = { ran: `git diff ${REF}`, diffRead: true, inScope: true, findings: [] };
 const declined = { ...reviewed, inScope: false };
-const scout = (ref, files) => ({
+const scout = (files, ref = REF) => ({
   ran: `git diff --name-only ${ref}`,
   toplevel: '/repo/worktree',
   head: 'my-branch',
   files,
 });
 
+/** A run over `files`, whose scout lists exactly them; `gate` answers every other agent. */
+function gateRun(files, gate, { passFiles = true } = {}) {
+  return runGates(passFiles ? { diffRef: REF, files } : { diffRef: REF }, (label) =>
+    label === 'scout:changed-files' ? scout(files) : gate(label),
+  );
+}
+
 test('a diff no gate routes is NO_GATES_IN_SCOPE, never NO_BLOCKERS', async () => {
   // 2026-09-26: #782's scripts-and-workflow diff ran zero gates and came back
   // NO_BLOCKERS, the verdict of a clean review.
   const files = ['MISTAKES.md', 'docs/ops/observability-alerts.md'];
-  const { result, calls } = await runGates({ files }, () => reviewed);
+  const { result, calls } = await gateRun(files, () => reviewed);
   assert.equal(result.verdict, 'NO_GATES_IN_SCOPE');
   assert.deepEqual(result.unrouted, files);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, ['scout:changed-files']);
 });
 
 test('scripts, hooks, workflows, ack lists and .tsx files each reach silent-failure-hunter', async () => {
@@ -96,58 +99,144 @@ test('scripts, hooks, workflows, ack lists and .tsx files each reach silent-fail
     'apps/web/src/features/triage/TriageCard.tsx',
     'apps/api/src/main.ts',
   ]) {
-    const { result } = await runGates({ files: [file] }, () => reviewed);
+    const { result } = await gateRun([file], () => reviewed);
     assert.ok(result.gatesRun.includes('silent-failure-hunter'), file);
     assert.equal(result.verdict, 'NO_BLOCKERS', file);
   }
 });
 
+test('the §7 gates for copy and for type-heavy files are routed', async () => {
+  const copy = await gateRun(['apps/web/src/features/triage/triage-copy.ts'], () => reviewed);
+  assert.ok(copy.result.gatesRun.includes('usability-editor'));
+  const types = await gateRun(['packages/events/src/mailbox-events.ts'], () => reviewed);
+  assert.ok(types.result.gatesRun.includes('type-design-analyzer'));
+});
+
 test('a run in which every gate declined the diff reviewed nothing', async () => {
-  const { result, logs } = await runGates(
-    { files: ['scripts/check-vendor-limits.mjs'] },
-    () => declined,
-  );
+  const { result, logs } = await gateRun(['scripts/check-vendor-limits.mjs'], () => declined);
   assert.equal(result.verdict, 'NO_GATES_IN_SCOPE');
   assert.deepEqual(result.gatesDeclined, ['silent-failure-hunter']);
   assert.ok(logs.some((line) => line.includes('reviewed nothing')));
 });
 
 test('a must-pass gate that declines leaves the run PARTIAL, whatever the advisory gates did', async () => {
-  const file = 'apps/api/src/gmail/message-adapter.ts';
-  const { result } = await runGates({ files: [file] }, (label) =>
+  const { result } = await gateRun(['apps/api/src/gmail/message-adapter.ts'], (label) =>
     label === 'privacy-auditor' ? declined : reviewed,
   );
   assert.equal(result.verdict, 'PARTIAL');
   assert.deepEqual(result.gatesDeclined, ['privacy-auditor']);
 });
 
+test('an advisory gate declining a file another gate reviewed does not stop a clean verdict', async () => {
+  const { result } = await gateRun(['apps/api/src/main.ts'], (label) =>
+    label === 'silent-failure-hunter' ? declined : reviewed,
+  );
+  assert.equal(result.verdict, 'NO_BLOCKERS');
+  assert.deepEqual(result.gatesDeclined, ['silent-failure-hunter']);
+  assert.deepEqual(result.unreviewed, []);
+});
+
+test('a file whose every gate declined was reviewed by nothing', async () => {
+  const { result } = await gateRun(
+    ['apps/api/src/main.ts', '.github/workflows/deploy.yml'],
+    (label) => (label === 'silent-failure-hunter' ? declined : reviewed),
+  );
+  assert.equal(result.verdict, 'PARTIAL');
+  assert.deepEqual(result.unreviewed, ['.github/workflows/deploy.yml']);
+});
+
+test('a changed file no gate routes keeps the run from a clean verdict', async () => {
+  const { result } = await gateRun(['apps/api/src/main.ts', 'package.json'], () => reviewed);
+  assert.equal(result.verdict, 'PARTIAL');
+  assert.deepEqual(result.unrouted, ['package.json']);
+  assert.deepEqual(result.unreviewed, ['package.json']);
+});
+
+test('prose does not stop a clean verdict, but a gate charter or CLAUDE.md is not prose', async () => {
+  const prose = await gateRun(['apps/api/src/main.ts', 'MISTAKES.md'], () => reviewed);
+  assert.equal(prose.result.verdict, 'NO_BLOCKERS');
+  for (const doc of ['.claude/agents/privacy-auditor.md', 'CLAUDE.md']) {
+    const { result } = await gateRun(['apps/api/src/main.ts', doc], () => reviewed);
+    assert.equal(result.verdict, 'PARTIAL', doc);
+    assert.deepEqual(result.unreviewed, [doc]);
+  }
+});
+
 test('a gate that died is INCOMPLETE, not a decline and not a pass', async () => {
-  const { result } = await runGates({ files: ['scripts/probe.ts'] }, () => null);
+  const { result } = await gateRun(['scripts/probe.ts'], () => null);
   assert.equal(result.verdict, 'INCOMPLETE');
   assert.deepEqual(result.gatesFailed, ['typescript-reviewer', 'silent-failure-hunter']);
   assert.deepEqual(result.gatesRun, []);
 });
 
-test('gates that could not read the diff are INCOMPLETE, even when the caller named the files', async () => {
-  // Explicit files skip the scout, so the gates are the only ones who run
-  // `git diff <ref>`: a ref that does not resolve must not read as clean.
-  const { result, logs } = await runGates(
-    { files: ['scripts/x.mjs'], diffRef: 'origin/mian...HEAD' },
-    () => ({ diffRead: false, diffError: 'fatal: bad revision', inScope: true, findings: [] }),
-  );
+test('gates that could not read the diff are INCOMPLETE', async () => {
+  const { result, logs } = await gateRun(['scripts/x.mjs'], () => ({
+    ...reviewed,
+    diffRead: false,
+    diffError: 'fatal: bad revision',
+  }));
   assert.equal(result.verdict, 'INCOMPLETE');
   assert.deepEqual(result.gatesUnreadable, ['silent-failure-hunter']);
   assert.ok(logs.some((line) => line.includes('fatal: bad revision')));
 });
 
+test('a gate that diffed some other ref did not review this diff', async () => {
+  // A gate can repair a ref the way the scout did.
+  const { result } = await gateRun(['scripts/a.mjs'], () => ({
+    ...reviewed,
+    ran: 'git diff origin/main...other-branch',
+  }));
+  assert.equal(result.verdict, 'INCOMPLETE');
+  assert.deepEqual(result.gatesUnreadable, ['silent-failure-hunter']);
+});
+
+test('a gate may name its checkout, add options or add paths to the diff it echoes', async () => {
+  for (const ran of [
+    `git -C /repo/worktree diff ${REF}`,
+    `cd /repo/worktree && git diff --stat ${REF}`,
+    `git diff ${REF} -- scripts/a.mjs`,
+  ]) {
+    const { result } = await gateRun(['scripts/a.mjs'], () => ({ ...reviewed, ran }));
+    assert.deepEqual(result.gatesRun, ['silent-failure-hunter'], ran);
+    assert.equal(result.verdict, 'NO_BLOCKERS', ran);
+  }
+});
+
+test('a ref naming HEAD, or no ref at all, is refused before any agent runs', async () => {
+  // HEAD is whichever branch the agent's checkout holds.
+  for (const args of [
+    { diffRef: 'origin/main...HEAD' },
+    { diffRef: 'HEAD~1..HEAD', files: ['a.ts'] },
+    {},
+  ]) {
+    const { result, calls } = await runGates(args, () => reviewed);
+    assert.equal(result.verdict, 'SCOUT_FAILED', JSON.stringify(args));
+    assert.deepEqual(calls, []);
+  }
+});
+
+test('files the caller passes must be the whole diff', async () => {
+  // A file left out would route no gate and appear nowhere.
+  const { result, calls } = await runGates({ diffRef: REF, files: ['scripts/a.mjs'] }, (label) =>
+    label === 'scout:changed-files'
+      ? scout(['scripts/a.mjs', 'apps/api/src/gmail/x.ts'])
+      : reviewed,
+  );
+  assert.equal(result.verdict, 'SCOUT_FAILED');
+  assert.match(result.error, /missing \[apps\/api\/src\/gmail\/x\.ts\]/);
+  assert.deepEqual(calls, ['scout:changed-files']);
+});
+
 test('a scout that failed, died or ran some other ref is SCOUT_FAILED, not NO_DIFF', async () => {
-  const ref = 'origin/mian...HEAD';
+  const ref = 'origin/mian...my-branch';
   for (const answer of [
-    { ...scout(ref, []), error: "fatal: bad revision 'origin/mian...HEAD'" },
+    { ...scout([], ref), error: "fatal: bad revision 'origin/mian...my-branch'" },
     null,
-    // 2026-09-26: the haiku scout, given this typo, ran the corrected ref
-    // and returned that diff's files.
-    { ...scout('origin/main...HEAD', ['a.ts']) },
+    // 2026-09-26: the haiku scout, given a mistyped ref, ran the corrected
+    // one and returned that diff's files.
+    scout(['a.ts'], 'origin/main...my-branch'),
+    // An empty error string must not skip the command check.
+    { ...scout(['a.ts'], 'origin/main...my-branch'), error: '' },
   ]) {
     const { result, calls } = await runGates({ diffRef: ref }, () => answer);
     assert.deepEqual(calls, ['scout:changed-files']);
@@ -156,9 +245,18 @@ test('a scout that failed, died or ran some other ref is SCOUT_FAILED, not NO_DI
 });
 
 test('a diff with no changed files is NO_DIFF, and says where it looked', async () => {
-  const { result } = await runGates({}, () => scout('origin/main...HEAD', []));
+  const { result } = await runGates({ diffRef: REF }, () => scout([]));
   assert.equal(result.verdict, 'NO_DIFF');
   assert.match(result.checkedIn, /\/repo\/worktree \(HEAD my-branch\)/);
+});
+
+test('the checkout the scout looked in is reported whatever the verdict', async () => {
+  const { result, logs } = await gateRun(['apps/api/src/main.ts'], () => reviewed, {
+    passFiles: false,
+  });
+  assert.equal(result.verdict, 'NO_BLOCKERS');
+  assert.equal(result.checkedIn, '/repo/worktree (HEAD my-branch)');
+  assert.ok(logs.some((line) => line.includes('/repo/worktree (HEAD my-branch)')));
 });
 
 const blockingFinding = {
@@ -169,7 +267,7 @@ const blockingFinding = {
 };
 
 test('a gate-tier blocker both refuters read and upheld is BLOCKED and CONFIRMED', async () => {
-  const { result, calls } = await runGates({ files: ['apps/api/src/gmail/a.ts'] }, (label) => {
+  const { result, calls } = await gateRun(['apps/api/src/gmail/a.ts'], (label) => {
     if (label.startsWith('refute')) return { refuted: false, reason: 'holds' };
     return label === 'privacy-auditor' ? { ...reviewed, findings: [blockingFinding] } : reviewed;
   });
@@ -182,7 +280,7 @@ test('a gate-tier blocker both refuters read and upheld is BLOCKED and CONFIRMED
 });
 
 test('a blocker whose refuters died still blocks, but is not called CONFIRMED', async () => {
-  const { result, logs } = await runGates({ files: ['apps/api/src/gmail/a.ts'] }, (label) => {
+  const { result, logs } = await gateRun(['apps/api/src/gmail/a.ts'], (label) => {
     if (label.startsWith('refute')) return null;
     return label === 'privacy-auditor' ? { ...reviewed, findings: [blockingFinding] } : reviewed;
   });
@@ -193,7 +291,7 @@ test('a blocker whose refuters died still blocks, but is not called CONFIRMED', 
 });
 
 test('a CLAUDE.md §9 stop condition reaches the verdict', async () => {
-  const { result } = await runGates({ files: ['apps/api/src/gmail/a.ts'] }, (label) =>
+  const { result } = await gateRun(['apps/api/src/gmail/a.ts'], (label) =>
     label === 'privacy-auditor'
       ? { ...reviewed, stopCondition: 'adds a header to the allowlist' }
       : reviewed,
@@ -202,52 +300,4 @@ test('a CLAUDE.md §9 stop condition reaches the verdict', async () => {
   assert.deepEqual(result.stopConditions, [
     { gate: 'privacy-auditor', stopCondition: 'adds a header to the allowlist' },
   ]);
-});
-
-test('a scout that reports an empty error still has its command checked', async () => {
-  const { result } = await runGates({ diffRef: 'origin/mian...HEAD' }, () => ({
-    ...scout('origin/main...HEAD', ['scripts/a.mjs']),
-    error: '',
-  }));
-  assert.equal(result.verdict, 'SCOUT_FAILED');
-});
-
-test('a gate that diffed some other ref did not review this diff', async () => {
-  // With explicit files the gates are the only ones who run `git diff <ref>`,
-  // and a gate can repair a mistyped ref the way the scout did.
-  const { result } = await runGates(
-    { files: ['scripts/a.mjs'], diffRef: 'origin/mian...HEAD' },
-    () => reviewed,
-  );
-  assert.equal(result.verdict, 'INCOMPLETE');
-  assert.deepEqual(result.gatesUnreadable, ['silent-failure-hunter']);
-});
-
-test('a gate that diffed the asked ref with paths reviewed it', async () => {
-  const { result } = await runGates({ files: ['scripts/a.mjs'] }, () => ({
-    ...reviewed,
-    ran: 'git diff origin/main...HEAD -- scripts/a.mjs',
-  }));
-  assert.deepEqual(result.gatesRun, ['silent-failure-hunter']);
-  assert.equal(result.verdict, 'NO_BLOCKERS');
-});
-
-test('the checkout the scout looked in is reported whatever the verdict', async () => {
-  const { result, logs } = await runGates({}, (label) =>
-    label === 'scout:changed-files'
-      ? scout('origin/main...HEAD', ['apps/api/src/main.ts'])
-      : reviewed,
-  );
-  assert.equal(result.verdict, 'NO_BLOCKERS');
-  assert.equal(result.checkedIn, '/repo/worktree (HEAD my-branch)');
-  assert.ok(logs.some((line) => line.includes('/repo/worktree (HEAD my-branch)')));
-});
-
-test('a changed file no gate routes keeps the run from a clean verdict, unless it is prose', async () => {
-  const code = 'apps/api/src/main.ts';
-  const withConfig = await runGates({ files: [code, 'package.json'] }, () => reviewed);
-  assert.equal(withConfig.result.verdict, 'PARTIAL');
-  assert.deepEqual(withConfig.result.unrouted, ['package.json']);
-  const withProse = await runGates({ files: [code, 'MISTAKES.md'] }, () => reviewed);
-  assert.equal(withProse.result.verdict, 'NO_BLOCKERS');
 });

@@ -1,7 +1,8 @@
 // ct-gates — fan out the CLAUDE.md §7 gate agents across a diff.
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
-// merge recommendation. Routing mirrors the §7 table, with one addition:
+// merge recommendation. Routing follows the CLAUDE.md §7 table, taking paths
+// from a gate's own charter where §7 names none, with one addition:
 // silent-failure-hunter also reads scripts, hooks, workflows, watchdog
 // acknowledgment lists and hook registrations, where this repo's watchdogs
 // and guards live. Each gate keeps its own charter.
@@ -16,14 +17,16 @@
 //   BLOCKED            a gate-tier BLOCKING finding the refuters did not refute
 //   STOP_CONDITION     a gate hit a CLAUDE.md §9 stop condition
 //   NO_GATES_IN_SCOPE  every gate that ran declined the diff
-//   PARTIAL            some gates declined (gatesDeclined), or a changed file
-//                      that is not prose has no gate (unrouted)
-//   NO_BLOCKERS        every gate the files route to reviewed, no blocker
-// Only NO_BLOCKERS is clean. Files no gate routes are listed in `unrouted`
-// and never reviewed; prose (.md) is unrouted by design and does not stop a
-// clean verdict. Agents run git; the scout and every gate echo the command
-// they ran and this script compares it. That is the limit of what it can
-// check: an agent that misreports its own command passes.
+//   PARTIAL            a must-pass gate declined, or a changed file that is
+//                      not prose was reviewed by no gate (`unreviewed`)
+//   NO_BLOCKERS        every must-pass gate reviewed, every file that is not
+//                      prose was reviewed by some gate, and no blocker
+// Only NO_BLOCKERS is clean. Prose is .md outside .claude/ and CLAUDE.md
+// (charters and commands decide what the gates do). An advisory gate that
+// declines a file another gate reviewed is listed in gatesDeclined only.
+// Agents run git; the scout and every gate echo the command they ran and
+// this script compares it. That is the limit of what it can check: an agent
+// that misreports its own command passes.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -36,11 +39,12 @@
 // findings, writes nothing, and posts nothing to GitHub.
 //
 // Usage:
-//   Workflow({ name: 'ct-gates' })                        // origin/main...HEAD
+//   Workflow({ name: 'ct-gates', args: { diffRef: 'origin/main...my-branch' } })
 //   Workflow({ name: 'ct-gates', args: { diffRef: 'abc123^..abc123' } })
-//   Workflow({ name: 'ct-gates', args: { files: ['apps/api/src/...'], diffRef: 'origin/main...my-branch' } })
-// From a worktree, name the branch rather than HEAD: agents may start in
-// another checkout, where HEAD is a different branch.
+//   Workflow({ name: 'ct-gates', args: { diffRef: 'origin/main...my-branch', files: [...] } })
+// diffRef is required and may not name HEAD: agents may start in another
+// checkout, where HEAD is a different branch. Branches and commits are the
+// same in every checkout. `files`, when given, must match the diff exactly.
 
 export const meta = {
   name: 'ct-gates',
@@ -53,10 +57,10 @@ export const meta = {
   ],
 }
 
-const DEFAULT_REF = 'origin/main...HEAD'
-
-// Prose no gate reviews, by design: unrouted, listed, but not a coverage gap.
-const PROSE = /\.md$/
+// Prose no gate reviews, by design: unrouted, listed, but not a coverage
+// gap. Agent charters, commands and CLAUDE.md are not prose: they decide
+// what the gates do.
+const isProse = (f) => /\.md$/.test(f) && !/^\.claude\/|(^|\/)CLAUDE\.md$/.test(f)
 
 // Routing mirrors CLAUDE.md §7. `tier` drives the merge verdict: a BLOCKING
 // finding from a GATE tier blocks; advisory findings never do.
@@ -74,6 +78,10 @@ const GATES = [
   // NO_BLOCKERS. The agent's charter covers the same paths.
   { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.tsx?$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\/|^scripts\/.*\.tsv$|^\.claude\/settings\.json$/ },
   { type: 'flow-completeness-auditor', tier: 'advisory', when: /^apps\/web\/src\/features\// },
+  // §7: "any PR that changes user-facing copy" under these paths.
+  { type: 'usability-editor',          tier: 'advisory', when: /^(apps\/web\/src\/features\/|packages\/shared\/src\/(actions|components|copy)\/)/ },
+  // §7 says only "type-heavy files"; these are the paths its charter lists.
+  { type: 'type-design-analyzer',      tier: 'advisory', when: /^(packages\/(events|workers)\/|apps\/api\/.*\/(dto|types|contracts)\/|apps\/web\/.*\/(types|domain)\/)/ },
 ]
 
 // Global cap on how many BLOCKING findings get the adversarial pass (2 refuters
@@ -155,12 +163,28 @@ if (typeof input === 'string') {
   }
 }
 
-const diffRef = input.diffRef ?? DEFAULT_REF
+const diffRef = input.diffRef
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+// A `git diff` of exactly this ref, from any checkout (`git -C <dir>` or
+// `cd <dir> &&`), with any options before the ref and any paths after it.
+const diffCommand = new RegExp(`^(cd \\S+ && )?git( -C \\S+)? diff( --?[\\w-]+(=\\S+)?)* ${escapeRe(diffRef ?? '')}( |$)`)
+
+// HEAD is whatever branch the agent's checkout holds, and agents may start
+// in another checkout: a HEAD ref can review the wrong branch and pass.
+const refError = !diffRef
+  ? 'pass diffRef naming the branch or commits, e.g. origin/main...my-branch'
+  : /\bHEAD\b/.test(diffRef)
+    ? `diffRef ${diffRef} names HEAD, which depends on the checkout an agent starts in; name the branch or commit`
+    : null
+if (refError) {
+  log(`${refError}. SCOUT_FAILED is not a pass.`)
+  return { diffRef, files: [], gatesRun: [], findings: [], error: refError, verdict: 'SCOUT_FAILED' }
+}
 
 phase('Scout')
-let files = input.files
-let checkedIn = 'the caller (files passed explicitly)'
-if (!files) {
+let files
+let checkedIn
+{
   const command = `git diff --name-only ${diffRef}`
   const scouted = await agent(
     `Run exactly \`${command}\`, then \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\`.\n` +
@@ -176,7 +200,7 @@ if (!files) {
     ? 'the scout agent returned nothing'
     : scouted.error?.trim()
       ? scouted.error
-      : scouted.ran.trim() !== command
+      : !diffCommand.test(scouted.ran.trim()) || !scouted.ran.includes('--name-only')
         ? `the scout ran \`${scouted.ran}\`, not \`${command}\``
         : null
   if (error) {
@@ -185,10 +209,21 @@ if (!files) {
   }
   files = scouted.files
   checkedIn = `${scouted.toplevel} (HEAD ${scouted.head})`
+  // A list the caller passes routes the gates, so it must be the whole diff:
+  // a file left out would route no gate and appear nowhere.
+  if (input.files) {
+    const missing = files.filter((f) => !input.files.includes(f))
+    const extra = input.files.filter((f) => !files.includes(f))
+    if (missing.length || extra.length) {
+      const mismatch = `the files passed differ from ${diffRef}: missing [${missing.join(', ')}], not in the diff [${extra.join(', ')}]`
+      log(`${mismatch}. SCOUT_FAILED is not a pass.`)
+      return { diffRef, files, gatesRun: [], findings: [], error: mismatch, verdict: 'SCOUT_FAILED' }
+    }
+  }
 }
 
 if (files.length === 0) {
-  log(`No changed files for ${diffRef} in ${checkedIn}. If that is not the checkout you meant, pass files and a diffRef that names your branch.`)
+  log(`No changed files for ${diffRef} (checked in ${checkedIn}).`)
   return { diffRef, files: [], gatesRun: [], findings: [], checkedIn, verdict: 'NO_DIFF' }
 }
 
@@ -201,7 +236,6 @@ if (skipped.length) log(`Out of scope, not run: ${skipped.join(', ')}`)
 // them, but nothing is charged with them.
 const unrouted = files.filter((f) => !GATES.some((g) => g.when.test(f)))
 if (unrouted.length) log(`No gate routes: ${unrouted.join(', ')}`)
-const uncovered = unrouted.filter((f) => !PROSE.test(f))
 
 // Zero gates is not zero findings. Returning NO_BLOCKERS here would make
 // this a gate network that cannot fail (CLAUDE.md §8): nothing looked.
@@ -251,11 +285,9 @@ const refutePrompt = (g, f) =>
   `Do NOT refute merely because the finding is hard to verify — say so in the reason and set refuted=false.\n` +
   `Set refuted=true only when you can name the specific thing the finding got wrong.`
 
-// A gate that could not read the diff, or diffed anything but the asked ref
-// (its echoed command must be `git diff <ref>`, optionally with paths), did
-// not review this diff.
-const readTheDiff = (review) =>
-  review?.diffRead !== false && `${review?.ran?.trim() ?? ''} `.startsWith(`git diff ${diffRef} `)
+// A gate that could not read the diff, or diffed anything but the asked ref,
+// did not review this diff.
+const readTheDiff = (review) => review?.diffRead !== false && diffCommand.test(review?.ran?.trim() ?? '')
 
 phase('Gates')
 const reviews = await pipeline(
@@ -322,6 +354,12 @@ if (unreadable.length) {
   log(`Could not read the diff ${diffRef}, so reviewed nothing: ${why.join(', ')}`)
 }
 
+// Coverage is per file: a file is reviewed if some gate it routes to
+// reviewed. A must-pass gate that declined leaves its charter unchecked.
+const unreviewed = files.filter((f) => !isProse(f) && !GATES.some((g) => g.when.test(f) && reviewed.includes(g.type)))
+const mustPassDeclined = declined.filter((type) => GATES.find((g) => g.type === type).tier === 'gate')
+if (unreviewed.length) log(`Reviewed by no gate: ${unreviewed.join(', ')}`)
+
 const findings = ran.flatMap((r) => r.findings)
 const blockers = findings.filter((f) => f.severity === 'BLOCKING' && f.tier === 'gate')
 const stops = ran.filter((r) => r.stopCondition).map((r) => ({ gate: r.gate, stopCondition: r.stopCondition }))
@@ -342,6 +380,7 @@ return {
   gatesUnreadable: unreadable,
   gatesDeclined: declined,
   unrouted,
+  unreviewed,
   stopConditions: stops,
   findings,
   // Structural only. CLAUDE.md §8: green gates are NOT a smoke.
@@ -354,7 +393,7 @@ return {
           ? 'STOP_CONDITION'
           : reviewed.length === 0
             ? 'NO_GATES_IN_SCOPE'
-            : declined.length || uncovered.length
+            : mustPassDeclined.length || unreviewed.length
               ? 'PARTIAL'
               : 'NO_BLOCKERS',
 }
