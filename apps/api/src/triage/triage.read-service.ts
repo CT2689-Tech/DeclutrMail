@@ -903,6 +903,12 @@ export class TriageReadService {
     // and `total_received`; the mailbox-level "is this measurable at
     // all" gate is read separately below, because a mailbox with no
     // indexed outbound would otherwise report every shield unsupported.
+    //
+    // INNER, not LEFT: a protection whose sender the index has dropped
+    // can be neither shown here nor found in Settings → Protected
+    // senders (both list `senders`), so counting it promised senders the
+    // user could never reach. The weak-keys query below requires the
+    // sender for the same reason.
     const reasonRows = await this.db
       .select({
         reason: senderPolicies.protectionReason,
@@ -911,7 +917,7 @@ export class TriageReadService {
         n: count(),
       })
       .from(senderPolicies)
-      .leftJoin(
+      .innerJoin(
         senders,
         and(
           eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
@@ -966,6 +972,13 @@ export class TriageReadService {
     const weakRows = await this.db
       .select({ senderKey: senderPolicies.senderKey })
       .from(senderPolicies)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
+          eq(senders.senderKey, senderPolicies.senderKey),
+        ),
+      )
       .where(
         and(
           eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),

@@ -834,6 +834,32 @@ describe('TriageReadService.readProtectionReview — the counts share one taxono
     // The rows are exactly the weak keys.
     expect([...review.senderKeys].sort()).toEqual(['sk_imp', 'sk_star']);
   });
+
+  it('counts only protections whose sender exists — the review and Settings can only list those', async () => {
+    await protect('sk_star', 's@x.example', 'starred');
+    // Protections left behind when the index dropped their senders. The
+    // rows the review shows, and Settings → Protected senders, both come
+    // from `senders`, so a count that includes these promises senders
+    // the user can never reach.
+    for (const [senderKey, reason] of [
+      ['sk_gone_star', 'starred'],
+      ['sk_gone_replied', 'replied'],
+      ['sk_gone_manual', 'user_defined'],
+    ] as const) {
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        isProtected: true,
+        protectionReason: reason,
+        protectionSetAt: new Date(),
+      });
+    }
+
+    const review = await svc.readProtectionReview({ mailboxAccountId: mailboxId, limit: 50 });
+
+    expect(review).toMatchObject({ strong: 0, unsupported: 0, weak: 1, manual: 0 });
+    expect([...review.senderKeys]).toEqual(['sk_star']);
+  });
 });
 
 describe('TriageReadService.listQueue — the age of the engine read (D25)', () => {
