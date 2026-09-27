@@ -55,8 +55,8 @@ git diff --name-only origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js'
 #### Empty catch blocks
 
 ```bash
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*\}'
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*//[^\n]*\}'
+git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*(\([^)]*\))?\s*\{\s*(/\*.*\*/\s*)?\}'
+git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*(\([^)]*\))?\s*\{\s*//'
 ```
 
 Empty catch = **[SUGGESTION]**. Empty catch in a security or privacy
@@ -65,7 +65,7 @@ code path = **[BLOCKING]**.
 #### Catch + console.log only
 
 ```bash
-git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 1 -A 5 'catch\s*\(' | rg -n 'console\.(log|warn|error)'
+git diff origin/main...HEAD -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 1 -A 5 'catch\s*(\([^)]*\))?\s*\{' | rg -n 'console\.(log|warn|error)'
 ```
 
 If the catch handler only does `console.*` and the file is in a

@@ -42,9 +42,12 @@
 //   Workflow({ name: 'ct-gates', args: { diffRef: 'origin/main...my-branch' } })
 //   Workflow({ name: 'ct-gates', args: { diffRef: 'abc123^..abc123' } })
 //   Workflow({ name: 'ct-gates', args: { diffRef: 'origin/main...my-branch', files: [...] } })
-// diffRef is required and may not name HEAD: agents may start in another
-// checkout, where HEAD is a different branch. Branches and commits are the
-// same in every checkout. `files`, when given, must match the diff exactly.
+// diffRef is required: a range of two named sides, `<base>...<tip>` or
+// `<base>..<tip>`. Agents may start in another checkout, so nothing that
+// resolves against a checkout is accepted: HEAD in any case, @, @{...},
+// FETCH_HEAD and the like, an empty side, or a single ref (which diffs a
+// working tree). Branches and commits are the same in every checkout.
+// `files`, when given, must match the diff exactly.
 
 export const meta = {
   name: 'ct-gates',
@@ -165,16 +168,19 @@ if (typeof input === 'string') {
 
 const diffRef = input.diffRef
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-// A `git diff` of exactly this ref, from any checkout (`git -C <dir>` or
-// `cd <dir> &&`), with any options before the ref and any paths after it.
-const diffCommand = new RegExp(`^(cd \\S+ && )?git( -C \\S+)? diff( --?[\\w-]+(=\\S+)?)* ${escapeRe(diffRef ?? '')}( |$)`)
+// Exactly this git command, from any checkout (`git -C <dir>` or
+// `cd <dir> &&`), and nothing after it: a trailing `| head`, `-- <path>` or
+// `2>/dev/null` would change what the command shows.
+const exactGit = (args) => new RegExp(`^(cd \\S+ && )?git( -C \\S+)? ${escapeRe(args)}$`)
 
-// HEAD is whatever branch the agent's checkout holds, and agents may start
-// in another checkout: a HEAD ref can review the wrong branch and pass.
+// Refs that resolve against the checkout an agent starts in, which may not
+// be the caller's: a diff of one can review the wrong branch and pass.
+const checkoutRelative = (side) => !side || /^@([~^{].*)?$|(^|[/_])head([~^@{].*)?$/i.test(side)
+const range = diffRef?.match(/^([^.\s]\S*?)\.\.\.?([^.\s]\S*)$/)
 const refError = !diffRef
   ? 'pass diffRef naming the branch or commits, e.g. origin/main...my-branch'
-  : /\bHEAD\b/.test(diffRef)
-    ? `diffRef ${diffRef} names HEAD, which depends on the checkout an agent starts in; name the branch or commit`
+  : !range || checkoutRelative(range[1]) || checkoutRelative(range[2])
+    ? `diffRef ${diffRef} must be <base>...<tip> with both sides named; HEAD, @ or an empty side depend on the checkout an agent starts in`
     : null
 if (refError) {
   log(`${refError}. SCOUT_FAILED is not a pass.`)
@@ -185,7 +191,9 @@ phase('Scout')
 let files
 let checkedIn
 {
-  const command = `git diff --name-only ${diffRef}`
+  // --no-renames lists a moved file's old path too, so moving a file out of
+  // a gate's paths still routes that gate.
+  const command = `git diff --name-only --no-renames ${diffRef}`
   const scouted = await agent(
     `Run exactly \`${command}\`, then \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\`.\n` +
       `Do not change, correct or substitute the ref, even if it looks mistyped: its failure is the answer.\n` +
@@ -200,9 +208,11 @@ let checkedIn
     ? 'the scout agent returned nothing'
     : scouted.error?.trim()
       ? scouted.error
-      : !diffCommand.test(scouted.ran.trim()) || !scouted.ran.includes('--name-only')
+      : !exactGit(command.slice(4)).test(scouted.ran.trim())
         ? `the scout ran \`${scouted.ran}\`, not \`${command}\``
-        : null
+        : scouted.files.some((f) => !f || f.startsWith('/') || f.split('/').includes('..'))
+          ? 'the scout returned paths that are not repo-relative, which no route would match'
+          : null
   if (error) {
     log(`Could not list the changed files for ${diffRef}: ${error}. SCOUT_FAILED is not a pass.`)
     return { diffRef, files: [], gatesRun: [], findings: [], error, verdict: 'SCOUT_FAILED' }
@@ -261,7 +271,8 @@ if (applicable.length === 0) {
 const chargeFor = (g) =>
   `Review the diff \`${diffRef}\` per your charter in .claude/agents/${g.type}.md.\n\n` +
   `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n` +
-  `Do not change or substitute the ref. Return \`ran\` as that diff command, verbatim as you ran it.\n` +
+  `Do not change or substitute the ref. Return \`ran\` as that whole-diff command, verbatim, with no\n` +
+  `options or paths (you may prefix it with \`git -C <dir>\` or \`cd <dir> &&\`).\n` +
   `If it fails or prints nothing, set diffRead=false, put what git printed in diffError, and return no\n` +
   `findings: a review of some other diff is not this one.\n\n` +
   `Changed files:\n${files.map((f) => `- ${f}`).join('\n')}\n\n` +
@@ -285,9 +296,10 @@ const refutePrompt = (g, f) =>
   `Do NOT refute merely because the finding is hard to verify — say so in the reason and set refuted=false.\n` +
   `Set refuted=true only when you can name the specific thing the finding got wrong.`
 
-// A gate that could not read the diff, or diffed anything but the asked ref,
-// did not review this diff.
-const readTheDiff = (review) => review?.diffRead !== false && diffCommand.test(review?.ran?.trim() ?? '')
+// A gate that could not read the diff, or read anything but the whole diff of
+// the asked ref (another ref, some paths only, no patch), did not review it.
+const gateDiff = exactGit(`diff ${diffRef}`)
+const readTheDiff = (review) => review?.diffRead !== false && gateDiff.test(review?.ran?.trim() ?? '')
 
 phase('Gates')
 const reviews = await pipeline(

@@ -63,7 +63,7 @@ const REF = 'origin/main...my-branch';
 const reviewed = { ran: `git diff ${REF}`, diffRead: true, inScope: true, findings: [] };
 const declined = { ...reviewed, inScope: false };
 const scout = (files, ref = REF) => ({
-  ran: `git diff --name-only ${ref}`,
+  ran: `git diff --name-only --no-renames ${ref}`,
   toplevel: '/repo/worktree',
   head: 'my-branch',
   files,
@@ -190,23 +190,37 @@ test('a gate that diffed some other ref did not review this diff', async () => {
   assert.deepEqual(result.gatesUnreadable, ['silent-failure-hunter']);
 });
 
-test('a gate may name its checkout, add options or add paths to the diff it echoes', async () => {
-  for (const ran of [
-    `git -C /repo/worktree diff ${REF}`,
-    `cd /repo/worktree && git diff --stat ${REF}`,
-    `git diff ${REF} -- scripts/a.mjs`,
-  ]) {
+test('a gate may name its checkout, but must echo the whole diff of the asked ref', async () => {
+  for (const ran of [`git -C /repo/worktree diff ${REF}`, `cd /repo/worktree && git diff ${REF}`]) {
     const { result } = await gateRun(['scripts/a.mjs'], () => ({ ...reviewed, ran }));
     assert.deepEqual(result.gatesRun, ['silent-failure-hunter'], ran);
     assert.equal(result.verdict, 'NO_BLOCKERS', ran);
   }
+  // A path-limited or patch-less diff does not show the whole change.
+  for (const ran of [
+    `git diff ${REF} -- scripts/a.mjs`,
+    `git diff -s ${REF}`,
+    `git diff --stat ${REF}`,
+  ]) {
+    const { result } = await gateRun(['scripts/a.mjs'], () => ({ ...reviewed, ran }));
+    assert.equal(result.verdict, 'INCOMPLETE', ran);
+  }
 });
 
-test('a ref naming HEAD, or no ref at all, is refused before any agent runs', async () => {
-  // HEAD is whichever branch the agent's checkout holds.
+test('a ref that depends on the checkout, or no ref at all, is refused before any agent runs', async () => {
+  // HEAD is whichever branch the agent's checkout holds; git fills an empty
+  // side with HEAD; @ is HEAD; a single ref diffs the working tree.
   for (const args of [
     { diffRef: 'origin/main...HEAD' },
     { diffRef: 'HEAD~1..HEAD', files: ['a.ts'] },
+    { diffRef: 'origin/main...' },
+    { diffRef: 'origin/main..' },
+    { diffRef: '...my-branch' },
+    { diffRef: 'origin/main...@' },
+    { diffRef: 'origin/main...head' },
+    { diffRef: 'origin/main...FETCH_HEAD' },
+    { diffRef: 'origin/main...@{u}' },
+    { diffRef: 'origin/main' },
     {},
   ]) {
     const { result, calls } = await runGates(args, () => reviewed);
@@ -237,6 +251,11 @@ test('a scout that failed, died or ran some other ref is SCOUT_FAILED, not NO_DI
     scout(['a.ts'], 'origin/main...my-branch'),
     // An empty error string must not skip the command check.
     { ...scout(['a.ts'], 'origin/main...my-branch'), error: '' },
+    // A suffix can hide a failure or trim the list.
+    { ...scout([], ref), ran: `git diff --name-only --no-renames ${ref} 2>/dev/null` },
+    { ...scout(['a.ts'], ref), ran: `git diff --name-only --no-renames ${ref} | head -1` },
+    // Without --no-renames a moved file lists only its new path.
+    { ...scout(['a.ts'], ref), ran: `git diff --name-only ${ref}` },
   ]) {
     const { result, calls } = await runGates({ diffRef: ref }, () => answer);
     assert.deepEqual(calls, ['scout:changed-files']);
@@ -300,4 +319,12 @@ test('a CLAUDE.md §9 stop condition reaches the verdict', async () => {
   assert.deepEqual(result.stopConditions, [
     { gate: 'privacy-auditor', stopCondition: 'adds a header to the allowlist' },
   ]);
+});
+
+test('a scout path that is not repo-relative fails the scout, since no route could match it', async () => {
+  for (const path of ['/repo/worktree/apps/api/src/gmail/x.ts', '../apps/api/src/gmail/x.ts']) {
+    const { result, calls } = await runGates({ diffRef: REF }, () => scout([path]));
+    assert.equal(result.verdict, 'SCOUT_FAILED', path);
+    assert.deepEqual(calls, ['scout:changed-files']);
+  }
 });
