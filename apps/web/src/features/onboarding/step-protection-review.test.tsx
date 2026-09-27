@@ -18,7 +18,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { TRIAGE_QUEUE } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { StepProtectionReview } from './step-protection-review';
 
 const onboarding = vi.hoisted(() => ({
