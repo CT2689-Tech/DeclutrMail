@@ -16,11 +16,14 @@
 //   BLOCKED            a gate-tier BLOCKING finding the refuters did not refute
 //   STOP_CONDITION     a gate hit a CLAUDE.md §9 stop condition
 //   NO_GATES_IN_SCOPE  every gate that ran declined the diff
-//   PARTIAL            some gates declined (gatesDeclined); the rest reviewed
+//   PARTIAL            some gates declined (gatesDeclined), or a changed file
+//                      that is not prose has no gate (unrouted)
 //   NO_BLOCKERS        every gate the files route to reviewed, no blocker
 // Only NO_BLOCKERS is clean. Files no gate routes are listed in `unrouted`
-// and are never reviewed. Agents report what they ran; this script cannot
-// run git itself, so it checks those reports instead of trusting a silence.
+// and never reviewed; prose (.md) is unrouted by design and does not stop a
+// clean verdict. Agents run git; the scout and every gate echo the command
+// they ran and this script compares it. That is the limit of what it can
+// check: an agent that misreports its own command passes.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -51,6 +54,9 @@ export const meta = {
 }
 
 const DEFAULT_REF = 'origin/main...HEAD'
+
+// Prose no gate reviews, by design: unrouted, listed, but not a coverage gap.
+const PROSE = /\.md$/
 
 // Routing mirrors CLAUDE.md §7. `tier` drives the merge verdict: a BLOCKING
 // finding from a GATE tier blocks; advisory findings never do.
@@ -94,8 +100,9 @@ const SCOUT_SCHEMA = {
 const FINDINGS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['diffRead', 'inScope', 'findings'],
+  required: ['ran', 'diffRead', 'inScope', 'findings'],
   properties: {
+    ran: { type: 'string', description: 'The `git diff` command you ran for this review, verbatim' },
     diffRead: {
       type: 'boolean',
       description: 'false if `git diff <ref>` failed or printed nothing; then return no findings',
@@ -167,7 +174,11 @@ if (!files) {
   // not an empty diff: NO_DIFF would read a mistyped ref as "nothing changed".
   const error = !scouted
     ? 'the scout agent returned nothing'
-    : scouted.error ?? (scouted.ran.trim() !== command ? `the scout ran \`${scouted.ran}\`, not \`${command}\`` : null)
+    : scouted.error?.trim()
+      ? scouted.error
+      : scouted.ran.trim() !== command
+        ? `the scout ran \`${scouted.ran}\`, not \`${command}\``
+        : null
   if (error) {
     log(`Could not list the changed files for ${diffRef}: ${error}. SCOUT_FAILED is not a pass.`)
     return { diffRef, files: [], gatesRun: [], findings: [], error, verdict: 'SCOUT_FAILED' }
@@ -183,13 +194,14 @@ if (files.length === 0) {
 
 const applicable = GATES.filter((g) => files.some((f) => g.when.test(f)))
 const skipped = GATES.filter((g) => !applicable.includes(g)).map((g) => g.type)
-log(`${files.length} changed files → ${applicable.length} gates: ${applicable.map((g) => g.type).join(', ')}`)
+log(`${files.length} changed files in ${checkedIn} → ${applicable.length} gates: ${applicable.map((g) => g.type).join(', ')}`)
 if (skipped.length) log(`Out of scope, not run: ${skipped.join(', ')}`)
 
 // No gate routes these. A gate that runs for another file may still read
 // them, but nothing is charged with them.
 const unrouted = files.filter((f) => !GATES.some((g) => g.when.test(f)))
 if (unrouted.length) log(`No gate routes: ${unrouted.join(', ')}`)
+const uncovered = unrouted.filter((f) => !PROSE.test(f))
 
 // Zero gates is not zero findings. Returning NO_BLOCKERS here would make
 // this a gate network that cannot fail (CLAUDE.md §8): nothing looked.
@@ -198,6 +210,7 @@ if (applicable.length === 0) {
   return {
     diffRef,
     files,
+    checkedIn,
     gatesRun: [],
     gatesSkipped: skipped,
     gatesFailed: [],
@@ -214,8 +227,9 @@ if (applicable.length === 0) {
 const chargeFor = (g) =>
   `Review the diff \`${diffRef}\` per your charter in .claude/agents/${g.type}.md.\n\n` +
   `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n` +
-  `Do not change or substitute the ref. If that command fails or prints nothing, set diffRead=false,\n` +
-  `put what git printed in diffError, and return no findings: a review of some other diff is not this one.\n\n` +
+  `Do not change or substitute the ref. Return \`ran\` as that diff command, verbatim as you ran it.\n` +
+  `If it fails or prints nothing, set diffRead=false, put what git printed in diffError, and return no\n` +
+  `findings: a review of some other diff is not this one.\n\n` +
   `Changed files:\n${files.map((f) => `- ${f}`).join('\n')}\n\n` +
   `Overrides for this run:\n` +
   `- Do NOT post PR comments, set status checks, or write to MISTAKES.md. Return findings only.\n` +
@@ -236,6 +250,12 @@ const refutePrompt = (g, f) =>
   `the pattern is already handled elsewhere, or the rule it invokes does not apply to this surface.\n` +
   `Do NOT refute merely because the finding is hard to verify — say so in the reason and set refuted=false.\n` +
   `Set refuted=true only when you can name the specific thing the finding got wrong.`
+
+// A gate that could not read the diff, or diffed anything but the asked ref
+// (its echoed command must be `git diff <ref>`, optionally with paths), did
+// not review this diff.
+const readTheDiff = (review) =>
+  review?.diffRead !== false && `${review?.ran?.trim() ?? ''} `.startsWith(`git diff ${diffRef} `)
 
 phase('Gates')
 const reviews = await pipeline(
@@ -279,8 +299,8 @@ const reviews = await pipeline(
     ).then((verified) => ({
       gate: g.type,
       tier: g.tier,
-      outcome: review?.diffRead === false ? 'unreadable' : review?.inScope ? 'reviewed' : 'declined',
-      diffError: review?.diffError,
+      outcome: !readTheDiff(review) ? 'unreadable' : review?.inScope ? 'reviewed' : 'declined',
+      diffError: readTheDiff(review) ? undefined : review?.diffError ?? `ran \`${review?.ran}\``,
       stopCondition: review?.stopCondition,
       findings: [...verified.filter(Boolean), ...rest],
     }))
@@ -307,13 +327,15 @@ const blockers = findings.filter((f) => f.severity === 'BLOCKING' && f.tier === 
 const stops = ran.filter((r) => r.stopCondition).map((r) => ({ gate: r.gate, stopCondition: r.stopCondition }))
 
 log(
-  `${findings.length} findings — ${blockers.length} confirmed gate blocker(s), ` +
+  `${findings.length} findings — ${blockers.length} gate blocker(s) ` +
+    `(${blockers.filter((f) => f.verification === 'CONFIRMED').length} confirmed), ` +
     `${findings.filter((f) => f.verification === 'REFUTED').length} refuted, ${stops.length} stop condition(s)`,
 )
 
 return {
   diffRef,
   files,
+  checkedIn,
   gatesRun: ran.map((r) => r.gate),
   gatesSkipped: skipped,
   gatesFailed: died,
@@ -332,7 +354,7 @@ return {
           ? 'STOP_CONDITION'
           : reviewed.length === 0
             ? 'NO_GATES_IN_SCOPE'
-            : declined.length
+            : declined.length || uncovered.length
               ? 'PARTIAL'
               : 'NO_BLOCKERS',
 }

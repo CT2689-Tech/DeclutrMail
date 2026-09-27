@@ -105,12 +105,12 @@ depending on context.
 #### Scripts, hooks and workflows
 
 ```bash
-git diff origin/main...HEAD -- '*.sh' '.husky/*' '.github/workflows/*' | rg -n '\|\|\s*(true\b|:(\s|\)|$))|2>\s*/dev/null|set \+e|continue-on-error:\s*true|always\(\)'
+git diff origin/main...HEAD -- '*.sh' '.husky/*' '.github/workflows/*' '.claude/settings.json' | rg -n '\|\|\s*(true\b|:(\s|\)|$)|exit 0\b)|>\s*/dev/null|set \+(e\b|o errexit)|continue-on-error:\s*true|always\(\)|cancelled\(\)'
 ```
 
-A command whose failure is the verdict, run under `|| true`, `2>/dev/null`,
-`set +e`, `continue-on-error` or `if: always()`, reports success whatever
-happened. **[SUGGESTION]**.
+A command whose failure is the verdict, run under `|| true`, `|| exit 0`,
+`>/dev/null` or `2>/dev/null`, `set +e`, `continue-on-error`, `always()` or
+`!cancelled()`, reports success whatever happened. **[SUGGESTION]**.
 
 An entry in an acknowledgment list (`scripts/*.tsv`) stops a watchdog from
 failing. Check that each new or widened entry matches only the cause it
