@@ -15,6 +15,7 @@ import type { LabelActionSelector } from '@declutrmail/db';
 import {
   ACTION_RECOVERY_JOB,
   actionRecoveryJobOptions,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
   labelActionJobOptions,
 } from '@declutrmail/workers';
@@ -245,7 +246,11 @@ export class ActionRecoveryService {
     }
 
     const storageKey = `recovery-${createHash('sha256').update(input.idempotencyKey).digest('hex')}`;
-    const confirmationFingerprint = recoveryConfirmationFingerprint(input.previewId, input.wakeAt);
+    const confirmationFingerprint = recoveryConfirmationFingerprint(
+      input.previewId,
+      input.wakeAt,
+      input.senderProtected === true,
+    );
     const existing = await this.findRecoveryByKey(storageKey);
     if (existing) {
       if (
@@ -494,6 +499,31 @@ export class ActionRecoveryService {
       action.status !== 'failed' ||
       action.direction !== 'forward' ||
       !isRecoverableVerb(action.verb)
+    ) {
+      throw new ConflictException({
+        code: 'ACTION_NOT_RECOVERABLE',
+        message: 'Only failed Archive, Later, or Delete actions can be reviewed here.',
+      });
+    }
+    // An Autopilot claim is not the user's action, and Activity lists no
+    // lineage that starts from one: a review of it would re-resolve the
+    // sender's current inbox into an Archive nobody asked for.
+    const [root] =
+      action.rootActionId === null
+        ? [action]
+        : await this.db
+            .select({ idempotencyKey: actionJobs.idempotencyKey })
+            .from(actionJobs)
+            .where(
+              and(
+                eq(actionJobs.id, action.rootActionId),
+                eq(actionJobs.mailboxAccountId, mailboxAccountId),
+              ),
+            )
+            .limit(1);
+    if (
+      root &&
+      AUTOPILOT_CLAIM_KEY_PREFIXES.some((prefix) => root.idempotencyKey.startsWith(prefix))
     ) {
       throw new ConflictException({
         code: 'ACTION_NOT_RECOVERABLE',
@@ -779,8 +809,19 @@ function safeErrorName(error: unknown): string {
   return error instanceof Error ? error.name : 'UnknownError';
 }
 
-function recoveryConfirmationFingerprint(previewId: string, wakeAt: Date | null): string {
+function recoveryConfirmationFingerprint(
+  previewId: string,
+  wakeAt: Date | null,
+  senderProtected: boolean,
+): string {
   return createHash('sha256')
-    .update(JSON.stringify({ previewId, wakeAt: wakeAt?.toISOString() ?? null }))
+    .update(
+      JSON.stringify({
+        previewId,
+        wakeAt: wakeAt?.toISOString() ?? null,
+        // Only when given, so a confirm without consent hashes as before.
+        ...(senderProtected ? { senderProtected: true } : {}),
+      }),
+    )
     .digest('hex');
 }

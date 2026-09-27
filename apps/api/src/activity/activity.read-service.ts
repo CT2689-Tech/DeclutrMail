@@ -381,6 +381,7 @@ export class ActivityReadService {
   }): Promise<ExecutionAttempt[]> {
     const current = alias(actionJobs, 'activity_export_current');
     const later = alias(actionJobs, 'activity_export_later');
+    const root = alias(actionJobs, 'activity_export_root');
     const outcomeTime = sql<Date>`case
       when ${current.status} = 'failed' then ${current.updatedAt}
       else ${current.createdAt}
@@ -391,7 +392,8 @@ export class ActivityReadService {
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
       lte(outcomeTime, timestamptzParam(args.snapshotCreatedAt)),
-      notAutopilotClaim(current.idempotencyKey),
+      // By the lineage's root, as the feed decides (`executionScope`).
+      notAutopilotClaim(root.idempotencyKey),
       notExists(
         this.db
           .select({ id: later.id })
@@ -431,6 +433,7 @@ export class ActivityReadService {
         recoveryAttempt: current.recoveryAttempt,
       })
       .from(current)
+      .innerJoin(root, sql`coalesce(${current.rootActionId}, ${current.id}) = ${root.id}`)
       .where(and(...whereParts))
       .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
       .limit(args.limit);
@@ -869,6 +872,7 @@ export class ActivityReadService {
     const reviewOutcome = persistedReviewOutcomeExpression();
     const failedCurrent = alias(actionJobs, 'weekly_failed_current');
     const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const failedRoot = alias(actionJobs, 'weekly_failed_root');
     const activityScope = this.senderScopeFilter(mailboxAccountId, senderQuery);
     const ruleScope = this.senderScopeFilter(mailboxAccountId, senderQuery, ruleMatchLog.senderKey);
     const jobScope = this.senderScopeFilter(
@@ -916,12 +920,19 @@ export class ActivityReadService {
       this.db
         .select({ n: count(failedCurrent.id) })
         .from(failedCurrent)
+        .innerJoin(
+          failedRoot,
+          sql`coalesce(${failedCurrent.rootActionId}, ${failedCurrent.id}) = ${failedRoot.id}`,
+        )
         .where(
           and(
             eq(failedCurrent.mailboxAccountId, mailboxAccountId),
             eq(failedCurrent.direction, 'forward'),
             inArray(failedCurrent.verb, EXECUTION_VERBS),
             eq(failedCurrent.status, 'failed'),
+            // The tile opens the feed, which leaves claim lineages out by
+            // their root (`executionScope`); count the same way.
+            notAutopilotClaim(failedRoot.idempotencyKey),
             gte(failedCurrent.updatedAt, cutoff),
             lt(failedCurrent.updatedAt, upperBound),
             ...(jobScope ? [jobScope] : []),
@@ -1549,13 +1560,6 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
 }
 
 /**
- * Encode a Date for comparison against a raw `sql` expression. Drizzle
- * only maps JS Dates through a column's encoder; a Date bound next to a
- * raw expression reaches postgres.js untyped and throws at serialization
- * ("argument must be of type string or Buffer"). PGlite (specs) accepts
- * either shape, so only the ISO-string form is safe on both drivers.
- */
-/**
  * An Autopilot claim is an `action_jobs` row the user never clicked. Its
  * outcome reaches Activity as the worker's own `autopilot` row; the claim
  * itself must not read as the user's action (the in-flight list already
@@ -1569,6 +1573,13 @@ function notAutopilotClaim(idempotencyKey: SQLWrapper): SQL {
   )!;
 }
 
+/**
+ * Encode a Date for comparison against a raw `sql` expression. Drizzle
+ * only maps JS Dates through a column's encoder; a Date bound next to a
+ * raw expression reaches postgres.js untyped and throws at serialization
+ * ("argument must be of type string or Buffer"). PGlite (specs) accepts
+ * either shape, so only the ISO-string form is safe on both drivers.
+ */
 function timestamptzParam(value: Date) {
   return sql`${value.toISOString()}::timestamptz`;
 }

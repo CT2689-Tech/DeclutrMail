@@ -1637,6 +1637,43 @@ describe('AutopilotActionWorker', () => {
       expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
     });
 
+    it('is released even when a later match fails the sweep', async () => {
+      // A retry loads approved matches only, so a claim left untouched by a
+      // match this sweep dismissed must be released before the error
+      // surfaces, or it outlives its match for good.
+      const other = await seedSender(db, mailboxId, 'other@shop.com', { inboxMessages: 2 });
+      const otherMatch = await seedApprovedMatch(db, mailboxId, ruleId, other.senderKey);
+      let dismissedMatch: string | null = null;
+      gmail.duringQuotaWait = async (ids) => {
+        if (dismissedMatch !== null) return;
+        const mine = ids[0]!.startsWith(senderKey.slice(0, 8));
+        dismissedMatch = mine ? matchId : otherMatch;
+        await protect(mine ? senderKey : other.senderKey);
+      };
+      let holds = 0;
+      const failing = buildWorker({
+        lock: {
+          run: async (_mailboxAccountId, fn) => {
+            holds += 1;
+            if (holds === 2) throw new Error('canceling statement due to lock timeout');
+            return fn();
+          },
+        },
+      });
+      failing.setObserver({
+        captureFailure: () => {},
+        captureBackgroundFailure: () => {},
+        recordBackgroundNotice: () => {},
+      });
+
+      await expect(
+        failing.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX),
+      ).rejects.toThrow('lock timeout');
+
+      expect(dismissedMatch).not.toBeNull();
+      expect(await claimOf(dismissedMatch!)).toBeUndefined();
+    });
+
     it('does not outlive a sweep that paused it, so no stale row sits in Activity', async () => {
       gmail.throwBeforeSend = new TransientError('Gmail token refresh failed');
       await sweep(NOW.getTime());

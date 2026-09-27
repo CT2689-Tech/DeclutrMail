@@ -612,6 +612,34 @@ describe('ActionRecoveryService', () => {
     expect(errorCode(error)).toBe('IDEMPOTENCY_KEY_CONFLICT');
   });
 
+  it('binds a recovery key to the "…anyway" consent it was confirmed with', async () => {
+    // A replay re-enqueues with ITS consent when the stored retry is still
+    // queued, so a replay that changed the consent is a different request.
+    const original = await seedFailedAction(db, mailbox, { key: 'original-consent-fingerprint' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+    await service.confirmPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      previewId: preview.previewId,
+      idempotencyKey: 'confirm-consent-fingerprint',
+      wakeAt: null,
+      senderProtected: true,
+    });
+
+    const error = await service
+      .confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-consent-fingerprint',
+        wakeAt: null,
+      })
+      .catch((caught: unknown) => caught);
+    expect(errorCode(error)).toBe('IDEMPOTENCY_KEY_CONFLICT');
+  });
+
   it('never offers generic recovery for unsubscribe execution', async () => {
     const action = await seedFailedAction(db, mailbox, {
       key: 'original-unsubscribe',
@@ -623,6 +651,40 @@ describe('ActionRecoveryService', () => {
       .catch((caught: unknown) => caught);
 
     expect(errorCode(error)).toBe('ACTION_NOT_RECOVERABLE');
+    expect(recoveryQueue.calls).toHaveLength(0);
+  });
+
+  it('never reviews an Autopilot claim, or a retry started from one', async () => {
+    // Activity lists neither, so no review may start from them: a claim's
+    // selection re-resolves the sender's current inbox, which would turn
+    // a retired claim into a new Archive nobody asked for.
+    const bareClaim = await seedFailedAction(db, mailbox, { key: 'autopilot-match-1' });
+    const claim = await seedFailedAction(db, mailbox, { key: 'autopilot-match-2' });
+    const [retry] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: claim.selector,
+        resolvedMessageIds: ['gmail-1'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'recovery-from-claim-1',
+        rootActionId: claim.id,
+        retryOfActionId: claim.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+      })
+      .returning();
+
+    for (const actionId of [bareClaim.id, retry!.id]) {
+      const error = await service
+        .createPreview({ mailboxAccountId: mailbox.mailboxId, actionId })
+        .catch((caught: unknown) => caught);
+      expect(errorCode(error)).toBe('ACTION_NOT_RECOVERABLE');
+    }
     expect(recoveryQueue.calls).toHaveLength(0);
   });
 });

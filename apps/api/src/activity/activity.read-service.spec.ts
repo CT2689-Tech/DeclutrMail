@@ -1961,7 +1961,7 @@ describe('ActivityReadService', () => {
     // cursor carries milliseconds (see the Protected-skip twin below).
     it('keeps every activity row sharing the page boundary timestamp', async () => {
       const ids: string[] = [];
-      for (const n of [1, 2, 3]) {
+      for (let i = 0; i < 3; i += 1) {
         ids.push(
           await seedActivity(db, {
             mailboxAccountId: mailboxA.mailboxAccountId,
@@ -2051,6 +2051,82 @@ describe('ActivityReadService', () => {
       expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[0]]));
       expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[1]]));
       expect(stats.needsAttention).toBe(0);
+    });
+
+    /**
+     * A failed claim plus a retry started from it before claims were hidden.
+     * The retry's own key is an ordinary one, so only the root can tell.
+     */
+    async function seedClaimLineage(at: Date) {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'lineage-claim',
+        'w@c.com',
+        'Lineage Claim',
+      );
+      const claim = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'lineage-claim',
+        status: 'failed',
+        createdAt: at,
+      });
+      await db
+        .update(actionJobs)
+        .set({ idempotencyKey: `autopilot-${claim}`, updatedAt: at })
+        .where(eq(actionJobs.id, claim));
+      const retry = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'lineage-claim',
+        status: 'failed',
+        createdAt: new Date(at.getTime() + 1_000),
+        rootActionId: claim,
+        retryOfActionId: claim,
+        recoveryAttempt: 1,
+      });
+      return { claim, retry };
+    }
+
+    // The weekly "Failed" tile opens the feed, so it must count exactly
+    // what the feed lists — claims out, decided by the lineage's root.
+    it('leaves Autopilot claims out of the weekly failed count', async () => {
+      const at = new Date(NOW_MS - ONE_DAY_MS);
+      await seedClaimLineage(at);
+      const userSender = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'weekly-user',
+        'u@c.com',
+        'Weekly User',
+      );
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId: userSender,
+        senderKey: 'weekly-user',
+        status: 'failed',
+        createdAt: at,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        failed: 1,
+      });
+    });
+
+    it('leaves a claim lineage out of the export, as the feed does', async () => {
+      const { claim, retry } = await seedClaimLineage(new Date(NOW_MS - ONE_DAY_MS));
+
+      const ids: string[] = [];
+      for await (const row of svc.iterateActivity(
+        { mailboxAccountId: mailboxA.mailboxAccountId, window: '30d', source: null, nowMs: NOW_MS },
+        500,
+        { createdAt: new Date(NOW_MS) },
+      )) {
+        ids.push(row.id);
+      }
+      expect(ids).not.toContain(claim);
+      expect(ids).not.toContain(retry);
     });
 
     // The in-flight twin (architecture-guardian 2026-09-27): a bulk's

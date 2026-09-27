@@ -127,8 +127,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *      marks its claim `executing` as the first request leaves (the
  *      apply worker filtered at match time, but the user may protect the
  *      sender at any point, mid-sweep included). A protected sender's
- *      match resolves to `dismissed` — a rule never STARTS an action on
- *      a protected sender (D43, defense-in-depth). A claim already in
+ *      match resolves to `dismissed` (D43, defense-in-depth). The
+ *      request leaves one round-trip after that statement, so a Protect
+ *      landing inside it is not seen: the window is as small as the send
+ *      allows, not zero. A claim already in
  *      flight still finishes, so a change Gmail may have applied keeps
  *      its Activity row and undo (see `claimIsInFlight`).
  *   5. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
@@ -770,18 +772,39 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // be taken (its 45 s `lock_timeout`) fails the sweep, as it always has:
     // BullMQ retries it with backoff, and every match already applied
     // stays applied.
-    for (const match of matches) {
-      if (!inFlightBy.get(match.matchId)) {
-        if (!match.ruleEnabled || match.ruleMode === 'paused' || !isPresetKey(match.presetKey)) {
-          result.skippedRuleInactive += 1;
-          continue;
+    try {
+      for (const match of matches) {
+        if (!inFlightBy.get(match.matchId)) {
+          if (!match.ruleEnabled || match.ruleMode === 'paused' || !isPresetKey(match.presetKey)) {
+            result.skippedRuleInactive += 1;
+            continue;
+          }
+          if ((remainingByRule.get(match.ruleId) ?? 1) <= 0) {
+            result.skippedCapped += 1;
+            continue;
+          }
         }
-        if ((remainingByRule.get(match.ruleId) ?? 1) <= 0) {
-          result.skippedCapped += 1;
-          continue;
-        }
+        await this.deps.lock.run(mailboxAccountId, () => this.processMatch(match, sweep));
       }
-      await this.deps.lock.run(mailboxAccountId, () => this.processMatch(match, sweep));
+    } catch (err) {
+      // A sweep that fails part-way still owes the release below: its retry
+      // loads approved matches only, so a claim left untouched by a match
+      // this sweep dismissed would outlive it for good. Best-effort — the
+      // sweep's own error is the one that must surface.
+      await this.releaseClaimsLeftUntouched(mailboxAccountId, loaded).catch(
+        (releaseErr: unknown) => {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'autopilot.action.release_failed',
+              worker: this.workerName,
+              mailboxAccountId,
+              message: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+            }),
+          );
+        },
+      );
+      throw err;
     }
 
     // One release for the whole sweep, in its own hold. It covers every
@@ -1149,8 +1172,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * API's Protect, a user's dismiss, the D251 demotion — still can, in the
    * gap between this read and the Gmail call, as they always could. The
    * claim transaction re-checks approved / unapplied / evidence-current,
-   * which narrows that gap for a dismiss, a demotion or a rebuild — not
-   * for Protect.
+   * which narrows that gap for a dismiss, a demotion or a rebuild; the
+   * statement that marks the claim `executing` re-checks Protect.
    *
    * `null` when the match is no longer approved-and-unapplied: applied
    * by another sweep, dismissed, or deleted by a sender-index rebuild.
@@ -1296,19 +1319,6 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * Release every label claim of these matches that never reached Gmail
-   * (`queued`, no persisted ids): a gated, refused, Protected or failed
-   * start must not leave a row the in-flight list shows as running, or one
-   * that outlives its dismissed match. A claim that may have reached Gmail
-   * is never touched. Callers hold the mailbox lock.
-   *
-   * Under the sender-index lock, like the claim itself. A rebuild spares
-   * an unexecuted match only while its claim exists, so once the claim is
-   * gone a match whose evidence the rebuild replaced would sit approved
-   * and never run (`MATCH_EVIDENCE_CURRENT` excludes it). Such a match is
-   * deleted here exactly as the rebuild would have deleted it.
-   */
-  /**
    * Take the locks for the release only when there is something to release.
    * Most sweeps leave no claim untouched, and the sender-index lock the
    * release needs can wait out a whole re-sync teardown while this holds
@@ -1344,6 +1354,18 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     );
   }
 
+  /**
+   * Release every label claim of these matches that never reached Gmail
+   * (`queued`, no persisted ids): a gated, refused, Protected or failed
+   * start must not leave a claim that outlives its match. A claim that may
+   * have reached Gmail is never touched. Callers hold the mailbox lock.
+   *
+   * Under the sender-index lock, like the claim itself. A rebuild spares
+   * an unexecuted match only while its claim exists, so once the claim is
+   * gone a match whose evidence the rebuild replaced would sit approved
+   * and never run (`MATCH_EVIDENCE_CURRENT` excludes it). Such a match is
+   * deleted here exactly as the rebuild would have deleted it.
+   */
   private async releaseUntouchedClaims(
     mailboxAccountId: string,
     matches: EligibleMatch[],
@@ -1356,6 +1378,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           .delete(actionJobs)
           .where(
             and(
+              eq(actionJobs.mailboxAccountId, mailboxAccountId),
               inArray(actionJobs.idempotencyKey, keys.slice(i, i + CLAIM_LOOKUP_CHUNK)),
               eq(actionJobs.status, 'queued'),
               sql`cardinality(${actionJobs.resolvedMessageIds}) = 0`,
@@ -1365,6 +1388,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         if (released.length === 0) return;
         await tx.delete(ruleMatchLog).where(
           and(
+            eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
             inArray(
               ruleMatchLog.id,
               released.map((r) => r.key.slice(AUTOPILOT_CLAIM_KEY_PREFIXES[0].length)),
