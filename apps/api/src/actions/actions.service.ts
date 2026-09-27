@@ -16,6 +16,7 @@ import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 // on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
 // are explicitly allowed.
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   actionJobs,
   activityLog,
   mailMessages,
@@ -27,7 +28,6 @@ import {
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
   labelActionJobOptions,
   OutboxPublisher,

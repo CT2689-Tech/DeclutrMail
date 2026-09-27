@@ -1,7 +1,13 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog, users } from '@declutrmail/db';
+import {
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
+  ruleMatchIsHeldAction,
+  ruleMatchLog,
+  users,
+} from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import {
   ERROR_CODES,
@@ -414,24 +420,22 @@ export class MailboxAccountsService {
   }
 
   /**
-   * Held-work count for the quiet surface (D96): approved autopilot
-   * actions the sweep has not applied yet (`resolution = 'approved' AND
-   * intent_applied = false`). An ACTION count (one per sender × rule) —
-   * the only held-work figure queryable today. Computed whether or not
-   * quiet is active (outside quiet it is the transient approve→sweep
-   * in-flight figure).
+   * Held-work count for the quiet surface (D96), by `ruleMatchIsHeldAction`
+   * — the definition, including what it leaves out. Approved-and-unapplied
+   * alone also counted matches no sweep ever runs or retires. An ACTION
+   * count, not a message count. Computed whether or not quiet is active.
    */
   private async quietHeldCount(mailboxAccountId: string): Promise<number> {
+    // ADR-0008 §3 exception: mailboxes reads the autopilot-owned
+    // `rule_match_log` (count only, through the shared predicate, which
+    // also reads `automation_rules`, `senders`, `sender_policies` and
+    // `action_jobs`). The AutopilotReadService facade would add a
+    // `forwardRef` module cycle for one count — AutopilotModule imports
+    // MailboxAccountsModule.
     const [held] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(ruleMatchLog)
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.resolution, 'approved'),
-          eq(ruleMatchLog.intentApplied, false),
-        ),
-      );
+      .where(and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsHeldAction()));
     return held?.count ?? 0;
   }
 

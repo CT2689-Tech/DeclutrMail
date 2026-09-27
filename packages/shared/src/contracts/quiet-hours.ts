@@ -73,13 +73,10 @@ export interface QuietHoursState {
   /** True when quiet is active RIGHT NOW (recurring window or manual quiet state). */
   activeNow: boolean;
   /**
-   * Autopilot actions currently HELD by quiet — approved matches the
-   * action sweep has not applied yet (`rule_match_log.resolution =
-   * 'approved' AND intent_applied = false`). This is an ACTION count
-   * (one per sender × rule), not a message count — the only held-work
-   * figure that is queryable today. Always the real number, computed
-   * whether or not quiet is active (outside quiet it is a transient
-   * approve→sweep in-flight figure).
+   * Autopilot actions waiting to run, counted by `ruleMatchIsHeldAction`
+   * in `@declutrmail/db` — that predicate is the definition, including
+   * what it leaves out. An ACTION count, not a message count. Computed
+   * whether or not quiet is active.
    */
   heldCount: number;
   /**
