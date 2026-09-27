@@ -906,9 +906,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await confirmArchive();
 
     await screen.findByText(/^Couldn't start Archive for those \d+ senders — nothing changed/);
-    await screen.findByText(
-      'Nothing was archived. The senders are still checked, so you can try again.',
-    );
+    await screen.findByText('Nothing was archived — try again.');
     expect(archiveButton()).not.toHaveAccessibleName('Archive 0 senders');
   });
 
@@ -1120,6 +1118,23 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     await screen.findByText(/The undo window for this archive has passed/i);
     expect(screen.queryByText(/Undo it from Recent actions/i)).not.toBeInTheDocument();
+  });
+
+  // A job that ends failed may have moved part of its mail first (it sends
+  // in chunks and keeps going after one lands): never "nothing was archived".
+  it('sends an archive that ended failed to Activity, never "nothing was archived"', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ status: 'failed', done: 0, failed: 2, affectedCount: 0 }),
+      undoStateHandler(),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText('Archive failed — check Activity before retrying.');
+    expect(screen.queryByText(/Nothing was archived/)).toBeNull();
   });
 
   it('leaves a persistent line on partial failure and disarms the succeeded senders', async () => {

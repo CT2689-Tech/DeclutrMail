@@ -1803,7 +1803,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /couldn't confirm the retry.*won't create a duplicate/i,
+      /can't tell if the retry started.*won't run twice/i,
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(2));
@@ -1909,9 +1909,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       stub(recoveryPreview({ verb: 'delete' }));
       const dialog = await openReview();
       expect(
-        await within(dialog).findByText(
-          'Delete moves these emails to Gmail Trash. You can undo it from Activity.',
-        ),
+        await within(dialog).findByText('They move to Gmail Trash. You can undo it from Activity.'),
       ).toBeInTheDocument();
       expect(within(dialog).queryByText(/does not yet reflect/)).toBeNull();
       expect(within(dialog).getByRole('button', { name: 'Delete 3' }).style.background).toBe(
@@ -1931,10 +1929,13 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       const dialog = await openReview();
       expect(
         await within(dialog).findByText(
-          'Gmail already reflects this action. Confirming updates Activity and Undo.',
+          'Gmail already reflects this action. Confirming updates Activity.',
         ),
       ).toBeInTheDocument();
-      expect(within(dialog).getByRole('button', { name: 'Mark as done' })).toBeEnabled();
+      const markDone = within(dialog).getByRole('button', { name: 'Mark as done' });
+      expect(markDone).toBeEnabled();
+      // Only a button that names Delete takes the danger tone.
+      expect(markDone.style.background).not.toBe(tokens.color.danger);
     });
 
     it('still says so when no reason comes with the review', async () => {
@@ -1979,6 +1980,24 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       );
       expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
       expect(within(dialog).getByRole('button', { name: 'Delete 3' })).toBeDisabled();
+    });
+
+    // A refusal the dialog has no words of its own for: the review cannot
+    // run, so "try again" would only be refused again (usability-editor).
+    it('sends an unexplained refusal back to Gmail, not to a retry', async () => {
+      stub(recoveryPreview({ verb: 'delete', senderProtected: false }), {
+        retry: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'RECOVERY_NOT_READY', message: 'not ready' } }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      });
+      const dialog = await openReview();
+      await userEvent.click(await within(dialog).findByRole('button', { name: 'Delete 3' }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+        "Couldn't start the retry — nothing changed. Check Gmail again.",
+      );
+      expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
     });
 
     // A legacy message-list action has no single sender to name.

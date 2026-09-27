@@ -11,7 +11,7 @@ import {
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 
 import { apiErrorCode } from '@/lib/api/client';
-import { technicalErrorDetails } from '@/lib/action-error-copy';
+import { enqueueMayHaveStarted, technicalErrorDetails } from '@/lib/action-error-copy';
 import type { ActivityRowWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
@@ -239,7 +239,11 @@ export function ActionRecoveryDialog({
           </Button>
           {ready && preview && (
             <Button
-              tone={preview.verb === 'delete' ? 'danger' : 'primary'}
+              tone={
+                preview.verb === 'delete' && (protectedNow || preview.outcome !== 'already_applied')
+                  ? 'danger'
+                  : 'primary'
+              }
               onClick={() =>
                 onConfirm({
                   ...(preview.requiresNewWakeAt && wakeAt ? { wakeAt: wakeAt.toISOString() } : {}),
@@ -378,7 +382,7 @@ function RecoveryCount({ label, value }: { label: string; value: number }) {
   return (
     <div>
       <div style={{ ...numeralStyle, fontSize: text.xl, fontWeight: 600, color: color.fg }}>
-        {value}
+        {value.toLocaleString('en-US')}
       </div>
       <div style={{ color: color.fgMuted, fontSize: text.xs }}>{label}</div>
     </div>
@@ -396,15 +400,15 @@ function RecoveryConsequence({
   // grid above already says what Gmail does not reflect yet.
   const actionCopy =
     preview.verb === 'archive'
-      ? 'Archive takes these emails out of the Inbox. You can undo it from Activity.'
+      ? 'They leave your inbox and stay in Gmail. You can undo it from Activity.'
       : preview.verb === 'delete'
-        ? 'Delete moves these emails to Gmail Trash. You can undo it from Activity.'
-        : 'Later takes these emails out of the Inbox now and returns them at the confirmed time. You can undo it from Activity.';
+        ? 'They move to Gmail Trash. You can undo it from Activity.'
+        : "They wait in Gmail's DeclutrMail/Later label, then return to your inbox. You can undo it from Activity.";
   // The retry re-applies its whole set, so an already-applied review makes
   // no promise about Gmail: mail moved back since the check moves again.
   const outcomeCopy =
     preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming updates Activity and Undo.'
+      ? 'Gmail already reflects this action. Confirming updates Activity.'
       : preview.outcome === 'partial'
         ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
         : null;
@@ -423,12 +427,6 @@ function RecoveryConsequence({
       )}
       {outcomeCopy !== null && <div style={{ marginBottom: 4 }}>{outcomeCopy}</div>}
       <div>{actionCopy}</div>
-      {preview.unavailableCount > 0 && (
-        <div style={{ marginTop: 4 }}>
-          {preview.unavailableCount} unavailable message
-          {preview.unavailableCount === 1 ? '' : 's'} will not be changed.
-        </div>
-      )}
     </div>
   );
 }
@@ -479,8 +477,20 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';
   }
-  return "We couldn't confirm the retry. Try again — it won't create a duplicate.";
+  // The same key answers a repeat, so an ambiguous failure is safe to
+  // retry; a refusal would only be refused again.
+  return enqueueMayHaveStarted(error)
+    ? "Can't tell if the retry started — try again; it won't run twice."
+    : "Couldn't start the retry — nothing changed. Check Gmail again.";
 }
+
+/** Codes whose own message names what to do instead of checking Gmail again. */
+const RECOVERY_SETTLED_CODES = new Set([
+  'LATER_TIMER_SUPERSEDED',
+  'ACTION_NO_LONGER_FAILED',
+  'IDEMPOTENCY_KEY_CONFLICT',
+  'RECOVERY_ALREADY_REQUESTED',
+]);
 
 function recoveryConfirmNeedsRecheck(error: Error): boolean {
   const code = apiErrorCode(error);
@@ -488,7 +498,9 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
     code === 'RECOVERY_PREVIEW_EXPIRED' ||
     code === 'LATER_WAKE_TIME_REQUIRED' ||
     // D245: the review the reader confirmed no longer says what is true.
-    code === 'RECOVERY_SENDER_PROTECTED'
+    code === 'RECOVERY_SENDER_PROTECTED' ||
+    // Any other refusal: this review cannot run, so start from Gmail again.
+    (!enqueueMayHaveStarted(error) && !RECOVERY_SETTLED_CODES.has(code ?? ''))
   );
 }
 

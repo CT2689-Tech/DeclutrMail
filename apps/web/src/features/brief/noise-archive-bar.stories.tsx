@@ -129,9 +129,14 @@ export const PartialFailure: Story<typeof NoiseArchiveBar> = {
     }),
 };
 
-/** Everything failed. Nothing moved, so the senders stay checked. */
+/** Every job ended failed. One may have moved part of its mail first. */
 export const Failed: Story<typeof NoiseArchiveBar> = {
   render: () => frame({ selectedCount: 4, outcome: { kind: 'failed' } }),
+};
+
+/** Refused before anything started: nothing moved, the senders stay checked. */
+export const Refused: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 4, outcome: { kind: 'refused' } }),
 };
 
 /** The status read failed — the outcome is genuinely unknown, and says so. */

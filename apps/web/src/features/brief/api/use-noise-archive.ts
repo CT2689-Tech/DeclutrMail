@@ -194,8 +194,14 @@ export type NoiseArchiveOutcome =
    * that already moved.
    */
   | { kind: 'partial'; doneCount: number; failedCount: number; total: number }
-  /** Every sibling failed. Nothing moved, so retrying is safe. */
+  /**
+   * Every sibling failed. Not "nothing moved": a job sends its mail in
+   * chunks and keeps going after one lands, so a failed one may have
+   * moved part of it. Activity has what each did.
+   */
   | { kind: 'failed' }
+  /** Refused before anything started. Nothing moved, so retrying is safe. */
+  | { kind: 'refused' }
   /**
    * Nothing ran: every sender was refused — Protected at the click or by
    * the time its job ran (D245), or no longer in this mailbox.
@@ -673,7 +679,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         setFailureOutcome({ kind: 'unconfirmed' });
         void qc.invalidateQueries({ queryKey: undoKeys.all });
       } else {
-        setFailureOutcome({ kind: 'failed' });
+        setFailureOutcome({ kind: 'refused' });
       }
       toast(
         getActionFailureCopy('enqueue', {

@@ -282,7 +282,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
       />,
     );
     expect(html).toContain('Preview · Archive');
-    expect(html).toContain('Confirm Archive');
+    expect(html).toContain('aria-label="Archive for');
     expect(html).toContain('Cancel');
     expect(html).toContain('4');
     assertNoScreenVerb(html);
@@ -321,7 +321,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
     );
     expect(html).toContain('Trash');
     expect(html).toContain('30 days');
-    expect(html).toContain('Confirm Delete');
+    expect(html).toContain('aria-label="Delete for');
     assertNoScreenVerb(html);
   });
 });

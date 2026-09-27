@@ -883,7 +883,9 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
         </>
       );
     case 'failed':
-      return <>Nothing was archived. The senders are still checked, so you can try again.</>;
+      return <>Archive failed — check Activity before retrying.</>;
+    case 'refused':
+      return <>Nothing was archived — try again.</>;
     case 'skipped':
       return (
         <>

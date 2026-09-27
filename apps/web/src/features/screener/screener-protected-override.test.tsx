@@ -64,7 +64,7 @@ describe('DecidePreview — Protected acknowledgement', () => {
     expect(notice).toHaveTextContent(/This sender is Protected/i);
     // The exact reason, not a generic "it's protected" (D245).
     expect(notice).toHaveTextContent(/you starred a message/i);
-    expect(screen.getByRole('button', { name: /Confirm Delete anyway/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete anyway/i })).toBeEnabled();
   });
 
   it('says nothing about protection for Keep — it moves no mail', () => {
@@ -80,7 +80,7 @@ describe('DecidePreview — Protected acknowledgement', () => {
     );
 
     expect(screen.queryByRole('status')).toBeNull();
-    expect(screen.getByRole('button', { name: /^Confirm Keep for/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Keep for/i })).toBeInTheDocument();
   });
 
   it('says nothing about protection for an unprotected sender', () => {
@@ -113,7 +113,7 @@ describe('DecidePreview — Protected acknowledgement', () => {
       />,
     );
 
-    const confirm = screen.getByRole('button', { name: /Confirm Delete anyway for/i });
+    const confirm = screen.getByRole('button', { name: /^Delete anyway for/i });
     expect(confirm).toBeDisabled();
     expect(confirm).toHaveTextContent('Confirming…');
   });
