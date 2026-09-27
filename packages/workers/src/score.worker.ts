@@ -208,10 +208,12 @@ export interface ScoreJobResult {
    */
   llmBlocked: number;
   /**
-   * Rows this run was allowed to buy a sentence for: a sweep's first-view
-   * set that it left on the template, or the one row an `explain` job
-   * names. `llmCalls` can only be lower — a row can qualify and still be
-   * skipped (`explainSkipped`), blocked (`llmBlocked`) or reused.
+   * Rows a sweep's first-view phase or an `explain` job was allowed to buy
+   * a sentence for: the first-view set the sweep left on the template, or
+   * the one row the job names. On those runs `llmCalls` can only be lower —
+   * a row can qualify and still be skipped (`explainSkipped`) or blocked
+   * (`llmBlocked`). A re-score that always pays (`manual_rescore`,
+   * `stale_refresh`) has no candidates; its calls are in `llmCalls` alone.
    */
   explainCandidates: number;
   /**
@@ -480,27 +482,38 @@ export function foreignIdentifierToken(reasoning: string, senderIdentity: string
  * and its confidence.
  *
  * Only Primary: the stored sentences use the word for Gmail's tab, while
- * "updates" and "promotions" are also what senders send. Allowed when the
- * word is the sender's own, the exception `foreignIdentifierToken` makes.
+ * "updates" and "promotions" are also what senders send. The sender's own
+ * name and address may still say it ("Primary Care Partners"), so they are
+ * taken out of the sentence before it is checked — the word anywhere else
+ * still counts.
  */
 export function misplacesInPrimary(
   reasoning: string,
   gmailCategory: SenderSignals['gmailCategory'],
-  senderIdentity: string,
+  sender: SenderIdentity,
 ): boolean {
-  return (
-    gmailCategory !== 'primary' &&
-    !senderIdentity.toLowerCase().includes('primary') &&
-    /\bprimary\b/i.test(reasoning)
-  );
+  if (gmailCategory === 'primary') return false;
+  let rest = reasoning.toLowerCase();
+  for (const own of [sender.displayName, sender.domain, sender.email]) {
+    const needle = own.trim().toLowerCase();
+    if (needle.length > 0) rest = rest.split(needle).join(' ');
+  }
+  return /\bprimary\b/.test(rest);
+}
+
+/** The sender's own name and address — what a sentence may quote. */
+interface SenderIdentity {
+  displayName: string;
+  domain: string;
+  email: string;
 }
 
 /**
- * The sender's own name and address — what a sentence may quote. One
+ * The identity as one string, for `foreignIdentifierToken`. One
  * definition, because a fresh sentence and a reused one must be judged
  * against the same identity.
  */
-function senderIdentity(s: { displayName: string; domain: string; email: string }): string {
+function senderIdentity(s: SenderIdentity): string {
   return `${s.displayName} ${s.domain} ${s.email}`;
 }
 
@@ -620,6 +633,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
+    // Senders counted in `templateExplanations`, so a first-view sentence
+    // below upgrades only a row counted there.
+    const countedAsTemplate = new Set<string>();
 
     for (let i = 0; i < senderKeys.length; i += SCORE_CHUNK_SIZE) {
       const chunk = senderKeys.slice(i, i + SCORE_CHUNK_SIZE);
@@ -660,15 +676,19 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         ),
       );
 
-      for (const outcome of settled) {
+      for (const [index, outcome] of settled.entries()) {
         if (outcome.status === 'rejected') {
           sendersFailed += 1;
           continue;
         }
         const written = outcome.value;
         if (!written) continue;
-        if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
-        else templateExplanations += 1;
+        if (written.generatedBy === 'llm_haiku') {
+          llmExplanations += 1;
+        } else {
+          templateExplanations += 1;
+          countedAsTemplate.add(chunk[index]!);
+        }
         if (written.timedOut) llmTimeouts += 1;
         if (written.called) llmCalls += 1;
         if (written.reused) llmReused += 1;
@@ -701,9 +721,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmBlocked += explained.blocked;
       llmCalls += explained.calls;
       llmTimeouts += explained.timeouts;
-      // A sentence written here upgrades a row counted as template above.
-      llmExplanations += explained.written;
-      templateExplanations -= explained.written;
+      // A sentence written here upgrades a row counted as template above —
+      // and only such a row: one whose scoring threw after its upsert is
+      // still template on disk, but it is counted in `sendersFailed`.
+      const upgraded = explained.writtenKeys.filter((key) => countedAsTemplate.has(key)).length;
+      llmExplanations += upgraded;
+      templateExplanations -= upgraded;
     }
 
     const decisionsWritten = llmExplanations + templateExplanations;
@@ -843,7 +866,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   ): Promise<{
     candidates: number;
     calls: number;
-    written: number;
+    /** Senders whose sentence was written. */
+    writtenKeys: string[];
     timeouts: number;
     skipped: number;
     blocked: number;
@@ -852,7 +876,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     const totals = {
       candidates: 0,
       calls: 0,
-      written: 0,
+      writtenKeys: [] as string[],
       timeouts: 0,
       skipped: 0,
       blocked: 0,
@@ -877,7 +901,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       targets.map((target) => this.limiter(() => this.explainOne(mailboxAccountId, target, batch))),
     );
     let firstError: unknown = null;
-    for (const outcome of settled) {
+    for (const [index, outcome] of settled.entries()) {
       if (outcome.status === 'rejected') {
         totals.failed += 1;
         firstError ??= outcome.reason;
@@ -894,7 +918,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       }
       // Counted as a call even when the write then threw: it was billed.
       totals.calls += 1;
-      if (value.written) totals.written += 1;
+      if (value.written) totals.writtenKeys.push(targets[index]!.senderKey);
       if (value.timedOut) totals.timeouts += 1;
       if (value.error) {
         totals.failed += 1;
@@ -1158,13 +1182,12 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         // A paragraph stored before the word ceiling existed is not worth
         // keeping: fall through to a fresh (ceiling-checked) call.
         reasoningWordCount(existing.reasoning) <= MAX_REASONING_WORDS &&
-        // Nor one that files the sender in a tab Gmail no longer uses for
-        // them — the check a fresh sentence gets in `generateProse`.
-        !misplacesInPrimary(
-          existing.reasoning,
-          signals.signals.gmailCategory,
-          senderIdentity(signals),
-        ) &&
+        // Nor one a fresh sentence would be refused for in `generateProse`:
+        // our internal vocabulary, or a tab Gmail does not use for the
+        // sender. A reused sentence gets every check a new one does, or it
+        // outlives the check by being re-stamped on every re-score.
+        foreignIdentifierToken(existing.reasoning, senderIdentity(signals)) === null &&
+        !misplacesInPrimary(existing.reasoning, signals.signals.gmailCategory, signals) &&
         existing.expiresAt > (this.deps.now ?? (() => new Date()))();
       if (reusable) {
         // Falls through to the monotonic upsert below so produced_at /
@@ -1345,10 +1368,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       this.explainTimeoutMs,
     );
     if (raced.kind === 'ok' && !raced.value) {
-      // The model answered with nothing usable: a refusal, a truncation, an
-      // empty string. Named here so a model that starts refusing everywhere
-      // is a log kind, not just a gap between two counters — and an empty
-      // string never becomes a blank reason on the user's screen.
+      // No sentence came back. The port answers `null` for every failure:
+      // a provider error or an over-long answer (the adapter logs those
+      // itself, so this line is their echo), and a model refusal, a
+      // truncation or an empty answer, which only this line names. So a
+      // model that starts refusing everywhere is a log kind, not just a gap
+      // between two counters — and an empty string never becomes a blank
+      // reason on the user's screen.
       console.warn(
         JSON.stringify({
           level: 'warn',
@@ -1366,7 +1392,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     const misplaced =
       raced.kind === 'ok' &&
       !!raced.value &&
-      misplacesInPrimary(raced.value, signals.signals.gmailCategory, identity);
+      misplacesInPrimary(raced.value, signals.signals.gmailCategory, signals);
     if (raced.kind === 'ok' && leaked === null && !misplaced) {
       return { reasoning: raced.value, timedOut: false, blocked: false };
     }

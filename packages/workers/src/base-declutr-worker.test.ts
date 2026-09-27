@@ -41,9 +41,11 @@ function fakeJob<TPayload, TResult>(opts: {
     attemptsMade: opts.attemptsMade ?? 0,
     queueName: opts.queueName ?? 'test-queue',
     ...(opts.attempts === undefined ? {} : { opts: { attempts: opts.attempts } }),
-    // The base only reads `id`, `data`, `attemptsMade`, `queueName`.
-    // Cast to keep the fake minimal — exercising `run()` exercises
-    // every field it touches.
+    // The base reads `id`, `data`, `attemptsMade`, `queueName` and
+    // `opts.attempts`. Without `attempts` the fake has no `opts` at all, so
+    // it runs the policy fallback; a real BullMQ job always carries
+    // `opts.attempts` (default 0), which the attempt-budget tests pin.
+    // Cast to keep the fake minimal.
   } as unknown as Job<TPayload, TResult>;
 }
 

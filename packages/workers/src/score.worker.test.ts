@@ -649,6 +649,31 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.generatedBy).toBe('llm_haiku');
   });
 
+  it('refuses Primary elsewhere in a sentence about a sender whose own name says it', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'deals@primaryarms.test', {
+      displayName: 'Primary Arms',
+      gmailCategory: 'promotions',
+    });
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Primary Arms deals belong in your primary inbox.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    // The name may say it; the rest of the sentence may not.
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('template');
+  });
+
   it('keeps a sentence that names a sender whose own name says Primary', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
@@ -861,6 +886,45 @@ describe('ScoreWorker — LLM port', () => {
       .from(triageDecisions)
       .where(eq(triageDecisions.senderKey, senderKey));
     expect(explained?.reasoning).toBe('Moved Tab note #2.');
+  });
+
+  it('does NOT reuse stored prose that names our internal vocabulary', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'reused-jargon@test.test', {
+      displayName: 'Reused Jargon',
+      gmailCategory: 'primary',
+    });
+    const T0 = Date.parse('2026-05-22T00:00:00Z');
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Reused Jargon writes and you read it.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    // Stands in for a sentence stored before the vocabulary check existed:
+    // same verdict, same confidence, unexpired — reusable on every other
+    // count, and re-stamped unexpired by every re-score that reuses it.
+    await db
+      .update(triageDecisions)
+      .set({ reasoning: 'The protect_engagement_based rule keeps Reused Jargon.' })
+      .where(eq(triageDecisions.senderKey, senderKey));
+
+    const quiet = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+
+    expect(quiet).toMatchObject({ llmCalls: 0, llmReused: 0, templateExplanations: 1 });
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('template');
+    expect(row?.reasoning).not.toContain('protect_engagement_based');
   });
 
   it('does NOT reuse a template row — the next sweep retries the LLM', async () => {
@@ -1871,6 +1935,51 @@ describe('ScoreWorker — explanations on demand (D24, founder 2026-09-25)', () 
       expect(row?.verdict).toBe('keep');
       expect(row?.generatedBy).toBe(firstView.includes(name) ? 'llm_haiku' : 'template');
     }
+  });
+
+  it('a first-view sentence does not re-count a sender whose scoring failed', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    await seedPrimarySenders(db, mailboxAccountId, ['Ada', 'Bea', 'Cy']);
+    // One sender's Screener write fails AFTER its decision row is upserted:
+    // the row is on disk, still template, but its scoring threw.
+    let failOnce = true;
+    const flaky = new Proxy(db, {
+      get(target, prop, receiver) {
+        if (prop === 'update') {
+          return (table: unknown) => {
+            if (table === screenerQuarantine && failOnce) {
+              failOnce = false;
+              throw new Error('screener write failed');
+            }
+            return target.update(table as never);
+          };
+        }
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
+    const { llm } = recordingLlm();
+    const worker = new ScoreWorker({
+      db: flaky,
+      llm,
+      now: () => NOW,
+      firstView: { queueRows: 3, volumeRows: 0 },
+    });
+
+    const result = await worker.processJob(
+      { mailboxAccountId, trigger: 'sync_complete', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+
+    // All three rows got a sentence, but the failed one is counted where
+    // its scoring left it — never as a template row turned LLM.
+    expect(result).toMatchObject({
+      sendersFailed: 1,
+      decisionsWritten: 2,
+      llmExplanations: 2,
+      templateExplanations: 0,
+      explainCandidates: 3,
+    });
   });
 
   it('the queue set skips a sender decided in the last 7 days, as the Triage queue does', async () => {
