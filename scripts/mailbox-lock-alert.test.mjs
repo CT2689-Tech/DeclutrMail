@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -34,18 +34,40 @@ const WORKER = {
 const OLD_PREFIX_FILTER =
   'resource.type="cloud_run_revision" AND jsonPayload.kind=~"^mailbox_lock\\."';
 
-/** Every `mailbox_lock.*` kind the API and worker code can log. */
-function emittedKinds() {
-  const root = join(here, '../apps/api/src');
+/**
+ * The lock kinds one source file logs. A `mailbox_lock.` that is not a whole
+ * quoted literal (a template, a concatenation, a kind with a dot or a digit
+ * the pattern does not expect) comes back in `unreadable`: a kind the scan
+ * cannot name would ship unclassified and never page.
+ */
+function lockKindsIn(source) {
   const kinds = new Set();
-  for (const file of readdirSync(root, { recursive: true })) {
-    if (!String(file).endsWith('.ts') || /\.(spec|test)\.ts$/.test(String(file))) continue;
-    for (const [, kind] of readFileSync(join(root, file), 'utf8').matchAll(
-      /['"`](mailbox_lock\.[a-z_]+)['"`]/g,
-    ))
-      kinds.add(kind);
+  const unreadable = [];
+  source.split('\n').forEach((text, i) => {
+    const literals = [...text.matchAll(/['"`](mailbox_lock\.[a-z0-9_]+)['"`]/g)].map((m) => m[1]);
+    literals.forEach((kind) => kinds.add(kind));
+    if ((text.match(/mailbox_lock\./g) ?? []).length !== literals.length) unreadable.push(i + 1);
+  });
+  return { kinds, unreadable };
+}
+
+/** Every `mailbox_lock.*` kind the apps and packages can log. */
+function emittedKinds() {
+  const kinds = new Set();
+  const unreadable = [];
+  for (const top of ['apps', 'packages']) {
+    for (const pkg of readdirSync(join(here, '..', top))) {
+      const root = join(here, '..', top, pkg, 'src');
+      if (!existsSync(root)) continue;
+      for (const file of readdirSync(root, { recursive: true })) {
+        if (!/\.tsx?$/.test(String(file)) || /\.(spec|test)\.tsx?$/.test(String(file))) continue;
+        const found = lockKindsIn(readFileSync(join(root, file), 'utf8'));
+        found.kinds.forEach((kind) => kinds.add(kind));
+        unreadable.push(...found.unreadable.map((n) => `${top}/${pkg}/src/${file}:${n}`));
+      }
+    }
   }
-  return kinds;
+  return { kinds, unreadable };
 }
 
 /**
@@ -86,18 +108,41 @@ function matches(filter, entry) {
 
 const line = (kind, extra = {}) => ({ resource: WORKER, jsonPayload: { kind, ...extra } });
 
+/** What GCP returns on read: proto3 JSON drops zero scalars, so `thresholdValue: 0` comes back absent. */
+function asRead(policy) {
+  return {
+    ...policy,
+    conditions: (policy.conditions ?? []).map((c) => {
+      if (!c.conditionThreshold) return c;
+      const { thresholdValue, ...rest } = c.conditionThreshold;
+      return {
+        ...c,
+        conditionThreshold: thresholdValue === 0 ? rest : { ...rest, thresholdValue },
+      };
+    }),
+  };
+}
+
 /**
  * The Logging and Monitoring APIs, in memory, refusing what the real ones
  * refused on 2026-09-26: `orderBy` spelled `openTime`, and a policy whose
  * duration breaks the reference's limits. A write that reaches a metric
- * whose filter matches counts one point; a policy watching that metric
- * opens an alert.
+ * whose filter matches counts one point, under its label if the metric
+ * extracts one; a policy watching that metric opens an alert.
+ *
+ * `miscount` makes the test metric count the lines its filter excludes,
+ * standing in for a filter that pages the wrong kind. `losePut` commits a
+ * metric PUT and then drops the response, as a client timeout would.
  */
 function fakeGcp({
   metric = null,
   policies = [],
+  channels = [ADMIN_CHANNEL],
+  snoozes = [],
   workerLine = line('stuck_mailbox_watchdog.completed'),
   openAlerts = true,
+  miscount = false,
+  losePut = false,
   failOn,
 } = {}) {
   const state = {
@@ -128,7 +173,7 @@ function fakeGcp({
   async function request(method, url, body) {
     calls.push({ method, url, body });
     const failure = failOn?.(method, url);
-    if (failure) return { status: failure, json: { error: { message: 'denied' } } };
+    if (failure) return { status: failure, json: { error: { message: `denied ${method}` } } };
     const path = url.split('?')[0];
     if (path.startsWith(metricsRoot)) {
       const name = path.slice(metricsRoot.length);
@@ -138,6 +183,8 @@ function fakeGcp({
           : { status: 404, json: {} };
       if (method === 'PUT') {
         state.metrics[name] = { ...body, name };
+        if (losePut && name.includes('_starve_'))
+          throw new Error('The operation was aborted due to timeout');
         return { status: 200, json: state.metrics[name] };
       }
       if (method === 'DELETE') {
@@ -152,9 +199,10 @@ function fakeGcp({
         : { status: 404, json: {} };
     }
     if (path === `${monitoring}/notificationChannels` && method === 'GET')
-      return page([ADMIN_CHANNEL], url, 'notificationChannels');
+      return page(channels, url, 'notificationChannels');
+    if (path === `${monitoring}/snoozes` && method === 'GET') return page(snoozes, url, 'snoozes');
     if (path === `${monitoring}/alertPolicies` && method === 'GET')
-      return page(state.policies, url, 'alertPolicies');
+      return page(state.policies.map(asRead), url, 'alertPolicies');
     if (path === `${monitoring}/alertPolicies` && method === 'POST') {
       const refused = refusePolicy(body);
       if (refused) return refused;
@@ -163,6 +211,12 @@ function fakeGcp({
       return { status: 200, json: made };
     }
     const policy = state.policies.find((p) => path === `${MONITORING}/${p.name}`);
+    if (policy && method === 'PATCH') {
+      const refused = refusePolicy(body);
+      if (refused) return refused;
+      state.policies[state.policies.indexOf(policy)] = { ...body, name: policy.name };
+      return { status: 200, json: body };
+    }
     if (policy && method === 'DELETE') {
       state.policies.splice(state.policies.indexOf(policy), 1);
       return { status: 200, json: {} };
@@ -181,10 +235,15 @@ function fakeGcp({
     }
     if (path === `${monitoring}/timeSeries` && method === 'GET') {
       const type = new URL(url).searchParams.get('filter').match(/user\/([\w]+)"/)[1];
-      const count = state.points[type] ?? 0;
+      const byLabel = state.points[type] ?? {};
       return {
         status: 200,
-        json: count ? { timeSeries: [{ points: [{ value: { int64Value: String(count) } }] }] } : {},
+        json: {
+          timeSeries: Object.entries(byLabel).map(([kind, count]) => ({
+            metric: { labels: kind === '' ? {} : { kind } },
+            points: [{ value: { int64Value: String(count) } }],
+          })),
+        },
       };
     }
     if (path === `${LOGGING}/entries:list` && method === 'POST')
@@ -193,8 +252,13 @@ function fakeGcp({
       for (const entry of body.entries) {
         state.written.push(entry);
         for (const m of Object.values(state.metrics)) {
-          if (!matches(m.filter, entry)) continue;
-          state.points[m.name] = (state.points[m.name] ?? 0) + 1;
+          const counts = matches(m.filter, entry) !== (miscount && m.name.includes('_starve_'));
+          if (!counts) continue;
+          const label = m.labelExtractors?.kind ? entry.jsonPayload.kind : '';
+          state.points[m.name] = {
+            ...state.points[m.name],
+            [label]: (state.points[m.name]?.[label] ?? 0) + 1,
+          };
           for (const p of state.policies) {
             if (
               !openAlerts ||
@@ -222,19 +286,37 @@ const prodPolicy = {
   ...expectedPolicy(ADMIN_CHANNEL.name),
   name: `projects/${PROJECT}/alertPolicies/9`,
 };
-const quiet = { log: () => {} };
+const NOW = Date.parse('2026-09-27T02:00:00Z');
+const quiet = { log: () => {}, now: NOW };
 const noWait = async () => {};
+const starve = (gcp, runId = 'r1') =>
+  starveTest({ project: PROJECT, request: gcp.request, runId, sleep: noWait, log: () => {} });
 
 test('every mailbox_lock kind the code logs is classified as page or no-page', () => {
-  const emitted = emittedKinds();
+  const { kinds, unreadable } = emittedKinds();
+  assert.deepEqual(unreadable, [], 'a lock kind the scan cannot read would ship unclassified');
   const classified = new Set([...Object.keys(PAGE_KINDS), ...Object.keys(NO_PAGE_KINDS)]);
-  for (const kind of emitted)
+  for (const kind of kinds)
     assert.ok(classified.has(kind), `${kind} is logged but classified neither way`);
   // A blind scan would pass the loop above: require it to find every kind that pages.
   for (const kind of Object.keys(PAGE_KINDS))
-    assert.ok(emitted.has(kind), `${kind} pages but nothing logs it`);
+    assert.ok(kinds.has(kind), `${kind} pages but nothing logs it`);
   for (const kind of Object.keys(NO_PAGE_KINDS))
     assert.ok(!(kind in PAGE_KINDS), `${kind} is both`);
+});
+
+test('a lock kind the scan cannot read as a literal is flagged, not skipped', () => {
+  const { kinds, unreadable } = lockKindsIn(
+    [
+      "log({ kind: 'mailbox_lock.acquire_failed' })",
+      'log({ kind: `mailbox_lock.${phase}_failed` })',
+      "log({ kind: 'mailbox_lock.' + name })",
+      "log({ kind: 'mailbox_lock.pool.exhausted' })",
+      "log({ kind: 'mailbox_lock.acquire_failed_v2' })",
+    ].join('\n'),
+  );
+  assert.deepEqual([...kinds], ['mailbox_lock.acquire_failed', 'mailbox_lock.acquire_failed_v2']);
+  assert.deepEqual(unreadable, [2, 3, 4]);
 });
 
 test('the metric counts exactly the page kinds, and never a starve-test line', () => {
@@ -255,6 +337,10 @@ test('verify reads a correctly wired project clean and writes nothing', async ()
   const gcp = fakeGcp({ metric: expectedMetric(), policies: [prodPolicy] });
   assert.deepEqual(await run({ project: PROJECT, request: gcp.request, ...quiet }), []);
   assert.ok(gcp.calls.every((c) => c.method === 'GET'));
+  assert.ok(
+    gcp.calls.some((c) => c.url.includes('/snoozes')),
+    'verify must read snoozes',
+  );
 });
 
 test('verify names the prefix filter, and --apply repairs only the metric', async () => {
@@ -275,6 +361,68 @@ test('verify names the prefix filter, and --apply repairs only the metric', asyn
     [`PUT metrics/${METRIC_NAME}`],
   );
   assert.equal(gcp.state.metrics[METRIC_NAME].filter, LOG_FILTER);
+});
+
+test('verify names every way the policy could fail to email, and --apply repairs the condition', async () => {
+  const threshold = (edit) => ({
+    conditions: [
+      {
+        ...prodPolicy.conditions[0],
+        conditionThreshold: edit(prodPolicy.conditions[0].conditionThreshold),
+      },
+    ],
+  });
+  const cases = [
+    [{ enabled: false }, /is not enabled/],
+    [{ notificationChannels: [`projects/${PROJECT}/notificationChannels/999`] }, /does not notify/],
+    [{ alertStrategy: { notificationPrompts: ['CLOSED'] } }, /OPENED/],
+    [threshold((t) => ({ ...t, thresholdValue: 1e12 })), /would not page/],
+    [threshold((t) => ({ ...t, trigger: { count: 5 } })), /would not page/],
+    [
+      threshold((t) => ({
+        ...t,
+        aggregations: [{ ...t.aggregations[0], alignmentPeriod: '86400s' }],
+      })),
+      /would not page/,
+    ],
+  ];
+  for (const [edit, named] of cases) {
+    const gcp = fakeGcp({ metric: expectedMetric(), policies: [{ ...prodPolicy, ...edit }] });
+    const problems = await run({ project: PROJECT, request: gcp.request, ...quiet });
+    assert.equal(problems.length, 1, JSON.stringify(edit));
+    assert.match(problems[0], named);
+    assert.deepEqual(
+      await run({ project: PROJECT, request: gcp.request, apply: true, ...quiet }),
+      [],
+      JSON.stringify(edit),
+    );
+  }
+});
+
+test('a snooze or a missing admin channel is named, and --apply does not paper over it', async () => {
+  const snoozed = fakeGcp({
+    metric: expectedMetric(),
+    policies: [prodPolicy],
+    snoozes: [
+      {
+        criteria: { policies: [prodPolicy.name] },
+        interval: { startTime: '2026-09-27T00:00:00Z', endTime: '2026-09-28T00:00:00Z' },
+      },
+    ],
+  });
+  assert.match(
+    (await run({ project: PROJECT, request: snoozed.request, apply: true, ...quiet }))[0],
+    /snoozed until 2026-09-28/,
+  );
+  const noChannel = fakeGcp({
+    metric: expectedMetric(),
+    policies: [prodPolicy],
+    channels: [{ ...ADMIN_CHANNEL, enabled: false }],
+  });
+  assert.match(
+    (await run({ project: PROJECT, request: noChannel.request, apply: true, ...quiet }))[0],
+    /one enabled email channel/,
+  );
 });
 
 test('--apply on an empty project creates a policy the real API accepts', async () => {
@@ -301,24 +449,15 @@ test('the starve test refuses to run while the production metric would count its
     metric: { ...expectedMetric(), filter: OLD_PREFIX_FILTER },
     policies: [prodPolicy],
   });
-  await assert.rejects(
-    starveTest({ project: PROJECT, request: gcp.request, runId: 'r1', sleep: noWait, ...quiet }),
-    /Run --apply first/,
-  );
+  await assert.rejects(starve(gcp), /Run --apply first/);
   assert.ok(gcp.calls.every((c) => c.method === 'GET'));
 });
 
-test('the starve test passes when only the failure line counts, and deletes what it made', async () => {
+test('the starve test passes only when the failure line counted and the timing line did not', async () => {
   const gcp = fakeGcp({ metric: expectedMetric(), policies: [prodPolicy] });
-  const report = await starveTest({
-    project: PROJECT,
-    request: gcp.request,
-    runId: 'r1',
-    sleep: noWait,
-    ...quiet,
-  });
+  const report = await starve(gcp);
   assert.equal(report.result, 'PASS');
-  assert.equal(report.counted, 1);
+  assert.deepEqual(report.counted, { 'mailbox_lock.acquire_failed': 1 });
   assert.ok(report.alert.id);
   assert.deepEqual(report.cleanup, [
     'deleted alertPolicies/1',
@@ -328,24 +467,54 @@ test('the starve test passes when only the failure line counts, and deletes what
   assert.deepEqual(gcp.state.policies, [prodPolicy]);
   // The production policy never saw either test line.
   assert.ok(gcp.state.alerts.every((a) => a.policy.name !== prodPolicy.name));
-  assert.deepEqual(
-    gcp.state.written.map((e) => e.jsonPayload.kind),
-    ['mailbox_lock.slow_operation', 'mailbox_lock.acquire_failed'],
+});
+
+test('the starve test fails when the alert opened on the timing line instead', async () => {
+  const report = await starve(
+    fakeGcp({ metric: expectedMetric(), policies: [prodPolicy], miscount: true }),
   );
+  assert.match(report.result, /^FAIL: counted \{"mailbox_lock.slow_operation":1\}/);
 });
 
 test('the starve test fails, and still cleans up, when no alert opens', async () => {
   const gcp = fakeGcp({ metric: expectedMetric(), policies: [prodPolicy], openAlerts: false });
-  const report = await starveTest({
-    project: PROJECT,
-    request: gcp.request,
-    runId: 'r2',
-    sleep: noWait,
-    ...quiet,
-  });
+  const report = await starve(gcp, 'r2');
   assert.match(report.result, /^FAIL: Timed out waiting for the test alert/);
   assert.deepEqual(Object.keys(gcp.state.metrics), [METRIC_NAME]);
   assert.deepEqual(gcp.state.policies, [prodPolicy]);
+});
+
+test('a starve test the API refuses reports ERROR, not FAIL', async () => {
+  const gcp = fakeGcp({
+    metric: expectedMetric(),
+    policies: [prodPolicy],
+    failOn: (m, url) => (url.includes('/alerts?') ? 403 : 0),
+  });
+  const report = await starve(gcp, 'r3');
+  assert.match(report.result, /^ERROR: .*HTTP 403/);
+  assert.deepEqual(Object.keys(gcp.state.metrics), [METRIC_NAME]);
+});
+
+test('a test metric whose create response was lost is still deleted', async () => {
+  const gcp = fakeGcp({ metric: expectedMetric(), policies: [prodPolicy], losePut: true });
+  const report = await starve(gcp, 'r4');
+  assert.match(report.result, /^ERROR: .*aborted/);
+  assert.deepEqual(report.cleanup, [`deleted metrics/${METRIC_NAME}_starve_r4`]);
+  assert.deepEqual(Object.keys(gcp.state.metrics), [METRIC_NAME]);
+});
+
+test('a delete the API refuses fails the run and keeps its reason', async () => {
+  const gcp = fakeGcp({
+    metric: expectedMetric(),
+    policies: [prodPolicy],
+    failOn: (m) => (m === 'DELETE' ? 403 : 0),
+  });
+  const report = await starve(gcp, 'r5');
+  assert.match(report.result, /^CLEANUP FAILED/);
+  assert.ok(
+    report.cleanup.every((l) => /FAILED to delete .*HTTP 403 .*denied DELETE/.test(l)),
+    JSON.stringify(report.cleanup),
+  );
 });
 
 test('the CLI with no GCP access exits 2 and does not claim the page is configured', () => {

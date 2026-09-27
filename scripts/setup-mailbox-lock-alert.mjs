@@ -19,8 +19,9 @@
  *   node scripts/setup-mailbox-lock-alert.mjs [project] --apply        repair the metric, then verify
  *   node scripts/setup-mailbox-lock-alert.mjs [project] --starve-test  prove it on production data
  *
- * --apply rewrites only the metric, whose filter decides what pages. The
- * alert policy is created when missing and otherwise left as it is.
+ * --apply rewrites the metric, whose filter decides what pages, and creates
+ * or repairs the policy only where what decides a page has drifted (its
+ * channel, prompts or condition). A snooze is reported, never lifted.
  * --starve-test creates a test metric and a test policy with no
  * notification channel, writes one timing line and one failure line that
  * the production metric does not count, requires the test alert to count
@@ -122,79 +123,178 @@ export function expectedPolicy(channelName) {
  * `{ status, json }`; a refused read rejects, so a check that could not
  * look never reports what it did not see.
  */
-export async function run({ project, request, apply = false, log = console.log }) {
-  let state = await inspect(project, request);
+export async function run({
+  project,
+  request,
+  apply = false,
+  log = console.log,
+  now = Date.now(),
+}) {
+  let state = await inspect(project, request, now);
   if (apply) {
     await converge(project, request, state, log);
-    state = await inspect(project, request);
+    state = await inspect(project, request, now);
   }
   for (const line of state.passed) log(`✓ ${line}`);
   for (const problem of state.problems) log(`✗ ${problem}`);
   return state.problems;
 }
 
-async function inspect(project, request) {
+async function inspect(project, request, now) {
   const problems = [];
   const passed = [];
   const metricUrl = `${LOGGING}/projects/${project}/metrics/${METRIC_NAME}`;
   const got = await request('GET', metricUrl);
   const metric = got.status === 404 ? null : ok(got, 'GET', metricUrl);
   if (!metric) problems.push(`log metric ${METRIC_NAME} does not exist`);
-  else if (metric.disabled) problems.push(`log metric ${METRIC_NAME} is disabled`);
-  else if (metric.filter !== LOG_FILTER)
-    problems.push(`log metric ${METRIC_NAME} filter is ${metric.filter}; expected ${LOG_FILTER}`);
-  else passed.push(`log metric ${METRIC_NAME} counts only ${Object.keys(PAGE_KINDS).join(', ')}`);
+  else {
+    const drift = metricDrift(metric);
+    problems.push(...drift);
+    if (!drift.length)
+      passed.push(`log metric ${METRIC_NAME} counts only ${Object.keys(PAGE_KINDS).join(', ')}`);
+  }
 
-  const policies = (
-    await listAll(request, `${MONITORING}/projects/${project}/alertPolicies`, 'alertPolicies')
-  ).filter((p) => p.displayName === POLICY_DISPLAY_NAME);
+  const monitoring = `${MONITORING}/projects/${project}`;
+  // Unset `enabled` is not assumed on.
+  const channels = (
+    await listAll(request, `${monitoring}/notificationChannels`, 'notificationChannels')
+  ).filter(
+    (c) => c.type === 'email' && c.labels?.email_address === ADMIN_EMAIL && c.enabled === true,
+  );
+  const channel = channels.length === 1 ? channels[0] : null;
+  if (!channel)
+    problems.push(
+      `expected one enabled email channel for ${ADMIN_EMAIL}, found ${channels.length}`,
+    );
+
+  const policies = (await listAll(request, `${monitoring}/alertPolicies`, 'alertPolicies')).filter(
+    (p) => p.displayName === POLICY_DISPLAY_NAME,
+  );
   const policy = policies.length === 1 ? policies[0] : null;
   if (policies.length === 0) problems.push(`alert policy "${POLICY_DISPLAY_NAME}" does not exist`);
-  else if (policies.length > 1)
-    problems.push(`${policies.length} policies named "${POLICY_DISPLAY_NAME}"`);
-  else if (policy.enabled !== true)
-    problems.push(`alert policy "${POLICY_DISPLAY_NAME}" is not enabled`);
-  else if (!policy.notificationChannels?.length)
-    problems.push(`alert policy "${POLICY_DISPLAY_NAME}" has no notification channel`);
-  else if (
-    !policy.conditions?.some((c) =>
-      c.conditionThreshold?.filter?.includes(`logging.googleapis.com/user/${METRIC_NAME}"`),
-    )
+  if (policies.length > 1)
+    problems.push(`${policies.length} policies are named "${POLICY_DISPLAY_NAME}"`);
+  if (policy) {
+    const drift = policyDrift(policy, channel);
+    for (const snooze of await listAll(request, `${monitoring}/snoozes`, 'snoozes')) {
+      if (!(snooze.criteria?.policies ?? []).includes(policy.name)) continue;
+      // An unreadable interval counts as active: fail closed.
+      const start = Date.parse(snooze.interval?.startTime ?? '');
+      const end = Date.parse(snooze.interval?.endTime ?? '');
+      if (!(start > now) && !(end <= now))
+        drift.push(
+          `alert policy "${POLICY_DISPLAY_NAME}" is snoozed until ${snooze.interval?.endTime ?? '(unknown)'}`,
+        );
+    }
+    problems.push(...drift);
+    if (!drift.length)
+      passed.push(
+        `alert policy "${POLICY_DISPLAY_NAME}" emails ${ADMIN_EMAIL} on the first failure line`,
+      );
+  }
+  return { problems, passed, metric, channel, policies, policy };
+}
+
+/** GCP may store a filter with different spacing around `=`; compare meaning, not spaces. */
+function normalizeFilter(filter) {
+  return typeof filter === 'string'
+    ? filter
+        .replace(/\s*=\s*/g, '=')
+        .replace(/\s+/g, ' ')
+        .trim()
+    : filter;
+}
+
+function metricDrift(metric) {
+  const drift = [];
+  if (metric.disabled === true) drift.push(`log metric ${METRIC_NAME} is disabled`);
+  if (normalizeFilter(metric.filter) !== normalizeFilter(LOG_FILTER))
+    drift.push(`log metric ${METRIC_NAME} filter is ${metric.filter}; expected ${LOG_FILTER}`);
+  if (
+    metric.metricDescriptor?.metricKind !== 'DELTA' ||
+    metric.metricDescriptor?.valueType !== 'INT64'
   )
-    problems.push(`alert policy "${POLICY_DISPLAY_NAME}" does not watch ${METRIC_NAME}`);
-  else passed.push(`alert policy "${POLICY_DISPLAY_NAME}" watches it and notifies a channel`);
-  return { problems, passed, metric, policies };
+    drift.push(`log metric ${METRIC_NAME} is not a DELTA INT64 counter`);
+  return drift;
+}
+
+/**
+ * Compare what decides whether an email goes out with the known-good
+ * policy, never a list of known-bad shapes. Proto3 JSON drops zeros on
+ * read, so an absent threshold is 0 and an absent duration is 0s.
+ */
+function policyDrift(policy, channel) {
+  const name = `alert policy "${POLICY_DISPLAY_NAME}"`;
+  const drift = [];
+  if (policy.enabled !== true) drift.push(`${name} is not enabled`);
+  if (channel && !(policy.notificationChannels ?? []).includes(channel.name))
+    drift.push(`${name} does not notify ${ADMIN_EMAIL}`);
+  const prompts = policy.alertStrategy?.notificationPrompts;
+  if (prompts && !prompts.includes('OPENED'))
+    drift.push(
+      `${name} does not include OPENED in notificationPrompts, so a new incident sends nothing`,
+    );
+  const conditions = policy.conditions ?? [];
+  const got = conditions.length === 1 ? conditions[0].conditionThreshold : undefined;
+  if (!got) {
+    drift.push(
+      `${name} must have exactly one threshold condition on ${METRIC_NAME}; it has ${conditions.length} condition(s)`,
+    );
+    return drift;
+  }
+  const want = lockCondition(METRIC_NAME).conditionThreshold;
+  const shape = (t) =>
+    JSON.stringify({
+      filter: normalizeFilter(t.filter),
+      comparison: t.comparison,
+      thresholdValue: t.thresholdValue ?? 0,
+      duration: t.duration ?? '0s',
+      trigger: t.trigger?.percent !== undefined ? t.trigger : (t.trigger?.count ?? 1),
+      aggregations: (t.aggregations ?? []).map((a) => [
+        a.alignmentPeriod,
+        a.perSeriesAligner,
+        a.crossSeriesReducer,
+        a.groupByFields ?? [],
+      ]),
+    });
+  if (shape(got) !== shape(want))
+    drift.push(
+      `${name} would not page on the first failure line as designed: its condition is ${JSON.stringify(got)}`,
+    );
+  return drift;
 }
 
 async function converge(project, request, state, log) {
-  if (state.metric?.filter !== LOG_FILTER || state.metric?.disabled) {
+  if (!state.metric || metricDrift(state.metric).length) {
     const url = `${LOGGING}/projects/${project}/metrics/${METRIC_NAME}`;
     // PUT is the Logging API create-or-update for a named metric.
     ok(await request('PUT', url, expectedMetric()), 'PUT', url);
     log(`→ log metric ${METRIC_NAME} now counts only the page kinds`);
   }
-  if (state.policies.length > 0) {
-    log(`→ alert policy "${POLICY_DISPLAY_NAME}" exists; left as it is`);
+  if (!state.channel) {
+    log(`→ policy NOT created or repaired: no single enabled ${ADMIN_EMAIL} email channel`);
     return;
   }
-  const channels = (
-    await listAll(
-      request,
-      `${MONITORING}/projects/${project}/notificationChannels`,
-      'notificationChannels',
-    )
-  ).filter(
-    (c) => c.type === 'email' && c.labels?.email_address === ADMIN_EMAIL && c.enabled === true,
-  );
-  if (channels.length !== 1) {
-    log(
-      `→ policy NOT created: expected one enabled ${ADMIN_EMAIL} email channel, found ${channels.length}`,
-    );
+  if (state.policies.length > 1) {
+    log('→ policy NOT repaired: delete the duplicates first');
     return;
   }
   const url = `${MONITORING}/projects/${project}/alertPolicies`;
-  ok(await request('POST', url, expectedPolicy(channels[0].name)), 'POST', url);
-  log(`→ created alert policy "${POLICY_DISPLAY_NAME}"`);
+  if (!state.policy) {
+    ok(await request('POST', url, expectedPolicy(state.channel.name)), 'POST', url);
+    log(`→ created alert policy "${POLICY_DISPLAY_NAME}"`);
+  } else if (policyDrift(state.policy, state.channel).length) {
+    const target = `${MONITORING}/${state.policy.name}`;
+    ok(
+      await request('PATCH', target, {
+        ...expectedPolicy(state.channel.name),
+        name: state.policy.name,
+      }),
+      'PATCH',
+      target,
+    );
+    log(`→ repaired alert policy "${POLICY_DISPLAY_NAME}"`);
+  } else log(`→ alert policy "${POLICY_DISPLAY_NAME}" already pages as designed; left as it is`);
 }
 
 /** Query string for one page of alerts.list, newest first; orderBy takes `open_time`, not `openTime`. */
@@ -204,11 +304,14 @@ function alertsPage(pageToken) {
   return query;
 }
 
+/** What the starve test was waiting for never happened: the check ran and failed. */
+class TimedOut extends Error {}
+
 async function waitFor(what, check, { timeoutMs, sleep }) {
   for (let waited = 0; ; waited += 30_000) {
     const found = await check();
     if (found) return found;
-    if (waited >= timeoutMs) throw new Error(`Timed out waiting for ${what}`);
+    if (waited >= timeoutMs) throw new TimedOut(`Timed out waiting for ${what}`);
     await sleep(30_000);
   }
 }
@@ -257,7 +360,16 @@ export async function starveTest({
     name: metricName,
     description: `TEST ONLY — mailbox-lock starve test ${runId}; deleted when the run ends.`,
     filter: `${RESOURCE} AND ${KINDS} AND jsonPayload.starveTest="${runId}"`,
-    metricDescriptor: { metricKind: 'DELTA', valueType: 'INT64', unit: '1' },
+    // Labelled by kind, so the count says which of the two lines it took.
+    metricDescriptor: {
+      metricKind: 'DELTA',
+      valueType: 'INT64',
+      unit: '1',
+      labels: [
+        { key: 'kind', valueType: 'STRING', description: 'jsonPayload.kind of the counted line' },
+      ],
+    },
+    labelExtractors: { kind: 'EXTRACT(jsonPayload.kind)' },
   };
   const policy = {
     displayName: `TEST ONLY — mailbox lock starve test ${runId}`,
@@ -328,19 +440,25 @@ export async function starveTest({
       'interval.startTime': since,
       'interval.endTime': new Date(now().getTime() + 60 * 1000).toISOString(),
     });
-    const points = (
-      ok(await request('GET', `${monitoring}/timeSeries?${series}`), 'GET', 'timeSeries')
-        .timeSeries ?? []
-    ).flatMap((s) => s.points ?? []);
-    report.counted = points.reduce((sum, p) => sum + Number(p.value?.int64Value ?? 0), 0);
+    report.counted = {};
+    for (const s of ok(
+      await request('GET', `${monitoring}/timeSeries?${series}`),
+      'GET',
+      'timeSeries',
+    ).timeSeries ?? []) {
+      const kind = s.metric?.labels?.kind ?? '(unlabelled)';
+      for (const p of s.points ?? [])
+        report.counted[kind] = (report.counted[kind] ?? 0) + Number(p.value?.int64Value ?? 0);
+    }
+    const want = { 'mailbox_lock.acquire_failed': 1 };
     report.result =
-      report.counted === 1
+      JSON.stringify(report.counted) === JSON.stringify(want)
         ? 'PASS'
-        : `FAIL: counted ${report.counted} of the 2 test lines, expected only the failure`;
+        : `FAIL: counted ${JSON.stringify(report.counted)}; expected only ${JSON.stringify(want)}`;
   } catch (err) {
-    // The alert never opening is the thing under test failing, not a
-    // failure to check: report it as FAIL, after cleanup.
-    report.result = `FAIL: ${err.message}`;
+    // Waiting in vain is the thing under test failing (exit 1). Anything
+    // else, such as a refused API call, means it could not check (exit 2).
+    report.result = `${err instanceof TimedOut ? 'FAIL' : 'ERROR'}: ${err.message}`;
   } finally {
     report.cleanup = [];
     try {
@@ -352,12 +470,25 @@ export async function starveTest({
     } catch (err) {
       report.cleanup.push(`FAILED to list policies for run ${runId}: ${err.message}`);
     }
+    // So does a metric whose PUT committed after the client gave up on it.
+    const metricUrl = `${metrics}/${metricName}`;
+    if (!created.includes(metricUrl)) {
+      const res = await request('GET', metricUrl).catch((err) => ({
+        status: 0,
+        json: String(err),
+      }));
+      if (res.status === 200) created.unshift(metricUrl);
+      else if (res.status !== 404)
+        report.cleanup.push(
+          `FAILED to check for ${metricUrl}: HTTP ${res.status} ${JSON.stringify(res.json).slice(0, 200)}`,
+        );
+    }
     for (const url of created.reverse()) {
       const res = await request('DELETE', url).catch((err) => ({ status: 0, json: String(err) }));
       report.cleanup.push(
         res.status >= 200 && res.status < 300
           ? `deleted ${url.split('/').slice(-2).join('/')}`
-          : `FAILED to delete ${url}: HTTP ${res.status}`,
+          : `FAILED to delete ${url}: HTTP ${res.status} ${JSON.stringify(res.json).slice(0, 200)}`,
       );
     }
     // A leftover test policy stays in production, so a leak fails the run
@@ -407,7 +538,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     const request = gcpHttp(gcpToken());
     if (args.includes('--starve-test')) {
       const report = await starveTest({ project, request, runId: Date.now().toString(36) });
-      process.exit(report.result === 'PASS' ? 0 : 1);
+      process.exit(report.result === 'PASS' ? 0 : report.result.startsWith('ERROR') ? 2 : 1);
     }
     const problems = await run({ project, request, apply: args.includes('--apply') });
     if (problems.length) {
