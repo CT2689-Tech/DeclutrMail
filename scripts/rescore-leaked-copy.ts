@@ -1,7 +1,8 @@
 #!/usr/bin/env tsx
 /**
  * rescore-leaked-copy.ts — re-score the senders whose stored explanation
- * names an internal cascade rule.
+ * a fresh one would be refused for: it names an internal cascade rule, or
+ * it puts a sender Gmail files outside Primary in the Primary inbox.
  *
  * WHY THIS EXISTS
  *
@@ -16,18 +17,26 @@
  * eventually, one sender at a time. This script clears the backlog in
  * one pass instead of waiting for someone to open 440 sender pages.
  *
+ * The same holds for the Primary check (2026-09-26): the model wrote "the
+ * primary inbox" for the inbox itself, including for senders Gmail files
+ * in Updates. New and reused sentences are checked now; stored ones keep
+ * their copy until re-scored — 28 rows on production that day, all past
+ * their TTL, so re-explained only where a surface refreshes a stale read.
+ *
  * WHAT IT DOES
  *
  * Finds `triage_decisions` rows whose `reasoning` contains an
  * identifier-shaped token that is NOT part of the sender's own name or
- * address, and enqueues one `manual_rescore` job per (mailbox, sender).
- * The worker rewrites the row; nothing here writes to the database.
+ * address, or whose LLM sentence says "primary" (outside the sender's own
+ * name or address) for a sender whose `gmail_category` is not 'primary',
+ * and enqueues one `manual_rescore` job per (mailbox, sender). The worker
+ * rewrites the row; nothing here writes to the database.
  *
- * That rule mirrors the worker's `foreignIdentifierToken`. A known-id
- * list would miss the tokens the model invented in our house style
- * (`protect_engagement_based` is in 100+ rows and zero lines of source);
- * a bare snake_case match would sweep up senders literally named
- * `ife_insurance_india`.
+ * The rules mirror the worker's `foreignIdentifierToken` and
+ * `misplacesInPrimary`. A known-id list would miss the tokens the model
+ * invented in our house style (`protect_engagement_based` is in 100+ rows
+ * and zero lines of source); a bare snake_case match would sweep up
+ * senders literally named `ife_insurance_india`.
  *
  * USAGE
  *
@@ -79,7 +88,7 @@ async function main(): Promise<void> {
     // ones the model invented (`protect_engagement_based` is in 100+
     // rows and zero lines of source); a bare snake_case match would
     // sweep up senders literally named `ife_insurance_india`.
-    const rows = await sql<Affected[]>`
+    const rows = await sql<(Affected & { reason: 'vocabulary' | 'primary' })[]>`
       WITH tokens AS (
         SELECT td.mailbox_account_id,
                td.sender_key,
@@ -93,21 +102,48 @@ async function main(): Promise<void> {
           JOIN senders s
             ON s.mailbox_account_id = td.mailbox_account_id
            AND s.sender_key = td.sender_key
+      ),
+      vocabulary AS (
+        SELECT DISTINCT mailbox_account_id, sender_key
+          FROM tokens
+         WHERE position(lower(token) in identity) = 0
+      ),
+      -- Same rule as misplacesInPrimary in the worker: the sender's own name, domain
+      -- and address are taken out of the sentence, then "primary" anywhere
+      -- else counts. LLM sentences only; the template is ours.
+      primary_claims AS (
+        SELECT td.mailbox_account_id, td.sender_key
+          FROM triage_decisions td
+          JOIN senders s
+            ON s.mailbox_account_id = td.mailbox_account_id
+           AND s.sender_key = td.sender_key
+         WHERE td.generated_by = 'llm_haiku'
+           AND s.gmail_category <> 'primary'
+           AND replace(replace(replace(lower(td.reasoning),
+                 lower(trim(coalesce(s.display_name, ''))), ' '),
+                 lower(trim(coalesce(s.domain, ''))), ' '),
+                 lower(trim(coalesce(s.email::text, ''))), ' ') ~ '\\mprimary\\M'
       )
-      SELECT DISTINCT mailbox_account_id, sender_key
-        FROM tokens
-       WHERE position(lower(token) in identity) = 0
+      SELECT mailbox_account_id, sender_key, 'vocabulary' AS reason FROM vocabulary
+      UNION ALL
+      SELECT mailbox_account_id, sender_key, 'primary' AS reason FROM primary_claims
        ORDER BY mailbox_account_id, sender_key`;
+    // A sender can fail both checks; it needs one job.
+    const affected = [
+      ...new Map(rows.map((row) => [`${row.mailbox_account_id}:${row.sender_key}`, row])).values(),
+    ];
 
     console.log(
       JSON.stringify({
         kind: 'rescore_leaked_copy.scan',
-        affected: rows.length,
+        affected: affected.length,
+        vocabulary: rows.filter((row) => row.reason === 'vocabulary').length,
+        primaryClaims: rows.filter((row) => row.reason === 'primary').length,
         dryRun,
       }),
     );
 
-    if (rows.length === 0 || dryRun) {
+    if (affected.length === 0 || dryRun) {
       return;
     }
 
@@ -123,7 +159,7 @@ async function main(): Promise<void> {
 
     let added = 0;
     let alreadyQueued = 0;
-    for (const row of rows) {
+    for (const row of affected) {
       const jobId = `${row.mailbox_account_id}:${row.sender_key}:${producedAtMs}`;
       // BullMQ silently returns the existing job on a jobId collision, so
       // counting loop iterations would report 439 "enqueued" on a re-run
@@ -155,8 +191,8 @@ async function main(): Promise<void> {
     );
     console.log(
       'Re-run the scan after the queue drains; `affected` should reach 0. ' +
-        'Any residue is a sender whose fresh copy still names a rule, which the ' +
-        '#577 output check should have refused — worth reading if it happens.',
+        'Any residue is a sender whose fresh copy still fails a check the worker ' +
+        'applies to new sentences (#577, 2026-09-26) — worth reading if it happens.',
     );
   } finally {
     await sql.end({ timeout: 5 });
