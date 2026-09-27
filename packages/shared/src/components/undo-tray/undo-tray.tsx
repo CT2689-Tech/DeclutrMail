@@ -530,7 +530,7 @@ function Headline({
         </span>
         {attention && onViewActivity ? (
           <Button size="sm" tone="ghost" onClick={onViewActivity}>
-            See Activity
+            View Activity
           </Button>
         ) : null}
         {notice.onDismiss ? (

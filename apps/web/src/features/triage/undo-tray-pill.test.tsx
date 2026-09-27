@@ -72,7 +72,7 @@ describe('<UndoTray /> — one pill', () => {
       />,
     );
     expect(screen.getByRole('alert')).toHaveTextContent('2 of 13 senders failed');
-    expect(screen.getByRole('button', { name: 'See Activity' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'View Activity' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Dismiss/ }));
     expect(failed.onDismiss).toHaveBeenCalled();
   });

@@ -211,7 +211,7 @@ describe('collapsed brand group', () => {
     const card = screen.getByTestId('domain-group-brand.com');
     // Unconfirmed may still be running — the group stays busy.
     expect(card).toHaveAttribute('aria-busy', 'true');
-    expect(within(card).getByText('1 not confirmed · 1 in Activity')).toBeInTheDocument();
+    expect(within(card).getByText('1 unknown · 1 in Activity')).toBeInTheDocument();
   });
 
   it('drops its summary once expanded — the member pills say it', () => {

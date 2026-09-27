@@ -1402,6 +1402,44 @@ describe('ActivityScreen — D58 undo affordances', () => {
     expect(screen.queryByText(/undo-one|\/api\//)).toBeNull();
   });
 
+  // The same fact reads the same on the pill and on Activity.
+  it('says an expired Undo window in the pill’s words', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                undoState: {
+                  kind: 'available',
+                  token: 'undo-one',
+                  expiresAt: '2099-01-01T00:00:00Z',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-one/action',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'GONE', message: 'Undo window has expired.' } }),
+            {
+              status: 410,
+              headers: { 'content-type': 'application/json' },
+            },
+          ),
+      },
+    ]);
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: /^undo/i }));
+    expect(await screen.findByText('Undo window has expired')).toBeInTheDocument();
+  });
+
   it('renders "Undo →" button for `available`', async () => {
     installFetchStub([
       {

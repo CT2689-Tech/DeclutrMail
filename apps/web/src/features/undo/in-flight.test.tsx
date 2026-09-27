@@ -87,8 +87,7 @@ describe('what the pill says once a decision stops', () => {
     ],
     [status({ done: 11, failed: 2 }), 'attention', 'Delete: 2 of 13 failed'],
     [status({ affectedCount: 0 }), 'info', 'Nothing to delete'],
-    [status({ affectedCount: 1400 }), 'info', 'Delete: some email not changed'],
-    [null, 'attention', 'Delete not confirmed'],
+    [null, 'attention', 'Delete: unknown'],
     // D245: a sender protected after the click is skipped, like one
     // protected before it — never "nothing to delete", never a failure.
     // Skipped senders are left out of every count the batch reports.
@@ -145,6 +144,13 @@ describe('what the pill says once a decision stops', () => {
       tone: 'info',
       label: 'Nothing to move to Later',
     });
+  });
+
+  // Fewer moved than the preview counted means mail had already left the
+  // inbox, not that some was left behind; the decision's own line has the
+  // real number, and a notice here would sit above its Undo for 10s.
+  it('says nothing when fewer moved than were counted', () => {
+    expect(outcomeNotice(GROUP, status({ affectedCount: 1400 }))).toBeNull();
   });
 
   // A one-sender job that was skipped has no job left to count: 0 of 0 is
@@ -354,7 +360,7 @@ describe('ProductUndoTray — live line', () => {
     );
     // Not ended — and not spinning as if it were live either: the line says
     // it is the last thing we knew. (It used to freeze on "Deleting…".)
-    await waitFor(() => expect(pillText()).toMatch(/Delete not confirmed/));
+    await waitFor(() => expect(pillText()).toMatch(/Delete: unknown/));
     expect(pillText()).not.toMatch(/Deleting…/);
     expect(screen.queryByRole('alert')).toBeNull();
   });

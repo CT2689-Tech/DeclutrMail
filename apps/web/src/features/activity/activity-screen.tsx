@@ -2535,6 +2535,20 @@ function OpenInGmailLink({
 }
 
 /**
+ * What a row says when its Undo failed, in the pill's words. Never the
+ * transport line: it carries the undo token and names no next step.
+ * `revertActivityUndo`'s own errors are written for the reader.
+ */
+function undoFailureCopy(error: Error | null): string {
+  // A row that failed inside a bulk Undo carries no error of its own.
+  if (error === null) return 'Undo failed — try again.';
+  if (!(error instanceof ApiError)) return error.message;
+  return error.status === 410
+    ? 'Undo window has expired'
+    : getActionFailureCopy('revert-enqueue', { error });
+}
+
+/**
  * D58 + B7/B13 — wired undo affordance.
  *
  * On click: POST /api/undo/:token via `useRevertActivity`. On success
@@ -2544,18 +2558,6 @@ function OpenInGmailLink({
  * silent-failure class from MISTAKES.md 2026-06-05 + the stuck-revert
  * recovery path the handoff calls out.
  */
-/**
- * What a row says when its Undo failed. Never the transport line: it
- * carries the undo token and names no next step. `revertActivityUndo`'s
- * own errors are written for the reader.
- */
-function undoFailureCopy(error: Error | null): string {
-  if (error === null) return 'Could not confirm Undo. Try again.';
-  return error instanceof ApiError
-    ? getActionFailureCopy('revert-enqueue', { error })
-    : error.message;
-}
-
 function UndoCell({
   row,
   bulkFailedTokens,
@@ -2593,7 +2595,6 @@ function UndoCell({
           aria-busy={isPendingHere}
           onClick={() => revert.mutate(undo.token)}
           disabled={isPendingHere}
-          title={failed ? undoFailureCopy(revert.error) : 'Revert this action.'}
           onMouseEnter={(e) => {
             if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
           }}

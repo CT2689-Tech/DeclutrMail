@@ -83,8 +83,10 @@ export function getActionFailureCopy(
       case 'revert-status':
         return ["Couldn't confirm undo", 'try again'];
       case 'terminal':
-      case 'revert-terminal':
         return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
+      // A repeat undo re-queues the same reverse job: safe to try again.
+      case 'revert-terminal':
+        return ['Undo failed', 'try again'];
     }
   })();
   return `${lead} — ${unconfirmedStart ? outcome : (options.outcome ?? outcome)}.`;

@@ -86,12 +86,13 @@ describe('getActionFailureCopy', () => {
 
   // An undo request is idempotent: the same token answers with the same
   // reverse job, or "reverted" once it finished. Trying again is safe.
-  it('says an unconfirmed undo may simply be tried again', () => {
+  it('says an unconfirmed or failed undo may simply be tried again', () => {
     expect(getActionFailureCopy('revert-status')).toBe("Couldn't confirm undo — try again.");
+    expect(getActionFailureCopy('revert-terminal')).toBe('Undo failed — try again.');
   });
 
   it('sends an unconfirmed outcome to Activity before a retry', () => {
-    for (const phase of ['status', 'terminal', 'revert-terminal'] as const) {
+    for (const phase of ['status', 'terminal'] as const) {
       expect(getActionFailureCopy(phase, { action: 'Archive for Acme' })).toMatch(
         /check Activity before retrying/,
       );

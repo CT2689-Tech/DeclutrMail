@@ -61,19 +61,20 @@ describe('Activity action-only Undo lifecycle', () => {
 
   it('reports a terminal failure without claiming that no email changed', async () => {
     stubUndo(() => jsonOk({ data: { status: 'failed', affectedCount: 2 } }));
+    // A repeat undo re-queues the same reverse job, so trying again is safe.
     await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow(
-      'Some emails may have been restored',
+      'Undo failed — try again',
     );
   });
 
   it('does not declare success for done without a recorded reversal', async () => {
     stubUndo(() => jsonOk({ data: { status: 'done', undoRevertedAt: null } }));
-    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow("Couldn't confirm Undo");
+    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow("Couldn't confirm undo");
   });
 
   it('stops on status access failure without claiming the background action failed', async () => {
     const requests = stubUndo(() => new Response('{}', { status: 403 }));
-    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow('It may still finish');
+    await expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow("Couldn't confirm undo");
     expect(requests.polls()).toBe(1);
   });
 
@@ -81,7 +82,7 @@ describe('Activity action-only Undo lifecycle', () => {
     vi.useFakeTimers();
     const requests = stubUndo(() => jsonOk({ data: { status: 'executing' } }));
     const pending = expect(revertActivityUndo('token', 'mailbox-a')).rejects.toThrow(
-      'taking longer than expected',
+      'Undo is still running',
     );
     await vi.runAllTimersAsync();
     await pending;

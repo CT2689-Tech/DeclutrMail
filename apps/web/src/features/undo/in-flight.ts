@@ -56,7 +56,7 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
     return {
       id: `run:${group.groupId}`,
       tone: 'info',
-      label: `${VERB[group.verb]} not confirmed`,
+      label: `${VERB[group.verb]}: unknown`,
       who: who(group),
     };
   }
@@ -89,7 +89,7 @@ export function outcomeNotice(
   const id = `end:${group.groupId}`;
   const verb = VERB[group.verb];
   if (status === null) {
-    return { id, tone: 'attention', label: `${verb} not confirmed`, who: who(group) };
+    return { id, tone: 'attention', label: `${verb}: unknown`, who: who(group) };
   }
   // Still running server-side (it only aged out of the list): say nothing.
   if (status.status !== 'done' && status.status !== 'failed') return null;
@@ -145,12 +145,10 @@ export function outcomeNotice(
         };
   }
   // Mail changed: a skip rides the decision's own Undo line, whose count
-  // comes with the decision itself (`GET /api/undo`).
-  // Mail moved between the preview's count and the job: fewer changed than
-  // were counted. The decision's own line has the real number.
-  if (status.affectedCount < status.requestedCount) {
-    return { id, tone: 'info', label: `${verb}: some email not changed`, who: who(group) };
-  }
+  // comes with the decision itself (`GET /api/undo`). Fewer than the
+  // preview counted means mail had already left the inbox, not that some
+  // was left behind: the decision's own line has the real number, and a
+  // notice here would sit above its Undo.
   return null;
 }
 

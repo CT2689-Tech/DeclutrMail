@@ -514,7 +514,7 @@ function ReadyState({
   } | null>(null);
   // Page-level action feedback — the same model the senders list rows use
   // (`row-activity`). `settled` is what the toolbar says once the job is
-  // terminal, or "not confirmed" when its status poll was lost.
+  // terminal, or "unknown" when its status poll was lost.
   const [settled, setSettled] = useState<SenderRowActivity | null>(null);
   // The confirmed request is on its way; the confirm holds on
   // "Submitting…" until the server answers (it used to close first).

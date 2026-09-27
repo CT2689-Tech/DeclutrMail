@@ -1542,13 +1542,13 @@ describe('SenderDetailRoute', () => {
         // why and its verbs are inert (founder report 2026-09-20 — nothing
         // on the page showed a job was still running).
         // The pressed verb has BECOME the status; it takes no second press.
-        const archiveAgain = screen.getByRole('button', { name: 'Archive not confirmed' });
+        const archiveAgain = screen.getByRole('button', { name: 'Archive: unknown' });
         expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
           'aria-busy',
           'true',
         );
-        expect(screen.getByText('Archive not confirmed')).toBeInTheDocument();
+        expect(screen.getByText('Archive: unknown')).toBeInTheDocument();
         fireEvent.click(archiveAgain);
         await tick(200);
         expect(screen.queryByRole('dialog')).toBeNull();
@@ -1639,7 +1639,7 @@ describe('SenderDetailRoute', () => {
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         await tick(ACTION_OVERDUE_MS);
-        expect(screen.getByText('Archive not confirmed')).toBeInTheDocument();
+        expect(screen.getByText('Archive: unknown')).toBeInTheDocument();
 
         skipped = true;
         await tick(2_500);
@@ -1806,8 +1806,8 @@ describe('SenderDetailRoute', () => {
 
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
         await archiveWith(() => jsonServerError());
-        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
-        expect(screen.getByRole('button', { name: 'Archive not confirmed' })).toHaveAttribute(
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
+        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -1891,8 +1891,8 @@ describe('SenderDetailRoute', () => {
       // run it twice.
       it('locks the verb when an Archive may have started', async () => {
         await archiveEnqueueFails(apiFailure(503, 'ENQUEUE_FAILED'));
-        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
-        expect(screen.getByRole('button', { name: 'Archive not confirmed' })).toHaveAttribute(
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
+        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -1921,7 +1921,7 @@ describe('SenderDetailRoute', () => {
       // The queue did not confirm the add: the archive may still run.
       it('marks the past-email half unconfirmed when its start is unconfirmed', async () => {
         await unsubscribeThenBacklog(apiFailure(503, 'ENQUEUE_FAILED'));
-        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
         expect(pill('failed')).toBeNull();
       });
 

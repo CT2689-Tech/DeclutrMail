@@ -2272,7 +2272,7 @@ describe('SendersScreen — edge states', () => {
       const alpha = screen.getByRole('checkbox', { name: /select overdue alpha/i });
       expect(alpha).toHaveAttribute('aria-disabled', 'true');
       const alphaCard = alpha.closest('[aria-busy="true"]')!;
-      expect(within(alphaCard as HTMLElement).getByText('Archive not confirmed')).toBeDefined();
+      expect(within(alphaCard as HTMLElement).getByText('Archive: unknown')).toBeDefined();
       // The action controls are off; peeking at the sender still works.
       expect(
         within(alphaCard as HTMLElement).getByRole('button', { name: /^More actions for/ }),
@@ -2880,7 +2880,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-      await waitFor(() => expect(screen.getAllByText('Archive not confirmed')).toHaveLength(2), {
+      await waitFor(() => expect(screen.getAllByText('Archive: unknown')).toHaveLength(2), {
         timeout: 4000,
       });
       // The Gmail job may still be running: the row stays busy and off.
@@ -4181,7 +4181,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(
       "Can't tell if Archive for Sender A started — check Activity before retrying.",
     );
-    expect(await screen.findByText('Archive not confirmed')).toBeInTheDocument();
+    expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
   });
 
   it('keeps the selection when the bulk enqueue is refused (no optimistic clear)', async () => {
@@ -4231,7 +4231,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(
       "Can't tell if Archive for 2 senders started — check Activity before retrying.",
     );
-    expect(await screen.findAllByText('Archive not confirmed')).toHaveLength(2);
+    expect(await screen.findAllByText('Archive: unknown')).toHaveLength(2);
     expect(screen.queryByText(/senders selected/i)).toBeNull();
   });
 
