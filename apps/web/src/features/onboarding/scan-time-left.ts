@@ -12,20 +12,25 @@ import type { SyncMessageProgress } from '@declutrmail/shared/contracts';
  * (seen at `receivedAt`, written `age_ms` before) — so how late a poll saw
  * it cannot shrink or stretch the rate. Counts already on screen at first
  * render are not a point: when they were seen is unknown. The time is the
- * average rate since the track started, counted down between batches.
+ * average rate since the track started, counted down between batches, and
+ * waits for a second gap: a first gap alone can hold a pause.
  *
  * The track starts over when the counts go away, drop or change total,
- * and when a batch lands after a stall against the pace already seen; a
- * hidden tab measures the pace again on return. So a pause is not
- * averaged into the pace that follows it, while a slow scan's minutes-long
- * first gap still counts as its pace. The time is dropped when batches
- * stop arriving at their usual pace, and when it runs out.
+ * and when a batch lands after a stall against the pace already seen. A
+ * batch far faster than the pace so far means an earlier gap held a pause:
+ * the pace is measured again from that batch's gap. A hidden tab measures
+ * the pace again on return. So a pause is not averaged into the pace
+ * around it, while a slow scan's minutes-long gaps still count as its pace.
+ * The time is dropped when batches stop arriving at their usual pace, and
+ * when it runs out.
  */
 
 /** No batch for this many usual gaps means the rate no longer holds. */
 const STALE_GAPS = 3;
 /** …but never sooner than this — one slow batch is not a stall. */
 const STALE_FLOOR_MS = 60_000;
+/** Gaps a time needs: one alone can hold a pause, and nothing would say so. */
+const MIN_STEPS = 2;
 /** How often a shown time re-checks that it is still backed. */
 const TICK_MS = 10_000;
 
@@ -65,31 +70,37 @@ export function observeScan(
   if (progress === null) {
     return startScanTrack(null);
   }
-  const { seen, last } = track;
+  const { seen, first, last, steps } = track;
   // The same batch again: already placed, and its first placement stands.
   if (last && seen && seen.total === progress.total && last.processed === progress.processed) {
     return { ...track, seen: progress };
   }
   const point = { at: receivedAt - progress.age_ms, processed: progress.processed };
   const restarted =
+    first === null ||
     last === null ||
     seen === null ||
     progress.total !== seen.total ||
     progress.processed < last.processed ||
-    // A long gap is a stall only against a pace already seen. The first
-    // gap IS the pace — each batch is timed by its write — and a slow
-    // scan's is minutes long.
-    (track.steps > 0 && point.at - last.at > staleAfter(track));
+    // A long gap is a stall only against a pace already seen: each batch
+    // is timed by its write, and a slow scan's gaps are minutes long.
+    (steps > 0 && point.at - last.at > staleAfter(track));
   if (restarted) {
     return { seen: progress, first: point, last: point, steps: 0 };
   }
-  return { seen: progress, first: track.first, last: point, steps: track.steps + 1 };
+  // Far faster than the pace so far: an earlier gap held a pause (a slow
+  // first read, a retry's backoff, a tab that came back mid-pause). Measure
+  // again from this gap alone.
+  if (steps > 0 && (point.at - last.at) * STALE_GAPS < (last.at - first.at) / steps) {
+    return { seen: progress, first: last, last: point, steps: 1 };
+  }
+  return { seen: progress, first, last: point, steps: steps + 1 };
 }
 
 /** Milliseconds left as of `now`, or `null` when nothing backs a time. */
 export function scanMsLeft(track: ScanTrack, now: number): number | null {
   const { seen, first, last, steps } = track;
-  if (seen === null || first === null || last === null || steps < 1) {
+  if (seen === null || first === null || last === null || steps < MIN_STEPS) {
     return null;
   }
   const elapsed = last.at - first.at;
@@ -115,14 +126,19 @@ function sameObservation(a: SyncMessageProgress | null, b: SyncMessageProgress |
   );
 }
 
-export function useScanTimeLeft(progress: SyncMessageProgress | null): number | null {
-  const [track, setTrack] = useState(() => startScanTrack(progress));
+/**
+ * `progress`: the counts this poll read, `null` when there are none, and
+ * `undefined` when the read failed — like a missed poll, that changes
+ * nothing, so the pace survives one failed read.
+ */
+export function useScanTimeLeft(progress: SyncMessageProgress | null | undefined): number | null {
+  const [track, setTrack] = useState(() => startScanTrack(progress ?? null));
   const [now, setNow] = useState(() => Date.now());
 
   // Fold a new observation in while rendering — React re-renders before it
   // commits. An effect would commit the new count beside the previous
   // count's time for a frame (seen live in the 2026-09-26 smoke).
-  if (!sameObservation(track.seen, progress)) {
+  if (progress !== undefined && !sameObservation(track.seen, progress)) {
     const receivedAt = Date.now();
     setTrack(observeScan(track, progress, receivedAt));
     setNow(receivedAt);
