@@ -289,7 +289,8 @@ function QuietHoursForm({
         <Button tone="primary" size="md" onClick={submit} disabled={saving || !dirty}>
           {saving ? 'Saving…' : 'Save quiet hours'}
         </Button>
-        {!dirty && !saving && (
+        {/* `useBrowserDefault` means no config is stored yet: nothing is saved. */}
+        {!dirty && !saving && !useBrowserDefault && (
           <span style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}>
             Saved
           </span>
