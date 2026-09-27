@@ -12,8 +12,10 @@ import type { SyncMessageProgress } from '@declutrmail/shared/contracts';
  * (seen at `receivedAt`, written `age_ms` before) — so how late a poll saw
  * it cannot shrink or stretch the rate. Counts already on screen at first
  * render are not a point: when they were seen is unknown. The time is the
- * average rate since the track started, counted down between batches, and
- * waits for a second gap: a first gap alone can hold a pause.
+ * average rate since the track started, counted down between batches. It
+ * first shows once two gaps agree — within half again of each other, per
+ * email — since one gap alone can hold a pause; until they do, the pace is
+ * measured again from the later gap.
  *
  * The track starts over when the counts go away, drop or change total,
  * and when a batch lands after a stall against the pace already seen. A
@@ -32,6 +34,8 @@ const STALE_GAPS = 3;
 const STALE_FLOOR_MS = 60_000;
 /** Gaps a time needs: one alone can hold a pause, and nothing would say so. */
 const MIN_STEPS = 2;
+/** How far apart, per email, the first two gaps may be and still agree. */
+const AGREE = 1.5;
 /** How often a shown time re-checks that it is still backed. */
 const TICK_MS = 10_000;
 
@@ -102,8 +106,17 @@ export function observeScan(
   // Far faster per email than the pace so far: an earlier gap held a pause
   // (a slow first read, a retry's backoff, a tab that came back mid-pause).
   // Measure again from this gap alone.
-  if (steps > 0 && ((point.at - last.at) / read) * STALE_GAPS < msPerEmail(track)) {
+  const pace = (point.at - last.at) / read;
+  if (steps > 0 && pace * STALE_GAPS < msPerEmail(track)) {
     return { seen: progress, first: last, last: point, steps: 1, batch };
+  }
+  // The first time shown needs its two gaps to agree; otherwise measure
+  // again from the later one. Positive form, so a NaN measures again.
+  if (steps === 1) {
+    const before = msPerEmail(track);
+    if (!(Math.max(pace, before) <= AGREE * Math.min(pace, before))) {
+      return { seen: progress, first: last, last: point, steps: 1, batch };
+    }
   }
   return { seen: progress, first, last: point, steps: steps + 1, batch };
 }

@@ -90,14 +90,49 @@ describe('scanMsLeft — from what the worker wrote, when it wrote it', () => {
     expect(scanMsLeft(track, 40_000)).toBe(529_960);
   });
 
-  it('averages every batch since the track started', () => {
+  it('averages every batch since the track started, once a time is shown', () => {
     const track = watched(10_000, [
       [0, 0],
       [10_000, 500],
-      [50_000, 1_000],
+      [20_000, 1_000],
+      [60_000, 1_500], // one slow batch after the time first showed
     ]);
 
-    expect(scanMsLeft(track, 50_000)).toBe(450_000); // 1,000 in 50s → 9,000 left at 20/s
+    // 1,500 in 60s → 8,500 left at 25/s — not the last gap alone, not the first two.
+    expect(scanMsLeft(track, 60_000)).toBe(340_000);
+  });
+
+  // Independent review (2026-09-27), at the founder's pace (51s a batch): one
+  // ~90s hiccup in the first two gaps showed "about 2 hr 10 min" for ~68 min.
+  it('shows no first time until two gaps agree — a hiccup in the first two is measured again', () => {
+    let track = watched(41_000, [
+      [0, 0],
+      [51_000, 500],
+      [192_000, 1_000], // this batch took 141s
+    ]);
+    expect(scanMsLeft(track, 192_000)).toBeNull();
+
+    track = observeScan(track, counts(1_500, 0, 41_000), 243_000);
+    expect(scanMsLeft(track, 243_000)).toBeNull();
+
+    track = observeScan(track, counts(2_000, 0, 41_000), 294_000);
+    // Two 51s gaps agree: 39,000 left at 102ms each — about 67 min, not 2 hr 10.
+    expect(scanMsLeft(track, 294_000)).toBe(3_978_000);
+  });
+
+  it('a slow second gap at a 10s pace is measured again, not shown as the pace', () => {
+    // "about 43 min" for 13 before: 10s, then 55s.
+    let track = watched(40_000, [
+      [0, 0],
+      [10_000, 500],
+      [65_000, 1_000],
+    ]);
+    expect(scanMsLeft(track, 65_000)).toBeNull();
+
+    track = observeScan(track, counts(1_500, 0, 40_000), 75_000);
+    track = observeScan(track, counts(2_000, 0, 40_000), 85_000);
+    // 38,000 left at 20ms each — about 13 min.
+    expect(scanMsLeft(track, 85_000)).toBe(760_000);
   });
 
   it.each([
