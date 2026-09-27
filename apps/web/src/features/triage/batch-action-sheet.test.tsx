@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { BatchActionSheet } from './batch-action-sheet';
 import type { DomainBatch } from './domain-batch';
 

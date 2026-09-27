@@ -64,12 +64,7 @@ import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-re
 import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
-import {
-  TRIAGE_QUEUE,
-  TRIAGE_SESSION_STATS,
-  type TriageDecisionRow,
-  type TriageScreenState,
-} from './data';
+import { type TriageDecisionRow, type TriageScreenState } from './data';
 import { findVerdictBatch, type DomainBatch } from './domain-batch';
 import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
 import { TriageEmptyState } from './empty-state';
@@ -102,18 +97,6 @@ const BatchActionSheet = dynamic(
 );
 
 const { color, font, radius, text } = tokens;
-
-/**
- * Default state — fixtures, used by Storybook variants and the
- * SSR-shape tests. The live route composes the real state from the
- * `/api/triage/queue` + `/api/triage/stats` queries (see
- * `compose-state.ts`).
- */
-export const DEFAULT_TRIAGE_STATE: TriageScreenState = {
-  kind: 'ready',
-  rows: [...TRIAGE_QUEUE],
-  stats: TRIAGE_SESSION_STATS,
-};
 
 /**
  * Triage screen — the V2 daily ritual (D29, D33, D36, D207).
@@ -216,11 +199,11 @@ interface BatchHandle {
 }
 
 export function TriageScreen({
-  state = DEFAULT_TRIAGE_STATE,
+  state,
   journey = 'daily',
   offerUnprotect = false,
 }: {
-  state?: TriageScreenState;
+  state: TriageScreenState;
   journey?: 'daily' | 'first_relief';
   /**
    * Show a direct Unprotect control on Protected rows (D245). Set by

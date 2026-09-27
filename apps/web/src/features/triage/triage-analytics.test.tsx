@@ -23,7 +23,7 @@ import type { UndoTrayEntry } from '@declutrmail/shared';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { undoKeys } from '@/features/undo/query-keys';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';

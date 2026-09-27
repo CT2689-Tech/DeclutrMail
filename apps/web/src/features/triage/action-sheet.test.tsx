@@ -21,7 +21,7 @@ import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { ActionSheet } from './action-sheet';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
 import { UnprotectButton } from './unprotect-button';
 
