@@ -26,6 +26,13 @@ export const MAILBOX_BATCH_SIZE = 1;
 export const NON_MAIL_PURGE_SWEEP_BATCHES = 10;
 
 /**
+ * And at most this long: no new batch starts after it, so a slow database
+ * cannot spend the cron job's 60 s on the purge and leave the reconcile
+ * to the deadline.
+ */
+export const NON_MAIL_PURGE_SWEEP_BUDGET_MS = 20_000;
+
+/**
  * Nightly sweep payload. The cron scheduler enqueues one job per tick
  * keyed on `(worker_name, scheduled_at_minute)` per D225. Continuations
  * carry an exclusive cursor so bounded jobs cover every eligible mailbox.
@@ -138,7 +145,8 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       /**
        * Publishes `mailbox.non_mail_purged` in each purge batch, so the
        * features that own verdicts and follow-ups repair them (D204).
-       * Without it the purge still runs and warns `event_unwired`.
+       * Without it the purge refuses to delete anything, and each refusal
+       * is reported like any purge failure.
        */
       outbox?: OutboxPublisher;
     },
@@ -195,12 +203,12 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       ctx.signal?.throwIfAborted();
       // Drafts and chat lines FIRST, so the reconcile below computes from
       // mail only. Each batch takes the lock and a transaction of its own,
-      // so a user action waits for one batch at most, and a run purges at
-      // most NON_MAIL_PURGE_SWEEP_BATCHES of them so the reconcile keeps
-      // its share of the job's time; a bigger backlog finishes on later
-      // runs. A purge that throws is reported and the reconcile still
-      // runs: the nightly protection retirement (D245) must not depend on
-      // it.
+      // so a user action waits for one batch at most, and a run stops
+      // starting batches after NON_MAIL_PURGE_SWEEP_BATCHES or
+      // NON_MAIL_PURGE_SWEEP_BUDGET_MS so the reconcile keeps most of the
+      // job's time; a bigger backlog finishes on later runs. A purge that
+      // throws is reported and the reconcile still runs: the nightly
+      // protection retirement (D245) must not depend on it.
       try {
         const purged = await purgeAllNonMail(
           this.deps.db,
@@ -216,6 +224,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
             signal: ctx.signal,
             outbox: this.deps.outbox,
             maxBatches: NON_MAIL_PURGE_SWEEP_BATCHES,
+            budgetMs: NON_MAIL_PURGE_SWEEP_BUDGET_MS,
           },
         );
         nonMailMessagesDeleted += purged.messagesDeleted;
@@ -223,21 +232,26 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
         nonMailSendersRecounted += purged.sendersRecounted;
         if (purged.capped) nonMailPurgeCapped += 1;
       } catch (err) {
-        nonMailPurgeFailed += 1;
-        const error = err instanceof Error ? err : new Error(String(err));
-        console.error(
-          JSON.stringify({
-            level: 'error',
+        // A job-deadline abort is not a purge failure: the reconcile below
+        // stops the same way, and the base worker reports the timeout
+        // once (D203). Anything else is reported here, because the job
+        // itself still succeeds.
+        if (!ctx.signal?.aborted) {
+          nonMailPurgeFailed += 1;
+          const error = err instanceof Error ? err : new Error(String(err));
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'sender_index_sweep.non_mail_purge_failed',
+              worker: this.workerName,
+              errorName: error.name,
+            }),
+          );
+          this.observer.captureBackgroundFailure(error, {
             kind: 'sender_index_sweep.non_mail_purge_failed',
-            worker: this.workerName,
-            errorKind: ctx.signal?.aborted ? 'cancelled' : 'purge_failed',
-            errorName: error.name,
-          }),
-        );
-        this.observer.captureBackgroundFailure(error, {
-          kind: 'sender_index_sweep.non_mail_purge_failed',
-          tags: { worker: this.workerName },
-        });
+            tags: { worker: this.workerName },
+          });
+        }
       }
       try {
         // Same per-mailbox advisory lock the label actions and the

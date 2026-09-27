@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as protection from './automatic-protection.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { OutboxPublisher } from './outbox-publisher.js';
 import {
   MAILBOX_BATCH_SIZE,
   SenderIndexSweepWorker,
@@ -422,7 +423,11 @@ describe('SenderIndexSweepWorker', () => {
       lines.push(String(line));
     });
     try {
-      await new SenderIndexSweepWorker({ db: db as never, lock: PASSTHROUGH_MAILBOX_LOCK }).run({
+      await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        outbox: new OutboxPublisher(),
+      }).run({
         id: 'sweep-1',
         data: { scheduledAtMinute: '2026-08-24T03:00' },
         attemptsMade: 0,
@@ -495,6 +500,7 @@ describe('SenderIndexSweepWorker', () => {
           return fn();
         },
       },
+      outbox: new OutboxPublisher(),
     });
     const captureBackgroundFailure = vi.fn();
     worker.setObserver({
@@ -522,6 +528,45 @@ describe('SenderIndexSweepWorker', () => {
       .from(mailMessages)
       .where(eq(mailMessages.providerMessageId, 'draft-1'));
     expect(drafts).toHaveLength(1);
+  });
+
+  it('leaves a deadline abort during the purge to the base worker — never reported twice (D203)', async () => {
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'draft-1',
+      providerThreadId: 't-draft-1',
+      senderKey: 'owner-self',
+      internalDate: RECENT,
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    // The job's deadline fires while a purge batch waits for the lock.
+    const controller = new AbortController();
+    const worker = new SenderIndexSweepWorker({
+      db: db as never,
+      lock: {
+        run: async () => {
+          controller.abort(new Error('fixture deadline'));
+          throw new Error('fixture deadline');
+        },
+      },
+      outbox: new OutboxPublisher(),
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+
+    await expect(
+      worker.processJob(
+        { scheduledAtMinute: '2026-08-24T03:00' },
+        { ...CTX, signal: controller.signal },
+      ),
+    ).rejects.toThrow('fixture deadline');
+    expect(captureBackgroundFailure).not.toHaveBeenCalled();
   });
 
   it('bounds each job and queues a continuation rather than dropping overflow', async () => {

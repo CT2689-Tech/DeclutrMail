@@ -126,6 +126,16 @@ export async function purgeNonMailMessages(
   limit: number = NON_MAIL_PURGE_BATCH,
   outbox?: OutboxPublisher,
 ): Promise<NonMailPurgeResult> {
+  // Fail closed. The follow-up and verdict repairs ride the event; a purge
+  // that deleted rows without publishing it would lose them for good,
+  // since the rows that described them are gone in the same transaction.
+  if (!outbox) {
+    throw new Error('non-mail purge refused: no outbox to publish mailbox.non_mail_purged');
+  }
+  // The event schema bounds its lists by one batch.
+  if (!Number.isInteger(limit) || limit < 1 || limit > NON_MAIL_PURGE_BATCH) {
+    throw new RangeError(`non-mail purge batch must be 1..${NON_MAIL_PURGE_BATCH}, got ${limit}`);
+  }
   const removed = await nonMailBatchDelete(tx, mailboxAccountId, limit);
   if (removed.length === 0) {
     return { messagesDeleted: 0, sendersDeleted: 0, sendersRecounted: 0 };
@@ -217,30 +227,17 @@ export async function purgeNonMailMessages(
   await recomputeWroteToCount(tx, mailboxAccountId, recipientKeys);
 
   if (recountedKeys.length > 0 || threadIds.length > 0) {
-    if (outbox) {
-      await outbox.publish(tx, {
-        topic: TOPICS.MAILBOX_NON_MAIL_PURGED,
-        aggregateId: mailboxAccountId,
-        payload: {
-          mailboxAccountId,
-          purgedAt: new Date().toISOString(),
-          recountedSenderKeys: recountedKeys,
-          threadIds,
-        },
-        schema: MailboxNonMailPurgedPayloadSchema,
-      });
-    } else {
-      // Loud, never silent: without the event the recounted senders keep
-      // their old verdict text and a draft-flipped follow-up stays replied.
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'non_mail_purge.event_unwired',
-          recountedSenders: recountedKeys.length,
-          threads: threadIds.length,
-        }),
-      );
-    }
+    await outbox.publish(tx, {
+      topic: TOPICS.MAILBOX_NON_MAIL_PURGED,
+      aggregateId: mailboxAccountId,
+      payload: {
+        mailboxAccountId,
+        purgedAt: new Date().toISOString(),
+        recountedSenderKeys: recountedKeys,
+        threadIds,
+      },
+      schema: MailboxNonMailPurgedPayloadSchema,
+    });
   }
 
   return {
@@ -283,14 +280,24 @@ async function recountSenders(
     RETURNING s.${sql.identifier('sender_key')} AS sender_key
   `);
   // postgres.js resolves to the row array; the PGlite test driver wraps
-  // it in `{ rows }`. Read the one column either way.
-  const rows = Array.isArray(result) ? result : (result as { rows?: unknown[] }).rows;
-  return (rows ?? []).map((row) => String((row as { sender_key: unknown }).sender_key));
+  // it in `{ rows }`. Anything else, or a row without its key, is an
+  // error: silently reading zero rows would skip the re-score.
+  const rows: unknown = Array.isArray(result) ? result : (result as { rows?: unknown }).rows;
+  if (!Array.isArray(rows)) {
+    throw new Error('non-mail purge: unrecognised result from the recount');
+  }
+  return rows.map((row) => {
+    const key = (row as { sender_key?: unknown }).sender_key;
+    if (typeof key !== 'string' || key.length === 0) {
+      throw new Error('non-mail purge: recount returned a row without a sender key');
+    }
+    return key;
+  });
 }
 
 /** What `purgeAllNonMail` did across its batches. */
 export interface NonMailPurgeTotals extends NonMailPurgeResult {
-  /** Stopped at `maxBatches` with a full last batch: more may remain for the next run. */
+  /** Stopped at `maxBatches` or `budgetMs` after a full batch: more may remain for the next run. */
   capped: boolean;
 }
 
@@ -314,9 +321,18 @@ export async function purgeAllNonMail(
     outbox?: OutboxPublisher | undefined;
     limit?: number;
     maxBatches?: number;
+    /** Stop starting batches after this long; the rest waits for the next run. */
+    budgetMs?: number;
   } = {},
 ): Promise<NonMailPurgeTotals> {
-  const { signal, outbox, limit = NON_MAIL_PURGE_BATCH, maxBatches = Infinity } = options;
+  const {
+    signal,
+    outbox,
+    limit = NON_MAIL_PURGE_BATCH,
+    maxBatches = Infinity,
+    budgetMs = Infinity,
+  } = options;
+  const startedAt = Date.now();
   const total: NonMailPurgeTotals = {
     messagesDeleted: 0,
     sendersDeleted: 0,
@@ -330,7 +346,7 @@ export async function purgeAllNonMail(
     .limit(1);
   if (!pending) return total;
   for (let batches = 0; ; batches += 1) {
-    if (batches === maxBatches) {
+    if (batches === maxBatches || Date.now() - startedAt >= budgetMs) {
       total.capped = true;
       return total;
     }

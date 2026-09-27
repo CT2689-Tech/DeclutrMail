@@ -559,6 +559,10 @@ export class TriageReadService {
         totalReceived: senders.totalReceived,
       })
       .from(triageDecisions)
+      // ADR-0008 §3 exception: triage reads the senders-owned `senders`
+      // table — sender identity rides every queue row, and the inner join
+      // is what keeps a verdict whose sender is gone off the queue. See
+      // the ADR's exception table.
       .innerJoin(
         senders,
         and(

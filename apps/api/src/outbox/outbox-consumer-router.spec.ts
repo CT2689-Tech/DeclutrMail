@@ -658,7 +658,9 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
       await expect(
         buildOutboxConsumer(db)(purgedEvent({ recountedSenderKeys: ['key-a'] })),
       ).resolves.toBeUndefined();
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('non_mail_purged.rescore_unwired'));
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('outbox.consumer.non_mail_purged_rescore_unwired'),
+      );
     } finally {
       warn.mockRestore();
     }

@@ -671,10 +671,11 @@ describe('InitialSyncWorker', () => {
     };
     const client = new FakeGmailClient([...makeMessages(4, 2), draft]);
 
-    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId },
-      CTX,
-    );
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    }).processJob({ mailboxAccountId }, CTX);
 
     const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
     expect(stored.map((r) => r.id)).not.toContain('legacy-draft');

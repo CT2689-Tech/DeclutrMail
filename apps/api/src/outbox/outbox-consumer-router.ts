@@ -1,6 +1,11 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
-import { followupTracker, mailMessages, screenerQuarantine, senderPolicies } from '@declutrmail/db';
+import {
+  followupReplyExists,
+  followupTracker,
+  screenerQuarantine,
+  senderPolicies,
+} from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
@@ -237,7 +242,12 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         );
         return;
       case TOPICS.MAILBOX_NON_MAIL_PURGED:
-        await handleNonMailPurged(db, deps, MailboxNonMailPurgedPayloadSchema.parse(event.payload));
+        await handleNonMailPurged(
+          db,
+          deps,
+          MailboxNonMailPurgedPayloadSchema.parse(event.payload),
+          event.id,
+        );
         return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
@@ -338,30 +348,18 @@ async function enqueueAutopilotApply(
 }
 
 /**
- * Senders projection — `sender_policies.policy_type = 'unsubscribe'`.
- *
- * D204 boundary: the senders feature owns the `sender_policies` table,
- * so the upsert lives here (not in ActionsService). The event carries
- * the sender_key directly (no resolve step needed).
- *
- * Idempotent — onConflictDoUpdate overwrites the same row whether this
- * is the first projection of the event or a redelivered one. We do NOT
- * touch `is_protected` / `protection_reason` so a Protect
- * override stays preserved (a sender can be both "Protect to avoid
- * bulk" + "Unsubscribe requested" until the brand honours it).
- */
-/**
  * `mailbox.non_mail_purged` — repair, in the features that own them, what
  * purged drafts and chat lines fed (D204). The purge itself only touches
  * the sender index.
  *
- * Follow-ups: `FollowupCheckWorker.flipReplied` marks a thread replied
- * once an inbound message follows the user's send, and a draft saved in
- * the thread counted as one. Reopen a replied row on those threads when
- * no inbound message after the send is left — `flipReplied`'s own
- * predicate, negated, over the mail that remains. Only `flipReplied` sets
- * `replied` (a user can only dismiss), so this undoes no choice of theirs.
- * Idempotent: a reopened row is `awaiting`, which this never matches.
+ * Follow-ups: `FollowupCheckWorker.flipReplied` marked a thread replied
+ * once an inbound message followed the user's send, and a draft saved in
+ * the thread used to count as one. Reopen a replied row on those threads
+ * when no reply is left — `followupReplyExists`, the same definition
+ * `flipReplied` uses, negated over the mail that remains. Only
+ * `flipReplied` sets `replied` (a user can only dismiss), so this undoes
+ * no choice of theirs. Idempotent: a reopened row is `awaiting`, which
+ * this never matches.
  *
  * Triage: the recounted senders' verdicts quote counts that changed, so
  * they are re-scored by the ScoreWorker, the only writer of
@@ -371,6 +369,7 @@ async function handleNonMailPurged(
   db: DrizzleDb,
   deps: OutboxConsumerDeps,
   payload: MailboxNonMailPurgedPayload,
+  eventId: string,
 ): Promise<void> {
   if (payload.threadIds.length > 0) {
     await db
@@ -381,13 +380,7 @@ async function handleNonMailPurged(
           eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
           eq(followupTracker.status, 'replied'),
           inArray(followupTracker.providerThreadId, payload.threadIds),
-          sql`NOT EXISTS (
-            SELECT 1 FROM ${mailMessages} AS m
-            WHERE m.mailbox_account_id = ${payload.mailboxAccountId}
-              AND m.provider_thread_id = ${sql.raw('"followup_tracker"."provider_thread_id"')}
-              AND m.is_outbound = false
-              AND m.internal_date > ${sql.raw('"followup_tracker"."sent_at"')}
-          )`,
+          not(followupReplyExists(payload.mailboxAccountId)),
         ),
       );
   }
@@ -396,7 +389,8 @@ async function handleNonMailPurged(
     console.warn(
       JSON.stringify({
         level: 'warn',
-        kind: 'non_mail_purged.rescore_unwired',
+        kind: 'outbox.consumer.non_mail_purged_rescore_unwired',
+        eventId,
         mailboxAccountId: payload.mailboxAccountId,
         senders: payload.recountedSenderKeys.length,
       }),
@@ -410,6 +404,19 @@ async function handleNonMailPurged(
   );
 }
 
+/**
+ * Senders projection — `sender_policies.policy_type = 'unsubscribe'`.
+ *
+ * D204 boundary: the senders feature owns the `sender_policies` table,
+ * so the upsert lives here (not in ActionsService). The event carries
+ * the sender_key directly (no resolve step needed).
+ *
+ * Idempotent — onConflictDoUpdate overwrites the same row whether this
+ * is the first projection of the event or a redelivered one. We do NOT
+ * touch `is_protected` / `protection_reason` so a Protect
+ * override stays preserved (a sender can be both "Protect to avoid
+ * bulk" + "Unsubscribe requested" until the brand honours it).
+ */
 async function handleUnsubscribeIntentRecorded(
   db: DrizzleDb,
   payload: ActionsUnsubscribeIntentRecordedPayload,

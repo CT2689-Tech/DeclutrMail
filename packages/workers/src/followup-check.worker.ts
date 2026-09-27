@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
+  followupReplyExists,
   followupTracker,
   mailboxAccounts,
   senderPolicies,
@@ -390,7 +391,9 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
   /**
    * Flip `awaiting` rows whose thread has since received an inbound
    * message → `replied`. Single bounded UPDATE per mailbox; the
-   * `mail_messages_account_date_idx` covers the EXISTS predicate.
+   * `mail_messages_account_date_idx` covers the EXISTS predicate, which
+   * is `followupReplyExists` — shared with the purge consumer's reopen,
+   * and never satisfied by a draft or a chat line.
    */
   private async flipReplied(mailboxAccountId: string): Promise<number> {
     const result = await this.deps.db.execute<{ id: string }>(sql`
@@ -398,13 +401,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
       SET status = 'replied', updated_at = now()
       WHERE mailbox_account_id = ${mailboxAccountId}
         AND status = 'awaiting'
-        AND EXISTS (
-          SELECT 1 FROM mail_messages m
-          WHERE m.mailbox_account_id = ${mailboxAccountId}
-            AND m.provider_thread_id = followup_tracker.provider_thread_id
-            AND m.is_outbound = false
-            AND m.internal_date > followup_tracker.sent_at
-        )
+        AND ${followupReplyExists(mailboxAccountId)}
       RETURNING id
     `);
     const rows = ((result as unknown as { rows?: unknown[] }).rows ?? result) as unknown[];

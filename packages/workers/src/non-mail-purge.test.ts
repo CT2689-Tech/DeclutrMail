@@ -395,18 +395,26 @@ describe('purgeNonMailMessages', () => {
     expect(event).toMatchObject({ threadIds: ['t1'] });
   });
 
-  it('warns by name when no outbox is wired, instead of dropping the repairs silently', async () => {
+  it('refuses to run without an outbox, and deletes nothing', async () => {
+    // The follow-up and verdict repairs ride the event, and the rows that
+    // describe them go in the same transaction — so a purge with nowhere
+    // to publish must not delete at all.
     const { mb } = await seedMailbox(db, OWNER);
     await seedSender(db, mb, OWNER, { total: 1, first: day(1), last: day(1) });
     await seedMessage(db, mb, { id: 'draft-1', from: OWNER, labelIds: ['DRAFT'], at: day(1) });
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    try {
-      await purgeNonMailMessages(db, mb);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('non_mail_purge.event_unwired'));
-    } finally {
-      warn.mockRestore();
-    }
+
+    await expect(purgeNonMailMessages(db, mb)).rejects.toThrow(/no outbox/);
+
+    expect(await storedIds(db, mb)).toEqual(['draft-1']);
     expect(await purgedEvents(db)).toEqual([]);
+  });
+
+  it('rejects a batch size the event cannot carry', async () => {
+    const { mb } = await seedMailbox(db, OWNER);
+    await expect(purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH + 1, outbox)).rejects.toThrow(
+      RangeError,
+    );
+    await expect(purgeNonMailMessages(db, mb, 0, outbox)).rejects.toThrow(RangeError);
   });
 
   it('converges across batches — the batch that removes a sender’s last line deletes it, once', async () => {
@@ -491,6 +499,17 @@ describe('purgeNonMailMessages', () => {
     expect(result).toMatchObject({ messagesDeleted: 4, capped: true });
     // Newest first: what a capped run leaves behind is the oldest line.
     expect(await storedIds(db, mb)).toEqual(['draft-1']);
+  });
+
+  it('starts no batch once its time budget is spent, and says so', async () => {
+    const { mb } = await seedMailbox(db, OWNER);
+    await seedMessage(db, mb, { id: 'draft-1', from: OWNER, labelIds: ['DRAFT'], at: day(1) });
+    const runBatch = vi.fn();
+
+    const result = await purgeAllNonMail(db, runBatch, mb, { outbox, budgetMs: 0 });
+
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ messagesDeleted: 0, capped: true });
   });
 
   it('a clean mailbox costs one probe — no batch, so no lock and no transaction', async () => {

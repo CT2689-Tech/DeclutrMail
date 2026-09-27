@@ -79,8 +79,33 @@ export function isNonMail(labelIds: readonly string[]): boolean {
  * that index.
  */
 export function nonMailRowWhere(): SQL {
-  const literal = `ARRAY[${NON_MAIL_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`;
-  return sql`${mailMessages.labelIds} && ${sql.raw(literal)}`;
+  return sql`${mailMessages.labelIds} && ${nonMailLabelsArray()}`;
+}
+
+/** `ARRAY['DRAFT','CHAT']::text[]` — static system label ids, safe as raw SQL. */
+function nonMailLabelsArray(): SQL {
+  return sql.raw(`ARRAY[${NON_MAIL_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`);
+}
+
+/**
+ * THE meaning of "replied" for Follow-ups: the tracked thread holds an
+ * inbound message, other than a draft or chat line, after the user's
+ * send. `FollowupCheckWorker.flipReplied` marks rows replied with it, and
+ * the `mailbox.non_mail_purged` consumer reopens with its negation, so
+ * the two cannot drift.
+ *
+ * Correlated to the enclosing statement's `followup_tracker` row — use it
+ * only in a query over that table, unaliased.
+ */
+export function followupReplyExists(mailboxAccountId: string): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM mail_messages m
+    WHERE m.mailbox_account_id = ${mailboxAccountId}
+      AND m.provider_thread_id = followup_tracker.provider_thread_id
+      AND m.is_outbound = false
+      AND m.internal_date > followup_tracker.sent_at
+      AND NOT (m.label_ids && ${nonMailLabelsArray()})
+  )`;
 }
 
 /**
