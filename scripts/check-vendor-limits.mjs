@@ -296,26 +296,44 @@ export async function checkUpstash() {
   // deleted) is a hard BREACH regardless of usage. Scan EVERY DB so a
   // non-first prod database can't hide behind an idle one.
   // One cause per database: acknowledging one suspended database must not
-  // cover the next (the 2026-07-15 outage was a second database).
-  const suspended = dbs
-    .filter((db) => (db.state ?? 'active') !== 'active')
+  // cover the next (the 2026-07-15 outage was a second database). A state
+  // that is not reported is not read as healthy (#795 review).
+  const lifecycle = dbs
+    .filter((db) => db.state !== 'active')
     .map((db) => ({
-      status: 'BREACH',
-      text: `${db.database_name ?? db.database_id}: state=${db.state}`,
+      status: typeof db.state === 'string' ? 'BREACH' : 'ERROR',
+      text: `${db.database_name ?? db.database_id}: ${
+        typeof db.state === 'string' ? `state=${db.state}` : 'state not reported'
+      }`,
     }));
-  // The first active database is the one gauged (the single prod Redis), and
-  // it is gauged even while another is suspended: acknowledging a suspended
-  // staging database must not stop the spend and volume checks on prod.
-  const active = dbs.find((db) => (db.state ?? 'active') === 'active');
-  if (!active)
-    return { status: 'BREACH', detail: suspended.map((c) => c.text).join('; '), causes: suspended };
-  const measured = await readKeeping(suspended, () => gaugeDatabase(active));
-  if (!suspended.length) return measured;
+  // Every active database is gauged, each with causes of its own, even while
+  // another is suspended: acknowledging a suspended staging database must not
+  // stop the spend and volume checks on prod, and gauging only the first
+  // active database let another one listed first stand in for prod.
+  const gauged = [];
+  for (const db of dbs.filter((d) => d.state === 'active')) {
+    const kept = [...lifecycle, ...gauged.flatMap((g) => g.causes)];
+    gauged.push(await readKeeping(kept, () => gaugeDatabase(db)));
+  }
+  const causes = [...lifecycle, ...gauged.flatMap((g) => g.causes)];
+  const detail = [...lifecycle.map((c) => c.text), ...gauged.map((g) => g.detail)].join('; ');
+  if (gauged.length <= 1) return { ...gauged[0], status: worstStatus(causes), detail, causes };
+  // Several active databases: the row reports account totals, and leaves out
+  // a total that any database could not supply rather than understate it.
+  const total = (read) => {
+    const values = gauged.map(read);
+    return values.every(Number.isFinite) ? values.reduce((a, b) => a + b, 0) : undefined;
+  };
   return {
-    ...measured,
-    status: 'BREACH',
-    detail: [...suspended.map((c) => c.text), measured.detail].join('; '),
-    causes: [...suspended, ...measured.causes],
+    status: worstStatus(causes),
+    costMtdUsd: total((g) => g.costMtdUsd) ?? null,
+    usage: Object.fromEntries(
+      ['commands_today', 'storage_mb', 'budget_usd', 'projected_month_usd']
+        .map((k) => [k, total((g) => g.usage?.[k])])
+        .filter(([, v]) => v !== undefined),
+    ),
+    detail,
+    causes,
   };
 
   async function gaugeDatabase(db) {
@@ -340,7 +358,10 @@ export async function checkUpstash() {
     //
     // Measured before volume, so a volume field Upstash stops reporting
     // cannot take the spend cause down with it.
-    const budget = Number(db.budget ?? 0);
+    //
+    // Only an explicit number is a budget: a missing or unreadable one is not
+    // "no cap", since the cap is the kill switch (#795 review).
+    const budget = db.budget == null || db.budget === '' ? NaN : Number(db.budget);
     const monthCost =
       stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);
     const billed = budget > 0 && Number.isFinite(monthCost);
@@ -385,25 +406,25 @@ export async function checkUpstash() {
       // Against the cap, so 100% reads as "projecting exactly the budget".
       usagePct: Math.round((projected / budget) * 100),
     };
-    // A capped database whose spend was not reported is not OK on volume:
-    // the cap is the kill switch, so an unread spend is an ERROR cause of
-    // its own (#795 review). Fixed/pro plans carry no cap to breach.
-    const spendCauses = !(budget > 0)
-      ? []
-      : billed
-        ? [
-            {
-              status: spend.status,
-              text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
-              value: projected,
-            },
-          ]
-        : [
-            {
-              status: 'ERROR',
-              text: `${db.database_name}: no billing reported, so its $${budget.toFixed(2)} cap cannot be gauged`,
-            },
-          ];
+    // A database whose cap or spend was not reported is not OK on volume:
+    // the cap is the kill switch, so an unread one is an ERROR cause of its
+    // own (#795 review). A budget of 0 is no cap, with nothing to breach.
+    const unread = Number.isNaN(budget)
+      ? 'budget not reported, so its cap cannot be gauged'
+      : budget > 0 && !billed
+        ? `no billing reported, so its $${budget.toFixed(2)} cap cannot be gauged`
+        : null;
+    const spendCauses = billed
+      ? [
+          {
+            status: spend.status,
+            text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
+            value: projected,
+          },
+        ]
+      : unread
+        ? [{ status: 'ERROR', text: `${db.database_name}: ${unread}` }]
+        : [];
 
     const cmds = await readKeeping(spendCauses, () =>
       latestValue(stats.daily_net_commands, 'daily_net_commands'),
@@ -423,9 +444,12 @@ export async function checkUpstash() {
       (1024 * 1024);
 
     if (!billed) {
-      // No cap to breach, or no billing to gauge it on: say which.
-      const why =
-        budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
+      // No cap to breach, or no cap or billing to gauge: say which.
+      const why = Number.isNaN(budget)
+        ? 'budget not reported'
+        : budget > 0
+          ? 'no billing reported'
+          : `no spend cap (type=${db.type ?? 'unknown'})`;
       return {
         ...volume,
         status: worstStatus(causes),
@@ -859,10 +883,14 @@ export async function runVendor(vendor) {
       // attempt inside 45s. A double timeout is exceptional again, and
       // failing to read a metered vendor's spend is precisely what should
       // exit 1.
+      // Whichever attempt got further keeps what it measured: a retry that
+      // fails earlier must not drop a suspension the first attempt saw.
+      const further =
+        (err2?.measuredCauses?.length ?? 0) >= (err?.measuredCauses?.length ?? 0) ? err2 : err;
       return errorRow(
         vendor.name,
-        `unreachable — timed out twice, value NOT verified: ${String(err2?.message ?? err2).slice(0, 240)}`,
-        err2,
+        `${isTimeout(err2) ? 'unreachable — timed out twice' : 'timed out, then failed on retry'}, value NOT verified: ${String(err2?.message ?? err2).slice(0, 240)}`,
+        further,
       );
     }
   }
@@ -940,9 +968,9 @@ function failingCauses(r, warnIsFailure) {
  * when every one of its failing causes is: by a line for its vendor and
  * status whose text the cause contains, through the line's date, and at or
  * under the line's ceiling. A measured cause needs a numeric ceiling, and a
- * cause with no measured value needs `-`. A line that matches several
- * failing causes in one row holds none of them. Lines that matched no
- * failing cause come back as `unmatched`, to be deleted.
+ * cause with no measured value needs `-`. A line whose text matches
+ * several of a row's causes, failing or not, holds none of them. Lines that
+ * matched no failing cause come back as `unmatched`, to be deleted.
  */
 export function triage(results, known, { today, warnIsFailure = false }) {
   const failing = [];
@@ -957,13 +985,13 @@ export function triage(results, known, { today, warnIsFailure = false }) {
       known.filter(
         (k) => k.vendor === r.name && k.status === cause.status && cause.text.includes(k.contains),
       );
-    // A line whose text names more than one failing cause in a row holds
-    // none of them. One ceiling cannot bound a spend projection and a
-    // command count at once, and text that covers two suspended databases
-    // would cover the next one too.
-    const reach = new Map();
-    for (const cause of causes)
-      for (const k of matching(cause)) reach.set(k, (reach.get(k) ?? 0) + 1);
+    // A line whose text names more than one of the row's causes holds none
+    // of them, whether the others fail this run or not. One ceiling cannot
+    // bound a spend projection and a command count at once, and text that
+    // covers two suspended databases would cover the next one too.
+    const listed = r.causes ?? [];
+    const pool = listed.some((c) => fails(c.status, warnIsFailure)) ? listed : causes;
+    const reach = (k) => pool.filter((c) => c.text.includes(k.contains)).length;
     for (const cause of causes) {
       const matches = matching(cause);
       for (const k of matches) used.add(k);
@@ -971,7 +999,7 @@ export function triage(results, known, { today, warnIsFailure = false }) {
       // a `-` line on a measured cause would hold at any size (#795 review).
       const measured = Number.isFinite(cause.value);
       const holds = (k) =>
-        reach.get(k) === 1 && (k.upTo === null ? !measured : measured && cause.value <= k.upTo);
+        reach(k) === 1 && (k.upTo === null ? !measured : measured && cause.value <= k.upTo);
       // When several lines name one cause, the tightest ceiling decides: a
       // broader line must not override a limit someone wrote down.
       const inDate = matches.filter((k) => today <= k.until);
@@ -986,8 +1014,8 @@ export function triage(results, known, { today, warnIsFailure = false }) {
           ? matches.length
             ? `acknowledgment expired ${matches[0].until}`
             : 'not acknowledged'
-          : reach.get(refusing) > 1
-            ? `line ${refusing.line} matches ${reach.get(refusing)} failing causes in this row; make its text name one`
+          : reach(refusing) > 1
+            ? `line ${refusing.line} matches ${reach(refusing)} causes in this row; make its text name one`
             : refusing.upTo === null
               ? `is measured, so line ${refusing.line} needs a number in up_to, not -`
               : measured

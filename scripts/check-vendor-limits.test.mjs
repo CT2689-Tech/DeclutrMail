@@ -165,11 +165,16 @@ async function withFetch(routes, env, check) {
   const realFetch = globalThis.fetch;
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
+  // A route may be a function of how many times it was called, for a
+  // response that changes between the first attempt and the retry.
+  const calls = {};
   globalThis.fetch = async (url) => {
     const hit = Object.entries(routes).find(([prefix]) => String(url).startsWith(prefix));
     if (!hit) throw new Error(`no canned response for ${url}`);
-    if (hit[1] instanceof Error) throw hit[1];
-    return new Response(JSON.stringify(hit[1]), { status: 200 });
+    calls[hit[0]] = (calls[hit[0]] ?? 0) + 1;
+    const body = typeof hit[1] === 'function' ? hit[1](calls[hit[0]]) : hit[1];
+    if (body instanceof Error) throw body;
+    return new Response(JSON.stringify(body), { status: 200 });
   };
   try {
     return await check();
@@ -573,7 +578,7 @@ test('a capped Upstash database with no billing figure is an ERROR, not OK on vo
     'declutrmail-v2-bullmq: no billing reported, so its $30.00 cap cannot be gauged',
   ]);
   // A database with no cap has no spend to gauge, and stays OK on volume.
-  assert.equal((await row({ ...prodDb, budget: 0, type: 'payg' })).status, 'OK');
+  assert.equal((await row({ ...prodDb, budget: 0 })).status, 'OK');
 });
 
 test('a - line does not hold a measured cause, at any size', async () => {
@@ -611,7 +616,7 @@ test('a line that matches several failing causes in a row holds none of them', a
   );
   const open = triage([row], byName, { today: TODAY }).failing[0].open;
   assert.equal(open.length, 2);
-  for (const { why } of open) assert.match(why, /^line \d+ matches 2 failing causes in this row/);
+  for (const { why } of open) assert.match(why, /^line \d+ matches 2 causes in this row/);
   // Text that covers two suspended databases would cover the next one too.
   const suspended = {
     name: 'Upstash Redis',
@@ -654,4 +659,133 @@ test('a missing Supabase usage figure keeps the size as its own cause', () => {
     run.stdout,
     /Supabase \(DB size\) \(BREACH\): DB size 1024\.0 MB \(warn 400 MB\) — not acknowledged/,
   );
+});
+
+test('a line naming two causes holds neither even when only one fails', async () => {
+  // Pass 3: the day after a volume spike, a database-name line written for it
+  // held the spend BREACH at $34 under its 5,000,000-command ceiling.
+  const row = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      {
+        [UPSTASH_DBS]: [prodDb],
+        [UPSTASH_STATS]: {
+          daily_net_commands: 137114,
+          current_storage: 1,
+          total_monthly_billing: 29.99,
+        },
+      },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  const known = parse(
+    `${LIST}Upstash Redis\tBREACH\tdeclutrmail-v2-bullmq:\t5000000\t2026-10-03\tvolume spike\n`,
+  );
+  const { open } = triage([row], known, { today: TODAY }).failing[0];
+  assert.equal(open.length, 1);
+  assert.match(open[0].cause.text, /projecting \$[\d.]+ against a \$30\.00 cap$/);
+  assert.match(open[0].why, /^line \d+ matches 2 causes in this row/);
+});
+
+test('a retry that fails earlier keeps what the first attempt measured', async () => {
+  // Pass 3: the first attempt saw prod suspended and timed out on another
+  // database's stats; the retry timed out on the database list itself.
+  const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+    name: 'TimeoutError',
+  });
+  const row = await runRow(
+    'Upstash Redis',
+    {
+      [UPSTASH_DBS]: (call) =>
+        call === 1
+          ? [
+              { ...prodDb, state: 'suspended' },
+              { ...prodDb, database_id: 'db2', database_name: 'cache' },
+            ]
+          : timeout,
+      [UPSTASH_STATS]: timeout,
+    },
+    UPSTASH,
+    checkUpstash,
+  );
+  const known = parse(
+    `${LIST}Upstash Redis\tERROR\ttimed out twice\t-\t2026-10-02\tUpstash API slow\n`,
+  );
+  assert.deepEqual(openCauses(triage([row], known, { today: TODAY })), [
+    'declutrmail-v2-bullmq: state=suspended',
+  ]);
+});
+
+test('an unreadable Upstash budget or state is an ERROR, not healthy', async () => {
+  // Pass 3: a missing, null or non-numeric budget read as "no spend cap",
+  // and a missing state read as active.
+  const stats = { daily_net_commands: 137114, current_storage: 1, total_monthly_billing: 29.99 };
+  const row = async (db) => ({
+    name: 'Upstash Redis',
+    ...(await withFetch({ [UPSTASH_DBS]: [db], [UPSTASH_STATS]: stats }, UPSTASH, checkUpstash)),
+  });
+  for (const budget of [undefined, null, '$30']) {
+    const r = await row({ ...prodDb, budget });
+    assert.equal(r.status, 'ERROR', String(budget));
+    assert.deepEqual(openCauses(triage([r], parse(LIST), { today: TODAY })), [
+      'declutrmail-v2-bullmq: budget not reported, so its cap cannot be gauged',
+    ]);
+  }
+  const stateless = await row({ ...prodDb, state: undefined });
+  assert.deepEqual(openCauses(triage([stateless], parse(LIST), { today: TODAY })), [
+    'declutrmail-v2-bullmq: state not reported',
+  ]);
+});
+
+test('every active Upstash database is gauged, not only the first', async () => {
+  // Pass 3: a second active database listed before prod stood in for it.
+  const row = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      {
+        [UPSTASH_DBS]: [
+          { ...prodDb, database_id: 'db0', database_name: 'staging-cache', budget: 10 },
+          prodDb,
+        ],
+        [`${UPSTASH_STATS}db0`]: {
+          daily_net_commands: 100,
+          current_storage: 1_048_576,
+          total_monthly_billing: 0.02,
+        },
+        [`${UPSTASH_STATS}db1`]: {
+          daily_net_commands: 137114,
+          current_storage: 1_048_576,
+          total_monthly_billing: 29.99,
+        },
+      },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  assert.equal(row.status, 'BREACH');
+  const open = openCauses(triage([row], parse(LIST), { today: TODAY }));
+  assert.equal(open.length, 1);
+  assert.match(open[0], /^declutrmail-v2-bullmq: projecting \$[\d.]+ against a \$30\.00 cap$/);
+  // The row's figures are account totals.
+  assert.equal(row.usage.commands_today, 137214);
+  assert.equal(row.usage.storage_mb, 2);
+  assert.ok(Math.abs(row.costMtdUsd - 30.01) < 1e-9, String(row.costMtdUsd));
+});
+
+test('a retry that fails for another reason does not say it timed out twice', async () => {
+  const timeout = Object.assign(new Error('The operation was aborted due to timeout'), {
+    name: 'TimeoutError',
+  });
+  const row = await runRow(
+    'Upstash Redis',
+    {
+      [UPSTASH_DBS]: (call) =>
+        call === 1 ? timeout : new Error('HTTP 401 from api.upstash.com: unauthorized'),
+    },
+    UPSTASH,
+    checkUpstash,
+  );
+  assert.equal(row.status, 'ERROR');
+  assert.match(row.detail, /^timed out, then failed on retry, value NOT verified: HTTP 401/);
 });
