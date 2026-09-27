@@ -88,7 +88,10 @@ const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 216, // 212.0 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 216 -> 217 by #805 (D245): measured 216.2, up from 214.9 on
+  // main. Rows hold after a start or status read we could not confirm, a
+  // new action clears a row's old mark, and the skip/unknown states.
+  '/(app)/senders/page': 217, // 216.2 — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -124,10 +127,18 @@ const OVERRIDES_KB = {
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
   // while keeping the general 180 kB ratchet and other routes unchanged.
   '/(app)/billing/page': 187, // checkout + invoices + plan controls + editorial shell
-  '/(app)/screener/page': 181, // queue + decision controls + editorial shell
+  // Raised 181 -> 183 by #805 (D245): measured 182.5, up from 180.9 on
+  // main. Rows hold after an unconfirmed start or lost status read (a
+  // second decision would run the job twice), the confirm names the
+  // count, and the pill's Protected-skip notes.
+  '/(app)/screener/page': 183, // queue + decision controls + editorial shell
   // The scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
   '/(app)/brief/page': 184,
+  // #805 (D245): measured 180.4, up from 179.3 on main — the Protected-
+  // skip line, the retry's consent and reason, and undo failures in the
+  // pill's words. Its own ceiling rather than relaxing the 180 default.
+  '/(app)/activity/page': 181,
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
