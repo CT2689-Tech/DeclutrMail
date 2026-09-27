@@ -96,7 +96,7 @@ function stageSentence(status: SyncStatus): string {
 const ERROR_COPY: Record<string, string> = {
   RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
   AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnect the account and allow Gmail access.',
+    'Google stopped accepting our access. Reconnect Gmail and allow access on Google’s screen.',
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',

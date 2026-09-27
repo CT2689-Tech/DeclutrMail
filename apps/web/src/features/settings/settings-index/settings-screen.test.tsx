@@ -153,6 +153,21 @@ function happyHandlers() {
       respond: () => jsonOk({ data: SETTINGS_PAYLOAD }),
     },
     {
+      // An onboarded user: the OAuth result is shown here, not carried on.
+      method: 'GET' as const,
+      path: '/api/onboarding/state',
+      respond: () =>
+        jsonOk({
+          data: {
+            onboardedAt: '2026-01-02T00:00:00.000Z',
+            skipped: false,
+            goal: null,
+            presetPicks: null,
+            presets: [],
+          },
+        }),
+    },
+    {
       method: 'GET' as const,
       path: '/api/v1/sync/status',
       respond: () => jsonOk({ data: readySyncStatus() }),
@@ -887,7 +902,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'target_invalid',
-      message: 'Could not match that recovery request to the mailbox you chose. Try again.',
+      message: 'That mailbox changed while you were on Google’s screen. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -935,7 +950,7 @@ describe('SettingsScreen', () => {
   it.each([
     {
       result: 'target_invalid',
-      message: 'That Gmail recovery request is no longer available. Try again.',
+      message: 'Could not start that reconnect. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -989,6 +1004,20 @@ describe('SettingsScreen', () => {
   // D108: someone who has not finished onboarding reaches Settings only to
   // be sent to /onboarding. The gate carries the result there; using it up
   // here first would lose it.
+  it('still shows an OAuth result when the onboarding state cannot be read', async () => {
+    // Fail-open: an unreadable onboarding state must not swallow the result.
+    installFetchStub(happyHandlers().filter((h) => h.path !== '/api/onboarding/state'));
+    setSettingsLocation('reconnect_result=gmail_access_missing', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+        'warn',
+      ),
+    );
+  });
+
   it('leaves an OAuth result for the onboarding gate while onboarding is incomplete', async () => {
     const onboardingState = vi.fn(() =>
       jsonOk({
@@ -996,7 +1025,7 @@ describe('SettingsScreen', () => {
       }),
     );
     installFetchStub([
-      ...happyHandlers(),
+      ...happyHandlers().filter((h) => h.path !== '/api/onboarding/state'),
       { method: 'GET', path: '/api/onboarding/state', respond: onboardingState },
     ]);
     setSettingsLocation('reconnect_result=gmail_access_missing', `#mailbox-${MAILBOX_A}`);

@@ -5,8 +5,9 @@ import { ERROR_CODES, GMAIL_ACCESS_MISSING_RESULT } from '@declutrmail/shared/co
  * The closed results a Gmail connection returns with, and the one line
  * each shows (D108). Read on Settings, by the app chrome and on
  * /onboarding. Someone who has not finished onboarding reaches Settings
- * only to be sent to /onboarding, so every line has to be true on both
- * screens. None names a control only one of them has.
+ * only to be sent to /onboarding, so every line that can reach /onboarding
+ * has to be true there too. `inbox_limit` reaches it only through a
+ * concurrent-connect race, so it still names Settings controls.
  *
  * Privacy-safe by construction: values are closed, and no provider error,
  * mailbox id or email address from the URL is ever echoed.
@@ -47,7 +48,7 @@ export const RECONNECT_RESULT_COPY: Record<ReconnectResult, OAuthResultCopy> = {
     liveRole: 'alert',
   },
   target_invalid: {
-    message: 'Could not match that recovery request to the mailbox you chose. Try again.',
+    message: 'That mailbox changed while you were on Google’s screen. Try again.',
     tone: 'danger',
     liveRole: 'alert',
   },
@@ -70,7 +71,7 @@ export const RECONNECT_RESULT_COPY: Record<ReconnectResult, OAuthResultCopy> = {
 
 export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCopy> = {
   target_invalid: {
-    message: 'That Gmail recovery request is no longer available. Try again.',
+    message: 'Could not start that reconnect. Try again.',
     tone: 'danger',
     liveRole: 'alert',
   },

@@ -268,7 +268,7 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     const html = renderToStaticMarkup(
       withClient(<SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} />),
     );
-    expect(html).toContain('allow Gmail access');
+    expect(html).toContain('Reconnect Gmail and allow access');
     expect(html).not.toContain('restores it');
   });
 
