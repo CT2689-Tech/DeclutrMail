@@ -165,7 +165,10 @@ describe('AccountMenu Gmail reconnect health', () => {
         name: `Manage connection and data for ${MAILBOX_A.email}`,
       }),
     );
-    expect(screen.getByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` })).toBeVisible();
+    // Loaded on first open, so it arrives a moment after the click.
+    expect(
+      await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` }),
+    ).toBeVisible();
   });
 
   it('keeps another revoked mailbox selectable and reconnects its exact target at the limit', async () => {
