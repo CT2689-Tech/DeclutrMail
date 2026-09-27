@@ -48,10 +48,12 @@
  *
  * WHY IT FAILS CLOSED. A measure that quietly looks at the wrong page is
  * worse than none. The run fails, naming the route, when the server never
- * answers, a route answers anything but 200 (a redirect to sign-in
- * included) and is not a declared redirect below, its HTML names no
- * chunks, or it rendered outside its own layout; and the server is
- * stopped on every way out.
+ * starts or answers, a route answers anything but 200 (a redirect to
+ * sign-in included) and is not a declared redirect below, its HTML names
+ * no chunks, or it names none of the route's own page chunks — the sign
+ * of some other page served in its place (a sign-in page, a 404). Layout
+ * chunks cannot show that: the layouts list chunks every page shares. The
+ * server is stopped on every way out the script can catch.
  *
  * WHY DERIVED, NOT LISTED. The route set comes from the build manifest,
  * and every route in it is measured or the run fails, so a new page is
@@ -261,58 +263,45 @@ const GROUPS = [
 /** A failure the run can name: the build, the server or one route. */
 class BudgetError extends Error {}
 
-const CHUNK = /static\/chunks\/[\w\-./()[\]@]+?\.js/g;
+const CHUNK = /static\/chunks\/[^"'\s<>\\]+?\.js/g;
 
 /**
- * Every JS chunk an HTML response names, each once: `<script src>` tags
- * and the RSC payload's client references alike. A `<script noModule>`
- * is dropped, because modern browsers never fetch it.
+ * Every JS chunk an HTML response names, each once and decoded to its
+ * path on disk (Next URL-encodes each segment, so `[id]` arrives as
+ * `%5Bid%5D`): `<script src>` tags and the RSC payload's client
+ * references alike. A `<script noModule>` is dropped, because modern
+ * browsers never fetch it.
  */
 export function chunkRefs(html) {
-  const text = html.replaceAll('%5B', '[').replaceAll('%5D', ']');
-  const refs = new Set(text.match(CHUNK) ?? []);
-  for (const tag of text.match(/<script\b[^>]*\bnomodule\b[^>]*>/gi) ?? []) {
-    for (const file of tag.match(CHUNK) ?? []) refs.delete(file);
+  const named = (text) => (text.match(CHUNK) ?? []).map((file) => decodeURIComponent(file));
+  const refs = new Set(named(html));
+  for (const tag of html.match(/<script\b[^>]*\bnomodule\b[^>]*>/gi) ?? []) {
+    for (const file of named(tag)) refs.delete(file);
   }
   return refs;
 }
 
 /**
  * The URL a page key is served at: route groups dropped, and a dynamic
- * segment filled from a path the build prerendered — else a placeholder,
- * which a client-rendered page like /senders/[id] answers like any id.
+ * segment filled with a path the build prerendered FROM this route (its
+ * `srcRoute`) — else a placeholder, which a client-rendered page like
+ * /senders/[id] answers like any id.
  */
 export function urlFor(route, prerendered) {
-  const segments = route
+  const url = `/${route
     .split('/')
     .slice(1, -1)
-    .filter((segment) => !/^\(.+\)$/.test(segment));
-  if (!segments.some((segment) => segment.startsWith('['))) return `/${segments.join('/')}`;
-  const pattern = segments.map((segment) => {
-    if (segment.startsWith('[[...') || segment.startsWith('[...')) return '.+';
-    if (segment.startsWith('[')) return '[^/]+';
-    return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  });
-  const matcher = new RegExp(`^/${pattern.join('/')}$`);
-  return (
-    prerendered.find((url) => matcher.test(url)) ??
-    `/${segments.map((segment) => (segment.startsWith('[') ? 'budget-probe' : segment)).join('/')}`
-  );
+    .filter((segment) => !/^\(.+\)$/.test(segment))
+    .join('/')}`;
+  if (!url.includes('[')) return url;
+  const built = Object.entries(prerendered).find(([, entry]) => entry.srcRoute === url);
+  return built?.[0] ?? url.replace(/\[[^\]]+\]+/g, 'budget-probe');
 }
 
-/**
- * The route's deepest layout, and the chunks it lists beyond the root
- * layout's — at least one of which its HTML must name, or it rendered
- * some other page (a sign-in redirect, a 404) under some other layout.
- */
-function ownLayout(manifest, route) {
-  const segments = route.split('/').slice(1, -1);
-  const key = segments
-    .map((_, i) => `/${segments.slice(0, i + 1).join('/')}/layout`)
-    .reverse()
-    .find((candidate) => manifest.pages[candidate] !== undefined);
-  const root = new Set(manifest.pages['/layout']);
-  return { key, files: manifest.pages[key].filter((f) => f.endsWith('.js') && !root.has(f)) };
+/** The chunks the manifest files under the route's own page entry. */
+function ownPageChunks(manifest, route) {
+  const prefix = `static/chunks/app${route.slice(0, -'/page'.length)}/page-`;
+  return manifest.pages[route].filter((file) => file.startsWith(prefix) && file.endsWith('.js'));
 }
 
 const gzipCache = new Map();
@@ -322,10 +311,10 @@ function gzippedSize(file) {
   let size;
   try {
     size = gzipSync(readFileSync(path.join(nextDir, file))).length;
-  } catch {
-    // A named chunk missing from disk is a broken build, not a budget
+  } catch (error) {
+    // A named chunk that cannot be read is a broken build, not a budget
     // question — surface it rather than silently under-counting.
-    throw new BudgetError(`${file} is named by the HTML but not on disk`);
+    throw new BudgetError(`${file} is named by the HTML but cannot be read (${error.code})`);
   }
   gzipCache.set(file, size);
   return size;
@@ -345,7 +334,8 @@ function freePort() {
 /**
  * `next start` on the build (or the contract test's fixture server) in a
  * process group of its own, so `stop` takes anything it forked with it.
- * `stop` runs on exit and on SIGINT/SIGTERM too, not only on success.
+ * `stop` also runs on exit and on SIGINT, SIGTERM and SIGHUP; only a
+ * SIGKILL of this script can leave the server behind.
  */
 async function startServer() {
   const port = await freePort();
@@ -363,8 +353,13 @@ async function startServer() {
   };
   child.stdout.on('data', keep);
   child.stderr.on('data', keep);
+  let spawnError = null;
+  child.once('error', (error) => {
+    spawnError = error;
+  });
 
   const stop = () => {
+    if (child.pid === undefined) return; // It never started.
     try {
       process.kill(-child.pid, 'SIGKILL');
     } catch (error) {
@@ -376,19 +371,28 @@ async function startServer() {
     }
   };
   process.once('exit', stop);
-  for (const signal of ['SIGINT', 'SIGTERM']) {
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.once(signal, () => {
       stop();
       process.exit(1);
     });
   }
-  return { base: `http://127.0.0.1:${port}`, child, stop, log: () => log };
+  return {
+    base: `http://127.0.0.1:${port}`,
+    child,
+    stop,
+    log: () => log,
+    spawnError: () => spawnError,
+  };
 }
 
 async function waitUntilReady(server) {
   const deadline = Date.now() + readyTimeoutMs;
   let last = 'no answer yet';
   while (Date.now() < deadline) {
+    if (server.spawnError()) {
+      throw new BudgetError(`the server could not start: ${server.spawnError().message}`);
+    }
     if (server.child.exitCode !== null || server.child.signalCode !== null) {
       throw new BudgetError(
         `the server exited (${server.child.exitCode ?? server.child.signalCode}) before answering.\n${server.log()}`,
@@ -427,10 +431,10 @@ async function measureRoute(server, manifest, route, url) {
   }
   const refs = chunkRefs(await response.text());
   if (refs.size === 0) throw new BudgetError('its HTML named no JS chunks at all');
-  const layout = ownLayout(manifest, route);
-  if (!layout.files.some((file) => refs.has(file))) {
+  const own = ownPageChunks(manifest, route);
+  if (!own.some((file) => refs.has(file))) {
     throw new BudgetError(
-      `its HTML named none of ${layout.key}'s chunks: it rendered some other page`,
+      `its HTML named none of the ${own.length} chunk(s) of its own page: it rendered some other page`,
     );
   }
   return [...refs].reduce((sum, file) => sum + gzippedSize(file), 0) / 1024;
@@ -441,9 +445,9 @@ export async function main() {
   let prerendered;
   try {
     manifest = JSON.parse(readFileSync(path.join(nextDir, 'app-build-manifest.json'), 'utf8'));
-    prerendered = Object.keys(
-      JSON.parse(readFileSync(path.join(nextDir, 'prerender-manifest.json'), 'utf8')).routes,
-    );
+    prerendered = JSON.parse(
+      readFileSync(path.join(nextDir, 'prerender-manifest.json'), 'utf8'),
+    ).routes;
   } catch (error) {
     console.error(
       `✗ bundle budget: cannot read the build (${error.message}).\n` +
@@ -468,16 +472,6 @@ export async function main() {
         `✗ bundle budget: no ${group.prefix} routes in the manifest — that group went unmeasured.`,
       );
       return 1;
-    }
-    // Without its layout keys, nothing could show a route rendered inside
-    // its own layout rather than some other page.
-    for (const layout of ['/layout', `${group.prefix}layout`]) {
-      if (manifest.pages[layout] === undefined) {
-        console.error(
-          `✗ bundle budget: no ${layout} in the manifest — ${group.prefix} routes cannot be checked against their layouts.`,
-        );
-        return 1;
-      }
     }
     for (const route of keys) routes.push({ route, group, url: urlFor(route, prerendered) });
   }
@@ -547,6 +541,11 @@ export async function main() {
   return 0;
 }
 
-if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+// Both sides resolved: under --preserve-symlinks-main, import.meta.url
+// keeps a symlink's path, and a one-sided compare would exit 0 unmeasured.
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
   process.exitCode = await main();
 }
