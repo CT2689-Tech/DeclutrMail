@@ -22,9 +22,11 @@
 // enqueue, previews it as-is, and executes the frozen ids — it is
 // internally consistent and expresses direct message-level intent.
 
-import { and, eq, inArray, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import { mailMessages } from './schema/mail-messages';
+import { screenerQuarantine } from './schema/screener-quarantine';
+import { senders } from './schema/senders';
 
 /**
  * How far a sender action reaches (ADR-0028).
@@ -270,4 +272,43 @@ export function readStateSweeperMarked(
 ): SQL {
   const alias = typeof messageAlias === 'string' ? sql.raw(messageAlias) : messageAlias;
   return sql`COALESCE(${alias}.label_ids, '{}') && ${sweeperLabelIds(mailboxScope)}`;
+}
+
+/**
+ * How long a sender may sit unjudged in the Screener before it stops
+ * being asked about (D256).
+ *
+ * The quarantine lifts at three messages. A sender still under three
+ * after this long is not a stream that has yet to reveal itself — it is
+ * a receipt. On the founder's mailbox the oldest pending row was 48 days
+ * old and 75% of the queue had sent exactly one message, ever.
+ */
+export const SCREENER_AGE_OUT_DAYS = 30;
+
+/**
+ * A Screener entry still awaiting a decision, exactly as the Screener
+ * shows it: undecided, and not aged out (`SCREENER_AGE_OUT_DAYS` old with
+ * fewer than three messages).
+ *
+ * REQUIRES `senders` joined on `(mailbox_account_id, sender_key)` in the
+ * enclosing query. The Screener renders only entries whose sender exists,
+ * and the age-out reads `senders.total_received`.
+ *
+ * Lives here, not in the API, because the weekly receipt email counts the
+ * same queue from a worker. Its hand-written copy had neither the join
+ * nor the age-out, so "N senders are waiting in Screener" counted entries
+ * the Screener could never show.
+ *
+ * @param asOf - the clock entries age against; the database's `now()`
+ *   when omitted. A worker running on an injected clock passes it.
+ */
+export function screenerAwaitingWhere(asOf?: Date): SQL {
+  const clock = asOf ? sql`${asOf.toISOString()}::timestamptz` : sql`now()`;
+  return and(
+    isNull(screenerQuarantine.decidedAt),
+    sql`NOT (
+      ${screenerQuarantine.createdAt} < ${clock} - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval
+      AND ${senders.totalReceived} < 3
+    )`,
+  )!;
 }

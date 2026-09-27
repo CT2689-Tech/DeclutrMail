@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, getTableName, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, getTableName, inArray, sql, type SQL } from 'drizzle-orm';
 
 import {
   mailMessages,
+  screenerAwaitingWhere,
   screenerQuarantine,
   senderPolicies,
   senders,
@@ -27,24 +28,15 @@ import type { ScreenerCountResult, ScreenerQueueFacts } from './screener.types.j
  * the tables touched.
  */
 /**
- * How long a sender may sit unjudged in the Screener before it stops
- * being asked about (D256).
- *
- * The quarantine lifts at three messages. A sender still under three
- * after this long is not a stream that has yet to reveal itself — it is
- * a receipt. On the founder's mailbox the oldest pending row was 48 days
- * old and 75% of the queue had sent exactly one message, ever.
- */
-export const SCREENER_AGE_OUT_DAYS = 30;
-
-/**
- * THE definition of "awaiting a decision in the Screener".
+ * THE definition of "awaiting a decision in the Screener", for one mailbox.
  *
  * Lives once, and is used by BOTH the queue read and the badge count.
  * Two copies of this predicate would put a number in the header that the
  * list below it could not produce — which is the exact defect class this
  * workstream exists to remove (the header already says "3360 new senders
- * waiting" above a list that can only ever reach 50).
+ * waiting" above a list that can only ever reach 50). The rule itself —
+ * undecided and not aged out — is `screenerAwaitingWhere` in
+ * `@declutrmail/db`, shared with the weekly receipt email.
  *
  * A row ages out when it has been queued longer than
  * `SCREENER_AGE_OUT_DAYS` AND the sender still has fewer than three
@@ -58,7 +50,6 @@ export const SCREENER_AGE_OUT_DAYS = 30;
 function screenerPendingWhere(mailboxAccountId: string): SQL {
   return and(
     eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
-    isNull(screenerQuarantine.decidedAt),
     // The queue INNER JOINs `senders`, so a quarantine row with no
     // sender row can never be rendered. Requiring it here too is what
     // makes the badge a promise the list can keep: without this clause
@@ -89,10 +80,7 @@ function screenerPendingWhere(mailboxAccountId: string): SQL {
     // `mail_messages`, itself retention-bounded). It is actively
     // reconciled by `senders-counter-reconciliation.worker.ts`, so drift
     // is corrected rather than accumulated. A spec asserts the two agree.
-    sql`NOT (
-      ${screenerQuarantine.createdAt} < now() - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval
-      AND ${senders.totalReceived} < 3
-    )`,
+    screenerAwaitingWhere(),
   )!;
 }
 

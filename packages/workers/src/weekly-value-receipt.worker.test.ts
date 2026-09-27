@@ -7,6 +7,7 @@ import {
   briefRuns,
   mailboxAccounts,
   screenerQuarantine,
+  senders,
   users,
   workspaces,
   type Workspace,
@@ -28,6 +29,45 @@ type Db = ReturnType<typeof drizzle<typeof schema>>;
 
 async function freshDb(): Promise<Db> {
   return freshTestDb();
+}
+
+const SCREENER_DAY_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Undecided Screener entries. `shown` gives each a one-message sender, as
+ * real entries have. `orphan` leaves the sender out (the index dropped
+ * it); `aged-out` backdates the entry past the 30-day age-out. The
+ * Screener shows neither of those.
+ */
+async function seedScreener(
+  db: Db,
+  mailboxId: string,
+  senderKeys: string[],
+  shape: 'shown' | 'orphan' | 'aged-out' = 'shown',
+): Promise<void> {
+  if (shape !== 'orphan') {
+    await db.insert(senders).values(
+      senderKeys.map((senderKey) => ({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        email: `${senderKey.replace(/[^a-z0-9-]/gi, '')}@example.com`,
+        domain: 'example.com',
+        gmailCategory: 'promotions' as const,
+        firstSeenAt: NOW,
+        lastSeenAt: NOW,
+        totalReceived: 1,
+      })),
+    );
+  }
+  await db.insert(screenerQuarantine).values(
+    senderKeys.map((senderKey) => ({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      ...(shape === 'aged-out'
+        ? { createdAt: new Date(NOW.getTime() - 40 * SCREENER_DAY_MS) }
+        : {}),
+    })),
+  );
 }
 
 async function seedUser(
@@ -63,11 +103,10 @@ async function seedUser(
     })
     .returning({ id: mailboxAccounts.id });
   if (input.pending > 0) {
-    await db.insert(screenerQuarantine).values(
-      Array.from({ length: input.pending }, (_, index) => ({
-        mailboxAccountId: mailbox!.id,
-        senderKey: `${input.email}-${index}`,
-      })),
+    await seedScreener(
+      db,
+      mailbox!.id,
+      Array.from({ length: input.pending }, (_, index) => `${input.email}-${index}`),
     );
   }
   return user!.id;
@@ -208,11 +247,10 @@ describe('WeeklyValueReceiptWorker facts', () => {
       })
       .returning({ id: mailboxAccounts.id });
     if (pending > 0) {
-      await db.insert(screenerQuarantine).values(
-        Array.from({ length: pending }, (_, index) => ({
-          mailboxAccountId: mailbox!.id,
-          senderKey: `pending-${index}`,
-        })),
+      await seedScreener(
+        db,
+        mailbox!.id,
+        Array.from({ length: pending }, (_, index) => `pending-${index}`),
       );
     }
     await seed(mailbox!.id);
@@ -508,6 +546,32 @@ describe('WeeklyValueReceiptWorker facts', () => {
     expect(withBrief?.briefSurfaced).toBe(2);
   });
 
+  it('counts only Screener entries the Screener shows — none whose sender is gone, none aged out', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await seedScreener(db, mailboxId, ['gone-1', 'gone-2'], 'orphan');
+        await seedScreener(db, mailboxId, ['old-1'], 'aged-out');
+      },
+      2,
+    );
+    expect(facts?.pendingScreener).toBe(2);
+  });
+
+  it('stays silent when the only Screener entries are ones the Screener cannot show', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await seedScreener(db, mailboxId, ['gone-1'], 'orphan');
+        await seedScreener(db, mailboxId, ['old-1'], 'aged-out');
+      },
+      0,
+    );
+    expect(facts).toBeNull();
+  });
+
   it('suppresses the receipt entirely when nothing happened (D189 empty state)', async () => {
     const facts = await factsFor(await freshDb(), async () => {}, 0);
     // prepareEmail never ran, so nothing was rendered or queued.
@@ -559,9 +623,7 @@ describe('WeeklyValueReceiptWorker facts', () => {
         providerAccountId: 'deleting@example.com',
       })
       .returning({ id: mailboxAccounts.id });
-    await db
-      .insert(screenerQuarantine)
-      .values({ mailboxAccountId: mailbox!.id, senderKey: 'waiting' });
+    await seedScreener(db, mailbox!.id, ['waiting']);
     await db.insert(accountDeletionRequests).values({
       userId: user!.id,
       effectiveAt: new Date(NOW.getTime() + 7 * DAY_MS),
