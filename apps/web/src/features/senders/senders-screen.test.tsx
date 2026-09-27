@@ -4951,13 +4951,12 @@ describe('SendersScreen — server-driven aggregates (#145)', () => {
 });
 
 describe('SendersScreen — the Protected override must reach BOTH halves of an unsubscribe', () => {
-  // Unsubscribe has no Protected guard on the server, so the intent
-  // ALWAYS lands — and for a one-click sender that is a real, one-way
-  // RFC 8058 request (D58). The paired backlog action is a SEPARATE
-  // composite POST. If the acknowledgement the preview collected does
-  // not ride that second call, the server 409s it and the user is left
-  // unsubscribed with their mail untouched: a partial execution whose
-  // first half cannot be undone.
+  // The acknowledgement the preview collected must ride both calls. The
+  // unsubscribe intent needs it or its send is refused as Protected when
+  // it runs (D245). The paired backlog action is a SEPARATE composite
+  // POST; without it the server 409s that half, and the user is left
+  // unsubscribed with their mail untouched — a partial execution whose
+  // first half (a one-way RFC 8058 request, D58) cannot be undone.
   const PROTECTED_ROW = {
     ...ROW,
     protectionFlags: {
@@ -4996,14 +4995,16 @@ describe('SendersScreen — the Protected override must reach BOTH halves of an 
 
   async function runUnsubWithBacklog(handler: ReturnType<typeof oneSenderHandler>) {
     const composites: Record<string, unknown>[] = [];
+    const intents: Record<string, unknown>[] = [];
     installFetchStub([
       handler,
       compositePreviewHandler(3),
       {
         method: 'POST',
         path: '/api/actions/unsubscribe-intent',
-        respond: () =>
-          jsonOk({
+        respond: async (req: Request) => {
+          intents.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
             data: {
               senderId: 'a',
               recordedAt: '2026-07-26T12:00:00.000Z',
@@ -5012,7 +5013,8 @@ describe('SendersScreen — the Protected override must reach BOTH halves of an 
               executionActionId: null,
               mailtoUrl: null,
             },
-          }),
+          });
+        },
       },
       {
         method: 'POST',
@@ -5065,18 +5067,27 @@ describe('SendersScreen — the Protected override must reach BOTH halves of an 
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
     await waitFor(() => expect(composites).toHaveLength(1));
-    return composites[0]!;
+    return { composite: composites[0]!, intent: intents[0]! };
   }
 
   it('carries override:true on the backlog composite for a Protected sender', async () => {
-    expect(await runUnsubWithBacklog(protectedSenderHandler())).toMatchObject({ override: true });
+    const { composite } = await runUnsubWithBacklog(protectedSenderHandler());
+    expect(composite).toMatchObject({ override: true });
+  });
+
+  it('carries override:true on the unsubscribe itself for a Protected sender (D245)', async () => {
+    const { intent } = await runUnsubWithBacklog(protectedSenderHandler());
+    expect(intent).toMatchObject({ override: true });
   });
 
   it('sends override:false for an unprotected sender', async () => {
     // Two-sided. `enqueueCompositeAction` always writes the key
     // (`override: input.override ?? false`), so the negative assertion
     // is an explicit `false`, not an absent key.
-    const body = await runUnsubWithBacklog(oneSenderHandler());
-    expect(body).toMatchObject({ override: false });
+    const { composite, intent } = await runUnsubWithBacklog(oneSenderHandler());
+    expect(composite).toMatchObject({ override: false });
+    // The intent sends the key only when true, so an API that predates it
+    // still takes every click but the Protected "…anyway" one.
+    expect(intent).not.toHaveProperty('override');
   });
 });

@@ -1622,8 +1622,16 @@ export class ActionsService {
     idempotencyKey: string;
     /** Separate backlog Archive/Delete will follow this same confirmation. */
     includesBacklogAction?: boolean;
+    /** "Unsubscribe anyway" on a sender shown as Protected (D245). */
+    override?: boolean;
   }): Promise<UnsubscribeIntentResult> {
-    const { mailboxAccountId, senderId, idempotencyKey, includesBacklogAction = false } = input;
+    const {
+      mailboxAccountId,
+      senderId,
+      idempotencyKey,
+      includesBacklogAction = false,
+      override = false,
+    } = input;
     // ADR-0008 §3 exception: actions → senders. The single-sender twin of
     // the bulk resolve above — read-only capability lookup that decides
     // which unsubscribe path this intent takes.
@@ -1668,6 +1676,22 @@ export class ActionsService {
           : 'none';
     const mailtoUrl = method === 'mailto' ? senderRow.unsubscribeUrl : null;
     const initialLifecycleStatus = initialUnsubscribeLifecycleStatus(method);
+    // Consent to what the user saw: "Unsubscribe anyway" on a sender that
+    // was Protected at the click (D245). Any other job is re-checked when
+    // it runs, and refused if its sender is Protected by then.
+    const [protection] = override
+      ? await this.db
+          .select({ isProtected: senderPolicies.isProtected })
+          .from(senderPolicies)
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              eq(senderPolicies.senderKey, senderKey),
+            ),
+          )
+          .limit(1)
+      : [];
+    const protectedConfirmed = override && protection?.isProtected === true;
 
     // The intent and its optional execution each have a globally-unique
     // storage key. Before projecting a cached response, bind BOTH rows
@@ -1831,7 +1855,7 @@ export class ActionsService {
           mailboxAccountId,
           senderKey,
           executionKey,
-          true,
+          protectedConfirmed,
         );
       }
       const [policy] = await this.db
@@ -2166,7 +2190,7 @@ export class ActionsService {
         mailboxAccountId,
         senderKey,
         executionKey,
-        true,
+        protectedConfirmed,
       );
     }
 
@@ -2187,21 +2211,18 @@ export class ActionsService {
    * honest terminal state — exec row 'failed' + `unsub_status='failed'`
    * (never a 'requested' chip with no job behind it) — then 503.
    *
-   * `explicit` must be `true` ONLY from `recordUnsubscribeIntent` (the
-   * single-sender click) — D245 excludes Protected senders from bulk and
-   * automatic actions, never from that explicit path (see
-   * `apps/web/src/features/senders/data.ts`'s `canUnsubscribe()`
-   * docblock). `enqueueBulkUnsubscribe` passes `false`: it already
-   * excludes Protected senders before calling this at all, and the
-   * worker's execution-time re-check (this method's whole reason to
-   * carry the flag) must stay active for that path.
+   * `protectedConfirmed` carries the single-sender "…anyway" confirm on a
+   * sender that was Protected at the click; only such a job skips the
+   * worker's execution-time Protected re-check (D245).
+   * `enqueueBulkUnsubscribe` passes `false`: it already excludes Protected
+   * senders at the click, and the re-check must stay active for it.
    */
   private async enqueueUnsubExecution(
     actionId: string,
     mailboxAccountId: string,
     senderKey: string,
     idempotencyKey: string,
-    explicit: boolean,
+    protectedConfirmed: boolean,
   ): Promise<void> {
     if (!this.unsubQueue) {
       // Callers guard up front; fail-fast for any future path that forgets.
@@ -2213,7 +2234,13 @@ export class ActionsService {
     try {
       await this.unsubQueue.add(
         UNSUB_EXECUTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey, source: 'manual', explicit },
+        {
+          actionId,
+          mailboxAccountId,
+          idempotencyKey,
+          source: 'manual',
+          ...(protectedConfirmed ? { protectedConfirmed: true } : {}),
+        },
         unsubExecutionJobOptions(idempotencyKey),
       );
     } catch (err) {

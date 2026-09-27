@@ -2859,6 +2859,62 @@ describe('ActionsService', () => {
       expect(queue.count).toBe(0);
     });
 
+    it('one_click on a sender Protected at the click: "…anyway" rides the job, fresh and on replay (D245)', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      const service = svcWithUnsubQueue();
+      const click = {
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'anyway-unsub-1',
+        override: true,
+      };
+
+      await service.recordUnsubscribeIntent(click);
+      expect(unsubQueue.jobData).toEqual([expect.objectContaining({ protectedConfirmed: true })]);
+
+      // The crash-window replay re-enqueues with the same consent.
+      unsubQueue.count = 0;
+      unsubQueue.jobIds = [];
+      unsubQueue.jobData = [];
+      await service.recordUnsubscribeIntent(click);
+      expect(unsubQueue.jobData).toEqual([expect.objectContaining({ protectedConfirmed: true })]);
+    });
+
+    it('one_click without "…anyway" consent: the job carries none, so it is re-checked when it runs (D245)', async () => {
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+
+      // Not Protected at the click: an override covers nothing.
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'plain-unsub-1',
+        override: true,
+      });
+      // Protected at the click, but the user did not confirm "…anyway".
+      await db
+        .update(senderPolicies)
+        .set({ isProtected: true, protectionReason: 'user_defined' })
+        .where(eq(senderPolicies.senderKey, SENDER_KEY));
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'plain-unsub-2',
+      });
+
+      expect(unsubQueue.jobData).toHaveLength(2);
+      for (const data of unsubQueue.jobData) {
+        expect(data).not.toHaveProperty('protectedConfirmed');
+        expect(data).not.toHaveProperty('explicit');
+      }
+    });
+
     it('one_click replay: the SAME Idempotency-Key returns the same execution handle; the wire sees ONE job (jobId dedup)', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
       const service = svcWithUnsubQueue();

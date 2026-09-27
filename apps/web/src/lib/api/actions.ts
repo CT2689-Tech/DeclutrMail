@@ -481,6 +481,8 @@ export async function recordUnsubscribeIntent(
   options: ActionRequestOptions & {
     idempotencyKey?: string;
     includesBacklogAction?: boolean;
+    /** "Unsubscribe anyway" confirmed on a Protected sender (D245). */
+    override?: boolean;
   } = {},
 ): Promise<UnsubscribeIntentResult> {
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
@@ -493,6 +495,9 @@ export async function recordUnsubscribeIntent(
       ...(options.includesBacklogAction !== undefined
         ? { includesBacklogAction: options.includesBacklogAction }
         : {}),
+      // Only a true override travels, so an API that predates the key
+      // still takes every click but the Protected "…anyway" one.
+      ...(options.override === true ? { override: true } : {}),
     },
     {
       headers: { 'Idempotency-Key': idempotencyKey },

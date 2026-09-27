@@ -20,7 +20,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
   actionLabel,
@@ -33,6 +33,7 @@ import {
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
 } from '@/lib/bulk-action-copy';
+import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -490,20 +491,8 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    if (data.status === 'done') {
-      toast(
-        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-      invalidateAfterDecision(qc);
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
+    if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [
     actionMailboxId,
@@ -1040,6 +1029,9 @@ export function TriageScreen({
             mailboxId: actionMailboxId,
             senderId: row.senderId,
             includesBacklogAction: Boolean(details?.archiveHistoric),
+            // The preview named the protection and its confirm says
+            // "anyway" (D245); without this the send is re-checked.
+            ...(row.protectionReason !== null ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {

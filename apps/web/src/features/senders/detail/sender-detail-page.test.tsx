@@ -164,6 +164,7 @@ function installHappyPath(
   message = MESSAGE,
   messageResponse?: (url: URL) => (typeof MESSAGE)[],
   delayed?: { endpoint: string; response: () => Response | Promise<Response> },
+  detail: SenderDetailDto = DETAIL,
 ) {
   installFetchStub([
     ...(delayed
@@ -178,7 +179,7 @@ function installHappyPath(
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+$/,
-      respond: () => jsonOk({ data: DETAIL }),
+      respond: () => jsonOk({ data: detail }),
     },
     {
       method: 'GET',
@@ -1837,6 +1838,45 @@ describe('SenderDetailRoute', () => {
           expect(h.toast).toHaveBeenCalledWith(UNSUB_SEND_DISABLED_MESSAGE, 'warn'),
         );
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
+      });
+
+      it('carries the "…anyway" confirm on a Protected sender\'s unsubscribe (D245)', async () => {
+        installHappyPath(MESSAGE, undefined, undefined, {
+          ...DETAIL,
+          protectionFlags: {
+            isProtected: true,
+            protectionReason: 'user_defined',
+            protectionSetAt: '2026-06-01T00:00:00.000Z',
+          },
+        });
+        const intents: unknown[] = [];
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: async (req) => {
+              intents.push(await req.json());
+              return jsonOk({
+                data: {
+                  senderId: 'linkedin',
+                  recordedAt: '2026-07-12T12:00:00.000Z',
+                  activityLogId: 'activity-a',
+                  method: 'none',
+                  executionActionId: null,
+                  mailtoUrl: null,
+                },
+              });
+            },
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe anyway' });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() => expect(intents).toEqual([expect.objectContaining({ override: true })]));
       });
 
       async function unsubscribeThenBacklog(backlog: () => Response) {

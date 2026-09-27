@@ -39,7 +39,10 @@ import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
-import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
+import {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
 // decisions never success-toast), so failure tests must assert the
@@ -1463,6 +1466,25 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     );
   });
 
+  it('one_click → refused as Protected when it was due: "not sent", never "failed" (D245)', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('failed', UNSUB_SENDER_PROTECTED_ERROR_CODE),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Unsubscribe from ${LINKEDIN.senderName} not sent — sender is Protected.`,
+        'info',
+      ),
+    );
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/failed/), expect.anything());
+  });
+
   it('one_click → 3xx redirect: ambiguous copy ("may have worked"), never a claimed success', async () => {
     addFetchHandlers([
       intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
@@ -1804,6 +1826,49 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
   it('does NOT send override for an unprotected row', async () => {
     // Two-sided: a flag only ever observed set is not a verified flag.
     expect(await archiveAndCaptureBody(GROUPON)).not.toMatchObject({ override: true });
+  });
+
+  /**
+   * The unsubscribe intent needs the same acknowledgement: without it the
+   * send is re-checked when it runs and refused as Protected (D245).
+   */
+  async function unsubscribeAndCaptureBody(row: (typeof TRIAGE_QUEUE)[number]) {
+    const intents: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: async (req) => {
+          intents.push(await req.json());
+          return jsonOk({
+            data: {
+              senderId: row.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '77777777-7777-4777-8777-777777777777',
+              method: 'none',
+              executionActionId: null,
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    renderWith([row]);
+    expandRow(row.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await confirmOpenSheet('Unsubscribe', false);
+    await waitFor(() => expect(intents).toHaveLength(1));
+    return intents[0];
+  }
+
+  it('sends override:true when unsubscribing a PROTECTED row (D245)', async () => {
+    const protectedLinkedin = { ...LINKEDIN, protectionReason: 'manual' as const };
+    expect(await unsubscribeAndCaptureBody(protectedLinkedin)).toMatchObject({ override: true });
+  });
+
+  it('does NOT send override when unsubscribing an unprotected row', async () => {
+    expect(await unsubscribeAndCaptureBody(LINKEDIN)).not.toHaveProperty('override');
   });
 });
 

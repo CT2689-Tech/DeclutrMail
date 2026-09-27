@@ -52,6 +52,12 @@ export const unsubscribeIntentRequestSchema = z
      * one-vs-two-unit Free quota preflight.
      */
     includesBacklogAction: z.boolean().default(false),
+    /**
+     * The user confirmed "Unsubscribe anyway" on a sender shown as
+     * Protected (D245). Honored only when the sender is Protected at the
+     * click; any other job is re-checked when it runs.
+     */
+    override: z.boolean().default(false),
   })
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;

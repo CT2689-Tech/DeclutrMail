@@ -48,7 +48,7 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -73,6 +73,7 @@ import {
   stillRunningCopy,
 } from '@/lib/action-error-copy';
 import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
+import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
 import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
@@ -892,6 +893,7 @@ function ReadyState({
             mailboxId: actionMailboxId,
             senderId: sender.id,
             includesBacklogAction: secondary != null,
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
@@ -941,8 +943,8 @@ function ReadyState({
                         : {}),
                     },
                     // The SAME acknowledgement the preview collected.
-                    // Unsubscribe has no Protected guard, so the intent
-                    // above always lands — one-click sends a real,
+                    // The intent above is never refused at the click, so
+                    // it lands — one-click sends a real,
                     // one-way request (D58). Dropping the override here
                     // 409s the backlog half AFTER that, leaving the user
                     // unsubscribed with their mail untouched: a partial
@@ -1169,19 +1171,7 @@ function ReadyState({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
