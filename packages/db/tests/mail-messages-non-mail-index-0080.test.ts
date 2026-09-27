@@ -11,8 +11,7 @@ import { freshTestPglite } from '../src/testing/index.js';
  * the probe reads an empty index instead of every message. A predicate
  * that drifts from the purge's still builds, still exists, and silently
  * stops being chosen — so pin the definition, and prove the planner picks
- * it for the purge's shape of query. (#791 ties the label list here to
- * `NON_MAIL_LABELS` in `packages/db/src/predicates.ts`.)
+ * it for the purge's shape of query.
  */
 
 const INDEX = 'mail_messages_non_mail_idx';
@@ -29,8 +28,10 @@ describe('migration 0080 — non-mail partial index', () => {
 
     // `internal_date` in the key serves the purge's newest-first batches.
     expect(def).toMatch(/\(mailbox_account_id, internal_date\) WHERE/);
+    // In this order: the planner uses the index only for a query that
+    // repeats the same array literal, element order included.
     const labels = [...def.matchAll(/'([A-Z_]+)'::text/g)].map((m) => m[1]);
-    expect(labels.sort()).toEqual(['CHAT', 'DRAFT']);
+    expect(labels).toEqual(['DRAFT', 'CHAT']);
     expect(def).toMatch(/label_ids && /);
   });
 

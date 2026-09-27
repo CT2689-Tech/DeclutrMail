@@ -1,8 +1,8 @@
 -- atlas:txmode none
 -- 0080_mail_messages_non_mail_idx.sql
 --
--- Partial index over the rows the sync workers no longer store: Gmail
--- drafts and chat lines (`NON_MAIL_LABELS`, packages/db/src/predicates.ts).
+-- Partial index over Gmail drafts and chat lines, the rows PR #791 stops
+-- storing and purges (its `NON_MAIL_LABELS`, packages/db/src/predicates.ts).
 -- Additive: no column, no data change, no Gmail field (D7, D228 unaffected).
 --
 -- WHY. Both sync workers stored every message Gmail listed and derived
@@ -11,11 +11,12 @@
 -- and carded. On the dev database (2026-09-26) one mailbox's row for its
 -- own address was built from 4 drafts and scored Keep at 95%, and chat
 -- lines counted as email: 790 rows and 23 chat-only senders on the
--- founder's mailbox. Founder decision 2026-09-26: ingest stops storing
--- both, and a purge (`purgeNonMailMessages`, PR #791), run per mailbox by
--- SenderIndexSweepWorker at worker boot and then nightly, deletes the rows
--- stored before that and repairs what they fed. This file only adds the
--- index that purge reads.
+-- founder's mailbox. Founder decision 2026-09-26: stop storing both. PR
+-- #791 makes ingest skip them, and its purge (`purgeNonMailMessages`), run
+-- per mailbox by SenderIndexSweepWorker at worker boot and then nightly,
+-- deletes the rows stored before that and repairs what they fed. This file
+-- only adds the index that purge reads. It applies before #791 deploys, and
+-- until then nothing reads it.
 --
 -- THE PURGE, NOT THIS FILE, DELETES DATA, and it lives in worker code on
 -- purpose. `migration-apply.yml` applies on merge, 10-20 minutes before the
@@ -28,9 +29,10 @@
 -- message — the whole table, rewritten on every label change — to serve a
 -- probe that should find nothing. This partial btree holds only non-mail
 -- rows: the first run touches exactly the rows it deletes, and every run
--- after probes an empty index. Its predicate matches the purge's
--- (`nonMailRowWhere()`), which is what lets the planner prove the
--- implication; tests pin the label set and check the plan.
+-- after probes an empty index. Its predicate must repeat the purge's
+-- (`nonMailRowWhere()` in #791) exactly, array element order included: the
+-- planner uses a partial index on `&&` only for the same literal. Tests pin
+-- the label set and check the plan.
 --
 -- NEWEST FIRST. `internal_date` in the key lets each batch take the most
 -- recent non-mail rows first. A sweep run purges a bounded number of
@@ -40,9 +42,11 @@
 -- last-seen dates. Years-old chat logs follow.
 --
 -- WRITE COST. Each INSERT/UPDATE evaluates the predicate, an overlap test
--- against a two-element constant. Once purged the index holds no entries,
--- because ingest never writes a matching row. `label_ids` already sits in
--- 0070's predicate, so no HOT update is lost here that was not already.
+-- against a two-element constant. Until #791 deploys the index also holds
+-- the draft and chat rows already stored, and each one ingest still writes;
+-- once its ingest skip and purge have run, it holds none. `label_ids`
+-- already sits in 0070's predicate, so no HOT update is lost here that was
+-- not already.
 --
 -- CONCURRENTLY because mail_messages is live: the build does not block
 -- writes (it scans the table twice and waits out open transactions
