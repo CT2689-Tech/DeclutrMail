@@ -15,12 +15,13 @@ import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox
 import { useDeleteMailboxIndexedData } from './api/use-delete-mailbox-indexed-data';
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
+import { loadMailboxDataControls } from './load-mailbox-data-controls';
 
 // The dialog lists what disconnect and deletion remove from the whole Gmail
-// data inventory. Loaded on first open: imported here, that registry rode
-// every signed-in route's first load for a dialog few people open.
+// data inventory. Loaded on demand: imported here, that registry rode every
+// signed-in route's first load for a dialog few people open.
 const MailboxDataControlsDialog = dynamic(
-  () => import('./mailbox-data-controls-dialog').then((m) => m.MailboxDataControlsDialog),
+  () => loadMailboxDataControls().then((m) => m.MailboxDataControlsDialog),
   { ssr: false },
 );
 
@@ -46,6 +47,14 @@ const { color, font, motion, radius, shadow, text } = tokens;
 export function AccountMenu() {
   const { me } = useAuth();
   const [open, setOpen] = useState(false);
+
+  // Fetch the data dialog while the menu is open, before its button is
+  // pressed: on a slow connection a disconnect/delete control that showed
+  // nothing for a moment would read as a dead click. A failed prefetch
+  // changes nothing — the dialog's own load runs again on the click.
+  useEffect(() => {
+    if (open) loadMailboxDataControls().catch(() => undefined);
+  }, [open]);
   const [managedMailboxId, setManagedMailboxId] = useState<string | null>(null);
   const [dataControlsError, setDataControlsError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);

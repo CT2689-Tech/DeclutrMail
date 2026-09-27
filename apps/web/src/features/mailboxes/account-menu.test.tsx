@@ -79,6 +79,17 @@ vi.mock('@/features/auth/api/use-logout', () => ({
   useLogout: () => ({ isPending: false, mutate: logoutMutateSpy }),
 }));
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(async () => undefined) }));
+// The dialog's code loads on demand; count each load, then load it for real.
+const { loadDialogSpy } = vi.hoisted(() => ({ loadDialogSpy: vi.fn() }));
+vi.mock('./load-mailbox-data-controls', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./load-mailbox-data-controls')>();
+  return {
+    loadMailboxDataControls: () => {
+      loadDialogSpy();
+      return actual.loadMailboxDataControls();
+    },
+  };
+});
 
 function makeMe(mailboxes: MeMailbox[] = [MAILBOX_A, MAILBOX_B]): Me {
   return {
@@ -117,6 +128,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       connectedInboxes: 2,
       atInboxLimit: true,
     };
+    loadDialogSpy.mockClear();
     startMailboxConnectSpy.mockClear();
     startMailboxReactivationSpy.mockClear();
     setActiveMutateSpy.mockClear();
@@ -138,6 +150,24 @@ describe('AccountMenu Gmail reconnect health', () => {
     );
     expect(screen.getByRole('dialog', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(selector).toBeEnabled();
+  });
+
+  // Orchestrator review (2026-09-27): loaded only on the click, a slow
+  // connection showed nothing for a moment after pressing a delete control.
+  it('starts loading the data dialog when the menu opens, and still opens it on the click', async () => {
+    const user = userEvent.setup();
+    render(<AccountMenu />);
+    expect(loadDialogSpy).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: MAILBOX_A.email }));
+    expect(loadDialogSpy).toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole('button', { name: `Manage connection and data for ${MAILBOX_A.email}` }),
+    );
+    expect(
+      await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` }),
+    ).toBeVisible();
   });
 
   it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {
