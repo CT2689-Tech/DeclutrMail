@@ -199,4 +199,4 @@ its config changes — same PR as the change. Cross-references:
 
 - **How to provision** → `sync-infra-setup.md`
 - **Service tiers / cost / account ownership** → `services.md`
-- **Founder action items** → `FOUNDER-FOLLOWUPS.md`
+- **Founder action items** → `docs/log/founder-followups/` (older items: `FOUNDER-FOLLOWUPS.md`)
