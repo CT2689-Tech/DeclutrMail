@@ -583,6 +583,96 @@ describe('ScoreWorker — LLM port', () => {
     expect(row?.reasoning).toContain('ife_insurance_india');
   });
 
+  /**
+   * A sentence that files the sender in Primary is a claim about where the
+   * user's own mail lands. Stored sentences on the founder's mailbox tell
+   * Updates senders they "belong in the primary inbox" — written while
+   * Gmail's missing label still read as Primary. Refused when Gmail does
+   * not file the sender there.
+   */
+  it('refuses a sentence that files a non-Primary sender in Primary', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'tabs@test.test', {
+      displayName: 'Tab Mover',
+      gmailCategory: 'updates',
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const worker = new ScoreWorker({
+        db,
+        llm: { explain: async () => 'Tab Mover belongs in the primary inbox, so keep it close.' },
+        now: () => new Date('2026-05-23T00:00:00Z'),
+      });
+      const result = await worker.processJob(
+        { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: 30_000 },
+        FAKE_CTX,
+      );
+
+      expect(result).toMatchObject({ llmCalls: 1, llmExplanations: 0, templateExplanations: 1 });
+      const [row] = await db
+        .select()
+        .from(triageDecisions)
+        .where(eq(triageDecisions.senderKey, senderKey));
+      expect(row?.generatedBy).toBe('template');
+      expect(row?.reasoning).not.toMatch(/primary/i);
+      const kinds = warnSpy.mock.calls.map(
+        (c) => (JSON.parse(String(c[0])) as { kind: string }).kind,
+      );
+      expect(kinds).toContain('reasoning.rejected_primary_claim');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('keeps a sentence about Primary for a sender Gmail files there', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'inbox@test.test', {
+      displayName: 'Inbox Regular',
+      gmailCategory: 'primary',
+    });
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Inbox Regular belongs in the primary inbox, so keep it close.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('llm_haiku');
+  });
+
+  it('keeps a sentence that names a sender whose own name says Primary', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'news@primarycare.test', {
+      displayName: 'Primary Care Partners',
+      gmailCategory: 'updates',
+    });
+    const worker = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Primary Care Partners writes primarily about appointments.' },
+      now: () => new Date('2026-05-23T00:00:00Z'),
+    });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: 30_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.generatedBy).toBe('llm_haiku');
+  });
+
   it('reuses unexpired same-verdict LLM reasoning without calling explain() (2026-07-10 re-bill fix)', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
@@ -717,6 +807,60 @@ describe('ScoreWorker — LLM port', () => {
       .from(triageDecisions)
       .where(eq(triageDecisions.senderKey, senderKey));
     expect(row?.reasoning).toBe('Short reason.');
+  });
+
+  it('does NOT reuse stored prose that files the sender in Primary once Gmail no longer does', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'moved-tab@test.test', {
+      displayName: 'Moved Tab',
+      gmailCategory: 'updates',
+    });
+    let calls = 0;
+    const llm: ReasoningLlmPort = {
+      explain: async () => {
+        calls += 1;
+        return `Moved Tab note #${calls}.`;
+      },
+    };
+    const T0 = Date.parse('2026-05-22T00:00:00Z');
+    const worker = new ScoreWorker({ db, llm, now: () => new Date('2026-05-23T00:00:00Z') });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'manual_rescore', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    // Stands in for a sentence written while the sender read as Primary:
+    // same verdict, same confidence, unexpired — reusable on every other
+    // count.
+    await db
+      .update(triageDecisions)
+      .set({ reasoning: 'Moved Tab belongs in the primary inbox.' })
+      .where(eq(triageDecisions.senderKey, senderKey));
+
+    // A re-score that may not buy a sentence shows the template instead.
+    const quiet = await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+    expect(quiet).toMatchObject({ llmCalls: 0, llmReused: 0, templateExplanations: 1 });
+    const [shown] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(shown?.generatedBy).toBe('template');
+    expect(shown?.reasoning).not.toMatch(/primary/i);
+
+    // …and opening it buys the sentence the sender now warrants.
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(2);
+    const [explained] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(explained?.reasoning).toBe('Moved Tab note #2.');
   });
 
   it('does NOT reuse a template row — the next sweep retries the LLM', async () => {

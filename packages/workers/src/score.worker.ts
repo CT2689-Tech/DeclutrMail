@@ -465,6 +465,43 @@ export function foreignIdentifierToken(reasoning: string, senderIdentity: string
   return null;
 }
 
+/**
+ * `true` when a sentence puts the sender in Primary and Gmail files them
+ * somewhere else.
+ *
+ * The model says "the primary inbox" for the inbox itself — "keeping this
+ * sender in the primary inbox", "whether it belongs in the primary inbox
+ * or should be archived" — and wrote exactly that for Updates senders.
+ * For them it names a tab their mail never reaches: Keep leaves mail where
+ * Gmail filed it. Checked on stored sentences too, because a sentence can
+ * outlive the tab it was written for, and reuse compares only the verdict
+ * and its confidence.
+ *
+ * Only Primary: the stored sentences use the word for Gmail's tab, while
+ * "updates" and "promotions" are also what senders send. Allowed when the
+ * word is the sender's own, the exception `foreignIdentifierToken` makes.
+ */
+export function misplacesInPrimary(
+  reasoning: string,
+  gmailCategory: SenderSignals['gmailCategory'],
+  senderIdentity: string,
+): boolean {
+  return (
+    gmailCategory !== 'primary' &&
+    !senderIdentity.toLowerCase().includes('primary') &&
+    /\bprimary\b/i.test(reasoning)
+  );
+}
+
+/**
+ * The sender's own name and address — what a sentence may quote. One
+ * definition, because a fresh sentence and a reused one must be judged
+ * against the same identity.
+ */
+function senderIdentity(s: { displayName: string; domain: string; email: string }): string {
+  return `${s.displayName} ${s.domain} ${s.email}`;
+}
+
 export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult> {
   override readonly workerName = 'ScoreWorker';
   override readonly policy = 'perMailboxPolicy' as const;
@@ -1119,6 +1156,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         // A paragraph stored before the word ceiling existed is not worth
         // keeping: fall through to a fresh (ceiling-checked) call.
         reasoningWordCount(existing.reasoning) <= MAX_REASONING_WORDS &&
+        // Nor one that files the sender in a tab Gmail no longer uses for
+        // them — the check a fresh sentence gets in `generateProse`.
+        !misplacesInPrimary(
+          existing.reasoning,
+          signals.signals.gmailCategory,
+          senderIdentity(signals),
+        ) &&
         existing.expiresAt > (this.deps.now ?? (() => new Date()))();
       if (reusable) {
         // Falls through to the monotonic upsert below so produced_at /
@@ -1259,8 +1303,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   /**
    * THE place a sentence is bought — every trigger that pays (a re-score,
    * a sweep's first-view set, an `explain` job) goes through here, so the
-   * breaker, the pacing, the timeout and the vocabulary check cover all of
-   * them.
+   * breaker, the pacing, the timeout, and the vocabulary and Primary
+   * checks cover all of them.
    *
    * `blocked` when the provider is refusing the account: no call was made.
    * Otherwise `null` reasoning when the model's answer is unusable; the
@@ -1314,11 +1358,30 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       );
       return { reasoning: null, timedOut: false, blocked: false };
     }
-    const identity = `${signals.displayName} ${signals.domain} ${signals.email}`;
+    const identity = senderIdentity(signals);
     const leaked =
       raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
-    if (raced.kind === 'ok' && leaked === null) {
+    const misplaced =
+      raced.kind === 'ok' &&
+      !!raced.value &&
+      misplacesInPrimary(raced.value, signals.signals.gmailCategory, identity);
+    if (raced.kind === 'ok' && leaked === null && !misplaced) {
       return { reasoning: raced.value, timedOut: false, blocked: false };
+    }
+    if (raced.kind === 'ok' && misplaced) {
+      // A tab Gmail does not use for this sender is a false claim about
+      // the user's own mail. The template instead.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'reasoning.rejected_primary_claim',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey,
+          gmailCategory: signals.signals.gmailCategory,
+        }),
+      );
+      return { reasoning: null, timedOut: false, blocked: false };
     }
     if (raced.kind === 'ok') {
       // The prompt no longer contains an id, but the model can still
