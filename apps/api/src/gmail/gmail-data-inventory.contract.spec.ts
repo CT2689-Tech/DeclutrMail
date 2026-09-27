@@ -15,6 +15,7 @@ import {
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_METADATA_HEADERS,
 } from '@declutrmail/shared/contracts';
+import { scanProgressKey } from '@declutrmail/workers';
 import { describe, expect, it } from 'vitest';
 
 /** App-owned row bookkeeping rather than data fetched or derived from Gmail. */
@@ -47,6 +48,10 @@ describe('D245 Gmail data inventory contract', () => {
     expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY).not.toHaveLength(0);
     expect(GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.map((item) => item.id)).toEqual([
       'gmail-account-identity',
+      // Two counts and a time in Redis, gone within 30 minutes of the scan's
+      // last update; a mailbox purge does not clear the key (open founder
+      // decision, docs/log/founder-followups/2026-09-26-redis-sync-count-retention.md).
+      'scan-progress-counts',
       // Domain-keyed logo cache: shared across users, no mailbox link,
       // so a mailbox purge has nothing of the user's to remove from it.
       'sender-logo-lookup',
@@ -98,13 +103,25 @@ describe('D245 Gmail data inventory contract', () => {
     ]);
 
     for (const ref of GMAIL_DATA_INVENTORY.flatMap((item) => item.storageRefs)) {
-      if (ref.endsWith('.*')) continue;
+      if (ref.endsWith('.*') || ref.startsWith('redis:')) continue;
       const [table, column] = ref.split('.');
       expect(table, `unknown inventory table in ${ref}`).toBeTruthy();
       expect(column, `missing inventory column in ${ref}`).toBeTruthy();
       expect(tableColumns.get(table!), `unvalidated inventory table in ${ref}`).toBeDefined();
       expect(tableColumns.get(table!)).toContain(column);
     }
+  });
+});
+
+describe('D245 Gmail data inventory — Redis keys', () => {
+  // A registered pattern that drifted from the key the code writes would
+  // describe data nothing stores, and leave the real key unregistered.
+  it('registers each Redis key by the exact pattern the code writes', () => {
+    const redisRefs = GMAIL_DATA_INVENTORY.flatMap((item) => item.storageRefs).filter((ref) =>
+      ref.startsWith('redis:'),
+    );
+
+    expect(redisRefs).toEqual([`redis:${scanProgressKey('{mailboxAccountId}')}`]);
   });
 });
 
