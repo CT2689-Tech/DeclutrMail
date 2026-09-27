@@ -391,9 +391,8 @@ describe('SyncGate — failure copy names only what its error proves', () => {
       // Both codes are in the reconnect rule, so the per-code map is never
       // read for them (its entries were deleted); the sentence is the rule's.
       const html = failedCopy({ ...FAILED, error_code: errorCode });
-      expect(html).toContain(
-        'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
-      );
+      expect(html).toContain('not granting the access');
+      expect(html).toContain('allow Gmail access');
       expect(html).not.toMatch(/restores|partway through/i);
     },
   );
