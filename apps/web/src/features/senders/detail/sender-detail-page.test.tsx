@@ -2090,3 +2090,193 @@ describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
     expect(posted[0]).toMatchObject({ senderId: 'linkedin' });
   });
 });
+
+/**
+ * Explanations on demand (D24, founder decision 2026-09-25). Most senders
+ * reach Sender Detail with the deterministic template as their reason —
+ * the LLM sentence is bought when someone is about to read it. Opening the
+ * sender is that moment: the page asks, shows the template meanwhile, and
+ * picks the sentence up on a later read.
+ */
+describe('SenderDetailRoute — explaining a template reason on open (D24)', () => {
+  let explained: Array<{ senderIds: string[] }>;
+  let rescored: Array<Record<string, unknown>>;
+
+  function stubWithRecommendation(recommendation: Record<string, unknown> | null) {
+    explained = [];
+    rescored = [];
+    window.sessionStorage.clear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: { ...DETAIL, recommendation } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/triage/explain',
+        respond: async (req: Request) => {
+          const body = (await req.json()) as { senderIds: string[] };
+          explained.push(body);
+          return jsonOk({ data: { queued: body.senderIds } });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/triage/score-sender',
+        respond: async (req: Request) => {
+          rescored.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({ data: { idempotencyKey: 'k' } });
+        },
+      },
+    ]);
+  }
+
+  const TEMPLATE_READ = {
+    verdict: 'unsubscribe',
+    confidence: 0.87,
+    reasoning: 'LinkedIn sends 27/mo. 0% marked read over 90d. Recommended: Unsubscribe.',
+    generatedBy: 'template',
+    scoredAt: '2026-09-25T06:44:56.910Z',
+    stale: false,
+  };
+
+  it('asks for the sentence behind a template reason when the sender is opened', async () => {
+    stubWithRecommendation(TEMPLATE_READ);
+    renderDetail();
+    // Guard the guard: the page must have LOADED before a POST is judged.
+    await screen.findByRole('group', { name: /Optional suggestion/ });
+    await waitFor(() => expect(explained).toHaveLength(1));
+    expect(explained[0]).toEqual({ senderIds: ['linkedin'] });
+    expect(rescored).toHaveLength(0);
+  });
+
+  it('asks nothing when the reason is already LLM prose', async () => {
+    stubWithRecommendation({ ...TEMPLATE_READ, generatedBy: 'llm_haiku' });
+    renderDetail();
+    await screen.findByRole('group', { name: /Optional suggestion/ });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(explained).toHaveLength(0);
+  });
+
+  /**
+   * The whole chain the page owns: the template shows at once, the page
+   * asks, and a later read of the SAME query brings the sentence — with
+   * no re-fetch of the messages, history or chart under it.
+   */
+  it('shows the template, then the sentence once a re-read finds it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let detailReads = 0;
+      let messageReads = 0;
+      stubWithRecommendation(TEMPLATE_READ);
+      installFetchStub([
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+$/,
+          respond: () => {
+            detailReads += 1;
+            const reasoning =
+              detailReads === 1
+                ? TEMPLATE_READ.reasoning
+                : 'LinkedIn mail goes unread; unsubscribing stops it.';
+            return jsonOk({
+              data: {
+                ...DETAIL,
+                recommendation: {
+                  ...TEMPLATE_READ,
+                  reasoning,
+                  generatedBy: detailReads === 1 ? 'template' : 'llm_haiku',
+                },
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/messages$/,
+          respond: () => {
+            messageReads += 1;
+            return jsonOk({
+              data: [MESSAGE],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/timeseries$/,
+          respond: () => jsonOk({ data: TIMESERIES }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/senders\/[^/]+\/history$/,
+          respond: () =>
+            jsonOk({
+              data: [],
+              meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/triage/explain',
+          respond: async (req: Request) => {
+            const body = (await req.json()) as { senderIds: string[] };
+            explained.push(body);
+            return jsonOk({ data: { queued: body.senderIds } });
+          },
+        },
+      ]);
+      renderDetail();
+      await screen.findByRole('group', { name: /Optional suggestion/ });
+      expect(screen.getByText(TEMPLATE_READ.reasoning)).toBeInTheDocument();
+      await waitFor(() => expect(explained).toHaveLength(1));
+      const messageReadsBeforeLook = messageReads;
+
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+
+      expect(
+        await screen.findByText('LinkedIn mail goes unread; unsubscribing stops it.'),
+      ).toBeInTheDocument();
+      expect(messageReads).toBe(messageReadsBeforeLook);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /**
+   * A stale read is re-scored on open, and the re-score buys its own
+   * sentence. Asking for an explanation too would pay twice for one look.
+   */
+  it('leaves a stale template to the re-score — never both', async () => {
+    stubWithRecommendation({ ...TEMPLATE_READ, stale: true });
+    renderDetail();
+    await screen.findByRole('group', { name: /Optional suggestion/ });
+    await waitFor(() => expect(rescored).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(explained).toHaveLength(0);
+  });
+});

@@ -10,6 +10,8 @@ import {
   type TriageVerdict,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { EXPLAIN_BATCH_MAX } from '@declutrmail/shared/contracts';
+import { FIRST_VIEW_QUEUE_ROWS } from '@declutrmail/workers';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -391,5 +393,199 @@ describe('TriageService.getQueueSize — D30 integration', () => {
     }
     expect(await service.getQueueSize(mailboxA)).toBe(TRIAGE_QUEUE_MIN);
     expect(await service.getQueueSize(mailboxB)).toBe(TRIAGE_QUEUE_MAX);
+  });
+});
+
+describe('TriageService.explainSenders — explanations on demand (D24)', () => {
+  let db: Db;
+  let queued: Array<{ name: string; data: Record<string, unknown>; opts: Record<string, unknown> }>;
+  let service: TriageService;
+  let mailboxA: string;
+  let mailboxB: string;
+
+  /**
+   * Models the two BullMQ 6 behaviours this producer leans on, rather than
+   * accepting anything. A custom job id containing `:` is rejected unless
+   * it has exactly three segments — a spy that took any id is how a
+   * malformed id shipped twice before (U14, domain icons). And a job whose
+   * `deduplication.id` is already live (throttle mode: the key outlives the
+   * job for `ttl`) is not added again.
+   */
+  function bullmqLikeQueue() {
+    const liveDedupIds = new Set<string>();
+    return {
+      addBulk: async (
+        jobs: Array<{
+          name: string;
+          data: Record<string, unknown>;
+          opts: { jobId?: string; deduplication?: { id: string; ttl?: number } };
+        }>,
+      ) => {
+        for (const job of jobs) {
+          const id = job.opts.jobId ?? '';
+          if (id.includes(':') && id.split(':').length !== 3) {
+            throw new Error('Custom Id cannot contain :');
+          }
+          const dedupId = job.opts.deduplication?.id;
+          if (dedupId !== undefined) {
+            if (liveDedupIds.has(dedupId)) continue;
+            liveDedupIds.add(dedupId);
+          }
+          queued.push(job as never);
+        }
+      },
+    } as never;
+  }
+
+  async function seedScoredSender(
+    mailboxAccountId: string,
+    email: string,
+    decision: { generatedBy: 'llm_haiku' | 'template'; producedAt: Date; expiresAt: Date } | null,
+  ): Promise<{ id: string; senderKey: string }> {
+    const senderKey = senderKeyFor(email);
+    const [row] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId,
+        senderKey,
+        email,
+        displayName: email,
+        domain: 'example.com',
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date('2026-01-01T00:00:00Z'),
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      })
+      .returning({ id: senders.id });
+    if (decision) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'archive',
+        confidence: '0.80',
+        reasoning: 'Sender sends 30/mo. Recommended: Archive.',
+        ...decision,
+      });
+    }
+    return { id: row!.id, senderKey };
+  }
+
+  const FRESH = {
+    producedAt: new Date('2026-09-25T08:30:00.123Z'),
+    expiresAt: new Date('2026-10-02T08:30:00.123Z'),
+  };
+
+  beforeEach(async () => {
+    db = await freshDb();
+    queued = [];
+    service = new TriageService(db as never, null, bullmqLikeQueue());
+    mailboxA = await seedMailbox(db, 'a@example.com');
+    mailboxB = await seedMailbox(db, 'b@example.com');
+  });
+
+  it('queues one explain job per fresh template row, keyed to the row version', async () => {
+    const opened = await seedScoredSender(mailboxA, 'opened@example.com', {
+      generatedBy: 'template',
+      ...FRESH,
+    });
+
+    const result = await service.explainSenders({
+      mailboxAccountId: mailboxA,
+      senderIds: [opened.id],
+    });
+
+    expect(result).toEqual({ queued: [opened.id] });
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.data).toEqual({
+      mailboxAccountId: mailboxA,
+      senderKey: opened.senderKey,
+      trigger: 'explain',
+      producedAtMs: Date.parse('2026-09-25T08:30:00.123Z'),
+    });
+    // Dedupe on the ROW VERSION for an hour, and remove only this job when
+    // it completes. An age-based `removeOnComplete` would sweep the whole
+    // score queue's finished set on every explain completion.
+    expect(queued[0]!.opts).toEqual({
+      deduplication: {
+        id: `explain-${mailboxA}-${opened.senderKey}-${Date.parse('2026-09-25T08:30:00.123Z')}`,
+        ttl: 60 * 60 * 1000,
+      },
+      removeOnComplete: true,
+    });
+  });
+
+  it('a second ask for the same row version within the hour is one job, not two bills', async () => {
+    const opened = await seedScoredSender(mailboxA, 'twice@example.com', {
+      generatedBy: 'template',
+      ...FRESH,
+    });
+
+    await service.explainSenders({ mailboxAccountId: mailboxA, senderIds: [opened.id] });
+    await service.explainSenders({ mailboxAccountId: mailboxA, senderIds: [opened.id] });
+
+    expect(queued).toHaveLength(1);
+  });
+
+  /**
+   * A stale row is asked about only by a surface that is NOT re-scoring it
+   * (the action sheet, the Screener's decide preview). Where the stale
+   * refresh runs, the page does not ask — that decision lives with the
+   * page, which knows which one it is.
+   */
+  it('queues a stale template row too — the page decides when a re-score owns it', async () => {
+    const stale = await seedScoredSender(mailboxA, 'stale-sheet@example.com', {
+      generatedBy: 'template',
+      producedAt: new Date('2026-09-10T00:00:00Z'),
+      expiresAt: new Date('2026-09-17T00:00:00Z'),
+    });
+
+    const result = await service.explainSenders({
+      mailboxAccountId: mailboxA,
+      senderIds: [stale.id],
+    });
+
+    expect(result).toEqual({ queued: [stale.id] });
+  });
+
+  it('asks for nothing a row does not need', async () => {
+    const explained = await seedScoredSender(mailboxA, 'explained@example.com', {
+      generatedBy: 'llm_haiku',
+      ...FRESH,
+    });
+    const unscored = await seedScoredSender(mailboxA, 'unscored@example.com', null);
+    // Another mailbox's sender, by id: a guessed id must not reach it.
+    const foreign = await seedScoredSender(mailboxB, 'foreign@example.com', {
+      generatedBy: 'template',
+      ...FRESH,
+    });
+
+    const result = await service.explainSenders({
+      mailboxAccountId: mailboxA,
+      senderIds: [explained.id, unscored.id, foreign.id],
+    });
+
+    expect(result).toEqual({ queued: [] });
+    expect(queued).toHaveLength(0);
+  });
+
+  it('refuses to pretend when there is no queue to put the work on', async () => {
+    const noQueue = new TriageService(db as never, null, null);
+    await expect(
+      noQueue.explainSenders({ mailboxAccountId: mailboxA, senderIds: [randomUUID()] }),
+    ).rejects.toThrow(/REDIS_URL/);
+  });
+
+  /**
+   * The worker explains the top `FIRST_VIEW_QUEUE_ROWS` of the queue when a
+   * mailbox becomes ready. It lives in `packages/workers`, which cannot
+   * import this constant — so raising the D30 ceiling without it would
+   * leave the tail of the first queue on the template.
+   */
+  it('the worker explains at least a full queue at ready', () => {
+    expect(FIRST_VIEW_QUEUE_ROWS).toBeGreaterThanOrEqual(TRIAGE_QUEUE_MAX);
+  });
+
+  /** The page asks for a whole queue in one request; the endpoint must take it. */
+  it('one ask can carry a full Triage queue', () => {
+    expect(EXPLAIN_BATCH_MAX).toBeGreaterThanOrEqual(TRIAGE_QUEUE_MAX);
   });
 });

@@ -90,6 +90,7 @@ import {
   RateLimiter,
   RedisGmailQuotaLimiter,
   RedisSnoozeLabelMapStore,
+  SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
@@ -1148,6 +1149,27 @@ async function bootstrap(): Promise<void> {
         level: 'error',
         kind: 'bullmq.error',
         queue: SCORE_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  // `explain` jobs (D24 on demand, founder decision 2026-09-25): the same
+  // ScoreWorker, on its own queue, so a page's asks never sit in front of
+  // sync sweeps and re-scores on the shared FIFO. Concurrency 4 — the
+  // LLM pacer is shared with every sweep in this process, so more slots
+  // would only wait on it.
+  const scoreExplainBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
+    SCORE_EXPLAIN_QUEUE,
+    (job) => scoreWorker.run(job),
+    { connection, concurrency: 4, ...userFacingTuning },
+  );
+  scoreExplainBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SCORE_EXPLAIN_QUEUE,
         message: err.message,
       }),
     );
@@ -2991,6 +3013,7 @@ async function bootstrap(): Promise<void> {
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();
       await scoreBullWorker.close();
+      await scoreExplainBullWorker.close();
       await labelActionBullWorker.close();
       await actionRecoveryBullWorker.close();
       await unsubExecutionBullWorker.close();

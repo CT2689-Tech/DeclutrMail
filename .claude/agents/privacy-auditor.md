@@ -199,7 +199,7 @@ If you find blockers:
 1. Post your findings as PR comments using the `[BLOCKING]` prefix
    convention (CLAUDE.md §6)
 2. Set the PR status check to "Privacy Audit — failed"
-3. Append an entry to `MISTAKES.md` with format from CLAUDE.md §11
+3. Add an entry file under `docs/log/mistakes/` with format from CLAUDE.md §11
 4. **Do not propose fixes.** The implementing agent fixes; you re-verify.
 
 ## Stop conditions (override "report and continue")
