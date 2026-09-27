@@ -244,12 +244,37 @@ describe('Gmail tab recount → re-score', () => {
     expect(d.reasoning).not.toMatch(/primary/i);
   });
 
+  it('a named set buys no prose even under a trigger that pays', async () => {
+    // The set is the recount's re-score whatever trigger it arrives with;
+    // `manual_rescore` would otherwise buy a sentence for every sender.
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    await db.update(triageDecisions).set({ expiresAt: new Date(NOW.getTime() - DAY) });
+    const explain = vi.fn(async () => 'Model prose.');
+
+    const result = await new ScoreWorker({ db, llm: { explain }, now: () => NOW }).processJob(
+      {
+        mailboxAccountId,
+        senderKeys: ['a'],
+        trigger: 'manual_rescore',
+        producedAtMs: NOW.getTime(),
+      },
+      CTX,
+    );
+
+    expect(explain).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ llmCalls: 0, explanationsNotRequested: 1 });
+    expect((await decisionOf('a')).generatedBy).toBe('template');
+  });
+
   it('reports explanationsNotRequested on worker.succeeded — the allowlist drops silently', async () => {
     // The journey report reads this to tell "no prose was asked for" from
     // "the model is off" (LLM_OFF); a key missing from
     // SAFE_WORKER_RESULT_KEYS vanishes from the line with no error.
     await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
     await seedGuessedPrimary('b', [{ labelIds: ['INBOX'], read: false }]);
+    // Marked, as the sweep leaves every sender it hands over (expired as of
+    // its own production), so their stored prose is not reusable.
+    await db.update(triageDecisions).set({ expiresAt: new Date(NOW.getTime() - DAY) });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await new ScoreWorker({ db, llm: { explain: vi.fn(async () => 'x') }, now: () => NOW }).run({
