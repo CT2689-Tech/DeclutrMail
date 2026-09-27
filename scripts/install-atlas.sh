@@ -6,9 +6,11 @@
 # a pinned SHA-256 before it ever runs, because this binary applies
 # production migrations (.github/workflows/migration-apply.yml).
 #
-#   * Community build: since v0.38 the default Atlas build refuses
-#     `atlas migrate lint` without an Atlas Cloud login. The community build
-#     is compiled from the same open-source repo (Apache-2.0) and needs none.
+#   * Community build: since v0.38 the default Atlas build runs
+#     `atlas migrate lint` only for paid Atlas Pro users
+#     (https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint). The
+#     community build is compiled from the same open-source repo (Apache-2.0)
+#     and needs no account.
 #   * The pin expires. Ariga's supported-version policy removes binaries
 #     published more than 6 months ago from its download hosts
 #     (https://atlasgo.io/cli-reference#supported-version-policy); v1.3.0

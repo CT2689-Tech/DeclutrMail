@@ -17,10 +17,10 @@
 # only migrations need the session pooler.
 #
 # Workflow safety:
-#   - `migrate lint` is the gate on the PR side
-#     (.github/workflows/migration-lint.yml). By the time a push reaches
-#     main, the migration has already been linted against an empty
-#     Postgres 16.
+#   - `migrate lint` runs on the PR side
+#     (.github/workflows/migration-lint.yml), but it is not a required
+#     check: a red lint does not stop a merge, so a push can reach main
+#     with a migration lint rejected (FOUNDER-FOLLOWUPS 2026-09-26).
 #   - `--allow-dirty` is needed because Supabase pre-installs
 #     `auth`/`storage`/`extensions` schemas. Our migrations only touch
 #     `public`; the dirty schemas are external.

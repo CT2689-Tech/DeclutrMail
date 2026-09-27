@@ -23,9 +23,38 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Decide whether a red migration lint should block a merge
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790) review, session 2026-09-26
+
+**Why:** the `atlas migrate lint` job is not a required check. Branch
+protection on main requires nine checks, and it is not one of them. So
+every check in that job can be red while auto-merge and the merge queue
+proceed:
+- lint itself, which PR #790 makes enforce `data_depend` as an error
+- the known-bad-migration probe
+- the full apply from empty
+- the forward-only check and the rollback-companion check
+
+`migration-apply.yml` then runs the migration on production. Merging past
+a red lint has been suggested here before (the PR #131 entry below).
+
+**How:** repo settings are yours to change, so this needs your hands. Two
+steps, in this order:
+1. Make the job report on every PR: drop its `pull_request` `paths`
+   filter and skip the steps when no migration file changed, so the check
+   still passes. A required check that never reports leaves other PRs
+   waiting on "Expected" forever.
+2. Add `atlas migrate lint` to main's required checks.
+
+**Verifies by:** a PR adding `ALTER TABLE … ADD COLUMN … NOT NULL` with no
+default cannot merge.
+
+**Status:** Open
+
 ### 2026-09-26 — Bump Atlas before Ariga stops serving v1.3.0
 
-**Source:** branch `chore/d152-atlas-community-v1-3` (session 2026-09-26)
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
 
 **Why:** CI's lint, the production migration apply, and the daily infra
 snapshot all install Atlas v1.3.0 through `scripts/install-atlas.sh`.
@@ -40,17 +69,26 @@ the tool that applies production migrations, so it needs your OK.
 **How:** set `ATLAS_VERSION` and both checksums in
 `scripts/install-atlas.sh` to the newest release. Each checksum is at
 `https://atlasbinaries.com/atlas/atlas-community-<platform>-<version>.sha256`.
-The bump PR's migration-lint run lints and applies every migration with
-the new binary.
+On the new binary, the bump PR's migration-lint run:
+- applies every migration from empty
+- lints the newest
+- fails unless lint rejects its NOT NULL probe
+- fails unless `migrate status --format` prints OK
 
-**Verifies by:** migration-lint green on the bump PR, then
-`atlas community version <new>` in the next migration-apply log.
+Also re-run the proof harness in PR #790's body against the current and
+the new binary. It compares hash, apply, status, handoff and rollback,
+and repeats the lint negative controls, which catch an analyzer moving to
+Atlas Pro.
+
+**Verifies by:** migration-lint green on the bump PR, the harness showing
+the same results for both binaries, then `atlas community version <new>`
+in the next migration-apply log.
 
 **Status:** Open — due by 2027-01-15
 
 ### 2026-09-26 — Decide how a CREATE INDEX without CONCURRENTLY gets caught
 
-**Source:** branch `chore/d152-atlas-community-v1-3` (session 2026-09-26)
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
 
 **Why:** D152 says Atlas flags "index creation that requires
 CONCURRENTLY". It never has. The `concurrent_index` analyzer is Atlas Pro
@@ -63,7 +101,9 @@ including `0063` on `senders`. A plain index build on a large table
 blocks writes to it until the build finishes.
 
 **How:** pick one. (a) Buy Atlas Pro and add its token as a secret. That
-means switching CI back to the default build, which also brings the PG3xx
+means switching CI back to the default build and restoring a
+`concurrent_index { error = true }` block in `packages/db/atlas.hcl`;
+without the block, PG101 only warns. It also brings the PG3xx
 blocking-change checks. (b) A repo check that fails any new
 non-concurrent index without an opt-out line, on new tables too. This is
 a text match, free, and adds opt-out lines to new-table indexes.
@@ -2488,11 +2528,12 @@ Then edit `.github/workflows/migration-lint.yml`:
 **Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
 release; lint reports appear at atlas.ariga.io.
 **Status:** Skipped 2026-09-26 — not needed: CI now installs the community
-build of Atlas v1.3.0 (`scripts/install-atlas.sh`, branch
-`chore/d152-atlas-community-v1-3`), which lints without a login.
+build of Atlas v1.3.0 (`scripts/install-atlas.sh`, PR #790), which lints
+without an account.
 **Correction 2026-09-26:** the "Done 2026-08-23" that stood here was wrong.
-`gh secret list` shows no `ATLAS_CLOUD_TOKEN`, and no workflow ever read
-one; lint passed because v0.37.0 needed no login.
+`gh secret list` shows no `ATLAS_CLOUD_TOKEN`, and no workflow on main has
+read one. PR #5's branch passed it to setup-atlas, then removed it before
+merging. Lint passed because v0.37.0 needed no account.
 **Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
 
 ---
