@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, ne, not, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -1366,7 +1366,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * Under the sender-index lock, like the claim itself. A rebuild spares
    * an unexecuted match only while its claim exists, so once the claim is
    * gone a match whose evidence the rebuild replaced would sit approved
-   * and never run (`MATCH_EVIDENCE_CURRENT` excludes it). Such a match is
+   * and never run (`ruleMatchEvidenceIsCurrent` excludes it). Such a match is
    * deleted here exactly as the rebuild would have deleted it.
    */
   private async releaseUntouchedClaims(
@@ -1398,7 +1398,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
             ),
             eq(ruleMatchLog.intentApplied, false),
             inArray(ruleMatchLog.resolution, ['pending', 'approved']),
-            sql`not ${MATCH_EVIDENCE_CURRENT}`,
+            not(ruleMatchEvidenceIsCurrent()),
           ),
         );
       });

@@ -17,7 +17,6 @@
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
 import { measureRequestOperation } from '../observability/request-performance.js';
-import { AUTOPILOT_CLAIM_KEY_PREFIXES } from '@declutrmail/workers';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   engagementWindowStart,
@@ -54,6 +53,7 @@ import {
   actionJobs,
   activityLog,
   automationRules,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   mailMessages,
   productFeedback,
   ruleMatchLog,
