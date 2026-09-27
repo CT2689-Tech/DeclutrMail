@@ -149,7 +149,12 @@ production credentials:
 **Verifies by:** once the score queue drains, the dry run prints
 `"affected":0`.
 
-**Status:** Open
+**Status:** Done 2026-09-27
+
+- Dry run at 08:37Z: affected 203, vocabulary 176, primaryClaims 28.
+- Enqueued 203 `manual_rescore` jobs.
+- 203 `llm_haiku` rewrites 08:37–08:39Z, all on `declutrmail-worker-00081-6lr` (#792's revision); llmBlocked 0.
+- Re-scan: affected 0.
 
 ### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
 
