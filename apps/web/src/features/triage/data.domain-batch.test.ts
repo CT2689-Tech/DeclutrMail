@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { MIN_BATCH_RUN, findDomainBatches } from './domain-batch';
 
 describe('amazon.com domain batch — Plan 4 step 1', () => {

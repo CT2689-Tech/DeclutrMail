@@ -22,7 +22,8 @@
 
 import { tokens } from '@declutrmail/shared';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { BatchActionSheet } from './batch-action-sheet';
 import type { DomainBatch } from './domain-batch';
 

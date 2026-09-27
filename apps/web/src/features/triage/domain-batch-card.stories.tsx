@@ -22,7 +22,8 @@
 //   • FocusVerdictOffer — the same-verdict offer: a headline, one verb
 
 import { tokens } from '@declutrmail/shared';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { DomainBatchCard } from './domain-batch-card';
 import type { DomainBatch } from './domain-batch';
 

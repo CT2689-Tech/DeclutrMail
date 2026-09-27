@@ -34,7 +34,7 @@ import {
   TRIAGE_SESSION_STATS_FREE,
   TRIAGE_SESSION_STATS_PRO,
   TRIAGE_SESSION_STATS_QUIET,
-} from './data';
+} from './fixtures';
 import { resetTriageStore, useTriageStore } from './store';
 import { storeTriageMode } from './test-mode';
 import { TriageScreen } from './triage-screen';

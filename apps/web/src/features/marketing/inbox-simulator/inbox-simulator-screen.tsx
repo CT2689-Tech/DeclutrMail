@@ -20,7 +20,8 @@ import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS, PRICING_TIER_ORDER } from '@/features/marketing/pricing/pricing-model';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
+import { type TriageDecisionRow } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
 import { DomainBatchCard, type BatchVerb } from '@/features/triage/domain-batch-card';
 import { ActionSheet, type ConfirmDetails } from '@/features/triage/action-sheet';

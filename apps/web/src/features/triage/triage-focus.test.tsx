@@ -44,7 +44,8 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, type TriageScreenState } from './data';
+import { type TriageScreenState } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 import { isBatchEligible, VERDICT_BATCH_LABELS } from './domain-batch';
 import {
   planFocusItems,

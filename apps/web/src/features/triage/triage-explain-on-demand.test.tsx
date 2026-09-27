@@ -15,7 +15,8 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 import { resetTriageStore, useTriageStore } from './store';
 import { storeTriageMode } from './test-mode';
 import { TriageScreen } from './triage-screen';

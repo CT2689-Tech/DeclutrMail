@@ -21,7 +21,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
-import { canUnsubscribe, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { canUnsubscribe, type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { RECOMMEND_FLOOR } from '@declutrmail/shared/copy';
 
 function rowById(id: string): TriageDecisionRow {
