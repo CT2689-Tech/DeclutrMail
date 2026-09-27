@@ -2340,3 +2340,9 @@ on the next one, or now at the founder's discretion.
 **Finding:** The workflow reference says a `pipeline()` stage that throws drops its item to null and skips the remaining stages. It says nothing about a stage that returns null. My first stub passed the null on to the next stage. Under that stub, main's `review?.findings ?? []` turned a dead gate into a clean review, so I "fixed" a bug that did not exist. A zero-agent probe of the real runtime, `pipeline(['a'], () => null, () => ({ ran: true }))`, returned `[null]`: a dead agent never reaches the later stages.
 **Rule (provisional):** Before stubbing a runtime to test code against it, probe the runtime for each behaviour the test depends on that its docs leave out. A zero-agent Workflow run costs nothing.
 **Distillation trigger:** promote to CLAUDE.md §8 ("A green test is not evidence") if a stub that disagrees with its runtime misleads a fix again. It is the same shape as the 2026-09-26 fake-GCP MISTAKES entry and the PGlite rule in §2.6.
+
+## 2026-09-26 — A haiku agent asked to run a command with a mistyped ref ran the corrected one
+**Context:** Starve-testing ct-gates' scout with `diffRef: 'origin/mian...HEAD'`, expecting SCOUT_FAILED.
+**Finding:** The scout, told to run `git diff --name-only origin/mian...HEAD` and report any error, returned the 6 files of `origin/main...HEAD` and no error. The run then gated a diff other than the one it was asked for, under the mistyped ref's name. A cheap model that meets a failing command may repair the input instead of reporting the failure.
+**Rule (provisional):** When an agent's answer depends on running an exact command, make it return the command it ran, verbatim, and compare that string in code. Tell it that a failure is the answer. Never infer "it ran what I asked" from a plausible result.
+**Distillation trigger:** promote to CLAUDE.md §8 if another workflow stage is found reporting on inputs it silently changed.

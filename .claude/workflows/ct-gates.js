@@ -2,16 +2,25 @@
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
 // merge recommendation. Routing mirrors the §7 table, with one addition:
-// silent-failure-hunter also reads scripts, shell hooks and workflow files,
-// where this repo's watchdogs and guards live. Each gate keeps its own
-// charter.
+// silent-failure-hunter also reads scripts, hooks, workflows, watchdog
+// acknowledgment lists and hook registrations, where this repo's watchdogs
+// and guards live. Each gate keeps its own charter.
 //
-// Verdicts: NO_DIFF (the diff lists no files) · SCOUT_FAILED (the changed
-// files could not be listed) · NO_GATES_IN_SCOPE (no gate routes a changed
-// file, or every gate that ran declined the diff as outside its charter) ·
-// INCOMPLETE (a gate returned nothing) · BLOCKED · NO_BLOCKERS. Only the last
-// means gates reviewed the diff and found no blocker; SCOUT_FAILED,
-// NO_GATES_IN_SCOPE and INCOMPLETE each mean something was not reviewed.
+// Each gate the files route to ends in one outcome: reviewed, declined (the
+// diff is outside its charter), unreadable (it could not read the diff) or
+// died. Verdicts, first match wins:
+//   SCOUT_FAILED       the changed files could not be listed
+//   NO_DIFF            the diff lists no files (`checkedIn` says where)
+//   NO_GATES_IN_SCOPE  no gate routes a changed file
+//   INCOMPLETE         a gate died or could not read the diff
+//   BLOCKED            a gate-tier BLOCKING finding the refuters did not refute
+//   STOP_CONDITION     a gate hit a CLAUDE.md §9 stop condition
+//   NO_GATES_IN_SCOPE  every gate that ran declined the diff
+//   PARTIAL            some gates declined (gatesDeclined); the rest reviewed
+//   NO_BLOCKERS        every gate the files route to reviewed, no blocker
+// Only NO_BLOCKERS is clean. Files no gate routes are listed in `unrouted`
+// and are never reviewed. Agents report what they ran; this script cannot
+// run git itself, so it checks those reports instead of trusting a silence.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -26,7 +35,9 @@
 // Usage:
 //   Workflow({ name: 'ct-gates' })                        // origin/main...HEAD
 //   Workflow({ name: 'ct-gates', args: { diffRef: 'abc123^..abc123' } })
-//   Workflow({ name: 'ct-gates', args: { files: ['apps/api/src/...'] } })
+//   Workflow({ name: 'ct-gates', args: { files: ['apps/api/src/...'], diffRef: 'origin/main...my-branch' } })
+// From a worktree, name the branch rather than HEAD: agents may start in
+// another checkout, where HEAD is a different branch.
 
 export const meta = {
   name: 'ct-gates',
@@ -50,11 +61,12 @@ const GATES = [
   { type: 'design-system-agent',       tier: 'gate',     when: /^(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
   { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
-  // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks and
-  // workflows: the guard-that-cannot-fail class (§8) keeps recurring there,
-  // and before this route a PR touching only those ran zero gates and came
-  // back NO_BLOCKERS. The agent's charter covers the same paths.
-  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.tsx?$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\// },
+  // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks, workflows,
+  // the acknowledgment lists that mute watchdogs and the hook registrations:
+  // the guard-that-cannot-fail class (§8) keeps recurring there, and before
+  // this route a PR touching only those ran zero gates and came back
+  // NO_BLOCKERS. The agent's charter covers the same paths.
+  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.tsx?$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\/|^scripts\/.*\.tsv$|^\.claude\/settings\.json$/ },
   { type: 'flow-completeness-auditor', tier: 'advisory', when: /^apps\/web\/src\/features\// },
 ]
 
@@ -69,18 +81,26 @@ let verifyBudget = VERIFY_BUDGET
 const SCOUT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['files'],
+  required: ['ran', 'toplevel', 'head', 'files'],
   properties: {
+    ran: { type: 'string', description: 'The diff command you executed, verbatim' },
+    toplevel: { type: 'string', description: 'Output of `git rev-parse --show-toplevel`' },
+    head: { type: 'string', description: 'Output of `git rev-parse --abbrev-ref HEAD`' },
     files: { type: 'array', items: { type: 'string' }, description: 'Repo-relative changed paths' },
-    error: { type: 'string', description: 'Set only if the git command failed: its error output' },
+    error: { type: 'string', description: 'Set only if the diff command failed: its error output' },
   },
 }
 
 const FINDINGS_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['inScope', 'findings'],
+  required: ['diffRead', 'inScope', 'findings'],
   properties: {
+    diffRead: {
+      type: 'boolean',
+      description: 'false if `git diff <ref>` failed or printed nothing; then return no findings',
+    },
+    diffError: { type: 'string', description: 'Set only if diffRead is false: what git printed' },
     inScope: { type: 'boolean', description: 'false if the gate judged the diff out of its charter' },
     findings: {
       type: 'array',
@@ -132,27 +152,33 @@ const diffRef = input.diffRef ?? DEFAULT_REF
 
 phase('Scout')
 let files = input.files
+let checkedIn = 'the caller (files passed explicitly)'
 if (!files) {
+  const command = `git diff --name-only ${diffRef}`
   const scouted = await agent(
-    `Run \`git diff --name-only ${diffRef}\` in the repo root and return the changed paths.\n` +
-      `Return paths exactly as git prints them (repo-relative). Do not read or review the files.\n` +
-      `If the command fails, put its error output in \`error\` and return an empty array.\n` +
-      `If it succeeds with no output, return an empty array and no \`error\`.`,
+    `Run exactly \`${command}\`, then \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\`.\n` +
+      `Do not change, correct or substitute the ref, even if it looks mistyped: its failure is the answer.\n` +
+      `Return \`ran\` as the diff command you executed, verbatim; \`toplevel\` and \`head\` as git printed them;\n` +
+      `and the changed paths exactly as git printed them. If the diff command fails, put its error output in\n` +
+      `\`error\` and return an empty array. Do not read or review the files.`,
     { label: 'scout:changed-files', phase: 'Scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  // A failed git command or a dead scout is not an empty diff: reporting it
-  // as NO_DIFF would read a mistyped ref as "nothing changed".
-  if (!scouted || scouted.error) {
-    const error = scouted?.error ?? 'the scout agent returned nothing'
+  // A failed git command, a dead scout or a scout that ran some other ref is
+  // not an empty diff: NO_DIFF would read a mistyped ref as "nothing changed".
+  const error = !scouted
+    ? 'the scout agent returned nothing'
+    : scouted.error ?? (scouted.ran.trim() !== command ? `the scout ran \`${scouted.ran}\`, not \`${command}\`` : null)
+  if (error) {
     log(`Could not list the changed files for ${diffRef}: ${error}. SCOUT_FAILED is not a pass.`)
     return { diffRef, files: [], gatesRun: [], findings: [], error, verdict: 'SCOUT_FAILED' }
   }
   files = scouted.files
+  checkedIn = `${scouted.toplevel} (HEAD ${scouted.head})`
 }
 
 if (files.length === 0) {
-  log(`No changed files for ${diffRef} — nothing to gate.`)
-  return { diffRef, files: [], gatesRun: [], findings: [], verdict: 'NO_DIFF' }
+  log(`No changed files for ${diffRef} in ${checkedIn}. If that is not the checkout you meant, pass files and a diffRef that names your branch.`)
+  return { diffRef, files: [], gatesRun: [], findings: [], checkedIn, verdict: 'NO_DIFF' }
 }
 
 const applicable = GATES.filter((g) => files.some((f) => g.when.test(f)))
@@ -187,7 +213,9 @@ if (applicable.length === 0) {
 // with the findings.
 const chargeFor = (g) =>
   `Review the diff \`${diffRef}\` per your charter in .claude/agents/${g.type}.md.\n\n` +
-  `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n\n` +
+  `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n` +
+  `Do not change or substitute the ref. If that command fails or prints nothing, set diffRead=false,\n` +
+  `put what git printed in diffError, and return no findings: a review of some other diff is not this one.\n\n` +
   `Changed files:\n${files.map((f) => `- ${f}`).join('\n')}\n\n` +
   `Overrides for this run:\n` +
   `- Do NOT post PR comments, set status checks, or write to MISTAKES.md. Return findings only.\n` +
@@ -236,11 +264,13 @@ const reviews = await pipeline(
         ]).then((votes) => {
           const cast = votes.filter(Boolean)
           // Conservative: demote only on unanimous refutation by both refuters.
-          // A refuter that died leaves the finding standing.
+          // A refuter that died leaves the finding standing, but unverified:
+          // CONFIRMED means two refuters read it and could not refute it.
           const refuted = cast.length === 2 && cast.every((v) => v.refuted)
+          if (cast.length < 2) log(`${g.type}: ${2 - cast.length} refuter(s) returned nothing for ${f.file}`)
           return {
             ...f,
-            verification: refuted ? 'REFUTED' : 'CONFIRMED',
+            verification: refuted ? 'REFUTED' : cast.length === 2 ? 'CONFIRMED' : 'UNVERIFIED_REFUTER_FAILED',
             severity: refuted ? 'WARNING' : f.severity,
             refutations: cast.map((v) => v.reason),
           }
@@ -249,7 +279,8 @@ const reviews = await pipeline(
     ).then((verified) => ({
       gate: g.type,
       tier: g.tier,
-      inScope: review?.inScope ?? false,
+      outcome: review?.diffRead === false ? 'unreadable' : review?.inScope ? 'reviewed' : 'declined',
+      diffError: review?.diffError,
       stopCondition: review?.stopCondition,
       findings: [...verified.filter(Boolean), ...rest],
     }))
@@ -260,10 +291,16 @@ const ran = reviews.filter(Boolean)
 const died = applicable.filter((g) => !ran.some((r) => r.gate === g.type)).map((g) => g.type)
 if (died.length) log(`Gates that returned nothing (treat as NOT run): ${died.join(', ')}`)
 
-// A gate that judged the diff outside its charter reviewed nothing. If every
-// gate that ran did, the run reviewed nothing: the same as none routing.
-const declined = ran.filter((r) => !r.inScope).map((r) => r.gate)
+// Only a gate that read the diff and judged it in its charter reviewed it.
+const gatesWith = (outcome) => ran.filter((r) => r.outcome === outcome).map((r) => r.gate)
+const reviewed = gatesWith('reviewed')
+const declined = gatesWith('declined')
+const unreadable = gatesWith('unreadable')
 if (declined.length) log(`Declined the diff as outside their charter, so reviewed nothing: ${declined.join(', ')}`)
+if (unreadable.length) {
+  const why = ran.filter((r) => r.outcome === 'unreadable').map((r) => `${r.gate} (${r.diffError ?? 'no output'})`)
+  log(`Could not read the diff ${diffRef}, so reviewed nothing: ${why.join(', ')}`)
+}
 
 const findings = ran.flatMap((r) => r.findings)
 const blockers = findings.filter((f) => f.severity === 'BLOCKING' && f.tier === 'gate')
@@ -280,16 +317,22 @@ return {
   gatesRun: ran.map((r) => r.gate),
   gatesSkipped: skipped,
   gatesFailed: died,
+  gatesUnreadable: unreadable,
   gatesDeclined: declined,
   unrouted,
   stopConditions: stops,
   findings,
   // Structural only. CLAUDE.md §8: green gates are NOT a smoke.
-  verdict: died.length
-    ? 'INCOMPLETE'
-    : blockers.length
-      ? 'BLOCKED'
-      : declined.length === ran.length
-        ? 'NO_GATES_IN_SCOPE'
-        : 'NO_BLOCKERS',
+  verdict:
+    died.length || unreadable.length
+      ? 'INCOMPLETE'
+      : blockers.length
+        ? 'BLOCKED'
+        : stops.length
+          ? 'STOP_CONDITION'
+          : reviewed.length === 0
+            ? 'NO_GATES_IN_SCOPE'
+            : declined.length
+              ? 'PARTIAL'
+              : 'NO_BLOCKERS',
 }
