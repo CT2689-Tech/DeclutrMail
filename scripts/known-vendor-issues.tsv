@@ -19,7 +19,7 @@
 #
 # Examples, not active (uncomment only for a cause you have looked at):
 # Sentry	BREACH	quota/rate limited (errors being dropped)	1000	2026-10-26	up to 1,000 dropped errors a day while the quota is raised; <owner>
-# Google Cloud (budgets)	BREACH	$20.00 budget	100	2026-10-26	month-to-date spend up to $100 while the budget is resized; <owner>
+# Google Cloud (budgets)	BREACH	declutrmail-monthly-alert-20:	100	2026-10-26	month-to-date spend up to $100 while the budget is resized; <owner>
 #
 # This repository is public: notes say what is known and who owns it,
 # nothing secret.

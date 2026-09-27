@@ -127,6 +127,8 @@ function gauge(value, warnAt) {
 
 /** Status severity order, for picking the worst of several gauges. */
 const RANK = { OK: 0, UNCONFIGURED: 0, WARN: 1, BREACH: 2, ERROR: 3 };
+const worstStatus = (causes) =>
+  causes.reduce((worst, c) => (RANK[c.status] > RANK[worst] ? c.status : worst), 'OK');
 
 /**
  * A request that ran out of time rather than failing on its merits.
@@ -215,9 +217,13 @@ async function checkSupabaseDbSize() {
   const connections = finiteNumber(stats.connections, 'database connections');
   const maxConnections = finiteNumber(stats.max_connections, 'maximum connections');
   if (!Number.isFinite(mb)) throw new Error('psql returned a non-numeric DB size');
+  const detail = `DB size ${mb.toFixed(1)} MB (warn ${warnMb} MB)`;
+  const size = gauge(mb, warnMb);
   return {
-    ...gauge(mb, warnMb),
-    detail: `DB size ${mb.toFixed(1)} MB (warn ${warnMb} MB)`,
+    ...size,
+    detail,
+    // Valued in MB, so an acknowledgment can bound it.
+    causes: [{ status: size.status, text: detail, value: mb }],
     usage: {
       database_mb: mb,
       database_connections: connections,
@@ -264,129 +270,144 @@ export async function checkUpstash() {
   // a healthy DB `state: 'active'`; anything else (suspended/disabled/
   // deleted) is a hard BREACH regardless of usage. Scan EVERY DB so a
   // non-first prod database can't hide behind an idle one.
-  const notActive = dbs.filter((db) => (db.state ?? 'active') !== 'active');
-  if (notActive.length > 0) {
-    // One cause per database: acknowledging one suspended database must not
-    // cover the next (the 2026-07-15 outage was a second database).
-    const causes = notActive.map((db) => ({
+  // One cause per database: acknowledging one suspended database must not
+  // cover the next (the 2026-07-15 outage was a second database).
+  const suspended = dbs
+    .filter((db) => (db.state ?? 'active') !== 'active')
+    .map((db) => ({
       status: 'BREACH',
       text: `${db.database_name ?? db.database_id}: state=${db.state}`,
     }));
-    return { status: 'BREACH', detail: causes.map((c) => c.text).join('; '), causes };
-  }
-  // All active — gauge the primary (single prod Redis).
-  const db = dbs[0];
-  const stats = await httpJson(`https://api.upstash.com/v2/redis/stats/${db.database_id}`, {
-    headers,
-  });
-  const cmds = latestValue(stats.daily_net_commands, 'daily_net_commands');
-  const storageMb = latestValue(stats.current_storage, 'current_storage') / (1024 * 1024);
-  const volume = {
-    ...gauge(cmds, warnCmds),
-    detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
+  // The first active database is the one gauged (the single prod Redis), and
+  // it is gauged even while another is suspended: acknowledging a suspended
+  // staging database must not stop the spend and volume checks on prod.
+  const active = dbs.find((db) => (db.state ?? 'active') === 'active');
+  if (!active)
+    return { status: 'BREACH', detail: suspended.map((c) => c.text).join('; '), causes: suspended };
+  const measured = await gaugeDatabase(active);
+  if (!suspended.length) return measured;
+  return {
+    ...measured,
+    status: 'BREACH',
+    detail: [...suspended.map((c) => c.text), measured.detail].join('; '),
+    causes: [...suspended, ...measured.causes],
   };
 
-  // SPEND, projected. Volume alone cannot see this coming: on 2026-07-25
-  // this vendor read "🟢 OK 14% — 137,114 commands today" hours before the
-  // production database was budget-suspended, because 137k/day is a
-  // seventh of the command threshold while the MONTH's cost was already
-  // at the cap. Commands and money are different axes and only one of
-  // them suspends the database.
-  //
-  // Gauged against the database's OWN `budget` rather than an env
-  // constant, so raising the cap in the Upstash console cannot leave a
-  // stale threshold here.
-  //
-  // The projection is the part that buys warning time. A flat gauge on
-  // spend-so-far is green early in the month by construction — day 5 of a
-  // $30 budget at $8 reads 27% while the run-rate says $48 by month end.
-  const budget = Number(db.budget ?? 0);
-  const monthCost = stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);
-  if (!(budget > 0) || !Number.isFinite(monthCost)) {
-    // Fixed/pro plans carry no spend cap to breach, and a plan that does
-    // not report billing cannot be gauged on it — say which, and fall
-    // back to volume rather than inventing a verdict.
-    const why = budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
+  async function gaugeDatabase(db) {
+    const stats = await httpJson(`https://api.upstash.com/v2/redis/stats/${db.database_id}`, {
+      headers,
+    });
+    const cmds = latestValue(stats.daily_net_commands, 'daily_net_commands');
+    const storageMb = latestValue(stats.current_storage, 'current_storage') / (1024 * 1024);
+    const volume = {
+      ...gauge(cmds, warnCmds),
+      detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
+    };
+
+    // SPEND, projected. Volume alone cannot see this coming: on 2026-07-25
+    // this vendor read "🟢 OK 14% — 137,114 commands today" hours before the
+    // production database was budget-suspended, because 137k/day is a
+    // seventh of the command threshold while the MONTH's cost was already
+    // at the cap. Commands and money are different axes and only one of
+    // them suspends the database.
+    //
+    // Gauged against the database's OWN `budget` rather than an env
+    // constant, so raising the cap in the Upstash console cannot leave a
+    // stale threshold here.
+    //
+    // The projection is the part that buys warning time. A flat gauge on
+    // spend-so-far is green early in the month by construction — day 5 of a
+    // $30 budget at $8 reads 27% while the run-rate says $48 by month end.
+    const budget = Number(db.budget ?? 0);
+    const monthCost =
+      stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);
+    if (!(budget > 0) || !Number.isFinite(monthCost)) {
+      // Fixed/pro plans carry no spend cap to breach, and a plan that does
+      // not report billing cannot be gauged on it — say which, and fall
+      // back to volume rather than inventing a verdict.
+      const why =
+        budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
+      return {
+        ...volume,
+        costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
+        usage: { commands_today: cmds, storage_mb: storageMb },
+        detail: `${db.database_name}: ${volume.detail}, ${why}`,
+        causes: [
+          { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
+        ],
+      };
+    }
+    const projected = monthCost / monthElapsedFraction();
+    // Deliberately NOT `gauge()`. Its BREACH tier is 2x the warn threshold,
+    // which for spend would mean "projecting 160% of the cap" — but the
+    // damage is done the moment the projection crosses the cap ITSELF:
+    // Upstash suspends the database and every BullMQ job stops. That is an
+    // outage prediction, not a cost surprise, so it has to exit non-zero.
+    //
+    // WARN would not do: WARN exits 0, the workflow stays green, and GitHub
+    // sends nothing — which is precisely how the 2026-07-25 suspension
+    // arrived unannounced. Flipping WARN_IS_FAILURE globally is not the
+    // alternative either: it would make every soft signal in the table fail
+    // the workflow, and a row that is always red trains the failure away just
+    // as surely as one that is always yellow. (The GH Actions row used to be
+    // exactly that standing WARN — 574% of an allowance a public repo never
+    // pays — and is now cost-keyed instead. Keep it that way.)
+    const warnAt = budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8);
+    // BREACH at the WARN line — this row alone, and deliberately.
+    //
+    // Upstash's cap is not a spend threshold, it is a kill switch: crossing
+    // it SUSPENDS the database, and a suspended Redis stops every BullMQ
+    // queue at once — Gmail watch renewal included, which lapses the push
+    // subscription after ~7 days and stops mail arriving even once Redis is
+    // back. That is a total outage, so "on track to be suspended" is a hard
+    // signal in the sense BREACH already documents ("a vendor-native hard
+    // signal"), not the soft, costs-money signal WARN is for.
+    //
+    // Every other row keeps WARN: overshooting Vercel or Sentry costs money
+    // or drops telemetry, and making those fail the run would leave a
+    // permanently red workflow that trains the alert away — the objection
+    // that (correctly) rules out flipping WARN_IS_FAILURE globally.
+    //
+    // The 80% projection is what makes this an alert BEFORE the outage. The
+    // pre-existing `projected >= budget` BREACH fires only once month-end
+    // spend is already modelled to hit the cap; on 2026-07-25 actual usage
+    // reached the cap while the projection still sat under it, the 80% line
+    // WARNed into a green run, and prod Redis suspended unannounced.
+    const spend = {
+      status: projected >= warnAt ? 'BREACH' : 'OK',
+      // Against the cap, so 100% reads as "projecting exactly the budget".
+      usagePct: Math.round((projected / budget) * 100),
+    };
+
+    // Worst axis wins — a database on track to blow its cap is not "OK"
+    // because its command count happens to be low.
+    const worst = RANK[spend.status] >= RANK[volume.status] ? spend : volume;
     return {
-      ...volume,
-      costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
-      usage: { commands_today: cmds, storage_mb: storageMb },
-      detail: `${db.database_name}: ${volume.detail}, ${why}`,
+      status: worst.status,
+      usagePct: worst.usagePct,
+      costMtdUsd: monthCost,
+      usage: {
+        commands_today: cmds,
+        storage_mb: storageMb,
+        budget_usd: budget,
+        projected_month_usd: projected,
+      },
+      detail:
+        `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
+        `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
+        ` — ${volume.detail}, storage ${storageMb.toFixed(1)} MB`,
+      // Spend and volume fail independently. Acknowledging a volume spike
+      // must not hide the spend projection that predicts a suspension.
       causes: [
+        {
+          status: spend.status,
+          text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
+          value: projected,
+        },
         { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
       ],
     };
   }
-  const projected = monthCost / monthElapsedFraction();
-  // Deliberately NOT `gauge()`. Its BREACH tier is 2x the warn threshold,
-  // which for spend would mean "projecting 160% of the cap" — but the
-  // damage is done the moment the projection crosses the cap ITSELF:
-  // Upstash suspends the database and every BullMQ job stops. That is an
-  // outage prediction, not a cost surprise, so it has to exit non-zero.
-  //
-  // WARN would not do: WARN exits 0, the workflow stays green, and GitHub
-  // sends nothing — which is precisely how the 2026-07-25 suspension
-  // arrived unannounced. Flipping WARN_IS_FAILURE globally is not the
-  // alternative either: it would make every soft signal in the table fail
-  // the workflow, and a row that is always red trains the failure away just
-  // as surely as one that is always yellow. (The GH Actions row used to be
-  // exactly that standing WARN — 574% of an allowance a public repo never
-  // pays — and is now cost-keyed instead. Keep it that way.)
-  const warnAt = budget * envNum('UPSTASH_BUDGET_WARN_FRACTION', 0.8);
-  // BREACH at the WARN line — this row alone, and deliberately.
-  //
-  // Upstash's cap is not a spend threshold, it is a kill switch: crossing
-  // it SUSPENDS the database, and a suspended Redis stops every BullMQ
-  // queue at once — Gmail watch renewal included, which lapses the push
-  // subscription after ~7 days and stops mail arriving even once Redis is
-  // back. That is a total outage, so "on track to be suspended" is a hard
-  // signal in the sense BREACH already documents ("a vendor-native hard
-  // signal"), not the soft, costs-money signal WARN is for.
-  //
-  // Every other row keeps WARN: overshooting Vercel or Sentry costs money
-  // or drops telemetry, and making those fail the run would leave a
-  // permanently red workflow that trains the alert away — the objection
-  // that (correctly) rules out flipping WARN_IS_FAILURE globally.
-  //
-  // The 80% projection is what makes this an alert BEFORE the outage. The
-  // pre-existing `projected >= budget` BREACH fires only once month-end
-  // spend is already modelled to hit the cap; on 2026-07-25 actual usage
-  // reached the cap while the projection still sat under it, the 80% line
-  // WARNed into a green run, and prod Redis suspended unannounced.
-  const spend = {
-    status: projected >= warnAt ? 'BREACH' : 'OK',
-    // Against the cap, so 100% reads as "projecting exactly the budget".
-    usagePct: Math.round((projected / budget) * 100),
-  };
-
-  // Worst axis wins — a database on track to blow its cap is not "OK"
-  // because its command count happens to be low.
-  const worst = RANK[spend.status] >= RANK[volume.status] ? spend : volume;
-  return {
-    status: worst.status,
-    usagePct: worst.usagePct,
-    costMtdUsd: monthCost,
-    usage: {
-      commands_today: cmds,
-      storage_mb: storageMb,
-      budget_usd: budget,
-      projected_month_usd: projected,
-    },
-    detail:
-      `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
-      `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
-      ` — ${volume.detail}, storage ${storageMb.toFixed(1)} MB`,
-    // Spend and volume fail independently. Acknowledging a volume spike
-    // must not hide the spend projection that predicts a suspension.
-    causes: [
-      {
-        status: spend.status,
-        text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
-        value: projected,
-      },
-      { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
-    ],
-  };
 }
 
 export async function checkAnthropic() {
@@ -487,35 +508,39 @@ export async function checkSentry() {
   // `filtered` is excluded on purpose: that is inbound filters doing
   // what we asked, not a loss.
   const dropped = sumOutcome('rate_limited', 'abuse', 'cardinality_limited');
-  if (dropped > 0) {
-    const detail = `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`;
-    return {
-      status: 'BREACH',
-      detail,
-      causes: [{ status: 'BREACH', text: detail, value: dropped }],
-    };
-  }
-
   // Client-side and malformed losses are real but are not enforcement,
   // so they warn rather than page.
   const lost = sumOutcome('invalid', 'client_discard');
   const accepted = sumOutcome('accepted');
   const volume = gauge(accepted, warnDaily);
-  const lostNote = lost > 0 ? `, ${fmtInt(lost)} invalid/client-discarded` : '';
-  const acceptedNote = `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})`;
+  // All three are measured every run, so acknowledging dropped errors cannot
+  // hide an accepted-volume breach, and the reverse.
+  const causes = [
+    {
+      status: dropped > 0 ? 'BREACH' : 'OK',
+      text: `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`,
+      value: dropped,
+    },
+    {
+      status: volume.status,
+      text: `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})`,
+      value: accepted,
+    },
+    {
+      status: lost > 0 ? 'WARN' : 'OK',
+      text: `${fmtInt(lost)} invalid/client-discarded`,
+      value: lost,
+    },
+  ];
   return {
-    status: lost > 0 && volume.status === 'OK' ? 'WARN' : volume.status,
+    status: worstStatus(causes),
     usagePct: volume.usagePct,
     usage: { accepted_errors_24h: accepted, discarded_errors_24h: lost },
-    detail: `${acceptedNote}${lostNote}`,
-    causes: [
-      { status: volume.status, text: acceptedNote, value: accepted },
-      {
-        status: lost > 0 ? 'WARN' : 'OK',
-        text: `${fmtInt(lost)} invalid/client-discarded`,
-        value: lost,
-      },
-    ],
+    detail: causes
+      .filter((c, i) => i === 1 || c.value > 0)
+      .map((c) => c.text)
+      .join('; '),
+    causes,
   };
 }
 
@@ -528,18 +553,13 @@ export async function checkPosthog() {
   for (const [resource, v] of Object.entries(quota ?? {})) {
     if (v === true || (v && typeof v === 'object' && v.limited === true)) limited.push(resource);
   }
-  if (limited.length > 0) {
-    // Past the billing limit — PostHog is DROPPING data right now. One
-    // cause per resource, so acknowledging one does not cover another.
-    return {
-      status: 'BREACH',
-      detail: `quota-limited (data being dropped): ${limited.join(', ')}`,
-      causes: limited.map((resource) => ({
-        status: 'BREACH',
-        text: `quota-limited (data being dropped): ${resource}`,
-      })),
-    };
-  }
+  // Past the billing limit, PostHog is DROPPING data right now. One cause
+  // per resource, so acknowledging one does not cover another, and the
+  // events gauge still runs, so acknowledging a quota cannot hide it.
+  const quotaCauses = limited.map((resource) => ({
+    status: 'BREACH',
+    text: `quota-limited (data being dropped): ${resource}`,
+  }));
   const warnEvents = envNum('POSTHOG_MTD_EVENTS_WARN', 1_000_000);
   const res = await httpJson(`${host}/api/projects/${pid}/query/`, {
     method: 'POST',
@@ -552,13 +572,21 @@ export async function checkPosthog() {
     }),
   });
   const events = finiteNumber(res.results?.[0]?.[0], 'PostHog events');
-  const detail = `no quota limits hit; MTD events ${fmtInt(events)} (warn ${fmtInt(warnEvents)})`;
   const volume = gauge(events, warnEvents);
+  const eventsCause = {
+    status: volume.status,
+    text: `MTD events ${fmtInt(events)} (warn ${fmtInt(warnEvents)})`,
+    value: events,
+  };
+  const causes = [...quotaCauses, eventsCause];
   return {
     ...volume,
+    status: worstStatus(causes),
     usage: { events_mtd: events },
-    detail,
-    causes: [{ status: volume.status, text: detail, value: events }],
+    detail: quotaCauses.length
+      ? `${causes.map((c) => c.text).join('; ')}`
+      : `no quota limits hit; ${eventsCause.text}`,
+    causes,
   };
 }
 
@@ -874,16 +902,20 @@ export function triage(results, known, { today, warnIsFailure = false }) {
       for (const k of matches) used.add(k);
       const withinCeiling = (k) =>
         k.upTo === null || (Number.isFinite(cause.value) && cause.value <= k.upTo);
-      const live = matches.find((k) => today <= k.until && withinCeiling(k));
-      if (live) {
-        covered.push({ cause, line: live });
+      // When several lines name one cause, the tightest ceiling decides: a
+      // broader line must not override a limit someone wrote down.
+      const inDate = matches.filter((k) => today <= k.until);
+      const exceeded = inDate.find((k) => !withinCeiling(k));
+      if (inDate.length && !exceeded) {
+        covered.push({ cause, line: inDate[0] });
         continue;
       }
-      const inDate = matches.find((k) => today <= k.until);
       open.push({
         cause,
-        why: inDate
-          ? `above the acknowledged ${inDate.upTo} (line ${inDate.line})`
+        why: exceeded
+          ? Number.isFinite(cause.value)
+            ? `above the acknowledged ${exceeded.upTo} (line ${exceeded.line})`
+            : `has no measured value, so the ceiling ${exceeded.upTo} on line ${exceeded.line} cannot hold`
           : matches.length
             ? `acknowledgment expired ${matches[0].until}`
             : 'not acknowledged',

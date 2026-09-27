@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -309,7 +309,7 @@ test('a ceiling never holds for a cause with no measured value', async () => {
   );
   assert.match(
     triage([row], known, { today: TODAY }).failing[0].open[0].why,
-    /above the acknowledged 5/,
+    /no measured value, so the ceiling 5 on line \d+ cannot hold/,
   );
 });
 
@@ -325,26 +325,136 @@ test('a WARN cause in a BREACH row needs acknowledging only when WARN fails the 
   ]);
 });
 
-test('each PostHog quota is its own cause', async () => {
-  const row = {
-    name: 'PostHog',
-    ...(await withFetch(
-      {
-        'https://us.posthog.com/api/projects/1/quota_limits/': {
-          events: true,
-          recordings: { limited: true },
-        },
-      },
-      { POSTHOG_API_KEY: 'key', POSTHOG_PROJECT_ID: '1' },
-      checkPosthog,
-    )),
-  };
+const POSTHOG = { POSTHOG_API_KEY: 'key', POSTHOG_PROJECT_ID: '1' };
+const posthogRow = async (quota, events) => ({
+  name: 'PostHog',
+  ...(await withFetch(
+    {
+      'https://us.posthog.com/api/projects/1/quota_limits/': quota,
+      'https://us.posthog.com/api/projects/1/query/': { results: [[events]] },
+    },
+    POSTHOG,
+    checkPosthog,
+  )),
+});
+
+test('each PostHog quota is its own cause, and the events gauge still runs', async () => {
   const known = parse(
     `${LIST}PostHog\tBREACH\tdropped): recordings\t-\t2026-10-26\trecordings are off\n`,
   );
-  assert.deepEqual(openCauses(triage([row], known, { today: TODAY })), [
+  const both = await posthogRow({ events: true, recordings: { limited: true } }, 10);
+  assert.deepEqual(openCauses(triage([both], known, { today: TODAY })), [
     'quota-limited (data being dropped): events',
   ]);
+  // #795 review: acknowledging the recordings quota also skipped the events gauge.
+  const volume = await posthogRow({ recordings: { limited: true } }, 5_000_000);
+  assert.deepEqual(openCauses(triage([volume], known, { today: TODAY })), [
+    'MTD events 5,000,000 (warn 1,000,000)',
+  ]);
+});
+
+test('acknowledged dropped Sentry errors do not hide an accepted-error breach', async () => {
+  // #795 review: the dropped branch returned before accepted volume was gauged.
+  const row = await sentryRow([outcome('accepted', 50_000), outcome('rate_limited', 500)]);
+  const known = parse(
+    `${LIST}Sentry\tBREACH\tquota/rate limited\t1000\t2026-10-26\tquota raise requested\n`,
+  );
+  assert.deepEqual(openCauses(triage([row], known, { today: TODAY })), [
+    '50,000 accepted errors last 24h (warn 1,000)',
+  ]);
+});
+
+test('acknowledging a suspended staging database does not stop the checks on prod', async () => {
+  // #795 review: any suspended database made the check return before prod was gauged.
+  const row = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      {
+        [UPSTASH_DBS]: [prodDb, { ...prodDb, database_name: 'staging-cache', state: 'suspended' }],
+        [UPSTASH_STATS]: {
+          daily_net_commands: 5_000_000,
+          current_storage: 1,
+          total_monthly_billing: 29.99,
+        },
+      },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  const known = parse(
+    `${LIST}Upstash Redis\tBREACH\tstaging-cache: state=suspended\t-\t2026-10-03\tstaging, being deleted\n`,
+  );
+  const open = openCauses(triage([row], known, { today: TODAY }));
+  assert.equal(open.length, 2);
+  assert.match(open[0], /^declutrmail-v2-bullmq: projecting \$[\d.]+ against a \$30\.00 cap$/);
+  assert.equal(open[1], 'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000)');
+});
+
+test('when two lines name one cause, the tightest ceiling decides', () => {
+  // #795 review: a broad line with no ceiling silently overrode a narrower one's.
+  const known = parse(
+    `${LIST}Sentry\tBREACH\tquota/rate limited (errors being dropped)\t1000\t2026-10-26\tquota raise requested\nSentry\tBREACH\tquota\t-\t2026-10-26\tbroad\n`,
+  );
+  const row = {
+    name: 'Sentry',
+    status: 'BREACH',
+    detail: 'x',
+    causes: [
+      {
+        status: 'BREACH',
+        text: 'quota/rate limited (errors being dropped): 480,112 in last 24h',
+        value: 480_112,
+      },
+    ],
+  };
+  assert.match(
+    triage([row], known, { today: TODAY }).failing[0].open[0].why,
+    /above the acknowledged 1000/,
+  );
+});
+
+test("the list header's example lines acknowledge the 2026-09-26 breaches exactly", async () => {
+  // The lines the PR and FOUNDER-FOLLOWUPS tell the founder to uncomment.
+  const examples = readFileSync(new URL('./known-vendor-issues.tsv', import.meta.url), 'utf8')
+    .split('\n')
+    .filter((l) => /^# (Sentry|Google Cloud \(budgets\))\t/.test(l))
+    .map((l) => l.slice(2));
+  assert.equal(examples.length, 2);
+  const known = parse(`${examples.join('\n')}\n`);
+  const budget = (units, displayName) => ({
+    displayName,
+    amount: { specifiedAmount: { currencyCode: 'USD', units } },
+    budgetFilter: {
+      calendarPeriod: 'MONTH',
+      projects: ['projects/387835380133'],
+      creditTypesTreatment: 'INCLUDE_ALL_CREDITS',
+    },
+  });
+  const spend = {
+    status: 'OK',
+    costMtdUsd: 84.21,
+    budgetPeriodStart: Date.parse('2026-09-01T07:00:00Z'),
+    budgetPeriodEnd: Date.parse('2026-10-01T07:00:00Z'),
+  };
+  const gcp = (budgets) => ({
+    name: 'Google Cloud (budgets)',
+    ...budgetStatus(budgets, spend, new Date('2026-09-26T12:00:00Z')),
+  });
+  const rows = [
+    gcp([budget('20', 'declutrmail-monthly-alert-20')]),
+    await sentryRow([outcome('accepted', 500), outcome('rate_limited', 23)]),
+  ];
+  assert.deepEqual(triage(rows, known, { today: TODAY }).failing, []);
+  // Another $20 budget is not covered by the line that names this one.
+  const other = triage(
+    [gcp([budget('20', 'declutrmail-monthly-alert-20'), budget('20', 'another-20')])],
+    known,
+    { today: TODAY },
+  );
+  assert.deepEqual(
+    openCauses(other).map((t) => t.split(':')[0]),
+    ['another-20'],
+  );
 });
 
 test('a failing row whose causes name nothing failing is still checked as one cause', () => {
