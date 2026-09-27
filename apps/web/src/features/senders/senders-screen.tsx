@@ -63,11 +63,13 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import {
+  actionLabel,
   backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
+  stillRunningCopy,
 } from '@/lib/action-error-copy';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
@@ -872,10 +874,7 @@ function SendersScreenContent({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -886,7 +885,10 @@ function SendersScreenContent({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: activeBatch.verb.toLowerCase() });
       toast(
-        `${activeBatch.verb} for ${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'} is still running — see Activity.`,
+        stillRunningCopy(
+          activeBatch.verb,
+          `${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'}`,
+        ),
         'info',
       );
       setOverdueBatch(activeBatch);
@@ -1292,7 +1294,7 @@ function SendersScreenContent({
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
                   : getActionFailureCopy('enqueue', {
-                      action: `${verb} for ${sender.name}`,
+                      action: actionLabel(verb, sender.name),
                       error: err,
                     }),
                 'warn',
@@ -1775,7 +1777,7 @@ function SendersScreenContent({
                 noneActionable
                   ? NO_ACTIONABLE_SENDERS_COPY
                   : getActionFailureCopy('enqueue', {
-                      action: `${verb} for ${n} senders`,
+                      action: actionLabel(verb, `${n} senders`),
                       error: err,
                     }),
                 'warn',

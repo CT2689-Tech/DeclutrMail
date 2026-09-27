@@ -66,9 +66,11 @@ import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import {
+  actionLabel,
   backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
+  stillRunningCopy,
 } from '@/lib/action-error-copy';
 import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
@@ -576,10 +578,7 @@ function ReadyState({
     if (!activeAction) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -837,7 +836,7 @@ function ReadyState({
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
                   : getActionFailureCopy('enqueue', {
-                      action: `${verb} for ${sender.name}`,
+                      action: actionLabel(verb, sender.name),
                       error: err,
                     }),
                 'warn',

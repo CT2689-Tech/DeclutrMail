@@ -2544,6 +2544,18 @@ function OpenInGmailLink({
  * silent-failure class from MISTAKES.md 2026-06-05 + the stuck-revert
  * recovery path the handoff calls out.
  */
+/**
+ * What a row says when its Undo failed. Never the transport line: it
+ * carries the undo token and names no next step. `revertActivityUndo`'s
+ * own errors are written for the reader.
+ */
+function undoFailureCopy(error: Error | null): string {
+  if (error === null) return 'Could not confirm Undo. Try again.';
+  return error instanceof ApiError
+    ? getActionFailureCopy('revert-enqueue', { error })
+    : error.message;
+}
+
 function UndoCell({
   row,
   bulkFailedTokens,
@@ -2581,11 +2593,7 @@ function UndoCell({
           aria-busy={isPendingHere}
           onClick={() => revert.mutate(undo.token)}
           disabled={isPendingHere}
-          title={
-            failed
-              ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
-              : 'Revert this action.'
-          }
+          title={failed ? undoFailureCopy(revert.error) : 'Revert this action.'}
           onMouseEnter={(e) => {
             if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
           }}
@@ -2613,7 +2621,7 @@ function UndoCell({
         </button>
         {failed && (
           <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>
-            {revert.error?.message ?? 'Could not confirm Undo. Try again.'}
+            {undoFailureCopy(revert.error)}
           </span>
         )}
       </span>

@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/lib/api/client';
 
 import {
+  actionLabel,
   backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
+  stillRunningCopy,
   technicalErrorDetails,
 } from './action-error-copy';
 
@@ -83,8 +85,14 @@ describe('getActionFailureCopy', () => {
     );
   });
 
+  // An undo request is idempotent: the same token answers with the same
+  // reverse job, or "reverted" once it finished. Trying again is safe.
+  it('says an unconfirmed undo may simply be tried again', () => {
+    expect(getActionFailureCopy('revert-status')).toBe("Couldn't confirm undo — try again.");
+  });
+
   it('sends an unconfirmed outcome to Activity before a retry', () => {
-    for (const phase of ['status', 'terminal', 'revert-status', 'revert-terminal'] as const) {
+    for (const phase of ['status', 'terminal', 'revert-terminal'] as const) {
       expect(getActionFailureCopy(phase, { action: 'Archive for Acme' })).toMatch(
         /check Activity before retrying/,
       );
@@ -136,6 +144,30 @@ describe('backlogAfterUnsubFailureCopy', () => {
         "Unsubscribe request recorded, but can't tell if Delete started for older email from Acme — check Activity before retrying.",
       );
     }
+  });
+});
+
+// "Later" names the verb; as an English word "start Later" means "begin
+// afterwards". Every sentence built from a verb says what Later does.
+describe('actionLabel', () => {
+  it('names Later by what it does', () => {
+    expect(actionLabel('Archive', 'Acme')).toBe('Archive for Acme');
+    expect(actionLabel('Later', 'Acme')).toBe('moving email from Acme to Later');
+    expect(
+      getActionFailureCopy('enqueue', { action: actionLabel('Later', 'Acme'), error: refused }),
+    ).toBe("Couldn't start moving email from Acme to Later — nothing changed.");
+    expect(getActionFailureCopy('terminal', { action: actionLabel('Later', '3 senders') })).toBe(
+      'Moving email from 3 senders to Later failed — check Activity before retrying.',
+    );
+  });
+
+  it('opens an overdue status with the action', () => {
+    expect(stillRunningCopy('Delete', 'Acme')).toBe(
+      'Delete for Acme is still running — see Activity.',
+    );
+    expect(stillRunningCopy('Later', 'the acme.com batch')).toBe(
+      'Moving email from the acme.com batch to Later is still running — see Activity.',
+    );
   });
 });
 

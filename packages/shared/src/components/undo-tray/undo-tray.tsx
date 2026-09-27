@@ -842,11 +842,6 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
 }
 
 /**
- * The pill's past-tense verb — the short form; the expanded list keeps the
- * registry's full result label. Unsubscribe states the request, never the
- * outcome (D58: nothing here knows the sender honoured it).
- */
-/**
  * The pill's line: verb, then how much. Later names a destination, so its
  * count goes before it — "Moved 1,400 emails to Later", never "Moved to
  * Later 1,400 emails".
@@ -856,6 +851,11 @@ function doneLine(kind: UndoActionKind, total: string | null): string {
   return kind === 'later' ? `Moved ${total} to Later` : `${doneLabel(kind)} ${total}`;
 }
 
+/**
+ * The pill's past-tense verb — the short form; the expanded list keeps the
+ * registry's full result label. Unsubscribe states the request, never the
+ * outcome (D58: nothing here knows the sender honoured it).
+ */
 function doneLabel(kind: UndoActionKind): string {
   switch (kind) {
     case 'archive':

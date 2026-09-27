@@ -774,8 +774,8 @@ export class ActivityReadService {
    *
    * Dated by the click (`created_at`), like the queued line it replaces;
    * the skip lands a lock-wait later. That also keeps the read on the
-   * `(mailbox, status, created_at)` index, bounded by the window, instead
-   * of scanning every finished job the mailbox ever ran.
+   * `(mailbox, status, created_at)` index, bounded by the window or date
+   * range when one is set; `all` walks the mailbox's `done` rows.
    */
   private async loadProtectedSkipRows(
     params: ListActivityParams,

@@ -33,7 +33,7 @@ const meta: StoryMeta<typeof ActionRecoveryDialog> = {
     docs: {
       description: {
         component:
-          'Review for a failed Archive / Later / Delete. Gmail is checked first; nothing changes until the reader confirms (D226). A Protected sender (D245) is named at this decision point, and the button that carries the consent says "anyway".',
+          'Review for a failed Archive / Later / Delete. Gmail is checked first; nothing changes until the reader confirms (D226). A Protected sender (D245) is named at this decision point, and the button that carries the consent says "anyway". Delete confirms in the danger tone.',
       },
     },
   },
@@ -161,6 +161,25 @@ export const RefusedProtectedSince: Story<typeof ActionRecoveryDialog> = {
       'Protected now.',
     ),
   } satisfies DialogArgs,
+};
+
+/** The same refusal on a message-list action: no single sender to name. */
+export const RefusedProtectedSinceNoSingleSender: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    row: { ...ROW, sender: null },
+    preview: READY,
+    confirmError: new ApiError(
+      409,
+      { error: { code: 'RECOVERY_SENDER_PROTECTED', message: 'Protected now.' } },
+      'Protected now.',
+    ),
+  } satisfies DialogArgs,
+};
+
+/** Confirmed: the retry is starting, and the dialog cannot be dismissed mid-request. */
+export const Confirming: Story<typeof ActionRecoveryDialog> = {
+  args: { ...base, preview: READY, isConfirming: true } satisfies DialogArgs,
 };
 
 /** A Later whose saved return time has passed asks for a new one. */

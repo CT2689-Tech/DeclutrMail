@@ -61,7 +61,12 @@ import {
 import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
-import { enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
 
 const { color, text } = tokens;
 
@@ -395,10 +400,7 @@ export function ScreenerScreen({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb });
-      toast(
-        `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(VERB_LABEL[activeAction.verb], activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -612,7 +614,7 @@ export function ScreenerScreen({
               staleProtection
                 ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
                 : getActionFailureCopy('enqueue', {
-                    action: `${VERB_LABEL[verb]} for ${row.senderName}`,
+                    action: actionLabel(VERB_LABEL[verb], row.senderName),
                     error: err,
                   }),
               'warn',

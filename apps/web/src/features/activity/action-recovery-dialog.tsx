@@ -211,7 +211,7 @@ export function ActionRecoveryDialog({
                 padding: '12px 14px',
               }}
             >
-              {recoveryConfirmErrorMessage(confirmError, senderName !== null)}
+              {recoveryConfirmErrorMessage(confirmError, senderName)}
               {confirmNeedsRecheck && (
                 <div style={{ marginTop: 8 }}>
                   <Button tone="default" onClick={onRetryVerification}>
@@ -239,7 +239,7 @@ export function ActionRecoveryDialog({
           </Button>
           {ready && preview && (
             <Button
-              tone="primary"
+              tone={preview.verb === 'delete' ? 'danger' : 'primary'}
               onClick={() =>
                 onConfirm({
                   ...(preview.requiresNewWakeAt && wakeAt ? { wakeAt: wakeAt.toISOString() } : {}),
@@ -253,8 +253,8 @@ export function ActionRecoveryDialog({
                 : protectedNow
                   ? `${failedActionNoun(preview.verb)} anyway`
                   : preview.outcome === 'already_applied'
-                    ? 'Update this record'
-                    : 'Try again'}
+                    ? 'Mark as done'
+                    : `${failedActionNoun(preview.verb)} ${preview.remainingCount.toLocaleString('en-US')}`}
             </Button>
           )}
         </div>
@@ -362,7 +362,7 @@ function RecoveryVerificationFailure({
       We couldn&apos;t check Gmail&apos;s current state.
       <div style={{ marginTop: 10 }}>
         <Button tone="default" onClick={onRetry}>
-          Check again
+          Check Gmail again
         </Button>
       </div>
       {error && (
@@ -392,18 +392,22 @@ function RecoveryConsequence({
   preview: ActionRecoveryPreviewResult;
   protectedLine: string | null;
 }) {
+  // §2.3: where the email goes and how to undo it, once each. The count
+  // grid above already says what Gmail does not reflect yet.
   const actionCopy =
     preview.verb === 'archive'
-      ? 'Archive takes these emails out of the Inbox. It does not delete them.'
+      ? 'Archive takes these emails out of the Inbox. You can undo it from Activity.'
       : preview.verb === 'delete'
-        ? 'Delete moves these emails to Gmail Trash. Gmail Trash recovery remains separate.'
-        : 'Later takes these emails out of the Inbox now and returns them at the confirmed time.';
+        ? 'Delete moves these emails to Gmail Trash. You can undo it from Activity.'
+        : 'Later takes these emails out of the Inbox now and returns them at the confirmed time. You can undo it from Activity.';
+  // The retry re-applies its whole set, so an already-applied review makes
+  // no promise about Gmail: mail moved back since the check moves again.
   const outcomeCopy =
     preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming updates your Activity and Undo record without a duplicate effect in Gmail.'
+      ? 'Gmail already reflects this action. Confirming updates Activity and Undo.'
       : preview.outcome === 'partial'
         ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
-        : 'Gmail does not yet reflect the failed action.';
+        : null;
   return (
     <div
       style={{
@@ -417,8 +421,8 @@ function RecoveryConsequence({
       {protectedLine !== null && (
         <div style={{ color: color.fg, marginBottom: 4 }}>{protectedLine}</div>
       )}
-      <div>{outcomeCopy}</div>
-      <div style={{ marginTop: 4 }}>{actionCopy}</div>
+      {outcomeCopy !== null && <div style={{ marginBottom: 4 }}>{outcomeCopy}</div>}
+      <div>{actionCopy}</div>
       {preview.unavailableCount > 0 && (
         <div style={{ marginTop: 4 }}>
           {preview.unavailableCount} unavailable message
@@ -429,12 +433,15 @@ function RecoveryConsequence({
   );
 }
 
-/** D245 — said once, at the decision point, with the exact reason. */
+/**
+ * D245 — said once, at the decision point, with the exact reason. The
+ * "{Verb} anyway" button carries the consent, so the line does not.
+ */
 function protectedSenderLine(senderName: string | null, reason: ProtectionReasonId | null): string {
-  if (senderName === null) return 'A Protected sender is included — this action applies anyway.';
+  if (senderName === null) return 'A sender here is Protected.';
   return reason !== null
-    ? `${senderName} is Protected because ${protectionReasonClause(reason)}. This action applies anyway.`
-    : `${senderName} is Protected — this action applies anyway.`;
+    ? `${senderName} is Protected because ${protectionReasonClause(reason)}.`
+    : `${senderName} is Protected.`;
 }
 
 function toLocalDateTimeInput(date: Date): string {
@@ -452,7 +459,7 @@ function formatRecoveryDate(iso: string): string {
       'an unknown time';
 }
 
-function recoveryConfirmErrorMessage(error: Error, oneSender: boolean): string {
+function recoveryConfirmErrorMessage(error: Error, senderName: string | null): string {
   const code = apiErrorCode(error);
   if (code === 'RECOVERY_PREVIEW_EXPIRED') {
     return 'This review expired. Check Gmail again before trying the action.';
@@ -467,9 +474,7 @@ function recoveryConfirmErrorMessage(error: Error, oneSender: boolean): string {
     return 'This action no longer needs recovery. Refresh Activity to see its current state.';
   }
   if (code === 'RECOVERY_SENDER_PROTECTED') {
-    return oneSender
-      ? 'This sender is Protected now — check Gmail again to confirm anyway.'
-      : 'One of these senders is Protected now — check Gmail again to confirm anyway.';
+    return `${senderName ?? 'A sender here'} is Protected now — check Gmail again to confirm anyway.`;
   }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';

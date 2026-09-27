@@ -23,11 +23,13 @@ import {
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
+  actionLabel,
   backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
+  stillRunningCopy,
 } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
@@ -174,10 +176,6 @@ function openPricing(): void {
  * polled — the outcome lands either way) and the latch releases.
  */
 export const ACTION_OVERDUE_MS = 120_000;
-
-/** Overdue is a status, not a failure — same wording as Senders and the Screener. */
-const stillRunningToast = (verb: string, subject: string): string =>
-  `${verb} for ${subject} is still running — see Activity.`;
 
 /**
  * Handle for one enqueued async action (enqueue → worker → poll).
@@ -428,7 +426,7 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
         }),
         'warn',
       );
@@ -462,7 +460,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
         }),
         'warn',
       );
@@ -681,7 +679,7 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${activeAction.verb} for ${activeAction.senderName}`,
+          action: actionLabel(activeAction.verb, activeAction.senderName),
         }),
         'warn',
       );
@@ -709,7 +707,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${activeAction.verb} for ${activeAction.senderName}`,
+          action: actionLabel(activeAction.verb, activeAction.senderName),
         }),
         'warn',
       );
@@ -742,7 +740,7 @@ export function TriageScreen({
     // fresh deadline) when the slot frees.
     if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningToast(activeAction.verb, activeAction.senderName), 'info');
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       // Parking is the one moment the client KNOWS a backend hang
       // happened (the 2026-08-12 incident was invisible until a human
       // noticed) — measure recurrence.
@@ -757,7 +755,7 @@ export function TriageScreen({
     // Same free-slot rule as the single-action park above.
     if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningToast(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
+      toast(stillRunningCopy(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
       void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
@@ -778,7 +776,7 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+          action: actionLabel(overdueAction.verb, overdueAction.senderName),
         }),
         'warn',
       );
@@ -801,7 +799,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+          action: actionLabel(overdueAction.verb, overdueAction.senderName),
         }),
         'warn',
       );
@@ -827,7 +825,7 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
         }),
         'warn',
       );
@@ -857,7 +855,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
         }),
         'warn',
       );
@@ -1186,7 +1184,7 @@ export function TriageScreen({
                 : sendDisabled
                   ? UNSUB_SEND_DISABLED_MESSAGE
                   : getActionFailureCopy('enqueue', {
-                      action: `${verb} for ${row.senderName}`,
+                      action: actionLabel(verb, row.senderName),
                       error: err,
                     }),
               'warn',
@@ -1425,7 +1423,7 @@ export function TriageScreen({
           if (enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
           toast(
             getActionFailureCopy('enqueue', {
-              action: `${verb} for the ${batch.domain} batch`,
+              action: actionLabel(verb, `the ${batch.domain} batch`),
               error: err,
             }),
             'warn',

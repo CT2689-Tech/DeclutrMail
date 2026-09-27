@@ -331,7 +331,8 @@ export class UndoService {
       -- they were Protected when their job ran. They hold no token, so they
       -- are not in the active CTE; counted here so the Undo line carries the skip
       -- in the same read. Two indexed probes (pkey; composite_id), as in
-      -- ActionsService.listInFlight — an OR across the columns scans.
+      -- ActionsService.listInFlight — an OR across the columns tends to
+      -- plan as a scan.
       skips as (
         select g.group_id, count(*)::int as protected_skipped
         from grouped g

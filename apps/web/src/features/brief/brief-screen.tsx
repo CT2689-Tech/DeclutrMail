@@ -863,11 +863,11 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
       // The pill can undo one sender of a bulk at a time.
       return outcome.senderCount < outcome.of ? (
         <>
-          Mail from {outcome.senderCount} of {outcome.of} senders is back in your inbox.
+          Email from {outcome.senderCount} of {outcome.of} senders is back in your inbox.
         </>
       ) : (
         <>
-          That archive was undone — mail from {outcome.senderCount} sender
+          That archive was undone — email from {outcome.senderCount} sender
           {outcome.senderCount === 1 ? '' : 's'} is back in your inbox.
         </>
       );

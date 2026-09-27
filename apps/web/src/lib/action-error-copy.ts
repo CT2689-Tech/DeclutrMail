@@ -73,20 +73,36 @@ export function getActionFailureCopy(
           ? [`Can't tell if ${action} started`, CHECK_ACTIVITY]
           : [`Couldn't start ${action}`, NOTHING_CHANGED];
       // An undo request is idempotent (the same token answers with the same
-      // reverse job), so trying again is always safe.
+      // reverse job, or "reverted" once it finished), so trying again is
+      // always safe — here and after a lost status read below.
       case 'revert-enqueue':
         return unconfirmedStart
           ? ["Can't tell if undo started", 'try again']
           : ["Couldn't start undo", NOTHING_CHANGED];
       case 'status':
-      case 'revert-status':
         return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
+      case 'revert-status':
+        return ["Couldn't confirm undo", 'try again'];
       case 'terminal':
       case 'revert-terminal':
         return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
     }
   })();
   return `${lead} — ${unconfirmedStart ? outcome : (options.outcome ?? outcome)}.`;
+}
+
+/**
+ * An action named in a sentence: "Archive for Acme". "Later" is the verb's
+ * name, not an English word — "Couldn't start Later for Acme" reads as
+ * "couldn't begin afterwards" — so it says what Later does.
+ */
+export function actionLabel(verb: string, target: string): string {
+  return verb === 'Later' ? `moving email from ${target} to Later` : `${verb} for ${target}`;
+}
+
+/** An action past its overdue deadline: a status, not a failure. */
+export function stillRunningCopy(verb: string, target: string): string {
+  return `${sentenceCase(actionLabel(verb, target))} is still running — see Activity.`;
 }
 
 /**
@@ -124,8 +140,9 @@ export function backlogAfterUnsubFailureCopy(options: {
 
 /**
  * D245 — senders an action left alone because they are Protected. One
- * phrase for the pill, the undo line and the click-time toasts, so a skip
- * reads the same wherever it is reported.
+ * phrase for every report of a skip that happened: the pill, its undo
+ * line, the Brief's outcome line and the click-time toasts. Previews
+ * forecast a skip in their own tense ("is skipped").
  */
 export function protectedSkippedCopy(count: number): string {
   return `${count.toLocaleString('en-US')} Protected sender${count === 1 ? '' : 's'} skipped`;

@@ -1046,7 +1046,9 @@ describe('Brief Noise bulk archive (D65)', () => {
       expect(screen.queryByText(/3 messages yesterday · Archived ✓/i)).not.toBeInTheDocument(),
     );
     expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
-    expect(screen.getByText('Mail from 1 of 2 senders is back in your inbox.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Email from 1 of 2 senders is back in your inbox.'),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument();
   });
 
@@ -1091,7 +1093,7 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     await waitFor(() => expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument());
     expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
-    await screen.findByText(/That archive was undone/i);
+    await screen.findByText(/That archive was undone — email from/);
     // The senders are selectable again, so a fresh archive is possible.
     expect(
       screen.getByRole('checkbox', { name: /include newsletter daily in the archive/i }),

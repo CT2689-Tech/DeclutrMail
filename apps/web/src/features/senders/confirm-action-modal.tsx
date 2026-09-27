@@ -433,7 +433,7 @@ export function ConfirmActionModal({
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
   const previewStateCopy = livePreviewUnavailable
     ? previewSenderGone
-      ? 'This sender is no longer in this mailbox. Close and refresh.'
+      ? 'This sender is no longer in this mailbox.'
       : "Couldn't load the preview — nothing can run without one."
     : livePreviewLoading
       ? 'Loading preview…'
@@ -1068,16 +1068,14 @@ export function ConfirmActionModal({
         key="protected"
         style={{ margin: 0, fontSize: text.sm, lineHeight: 1.45, color: color.fgSoft }}
       >
+        {/* The "{Verb} anyway" button carries the consent; this says why. */}
         {protectedReason !== null ? (
           <>
             <strong style={{ color: color.danger, fontWeight: 600 }}>Protected</strong> —{' '}
-            {protectionReasonClause(protectedReason)}. This action applies anyway.
+            {protectionReasonClause(protectedReason)}.
           </>
         ) : (
-          <>
-            <strong style={{ color: color.danger, fontWeight: 600 }}>Protected.</strong> Bulk and
-            automatic actions skip this sender; this action will not.
-          </>
+          <strong style={{ color: color.danger, fontWeight: 600 }}>Protected.</strong>
         )}
       </p>,
     );
@@ -1088,7 +1086,7 @@ export function ConfirmActionModal({
   // return would make the batch runnable, so a "Loading…" line would only
   // promise a wait that ends in the same disabled button.
   const status: ReactNode = unsubNothingToSend ? (
-    'No sendable unsubscribe for these senders. Archive moves their email out of your inbox instead.'
+    NO_SENDABLE_UNSUB
   ) : previewStateCopy !== null ? (
     <StatusWithAction
       message={previewStateCopy}
@@ -1101,7 +1099,16 @@ export function ConfirmActionModal({
       }
     />
   ) : nothingActionableBulk ? (
-    'Every selected sender is now Protected or no longer in this mailbox. Close and refresh.'
+    // For Unsubscribe the count is of one-click senders only: mailto and
+    // no-link senders may still be here, neither Protected nor gone.
+    isUnsubVerb ? (
+      NO_SENDABLE_UNSUB
+    ) : (
+      <StatusWithAction
+        message="Every selected sender is now Protected or no longer in this mailbox."
+        action={onRefreshSenders && { label: 'Refresh senders', onClick: onRefreshSenders }}
+      />
+    )
   ) : null;
   // A no-op spends no cleanup action, and a sheet that cannot run has
   // nothing to charge — the status line above is the reason.
@@ -1427,6 +1434,10 @@ export function ConfirmActionModal({
     </div>
   );
 }
+
+/** An Unsubscribe with no one-click sender left to send to. */
+const NO_SENDABLE_UNSUB =
+  'No sendable unsubscribe for these senders. Archive moves their email out of your inbox instead.';
 
 const fmt = (value: number) => value.toLocaleString('en-US');
 const emailsLabel = (count: number) => `${fmt(count)} email${count === 1 ? '' : 's'}`;

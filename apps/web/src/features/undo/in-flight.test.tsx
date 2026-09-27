@@ -115,11 +115,12 @@ describe('what the pill says once a decision stops', () => {
       'Delete: 1 Protected sender skipped · nothing else changed',
     ],
     // Beside a failure the skip is part of the line itself — an alert's
-    // detail slot is not read aloud.
+    // detail slot is not read aloud. The split counts jobs (a composite
+    // runs two per sender), so beside a count of senders it names none.
     [
       status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) }),
       'attention',
-      'Delete: 2 of 12 failed · 1 Protected sender skipped',
+      'Delete partly failed · 1 Protected sender skipped',
     ],
     [
       status({
@@ -135,6 +136,14 @@ describe('what the pill says once a decision stops', () => {
     ],
   ] as const)('%#: %s → %s', (result, tone, label) => {
     expect(outcomeNotice(GROUP, result)).toMatchObject({ tone, label });
+  });
+
+  // "Later" is the verb's name, not an English verb: "Nothing to later".
+  it('says nothing moved to Later in words, not "nothing to later"', () => {
+    expect(outcomeNotice({ ...GROUP, verb: 'later' }, status({ affectedCount: 0 }))).toMatchObject({
+      tone: 'info',
+      label: 'Nothing to move to Later',
+    });
   });
 
   // A one-sender job that was skipped has no job left to count: 0 of 0 is

@@ -432,8 +432,7 @@ export function DecidePreview({
       {overriding && (
         <p role="status" style={{ ...mutedLine, marginTop: space[3], color: color.fgSoft }}>
           <strong style={{ fontWeight: 600, color: color.danger }}>This sender is Protected</strong>{' '}
-          because {screenerProtectionClause(row.protectionReason)}. Confirming acts on it anyway; it
-          stays Protected.
+          because {screenerProtectionClause(row.protectionReason)}. It stays Protected.
         </p>
       )}
 

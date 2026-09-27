@@ -114,9 +114,12 @@ export function outcomeNotice(
     return {
       id,
       tone: 'attention',
-      label: withSkip(
-        `${verb}: ${status.failed.toLocaleString('en-US')} of ${status.total.toLocaleString('en-US')} failed`,
-      ),
+      // The split counts jobs (a composite runs two per sender), so beside
+      // a skip, which counts senders, it would read as a sender count.
+      label:
+        skipped > 0
+          ? withSkip(`${verb} partly failed`)
+          : `${verb}: ${status.failed.toLocaleString('en-US')} of ${status.total.toLocaleString('en-US')} failed`,
     };
   }
   if (status.affectedCount === 0) {
@@ -131,7 +134,15 @@ export function outcomeNotice(
           // The group's lead sender is only the skipped one when all were.
           ...(skipped === group.senderCount ? { who: who(group) } : {}),
         }
-      : { id, tone: 'info', label: `Nothing to ${verb.toLowerCase()}`, who: who(group) };
+      : {
+          id,
+          tone: 'info',
+          label:
+            group.verb === 'later'
+              ? 'Nothing to move to Later'
+              : `Nothing to ${verb.toLowerCase()}`,
+          who: who(group),
+        };
   }
   // Mail changed: a skip rides the decision's own Undo line, whose count
   // comes with the decision itself (`GET /api/undo`).
