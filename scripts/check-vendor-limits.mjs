@@ -62,14 +62,18 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  * full command line, which would carry the DSN). HTTP error details
  * carry status code + truncated response body only.
  *
- * Known issues: a failing row listed in scripts/known-vendor-issues.tsv
- * (vendor + status + the text its detail contains, until a date at most
- * 30 days out) prints as a warning and does not fail the run, so red
- * means a failure nobody has acknowledged yet. An acknowledgment that
- * expires turns the run red again until the line is renewed or removed. Before the
- * list, Anthropic's standing ERROR (no Admin API key) held the run red
- * every day from at least 2026-09-21, and the Sentry and Google Cloud
- * budget breaches of 2026-09-24/25 changed nothing anyone saw.
+ * Known issues: scripts/known-vendor-issues.tsv acknowledges one failing
+ * cause per line (vendor + status + text the cause contains, an optional
+ * ceiling on its value, until a date at most 30 days out). A failing row
+ * prints as a warning, and does not fail the run, only when every failing
+ * cause in it is acknowledged and within its ceiling; so red means a
+ * failure nobody has acknowledged yet, at a size nobody has accepted. A
+ * check that joins causes into one detail (Upstash spend and volume, each
+ * suspended database, each GCP budget, each PostHog quota) reports them
+ * separately, so one line cannot mute another cause. Before the list,
+ * Anthropic's standing ERROR (no Admin API key) held the run red every day
+ * from at least 2026-09-21, and the Sentry and Google Cloud budget breaches
+ * of 2026-09-24/25 changed nothing anyone saw.
  *
  * Exit codes: 0 — nothing failing that is not acknowledged · 1 — an
  * unacknowledged BREACH or ERROR (or WARN with WARN_IS_FAILURE=true) ·
@@ -243,7 +247,7 @@ async function checkGcpBudgets() {
   return budgetStatus(budgets, spend);
 }
 
-async function checkUpstash() {
+export async function checkUpstash() {
   const warnCmds = envNum('UPSTASH_DAILY_CMD_WARN', 1_000_000);
   const basic = Buffer.from(`${process.env.UPSTASH_EMAIL}:${process.env.UPSTASH_API_KEY}`).toString(
     'base64',
@@ -262,12 +266,13 @@ async function checkUpstash() {
   // non-first prod database can't hide behind an idle one.
   const notActive = dbs.filter((db) => (db.state ?? 'active') !== 'active');
   if (notActive.length > 0) {
-    return {
+    // One cause per database: acknowledging one suspended database must not
+    // cover the next (the 2026-07-15 outage was a second database).
+    const causes = notActive.map((db) => ({
       status: 'BREACH',
-      detail: notActive
-        .map((db) => `${db.database_name ?? db.database_id}: state=${db.state}`)
-        .join('; '),
-    };
+      text: `${db.database_name ?? db.database_id}: state=${db.state}`,
+    }));
+    return { status: 'BREACH', detail: causes.map((c) => c.text).join('; '), causes };
   }
   // All active — gauge the primary (single prod Redis).
   const db = dbs[0];
@@ -307,6 +312,9 @@ async function checkUpstash() {
       costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
       usage: { commands_today: cmds, storage_mb: storageMb },
       detail: `${db.database_name}: ${volume.detail}, ${why}`,
+      causes: [
+        { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
+      ],
     };
   }
   const projected = monthCost / monthElapsedFraction();
@@ -368,6 +376,16 @@ async function checkUpstash() {
       `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
       `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
       ` — ${volume.detail}, storage ${storageMb.toFixed(1)} MB`,
+    // Spend and volume fail independently. Acknowledging a volume spike
+    // must not hide the spend projection that predicts a suspension.
+    causes: [
+      {
+        status: spend.status,
+        text: `${db.database_name}: projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap`,
+        value: projected,
+      },
+      { status: volume.status, text: `${db.database_name}: ${volume.detail}`, value: cmds },
+    ],
   };
 }
 
@@ -430,7 +448,7 @@ export async function checkVercel() {
   };
 }
 
-async function checkSentry() {
+export async function checkSentry() {
   const warnDaily = envNum('SENTRY_DAILY_EVENTS_WARN', 1_000);
   const url = new URL(`https://sentry.io/api/0/organizations/${process.env.SENTRY_ORG}/stats_v2/`);
   url.searchParams.set('field', 'sum(quantity)');
@@ -470,9 +488,11 @@ async function checkSentry() {
   // what we asked, not a loss.
   const dropped = sumOutcome('rate_limited', 'abuse', 'cardinality_limited');
   if (dropped > 0) {
+    const detail = `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`;
     return {
       status: 'BREACH',
-      detail: `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`,
+      detail,
+      causes: [{ status: 'BREACH', text: detail, value: dropped }],
     };
   }
 
@@ -482,15 +502,24 @@ async function checkSentry() {
   const accepted = sumOutcome('accepted');
   const volume = gauge(accepted, warnDaily);
   const lostNote = lost > 0 ? `, ${fmtInt(lost)} invalid/client-discarded` : '';
+  const acceptedNote = `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})`;
   return {
     status: lost > 0 && volume.status === 'OK' ? 'WARN' : volume.status,
     usagePct: volume.usagePct,
     usage: { accepted_errors_24h: accepted, discarded_errors_24h: lost },
-    detail: `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})${lostNote}`,
+    detail: `${acceptedNote}${lostNote}`,
+    causes: [
+      { status: volume.status, text: acceptedNote, value: accepted },
+      {
+        status: lost > 0 ? 'WARN' : 'OK',
+        text: `${fmtInt(lost)} invalid/client-discarded`,
+        value: lost,
+      },
+    ],
   };
 }
 
-async function checkPosthog() {
+export async function checkPosthog() {
   const host = process.env.POSTHOG_HOST || 'https://us.posthog.com';
   const pid = process.env.POSTHOG_PROJECT_ID;
   const headers = { Authorization: `Bearer ${process.env.POSTHOG_API_KEY}` };
@@ -500,10 +529,15 @@ async function checkPosthog() {
     if (v === true || (v && typeof v === 'object' && v.limited === true)) limited.push(resource);
   }
   if (limited.length > 0) {
-    // Past the billing limit — PostHog is DROPPING data right now.
+    // Past the billing limit — PostHog is DROPPING data right now. One
+    // cause per resource, so acknowledging one does not cover another.
     return {
       status: 'BREACH',
       detail: `quota-limited (data being dropped): ${limited.join(', ')}`,
+      causes: limited.map((resource) => ({
+        status: 'BREACH',
+        text: `quota-limited (data being dropped): ${resource}`,
+      })),
     };
   }
   const warnEvents = envNum('POSTHOG_MTD_EVENTS_WARN', 1_000_000);
@@ -518,10 +552,13 @@ async function checkPosthog() {
     }),
   });
   const events = finiteNumber(res.results?.[0]?.[0], 'PostHog events');
+  const detail = `no quota limits hit; MTD events ${fmtInt(events)} (warn ${fmtInt(warnEvents)})`;
+  const volume = gauge(events, warnEvents);
   return {
-    ...gauge(events, warnEvents),
+    ...volume,
     usage: { events_mtd: events },
-    detail: `no quota limits hit; MTD events ${fmtInt(events)} (warn ${fmtInt(warnEvents)})`,
+    detail,
+    causes: [{ status: volume.status, text: detail, value: events }],
   };
 }
 
@@ -757,9 +794,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Parses scripts/known-vendor-issues.tsv. Refuses anything it cannot use: a
  * misspelt vendor or an OK status never matches a row, an empty
- * `detail_contains` matches every cause, and a date years out never
- * expires — each would read as a careful acknowledgment while muting
- * more than anyone looked at.
+ * `cause_contains` matches every cause, a ceiling that is not a number
+ * bounds nothing, and a date years out never expires. Each would read as a
+ * careful acknowledgment while muting more than anyone looked at.
  */
 export function parseKnownIssues(text, vendorNames, { today }) {
   const known = [];
@@ -768,12 +805,15 @@ export function parseKnownIssues(text, vendorNames, { today }) {
     .slice(0, 10);
   text.split('\n').forEach((line, i) => {
     if (!line.trim() || line.startsWith('#')) return;
-    const [vendor, status, contains, until, note, ...extra] = line.split('\t');
+    const [vendor, status, contains, upTo, until, note, ...extra] = line.split('\t');
+    const ceiling =
+      upTo === '-' ? null : /^\d+(\.\d+)?$/.test(upTo ?? '') ? Number(upTo) : undefined;
     const date = /^\d{4}-\d{2}-\d{2}$/.test(until ?? '') ? new Date(`${until}T00:00:00Z`) : null;
     const valid =
       vendorNames.includes(vendor) &&
       FAILING_STATUSES.includes(status) &&
       Boolean(contains?.trim()) &&
+      ceiling !== undefined &&
       date !== null &&
       !Number.isNaN(date.getTime()) &&
       date.toISOString().slice(0, 10) === until &&
@@ -781,7 +821,7 @@ export function parseKnownIssues(text, vendorNames, { today }) {
       extra.length === 0;
     if (!valid)
       throw new Error(
-        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>detail_contains<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
+        `line ${i + 1}: expected vendor<TAB>WARN|BREACH|ERROR<TAB>cause_contains<TAB>up_to (a number, or - for no ceiling)<TAB>acknowledged_until (YYYY-MM-DD)<TAB>note, naming a vendor this script checks`,
       );
     if (until > latest)
       throw new Error(
@@ -789,33 +829,68 @@ export function parseKnownIssues(text, vendorNames, { today }) {
       );
     if (known.some((k) => k.vendor === vendor && k.status === status && k.contains === contains))
       throw new Error(`line ${i + 1}: ${vendor} ${status} "${contains}" is listed twice`);
-    known.push({ line: i + 1, vendor, status, contains, until, note: note.trim() });
+    known.push({ line: i + 1, vendor, status, contains, upTo: ceiling, until, note: note.trim() });
   });
   return known;
 }
 
+const fails = (status, warnIsFailure) =>
+  status === 'BREACH' || status === 'ERROR' || (warnIsFailure && status === 'WARN');
+
 /**
- * Splits failing rows into acknowledged and not. An entry covers a row only
- * for its vendor and status, only while the row's detail contains its text
- * (the cause someone looked at), and only through its date. Entries that
- * matched no failing row come back as `unmatched`, to be deleted.
+ * The failing causes behind a failing row. A check that joins independent
+ * causes into one detail reports them separately; any other row is one
+ * cause, its detail, valued at its month-to-date cost when it has one. A
+ * failing row that names no failing cause is still one cause: it is never
+ * waved through with nothing checked.
+ */
+function failingCauses(r, warnIsFailure) {
+  const listed = (r.causes ?? []).filter((c) => fails(c.status, warnIsFailure));
+  return listed.length
+    ? listed
+    : [{ status: r.status, text: String(r.detail ?? ''), value: r.costMtdUsd }];
+}
+
+/**
+ * Splits failing rows into acknowledged and not. A row is acknowledged only
+ * when every one of its failing causes is: by a line for its vendor and
+ * status whose text the cause contains, through the line's date, and at or
+ * under the line's ceiling when it has one. A ceiling never holds for a
+ * cause with no measured value. Lines that matched no failing cause come
+ * back as `unmatched`, to be deleted.
  */
 export function triage(results, known, { today, warnIsFailure = false }) {
   const failing = [];
   const acknowledged = [];
   const used = new Set();
   for (const r of results) {
-    if (!(r.status === 'BREACH' || r.status === 'ERROR' || (warnIsFailure && r.status === 'WARN')))
-      continue;
-    const matches = known.filter(
-      (k) =>
-        k.vendor === r.name && k.status === r.status && String(r.detail ?? '').includes(k.contains),
-    );
-    for (const k of matches) used.add(k);
-    const live = matches.find((k) => today <= k.until);
-    if (live) acknowledged.push({ ...r, until: live.until, note: live.note });
-    else if (matches.length) failing.push({ ...r, expired: matches[0].until });
-    else failing.push(r);
+    if (!fails(r.status, warnIsFailure)) continue;
+    const open = [];
+    const covered = [];
+    for (const cause of failingCauses(r, warnIsFailure)) {
+      const matches = known.filter(
+        (k) => k.vendor === r.name && k.status === cause.status && cause.text.includes(k.contains),
+      );
+      for (const k of matches) used.add(k);
+      const withinCeiling = (k) =>
+        k.upTo === null || (Number.isFinite(cause.value) && cause.value <= k.upTo);
+      const live = matches.find((k) => today <= k.until && withinCeiling(k));
+      if (live) {
+        covered.push({ cause, line: live });
+        continue;
+      }
+      const inDate = matches.find((k) => today <= k.until);
+      open.push({
+        cause,
+        why: inDate
+          ? `above the acknowledged ${inDate.upTo} (line ${inDate.line})`
+          : matches.length
+            ? `acknowledgment expired ${matches[0].until}`
+            : 'not acknowledged',
+      });
+    }
+    if (open.length) failing.push({ ...r, open });
+    else acknowledged.push({ ...r, covered });
   }
   return { failing, acknowledged, unmatched: known.filter((k) => !used.has(k)) };
 }
@@ -897,10 +972,14 @@ async function main() {
     today,
     warnIsFailure: process.env.WARN_IS_FAILURE === 'true',
   });
+  const ackLabel = (k) =>
+    `"${k.contains}"${k.upTo === null ? '' : ` up to ${k.upTo}`} until ${k.until}`;
   for (const r of acknowledged) {
-    console.log(
-      `::warning title=Known vendor issue::${r.name} (${r.status}) — acknowledged until ${r.until}: ${r.note}`,
-    );
+    for (const { cause, line } of r.covered) {
+      console.log(
+        `::warning title=Known vendor issue::${r.name} (${cause.status}) — ${ackLabel(line)}: ${line.note}`,
+      );
+    }
   }
   // A leftover entry would quietly cover the same cause if it came back.
   for (const k of unmatched) {
@@ -912,7 +991,7 @@ async function main() {
     appendFileSync(
       process.env.GITHUB_STEP_SUMMARY,
       `Acknowledged in scripts/known-vendor-issues.tsv, not failing this run: ${acknowledged
-        .map((r) => `${r.name} (${r.status}) until ${r.until}`)
+        .flatMap((r) => r.covered.map(({ line }) => `${r.name} ${ackLabel(line)}`))
         .join('; ')}\n`,
     );
   }
@@ -920,8 +999,8 @@ async function main() {
     // `::error::` surfaces as a red annotation on the Actions run.
     console.log(
       `::error::Vendor limits watchdog failing: ${failing
-        .map(
-          (r) => `${r.name} (${r.status}${r.expired ? `, acknowledged until ${r.expired}` : ''})`,
+        .flatMap((r) =>
+          r.open.map(({ cause, why }) => `${r.name} (${cause.status}): ${cause.text} — ${why}`),
         )
         .join('; ')}`,
     );
