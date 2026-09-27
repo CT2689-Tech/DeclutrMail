@@ -1,0 +1,13 @@
+# Stuck mailboxes someone has looked at. The sync-stuck watchdog
+# (scripts/check-sync-*.sh) still lists them on every run, as warnings,
+# and turns red only for a stuck mailbox that is not here.
+#
+# One tab-separated line per mailbox:
+#   mailbox_account_id  stuck_since (UTC, from the watchdog output)  acknowledged_on  note
+# An entry matches only that mailbox at that stuck-since instant: if the
+# mailbox is retried and fails again, it is new again.
+#
+# This repository is public. Notes carry no names, email addresses or
+# message data — only what is known and who owns it.
+bfc1ca79-a58c-4150-beba-fef4bf57f5a0	2026-08-26T20:50:26.925271Z	2026-09-26	first scan failed (RateLimitError); never retried
+58c7eb82-134b-4e12-a3c2-9cd41a3ee661	2026-09-05T23:50:49.783269Z	2026-09-26	first scan failed (TransientError); never retried

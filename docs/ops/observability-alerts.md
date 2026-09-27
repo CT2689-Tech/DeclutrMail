@@ -64,6 +64,42 @@ must not be summed into users or jobs; mailbox reasons can overlap. Sync duratio
 are worker attempts, including retries, not signup funnel conversion. Outcome `resolved` includes skipped/no-op runs and must never be labelled completed sync or used as a sync success rate. Scheduler
 success age is absent when no success exists; the missing-success rule covers it.
 
+## Stuck mailboxes
+
+Two paths watch for a mailbox broken past the 2-hour grace window with nothing
+recovering it. Each keeps "known" and "new" apart, so a mailbox stuck for weeks
+cannot hide the next one.
+
+- **Cloud Monitoring (the pager).** The worker sweeps every 15 minutes and logs
+  `mailbox.stuck_unnoticed` once per stuck mailbox, then
+  `stuck_mailbox_watchdog.completed`. "Mailbox stuck: broken past grace window,
+  unnoticed" opens one alert per mailbox and reason, named in the subject.
+  Acknowledge a known one in the console; the next stuck mailbox still opens
+  its own alert. An alert closes about 30 minutes after its mailbox recovers, so
+  a mailbox that breaks again pages again. "Stuck-mailbox watchdog silent" pages
+  when no sweep has completed for over an hour; while it is open, the first
+  policy cannot see newly stuck mailboxes.
+- **GitHub watchdog (the backstop).** `sync-stuck-watchdog.yml` reads
+  `provider_sync_state` directly, so it works when the worker or Cloud Logging
+  does not. It fails only for a stuck row missing from
+  `scripts/known-stuck-mailboxes.tsv`; listed rows print as warnings on every
+  run. An entry matches one mailbox at one stuck-since instant, so a retry that
+  fails again is new. To acknowledge a row, paste the line the failing run
+  prints. GitHub starts this schedule a few times a day, not every 5 minutes.
+
+`node scripts/setup-stuck-mailbox-alert.mjs declutrmail-ai-prod` prints the
+plan. `--apply` converges both log metrics and both policies in place and
+refuses the silent-watchdog policy until the worker has logged a completed sweep
+in the last 20 minutes. Switching the first policy to per-mailbox opens one
+alert, and sends one email, for each mailbox already stuck.
+
+`--starve-test` then proves on production data that a freshly stuck mailbox
+opens its own alert while the already-stuck ones stay open, and that the
+absence probe fires for a heartbeat that never existed. It uses a temporary
+metric and two test policies with no notification channel, writes one synthetic
+line that the production metric filters out (`jsonPayload.starveTest`), deletes
+what it created, and pages nobody.
+
 ## Isolated notification delivery rehearsal
 
 This test sends one clearly identified test incident to the existing authorized
@@ -95,12 +131,16 @@ separate authorized recipient and account test; alerts are not customer outreach
 
 The runtime metric set uses only bounded queue/reason/source/worker/outcome labels.
 Never include mailbox IDs, job IDs, message content, addresses or exception text in
-labels. Log-based metrics and alert policies can add monitoring charges; inspect
+labels. One exception: `stuck_mailbox_unnoticed` is labelled by mailbox, because one
+alert per stuck mailbox is its purpose. Its series exist only while a mailbox is
+stuck, so there are only as many as stuck mailboxes (a policy opens at most 1,000
+alerts at once). Log-based metrics and alert policies can add monitoring charges; inspect
 billing after deployment. Preserve raw forensic logs, recovery queues and required
 retention. Do not lower logging thresholds or suspend production to reduce noise.
 
 Definitions: `scripts/infra-runtime-metrics.mjs`,
-`scripts/setup-infra-alerts.mjs`, `scripts/setup-infra-dashboard.mjs`.
+`scripts/setup-infra-alerts.mjs`, `scripts/setup-infra-dashboard.mjs`,
+`scripts/setup-stuck-mailbox-alert.mjs`.
 
 ## Gmail push dead-letter recovery
 

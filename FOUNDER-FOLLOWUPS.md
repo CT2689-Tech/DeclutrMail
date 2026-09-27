@@ -23,6 +23,112 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
+
+**Why:** the MISTAKES.md entry "2026-09-03 — Gmail quota limiter started
+every mailbox's bucket FULL" names two real signups by email address, and
+this repository is public. Their mailbox IDs and first-scan failure dates
+are also public (every `sync-stuck-watchdog` run log, and now
+`scripts/known-stuck-mailboxes.tsv`), so a reader can pair an address
+with "this account's first scan never finished". MISTAKES.md is
+append-only for agents and a history rewrite needs a force-push to main,
+so both calls are yours.
+
+**How:** either (a) replace the two addresses in that entry with "two
+signups (2026-08-06, 2026-08-26)", accepting that git history keeps
+them, or (b) do (a) and also purge them from history (`git filter-repo`
+or GitHub support), or (c) accept the exposure.
+
+**Verifies by:** `git grep -nE '@gmail\.com' -- MISTAKES.md` shows no
+customer address.
+
+**Status:** Open
+
+### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778), session 2026-09-26
+
+**Why:** the new alert definitions ship in code, but Cloud Monitoring only
+changes when the script runs against prod. Until then the old policy
+stays: one alert, open since 2026-09-05, that a newly stuck mailbox
+cannot fire again. Prod metric and policy changes wait for your OK, and
+the stored `admin@declutrmail.ai` gcloud login needs an interactive
+re-auth before anything can run.
+
+**How:** after the PR merges and the worker deploys:
+
+1. `gcloud auth login` as admin@declutrmail.ai.
+2. `node scripts/setup-stuck-mailbox-alert.mjs declutrmail-ai-prod` —
+   review the printed plan.
+3. Same command with `--apply`. Expect one email at admin@declutrmail.ai
+   per mailbox stuck at that moment (three were reported on 2026-09-26);
+   acknowledge each in Monitoring → Alerting.
+4. Same command with `--starve-test` (about 25 minutes, pages nobody).
+
+**Verifies by:** step 4 prints `"result": "PASS"` with a `freshAlert` that
+opened beside the already-stuck ones and a `silentProbe` open time, and
+its `cleanup` lists three deletions.
+
+### 2026-09-26 — Two vendor breaches will fail the daily watchdog until you act on them
+
+**Source:** vendor-limits known-issues PR, session 2026-09-26; figures in
+run 36256853826 (2026-09-26)
+
+**Why:** the vendor-limits watchdog now fails only for failing rows missing
+from `scripts/known-vendor-issues.tsv`. Only Anthropic's ERROR (no Admin
+API key; item 2026-08-29 below) is listed, until 2026-10-26. Two failing
+rows are new since 2026-09-24/25 and were hidden behind it: Google Cloud
+(budgets) BREACH — spend past the monthly budget alert — and Sentry BREACH
+— errors dropped for quota or rate limits.
+
+**How:** for each, fix it (budget, spend, Sentry quota) or acknowledge it
+with a line in `scripts/known-vendor-issues.tsv`: the text of the cause
+you looked at (so a different cause for the same vendor still fails) and
+a date at most 30 days out. Confirm or delete the Anthropic line too.
+
+**Verifies by:** the next scheduled vendor-limits run is green, or red only
+for something new.
+
+**Status:** Open
+
+### 2026-09-26 — Turn on the page for a refused Anthropic account
+
+**Source:** the LLM refusal breaker + alert PR (branch
+`fix/d024-llm-rejection-breaker`); the 2026-09-24 credit outage.
+
+**Why:** the worker now logs `llm.provider_rejected` on every refused
+Anthropic call and stops calling, but a log line pages nobody until the
+GCP log metric and alert policy exist. Creating them needs GCP
+credentials; the session that wrote the PR had none (gcloud asked for
+re-authentication).
+
+**How:** after the PR merges and deploys:
+
+```bash
+gcloud auth login
+node scripts/setup-llm-rejection-alert.mjs --apply
+```
+
+It creates the log metric `llm_provider_rejected` and the alert policy
+"LLM provider refused our calls (credit, limit or key)", reuses the
+existing admin@declutrmail.ai email channel, then reads both back.
+
+Then the drill, the only step that proves an email arrives: write one
+synthetic line, labelled as a drill, and expect one alert email within
+about 5 minutes.
+
+```bash
+curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
+```
+
+**Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
+`Configured:` and exits 0, and the drill produces an alert email naming
+`reason=other`.
+
+**Status:** Open
+
 ### 2026-09-24 — Add the return-path records so SPF counts for declutrmail.com
 **Source:** session 2026-09-24 (a friend's "Your inbox is ready" landed in spam; PR #772)
 **Why:** Resend sends through Amazon SES with the envelope sender (return-path) on `send.send.declutrmail.com`, and that host has no records. So SPF passes only for `amazonses.com`, not for our domain; DKIM and DMARC still pass (DMARC aligns via DKIM). Resend's dashboard still says "verified" from an older check. Fixing it gives mailbox providers a second aligned signal. Checked 2026-09-24 with `dig`: the MX and SPF records sit on `send.declutrmail.com`, and `send.send.declutrmail.com` returns nothing.
@@ -44,8 +150,8 @@ Then Resend → Domains → declutrmail.com → Verify.
 ### 2026-09-24 — Top up Anthropic credits (they ran out, and nothing alerted)
 **Source:** session 2026-09-24 (prod logs)
 **Why:** The balance hit zero at ~08:15 UTC on 2026-09-24. Since then every AI explanation and the Brief fall back to templates without telling anyone. A new user's first scan on 2026-09-25 got 2,929 "credit balance is too low" errors, so every one of their senders got a template reason. The drain came from one sweep: a returning Google sign-in re-scanned an already-synced mailbox and re-scored all 7,999 senders, which made 6,022 Haiku calls. `scripts/check-vendor-limits.mjs` watches only for spend that is too HIGH, so nothing checks for credits running out.
-**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog, and stopping the sign-in re-scan (decision pending).
-**Verifies by:** `reasoning.adapter_error` stops appearing in worker logs, and the next score sweep reports `llmExplanations > 0`.
+**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog (now a log-based page, see 2026-09-26 above), and stopping the sign-in re-scan (decision pending).
+**Verifies by:** `llm.provider_rejected` stops appearing in worker logs (refusals log there since the 2026-09-26 breaker, no longer as `reasoning.adapter_error`), and the next score sweep reports `llmExplanations` greater than `llmReused`.
 **Status:** Open
 
 ### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
@@ -126,6 +232,13 @@ is on for this account, so a future `vendor-limits-watchdog` BREACH
 **Verifies by:** a deliberate `workflow_dispatch` re-run of
 `vendor-limits-watchdog` with a low threshold produces a visible
 notification.
+
+**Update 2026-09-26:** a Gmail search of chintan.a.thakkar@gmail.com
+found no `notifications@github.com` "Run failed" or watchdog mail in the
+past 40 days, while `sync-stuck-watchdog` failed 155 scheduled runs in a
+row (2026-09-03 23:21 UTC onward). If GitHub sends these, they go to
+another address or are filtered before that inbox. The account that
+last changed that workflow's `cron:` line is CT2689.
 
 **Status:** Open
 

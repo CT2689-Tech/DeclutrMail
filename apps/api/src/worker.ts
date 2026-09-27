@@ -128,7 +128,7 @@ import {
   WEEKLY_VALUE_RECEIPT_QUEUE,
   WeeklyValueReceiptWorker,
   workerTuningOptions,
-  findStuckMailboxes,
+  reportStuckMailboxes,
 } from '@declutrmail/workers';
 import type {
   ActionRecoveryJobData,
@@ -185,11 +185,17 @@ import type {
 import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
+import { LlmCircuitBreaker } from './adapters/llm-circuit-breaker.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import {
+  GMAIL_QUOTA_BURST_WINDOW_MS,
+  GMAIL_QUOTA_WINDOW_MS,
+  resolveGmailQuotaConfig,
+} from './gmail/gmail-quota-config.js';
 import {
   deletionReceiptEmail,
   lapseReengagementEmail,
@@ -224,45 +230,6 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  *
  * Local dev: `./scripts/dev-worker.sh`.
  */
-
-/**
- * Gmail quota throttle (D5). Newer projects get 6,000 units/user/minute;
- * default to 4,800 (20% headroom). The production project retains a
- * 15,000-unit legacy ceiling, so its deploy manifest sets this to 12,000.
- * Each Gmail method still reserves its current published cost. One limiter
- * per mailbox.
- */
-const configuredGmailQuotaUnits = process.env.GMAIL_QUOTA_UNITS_PER_MIN;
-const GMAIL_QUOTA_UNITS_PER_MIN = configuredGmailQuotaUnits
-  ? Number(configuredGmailQuotaUnits)
-  : 4_800;
-if (
-  !Number.isSafeInteger(GMAIL_QUOTA_UNITS_PER_MIN) ||
-  GMAIL_QUOTA_UNITS_PER_MIN < 1_200 ||
-  GMAIL_QUOTA_UNITS_PER_MIN > 12_000
-) {
-  throw new Error('GMAIL_QUOTA_UNITS_PER_MIN must be an integer from 1200 to 12000');
-}
-const GMAIL_QUOTA_WINDOW_MS = 60_000;
-
-/**
- * Burst ceiling — separate from the sustained target above (2026-09-03,
- * post-incident: see `RedisGmailQuotaLimiter`'s class doc for the full
- * root-cause). Both limiter implementations previously started a fresh
- * mailbox's bucket FULL, so `InitialSyncWorker`'s fetch loop could spend
- * the entire 12,000-unit sustained budget the instant it started —
- * ~2,400 `messages.get` calls at the old 5-unit accounting, with zero
- * pacing before either limiter ever introduced a delay.
- *
- * A five-second share of the sustained budget caps that instant burst:
- * 400 units by default or 1,000 for the production legacy quota. Paired
- * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME average rate, so the
- * in-process `RateLimiter` fallback paces identically to the primary
- * Redis-backed bucket instead of reverting to the old full-burst
- * behavior the moment Redis degrades.
- */
-const GMAIL_QUOTA_BURST_CAPACITY = Math.floor(GMAIL_QUOTA_UNITS_PER_MIN / 12);
-const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */
 function requireEnv(name: string): string {
@@ -397,6 +364,13 @@ async function bootstrap(): Promise<void> {
   auditRequiredEnv();
   bootStep('env_audit_complete');
 
+  // Gmail pacing (D5), resolved here rather than at module load so a bad
+  // value fails through `worker.boot_failed`. Logged in full: the
+  // 2026-09-24 (UTC) pricing regression left no trace in the logs and was found
+  // only by timing a 68-minute first sync.
+  const gmailQuota = resolveGmailQuotaConfig(process.env);
+  bootStep('gmail_quota', { ...gmailQuota });
+
   // Boot-refusal (mirrors the DEV_AUTH_ENABLED guard in main.ts):
   // `UNSUB_ALLOW_INSECURE_TARGETS` lets the unsub executor POST to
   // plain-http / loopback targets for LOCAL smoke only. In production
@@ -491,9 +465,10 @@ async function bootstrap(): Promise<void> {
    * Size of the dedicated advisory-lock pool.
    *
    * NOT sized to peak demand, and that is a deliberate, budgeted choice.
-   * SIX workers take this lock, and their BullMQ concurrencies sum to
-   * 38: IncrementalSync 20, LabelAction 10, AutopilotAction 5, and
-   * SenderIndexSweep / SnoozeWake / AccountDeletionPurge at 1 each.
+   * SIX workers take this lock, and together they can hold 41 at once:
+   * IncrementalSync 20, LabelAction 10, AutopilotAction 5, SnoozeWake 4
+   * (one job, but its sweep wakes four mailboxes at a time), and
+   * SenderIndexSweep / AccountDeletionPurge at 1 each.
    * (A comment on the autopilot registration below used to put the peak
    * at 15 — it counted only the two workers in front of it, and missed
    * IncrementalSync, which is both the largest consumer and the one that
@@ -504,12 +479,12 @@ async function bootstrap(): Promise<void> {
    * and the reserve queue always drains. The cost is latency, not
    * failure.
    *
-   * Raising it to 38 is what the wait argues for and the CONNECTION
+   * Raising it to 41 is what the wait argues for and the CONNECTION
    * BUDGET forbids today. Postgres reports `max_connections = 60` on the
    * current Supabase compute tier, and the fixed pools already claim 31:
    * this worker's main `pg` (postgres.js default 10) + this lock pool
-   * (10) + the outbox listener (1) + the API's own pool (10). At 38 the
-   * total is 59 of 60 — and exhausting connections fails requests
+   * (10) + the outbox listener (1) + the API's own pool (10). At 41 the
+   * total would be 62, past the 60 — and exhausting connections fails requests
    * outright, where an over-subscribed lock pool only queues. Deferred
    * to the compute-tier decision recorded in FOUNDER-FOLLOWUPS.md
    * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
@@ -788,17 +763,17 @@ async function bootstrap(): Promise<void> {
         gmailQuotaConnection,
         gmailQuotaSha,
         mailboxAccountId,
-        GMAIL_QUOTA_BURST_CAPACITY,
-        GMAIL_QUOTA_UNITS_PER_MIN,
+        gmailQuota.burstCapacity,
+        gmailQuota.unitsPerMin,
         GMAIL_QUOTA_WINDOW_MS,
-        new RateLimiter(GMAIL_QUOTA_BURST_CAPACITY, GMAIL_QUOTA_BURST_WINDOW_MS),
+        new RateLimiter(gmailQuota.burstCapacity, GMAIL_QUOTA_BURST_WINDOW_MS),
       );
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
     // D181: close over the mailbox row's workspace/user so the audit
     // emit carries the operator-useful identifiers. Fire-and-forget —
     // a failed insert never alters the original token-swap throw.
-    return new GmailClientService(oauth, limiter, ({ reason }) => {
+    return new GmailClientService(oauth, limiter, gmailQuota.metric, ({ reason }) => {
       void securityEvents.record({
         eventType: 'oauth.refresh_failed',
         // `invalid_grant` means the mailbox needs reconnect (a real
@@ -1073,8 +1048,13 @@ async function bootstrap(): Promise<void> {
    * worker accepts `undefined` to mean "no LLM available; always use
    * the deterministic template". `null → undefined` so the worker
    * checks `this.deps.llm` rather than `null !== undefined`.
+   *
+   * One breaker for both Anthropic adapters (Brief here, reasoning
+   * below): they bill the same account, so a credit or key refusal seen
+   * by either pauses both.
    */
-  const briefLlm = buildBriefLlmAdapter();
+  const anthropicBreaker = new LlmCircuitBreaker();
+  const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
   briefSnapshotWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -1141,6 +1121,7 @@ async function bootstrap(): Promise<void> {
           timeout: resolveExplainTimeoutMs(process.env.REASONING_TIMEOUT_MS),
           maxRetries: 1,
         }),
+        breaker: anthropicBreaker,
       })
     : undefined;
   // U14/U-WIRE: `outbox` publishes `triage.score_run_completed` after
@@ -1470,19 +1451,21 @@ async function bootstrap(): Promise<void> {
    * `readiness_status` still reading `'ready'`) and generalizes to the
    * next one, since neither branch is keyed on a specific error class.
    *
-   * The sweep itself is read-only and lives in
-   * `packages/workers/src/stuck-mailbox-watchdog.ts` so it is testable
-   * without a composition root; this wrapper owns the logging and the
-   * Sentry seam, same split as `reconcileStuckInitialSyncs` above.
+   * The sweep and its log lines live in
+   * `packages/workers/src/stuck-mailbox-watchdog.ts` so they are testable
+   * without a composition root; this wrapper owns the Sentry seam, same
+   * split as `reconcileStuckInitialSyncs` above.
    *
    * A structured `mailbox.stuck_unnoticed` line is emitted once PER
    * STUCK MAILBOX PER TICK — deliberately not deduplicated across
    * ticks, unlike `DeadLetterWorker`'s `alertedIds`. That worker
    * dedupes because repeat Sentry captures burn its error quota; this
-   * is a plain log line, and the log-based Cloud Monitoring alert
-   * (`scripts/setup-stuck-mailbox-alert.sh`) needs the line to recur
-   * across several ticks to satisfy its "sustained" condition in the
-   * first place.
+   * is a plain log line, and the Cloud Monitoring alert
+   * (`scripts/setup-stuck-mailbox-alert.mjs`) keeps one alert open per
+   * mailbox only while its line keeps arriving — so a mailbox that
+   * recovers and breaks again pages again. Each tick ends with
+   * `stuck_mailbox_watchdog.completed`; a second policy pages when that
+   * line stops.
    */
   const STUCK_MAILBOX_INTERVAL_MS = 15 * 60 * 1000;
   let stuckMailboxInFlight: Promise<void> | null = null;
@@ -1490,22 +1473,7 @@ async function bootstrap(): Promise<void> {
   async function sweepStuckMailboxes(): Promise<void> {
     if (shuttingDown) return;
     try {
-      const stuck = await findStuckMailboxes(db);
-      for (const mailbox of stuck) {
-        const stuckSinceHours = Math.floor(
-          (Date.now() - mailbox.stuckSince.getTime()) / (60 * 60 * 1000),
-        );
-        console.error(
-          JSON.stringify({
-            level: 'error',
-            kind: 'mailbox.stuck_unnoticed',
-            mailboxAccountId: mailbox.mailboxAccountId,
-            reason: mailbox.reason,
-            errorCode: mailbox.errorCode,
-            stuckSinceHours,
-          }),
-        );
-      }
+      await reportStuckMailboxes(db, console);
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(
@@ -2326,10 +2294,11 @@ async function bootstrap(): Promise<void> {
   const autopilotActionBullWorker = new Worker<AutopilotActionJobData, AutopilotActionResult>(
     AUTOPILOT_ACTION_QUEUE,
     (job) => autopilotActionWorker.run(job),
-    // Each sweep holds a `lockPg` advisory-lock connection for its full
-    // duration, sharing the lock pool with five other consumers. This
+    // Each sweep holds a `lockPg` advisory-lock connection for one MATCH
+    // at a time — per-match holds since 2026-09-25, not the whole sweep —
+    // sharing the lock pool with five other consumers. This
     // comment used to put combined peak demand at 15 > 10, counting
-    // only LabelActionWorker and this worker; the real figure is 38
+    // only LabelActionWorker and this worker; the real figure is 41
     // across six workers — see `LOCK_POOL_MAX` above, which carries the
     // accounting and the connection budget that keeps the pool at 10.
     // The overcommit is still ACCEPTED and still not a deadlock:

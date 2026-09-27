@@ -1,4 +1,5 @@
 import type { OAuth2Client } from 'google-auth-library';
+import { GMAIL_METADATA_HEADERS } from '@declutrmail/shared/contracts';
 import {
   AuthExpiredError,
   InvalidGrantError,
@@ -14,6 +15,8 @@ import { GmailClientService } from './gmail-client.service.js';
 
 const ACCESS_TOKEN = 'access-token-xyz';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
+/** The newer quota metric — the pricing most tests here do not care about. */
+const TQC = 'gmail.googleapis.com/total_query_cost' as const;
 
 /** The request init Gmail calls are issued with (the fields we assert on). */
 interface FetchInit {
@@ -97,7 +100,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     acquireSpy.mockImplementation(async () => {
       controller.abort(new Error('stop'));
     });
-    const client = new GmailClientService(oauth, limiter);
+    const client = new GmailClientService(oauth, limiter, TQC);
     await expect(client.getProfile(controller.signal)).rejects.toThrow('stop');
     expect(acquireSpy).toHaveBeenCalledWith(1, controller.signal);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -111,14 +114,14 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       init.signal?.throwIfAborted();
       return jsonOk({});
     });
-    const client = new GmailClientService(oauth, limiter);
+    const client = new GmailClientService(oauth, limiter, TQC);
     await expect(client.getMessageMetadata('fixture', controller.signal)).rejects.toThrow('stop');
   });
 
   describe('modifyLabels', () => {
     it('POSTs the add/remove label change to /messages/:id/modify', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['STARRED'] }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.modifyLabels('m1', { addLabelIds: ['STARRED'], removeLabelIds: ['UNREAD'] });
 
@@ -136,7 +139,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('defaults omitted add/remove arrays to empty', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ id: 'm1' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.modifyLabels('m1', { addLabelIds: ['IMPORTANT'] });
 
@@ -145,7 +148,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('url-encodes the message id in the path', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({}));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.modifyLabels('a/b id', { addLabelIds: ['X'] });
 
@@ -157,7 +160,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
   describe('batchModify', () => {
     it('POSTs ids + label change to /messages/batchModify in one call', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({}));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.batchModify(['m1', 'm2', 'm3'], { addLabelIds: ['TRASH'] });
 
@@ -176,7 +179,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('chunks more than 1000 ids into sequential ≤1000-id calls', async () => {
       fetchMock.mockResolvedValue(jsonOk({}));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       const ids = Array.from({ length: 2300 }, (_, i) => `m${i}`);
 
       await client.batchModify(ids, { removeLabelIds: ['INBOX'] });
@@ -200,7 +203,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('sends exactly one call for precisely 1000 ids', async () => {
       fetchMock.mockResolvedValue(jsonOk({}));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       const ids = Array.from({ length: 1000 }, (_, i) => `m${i}`);
 
       await client.batchModify(ids, { addLabelIds: ['X'] });
@@ -210,7 +213,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
 
     it('is a no-op for an empty id list (no request, no quota)', async () => {
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.batchModify([], { addLabelIds: ['X'] });
 
@@ -219,34 +222,61 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     });
   });
 
-  it('reserves each Gmail method’s actual quota cost before making its request', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonOk({ messages: [] }))
-      .mockResolvedValueOnce(jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }))
-      .mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['INBOX'] }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '123' }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '124' }))
-      .mockResolvedValueOnce(jsonOk({ labels: [] }))
-      .mockResolvedValueOnce(jsonOk({ labels: [] }))
-      .mockResolvedValueOnce(jsonOk({ id: 'Label_1' }))
-      .mockResolvedValueOnce(jsonOk({ historyId: '125', expiration: '1900000000000' }))
-      .mockResolvedValueOnce(jsonOk({}));
-    const client = new GmailClientService(oauth, limiter);
+  // Only `messages.get` (the two get* calls) is priced differently: 5 units
+  // on the grandfathered `default` metric, 20 on `total_query_cost`.
+  it.each([
+    ['gmail.googleapis.com/total_query_cost' as const, [5, 20, 20, 1, 2, 1, 1, 5, 100, 50]],
+    ['gmail.googleapis.com/default' as const, [5, 5, 5, 1, 2, 1, 1, 5, 100, 50]],
+  ])(
+    'reserves each method’s cost on the %s metric before making its request',
+    async (metric, expectedUnits) => {
+      fetchMock
+        .mockResolvedValueOnce(jsonOk({ messages: [] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }))
+        .mockResolvedValueOnce(jsonOk({ id: 'm1', labelIds: ['INBOX'] }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '123' }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '124' }))
+        .mockResolvedValueOnce(jsonOk({ labels: [] }))
+        .mockResolvedValueOnce(jsonOk({ labels: [] }))
+        .mockResolvedValueOnce(jsonOk({ id: 'Label_1' }))
+        .mockResolvedValueOnce(jsonOk({ historyId: '125', expiration: '1900000000000' }))
+        .mockResolvedValueOnce(jsonOk({}));
+      const client = new GmailClientService(oauth, limiter, metric);
 
-    await client.listMessageIds();
-    await client.getMessageMetadata('m1');
-    await client.getMessageLabelIds('m1');
-    await client.getProfile();
-    await client.listHistory('123');
-    await client.listLabels();
-    await client.ensureLabelId('DeclutrMail/Test');
-    await client.watch('projects/test/topics/gmail');
-    await client.stopWatch();
+      await client.listMessageIds();
+      await client.getMessageMetadata('m1');
+      await client.getMessageLabelIds('m1');
+      await client.getProfile();
+      await client.listHistory('123');
+      await client.listLabels();
+      await client.ensureLabelId('DeclutrMail/Test');
+      await client.watch('projects/test/topics/gmail');
+      await client.stopWatch();
 
-    expect(acquireSpy.mock.calls.map(([units]) => units)).toEqual([
-      5, 20, 20, 1, 2, 1, 1, 5, 100, 50,
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
+      expect(acquireSpy.mock.calls.map(([units]) => units)).toEqual(expectedUnits);
+      expect(fetchMock).toHaveBeenCalledTimes(acquireSpy.mock.calls.length);
+    },
+  );
+
+  describe('getMessageMetadata', () => {
+    // D7: the "never fetch full email contents" guarantee on the sync path
+    // is this one request — format=metadata plus exactly the registry's
+    // header allowlist, never full/raw.
+    it('asks Gmail for metadata and exactly the D7 header allowlist', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonOk({ id: 'm1', threadId: 't1', internalDate: '1700000000000' }),
+      );
+      const client = new GmailClientService(oauth, limiter, TQC);
+
+      await client.getMessageMetadata('a/b id');
+
+      const url = new URL(fetchMock.mock.calls[0]![0]);
+      expect(`${url.origin}${url.pathname}`).toBe(`${API}/messages/a%2Fb%20id`);
+      expect(url.searchParams.getAll('format')).toEqual(['metadata']);
+      expect(url.searchParams.getAll('metadataHeaders')).toEqual([...GMAIL_METADATA_HEADERS]);
+      // Nothing else rides along (no `fields`, no second format).
+      expect(new Set(url.searchParams.keys())).toEqual(new Set(['format', 'metadataHeaders']));
+    });
   });
 
   describe('getMessageLabelIds', () => {
@@ -254,7 +284,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       fetchMock.mockResolvedValueOnce(
         jsonOk({ id: 'm1', labelIds: ['INBOX', 'STARRED'], snippet: 'must be ignored' }),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const labels = await client.getMessageLabelIds('a/b id');
 
@@ -267,7 +297,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('returns null when the message no longer exists', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(404, 'missing'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageLabelIds('gone')).resolves.toBeNull();
     });
@@ -302,7 +332,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('skips a message Gmail cannot render as metadata instead of failing the sync', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(400, FAILED_PRECONDITION));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageMetadata('unreadable')).resolves.toBeNull();
     });
@@ -314,7 +344,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           JSON.stringify({ error: { code: 400, errors: [{ reason: 'invalidArgument' }] } }),
         ),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageMetadata('bad')).rejects.toBeInstanceOf(PermanentError);
     });
@@ -331,7 +361,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       fetchMock.mockResolvedValueOnce(
         makeResponse(200, JSON.stringify({ id: 'm1', threadId: 't1', labelIds: ['INBOX'] })),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageMetadata('undatable')).resolves.toBeNull();
       // Surfaced, not swallowed: the sync result reports it.
@@ -348,7 +378,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           JSON.stringify({ threadId: 't1', internalDate: '1700000000000', labelIds: [] }),
         ),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageMetadata('no-id')).resolves.toBeNull();
       expect(client.unreadableMessageCount).toBe(1);
@@ -367,7 +397,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           }),
         ),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageMetadata('fine')).resolves.toMatchObject({
         id: 'm1',
@@ -379,7 +409,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('does NOT skip on the recovery-verification read — unreadable must never read as "no labels"', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(400, FAILED_PRECONDITION));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.getMessageLabelIds('unreadable')).rejects.toBeInstanceOf(PermanentError);
     });
@@ -399,7 +429,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           ],
         }),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const labels = await client.listLabels();
 
@@ -425,7 +455,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           labels: [{ id: 'Label_1' }, { name: 'Nameless' }, { id: 'Label_2', name: 'Ok' }],
         }),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       expect(await client.listLabels()).toEqual([{ id: 'Label_2', name: 'Ok' }]);
     });
@@ -434,14 +464,14 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       // Empty is the signal `syncMailboxLabels` treats as "we learned
       // nothing" and leaves stored rows alone — never as "no labels".
       fetchMock.mockResolvedValueOnce(jsonOk({}));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       expect(await client.listLabels()).toEqual([]);
     });
 
     it('findLabelId returns null without creating a missing label', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const id = await client.findLabelId('DeclutrMail/Later');
 
@@ -459,7 +489,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           ],
         }),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const id = await client.ensureLabelId('DeclutrMail/Later');
 
@@ -474,7 +504,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       fetchMock
         .mockResolvedValueOnce(jsonOk({ labels: [{ id: 'INBOX', name: 'INBOX' }] }))
         .mockResolvedValueOnce(jsonOk({ id: 'Label_7', name: 'DeclutrMail/Later' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const id = await client.ensureLabelId('DeclutrMail/Later');
 
@@ -495,7 +525,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       fetchMock
         .mockResolvedValueOnce(jsonOk({ labels: [{ id: 'Label_1', name: 'declutrmail/later' }] }))
         .mockResolvedValueOnce(jsonOk({ id: 'Label_2' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const id = await client.ensureLabelId('DeclutrMail/Later');
 
@@ -508,7 +538,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       fetchMock.mockResolvedValueOnce(
         jsonOk({ labels: [{ id: 'Label_42', name: 'DeclutrMail/Later' }] }),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const first = await client.ensureLabelId('DeclutrMail/Later');
       const second = await client.ensureLabelId('DeclutrMail/Later');
@@ -524,7 +554,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
   describe('mutation error mapping', () => {
     it('maps 401 to AuthExpiredError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(401, 'unauthorized'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         AuthExpiredError,
       );
@@ -532,7 +562,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('maps 429 to RateLimitError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(429, 'slow down'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.batchModify(['m1'], { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         RateLimitError,
       );
@@ -540,7 +570,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('maps a 403 quota body to RateLimitError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(403, 'Quota exceeded for quota metric'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         RateLimitError,
       );
@@ -560,7 +590,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
           }),
         ),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       const error = await client.getProfile().catch((err: unknown) => err);
       expect(error).toBeInstanceOf(InvalidGrantError);
       expect(isNonRetryable(error)).toBe(true);
@@ -569,7 +599,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('maps a non-quota 403 to TransientError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(403, 'forbidden: insufficient scope'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         TransientError,
       );
@@ -580,7 +610,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       // produced `400: Invalid label` and the worker retried it to the
       // attempt cap. A deterministic 4xx must fail on attempt 1.
       fetchMock.mockResolvedValueOnce(makeResponse(400, 'Invalid label: DeclutrMail/Later'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(
         client.batchModify(['m1'], { addLabelIds: ['DeclutrMail/Later'] }),
       ).rejects.toBeInstanceOf(PermanentError);
@@ -588,7 +618,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('maps 5xx to TransientError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(503, 'unavailable'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.batchModify(['m1'], { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         TransientError,
       );
@@ -596,7 +626,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
 
     it('maps a network failure to TransientError', async () => {
       fetchMock.mockRejectedValueOnce(new Error('socket hang up'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         TransientError,
       );
@@ -606,7 +636,7 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error('invalid_grant: token revoked'),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         InvalidGrantError,
       );
@@ -647,7 +677,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
       new Error('invalid_grant: token revoked'),
     );
     const recorder = vi.fn();
-    const client = new GmailClientService(oauth, limiter, recorder);
+    const client = new GmailClientService(oauth, limiter, TQC, recorder);
 
     await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
       InvalidGrantError,
@@ -661,7 +691,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
       new Error('socket hang up'),
     );
     const recorder = vi.fn();
-    const client = new GmailClientService(oauth, limiter, recorder);
+    const client = new GmailClientService(oauth, limiter, TQC, recorder);
 
     await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
       TransientError,
@@ -672,7 +702,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
   it('records reason=no_access_token when getAccessToken resolves null', async () => {
     (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ token: null });
     const recorder = vi.fn();
-    const client = new GmailClientService(oauth, limiter, recorder);
+    const client = new GmailClientService(oauth, limiter, TQC, recorder);
 
     await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
       InvalidGrantError,
@@ -683,7 +713,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
   it('never records on a successful token swap', async () => {
     fetchMock.mockResolvedValueOnce(jsonOk({ id: 'm1' }));
     const recorder = vi.fn();
-    const client = new GmailClientService(oauth, limiter, recorder);
+    const client = new GmailClientService(oauth, limiter, TQC, recorder);
 
     await client.modifyLabels('m1', { addLabelIds: ['X'] });
 
@@ -697,7 +727,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
     const recorder = vi.fn().mockImplementation(() => {
       throw new Error('audit pipe burst');
     });
-    const client = new GmailClientService(oauth, limiter, recorder);
+    const client = new GmailClientService(oauth, limiter, TQC, recorder);
 
     // The InvalidGrantError reaches the caller; the recorder's throw is
     // swallowed so the worker still sees the same error type it would
@@ -716,7 +746,7 @@ describe('GmailClientService — D181 oauth.refresh_failed emit', () => {
     (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error('invalid_grant'),
     );
-    const client = new GmailClientService(oauth, limiter);
+    const client = new GmailClientService(oauth, limiter, TQC);
     await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
       InvalidGrantError,
     );
@@ -745,7 +775,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
   describe('watch', () => {
     it('POSTs the topic + INBOX label filter and returns historyId + expiration', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '987654', expiration: '1765432100000' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       const result = await client.watch('projects/p/topics/gmail-push');
 
@@ -766,19 +796,19 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
 
     it('throws TransientError when the response is missing historyId/expiration', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '987654' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(TransientError);
     });
 
     it('throws TransientError when expiration is non-numeric', async () => {
       fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '1', expiration: 'soon' }));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(TransientError);
     });
 
     it('maps a Gmail 400 (bad topic / missing publish grant) to PermanentError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(400, 'topicName required'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(PermanentError);
     });
 
@@ -786,7 +816,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
       (oauth.getAccessToken as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error('invalid_grant'),
       );
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.watch('projects/p/topics/t')).rejects.toBeInstanceOf(InvalidGrantError);
     });
   });
@@ -794,7 +824,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
   describe('stopWatch', () => {
     it('POSTs users.stop and discards the (empty) response body', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(204, ''));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.stopWatch();
 
@@ -806,7 +836,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
 
     it('maps a Gmail 401 to AuthExpiredError', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(401, 'unauthorized'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
       await expect(client.stopWatch()).rejects.toBeInstanceOf(AuthExpiredError);
     });
   });
@@ -814,7 +844,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
   describe('revokeGrant', () => {
     it('revokes the refresh token and clears local OAuth credentials', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(200, ''));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await client.revokeGrant();
 
@@ -830,7 +860,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
 
     it('treats an already-invalid token as idempotent success', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(400, '{"error":"invalid_token"}'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.revokeGrant()).resolves.toBeUndefined();
       expect(oauth.setCredentials).toHaveBeenCalledWith({});
@@ -838,7 +868,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
 
     it('keeps transient revoke failures retryable', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(503, 'unavailable'));
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.revokeGrant()).rejects.toBeInstanceOf(TransientError);
       expect(oauth.setCredentials).not.toHaveBeenCalled();
@@ -846,7 +876,7 @@ describe('GmailClientService — users.watch lifecycle (D8, D225, D229)', () => 
 
     it('refuses to claim revocation without a stored refresh token', async () => {
       oauth.credentials = {};
-      const client = new GmailClientService(oauth, limiter);
+      const client = new GmailClientService(oauth, limiter, TQC);
 
       await expect(client.revokeGrant()).rejects.toBeInstanceOf(InvalidGrantError);
       expect(fetchMock).not.toHaveBeenCalled();
