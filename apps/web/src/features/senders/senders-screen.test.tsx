@@ -1657,6 +1657,60 @@ describe('SendersScreen — edge states', () => {
     expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
   });
 
+  // The twin of the batch case: a skip must not let an earlier job's
+  // "Archive failed" resurface as this job's outcome.
+  it('drops an earlier mark from a single sender whose next job was skipped', async () => {
+    let posts = 0;
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posts += 1;
+          return jsonOk({
+            data: { actionId: `act-${posts}`, requestedCount: 12, status: 'queued' },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: (_req, url) =>
+          jsonOk({
+            data: url.pathname.endsWith('/act-1')
+              ? archiveStatus({ actionId: 'act-1', status: 'failed', affectedCount: 0 })
+              : archiveStatus({
+                  actionId: 'act-2',
+                  affectedCount: 0,
+                  undoToken: null,
+                  undoExpiresAt: null,
+                  errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+                }),
+          }),
+      },
+    ]);
+
+    renderScreen();
+    for (const _attempt of [1, 2]) {
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() =>
+        expect(document.querySelector('[data-dm-row-activity="working"]')).toBeNull(),
+      );
+      if (posts === 1) {
+        await waitFor(() =>
+          expect(document.querySelector('[data-dm-row-activity="failed"]')).not.toBeNull(),
+        );
+      }
+    }
+    await waitFor(() => expect(posts).toBe(2));
+    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
+  });
+
   it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
     // The real preview now gates the no-op UPFRONT: a 0 count tells the user
     // there's nothing to archive and blocks confirm, so they never enqueue
@@ -3175,6 +3229,73 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived']), { timeout: 4000 });
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
+    });
+
+    // A skip says nothing about THIS job, so an older job's outcome must
+    // not resurface on the row as if it were the latest (smoke 2026-09-26).
+    it('drops an earlier mark from a sender the next batch skipped as Protected', async () => {
+      let posts = 0;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            return jsonOk({
+              data: {
+                batchId: `batch-${posts}`,
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 30,
+                skipped: [],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: (_req, url) => {
+            const batchId = url.pathname.split('/').pop()!;
+            const failedAll = { status: 'failed', done: 0, affectedCount: 0, undoToken: null };
+            return jsonOk({
+              data:
+                batchId === 'batch-1'
+                  ? { batchId, ...failedAll, total: 2, failed: 2, requestedCount: 30 }
+                  : {
+                      batchId,
+                      ...failedAll,
+                      total: 1,
+                      failed: 1,
+                      requestedCount: 18,
+                      skippedProtectedSenderIds: ['a'],
+                    },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(
+        () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
+        { timeout: 4000 },
+      );
+
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(posts).toBe(2));
+      await waitFor(
+        () => expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull(),
+        { timeout: 4000 },
+      );
+      expect(
+        rowOf(/select sender b/i).querySelector('[data-dm-row-activity="failed"]'),
+      ).not.toBeNull();
     });
 
     it('leaves a sender skipped as Protected at the click unmarked', async () => {
