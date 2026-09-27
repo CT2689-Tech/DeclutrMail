@@ -342,10 +342,12 @@ const SCORE_WRITE_CONCURRENCY = 4;
 
 /**
  * Senders a `sync_complete` sweep explains by volume
- * (`senders.total_received`): the first two pages of the Senders list,
- * whose default sort is the same column (page size 25). The loudest senders
- * are the ones a new user opens, and onboarding's cleanup pool ranks by the
- * same count. Everyone else is explained when first opened.
+ * (`senders.total_received`, highest first). Unfiltered on purpose: the
+ * places a new user opens senders from both rank by this count but filter
+ * it differently — the Senders list defaults to senders active in the last
+ * 30 days, onboarding's cleanup goals to senders with mail still in the
+ * inbox, of any age — so neither filter serves both. Everyone else is
+ * explained when first opened.
  */
 export const FIRST_VIEW_VOLUME_ROWS = 50;
 
