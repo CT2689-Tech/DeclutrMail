@@ -204,6 +204,11 @@ export const senderPolicies = pgTable(
       'sender_policies_snooze_wake_cleared_state_check',
       sql`${table.snoozedUntil} IS NOT NULL OR (${table.snoozeWakeLastAttemptAt} IS NULL AND ${table.snoozeWakeLastFailedAt} IS NULL AND ${table.snoozeWakeFailureCount} = 0 AND ${table.snoozeWakeFailureKind} IS NULL)`,
     ),
+    /** Mirrors migration 0023 — a protected sender always carries its reason. */
+    protectionReasonWhenProtectedCheck: check(
+      'sender_policies_protection_reason_when_protected_chk',
+      sql`NOT ${table.isProtected} OR ${table.protectionReason} IS NOT NULL`,
+    ),
   }),
 );
 

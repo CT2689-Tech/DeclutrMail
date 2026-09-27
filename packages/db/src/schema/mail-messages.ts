@@ -225,6 +225,24 @@ export const mailMessages = pgTable(
       table.internalDate,
     ),
     /**
+     * Mirrors migration 0070 — Senders' `inboxCount` and
+     * `unreadInboxCount` subqueries carry this exact predicate, so the
+     * planner drops the filter; `is_unread` in the key answers both from
+     * one scan.
+     */
+    senderInboxIdx: index('mail_messages_account_sender_inbox_idx')
+      .on(table.mailboxAccountId, table.senderKey, table.isUnread)
+      .where(sql`${table.isOutbound} = false AND 'INBOX' = ANY(${table.labelIds})`),
+    /**
+     * Mirrors migration 0080 — the non-mail purge's probe and its
+     * newest-first batches. Holds only draft and chat rows, so on a clean
+     * mailbox the probe reads an empty index. The planner matches the
+     * array literal as written, element order included.
+     */
+    nonMailIdx: index('mail_messages_non_mail_idx')
+      .on(table.mailboxAccountId, table.internalDate)
+      .where(sql`${table.labelIds} && ARRAY['DRAFT','CHAT']::text[]`),
+    /**
      * Channel-split scheme invariants (migration 0032, FOUNDER-FOLLOWUPS
      * 2026-05-22). The header parser enforces these shapes; the CHECKs
      * make the DB reject a future writer that misses the docstrings.
