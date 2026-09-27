@@ -1994,6 +1994,85 @@ describe('ActivityReadService', () => {
       }
       expect(seen).toEqual([...ids].sort().reverse());
     });
+
+    async function pageAll(limit: number): Promise<string[]> {
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 6; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(...rows.map((row) => row.id));
+        const last = rows[rows.length - 1]!;
+        cursor = { occurredAt: new Date(last.occurredAt), id: last.id };
+      }
+      return seen;
+    }
+
+    // The in-flight twin (architecture-guardian 2026-09-27): a bulk's
+    // queued jobs share one timestamp too.
+    it('keeps every in-flight action sharing the page boundary timestamp', async () => {
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        const key = `inflight-us-${n}`;
+        const senderId = await seedSender(
+          db,
+          mailboxA.mailboxAccountId,
+          key,
+          `n${n}@q.com`,
+          `Q ${n}`,
+        );
+        ids.push(
+          await seedExecutionAttempt(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderId,
+            senderKey: key,
+            status: 'queued',
+            createdAt: new Date(NOW_MS - ONE_DAY_MS),
+          }),
+        );
+      }
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(actionJobs)
+        .set({ createdAt: sql`${shared}::timestamptz`, updatedAt: sql`${shared}::timestamptz` })
+        .where(inArray(actionJobs.id, ids));
+
+      expect(await pageAll(1)).toEqual([...ids].sort().reverse());
+    });
+
+    // Same millisecond, different microseconds, ordered opposite to id: a
+    // source sorting by microsecond cut, at its LIMIT, the row the merge
+    // puts first — and the cursor then passed it by.
+    it('pages rows of one millisecond by id, whatever their microseconds', async () => {
+      const ids: string[] = [];
+      for (const _n of [1, 2, 3]) {
+        ids.push(
+          await seedActivity(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+            source: 'manual',
+            action: 'archive',
+          }),
+        );
+      }
+      const byId = [...ids].sort();
+      const base = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '');
+      for (const [i, micros] of ['900', '500', '100'].entries()) {
+        await db
+          .update(activityLog)
+          .set({ occurredAt: sql`${`${base}${micros}+00`}::timestamptz` })
+          .where(eq(activityLog.id, byId[i]!));
+      }
+
+      expect(await pageAll(1)).toEqual([...byId].reverse());
+    });
   });
 
   describe('D57 — rule attribution', () => {

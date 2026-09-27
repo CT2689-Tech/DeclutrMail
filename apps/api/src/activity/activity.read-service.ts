@@ -430,7 +430,7 @@ export class ActivityReadService {
       })
       .from(current)
       .where(and(...whereParts))
-      .orderBy(desc(outcomeTime), desc(current.id))
+      .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
       .limit(args.limit);
   }
 
@@ -580,7 +580,7 @@ export class ActivityReadService {
         ),
       )
       .where(and(...whereParts))
-      .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
+      .orderBy(desc(feedTime(activityLog.occurredAt)), desc(activityLog.id))
       .limit(limit + 1);
 
     const projected = rows.map((row): ActivityRowFacts => {
@@ -716,7 +716,7 @@ export class ActivityReadService {
         ),
       )
       .where(and(...whereParts))
-      .orderBy(desc(reviewTime), desc(ruleMatchLog.id))
+      .orderBy(desc(feedTime(reviewTime)), desc(ruleMatchLog.id))
       .limit(limit + 1);
     return rows.map((row) => ({
       id: row.id,
@@ -819,7 +819,7 @@ export class ActivityReadService {
         ),
       )
       .where(and(...whereParts))
-      .orderBy(desc(clickedAt), desc(actionJobs.id))
+      .orderBy(desc(feedTime(clickedAt)), desc(actionJobs.id))
       .limit(limit + 1);
     return rows.map((row) => ({
       id: row.id,
@@ -1038,10 +1038,7 @@ export class ActivityReadService {
       );
     if (args.lowerBound) scope.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) scope.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
-    if (args.cursor)
-      scope.push(
-        sql`(${outcomeTime}, ${current.id}) < (${timestamptzParam(args.cursor.occurredAt)}, ${args.cursor.id})`,
-      );
+    if (args.cursor) scope.push(afterCursor(outcomeTime, current.id, args.cursor));
     return {
       root,
       current,
@@ -1084,7 +1081,7 @@ export class ActivityReadService {
         .from(current)
         .innerJoin(root, join)
         .where(where)
-        .orderBy(desc(outcomeTime), desc(current.id))
+        .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
         .limit(params.limit + 1);
       if (!attempts.length) return [];
       return this.hydrateCurrentExecutionLineages(params.mailboxAccountId, attempts);
@@ -1560,12 +1557,23 @@ function timestamptzParam(value: Date) {
 }
 
 /**
- * The rows after a page's last row, for a feed ordered by (time, id) desc.
- * The cursor carries milliseconds (an ISO string) while Postgres keeps
- * microseconds, and rows written in one transaction share `now()`. So
- * `time = cursor` never matched such a row and `time < cursor` skipped it:
+ * The feed's sort time. The page cursor and the merge of the sources
+ * (`compareActivityRowsNewestFirst`) carry milliseconds, while Postgres
+ * keeps microseconds. Each source must order at the same precision, or its
+ * `LIMIT` can cut a row the merge would have placed first and the cursor
+ * then passes it by.
+ */
+function feedTime(time: SQLWrapper): SQL {
+  return sql`date_trunc('milliseconds', ${time})`;
+}
+
+/**
+ * The rows after a page's last row, for a feed ordered by (`feedTime`, id)
+ * desc. Rows written in one transaction share `now()` to the microsecond,
+ * so `time = cursor` never matched one and `time < cursor` skipped it:
  * every row after the page's last one in that millisecond dropped out.
- * Rows inside the cursor's millisecond continue by id instead.
+ * Rows inside the cursor's millisecond continue by id instead. Compared on
+ * the raw column, so the window's index still bounds the scan.
  */
 function afterCursor(
   time: SQLWrapper,
