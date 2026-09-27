@@ -63,8 +63,8 @@
  *
  * WHY THESE LIMITS. A per-group default plus an override table. They are
  * a ratchet — "this route may not get heavier by accident" — not a claim
- * that any route is fast enough. `/senders` at 288.9 kB is
- * emphatically NOT a blessing of 288.9 kB; it is a floor under the
+ * that any route is fast enough. `/senders` at 289.0 kB is
+ * emphatically NOT a blessing of 289.0 kB; it is a floor under the
  * regression. Raising one is a deliberate edit that belongs in a commit
  * message; lowering one as routes get lighter is always welcome.
  *
@@ -142,18 +142,18 @@ export const OVERRIDES_KB = {
   // the long tail. Budgeted at the long tail's headroom, rounded up: the
   // extra 3.4 kB they had on the page-entry measure was chunk 1705, which
   // it filed under the layout for them and under the page for the tail.
-  '/(marketing)/alternatives/[tool]/page': 160, // 154.8
-  '/(marketing)/compare/page': 160, // 154.8
+  '/(marketing)/alternatives/[tool]/page': 160, // 154.9
+  '/(marketing)/compare/page': 160, // 154.9
   '/(marketing)/how-it-works/page': 160, // 154.8
   '/(marketing)/methodology/page': 160, // 154.8
-  '/(marketing)/security/page': 160, // 155.0
+  '/(marketing)/security/page': 160, // 155.1
   '/(marketing)/sign-in/page': 160, // 154.8
-  '/(marketing)/vs/[competitor]/page': 160, // 154.8
+  '/(marketing)/vs/[competitor]/page': 160, // 154.9
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 290, // 288.9 — grid + table + compose strip + saved views + mobile dialect
+  '/(app)/senders/page': 290, // 289.0 — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -234,7 +234,7 @@ export const OVERRIDES_KB = {
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.
   '/(app)/settings/senders/page': 250, // 245.7
-  '/(app)/quiet/page': 242, // 239.5 — schedule controls + explainer
+  '/(app)/quiet/page': 242, // 239.4 — schedule controls + explainer
   '/(app)/later/page': 246, // 239.1 — return queue + explainer
   '/(app)/followups/page': 246, // 241.3 — follow-up queue + explainer
   '/(app)/admin/security/page': 235, // 234.4 — operator log + editorial shell
