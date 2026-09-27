@@ -3,14 +3,20 @@
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
 
-import { useOnboardingState } from '@/features/onboarding/api/use-onboarding';
+import {
+  onboardingGateVerdict,
+  useOnboardingState,
+} from '@/features/onboarding/api/use-onboarding';
+import { replaceUrl } from '@/lib/replace-url';
 
-import { CONNECT_ERROR_COPY } from './oauth-result';
+import { CONNECT_ERROR_COPY, connectErrorCode } from './oauth-result';
 
 /**
- * Reads `?connected` / `?connect_error` from the URL once on mount, fires
- * the matching toast, then clears the param via `history.replaceState` so
- * a manual refresh doesn't replay it.
+ * Reads `?connect_error` from the URL once on mount, fires the matching
+ * toast, then clears the param so a manual refresh doesn't replay it.
+ * Only closed codes reach the toast. A `?connected=<email>` success toast
+ * used to show whatever text the URL carried; nothing sends that param (a
+ * successful connect lands on `/onboarding?mailbox=`), so it is gone.
  *
  * Mounted at the app-chrome level (`app-chrome-layout.tsx`), not on a
  * specific page: a connect failure leaves `activeMailboxId` null, so the
@@ -30,36 +36,21 @@ export function useConnectResultToast(): void {
   // /onboarding, and the gate carries this result there to show (D108).
   // Using it up here first would lose it. A failed read counts as done, so
   // the result still shows somewhere.
-  const onboarding = useOnboardingState();
-  const onboarded =
-    onboarding.isError || (onboarding.data !== undefined && onboarding.data.onboardedAt !== null);
+  const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
     if (fired.current || typeof window === 'undefined' || !onboarded) return;
     fired.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    const connected = params.get('connected');
     const connectError = params.get('connect_error');
-    if (!connected && !connectError) return;
+    if (!connectError) return;
 
-    if (connected) {
-      toast(`Connected ${connected}.`, 'success');
-    } else if (connectError) {
-      toast(CONNECT_ERROR_COPY[connectError] ?? 'Could not connect that account.', 'danger');
-    }
+    toast(CONNECT_ERROR_COPY[connectErrorCode(connectError)]!, 'danger');
 
-    // Strip the one-shot params without a navigation. Preserves the
-    // existing history state (Codex adversarial review, round 2, matching
-    // `settings-screen.tsx`'s own `reconnect_result` scrub) — this hook
-    // now mounts above the whole branch ladder, not one page, so an
-    // overwritten `null` state would reach every `(app)` route.
-    params.delete('connected');
+    // Strip the one-shot param without a navigation, through Next's router
+    // so a later refresh cannot write it back (see replaceUrl).
     params.delete('connect_error');
     const qs = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      '',
-      window.location.pathname + (qs ? `?${qs}` : ''),
-    );
+    replaceUrl(window.location.pathname + (qs ? `?${qs}` : ''));
   }, [onboarded]);
 }

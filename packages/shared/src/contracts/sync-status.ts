@@ -88,8 +88,10 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
  * First-scan failures whose only real recovery is reconnecting Gmail: a
  * revoked grant (`InvalidGrantError`) or one Gmail stopped accepting
  * partway through (`AuthExpiredError`). Names match
- * `packages/workers/src/worker-errors.ts`. One definition for every
- * surface, web or API, that offers Reconnect instead of a retry.
+ * `packages/workers/src/worker-errors.ts`. Read today by the web app's
+ * surfaces that offer Reconnect instead of a retry: the onboarding sync
+ * gate, the top-bar Sync now button, and mailbox health on Settings and
+ * in the account menu.
  *
  * QA-sync-20260831-07 added `AuthExpiredError` to the onboarding gate's
  * own local set. A Codex review of the same round found the top-bar

@@ -5,7 +5,7 @@ import type { SignInResult } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 import { JwtService } from './jwt.service.js';
-import { parseBillingReturnTo, STATE_COOKIE } from './oauth-browser.js';
+import { parseBillingReturnTo, STATE_COOKIE, STATE_COOKIE_PATH } from './oauth-browser.js';
 
 /** Where a failed OAuth browser request lands. */
 type OAuthExit = { mode: 'login'; returnTo: string | undefined } | { mode: 'connect' };
@@ -77,6 +77,13 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
   // decorator metadata (the test transpiler emits none).
   constructor(@Inject(JwtService) private readonly jwt: JwtService) {
     super();
+  }
+
+  // The state is single-use. A callback that failed clears it, as the
+  // handler's own exits do; `exitFor` still reads it from the request.
+  protected override respond(res: Response, status: number): void {
+    if (!res.headersSent) res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
+    super.respond(res, status);
   }
 
   protected exitFor(req: Request): OAuthExit {

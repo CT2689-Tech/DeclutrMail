@@ -1,14 +1,18 @@
 import { BadRequestException, Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
-const { getToken, getTokenInfo, verifyIdToken } = vi.hoisted(() => ({
+const { getToken, getTokenInfo, verifyIdToken, clientOptions } = vi.hoisted(() => ({
   getToken: vi.fn(),
   getTokenInfo: vi.fn(),
   verifyIdToken: vi.fn(),
+  clientOptions: [] as unknown[],
 }));
 
 vi.mock('google-auth-library', () => ({
   OAuth2Client: class {
+    constructor(options: unknown) {
+      clientOptions.push(options);
+    }
     getToken = getToken;
     getTokenInfo = getTokenInfo;
     verifyIdToken = verifyIdToken;
@@ -112,7 +116,7 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
   ])('when the scope list is %s', (_label, scope) => {
     it('accepts the grant once token info shows Gmail', async () => {
       getToken.mockResolvedValue(tokenResponse(scope));
-      getTokenInfo.mockResolvedValue({ scopes: [GMAIL, 'openid'] });
+      getTokenInfo.mockResolvedValue({ aud: 'client-id', scopes: [GMAIL, 'openid'] });
 
       await expect(new GoogleOAuthService().exchangeCode('code')).resolves.toEqual({
         email: 'user@example.com',
@@ -126,6 +130,7 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
     it('refuses a near-miss Gmail scope from token info', async () => {
       getToken.mockResolvedValue(tokenResponse(scope));
       getTokenInfo.mockResolvedValue({
+        aud: 'client-id',
         scopes: [`${GMAIL}.extra`, 'https://www.googleapis.com/auth/gmail.metadata'],
       });
 
@@ -136,12 +141,33 @@ describe('GoogleOAuthService.exchangeCode — the Gmail grant (D108)', () => {
 
     it('refuses the grant when token info shows no Gmail', async () => {
       getToken.mockResolvedValue(tokenResponse(scope));
-      getTokenInfo.mockResolvedValue({ scopes: ['openid'] });
+      getTokenInfo.mockResolvedValue({ aud: 'client-id', scopes: ['openid'] });
 
       await expect(new GoogleOAuthService().exchangeCode('code')).rejects.toBeInstanceOf(
         GmailScopeNotGrantedError,
       );
     });
+  });
+
+  it('trusts token info only for a token issued to this app', async () => {
+    getToken.mockResolvedValue(tokenResponse(undefined));
+    getTokenInfo.mockResolvedValue({ aud: 'another-app', scopes: [GMAIL, 'openid'] });
+
+    const err = await rejection(new GoogleOAuthService().exchangeCode('code'));
+
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err).not.toBeInstanceOf(GmailScopeNotGrantedError);
+  });
+
+  it('gives every Google call a timeout', async () => {
+    getToken.mockResolvedValue(tokenResponse(`${GMAIL} ${SIGN_IN}`));
+    clientOptions.length = 0;
+
+    await new GoogleOAuthService().exchangeCode('code');
+
+    expect(clientOptions).toEqual([
+      expect.objectContaining({ clientId: 'client-id', transporterOptions: { timeout: 10_000 } }),
+    ]);
   });
 
   it('fails like any broken exchange when token info cannot answer', async () => {

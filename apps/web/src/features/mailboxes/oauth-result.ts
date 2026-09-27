@@ -6,8 +6,7 @@ import { ERROR_CODES, GMAIL_ACCESS_MISSING_RESULT } from '@declutrmail/shared/co
  * each shows (D108). Read on Settings, by the app chrome and on
  * /onboarding. Someone who has not finished onboarding reaches Settings
  * only to be sent to /onboarding, so every line that can reach /onboarding
- * has to be true there too. `inbox_limit` reaches it only through a
- * concurrent-connect race, so it still names Settings controls.
+ * has to be true there too: none names a control only one of them has.
  *
  * Privacy-safe by construction: values are closed, and no provider error,
  * mailbox id or email address from the URL is ever echoed.
@@ -53,7 +52,7 @@ export const RECONNECT_RESULT_COPY: Record<ReconnectResult, OAuthResultCopy> = {
     liveRole: 'alert',
   },
   cancelled: {
-    message: 'Gmail reconnect was cancelled. Nothing changed.',
+    message: 'Gmail reconnect was cancelled.',
     tone: 'info',
     liveRole: 'status',
   },
@@ -76,8 +75,7 @@ export const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, OAuthResultCo
     liveRole: 'alert',
   },
   inbox_limit: {
-    message:
-      'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
+    message: 'Your plan’s Gmail limit is in use, so no account was added.',
     tone: 'warn',
     liveRole: 'status',
   },
@@ -118,6 +116,15 @@ export const CONNECT_ERROR_COPY: Record<string, string> = {
   MAILBOX_DATA_DELETION_IN_PROGRESS: ERROR_CODES.MAILBOX_DATA_DELETION_IN_PROGRESS.message,
   connect_failed: 'Could not connect that Gmail account. Try again.',
 };
+
+/**
+ * The `connect_error` code to show: one listed above, or `connect_failed`
+ * for anything else, so an unexpected code still says the connect failed
+ * instead of vanishing. The raw value is never echoed.
+ */
+export function connectErrorCode(code: string): string {
+  return Object.hasOwn(CONNECT_ERROR_COPY, code) ? code : 'connect_failed';
+}
 
 export function reconnectResultOf(value: string | null): ReconnectResult | null {
   switch (value) {
@@ -165,11 +172,12 @@ export function oauthResultIn(
     };
   }
   const connectError = params.get('connect_error');
-  if (connectError !== null && Object.hasOwn(CONNECT_ERROR_COPY, connectError)) {
+  if (connectError) {
+    const value = connectErrorCode(connectError);
     return {
       param: 'connect_error',
-      value: connectError,
-      copy: { message: CONNECT_ERROR_COPY[connectError]!, tone: 'danger', liveRole: 'alert' },
+      value,
+      copy: { message: CONNECT_ERROR_COPY[value]!, tone: 'danger', liveRole: 'alert' },
     };
   }
   return null;

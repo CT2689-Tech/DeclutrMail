@@ -17,13 +17,12 @@ import { track } from '@/lib/posthog';
  * is fixture-shape compatible — the BE controllers return the same
  * JSON shapes the fixtures used, so the inner tree is unchanged.
  *
- * The connect-mailbox result toast (`?connected=<email>` /
- * `?connect_error=<code>`) used to be wired here, but a connect
- * FAILURE leaves `activeMailboxId` null, so the app chrome renders the
- * `NoActiveMailbox` reconnect takeover instead of this page — the toast
- * never ran (QA-onboarding-20260828-05). It now lives at the chrome
- * level (`app-chrome-layout.tsx`'s `useConnectResultToast`), above every
- * branch that decision can take.
+ * The connect-failure toast (`?connect_error=<code>`) used to be wired
+ * here, but a connect FAILURE leaves `activeMailboxId` null, so the app
+ * chrome renders the `NoActiveMailbox` reconnect takeover instead of this
+ * page — the toast never ran (QA-onboarding-20260828-05). It now lives at
+ * the chrome level (`app-chrome-layout.tsx`'s `useConnectResultToast`),
+ * above every branch that decision can take.
  */
 export function TriageRoute() {
   return (

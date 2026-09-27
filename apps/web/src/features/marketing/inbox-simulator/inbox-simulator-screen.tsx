@@ -34,6 +34,7 @@ import { ActivateRuleModal } from '@/features/autopilot/activate-rule-modal';
 import { permissionEntryUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
+import { replaceUrl } from '@/lib/replace-url';
 import {
   buildSyntheticBulkPreview,
   buildSyntheticRulePreview,
@@ -847,7 +848,7 @@ export function InboxSimulatorScreen() {
     url.searchParams.delete('step');
     if (nextMode === 'guided') url.searchParams.set('tour', '1');
     else url.searchParams.delete('tour');
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl(url);
   };
 
   const changeWorkspace = (next: 'triage' | 'senders') => {
@@ -863,7 +864,7 @@ export function InboxSimulatorScreen() {
       url.searchParams.delete('step');
       url.searchParams.delete('tour');
     }
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl(url);
   };
 
   const pendingInboxCount = pending ? syntheticInboxCount(pending.row) : 0;

@@ -27,12 +27,16 @@ import {
   RECONNECT_RESULT_COPY,
   reconnectResultOf,
 } from '@/features/mailboxes/oauth-result';
-import { useOnboardingState } from '@/features/onboarding/api/use-onboarding';
+import {
+  onboardingGateVerdict,
+  useOnboardingState,
+} from '@/features/onboarding/api/use-onboarding';
 import {
   isBillingDisabledError,
   useBillingSubscription,
 } from '@/features/billing/api/use-billing-subscription';
 import { track } from '@/lib/posthog';
+import { replaceUrl } from '@/lib/replace-url';
 import {
   useMeSettings,
   useUpdateActionSheetPrefs,
@@ -138,9 +142,7 @@ export function SettingsScreen({
   // sent to /onboarding, and the gate carries the result there to show
   // (D108). Using it up here first would lose it. A failed read counts as
   // done, so the result still shows here.
-  const onboarding = useOnboardingState();
-  const onboarded =
-    onboarding.isError || (onboarding.data !== undefined && onboarding.data.onboardedAt !== null);
+  const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
     if (
       (reconnectResultParam === null && connectStartResultParam === null) ||
@@ -175,7 +177,7 @@ export function SettingsScreen({
     nextParams.delete('connect_start_result');
     const nextSearch = nextParams.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#mailboxes`;
-    window.history.replaceState(window.history.state, '', nextUrl);
+    replaceUrl(nextUrl);
   }, [connectStartResultParam, onboarded, reconnectResultParam, reconnectSearch]);
 
   // Keep highlight lifetime independent from the URL effect: Next's

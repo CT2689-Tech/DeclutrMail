@@ -24,7 +24,7 @@ const AUTH_RESULT_ALERT_ID = 'dm-auth-entry-result';
 // restarts Google's consent.
 const AUTH_RESULT_LINE: Record<Exclude<SignInResult, 'inbox_limit'>, string> = {
   gmail_access_missing: 'DeclutrMail needs Gmail access. Continue with Google and allow it.',
-  failed: 'Google sign-in didn’t finish. Try again.',
+  failed: 'Sign-in didn’t finish. Try again.',
   rate_limited: 'Too many sign-in attempts. Wait a minute, then try again.',
 };
 

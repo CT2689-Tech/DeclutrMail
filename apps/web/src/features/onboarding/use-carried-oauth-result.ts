@@ -1,9 +1,14 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from '@declutrmail/shared';
 
-import { OAUTH_RESULT_PARAMS, oauthResultIn } from '@/features/mailboxes/oauth-result';
+import {
+  OAUTH_RESULT_PARAMS,
+  oauthResultIn,
+  type OAuthResultCopy,
+} from '@/features/mailboxes/oauth-result';
+import { replaceUrl } from '@/lib/replace-url';
 
 /**
  * Show the OAuth result the onboarding gate carried here, once (D108).
@@ -13,27 +18,33 @@ import { OAUTH_RESULT_PARAMS, oauthResultIn } from '@/features/mailboxes/oauth-r
  * the closed result. Without this, a reconnect that came back without
  * Gmail looked exactly like nothing had happened.
  *
+ * Returns the copy so the page can put it in live regions that were
+ * already on screen: a toast's region arrives already holding its text,
+ * which screen readers may not announce. Settings does the same.
+ *
+ * Waits for `signedIn`: only a signed-in session was carried here by the
+ * gate, so a signed-out visit to a crafted URL shows nothing.
+ *
  * Reads `window.location` rather than `useSearchParams` (value needed
  * once, client-side), then clears the params so a refresh does not replay
- * it, keeping any other query and the existing history state.
+ * it, keeping any other query and the hash.
  */
-export function useCarriedOAuthResult(): void {
+export function useCarriedOAuthResult(signedIn: boolean): OAuthResultCopy | null {
   const fired = useRef(false);
+  const [copy, setCopy] = useState<OAuthResultCopy | null>(null);
   useEffect(() => {
-    if (fired.current) return;
+    if (fired.current || !signedIn) return;
     fired.current = true;
 
     const result = oauthResultIn(window.location.search);
     if (!result) return;
+    setCopy(result.copy);
     toast(result.copy.message, result.copy.tone);
 
     const params = new URLSearchParams(window.location.search);
     for (const param of OAUTH_RESULT_PARAMS) params.delete(param);
     const search = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      '',
-      `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`,
-    );
-  }, []);
+    replaceUrl(`${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  }, [signedIn]);
+  return copy;
 }

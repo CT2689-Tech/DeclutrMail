@@ -57,7 +57,7 @@ describe('/sign-in OAuth recovery', () => {
 
   // A sign-in that did not complete lands here instead of on API JSON.
   it.each([
-    ['failed', /Google sign-in didn.t finish\. Try again\./],
+    ['failed', /^Sign-in didn.t finish\. Try again\.$/],
     ['rate_limited', /Too many sign-in attempts\. Wait a minute, then try again\./],
   ])('says what happened for a %s sign-in', async (authResult, line) => {
     await renderPage({ auth_result: authResult });

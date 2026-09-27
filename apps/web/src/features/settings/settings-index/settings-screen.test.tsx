@@ -908,7 +908,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'cancelled',
-      message: 'Gmail reconnect was cancelled. Nothing changed.',
+      message: 'Gmail reconnect was cancelled.',
       tone: 'info',
       liveRole: 'status',
     },
@@ -956,8 +956,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'inbox_limit',
-      message:
-        'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
+      message: 'Your plan’s Gmail limit is in use, so no account was added.',
       tone: 'warn',
       liveRole: 'status',
     },

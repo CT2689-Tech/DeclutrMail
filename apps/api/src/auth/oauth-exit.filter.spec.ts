@@ -51,6 +51,7 @@ function run(
     req,
     headersSent,
     redirect: vi.fn(),
+    clearCookie: vi.fn(),
     status: vi.fn().mockReturnThis(),
     json: vi.fn(),
   };
@@ -119,6 +120,17 @@ describe('OAuth exit filters', () => {
 
       expect(res.redirect).toHaveBeenCalledWith(302, `${WEB}/sign-in?auth_result=failed`);
     });
+
+    // Another tab's sign-in may still be on Google's screen with this cookie.
+    it('leaves the state cookie alone', () => {
+      const res = run(
+        new LoginStartExitFilter(),
+        new HttpException('slow down', HttpStatus.TOO_MANY_REQUESTS),
+        fakeRequest({ route: { path: '/api/auth/google/start' } }),
+      );
+
+      expect(res.clearCookie).not.toHaveBeenCalled();
+    });
   });
 
   describe('OAuthCallbackExitFilter', () => {
@@ -149,6 +161,37 @@ describe('OAuth exit filters', () => {
       expect(res.redirect).toHaveBeenCalledWith(
         302,
         `${WEB}/settings?connect_start_result=${result}#mailboxes`,
+      );
+    });
+
+    it('drops a forged returnTo even from a signed state', () => {
+      const res = run(
+        new OAuthCallbackExitFilter(jwt),
+        new BadRequestException(),
+        fakeRequest({
+          cookies: stateCookie({
+            nonce: 'n',
+            mode: 'login',
+            returnTo: 'https://evil.example/billing?plan=pro',
+          }),
+        }),
+      );
+
+      expect(res.redirect).toHaveBeenCalledWith(302, `${WEB}/sign-in?auth_result=failed`);
+    });
+
+    it('clears the single-use state cookie on every failed callback', () => {
+      const res = run(
+        new OAuthCallbackExitFilter(jwt),
+        new Error('private runtime detail'),
+        fakeRequest({ cookies: stateCookie({ nonce: 'n', mode: 'connect' }) }),
+      );
+
+      expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
+      // Cleared on the response only: the landing page still came from it.
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        `${WEB}/settings?connect_start_result=failed#mailboxes`,
       );
     });
 
@@ -185,6 +228,7 @@ describe('OAuth exit filters', () => {
 
     expect(res.redirect).not.toHaveBeenCalled();
     expect(res.json).not.toHaveBeenCalled();
+    expect(res.clearCookie).not.toHaveBeenCalled();
   });
 
   describe('over HTTP', () => {
@@ -248,6 +292,9 @@ describe('OAuth exit filters', () => {
         expect(response.status).toBe(HttpStatus.FOUND);
         expect(response.headers.get('location')).toBe(
           `${WEB}/settings?connect_start_result=rate_limited#mailboxes`,
+        );
+        expect(response.headers.get('set-cookie')).toMatch(
+          /^oauth_state=; Path=\/api\/auth\/google; Expires=Thu, 01 Jan 1970/,
         );
       });
     });

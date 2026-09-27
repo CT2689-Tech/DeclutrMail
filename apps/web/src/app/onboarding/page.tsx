@@ -73,16 +73,50 @@ const { color, font, text } = tokens;
  * fires after the completion POST succeeds.
  */
 export default function OnboardingPage() {
+  // Outside the Suspense boundary, so both regions are on screen before a
+  // carried OAuth result fills one (D108; see useCarriedOAuthResult).
+  const carried = useCarriedOAuthResult(useMe().data !== undefined);
   return (
-    <Suspense fallback={null}>
-      <OnboardingFlow />
-      <ToastHost />
-    </Suspense>
+    <>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="oauth-result-status"
+        style={screenReaderOnlyStyle}
+      >
+        {carried?.liveRole === 'status' ? carried.message : ''}
+      </div>
+      <div
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+        data-testid="oauth-result-alert"
+        style={screenReaderOnlyStyle}
+      >
+        {carried?.liveRole === 'alert' ? carried.message : ''}
+      </div>
+      <Suspense fallback={null}>
+        <OnboardingFlow />
+        <ToastHost />
+      </Suspense>
+    </>
   );
 }
 
+const screenReaderOnlyStyle = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
+
 function OnboardingFlow() {
-  useCarriedOAuthResult();
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
   // Exact closed flag, honored only alongside the secondary-mailbox
