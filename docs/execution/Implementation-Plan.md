@@ -10970,8 +10970,9 @@ knew both numbers the whole time.
   late poll cannot shorten it — counted down between batches, and shown
   only once two gaps between batches agree: one gap alone can hold a
   pause. It starts over after a stall against the pace already seen or a
-  hidden tab; a batch far faster than the pace so far means an earlier
-  gap held a pause, and the pace is measured again from there. It is
+  hidden tab; a batch far faster per email than the pace so far means
+  an earlier gap held a pause, and the pace is measured again from there
+  (per email, not per step: a failed read can hide batches in one step). It is
   dropped when batches stop arriving at their usual pace or the estimate
   runs out. Minutes round up; past an hour, to the next five.
 - The title reads "Reading your Gmail…" (on Home too): the count covers
