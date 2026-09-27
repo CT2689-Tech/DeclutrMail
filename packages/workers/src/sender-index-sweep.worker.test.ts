@@ -486,7 +486,7 @@ describe('SenderIndexSweepWorker', () => {
     await seedProtection('stale-star', 'starred');
     // The purge's batch is the first thing to take the lock; fail it.
     let calls = 0;
-    const result = await new SenderIndexSweepWorker({
+    const worker = new SenderIndexSweepWorker({
       db: db as never,
       lock: {
         run: async (_id, fn) => {
@@ -495,7 +495,14 @@ describe('SenderIndexSweepWorker', () => {
           return fn();
         },
       },
-    }).processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
 
     expect(result).toMatchObject({
       nonMailPurgeFailed: 1,
@@ -503,6 +510,11 @@ describe('SenderIndexSweepWorker', () => {
       mailboxesProcessed: 1,
       mailboxesFailed: 0,
     });
+    // Reported, not just counted: the job itself still succeeds.
+    expect(captureBackgroundFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'purge boom' }),
+      expect.objectContaining({ kind: 'sender_index_sweep.non_mail_purge_failed' }),
+    );
     expect((await policyFor('stale-star'))?.isProtected).toBe(false);
     // Not purged this pass; the next one will.
     const drafts = await db

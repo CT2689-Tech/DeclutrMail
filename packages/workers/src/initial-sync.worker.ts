@@ -917,7 +917,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         this.deps.db,
         (purge) => this.deps.db.transaction(purge),
         mailboxAccountId,
-        signal,
+        { signal, outbox: this.deps.outbox },
       );
     } catch (err) {
       signal?.throwIfAborted();

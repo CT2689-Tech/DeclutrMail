@@ -327,6 +327,30 @@ export const MailboxReconnectRequiredPayloadSchema = MailboxSyncFailedPayloadSch
 export type MailboxReconnectRequiredPayload = z.infer<typeof MailboxReconnectRequiredPayloadSchema>;
 
 // ──────────────────────────────────────────────────────────────────────
+// mailbox.non_mail_purged
+// ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Published by the non-mail purge in the same transaction as one batch
+ * of deleted drafts and chat lines. Carries only what the consumers need
+ * to repair their own tables: sender keys and Gmail thread ids, never a
+ * subject, snippet or address (D7/D228). Both lists are bounded by the
+ * purge's 1,000-row batch.
+ */
+export const MailboxNonMailPurgedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    /** ISO-8601 — when the batch ran. Clocks the re-score jobs, so a redelivery dedups. */
+    purgedAt: z.string().datetime(),
+    /** Senders that also have mail, recounted without the deleted rows. */
+    recountedSenderKeys: z.array(z.string().min(1)).max(1_000),
+    /** Threads that held a deleted inbound row: follow-ups to re-check. */
+    threadIds: z.array(z.string().min(1)).max(1_000),
+  })
+  .strict();
+export type MailboxNonMailPurgedPayload = z.infer<typeof MailboxNonMailPurgedPayloadSchema>;
+
+// ──────────────────────────────────────────────────────────────────────
 // mailbox.deleted
 // ──────────────────────────────────────────────────────────────────────
 
@@ -468,6 +492,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_SYNC_FAILED]: MailboxSyncFailedPayloadSchema,
   [TOPICS.MAILBOX_RECONNECT_REQUIRED]: MailboxReconnectRequiredPayloadSchema,
+  [TOPICS.MAILBOX_NON_MAIL_PURGED]: MailboxNonMailPurgedPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayloadSchema,
@@ -487,6 +512,7 @@ export type EventPayloadByTopic = {
   [TOPICS.AUTOPILOT_RULE_ACTIVATED]: AutopilotRuleActivatedPayload;
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
+  [TOPICS.MAILBOX_NON_MAIL_PURGED]: MailboxNonMailPurgedPayload;
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayload;
   [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayload;

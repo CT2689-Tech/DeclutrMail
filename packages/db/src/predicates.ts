@@ -22,7 +22,7 @@
 // enqueue, previews it as-is, and executes the frozen ids — it is
 // internally consistent and expresses direct message-level intent.
 
-import { and, eq, inArray, isNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 import { mailMessages } from './schema/mail-messages';
 import { screenerQuarantine } from './schema/screener-quarantine';
@@ -287,12 +287,14 @@ export const SCREENER_AGE_OUT_DAYS = 30;
 
 /**
  * A Screener entry still awaiting a decision, exactly as the Screener
- * shows it: undecided, and not aged out (`SCREENER_AGE_OUT_DAYS` old with
- * fewer than three messages).
+ * shows it: its sender exists, it is undecided, and it has not aged out
+ * (`SCREENER_AGE_OUT_DAYS` old with fewer than three messages).
  *
- * REQUIRES `senders` joined on `(mailbox_account_id, sender_key)` in the
- * enclosing query. The Screener renders only entries whose sender exists,
- * and the age-out reads `senders.total_received`.
+ * Needs `senders` in the enclosing query, joined on
+ * `(mailbox_account_id, sender_key)`: a query without it fails loudly.
+ * The sender-exists test is part of the predicate, so a LEFT join cannot
+ * count an entry whose sender is gone either (its `total_received` would
+ * be NULL and slip past the age-out).
  *
  * Lives here, not in the API, because the weekly receipt email counts the
  * same queue from a worker. Its hand-written copy had neither the join
@@ -305,6 +307,7 @@ export const SCREENER_AGE_OUT_DAYS = 30;
 export function screenerAwaitingWhere(asOf?: Date): SQL {
   const clock = asOf ? sql`${asOf.toISOString()}::timestamptz` : sql`now()`;
   return and(
+    isNotNull(senders.senderKey),
     isNull(screenerQuarantine.decidedAt),
     sql`NOT (
       ${screenerQuarantine.createdAt} < ${clock} - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval

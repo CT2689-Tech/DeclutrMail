@@ -3,6 +3,7 @@ import {
   followupTracker,
   mailboxAccounts,
   mailMessages,
+  outboxEvents,
   ruleMatchLog,
   screenerQuarantine,
   senderPolicies,
@@ -13,7 +14,8 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { and, eq, sql } from 'drizzle-orm';
+import { TOPICS } from '@declutrmail/events';
+import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -22,12 +24,13 @@ import {
   purgeAllNonMail,
   purgeNonMailMessages,
 } from './non-mail-purge.js';
-import type { OutboxTx } from './outbox-publisher.js';
+import { OutboxPublisher, type OutboxTx } from './outbox-publisher.js';
 import { deriveSenderKey } from './sender-key.js';
 
 /**
- * purgeNonMailMessages — clears stored drafts and chat lines, and the
- * derived state they fed (NON_MAIL_LABELS).
+ * purgeNonMailMessages — clears stored drafts and chat lines, and repairs
+ * the sender index they fed (NON_MAIL_LABELS). Repairs in tables other
+ * features own ride the `mailbox.non_mail_purged` event (D204).
  *
  * Seeds the state the sync workers wrote before the ingest skip: drafts
  * stored as INBOUND mail From the owner (a senders row for the mailbox
@@ -101,19 +104,6 @@ async function seedMessage(
   });
 }
 
-async function seedDecision(db: Db, mb: string, senderKey: string): Promise<void> {
-  await db.insert(triageDecisions).values({
-    mailboxAccountId: mb,
-    senderKey,
-    verdict: 'keep',
-    confidence: '0.95',
-    reasoning: 'Sends 2/mo. You open 100%.',
-    generatedBy: 'template',
-    producedAt: day(12),
-    expiresAt: day(30),
-  });
-}
-
 async function storedIds(db: Db, mb: string): Promise<string[]> {
   const rows = await db
     .select({ id: mailMessages.providerMessageId })
@@ -122,8 +112,18 @@ async function storedIds(db: Db, mb: string): Promise<string[]> {
   return rows.map((r) => r.id).sort();
 }
 
+/** The `mailbox.non_mail_purged` payloads written to the outbox, oldest first. */
+async function purgedEvents(db: Db): Promise<Array<Record<string, unknown>>> {
+  const rows = await db
+    .select({ topic: outboxEvents.topic, payload: outboxEvents.payload })
+    .from(outboxEvents)
+    .where(eq(outboxEvents.topic, TOPICS.MAILBOX_NON_MAIL_PURGED));
+  return rows.map((row) => row.payload as Record<string, unknown>);
+}
+
 describe('purgeNonMailMessages', () => {
   let db: Db;
+  const outbox = new OutboxPublisher();
 
   beforeEach(async () => {
     db = (await freshTestDb()) as unknown as Db;
@@ -150,12 +150,10 @@ describe('purgeNonMailMessages', () => {
       at: day(3),
     });
 
-    // Rows derived from the owner-as-sender.
+    // Rows derived from the owner-as-sender that the sender index owns.
     await db
       .insert(senderTimeseries)
       .values({ mailboxAccountId: mb, senderKey: ownerKey, yearMonth: '2026-03-01', volume: 2 });
-    await seedDecision(db, mb, ownerKey);
-    await db.insert(screenerQuarantine).values({ mailboxAccountId: mb, senderKey: ownerKey });
     const [rule] = await db
       .insert(automationRules)
       .values({
@@ -202,9 +200,20 @@ describe('purgeNonMailMessages', () => {
         protectionSetAt: day(3),
       },
     ]);
-    await db
-      .insert(screenerQuarantine)
-      .values({ mailboxAccountId: mb, senderKey: buddyKey, decidedAt: day(4) });
+    // Owned by Triage and the Screener: left as rows, as a rebuild leaves
+    // them — nothing counts or shows a verdict or entry whose sender is
+    // gone.
+    await db.insert(triageDecisions).values({
+      mailboxAccountId: mb,
+      senderKey: ownerKey,
+      verdict: 'keep',
+      confidence: '0.95',
+      reasoning: 'Sends 2/mo. You open 100%.',
+      generatedBy: 'template',
+      producedAt: day(12),
+      expiresAt: day(30),
+    });
+    await db.insert(screenerQuarantine).values({ mailboxAccountId: mb, senderKey: ownerKey });
 
     // Another mailbox's draft is none of this purge's business.
     await seedSender(db, other.mb, 'other@declutrmail.ai', {
@@ -219,23 +228,13 @@ describe('purgeNonMailMessages', () => {
       at: day(1),
     });
 
-    const result = await purgeNonMailMessages(db, mb);
+    const result = await purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH, outbox);
 
-    expect(result).toEqual({
-      messagesDeleted: 3,
-      sendersDeleted: 2,
-      sendersRecounted: 0,
-      followupsReopened: 0,
-    });
+    expect(result).toEqual({ messagesDeleted: 3, sendersDeleted: 2, sendersRecounted: 0 });
     expect(await storedIds(db, mb)).toEqual([]);
     const senderRows = await db.select({ email: senders.email }).from(senders);
     expect(senderRows.map((r) => r.email)).toEqual(['other@declutrmail.ai']);
     expect(await db.select().from(senderTimeseries)).toEqual([]);
-    expect(await db.select().from(triageDecisions)).toEqual([]);
-    const queue = await db
-      .select({ senderKey: screenerQuarantine.senderKey })
-      .from(screenerQuarantine);
-    expect(queue).toEqual([{ senderKey: buddyKey }]);
     const matches = await db.select({ reason: ruleMatchLog.reason }).from(ruleMatchLog);
     expect(matches).toEqual([{ reason: 'executed' }]);
     const policies = await db
@@ -257,15 +256,25 @@ describe('purgeNonMailMessages', () => {
         },
       ]),
     );
+    expect(await db.select().from(triageDecisions)).toHaveLength(1);
+    expect(await db.select().from(screenerQuarantine)).toHaveLength(1);
     expect(await storedIds(db, other.mb)).toEqual(['draft-x']);
+    // The threads go to the follow-ups owner; no sender was recounted.
+    const [event] = await purgedEvents(db);
+    expect(event).toMatchObject({ mailboxAccountId: mb, recountedSenderKeys: [] });
+    expect([...(event!.threadIds as string[])].sort()).toEqual([
+      'thread-chat-1',
+      'thread-draft-1',
+      'thread-draft-2',
+    ]);
 
-    // Idempotent: a clean mailbox is a no-op.
-    expect(await purgeNonMailMessages(db, mb)).toEqual({
+    // Idempotent: a clean mailbox is a no-op and publishes nothing.
+    expect(await purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH, outbox)).toEqual({
       messagesDeleted: 0,
       sendersDeleted: 0,
       sendersRecounted: 0,
-      followupsReopened: 0,
     });
+    expect(await purgedEvents(db)).toHaveLength(1);
   });
 
   it('recounts a sender that also has real mail, and a SENT chat line stops counting as "you wrote to them"', async () => {
@@ -313,9 +322,7 @@ describe('purgeNonMailMessages', () => {
       at: day(4),
       recipients: ['friend@example.com'],
     });
-    await seedDecision(db, mb, friendKey);
-    // A sender the purge never touched keeps its (deliberately stale)
-    // count and its fresh decision.
+    // A sender the purge never touched keeps its (deliberately stale) count.
     const newsKey = await seedSender(db, mb, 'news@example.com', {
       total: 5,
       first: day(1),
@@ -327,11 +334,10 @@ describe('purgeNonMailMessages', () => {
       labelIds: ['INBOX'],
       at: day(1),
     });
-    await seedDecision(db, mb, newsKey);
 
-    const result = await purgeNonMailMessages(db, mb);
+    const result = await purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH, outbox);
 
-    expect(result).toMatchObject({ messagesDeleted: 3, sendersDeleted: 1, sendersRecounted: 1 });
+    expect(result).toEqual({ messagesDeleted: 3, sendersDeleted: 1, sendersRecounted: 1 });
     expect(await storedIds(db, mb)).toEqual(['mail-1', 'mail-2', 'sent-1']);
     const emails = await db.select({ email: senders.email }).from(senders);
     expect(emails.map((r) => r.email).sort()).toEqual(['friend@example.com', 'news@example.com']);
@@ -350,77 +356,57 @@ describe('purgeNonMailMessages', () => {
         { senderKey: newsKey, total: 5, first: day(1), last: day(1), wroteTo: 0 },
       ]),
     );
-    const decisions = await db
-      .select({
-        senderKey: triageDecisions.senderKey,
-        producedAt: triageDecisions.producedAt,
-        expiresAt: triageDecisions.expiresAt,
-      })
-      .from(triageDecisions);
-    expect(decisions).toEqual(
-      expect.arrayContaining([
-        { senderKey: friendKey, producedAt: day(12), expiresAt: day(12) },
-        { senderKey: newsKey, producedAt: day(12), expiresAt: day(30) },
-      ]),
-    );
+    // Only the recounted sender is handed to Triage for a re-score.
+    const [event] = await purgedEvents(db);
+    expect(event).toMatchObject({ mailboxAccountId: mb, recountedSenderKeys: [friendKey] });
   });
 
-  it('reopens a follow-up a draft marked replied — not one with a real reply, nor a dismissed one', async () => {
+  it('touches no follow-up itself — it names the threads for the follow-ups owner', async () => {
     const { workspaceId, mb } = await seedMailbox(db, OWNER);
-    const tracker = (thread: string, status: 'replied' | 'dismissed') => ({
+    await seedMessage(db, mb, {
+      id: 'sent-t1',
+      from: OWNER,
+      labelIds: ['SENT'],
+      at: day(20),
+      thread: 't1',
+      recipients: ['friend@example.com'],
+    });
+    await seedMessage(db, mb, {
+      id: 'draft-t1',
+      from: OWNER,
+      labelIds: ['DRAFT'],
+      at: day(21),
+      thread: 't1',
+    });
+    await db.insert(followupTracker).values({
       workspaceId,
       mailboxAccountId: mb,
-      providerThreadId: thread,
+      providerThreadId: 't1',
       recipientEmail: 'friend@example.com',
       sentAt: day(20),
-      status,
+      status: 'replied',
     });
-    for (const thread of ['t-draft', 't-real', 't-dismissed']) {
-      await seedMessage(db, mb, {
-        id: `sent-${thread}`,
-        from: OWNER,
-        labelIds: ['SENT'],
-        at: day(20),
-        thread,
-        recipients: ['friend@example.com'],
-      });
-      await seedMessage(db, mb, {
-        id: `draft-${thread}`,
-        from: OWNER,
-        labelIds: ['DRAFT'],
-        at: day(21),
-        thread,
-      });
+
+    await purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH, outbox);
+
+    const [tracker] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(tracker?.status).toBe('replied');
+    const [event] = await purgedEvents(db);
+    expect(event).toMatchObject({ threadIds: ['t1'] });
+  });
+
+  it('warns by name when no outbox is wired, instead of dropping the repairs silently', async () => {
+    const { mb } = await seedMailbox(db, OWNER);
+    await seedSender(db, mb, OWNER, { total: 1, first: day(1), last: day(1) });
+    await seedMessage(db, mb, { id: 'draft-1', from: OWNER, labelIds: ['DRAFT'], at: day(1) });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await purgeNonMailMessages(db, mb);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('non_mail_purge.event_unwired'));
+    } finally {
+      warn.mockRestore();
     }
-    await seedMessage(db, mb, {
-      id: 'reply-t-real',
-      from: 'friend@example.com',
-      labelIds: ['INBOX'],
-      at: day(22),
-      thread: 't-real',
-    });
-    await db
-      .insert(followupTracker)
-      .values([
-        tracker('t-draft', 'replied'),
-        tracker('t-real', 'replied'),
-        tracker('t-dismissed', 'dismissed'),
-      ]);
-
-    const result = await purgeNonMailMessages(db, mb);
-
-    expect(result.followupsReopened).toBe(1);
-    const statuses = await db
-      .select({ thread: followupTracker.providerThreadId, status: followupTracker.status })
-      .from(followupTracker)
-      .where(and(eq(followupTracker.mailboxAccountId, mb)));
-    expect(statuses).toEqual(
-      expect.arrayContaining([
-        { thread: 't-draft', status: 'awaiting' },
-        { thread: 't-real', status: 'replied' },
-        { thread: 't-dismissed', status: 'dismissed' },
-      ]),
-    );
+    expect(await purgedEvents(db)).toEqual([]);
   });
 
   it('converges across batches — the batch that removes a sender’s last line deletes it, once', async () => {
@@ -466,13 +452,12 @@ describe('purgeNonMailMessages', () => {
         return (db as unknown as TxRunner).transaction(purge);
       },
       mb,
-      undefined,
-      2,
+      { limit: 2, outbox },
     );
 
     // 7 lines at 2 a batch: 2 + 2 + 2 + 1, and the short batch ends it.
     expect(batches).toBe(4);
-    expect(result).toMatchObject({ messagesDeleted: 7, sendersDeleted: 2 });
+    expect(result).toMatchObject({ messagesDeleted: 7, sendersDeleted: 2, capped: false });
     expect(await storedIds(db, mb)).toEqual(['mail-1']);
     const rows = await db
       .select({
@@ -483,6 +468,28 @@ describe('purgeNonMailMessages', () => {
       })
       .from(senders);
     expect(rows).toEqual([{ senderKey: friendKey, total: 1, first: day(10), last: day(10) }]);
+  });
+
+  it('stops at maxBatches and says so, leaving the rest for the next run', async () => {
+    const { mb } = await seedMailbox(db, OWNER);
+    await seedSender(db, mb, OWNER, { total: 5, first: day(1), last: day(5) });
+    for (const d of [1, 2, 3, 4, 5]) {
+      await seedMessage(db, mb, { id: `draft-${d}`, from: OWNER, labelIds: ['DRAFT'], at: day(d) });
+    }
+
+    const result = await purgeAllNonMail(
+      db,
+      (purge) => (db as unknown as TxRunner).transaction(purge),
+      mb,
+      {
+        limit: 2,
+        maxBatches: 2,
+        outbox,
+      },
+    );
+
+    expect(result).toMatchObject({ messagesDeleted: 4, capped: true });
+    expect(await storedIds(db, mb)).toEqual(['draft-5']);
   });
 
   it('a clean mailbox costs one probe — no batch, so no lock and no transaction', async () => {
@@ -499,7 +506,7 @@ describe('purgeNonMailMessages', () => {
     const result = await purgeAllNonMail(db, runBatch, mb);
 
     expect(runBatch).not.toHaveBeenCalled();
-    expect(result.messagesDeleted).toBe(0);
+    expect(result).toMatchObject({ messagesDeleted: 0, capped: false });
     expect(await storedIds(db, mb)).toEqual(['mail-1']);
   });
 

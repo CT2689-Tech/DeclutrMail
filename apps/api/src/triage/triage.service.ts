@@ -204,6 +204,9 @@ export class TriageService {
     const [row] = await this.db
       .select({ backlog: count() })
       .from(triageDecisions)
+      // ADR-0008 §3 exception: triage reads the senders-owned `senders`
+      // table, only to require that each verdict's sender exists — the
+      // same join the queue makes. See the ADR's exception table.
       .innerJoin(
         senders,
         and(

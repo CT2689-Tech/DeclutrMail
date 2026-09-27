@@ -1,11 +1,12 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
-import { screenerQuarantine, senderPolicies } from '@declutrmail/db';
+import { followupTracker, mailMessages, screenerQuarantine, senderPolicies } from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotRuleActivatedPayloadSchema,
+  MailboxNonMailPurgedPayloadSchema,
   MailboxSyncFailedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
@@ -16,6 +17,7 @@ import type {
   ActionLabelAppliedPayload,
   ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
+  MailboxNonMailPurgedPayload,
   MailboxSyncFailedPayload,
   MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
@@ -61,6 +63,17 @@ export interface OutboxConsumerDeps {
     eventId: string,
   ) => Promise<void>;
   onMailboxSyncFailed?: (payload: MailboxSyncFailedPayload, eventId: string) => Promise<void>;
+  /**
+   * `mailbox.non_mail_purged` — enqueue a score job per recounted sender
+   * (the ScoreWorker is the only writer of `triage_decisions`).
+   * `producedAtMs` is the purge's clock, so a redelivery dedups by jobId.
+   * Optional: without it the router warns `rescore_unwired`.
+   */
+  rescoreSenders?: (
+    mailboxAccountId: string,
+    senderKeys: readonly string[],
+    producedAtMs: number,
+  ) => Promise<void>;
 }
 
 /**
@@ -223,6 +236,9 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
           ActionsUnsubscribeExecutedPayloadSchema.parse(event.payload),
         );
         return;
+      case TOPICS.MAILBOX_NON_MAIL_PURGED:
+        await handleNonMailPurged(db, deps, MailboxNonMailPurgedPayloadSchema.parse(event.payload));
+        return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
         // to `dispatched` rather than blocking the queue. A future
@@ -334,6 +350,66 @@ async function enqueueAutopilotApply(
  * override stays preserved (a sender can be both "Protect to avoid
  * bulk" + "Unsubscribe requested" until the brand honours it).
  */
+/**
+ * `mailbox.non_mail_purged` — repair, in the features that own them, what
+ * purged drafts and chat lines fed (D204). The purge itself only touches
+ * the sender index.
+ *
+ * Follow-ups: `FollowupCheckWorker.flipReplied` marks a thread replied
+ * once an inbound message follows the user's send, and a draft saved in
+ * the thread counted as one. Reopen a replied row on those threads when
+ * no inbound message after the send is left — `flipReplied`'s own
+ * predicate, negated, over the mail that remains. Only `flipReplied` sets
+ * `replied` (a user can only dismiss), so this undoes no choice of theirs.
+ * Idempotent: a reopened row is `awaiting`, which this never matches.
+ *
+ * Triage: the recounted senders' verdicts quote counts that changed, so
+ * they are re-scored by the ScoreWorker, the only writer of
+ * `triage_decisions`.
+ */
+async function handleNonMailPurged(
+  db: DrizzleDb,
+  deps: OutboxConsumerDeps,
+  payload: MailboxNonMailPurgedPayload,
+): Promise<void> {
+  if (payload.threadIds.length > 0) {
+    await db
+      .update(followupTracker)
+      .set({ status: 'awaiting', updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
+          eq(followupTracker.status, 'replied'),
+          inArray(followupTracker.providerThreadId, payload.threadIds),
+          sql`NOT EXISTS (
+            SELECT 1 FROM ${mailMessages} AS m
+            WHERE m.mailbox_account_id = ${payload.mailboxAccountId}
+              AND m.provider_thread_id = ${sql.raw('"followup_tracker"."provider_thread_id"')}
+              AND m.is_outbound = false
+              AND m.internal_date > ${sql.raw('"followup_tracker"."sent_at"')}
+          )`,
+        ),
+      );
+  }
+  if (payload.recountedSenderKeys.length === 0) return;
+  if (!deps.rescoreSenders) {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'non_mail_purged.rescore_unwired',
+        mailboxAccountId: payload.mailboxAccountId,
+        senders: payload.recountedSenderKeys.length,
+      }),
+    );
+    return;
+  }
+  await deps.rescoreSenders(
+    payload.mailboxAccountId,
+    payload.recountedSenderKeys,
+    Date.parse(payload.purgedAt),
+  );
+}
+
 async function handleUnsubscribeIntentRecorded(
   db: DrizzleDb,
   payload: ActionsUnsubscribeIntentRecordedPayload,

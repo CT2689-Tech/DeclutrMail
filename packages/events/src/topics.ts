@@ -113,6 +113,15 @@ export const TOPICS = {
   MAILBOX_RECONNECT_REQUIRED: 'mailbox.reconnect_required',
 
   /**
+   * Stored drafts and chat lines were deleted from `mail_messages` (the
+   * non-mail purge, `packages/workers/src/non-mail-purge.ts`). Consumers
+   * repair what those rows fed in features the sync pipeline does not
+   * own: Triage re-scores the senders that were recounted, and
+   * Follow-ups reopens a thread a draft had marked replied.
+   */
+  MAILBOX_NON_MAIL_PURGED: 'mailbox.non_mail_purged',
+
+  /**
    * Mailbox was deleted (D232 hard-delete path completed). Consumers:
    * per-mailbox cache evictions (e.g. the worker's
    * `limiterByMailbox: Map<id, RateLimiter>` — FOUNDER-FOLLOWUPS

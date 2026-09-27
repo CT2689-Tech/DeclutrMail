@@ -887,8 +887,9 @@ export class TriageReadService {
     limit: number;
   }): Promise<ProtectionReviewRead> {
     // ADR-0008 §3 exception: triage reads senders-owned
-    // `sender_policies` directly (here and in the weak-keys query
-    // below). Read-only; ratified in the ADR's exception table.
+    // `sender_policies` and `senders` directly (here and in the weak-keys
+    // query below) — `senders` only to require that the protected sender
+    // exists. Read-only; see the ADR's exception table.
     //
     // GROUP BY + TS bucketing rather than three SQL FILTER literals:
     // the literals were a second copy of the reason taxonomy the shared
@@ -945,8 +946,8 @@ export class TriageReadService {
         const holds = evaluateProtectionEvidence({
           isProtected: true,
           reason: 'replied',
-          wroteToCount: Number(row.wroteToCount ?? 0),
-          receivedCount: Number(row.receivedCount ?? 0),
+          wroteToCount: Number(row.wroteToCount),
+          receivedCount: Number(row.receivedCount),
           mailboxHasOutbound,
         });
         // `false` is the ONLY value that surfaces a shield. `null` means

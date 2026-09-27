@@ -7,6 +7,7 @@ import { applyAutomaticProtection } from './automatic-protection.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { purgeAllNonMail } from './non-mail-purge.js';
+import type { OutboxPublisher } from './outbox-publisher.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -15,6 +16,14 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 /** Each transaction batch stays bounded; keyset continuations cover the whole fleet. */
 export const MAILBOX_BATCH_SIZE = 1;
+
+/**
+ * Most non-mail purge batches (of up to `NON_MAIL_PURGE_BATCH` rows) one
+ * run spends on a mailbox. Bounds the purge's share of the cron job's
+ * time so the reconcile after it still runs; a bigger backlog finishes
+ * over later runs (the tick at worker boot, then nightly).
+ */
+export const NON_MAIL_PURGE_SWEEP_BATCHES = 10;
 
 /**
  * Nightly sweep payload. The cron scheduler enqueues one job per tick
@@ -57,8 +66,8 @@ export interface SenderIndexSweepResult {
   nonMailSendersDeleted: number;
   /** Recounts of senders that also have real mail, one per purge batch. */
   nonMailSendersRecounted: number;
-  /** Follow-ups a draft had marked replied, reopened. */
-  nonMailFollowupsReopened: number;
+  /** Mailboxes whose purge stopped at the per-run batch cap; the rest waits for the next run. */
+  nonMailPurgeCapped: number;
   /** Mailboxes whose purge threw. Their reconcile still ran. */
   nonMailPurgeFailed: number;
   /** Wall-clock duration of the whole pass. */
@@ -126,6 +135,12 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       lock: MailboxActionLock;
       statementTimeoutMs?: number;
       enqueueContinuation?: (payload: SenderIndexSweepJobData) => Promise<void>;
+      /**
+       * Publishes `mailbox.non_mail_purged` in each purge batch, so the
+       * features that own verdicts and follow-ups repair them (D204).
+       * Without it the purge still runs and warns `event_unwired`.
+       */
+      outbox?: OutboxPublisher;
     },
   ) {
     super();
@@ -172,7 +187,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
     let nonMailMessagesDeleted = 0;
     let nonMailSendersDeleted = 0;
     let nonMailSendersRecounted = 0;
-    let nonMailFollowupsReopened = 0;
+    let nonMailPurgeCapped = 0;
     let nonMailPurgeFailed = 0;
     const statementTimeout = sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`;
 
@@ -180,9 +195,12 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       ctx.signal?.throwIfAborted();
       // Drafts and chat lines FIRST, so the reconcile below computes from
       // mail only. Each batch takes the lock and a transaction of its own,
-      // so a user action waits for one batch at most. A purge that throws
-      // is logged and counted and the reconcile still runs: the nightly
-      // protection retirement (D245) must not depend on it.
+      // so a user action waits for one batch at most, and a run purges at
+      // most NON_MAIL_PURGE_SWEEP_BATCHES of them so the reconcile keeps
+      // its share of the job's time; a bigger backlog finishes on later
+      // runs. A purge that throws is reported and the reconcile still
+      // runs: the nightly protection retirement (D245) must not depend on
+      // it.
       try {
         const purged = await purgeAllNonMail(
           this.deps.db,
@@ -194,22 +212,32 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
               }),
             ),
           mailboxAccountId,
-          ctx.signal,
+          {
+            signal: ctx.signal,
+            outbox: this.deps.outbox,
+            maxBatches: NON_MAIL_PURGE_SWEEP_BATCHES,
+          },
         );
         nonMailMessagesDeleted += purged.messagesDeleted;
         nonMailSendersDeleted += purged.sendersDeleted;
         nonMailSendersRecounted += purged.sendersRecounted;
-        nonMailFollowupsReopened += purged.followupsReopened;
-      } catch {
+        if (purged.capped) nonMailPurgeCapped += 1;
+      } catch (err) {
         nonMailPurgeFailed += 1;
+        const error = err instanceof Error ? err : new Error(String(err));
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'sender_index_sweep.non_mail_purge_failed',
             worker: this.workerName,
             errorKind: ctx.signal?.aborted ? 'cancelled' : 'purge_failed',
+            errorName: error.name,
           }),
         );
+        this.observer.captureBackgroundFailure(error, {
+          kind: 'sender_index_sweep.non_mail_purge_failed',
+          tags: { worker: this.workerName },
+        });
       }
       try {
         // Same per-mailbox advisory lock the label actions and the
@@ -272,7 +300,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       nonMailMessagesDeleted,
       nonMailSendersDeleted,
       nonMailSendersRecounted,
-      nonMailFollowupsReopened,
+      nonMailPurgeCapped,
       nonMailPurgeFailed,
       durationMs: Date.now() - startedAt,
     };

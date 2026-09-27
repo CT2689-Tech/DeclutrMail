@@ -21,6 +21,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { InitialSyncWorker } from './initial-sync.worker.js';
+import * as nonMailPurge from './non-mail-purge.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
@@ -627,6 +628,88 @@ describe('InitialSyncWorker', () => {
     const ccRow = outboundRows.find((m) => m.providerMessageId === 'sent-0');
     expect(ccRow!.recipientEmails).toEqual(
       expect.arrayContaining(['recipient0@example.com', 'cc@example.com']),
+    );
+  });
+
+  it('a re-sync purges draft rows stored before the ingest skip, before the rebuild folds them', async () => {
+    // A draft Gmail still lists, stored (with the owner-as-sender it
+    // built) by the old ingest. The resume keeps stored rows, so only the
+    // purge stands between it and the rebuild.
+    const ownerKey = deriveSenderKey('owner@declutrmail.ai');
+    await db.insert(senders).values({
+      id: deriveSenderId(mailboxAccountId, ownerKey),
+      mailboxAccountId,
+      senderKey: ownerKey,
+      email: 'owner@declutrmail.ai',
+      domain: 'declutrmail.ai',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(Date.UTC(2026, 0, 5)),
+      lastSeenAt: new Date(Date.UTC(2026, 0, 5)),
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'legacy-draft',
+      providerThreadId: 'thread-legacy-draft',
+      senderKey: ownerKey,
+      internalDate: new Date(Date.UTC(2026, 0, 5)),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    const draft: GmailMessageMetadata = {
+      id: 'legacy-draft',
+      threadId: 'thread-legacy-draft',
+      labelIds: ['DRAFT'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 0, 5)),
+      from: 'Owner <owner@declutrmail.ai>',
+      subject: '',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    };
+    const client = new FakeGmailClient([...makeMessages(4, 2), draft]);
+
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
+    expect(stored.map((r) => r.id)).not.toContain('legacy-draft');
+    const emails = await db.select({ email: senders.email }).from(senders);
+    expect(emails.map((r) => r.email)).not.toContain('owner@declutrmail.ai');
+  });
+
+  it('a failed purge is reported and the sync still completes', async () => {
+    const spy = vi
+      .spyOn(nonMailPurge, 'purgeAllNonMail')
+      .mockRejectedValueOnce(new Error('purge boom'));
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+    try {
+      await worker.processJob({ mailboxAccountId }, CTX);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state?.readinessStatus).toBe('ready');
+    expect(captureBackgroundFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'purge boom' }),
+      expect.objectContaining({ kind: 'sync.non_mail_purge_failed' }),
     );
   });
 
