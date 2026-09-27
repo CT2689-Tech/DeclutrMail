@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { composeTriageState } from './compose-state';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 
 const base = {
   rows: undefined,

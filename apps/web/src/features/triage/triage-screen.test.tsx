@@ -18,14 +18,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { Me } from '@/features/auth/api/me-contract';
+import { type TriageScreenState } from './data';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
   TRIAGE_SESSION_STATS_FREE,
   TRIAGE_SESSION_STATS_PRO,
   TRIAGE_SESSION_STATS_QUIET,
-  type TriageScreenState,
-} from './data';
+} from './fixtures';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
