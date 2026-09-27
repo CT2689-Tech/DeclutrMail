@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { tokens, toast } from '@declutrmail/shared';
 
@@ -14,7 +15,15 @@ import { startMailboxConnect, startMailboxReactivation } from './connect-mailbox
 import { useDeleteMailboxIndexedData } from './api/use-delete-mailbox-indexed-data';
 import { useDisconnectMailbox } from './api/use-disconnect-mailbox';
 import { useSetActiveMailbox } from './api/use-set-active-mailbox';
-import { MailboxDataControlsDialog } from './mailbox-data-controls-dialog';
+import { loadMailboxDataControls } from './load-mailbox-data-controls';
+
+// The dialog lists what disconnect and deletion remove from the whole Gmail
+// data inventory. Loaded on demand: imported here, that registry rode every
+// signed-in route's first load for a dialog few people open.
+const MailboxDataControlsDialog = dynamic(
+  () => loadMailboxDataControls().then((m) => m.MailboxDataControlsDialog),
+  { ssr: false },
+);
 
 const { color, font, motion, radius, shadow, text } = tokens;
 
@@ -38,6 +47,14 @@ const { color, font, motion, radius, shadow, text } = tokens;
 export function AccountMenu() {
   const { me } = useAuth();
   const [open, setOpen] = useState(false);
+
+  // Fetch the data dialog while the menu is open, before its button is
+  // pressed: on a slow connection a disconnect/delete control that showed
+  // nothing for a moment would read as a dead click. A failed prefetch
+  // changes nothing — the dialog's own load runs again on the click.
+  useEffect(() => {
+    if (open) loadMailboxDataControls().catch(() => undefined);
+  }, [open]);
   const [managedMailboxId, setManagedMailboxId] = useState<string | null>(null);
   const [dataControlsError, setDataControlsError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
@@ -496,55 +513,57 @@ export function AccountMenu() {
           </div>
         </div>
       )}
-      <MailboxDataControlsDialog
-        mailbox={managedMailbox}
-        onCancel={() => {
-          setManagedMailboxId(null);
-          setDataControlsError(null);
-        }}
-        onDisconnect={() => {
-          if (!managedMailbox) return;
-          setDataControlsError(null);
-          disconnect.mutate(managedMailbox.id, {
-            onSuccess: () => {
-              setManagedMailboxId(null);
-              toast(
-                `Disconnected ${managedMailbox.email}. DeclutrMail history was kept; Gmail is unchanged.`,
-                'success',
-              );
-            },
-            onError: () => {
-              setDataControlsError(
-                `Could not disconnect ${managedMailbox.email}. Nothing was deleted; try again.`,
-              );
-            },
-          });
-        }}
-        onDeleteIndexedData={(confirmPhrase) => {
-          if (!managedMailbox) return;
-          setDataControlsError(null);
-          deleteIndexedData.mutate(
-            { mailboxId: managedMailbox.id, confirmPhrase },
-            {
+      {managedMailbox && (
+        <MailboxDataControlsDialog
+          mailbox={managedMailbox}
+          onCancel={() => {
+            setManagedMailboxId(null);
+            setDataControlsError(null);
+          }}
+          onDisconnect={() => {
+            if (!managedMailbox) return;
+            setDataControlsError(null);
+            disconnect.mutate(managedMailbox.id, {
               onSuccess: () => {
                 setManagedMailboxId(null);
                 toast(
-                  `Disconnected ${managedMailbox.email}. Saved-data deletion started; Gmail is unchanged.`,
+                  `Disconnected ${managedMailbox.email}. DeclutrMail history was kept; Gmail is unchanged.`,
                   'success',
                 );
               },
               onError: () => {
                 setDataControlsError(
-                  `Could not start deleting saved data for ${managedMailbox.email}. Nothing was deleted; try again.`,
+                  `Could not disconnect ${managedMailbox.email}. Nothing was deleted; try again.`,
                 );
               },
-            },
-          );
-        }}
-        isDisconnecting={disconnect.isPending}
-        isDeleting={deleteIndexedData.isPending}
-        error={dataControlsError}
-      />
+            });
+          }}
+          onDeleteIndexedData={(confirmPhrase) => {
+            if (!managedMailbox) return;
+            setDataControlsError(null);
+            deleteIndexedData.mutate(
+              { mailboxId: managedMailbox.id, confirmPhrase },
+              {
+                onSuccess: () => {
+                  setManagedMailboxId(null);
+                  toast(
+                    `Disconnected ${managedMailbox.email}. Saved-data deletion started; Gmail is unchanged.`,
+                    'success',
+                  );
+                },
+                onError: () => {
+                  setDataControlsError(
+                    `Could not start deleting saved data for ${managedMailbox.email}. Nothing was deleted; try again.`,
+                  );
+                },
+              },
+            );
+          }}
+          isDisconnecting={disconnect.isPending}
+          isDeleting={deleteIndexedData.isPending}
+          error={dataControlsError}
+        />
+      )}
     </div>
   );
 }
