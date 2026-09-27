@@ -25,7 +25,11 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { applyAutomaticProtection } from './automatic-protection.js';
+import {
+  applyAutomaticProtection,
+  logProtectionReleases,
+  type AutomaticProtectionResult,
+} from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import {
   markDecisionsStale,
@@ -1022,6 +1026,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Gmail is read BEFORE the rebuild transaction opens: no network call
     // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
     const labels = await listMailboxLabels(client);
+    let released: AutomaticProtectionResult['released'] = [];
     await this.deps.db.transaction(async (tx) => {
       signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
@@ -1208,9 +1213,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       await reconcileSenderTimeseries(tx, mailboxAccountId);
 
       signal?.throwIfAborted();
-      await applyAutomaticProtection(tx, mailboxAccountId);
+      released = (await applyAutomaticProtection(tx, mailboxAccountId)).released;
       signal?.throwIfAborted();
     });
+    // After the commit, so the line never claims a release that rolled back.
+    logProtectionReleases(this.workerName, mailboxAccountId, released);
 
     if (orphans > 0) {
       // Should be 0 after a complete run — surfaced, never swallowed.

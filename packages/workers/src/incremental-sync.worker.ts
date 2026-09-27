@@ -12,7 +12,11 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { applyAutomaticProtection } from './automatic-protection.js';
+import {
+  applyAutomaticProtection,
+  logProtectionReleases,
+  type AutomaticProtectionResult,
+} from './automatic-protection.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { listMailboxLabels, syncMailboxLabels, type MailboxLabel } from './mailbox-label-sync.js';
@@ -1403,6 +1407,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       protectionSenderKeys: readonly string[];
     },
   ): Promise<void> {
+    let released: AutomaticProtectionResult['released'] = [];
     await this.deps.db.transaction(async (tx) => {
       // Label names BEFORE the counter reconcile: the read-rate
       // numerator excludes messages carrying a known sweeper's label
@@ -1482,10 +1487,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // Reconciled nightly by `SenderIndexSweepWorker`, not here: the
       // recompute is two full-mailbox passes and this method runs on
       // every Pub/Sub push.
-      await applyAutomaticProtection(tx, mailboxAccountId, {
-        senderKeys: opts.protectionSenderKeys,
-      });
+      released = (
+        await applyAutomaticProtection(tx, mailboxAccountId, {
+          senderKeys: opts.protectionSenderKeys,
+        })
+      ).released;
     });
+    // After the commit, so the line never claims a release that rolled back.
+    logProtectionReleases(this.workerName, mailboxAccountId, released);
   }
 
   /**

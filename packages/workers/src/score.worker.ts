@@ -176,7 +176,7 @@ export type ScoreTrigger =
  */
 export interface ScoreJobData {
   mailboxAccountId: string;
-  /** If set, score just this sender. If unset, score every active sender. */
+  /** If set, score just this sender. If unset (and no `senderKeys`), score every active sender. */
   senderKey?: string;
   /**
    * If set (and `senderKey` is not), score exactly these senders — the
@@ -739,7 +739,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // an empty mailbox on the ops line, and it is how a broken sweep
     // stays broken.
     if (senderKeys.length > 0 && sendersFailed === senderKeys.length) {
-      throw new Error(`score sweep failed for all ${senderKeys.length} senders in the mailbox`);
+      throw new Error(`score run failed for all ${senderKeys.length} senders it was given`);
     }
 
     // The sentences, after the verdicts. "First" is a position in the

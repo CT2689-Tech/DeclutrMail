@@ -1447,6 +1447,57 @@ describe('InitialSyncWorker', () => {
       );
     });
 
+    it('a rescan that withdraws a protection logs it after the commit, by count only', async () => {
+      const fixture = makeLabeledSender(24, [['INBOX', 'STARRED'], ['INBOX']]);
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+      const senderKey = deriveSenderKey('sender24@example.com');
+      const policyOf = async () =>
+        (
+          await db
+            .select({
+              isProtected: schema.senderPolicies.isProtected,
+              reason: schema.senderPolicies.protectionReason,
+            })
+            .from(schema.senderPolicies)
+            .where(eq(schema.senderPolicies.senderKey, senderKey))
+        )[0];
+      expect(await policyOf()).toEqual({ isProtected: true, reason: 'starred' });
+
+      // The starred message is gone from Gmail; the rescan reconciles it out.
+      await resetToQueued(db, mailboxAccountId);
+      const lines: string[] = [];
+      const spy = vi.spyOn(console, 'log').mockImplementation((l: unknown) => {
+        lines.push(String(l));
+      });
+      try {
+        await new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(fixture.slice(1))),
+        }).processJob({ mailboxAccountId }, CTX);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect((await policyOf())?.isProtected).toBe(false);
+      const released = lines
+        .flatMap((l) => {
+          try {
+            return [JSON.parse(l) as Record<string, unknown>];
+          } catch {
+            return [];
+          }
+        })
+        .find((l) => l.kind === 'automatic_protection.released');
+      expect(released).toMatchObject({
+        worker: 'InitialSyncWorker',
+        released: 1,
+        byReason: { starred: 1 },
+      });
+    });
+
     it('sweep withdraws importance-only protection from non-Primary senders (self-heals stale rows)', async () => {
       // A stale worker (or the pre-gate rule) may have protected a
       // promotions sender on importance alone. The sweep reconciles:

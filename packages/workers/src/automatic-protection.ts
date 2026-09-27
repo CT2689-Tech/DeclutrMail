@@ -1,6 +1,7 @@
 import { mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import { sql } from 'drizzle-orm';
 
+import { telemetryReference } from './base-declutr-worker.js';
 import { rowsOf } from './gmail-category.js';
 import type { OutboxTx } from './outbox-publisher.js';
 import { sqlTextArray } from './sql-text-array.js';
@@ -24,11 +25,40 @@ export interface AutomaticProtectionScope {
 /**
  * What a pass withdrew: automatic protections it demoted and did NOT
  * restore under a current reason (a reason correction — star aged out,
- * now `replied` — is not a release). Returned so the caller can count
- * and log a withdrawn safety state instead of it happening silently.
+ * now `replied` — is not a release). Returned so every caller logs a
+ * withdrawn safety state (`logProtectionReleases`) instead of it
+ * happening silently.
  */
 export interface AutomaticProtectionResult {
   released: Array<{ senderKey: string; priorReason: string }>;
+}
+
+/**
+ * One line for a pass that withdrew automatic protections, counted by the
+ * reason each had: a release re-exposes senders to bulk and automatic
+ * actions. Call it AFTER the transaction that ran the pass commits —
+ * logged before, a rollback would leave a line claiming a release that
+ * never happened. Counts only: no sender identity leaves the process.
+ */
+export function logProtectionReleases(
+  worker: string,
+  mailboxAccountId: string,
+  released: AutomaticProtectionResult['released'],
+): void {
+  if (released.length === 0) return;
+  const byReason: Record<string, number> = {};
+  for (const r of released) byReason[r.priorReason] = (byReason[r.priorReason] ?? 0) + 1;
+  console.log(
+    JSON.stringify({
+      severity: 'INFO',
+      level: 'info',
+      kind: 'automatic_protection.released',
+      worker,
+      mailboxRef: telemetryReference(mailboxAccountId),
+      released: released.length,
+      byReason,
+    }),
+  );
 }
 
 /**

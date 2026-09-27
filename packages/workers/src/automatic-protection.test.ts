@@ -2,9 +2,9 @@ import { mailMessages, schema, senderPolicies, senders } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { applyAutomaticProtection } from './automatic-protection.js';
+import { applyAutomaticProtection, logProtectionReleases } from './automatic-protection.js';
 
 /**
  * Auto-protection rules, tested directly (D245 §2.6).
@@ -307,5 +307,32 @@ describe('applyAutomaticProtection', () => {
 
       expect((await sweep()).get('split-new')).toBeUndefined();
     });
+  });
+
+  it('logs one line of counts by prior reason per pass that withdrew anything', () => {
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((l: unknown) => {
+      lines.push(String(l));
+    });
+    try {
+      logProtectionReleases('W', mailboxId, []);
+      logProtectionReleases('W', mailboxId, [
+        { senderKey: 'key-a', priorReason: 'starred' },
+        { senderKey: 'key-b', priorReason: 'starred' },
+        { senderKey: 'key-c', priorReason: 'gmail_important' },
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({
+      kind: 'automatic_protection.released',
+      worker: 'W',
+      released: 3,
+      byReason: { starred: 2, gmail_important: 1 },
+    });
+    expect(lines[0]).not.toMatch(/key-|senderKey/);
+    expect(lines[0]).not.toContain(mailboxId);
   });
 });
