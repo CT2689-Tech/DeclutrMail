@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  isNonMail,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -30,6 +31,7 @@ import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
+import { purgeAllNonMail } from './non-mail-purge.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -819,7 +821,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         }
         const row = this.toMessageRow(mailboxAccountId, meta);
         if (!row) {
-          continue; // unparseable sender — cannot be keyed; skip.
+          continue; // not mail, or an unparseable sender that cannot be keyed.
         }
         pendingMessages.push(row.message);
         // Outbound messages still land in `mail_messages` (for future
@@ -902,6 +904,39 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     client: GmailMetadataClient,
     signal?: AbortSignal,
   ): Promise<number> {
+    // Drafts and chat lines stored before ingest skipped them are still
+    // listed by Gmail, so the resume above kept them. The fold below must
+    // not see them, and the teardown below would leave their senders'
+    // decisions and Screener entries behind.
+    //
+    // A failed purge must not fail the sync — a mailbox would sit behind
+    // the onboarding gate over a cleanup. It is logged and reported, the
+    // index is built as before, and the nightly sweep purges again.
+    try {
+      await purgeAllNonMail(
+        this.deps.db,
+        (purge) => this.deps.db.transaction(purge),
+        mailboxAccountId,
+        signal,
+      );
+    } catch (err) {
+      signal?.throwIfAborted();
+      const purgeError = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sync.non_mail_purge_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          message: purgeError.message,
+        }),
+      );
+      this.observer.captureBackgroundFailure(purgeError, {
+        kind: 'sync.non_mail_purge_failed',
+        tags: { worker: this.workerName },
+      });
+    }
+    signal?.throwIfAborted();
     // Sender identity (email/name/domain) was written during fetch.
     const identityRows = await this.deps.db
       .select({
@@ -1241,13 +1276,20 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
 
   /**
    * Build a `mail_messages` row + the parsed sender facts from one
-   * message's metadata. Returns `null` when the `From` header carries no
-   * usable address.
+   * message's metadata. Returns `null` when the message is not mail (a
+   * draft or a chat line, `NON_MAIL_LABELS`) or the `From` header carries
+   * no usable address.
    */
   private toMessageRow(
     mailboxAccountId: string,
     meta: GmailMessageMetadata,
   ): { message: NewMailMessage; senderKey: string; facts: ParsedFacts } | null {
+    // Skipped after the fetch, not at listing: the listing is the
+    // reconcile set, and filtering it would delete stored mail it omits.
+    // Never stored, so a resumed sync fetches these again.
+    if (isNonMail(meta.labelIds)) {
+      return null;
+    }
     const parsed = parseFromHeader(meta.from);
     if (!parsed) {
       return null;

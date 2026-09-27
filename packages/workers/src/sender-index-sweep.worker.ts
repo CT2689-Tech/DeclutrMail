@@ -6,6 +6,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { MailboxActionLock } from './label-action.worker.js';
+import { purgeAllNonMail } from './non-mail-purge.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -50,6 +51,16 @@ export interface SenderIndexSweepResult {
   timeseriesCorrected: number;
   /** Sender-months whose messages are all gone, zeroed rather than deleted. */
   timeseriesZeroed: number;
+  /** Stored drafts and chat lines deleted (`purgeNonMailMessages`). */
+  nonMailMessagesDeleted: number;
+  /** Senders that existed only because of those rows, deleted. */
+  nonMailSendersDeleted: number;
+  /** Recounts of senders that also have real mail, one per purge batch. */
+  nonMailSendersRecounted: number;
+  /** Follow-ups a draft had marked replied, reopened. */
+  nonMailFollowupsReopened: number;
+  /** Mailboxes whose purge threw. Their reconcile still ran. */
+  nonMailPurgeFailed: number;
   /** Wall-clock duration of the whole pass. */
   durationMs: number;
 }
@@ -83,6 +94,11 @@ export interface SenderIndexSweepResult {
  * Dropping this cron would leave protections pinned to expired
  * evidence: a sender the product says is protected "because you starred
  * it" whose star is two years old. D245 requires the reason be true.
+ *
+ * It also runs `purgeNonMailMessages` first in each mailbox: drafts and
+ * chat lines stored before ingest learned to skip them, or by an old
+ * worker in the minutes before a deploy went live. The tick enqueued at
+ * worker boot makes that pass land right after a deploy.
  *
  * ## Policy and isolation
  *
@@ -153,9 +169,48 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
     let mailboxesFailed = 0;
     let timeseriesCorrected = 0;
     let timeseriesZeroed = 0;
+    let nonMailMessagesDeleted = 0;
+    let nonMailSendersDeleted = 0;
+    let nonMailSendersRecounted = 0;
+    let nonMailFollowupsReopened = 0;
+    let nonMailPurgeFailed = 0;
+    const statementTimeout = sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`;
 
     for (const { id: mailboxAccountId } of mailboxes) {
       ctx.signal?.throwIfAborted();
+      // Drafts and chat lines FIRST, so the reconcile below computes from
+      // mail only. Each batch takes the lock and a transaction of its own,
+      // so a user action waits for one batch at most. A purge that throws
+      // is logged and counted and the reconcile still runs: the nightly
+      // protection retirement (D245) must not depend on it.
+      try {
+        const purged = await purgeAllNonMail(
+          this.deps.db,
+          (purge) =>
+            this.deps.lock.run(mailboxAccountId, () =>
+              this.deps.db.transaction(async (tx) => {
+                await tx.execute(statementTimeout);
+                return purge(tx);
+              }),
+            ),
+          mailboxAccountId,
+          ctx.signal,
+        );
+        nonMailMessagesDeleted += purged.messagesDeleted;
+        nonMailSendersDeleted += purged.sendersDeleted;
+        nonMailSendersRecounted += purged.sendersRecounted;
+        nonMailFollowupsReopened += purged.followupsReopened;
+      } catch {
+        nonMailPurgeFailed += 1;
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'sender_index_sweep.non_mail_purge_failed',
+            worker: this.workerName,
+            errorKind: ctx.signal?.aborted ? 'cancelled' : 'purge_failed',
+          }),
+        );
+      }
       try {
         // Same per-mailbox advisory lock the label actions and the
         // incremental sync take. Neither recompute mutates Gmail and
@@ -167,9 +222,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
           ctx.signal?.throwIfAborted();
           await this.deps.db.transaction(async (tx) => {
             // SET LOCAL disappears at transaction end and works through transaction pooling.
-            await tx.execute(
-              sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`,
-            );
+            await tx.execute(statementTimeout);
             ctx.signal?.throwIfAborted();
             const reconciled = await reconcileSenderTimeseries(tx, mailboxAccountId);
             ctx.signal?.throwIfAborted();
@@ -216,6 +269,11 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       timeseriesCorrected,
       timeseriesZeroed,
+      nonMailMessagesDeleted,
+      nonMailSendersDeleted,
+      nonMailSendersRecounted,
+      nonMailFollowupsReopened,
+      nonMailPurgeFailed,
       durationMs: Date.now() - startedAt,
     };
   }

@@ -43,12 +43,51 @@ import { mailMessages } from './schema/mail-messages';
 export type SenderActionReach = 'inbox_only' | 'all_mail';
 
 /**
+ * Gmail labels that mark an item as NOT MAIL: an unsent draft, or a
+ * saved chat line. Gmail lists both beside real mail, but a draft was
+ * never sent and a chat line was never an email, so neither is mail
+ * from a sender nor mail the user wrote to one.
+ *
+ * The sync workers never store them (`isNonMail`), and
+ * `SenderIndexSweepWorker` purges any row that predates that rule.
+ * Before it, drafts landed as INBOUND mail From the user — a sender row
+ * for the mailbox owner, scored and carded — and 2007–2014 chat logs
+ * counted as email (790 rows and 23 chat-only senders on the founder's
+ * mailbox, 2026-09-26).
+ *
+ * Skipping drafts loses nothing, by Gmail's own contract: sending a
+ * draft deletes it and creates a NEW message with the SENT label, and a
+ * draft can carry no label but DRAFT
+ * (developers.google.com/workspace/gmail/api/guides/drafts). No stored
+ * row ever has to turn from draft into mail.
+ */
+export const NON_MAIL_LABELS = ['DRAFT', 'CHAT'] as const;
+
+/** Whether a message's labels mark it as not mail — see `NON_MAIL_LABELS`. */
+export function isNonMail(labelIds: readonly string[]): boolean {
+  return NON_MAIL_LABELS.some((label) => labelIds.includes(label));
+}
+
+/**
+ * SQL form of `isNonMail` over `mail_messages.label_ids`.
+ *
+ * The same predicate as `mail_messages_non_mail_idx` (migration 0080),
+ * which holds only non-mail rows and so is empty on a clean mailbox.
+ * Tests pin both to `NON_MAIL_LABELS` and check the purge is planned on
+ * that index.
+ */
+export function nonMailRowWhere(): SQL {
+  const literal = `ARRAY[${NON_MAIL_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`;
+  return sql`${mailMessages.labelIds} && ${sql.raw(literal)}`;
+}
+
+/**
  * Labels `all_mail` must never touch. TRASH/SPAM are already on their
  * way out or never wanted; DRAFT/CHAT are not "mail from this sender"
  * in any user's mental model. Kept as one array so the predicate and
  * its tests share the exact list.
  */
-export const ALL_MAIL_EXCLUDED_LABELS = ['TRASH', 'SPAM', 'DRAFT', 'CHAT'] as const;
+export const ALL_MAIL_EXCLUDED_LABELS = ['TRASH', 'SPAM', ...NON_MAIL_LABELS] as const;
 
 export interface SenderInboxActionScope {
   mailboxAccountId: string;

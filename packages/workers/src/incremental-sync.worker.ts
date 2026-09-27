@@ -1,5 +1,6 @@
 import {
   deriveSenderId,
+  isNonMail,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -15,6 +16,7 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
+import { recomputeWroteToCount } from './wrote-to-count.js';
 import { listMailboxLabels, syncMailboxLabels, type MailboxLabel } from './mailbox-label-sync.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import {
@@ -534,7 +536,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       const labels = events.length > 0 ? (listedLabels ??= await listMailboxLabels(client)) : null;
       const unreadableBefore = client.unreadableMessageCount ?? 0;
       const addedIds = [
-        ...new Set(events.filter((ev) => ev.kind === 'added').map((ev) => ev.messageId)),
+        ...new Set(
+          events
+            .filter((ev) => ev.kind === 'added' && !isNonMail(ev.labelIds))
+            .map((ev) => ev.messageId),
+        ),
       ].slice(0, 500);
       // Single arrivals retain the one-request path. Bursts add two profile
       // reads; refresh labels only when history changed during prefetch.
@@ -714,6 +720,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             case 'added': {
               await flushLabelRun();
               await flushDeleteRun();
+              // A draft or a chat line is not mail (NON_MAIL_LABELS). Skipped
+              // on the labels history already carries, with no metadata
+              // fetch: every draft autosave is a new message id. A record
+              // with no labels is caught after the fetch instead.
+              if (isNonMail(ev.labelIds)) break;
               if (!metadata.has(ev.messageId) || !countedPrefetched.has(ev.messageId))
                 addAttempts += 1;
               countedPrefetched.add(ev.messageId);
@@ -1054,6 +1065,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // 404 — the message was deleted between the history record and
       // the get. The `messagesDeleted` event will arrive (or already
       // did) on a later history record; nothing to write here.
+      return {
+        inserted: false,
+        firstSeenSenderKey: null,
+        touchedSenderKey: null,
+        outboundRecipients: null,
+      };
+    }
+    if (isNonMail(meta.labelIds)) {
       return {
         inserted: false,
         firstSeenSenderKey: null,
@@ -1429,61 +1448,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           }),
         );
       }
-      // Wrote-to attribution post-pass (mig 0063, F010). Counts DISTINCT
-      // outbound `mail_messages.id` ADDRESSED to each sender —
-      // `recipient_emails` (To + Cc) matched against `senders.email` on
-      // the D12 normalized form. Same statement as 0063's backfill, so
-      // the migration, the initial sync and the incremental sync all
-      // converge on one derived state.
-      //
-      // Zero FIRST. The rule credits strictly fewer senders than the
-      // thread-membership join it replaces, so a sender that loses all
-      // its evidence must fall to 0; an `UPDATE ... FROM` alone never
-      // reaches a row with no matching group and would leave the stale
-      // count standing forever.
-      // Gated on `recomputeAttribution` — see the call site for why a
-      // label-only push cannot move this number. Both statements are
-      // inside the gate: running the zero-first pass WITHOUT the
-      // recompute would blank every count in the mailbox.
-      //
-      // Scoped to the senders this batch can move. A full-mailbox zero
-      // was the 4.5s / 1 GB production cost: every incremental push
-      // rewrote every sender row, then seq-scanned mail_messages to
-      // rebuild. Initial sync still does that once; this path must not.
-      if (opts.attributionSenderKeys.length > 0) {
-        const scopedKeys = opts.attributionSenderKeys;
-        if (scopedKeys.length > 0) {
-          const keyArray = sqlTextArray(scopedKeys);
-          await tx.execute(sql`
-            UPDATE ${senders} AS s
-            SET ${sql.identifier('wrote_to_count')} = 0
-            WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-              AND s.${sql.identifier('sender_key')} = ANY(${keyArray})
-              AND s.${sql.identifier('wrote_to_count')} <> 0
-          `);
-          await tx.execute(sql`
-            UPDATE ${senders} AS s
-            SET ${sql.identifier('wrote_to_count')} = sub.cnt
-            FROM (
-              SELECT
-                m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-                s2.${sql.identifier('sender_key')} AS sender_key,
-                COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
-              FROM ${mailMessages} AS m
-              CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
-              JOIN ${senders} AS s2
-                ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
-               AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
-               AND s2.${sql.identifier('sender_key')} = ANY(${keyArray})
-              WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-                AND m.${sql.identifier('is_outbound')} = true
-              GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
-            ) AS sub
-            WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
-              AND s.${sql.identifier('sender_key')} = sub.sender_key
-          `);
-        }
-      }
+      // Wrote-to attribution post-pass (mig 0063, F010), scoped to the
+      // senders this batch can move — see the call site for why a
+      // label-only push cannot move this number. Empty = nothing to do.
+      await recomputeWroteToCount(tx, mailboxAccountId, opts.attributionSenderKeys);
 
       // `volume` / `read_count` are derived, not accumulated — a message
       // read after it was indexed arrives here as a label change, never
@@ -1531,22 +1499,6 @@ function startOfMonthISO(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}-01`;
-}
-
-/**
- * Bound text[] literal. Drizzle interpolating a JS string[] as
- * `ANY(${keys})` expands to a ROW `($1,$2)`, which Postgres rejects
- * (triage.read-service.ts, Codex smoke 2026-05-27). `sql.join` emits
- * `ARRAY[$1, $2, …]::text[]`.
- */
-function sqlTextArray(values: readonly string[]) {
-  if (values.length === 0) {
-    return sql`ARRAY[]::text[]`;
-  }
-  return sql`ARRAY[${sql.join(
-    values.map((value) => sql`${value}`),
-    sql`, `,
-  )}]::text[]`;
 }
 
 /**

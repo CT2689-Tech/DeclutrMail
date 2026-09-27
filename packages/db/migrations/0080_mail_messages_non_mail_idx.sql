@@ -1,0 +1,43 @@
+-- atlas:txmode none
+-- 0080_mail_messages_non_mail_idx.sql
+--
+-- Partial index over the rows the sync workers no longer store: Gmail
+-- drafts and chat lines (`NON_MAIL_LABELS`, packages/db/src/predicates.ts).
+-- Additive: no column, no data change, no Gmail field (D7, D228 unaffected).
+--
+-- WHY. Both sync workers stored every message Gmail listed and derived
+-- direction from SENT alone. A draft carries only DRAFT, so it landed as
+-- INBOUND mail From the mailbox owner: a senders row for the owner, scored
+-- and carded. On the dev database (2026-09-26) one mailbox's row for its
+-- own address was built from 4 drafts and scored Keep at 95%, and chat
+-- lines counted as email: 790 rows and 23 chat-only senders on the
+-- founder's mailbox. Ingest now skips both, and `purgeNonMailMessages`,
+-- run per mailbox by SenderIndexSweepWorker (at worker boot, then nightly),
+-- deletes the rows stored before that and repairs what they fed.
+--
+-- THE PURGE, NOT THIS FILE, DELETES DATA, and it lives in worker code on
+-- purpose. `migration-apply.yml` applies on merge, 10-20 minutes before the
+-- deploy, so an old worker still ingesting drafts in that window would
+-- re-create rows a one-shot SQL delete had already passed over.
+--
+-- WHY AN INDEX. Nothing indexes `label_ids` (0070 explains why GIN cannot
+-- serve these predicates). Without an index the purge's DELETE reads every
+-- row of a mailbox every night to find none. With it, the purge probes an
+-- index that holds only non-mail rows: the first run touches exactly the
+-- rows it deletes, and every run after probes an empty index. The
+-- predicate is spelled exactly as `nonMailRowWhere()` emits it, so the
+-- planner can prove the implication; a test pins both to NON_MAIL_LABELS.
+--
+-- WRITE COST. Each INSERT/UPDATE evaluates the predicate, an overlap test
+-- against a two-element constant. Once purged the index holds no entries,
+-- because ingest never writes a matching row. `label_ids` already sits in
+-- 0070's predicate, so no HOT update is lost here that was not already.
+--
+-- CONCURRENTLY because mail_messages is live: the build reads the table
+-- once without blocking writes. No IF NOT EXISTS, matching 0070: a leftover
+-- INVALID index from a failed concurrent build must fail loudly on retry.
+-- Recovery is the rollback, then re-apply.
+
+CREATE INDEX CONCURRENTLY "mail_messages_non_mail_idx"
+  ON "mail_messages" USING btree ("mailbox_account_id")
+  WHERE "label_ids" && ARRAY['DRAFT','CHAT']::text[];

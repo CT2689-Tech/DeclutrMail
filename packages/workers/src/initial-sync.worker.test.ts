@@ -630,6 +630,71 @@ describe('InitialSyncWorker', () => {
     );
   });
 
+  it('drafts and chat lines are not mail — never stored, never a sender, never "you wrote to them"', async () => {
+    // Gmail lists both beside real mail. A draft carries only DRAFT, never
+    // SENT, so it landed as INBOUND mail From the owner — a senders row for
+    // the mailbox itself, scored and carded. Chat lines counted as email.
+    const day = (d: number): number => Date.UTC(2026, 2, d);
+    const item = (
+      id: string,
+      labelIds: string[],
+      from: string,
+      to: string,
+      d: number,
+    ): GmailMessageMetadata => ({
+      id,
+      threadId: `thread-${id}`,
+      labelIds,
+      snippet: `snippet ${id}`,
+      internalDate: String(day(d)),
+      from,
+      subject: `Subject ${id}`,
+      to,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+    const owner = 'Owner <owner@declutrmail.ai>';
+    const friend = 'Friend <friend@example.com>';
+    const client = new FakeGmailClient([
+      item('mail-1', ['INBOX', 'CATEGORY_PERSONAL'], friend, 'owner@declutrmail.ai', 10),
+      item('draft-1', ['DRAFT'], owner, 'friend@example.com', 11),
+      item('chat-in', ['CHAT'], friend, 'owner@declutrmail.ai', 3),
+      item('chat-only', ['CHAT'], 'Buddy <buddy@example.com>', 'owner@declutrmail.ai', 4),
+      item('chat-own', ['CHAT'], owner, 'friend@example.com', 5),
+      item('chat-sent', ['CHAT', 'SENT'], owner, 'friend@example.com', 6),
+    ]);
+
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
+    expect(stored.map((r) => r.id)).toEqual(['mail-1']);
+    // Only the friend: no row for the owner (draft, own chat line) or for
+    // the chat-only buddy. The earlier chat line moves neither the count
+    // nor first-seen, and the SENT chat line is not "you wrote to them".
+    const senderRows = await db
+      .select({
+        email: senders.email,
+        total: senders.totalReceived,
+        firstSeenAt: senders.firstSeenAt,
+        wroteTo: senders.wroteToCount,
+      })
+      .from(senders);
+    expect(senderRows).toEqual([
+      { email: 'friend@example.com', total: 1, firstSeenAt: new Date(day(10)), wroteTo: 0 },
+    ]);
+    const months = await db
+      .select({
+        senderKey: schema.senderTimeseries.senderKey,
+        volume: schema.senderTimeseries.volume,
+      })
+      .from(schema.senderTimeseries);
+    expect(months).toEqual([{ senderKey: deriveSenderKey('friend@example.com'), volume: 1 }]);
+  });
+
   it('D6 sync gate — writes D224 stage sequence + monotonic progress + final ready', async () => {
     // D6 strict gate consumers (useSyncStatus hook + action guards) read
     // (current_stage, readiness_status, progress_pct) from this row. This

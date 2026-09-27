@@ -461,6 +461,46 @@ describe('IncrementalSyncWorker', () => {
     expect(state!.lastSyncedAt).not.toBeNull();
   });
 
+  it('skips drafts and chat lines — no row, no sender, no metadata fetch for labelled ones', async () => {
+    // A draft carries only DRAFT, never SENT, so it landed as INBOUND mail
+    // From the owner — a senders row for the mailbox itself. Every autosave
+    // is a NEW message id (Gmail's draft contract), so composing one email
+    // streamed these in, one metadata fetch each.
+    const at = Date.UTC(2026, 5, 1);
+    const owner = 'Owner <owner@declutrmail.ai>';
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'draft-1', threadId: 't-d1', labelIds: ['DRAFT'] },
+      { kind: 'added', messageId: 'chat-1', threadId: 't-c1', labelIds: ['CHAT'] },
+      // A record without labels still has to be read — the post-fetch
+      // check is what catches it.
+      { kind: 'added', messageId: 'draft-2', threadId: 't-d2', labelIds: [] },
+      { kind: 'added', messageId: 'mail-1', threadId: 't-m1', labelIds: ['INBOX'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([
+        ['draft-1', makeMetadata('draft-1', 't-d1', owner, ['DRAFT'], at)],
+        ['chat-1', makeMetadata('chat-1', 't-c1', 'buddy@example.com', ['CHAT'], at)],
+        ['draft-2', makeMetadata('draft-2', 't-d2', owner, ['DRAFT'], at)],
+        ['mail-1', makeMetadata('mail-1', 't-m1', 'friend@example.com', ['INBOX'], at)],
+      ]),
+    );
+    const fetches = vi.spyOn(client, 'getMessageMetadata');
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.added).toBe(1);
+    const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
+    expect(stored.map((r) => r.id)).toEqual(['mail-1']);
+    const senderRows = await db.select({ email: senders.email }).from(senders);
+    expect(senderRows.map((r) => r.email)).toEqual(['friend@example.com']);
+    expect(fetches.mock.calls.map(([id]) => id)).toEqual(['draft-2', 'mail-1']);
+  });
+
   /**
    * `getMessageMetadata` resolves `null` for BOTH "deleted between the
    * history record and the get" and "Gmail refused to render it". Only the

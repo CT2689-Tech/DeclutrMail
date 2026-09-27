@@ -384,6 +384,134 @@ describe('SenderIndexSweepWorker', () => {
     expect(succeeded?.result).toHaveProperty('mailboxesProcessed');
   });
 
+  it('purges stored drafts before reconciling, and says so on the ops line', async () => {
+    // A draft used to land as INBOUND mail From the owner, so the owner
+    // became a sender built from nothing else. The purge runs first so
+    // the reconcile after it never sees that row — the sender and its
+    // months go, rather than surviving as a zeroed shell.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'owner-self',
+      email: 'owner@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'primary',
+      firstSeenAt: RECENT,
+      lastSeenAt: RECENT,
+      totalReceived: 1,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'draft-1',
+      providerThreadId: 't-draft-1',
+      senderKey: 'owner-self',
+      internalDate: new Date('2026-08-05T00:00:00Z'),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    await db.insert(senderTimeseries).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'owner-self',
+      yearMonth: MONTH,
+      volume: 1,
+      readCount: 1,
+    });
+
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await new SenderIndexSweepWorker({ db: db as never, lock: PASSTHROUGH_MAILBOX_LOCK }).run({
+        id: 'sweep-1',
+        data: { scheduledAtMinute: '2026-08-24T03:00' },
+        attemptsMade: 0,
+      } as never);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(await db.select().from(mailMessages)).toEqual([]);
+    expect(await db.select().from(senders)).toEqual([]);
+    expect(await db.select().from(senderTimeseries)).toEqual([]);
+    const succeeded = lines
+      .map((l) => {
+        try {
+          return JSON.parse(l) as { kind?: string; result?: Record<string, unknown> };
+        } catch {
+          return null;
+        }
+      })
+      .find((l) => l?.kind === 'worker.succeeded');
+    expect(succeeded?.result).toMatchObject({
+      nonMailMessagesDeleted: 1,
+      nonMailSendersDeleted: 1,
+      nonMailPurgeFailed: 0,
+      timeseriesZeroed: 0,
+    });
+  });
+
+  it('still retires protections when the purge throws — D245 never waits on the cleanup', async () => {
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'stale-star',
+      email: 'stale@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: LONG_AGO,
+    });
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'old-star',
+        providerThreadId: 't-old-star',
+        senderKey: 'stale-star',
+        internalDate: LONG_AGO,
+        labelIds: ['INBOX', 'STARRED'],
+        isUnread: false,
+        isOutbound: false,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'draft-1',
+        providerThreadId: 't-draft-1',
+        senderKey: 'owner-self',
+        internalDate: RECENT,
+        labelIds: ['DRAFT'],
+        isUnread: false,
+        isOutbound: false,
+      },
+    ]);
+    await seedProtection('stale-star', 'starred');
+    // The purge's batch is the first thing to take the lock; fail it.
+    let calls = 0;
+    const result = await new SenderIndexSweepWorker({
+      db: db as never,
+      lock: {
+        run: async (_id, fn) => {
+          calls += 1;
+          if (calls === 1) throw new Error('purge boom');
+          return fn();
+        },
+      },
+    }).processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
+
+    expect(result).toMatchObject({
+      nonMailPurgeFailed: 1,
+      nonMailMessagesDeleted: 0,
+      mailboxesProcessed: 1,
+      mailboxesFailed: 0,
+    });
+    expect((await policyFor('stale-star'))?.isProtected).toBe(false);
+    // Not purged this pass; the next one will.
+    const drafts = await db
+      .select({ id: mailMessages.providerMessageId })
+      .from(mailMessages)
+      .where(eq(mailMessages.providerMessageId, 'draft-1'));
+    expect(drafts).toHaveLength(1);
+  });
+
   it('bounds each job and queues a continuation rather than dropping overflow', async () => {
     for (let i = 0; i < MAILBOX_BATCH_SIZE + 2; i++) await seedMailbox();
     const enqueue = vi.fn(async (_payload: SenderIndexSweepJobData) => {});
