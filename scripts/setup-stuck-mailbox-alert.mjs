@@ -301,6 +301,17 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
   await upsert(watchdogSilentPolicy());
 }
 
+/**
+ * Query string for one page of alerts.list, newest first. orderBy takes the
+ * API's field name, open_time; the openTime spelling the Alert JSON uses is
+ * refused with HTTP 400.
+ */
+export function alertsPageQuery(pageToken) {
+  const query = new URLSearchParams({ orderBy: 'open_time desc', pageSize: '100' });
+  if (pageToken) query.set('pageToken', pageToken);
+  return query;
+}
+
 async function waitFor(what, check, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
@@ -336,9 +347,7 @@ export async function starveTest(project) {
     const alerts = [];
     let next = '';
     for (let page = 0; page < 10; page++) {
-      const query = new URLSearchParams({ orderBy: 'openTime desc', pageSize: '100' });
-      if (next) query.set('pageToken', next);
-      const data = await gcpRequest(`${root}/alerts?${query}`, token);
+      const data = await gcpRequest(`${root}/alerts?${alertsPageQuery(next)}`, token);
       alerts.push(...(data.alerts ?? []));
       next = data.nextPageToken;
       if (!next) break;
