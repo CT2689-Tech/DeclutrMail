@@ -76,7 +76,8 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             {band !== null && <> · {band}</>}
           </span>
           {/* The sentence below and the STATISTICS come from different
-              moments: reasoning is stored at score time, the stats are
+              moments: reasoning is stored (when the read was scored, or
+              when it was first opened — D24 on demand), the stats are
               recomputed on every request. Stating the age is what stops
               the two from reading as one measurement that contradicts
               itself (D25, founder 2026-08-19). Omitted entirely when

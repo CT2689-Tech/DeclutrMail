@@ -95,6 +95,11 @@ export {
 } from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
 export { deriveSenderId } from './sender-id';
+export {
+  TRIAGE_DECIDED_WINDOW_DAYS,
+  triageNotDecidedRecently,
+  triageQueueOrder,
+} from './triage-queue';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
 export { mailboxLabels } from './schema/mailbox-labels';

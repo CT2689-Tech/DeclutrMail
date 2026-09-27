@@ -2335,6 +2335,18 @@ on the next one, or now at the founder's discretion.
 **Rule (provisional):** When narrowing a critical section, list every value the loop reads before its first iteration and classify each: used only to SKIP (stale-safe) or to ACT / DISMISS / COUNT (re-read inside every hold).
 **Distillation trigger:** promote to CLAUDE.md §8 "Adversarial review for context-moving changes" if a second lock-narrowing change needs the same read relocation.
 
+## 2026-09-26 — Moving LLM work on-demand: defer only the half whose readers can take a fallback
+**Context:** Haiku explanations moved from the first-scan sweep (every sender) to on-demand (founder decision 2026-09-25).
+**Finding:** The sweep kept computing EVERY verdict (cheap, deterministic) and gave up only the sentence (expensive, optional). Splitting by output made the context move safe by construction: every destructive reader (Autopilot, the queue order) reads verdicts, which never moved; only display readers see the template for a while, and the template is a true explanation. The deferred write is compare-and-set on the row version (`produced_at`), which absorbed every race (re-score mid-call, re-sync, duplicate asks) without a lock. And "who pays" became one exhaustive switch over the trigger union, so a new trigger cannot compile without deciding it.
+**Rule (provisional):** When deferring work off a sweep, split it by who reads each output; defer only outputs whose every reader can act on a correct fallback, and CAS the deferred write on the row version.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second background enrichment moves on-demand.
+
+## 2026-09-26 — A negative control that short-circuits the whole expression proves nothing
+**Context:** Negative-controlling the reuse half of the stale-Primary check in `score.worker.ts`, where `reusable` is one long `&&` chain ending `… && !misplacesInPrimary(…) && …`.
+**Finding:** "Disabling" the conjunct as `false && !misplacesInPrimary(…)` made all of `reusable` false, so reuse never happened and the test named "does NOT reuse …" stayed green. The control had removed the path the test watches, not the guard on it. Replacing the call with its identity element (a predicate that always answers "not misplaced") turned the test red at once.
+**Rule (provisional):** To disable a guard, substitute its identity: `true` for a conjunct, `false` for a disjunct, never a value that decides the whole expression. A control that stays green is a finding about the control before it is evidence about the test.
+**Distillation trigger:** promote to CLAUDE.md §8 "A green test is not evidence" if a second vacuous negative control is found.
+
 ## 2026-09-26 — Gmail's tab labels are missing on a large share of real mail
 **Context:** Tracing why most of one production mailbox's senders were kept as "Primary".
 **Finding:** In the dev database (read-only, 2026-09-26), 1,712 of 99,593 inbound messages on the founder's mailbox carry no `CATEGORY_*` label. Overlapping counts: 1,501 are from before 2014 (Gmail tabs launched in 2013), 784 are Google Talk chat logs (label `CHAT`), 129 are in Trash, 5 are drafts. A message never carried two `CATEGORY_*` labels in that data. On the production mailbox in the founder's trace the unlabelled share was 80% (30,443 of 38,259). Its cause was not verified — production SQL was blocked in this session — so do not assume "old mail" explains it.

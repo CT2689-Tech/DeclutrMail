@@ -145,9 +145,12 @@ export class ScreenerReadService {
         unsubscribeMethod: senders.unsubscribeMethod,
         isProtected: senderPolicies.isProtected,
         protectionReason: senderPolicies.protectionReason,
+        // ADR-0008 §3 exception: the Screener reads the triage-owned
+        // `triage_decisions` for each row's recommendation (read-only).
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
+        generatedBy: triageDecisions.generatedBy,
         producedAt: triageDecisions.producedAt,
         expiresAt: triageDecisions.expiresAt,
       })
@@ -231,12 +234,14 @@ export class ScreenerReadService {
         r.verdict != null &&
         r.confidence != null &&
         r.reasoning != null &&
+        r.generatedBy != null &&
         r.producedAt != null &&
         r.expiresAt != null
           ? {
               verdict: r.verdict,
               confidence: Number(r.confidence),
               reasoning: r.reasoning,
+              generatedBy: r.generatedBy,
               scoredAt: r.producedAt.toISOString(),
               stale: r.expiresAt.getTime() <= now,
             }

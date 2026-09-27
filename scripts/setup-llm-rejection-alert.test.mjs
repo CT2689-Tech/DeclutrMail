@@ -55,7 +55,31 @@ function asRead(policy) {
   };
 }
 
-/** An in-memory stand-in for the Logging + Monitoring REST APIs, one item per page. */
+/**
+ * The write the real alertPolicies API refused on the prod --apply of
+ * 2026-09-26: a condition that sets evaluationMissingData with a zero or
+ * absent duration, as HTTP 400. Until then the fake accepted any body, so
+ * every test here passed a policy Monitoring would not create.
+ */
+function monitoringRefusal(policy) {
+  for (const [i, { conditionThreshold: t }] of (policy.conditions ?? []).entries()) {
+    if (t?.evaluationMissingData && !(Number.parseFloat(t.duration ?? '0s') > 0))
+      return {
+        status: 400,
+        json: {
+          error: {
+            message: `Field alert_policy.conditions[${i}].condition_threshold.evaluation_missing_data had an invalid value of "${t.evaluationMissingData}": Conditions setting evaluation_missing_data must have a non-zero duration.`,
+          },
+        },
+      };
+  }
+  return undefined;
+}
+
+/**
+ * An in-memory stand-in for the Logging + Monitoring REST APIs, one item
+ * per page, refusing a policy write the way the real API did.
+ */
 function fakeGcp({
   metric = null,
   channels = [ADMIN_CHANNEL],
@@ -79,6 +103,14 @@ function fakeGcp({
     const failure = failOn?.(method, url);
     if (failure) return { status: failure, json: { error: { message: 'denied' } } };
     const path = url.split('?')[0];
+    // Create (POST) and repair (PATCH) both write a whole policy.
+    if (
+      (method === 'POST' || method === 'PATCH') &&
+      path.startsWith(`${monitoring}/alertPolicies`)
+    ) {
+      const refused = monitoringRefusal(body);
+      if (refused) return refused;
+    }
     if (path === metricUrl && method === 'GET') {
       if (!state.metric) return { status: 404, json: {} };
       const { disabled, ...rest } = state.metric;
@@ -222,6 +254,38 @@ test('a policy that is off, silent, or would not fire on the first refusal fails
       problems.some((p) => named.test(p)),
       `${JSON.stringify(policy).slice(0, 120)} → ${JSON.stringify(problems)}`,
     );
+  }
+});
+
+test('a duration other than the expected one fails by name, shorter or longer', async () => {
+  // Compared exactly, not as "non-zero": '0s' is the value the API refused
+  // live (an absent duration reads the same), and '120s' still pages, only
+  // a minute later than designed.
+  for (const edit of [
+    (t) => ({ ...t, duration: '0s' }),
+    ({ duration: _d, ...t }) => t,
+    (t) => ({ ...t, duration: '120s' }),
+  ]) {
+    const policy = withThreshold(edit);
+    const problems = await verify(wiredProject({ policy }));
+    assert.ok(
+      problems.some((p) => /duration/.test(p)),
+      `${policy.conditions[0].conditionThreshold.duration} → ${JSON.stringify(problems)}`,
+    );
+  }
+});
+
+test('the policy it writes obeys the API limits that refused it live', () => {
+  // 2026-09-26: prod --apply got HTTP 400 for duration '0s' with
+  // EVALUATION_MISSING_DATA_INACTIVE, which the fake here had accepted. The
+  // alertPolicies reference: duration is a multiple of a minute, and
+  // evaluationMissingData needs duration >= 60s.
+  for (const { conditionThreshold: t } of expectedPolicy(ADMIN_CHANNEL.name).conditions) {
+    assert.match(t.duration, /^\d+s$/);
+    const seconds = Number.parseInt(t.duration, 10);
+    assert.equal(seconds % 60, 0, `duration ${t.duration}`);
+    if (t.evaluationMissingData)
+      assert.ok(seconds >= 60, `duration ${t.duration} with missing data`);
   }
 });
 
