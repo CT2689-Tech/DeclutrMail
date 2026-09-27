@@ -1,5 +1,7 @@
 # Learnings — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/learnings/`](docs/log/learnings/) (one file per entry). Existing entries stay here.
+
 Append-only log of what worked, what surprised us, and rules to promote
 into CLAUDE.md when patterns emerge.
 

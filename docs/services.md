@@ -192,4 +192,4 @@ _why_, _which tier_, and _where the credential lives_.
 1. Add a row to this file (PR preferred, or commit directly to `main` for docs-only changes).
 2. Store the actual credential in **1Password** under a vault item named `<Service> — DeclutrMail`.
 3. If CI needs it: add it as a **GitHub repo secret** at https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions.
-4. If it's a stop-condition service (OAuth, billing, webhooks): add a **FOUNDER-FOLLOWUPS.md** entry before wiring it up.
+4. If it's a stop-condition service (OAuth, billing, webhooks): add a founder follow-up entry in `docs/log/founder-followups/` before wiring it up.
