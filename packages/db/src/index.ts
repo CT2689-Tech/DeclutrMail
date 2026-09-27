@@ -94,6 +94,11 @@ export {
   senderInboxActionWhere,
 } from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
+export {
+  ruleMatchIsOfferableSuggestion,
+  ruleMatchIsPendingSuggestion,
+  ruleMatchSenderIsProtected,
+} from './autopilot-suggestions';
 export { deriveSenderId } from './sender-id';
 export {
   TRIAGE_DECIDED_WINDOW_DAYS,
