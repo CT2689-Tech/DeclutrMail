@@ -4,8 +4,8 @@ Running capture of things noticed in passing that are **not** blocking the
 task at hand — product friction, UX doubts, telemetry gaps, deferred
 engineering. Drop it here, keep moving, triage later.
 
-This is the fifth artifact alongside `LEARNINGS.md` (what worked),
-`MISTAKES.md` (what broke), `FOUNDER-FOLLOWUPS.md` (founder-only actions
+This is the fifth artifact alongside `docs/log/learnings/` (what worked),
+`docs/log/mistakes/` (what broke), `docs/log/founder-followups/` (founder-only actions
 outside the code), and `IMPLEMENTATION-LOG.md` (D-decision status). A
 finding is **an open question about the product or the code** — it has no
 verdict yet. Once it has one, it either becomes work (PR / D-candidate),

@@ -18,8 +18,8 @@ secret or rotates an existing one.
   - Vercel env var — Project Settings → Environment Variables (Production / Preview / Development).
 - **Env var name**: what the code reads via `process.env.*`. Same name
   across all storages is intentional — code doesn't branch by env.
-- **Rotated**: ISO date of last rotation. Calendar reminder in
-  `FOUNDER-FOLLOWUPS.md` triggers a quarterly review.
+- **Rotated**: ISO date of last rotation. Review cadence: see
+  [Rotation cadence](#rotation-cadence).
 - **Spend cap**: hard ceiling at the vendor side (Anthropic + paid
   APIs). Not all vendors support this; mark `n/a` where they don't.
 - **Owner**: who can rotate this. Solo founder = `founder` everywhere
@@ -332,7 +332,7 @@ Listed here so a missing row is a known gap, not an oversight.
 
 ## Rotation cadence
 
-Quarterly review (track in `FOUNDER-FOLLOWUPS.md`):
+Quarterly review (track as a founder follow-up in `docs/log/founder-followups/`):
 
 1. Anthropic keys — rotate annually unless a leak is suspected; update
    the date suffix in the vendor label.

@@ -1,5 +1,7 @@
 # Mistakes — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/mistakes/`](docs/log/mistakes/) (one file per entry). Existing entries stay here.
+
 Append-only log of mistakes and the rules added so we never repeat them.
 
 See CLAUDE.md §11. Append when a gate fires, a bug ships and is caught

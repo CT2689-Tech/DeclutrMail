@@ -638,7 +638,7 @@ After all 10 steps succeed, update the following in the same PR:
 - [ ] `docs/runbooks/secrets-inventory.md` — `Rotated` column reflects today's date for all created secrets
 - [ ] `IMPLEMENTATION-LOG.md` — mark D160 🔵 (shipped, awaiting verify)
 - [ ] `FOUNDER-FOLLOWUPS.md` — close "Wire prod Anthropic key to Cloud Run worker" entry
-- [ ] `FOUNDER-FOLLOWUPS.md` — open follow-ups for Tier B (Cloud SQL, Upstash, Vercel Pro, `min_instances=1` flip)
+- [ ] `docs/log/founder-followups/` — open follow-ups for Tier B (Cloud SQL, Upstash, Vercel Pro, `min_instances=1` flip)
 - [ ] Personal vault — mirror every secret created in step 4
 
 ## Costs after this runbook
