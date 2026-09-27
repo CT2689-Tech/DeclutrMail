@@ -10957,19 +10957,29 @@ info." — no count, no time. They left twice; it looked stuck. The worker
 knew both numbers the whole time.
 
 **What keeps it honest.**
-- The counts are the worker's own, written per 500-message batch and as
-  soon as the mailbox is listed ("Found 40,898 emails" until the first
-  batch lands). D224's field set gains `message_progress`, read from a
-  short-lived Redis key the worker writes (no migration): cleared when an
-  attempt starts and when the read ends, expiring 30 minutes after its
-  last write. No count before the mailbox is listed, outside the reading
-  stage, or when the key cannot be read.
+- The counts are the worker's own, written per 500 messages read (saved
+  or skipped) and as soon as the mailbox is listed ("Found 40,898 emails"
+  until the first batch lands). D224's field set gains
+  `message_progress`, read from a short-lived Redis key the worker writes
+  (no migration): cleared when an attempt starts and when the read ends,
+  expiring 30 minutes after its last write. No count before the mailbox
+  is listed or outside the reading stage; none for a poll whose read of
+  the key failed, which the wire marks as unknown rather than none.
 - Time left is never a fixed rate. It is the average pace of the
   worker's own batches, each timed by when the worker wrote it — so a
-  late poll cannot shorten it — counted down between batches. It starts
-  over after a stall or a hidden tab, and is dropped when batches stop
-  arriving at their usual pace or the estimate runs out. Minutes round
-  up; past an hour, to the next five.
+  late poll cannot shorten it — counted down between batches, and shown
+  only once two gaps between batches agree: one gap alone can hold a
+  pause. It starts over after a stall against the pace already seen or a
+  hidden tab; a batch far faster than the pace so far means an earlier
+  gap held a pause, and the pace is measured again from there. It is
+  dropped when batches stop arriving at their usual pace or the estimate
+  runs out. Minutes round up; past an hour, to the next five.
+- The title reads "Reading your Gmail…" (on Home too): the count covers
+  all mail but Spam and Trash, which "inbox" would misstate.
+- A sign-in or connect during the scan re-queues its row without a new
+  attempt; the running read takes the row back, cursor included, at its
+  next count, so the gate never sits on "Waiting to start." for the rest
+  of the read.
 - The "you can close this tab" line still promises no time.
 
 `show_sync_live_counters` and `show_sync_eta` are retired with this. In
