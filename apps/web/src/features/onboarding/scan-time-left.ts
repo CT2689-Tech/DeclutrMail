@@ -18,8 +18,9 @@ import type { SyncMessageProgress } from '@declutrmail/shared/contracts';
  * The track starts over when the counts go away, drop or change total,
  * and when a batch lands after a stall against the pace already seen. A
  * batch far faster than the pace so far means an earlier gap held a pause:
- * the pace is measured again from that batch's gap. A hidden tab measures
- * the pace again on return. So a pause is not averaged into the pace
+ * the pace is measured again from that batch's gap. Gaps are judged per
+ * email, never per step — a failed read can hide batches inside one step.
+ * A hidden tab measures the pace again on return. So a pause is not averaged into the pace
  * around it, while a slow scan's minutes-long gaps still count as its pace.
  * The time is dropped when batches stop arriving at their usual pace, and
  * when it runs out.
@@ -47,17 +48,25 @@ export interface ScanTrack {
   first: Point | null;
   /** Latest batch. */
   last: Point | null;
-  /** Batches after `first` — the rate needs at least one. */
+  /** Batches seen after `first` — the time needs `MIN_STEPS`. */
   steps: number;
+  /** Fewest emails between two batches seen: one batch. */
+  batch: number | null;
 }
 
 export function startScanTrack(seen: SyncMessageProgress | null): ScanTrack {
-  return { seen, first: null, last: null, steps: 0 };
+  return { seen, first: null, last: null, steps: 0, batch: null };
+}
+
+/** Milliseconds per email since the track started. */
+function msPerEmail({ first, last }: ScanTrack): number {
+  return first && last && last.processed > first.processed
+    ? (last.at - first.at) / (last.processed - first.processed)
+    : 0;
 }
 
 function staleAfter(track: ScanTrack): number {
-  const { first, last, steps } = track;
-  const usualGap = first && last && steps > 0 ? (last.at - first.at) / steps : 0;
+  const usualGap = (track.batch ?? 0) * msPerEmail(track);
   return Math.max(STALE_FLOOR_MS, STALE_GAPS * usualGap);
 }
 
@@ -86,15 +95,17 @@ export function observeScan(
     // is timed by its write, and a slow scan's gaps are minutes long.
     (steps > 0 && point.at - last.at > staleAfter(track));
   if (restarted) {
-    return { seen: progress, first: point, last: point, steps: 0 };
+    return { seen: progress, first: point, last: point, steps: 0, batch: null };
   }
-  // Far faster than the pace so far: an earlier gap held a pause (a slow
-  // first read, a retry's backoff, a tab that came back mid-pause). Measure
-  // again from this gap alone.
-  if (steps > 0 && (point.at - last.at) * STALE_GAPS < (last.at - first.at) / steps) {
-    return { seen: progress, first: last, last: point, steps: 1 };
+  const read = point.processed - last.processed;
+  const batch = Math.min(track.batch ?? read, read);
+  // Far faster per email than the pace so far: an earlier gap held a pause
+  // (a slow first read, a retry's backoff, a tab that came back mid-pause).
+  // Measure again from this gap alone.
+  if (steps > 0 && ((point.at - last.at) / read) * STALE_GAPS < msPerEmail(track)) {
+    return { seen: progress, first: last, last: point, steps: 1, batch };
   }
-  return { seen: progress, first, last: point, steps: steps + 1 };
+  return { seen: progress, first, last: point, steps: steps + 1, batch };
 }
 
 /** Milliseconds left as of `now`, or `null` when nothing backs a time. */

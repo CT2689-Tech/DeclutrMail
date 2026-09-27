@@ -207,6 +207,23 @@ describe('scanMsLeft — from what the worker wrote, when it wrote it', () => {
     expect(scanMsLeft(track, 127_500)).toBe(684_950);
   });
 
+  // Round-3 review (2026-09-27): a failed read that spans batches makes one
+  // step several batches long. Timed per step, that read as a pause — a
+  // correct time was withheld, and the stall window stretched to minutes.
+  it('times a gap by the emails in it: a step over missed batches is not a pause', () => {
+    let track = watched(40_898, [
+      [0, 0],
+      [50_000, 2_000], // four batches, their reads failed
+    ]);
+    track = observeScan(track, counts(2_500), 62_500);
+
+    // 2,500 in 62.5s → 38,398 left.
+    expect(scanMsLeft(track, 62_500)).toBe(959_950);
+    // A batch is 500 emails, 12.5s: a stall is judged by the minute floor.
+    expect(scanMsLeft(track, 62_500 + 60_000)).not.toBeNull();
+    expect(scanMsLeft(track, 62_500 + 60_001)).toBeNull();
+  });
+
   it('counts down between batches and drops the time once it has run out', () => {
     const track = watched(1_500, [
       [0, 0],
