@@ -1,0 +1,225 @@
+{
+  "$comment": "Guard-hook findings that predate scripts/run-guard-hooks.mjs. Each entry must match a live finding exactly (guard, file, and the lines its ❌ finding quotes) or CI fails, so a fixed finding must be removed here and a new one cannot hide behind an old entry. Fix the code instead of adding entries.",
+  "entries": [
+    {
+      "guard": "check-microcopy",
+      "file": "apps/web/src/features/autopilot/autopilot-screen.stories.tsx",
+      "hits": [
+        "'Autopilot screen (D104, D105). Surfaces the Observe-mode pending suggestions buffer + a master pause-all button. Per D226 the pause confirmation renders a mandatory modal preview before the mutation runs. Per D227 the screen never surfaces \"Screen\" as a verb (the screen-new-senders preset emits Later, the canonical 4th verb). Custom rule builder UI is deferred to V2.1 per D196/D197 — only preset rules render.',"
+      ],
+      "reason": "Storybook docs description that states D227 by quoting the banned verb; not a label or an action."
+    },
+    {
+      "guard": "check-microcopy",
+      "file": "apps/web/src/features/autopilot/fixtures.ts",
+      "hits": ["// Mirrors the BE seed (D101 #3) which ships with the banned \"Screen\""],
+      "reason": "Code comment quoting the banned verb to explain D227; the canonical-verb patterns do not skip comments."
+    },
+    {
+      "guard": "check-microcopy",
+      "file": "apps/web/src/features/autopilot/preset-labels.ts",
+      "hits": [
+        "* product-UI verb \"Screen\" (D227 — only K/A/U/L are user-facing). At",
+        "// D227: \"Screen\" is an internal enum, never a user-facing verb. The"
+      ],
+      "reason": "Code comment quoting the banned verb to explain D227; the canonical-verb patterns do not skip comments."
+    },
+    {
+      "guard": "check-microcopy",
+      "file": "apps/web/src/features/triage/focus-stack.tsx",
+      "hits": ["* (D227), and `S` is the letter that rule retired with \"Screen\"."],
+      "reason": "Code comment quoting the banned verb to explain D227; the canonical-verb patterns do not skip comments."
+    },
+    {
+      "guard": "check-microcopy",
+      "file": "apps/web/src/features/triage/types.ts",
+      "hits": ["* the toolbar, action sheet, and preview. \"Screen\" is intentionally"],
+      "reason": "Code comment quoting the banned verb to explain D227; the canonical-verb patterns do not skip comments."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/action-recovery.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/autopilot-apply.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/billing-verdict.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/brief-snapshot.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/dead-letter.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/domain-icon.worker.ts",
+      "hits": [],
+      "reason": "Real under the guard's rule: the class declares no getIdempotencyKey(). Dedup is the queue jobId (domain-icon.queue.ts) and base-declutr-worker.ts makes the method optional, so the gap is the lifecycle log's idempotencyRef, not duplicate work."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/followup-check.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/incremental-sync.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/initial-sync.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/ops-retention.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/score.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/sender-index-sweep.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/senders-counter-reconciliation.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/snooze-wake.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/undo-expiry.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "require-idempotency",
+      "file": "packages/workers/src/watch-renewal.worker.ts",
+      "hits": [],
+      "reason": "False positive: the key is declared with getIdempotencyKey(), the BaseDeclutrWorker hook (base-declutr-worker.ts), which the guard's case-sensitive idempotencyKey pattern does not match."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/api/src/senders/senders.controller.ts",
+      "hits": ["* nobody read (audit 2026-08-21). Optional, not zeroed: a zero would"],
+      "reason": "False positive: a comment reading \"nobody read (audit 2026-08-21)\" matches bod(y|ies)\\s+read.*0, which has no word boundary before \"body\"."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/web/src/app/(marketing)/legal-pages.test.tsx",
+      "hits": [
+        "*      banned pre-D228 phrase \"Bodies read: 0\" must not appear.",
+        "it('never uses the banned pre-D228 phrase \"Bodies read: 0\"', () => {"
+      ],
+      "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/web/src/app/(marketing)/support-pages.test.tsx",
+      "hits": [
+        "*      \"Bodies read: 0\" must not appear.",
+        "it('never uses the banned pre-D228 phrase \"Bodies read: 0\"', () => {"
+      ],
+      "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/web/src/app/onboarding/page.test.tsx",
+      "hits": ["expect(screen.queryByText(/Bodies read: 0/)).not.toBeInTheDocument();"],
+      "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/web/src/features/onboarding/sync-gate.test.tsx",
+      "hits": [
+        "expect(html).not.toContain('Bodies read: 0');",
+        "expect(html).not.toContain('Bodies read: 0');"
+      ],
+      "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx",
+      "hits": [
+        "*   - the banned pre-D228 phrase \"Bodies read: 0\" appears NOWHERE",
+        "expect(container.innerHTML).not.toMatch(/Bodies read: 0/i);"
+      ],
+      "reason": "Test asserting the banned trust copy is absent from rendered output; the quote is the assertion, not copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "docs/adr/0030-positioning-preview-guarantee.md",
+      "hits": [
+        "- `check-microcopy.sh` enforces only the `Bodies read: 0` ban and the D227 verb rule. The"
+      ],
+      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "docs/marketing/directory-submissions.md",
+      "hits": [
+        "- **No counter-style privacy claims**: never \"0 bodies read\", \"Bodies read: 0\", \"Full bodies"
+      ],
+      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "docs/reviews/user-facing-language-audit-2026-07-14.md",
+      "hits": [
+        "- Privacy language must describe Gmail's short preview honestly and must not use the retired “Bodies read: 0” claim (D7, D228)."
+      ],
+      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "docs/superpowers/plans/2026-07-27-email-foundation.md",
+      "hits": [
+        "- **Trust copy (D2.1):** the badge line is exactly `Full bodies fetched: 0`. Never \"Bodies read: 0 forever.\""
+      ],
+      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
+    },
+    {
+      "guard": "verify-no-body-storage",
+      "file": "FOUNDER-FOLLOWUPS.md",
+      "hits": [
+        "**Verifies by:** `rg \"no bodies read\" apps/web/src/app/senders-lab-v2/` returns 0 results.",
+        "**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` line 1063 + 1402 use \"no bodies read\" — the canonical D228 copy is \"Full bodies fetched: 0\" (CLAUDE.md §2.1) and the spec's in-product line is \"Metadata only · No email bodies\" / \"Subjects only · we never read email bodies\". The literal banned regex `/bod(y|ies) read.*0/i` doesn't match, so no automated trip, but the phrasing drift risks getting copy-pasted forward when the chosen variant hardens."
+      ],
+      "reason": "Founder log entry quoting the banned trust copy in order to ban it; not product copy."
+    }
+  ]
+}

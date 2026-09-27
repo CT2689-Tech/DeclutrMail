@@ -249,6 +249,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        # Full history: the guard-hook step diffs against the PR, queue or
+        # push base, which a depth-1 checkout does not contain. The runner
+        # fails closed on a base it cannot read rather than checking nothing.
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -272,6 +277,24 @@ jobs:
         run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
       - name: No personal email addresses in tracked files (D7)
         run: node --test scripts/personal-email-guard.test.mjs
+      # The .claude/hooks guards only ran on edits made through Claude Code,
+      # and signalled violations with an exit code the agent never sees, so
+      # CLAUDE.md's "Enforced by … hook" held for nothing (2026-09-27). This
+      # feeds every changed file to every registered guard. It fails on a
+      # violation, and fails closed on an unreadable base, an empty diff, or
+      # a guard that is missing, crashes or misses its positive control.
+      # Pre-existing findings live in scripts/guard-hooks-allowlist.json.
+      - name: Guard-hook runner contracts
+        run: node --test scripts/run-guard-hooks.test.mjs
+      - name: Tier 1 guard hooks (D7, D222, D227)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            node scripts/run-guard-hooks.mjs --all
+          else
+            node scripts/run-guard-hooks.mjs --base "$BASE_SHA"
+          fi
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
