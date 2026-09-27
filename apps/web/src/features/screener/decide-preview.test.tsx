@@ -43,7 +43,10 @@ describe('DecidePreview — live-preview confirm gate', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: /^Archive for/ })).toHaveTextContent('Archive 1,400');
+    // The accessible name contains the visible label, so "click Archive
+    // 1,400" finds it (WCAG 2.5.3).
+    const confirm = screen.getByRole('button', { name: /^Archive 1,400 for/ });
+    expect(confirm).toHaveTextContent('Archive 1,400');
   });
 
   it('blocks click confirmation while a required preview is still loading', () => {

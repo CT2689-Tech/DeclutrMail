@@ -8,6 +8,7 @@
 //   • Protected      — the Protected mark + the exact evidence
 //   • WhyOpen        — reasoning, band, stats and signals disclosed
 //   • Busy           — the decision is confirming server-side
+//   • OutcomeUnknown — held: its start could not be confirmed (D245)
 //   • InlinePreview  — D34 path: the mandatory preview inside the card
 
 import { tokens } from '@declutrmail/shared';
@@ -94,6 +95,11 @@ export const WhyOpen: Story<typeof TriageFocusCard> = {
 
 export const Busy: Story<typeof TriageFocusCard> = {
   args: { ...base, row: row('t-linkedin'), busy: true },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+
+export const OutcomeUnknown: Story<typeof TriageFocusCard> = {
+  args: { ...base, row: row('t-linkedin'), busy: true, unknownVerb: 'Archive' },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
 

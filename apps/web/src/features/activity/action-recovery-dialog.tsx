@@ -90,7 +90,13 @@ export function ActionRecoveryDialog({
   const protectedNow = ready && preview?.senderProtected === true;
   const senderName = row.sender?.displayName || row.sender?.email || null;
   const confirmNeedsRecheck = confirmError ? recoveryConfirmNeedsRecheck(confirmError) : false;
-  const canConfirm = ready && wakeAtValid && !isConfirming && !confirmNeedsRecheck;
+  // Only a failure that may have started is worth confirming again (the
+  // same key answers it); any refusal would only be refused again.
+  const canConfirm =
+    ready &&
+    wakeAtValid &&
+    !isConfirming &&
+    (confirmError == null || enqueueMayHaveStarted(confirmError));
 
   return (
     <>
@@ -239,11 +245,9 @@ export function ActionRecoveryDialog({
           </Button>
           {ready && preview && (
             <Button
-              tone={
-                preview.verb === 'delete' && (protectedNow || preview.outcome !== 'already_applied')
-                  ? 'danger'
-                  : 'primary'
-              }
+              // Every outcome moves mail — an already-applied review runs its
+              // whole set again — so a Delete always reads as one.
+              tone={preview.verb === 'delete' ? 'danger' : 'primary'}
               onClick={() =>
                 onConfirm({
                   ...(preview.requiresNewWakeAt && wakeAt ? { wakeAt: wakeAt.toISOString() } : {}),
@@ -257,7 +261,7 @@ export function ActionRecoveryDialog({
                 : protectedNow
                   ? `${failedActionNoun(preview.verb)} anyway`
                   : preview.outcome === 'already_applied'
-                    ? 'Mark as done'
+                    ? `${failedActionNoun(preview.verb)} again`
                     : `${failedActionNoun(preview.verb)} ${preview.remainingCount.toLocaleString('en-US')}`}
             </Button>
           )}
@@ -408,7 +412,7 @@ function RecoveryConsequence({
   // no promise about Gmail: mail moved back since the check moves again.
   const outcomeCopy =
     preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming updates Activity.'
+      ? 'Gmail already reflects this action. Confirming runs it again on the same emails.'
       : preview.outcome === 'partial'
         ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
         : null;
@@ -469,13 +473,13 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
     return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
   }
   if (code === 'ACTION_NO_LONGER_FAILED') {
-    return 'This action no longer needs recovery. Refresh Activity to see its current state.';
+    return 'This action no longer needs recovery.';
   }
   if (code === 'RECOVERY_SENDER_PROTECTED') {
     return `${senderName ?? 'A sender here'} is Protected now — check Gmail again to confirm anyway.`;
   }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
-    return 'This recovery review was already used. Refresh Activity to see the current attempt.';
+    return 'This review was already used. Activity shows the retry.';
   }
   // The same key answers a repeat, so an ambiguous failure is safe to
   // retry; a refusal would only be refused again.

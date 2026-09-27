@@ -4,6 +4,8 @@ import {
   UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
+import { apiErrorCode } from './api/client';
+
 /**
  * The toast for a single-sender one-click unsubscribe that reached a
  * terminal status. One copy source for Senders, Sender Detail, Triage and
@@ -27,4 +29,16 @@ export function unsubscribeOutcomeToast(
     return [`Unsubscribe from ${senderName} not sent — sender is Protected.`, 'info'];
   }
   return [`Unsubscribe from ${senderName} failed — Archive still works.`, 'warn'];
+}
+
+/**
+ * The API refused a click because a request to this sender is still queued
+ * or sending: a second would be one more send nobody can recall (D58).
+ */
+export function isUnsubscribeInFlight(err: unknown): boolean {
+  return apiErrorCode(err) === 'UNSUBSCRIBE_IN_FLIGHT';
+}
+
+export function unsubscribeInFlightCopy(senderName: string): string {
+  return `An unsubscribe request to ${senderName} is already on its way.`;
 }

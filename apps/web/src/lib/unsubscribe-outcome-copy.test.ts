@@ -4,7 +4,12 @@ import {
 } from '@declutrmail/shared/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { unsubscribeOutcomeToast } from './unsubscribe-outcome-copy';
+import { ApiError } from './api/client';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from './unsubscribe-outcome-copy';
 
 describe('unsubscribeOutcomeToast', () => {
   it('states only what an accepted request proves', () => {
@@ -41,5 +46,15 @@ describe('unsubscribeOutcomeToast', () => {
     });
     expect(message).toContain('Unsubscribe from Acme failed');
     expect(tone).toBe('warn');
+  });
+});
+
+describe('unsubscribeInFlightCopy', () => {
+  it('names the refusal the API gives while a request is still on its way', () => {
+    const refusal = (code: string) => new ApiError(409, { error: { code } }, code);
+    expect(isUnsubscribeInFlight(refusal('UNSUBSCRIBE_IN_FLIGHT'))).toBe(true);
+    expect(isUnsubscribeInFlight(refusal('PROTECTED_SENDER'))).toBe(false);
+    expect(unsubscribeInFlightCopy('Acme')).toContain('Acme');
+    expect(unsubscribeInFlightCopy('Acme')).toContain('already on its way');
   });
 });

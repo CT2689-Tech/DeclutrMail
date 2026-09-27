@@ -1840,6 +1840,35 @@ describe('SenderDetailRoute', () => {
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
+      it('says an unsubscribe already on its way was not sent again, and reports nothing', async () => {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: () =>
+              new Response(JSON.stringify({ error: { code: 'UNSUBSCRIBE_IN_FLIGHT' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              }),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(
+            'An unsubscribe request to LinkedIn is already on its way.',
+            'info',
+          ),
+        );
+        expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
+      });
+
       it('carries the "…anyway" confirm on a Protected sender\'s unsubscribe (D245)', async () => {
         installHappyPath(MESSAGE, undefined, undefined, {
           ...DETAIL,

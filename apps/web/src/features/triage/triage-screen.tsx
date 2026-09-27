@@ -33,7 +33,12 @@ import {
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
 } from '@/lib/bulk-action-copy';
-import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -145,7 +150,6 @@ export const TRIAGE_MODE_STORAGE_KEY = 'triage.mode';
 
 /** Stable empty default — a fresh `[]` per render would re-plan the focus stack every time. */
 const NO_ROWS: readonly TriageDecisionRow[] = [];
-const NO_UNCONFIRMED: ReadonlySet<string> = new Set();
 
 /**
  * Hard navigation to /pricing — it lives in the (marketing) route
@@ -183,6 +187,9 @@ interface ActionHandle {
    */
   followOn?: boolean;
 }
+
+/** A verb whose start may not have been confirmed — what a held row names. */
+type HeldVerb = ActionHandle['verb'] | 'Unsubscribe';
 
 /** Handle for one enqueued domain-batch composite — same lifecycle. */
 interface BatchHandle {
@@ -313,11 +320,26 @@ export function TriageScreen({
   // frees (the effect keys on both) — displacing would stop the parked
   // poll and silently re-arm a row whose job is still running.
   const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
+  // The route rebuilds `state` on every render; key the listed ids on
+  // their content so what reads them re-runs only when the list does.
+  const listedKey =
+    state.kind === 'ready'
+      ? state.rows.map((r) => r.id).join('\n')
+      : state.kind === 'empty'
+        ? ''
+        : null;
+  const listedRowIds = useMemo(
+    () => (listedKey === null ? null : listedKey === '' ? [] : listedKey.split('\n')),
+    [listedKey],
+  );
   /** Rows whose job may be running although we could not confirm it. */
-  const [unconfirmedRowIds, setUnconfirmedRowIds] = useState<ReadonlySet<string>>(NO_UNCONFIRMED);
-  const holdUnconfirmed = useCallback((rowIds: readonly string[]) => {
-    setUnconfirmedRowIds((prev) => new Set([...prev, ...rowIds]));
-  }, []);
+  const holds = useUnconfirmedHolds<HeldVerb>(actionMailboxId, listedRowIds);
+  const holdUnconfirmed = holds.hold;
+  const resetHolds = holds.reset;
+  const unknownVerbs = useMemo(
+    () => new Map([...holds.held].map(([id, hold]) => [id, hold.verb] as const)),
+    [holds.held],
+  );
   const overdueActionStatus = useActionStatus(
     overdueAction?.actionId ?? null,
     overdueAction?.mailboxId,
@@ -376,7 +398,7 @@ export function TriageScreen({
   const [heldKey, setHeldKey] = useState<string | null>(null);
   const resetPendingScope = useCallback(() => {
     clearPending();
-    setUnconfirmedRowIds(NO_UNCONFIRMED);
+    resetHolds();
     setPendingBatch(null);
     setExpandedRow(null);
     setMailtoFollowup(null);
@@ -425,7 +447,7 @@ export function TriageScreen({
         'warn',
       );
       // The job may still be running: its rows must not re-arm.
-      holdUnconfirmed(batchAction.rowIds);
+      holdUnconfirmed(batchAction.rowIds, batchAction.verb);
       setBatchAction(null);
       return;
     }
@@ -703,7 +725,7 @@ export function TriageScreen({
         }),
         'warn',
       );
-      holdUnconfirmed([activeAction.rowId]);
+      holdUnconfirmed([activeAction.rowId], activeAction.verb);
       setActiveAction(null);
       return;
     }
@@ -801,7 +823,7 @@ export function TriageScreen({
         }),
         'warn',
       );
-      holdUnconfirmed([overdueAction.rowId]);
+      holdUnconfirmed([overdueAction.rowId], overdueAction.verb);
       setOverdueAction(null);
       return;
     }
@@ -851,7 +873,7 @@ export function TriageScreen({
         }),
         'warn',
       );
-      holdUnconfirmed(overdueBatch.rowIds);
+      holdUnconfirmed(overdueBatch.rowIds, overdueBatch.verb);
       setOverdueBatch(null);
       return;
     }
@@ -905,19 +927,16 @@ export function TriageScreen({
   //
   // …and rows whose job may have started without our knowing (a 5xx
   // enqueue, or a lost status read): a second dispatch would run it
-  // twice. The queue drops a row once its job lands, which is what
-  // releases one; a row the queue no longer lists is not held.
+  // twice. `useUnconfirmedHolds` says when one is released.
   const busyRowIds = useMemo(() => {
     const ids = new Set<string>();
     if (activeAction) ids.add(activeAction.rowId);
     if (overdueAction) ids.add(overdueAction.rowId);
     if (intentRowId != null) ids.add(intentRowId);
     for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
-    if (state.kind === 'ready') {
-      for (const row of state.rows) if (unconfirmedRowIds.has(row.id)) ids.add(row.id);
-    }
+    for (const id of listedRowIds ?? []) if (holds.held.has(id)) ids.add(id);
     return ids;
-  }, [activeAction, overdueAction, intentRowId, overdueBatch, state, unconfirmedRowIds]);
+  }, [activeAction, overdueAction, intentRowId, overdueBatch, listedRowIds, holds.held]);
 
   /**
    * Run the mutation for `verb` against `row` after the preview has
@@ -1100,7 +1119,7 @@ export function TriageScreen({
                         reason: 'enqueue_archive_after_unsub',
                       });
                       if (enqueueMayHaveStarted(err)) {
-                        holdUnconfirmed([row.id]);
+                        holdUnconfirmed([row.id], 'Archive');
                         invalidateAfterDecision(qc);
                       }
                       toast(
@@ -1122,7 +1141,19 @@ export function TriageScreen({
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
+              // Designed too: one request to this sender is still on its way.
+              if (isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(row.senderName), 'info');
+                invalidateAfterDecision(qc);
+                return;
+              }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
+              // A 5xx cannot prove nothing started: a second click would send
+              // a second one-way request (D58).
+              if (enqueueMayHaveStarted(err)) {
+                holdUnconfirmed([row.id], 'Unsubscribe');
+                invalidateAfterDecision(qc);
+              }
               toast(
                 getActionFailureCopy('enqueue', {
                   action: `Unsubscribe for ${row.senderName}`,
@@ -1215,7 +1246,7 @@ export function TriageScreen({
             // …and a job that may have started: the queue drops a row it
             // took, and the pill finds the job through the in-flight read.
             if (staleProtection || enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
-            if (enqueueMayHaveStarted(err)) holdUnconfirmed([row.id]);
+            if (enqueueMayHaveStarted(err)) holdUnconfirmed([row.id], verb);
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
@@ -1402,6 +1433,12 @@ export function TriageScreen({
     const { verb, batch, wakeAt } = pendingBatch;
     const eligible = batch.eligibleRows;
     setPendingBatch(null);
+    // A member held since the sheet opened may still be running; sending it
+    // again would run it twice. The re-planned batch leaves it out.
+    if (eligible.some((r) => busyRowIds.has(r.id))) {
+      toast('Still confirming your last decision — give it a moment.', 'info');
+      return;
+    }
     enqueueBulk.mutate(
       {
         mailboxId: actionMailboxId,
@@ -1459,7 +1496,10 @@ export function TriageScreen({
           // Some members may have started (a bulk answers 5xx when any one
           // add fails while the rest run).
           if (enqueueMayHaveStarted(err)) {
-            holdUnconfirmed(eligible.map((r) => r.id));
+            holdUnconfirmed(
+              eligible.map((r) => r.id),
+              verb,
+            );
             invalidateAfterDecision(qc);
           }
           toast(
@@ -1472,7 +1512,16 @@ export function TriageScreen({
         },
       },
     );
-  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId, journey, qc]);
+  }, [
+    pendingBatch,
+    enqueueBulk,
+    bulkPreview.data,
+    actionMailboxId,
+    journey,
+    qc,
+    busyRowIds,
+    holdUnconfirmed,
+  ]);
 
   /**
    * Escape clears an INLINE pending preview — the contract the comment
@@ -1502,8 +1551,8 @@ export function TriageScreen({
   // ── Focus stack ───────────────────────────────────────────────────
   const readyRows = state.kind === 'ready' ? state.rows : NO_ROWS;
   const focusItems = useMemo(
-    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily'),
-    [readyRows, dismissedBatchDomains, journey],
+    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily', busyRowIds),
+    [readyRows, dismissedBatchDomains, journey, busyRowIds],
   );
   // A sender with an open preview stays on stage. The stack re-plans on
   // every refetch (a batch offer can appear, the order can change), and
@@ -1538,7 +1587,7 @@ export function TriageScreen({
   // it is a card in the stack (`planFocusItems`); here it leads the list.
   const verdictBatch =
     mode === 'list' && journey === 'daily' && hasQueue
-      ? findVerdictBatch(readyRows, dismissedBatchDomains)
+      ? findVerdictBatch(readyRows, dismissedBatchDomains, busyRowIds)
       : null;
   const resting = state.kind === 'empty' || (state.kind === 'ready' && !hasQueue);
 
@@ -1660,6 +1709,7 @@ export function TriageScreen({
             onSkip={onSkip}
             onAction={onRowActionWithInlineConfirm}
             busyRowIds={busyRowIds}
+            unknownVerbs={unknownVerbs}
             previewInboxCount={previewInboxCount}
             previewDetail={previewDetail}
             previewQuotaRemaining={cleanupRemaining}
@@ -1672,6 +1722,7 @@ export function TriageScreen({
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}
           busyRowIds={busyRowIds}
+          unknownVerbs={unknownVerbs}
           previewInboxCount={previewInboxCount}
           previewDetail={previewDetail}
           previewQuotaRemaining={cleanupRemaining}

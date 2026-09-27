@@ -73,7 +73,11 @@ import {
   stillRunningCopy,
 } from '@/lib/action-error-copy';
 import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
-import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
 import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
@@ -993,7 +997,17 @@ function ReadyState({
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
+              // Designed too: one request to this sender is still on its way.
+              if (isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(sender.name), 'info');
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                return;
+              }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
+              // A 5xx cannot prove nothing started: show what the server has.
+              if (enqueueMayHaveStarted(err)) {
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              }
               toast(
                 getActionFailureCopy('enqueue', {
                   action: `Unsubscribe for ${sender.name}`,

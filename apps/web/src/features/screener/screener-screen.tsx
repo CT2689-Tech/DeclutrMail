@@ -67,7 +67,12 @@ import {
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
-import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 
 const { color, text } = tokens;
 
@@ -254,15 +259,29 @@ export function ScreenerScreen({
   } | null>(null);
   /** Row whose decide POST is in flight (intent verbs settle here). */
   const [decidingRowId, setDecidingRowId] = useState<string | null>(null);
+  // Keyed on content: a re-render with the same queue must not re-run
+  // what reads the ids.
+  const listedKey =
+    state.kind === 'ready'
+      ? state.rows.map((r) => r.id).join('\n')
+      : state.kind === 'empty'
+        ? ''
+        : null;
+  const listedRowIds = useMemo(
+    () => (listedKey === null ? null : listedKey === '' ? [] : listedKey.split('\n')),
+    [listedKey],
+  );
   /**
    * Rows whose job may be running although we could not confirm it (a 5xx
    * decide, or a lost status read). A second decision would run it twice;
-   * the row leaves the queue once its job lands.
+   * `useUnconfirmedHolds` says when one is released.
    */
-  const [unconfirmedRowIds, setUnconfirmedRowIds] = useState<ReadonlySet<string>>(() => new Set());
-  const holdUnconfirmed = useCallback((rowId: string) => {
-    setUnconfirmedRowIds((prev) => new Set([...prev, rowId]));
-  }, []);
+  const holds = useUnconfirmedHolds<string>(activeMailbox?.id, listedRowIds);
+  const { hold: holdRows, reset: resetHolds } = holds;
+  const holdUnconfirmed = useCallback(
+    (rowId: string, verb: ScreenerDecideVerb) => holdRows([rowId], VERB_LABEL[verb]),
+    [holdRows],
+  );
   /** D230 manual path — "finish in Gmail" callout after a mailto unsub. */
   const [mailtoFollowup, setMailtoFollowup] = useState<{
     senderId: string;
@@ -279,13 +298,13 @@ export function ScreenerScreen({
   const scopeGeneration = useRef(0);
   const resetScope = useCallback(() => {
     scopeGeneration.current += 1;
-    setUnconfirmedRowIds(new Set());
+    resetHolds();
     setPending(null);
     setExpandedRowId(null);
     setMailtoFollowup(null);
     setQueueFilter('all');
     setQueueSort('queued');
-  }, []);
+  }, [resetHolds]);
   useEffect(() => {
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
@@ -400,7 +419,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
-      holdUnconfirmed(activeAction.rowId);
+      holdUnconfirmed(activeAction.rowId, activeAction.verb);
       setActiveAction(null);
       return;
     }
@@ -459,7 +478,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
-      holdUnconfirmed(overdueAction.rowId);
+      holdUnconfirmed(overdueAction.rowId, overdueAction.verb);
       setOverdueAction(null);
       return;
     }
@@ -510,8 +529,8 @@ export function ScreenerScreen({
   const parkedRowId = overdueAction?.rowId ?? null;
   /** Rows that may not take another decision yet: parked, or unconfirmed. */
   const isHeld = useCallback(
-    (rowId: string) => rowId === parkedRowId || unconfirmedRowIds.has(rowId),
-    [parkedRowId, unconfirmedRowIds],
+    (rowId: string) => rowId === parkedRowId || holds.held.has(rowId),
+    [parkedRowId, holds.held],
   );
 
   /** Verb click — opens (or swaps) the mandatory preview (D226). */
@@ -620,6 +639,12 @@ export function ScreenerScreen({
             // (hook-level handler); 409 PROTECTED_SENDER is a designed
             // state — no Sentry for either.
             if (err instanceof ApiError && err.status === 402) return;
+            // One unsubscribe request to this sender is still on its way.
+            if (isUnsubscribeInFlight(err)) {
+              toast(unsubscribeInFlightCopy(row.senderName), 'info');
+              invalidateAfterDecision(qc);
+              return;
+            }
             // Read the CODE, not the status. `CurrentMailboxGuard` runs
             // in front of this endpoint and answers 409 as well
             // (NO_ACTIVE_MAILBOX / SELECT_MAILBOX / MAILBOX_NOT_OWNED),
@@ -639,7 +664,7 @@ export function ScreenerScreen({
             // job took, and the pill finds the job through the in-flight
             // read.
             if (enqueueMayHaveStarted(err)) {
-              holdUnconfirmed(row.id);
+              holdUnconfirmed(row.id, verb);
               invalidateAfterDecision(qc);
               void qc.invalidateQueries({ queryKey: undoKeys.all });
             }
@@ -868,6 +893,7 @@ export function ScreenerScreen({
                   row={row}
                   expanded={expandedRowId === row.id}
                   busy={busyRowId === row.id || isHeld(row.id)}
+                  unknownVerb={holds.held.get(row.id)?.verb ?? null}
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}
                   previewInboxTotal={previewInboxTotal}

@@ -285,7 +285,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     await user.keyboard('{Enter}');
     expect(allMailChip).toHaveAttribute('aria-checked', 'true');
     expect(bodies).toHaveLength(0);
-    expect(screen.getByRole('button', { name: /^Delete for/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeEnabled();
   });
 
   it('Enter on Cancel cancels the preview without submitting Delete', async () => {
@@ -323,13 +323,13 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('combobox', { name: 'How far back to delete' });
-    expect(screen.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeDisabled();
 
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
       target: { value: 'all' },
     });
-    expect(screen.getByRole('button', { name: /^Delete for/ })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: /^Delete for/ }));
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).not.toHaveProperty('olderThanDays');
   });

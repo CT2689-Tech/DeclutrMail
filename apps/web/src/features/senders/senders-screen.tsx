@@ -73,7 +73,12 @@ import {
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
 } from '@/lib/bulk-action-copy';
-import { unsubscribeOutcomeToast } from '@/lib/unsubscribe-outcome-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
@@ -760,6 +765,13 @@ function SendersScreenContent({
     overdueUnsubBatch?.mailboxId,
   );
 
+  // Rows whose job may be running although we could not confirm it. Their
+  // row says "<Verb>: unknown", and they take no new decision until
+  // `useUnconfirmedHolds` releases them; a sender stays listed after its
+  // job lands, so only the in-flight reads can.
+  const holds = useUnconfirmedHolds<RowActivityVerb>(actionMailboxId, null);
+  const { hold: holdRows, reset: resetHolds } = holds;
+
   const resetPendingScope = useCallback(() => {
     setPendingAction(null);
     setSelected(new Set());
@@ -770,7 +782,8 @@ function SendersScreenContent({
     setSubmitting(false);
     setSettled(new Map());
     setPinnedSenders(new Map());
-  }, []);
+    resetHolds();
+  }, [resetHolds]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Senders an in-flight OR parked single handle still owns, plus every
@@ -792,8 +805,18 @@ function SendersScreenContent({
     if (overdueAction) ids.add(overdueAction.senderId);
     for (const id of overdueBatch?.senderIds ?? []) ids.add(id);
     for (const id of overdueUnsubBatch?.senderIds ?? []) ids.add(id);
+    // …and a row whose job may have started without our knowing.
+    for (const id of holds.held.keys()) ids.add(id);
     return ids;
-  }, [activeAction, activeBatch, activeUnsubBatch, overdueAction, overdueBatch, overdueUnsubBatch]);
+  }, [
+    activeAction,
+    activeBatch,
+    activeUnsubBatch,
+    overdueAction,
+    overdueBatch,
+    overdueUnsubBatch,
+    holds.held,
+  ]);
 
   // What each row says about its own action (`RowActivityProvider`). Live
   // handles win over a settled result: acting again on a finished row
@@ -824,6 +847,7 @@ function SendersScreenContent({
         for (const id of ids) next.set(id, activity);
         return next;
       });
+      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
       // While a NEW question is loading, the rows on screen still belong
       // to the old one (`keepPreviousData`). Pinning them would carry the
       // old question's rows into the new results. The mark is recorded
@@ -838,17 +862,32 @@ function SendersScreenContent({
         return next;
       });
     },
-    [senders, showingStaleRows],
+    [senders, showingStaleRows, holdRows],
   );
   /**
    * An undo was confirmed: nothing on a row may still say "Deleted". All
    * of it goes, not just the undone senders — the receipt does not carry
    * their ids, and the list refetch that follows every undo is the truth.
+   * Except "unknown": an undo says nothing about a job we could not see,
+   * and that row stays held until `useUnconfirmedHolds` releases it.
    */
   const releaseSettledRows = useCallback(() => {
-    setSettled(new Map());
+    setSettled((prev) => new Map([...prev].filter(([, a]) => a.phase === 'unconfirmed')));
     setPinnedSenders(new Map());
   }, []);
+  // A released hold takes its "unknown" mark with it, and the row takes a
+  // new decision again.
+  useEffect(() => {
+    setSettled((prev) => {
+      const released = [...prev].filter(
+        ([id, activity]) => activity.phase === 'unconfirmed' && !holds.held.has(id),
+      );
+      if (released.length === 0) return prev;
+      const next = new Map(prev);
+      for (const [id] of released) next.delete(id);
+      return next;
+    });
+  }, [holds.held]);
   /** Drop what these rows say about an earlier action (see `performAction`). */
   const unsettleRows = useCallback((ids: readonly string[]) => {
     setSettled((prev) => {
@@ -1471,7 +1510,17 @@ function SendersScreenContent({
                   toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                   return;
                 }
+                // Designed too: one request to this sender is still on its way.
+                if (isUnsubscribeInFlight(err)) {
+                  toast(unsubscribeInFlightCopy(sref.name), 'info');
+                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                  return;
+                }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
+                // A 5xx cannot prove nothing started: show what the server has.
+                if (enqueueMayHaveStarted(err)) {
+                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                }
                 toast(
                   getActionFailureCopy('enqueue', {
                     action: `Unsubscribe for ${sref.name}`,

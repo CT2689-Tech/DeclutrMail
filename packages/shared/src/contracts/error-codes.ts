@@ -554,6 +554,14 @@ export const ERROR_CODES = {
     retryable: false,
     message: "This sender hasn't been checked for an unsubscribe option yet.",
   },
+  // A one-click request to this sender is still queued or sending; a second
+  // would be one more send nobody can recall (D58).
+  UNSUBSCRIBE_IN_FLIGHT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'An unsubscribe request to this sender is already on its way.',
+  },
   UNSUBSCRIBE_INTENT_REQUIRED: {
     status: 409,
     severityTier: 'inline_recoverable',

@@ -15,6 +15,7 @@ import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 import { outcomeNotice, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
+import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -335,6 +336,17 @@ describe('ProductUndoTray — live line', () => {
     active = [];
     await reread();
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ME_QUERY_KEY }));
+  });
+
+  // A Screener decision leaves its queue only once its job lands, so a row
+  // held after a lost read is released by this re-read (flow gate 2026-09-27).
+  it('re-reads the Screener queue and count when a decision stops', async () => {
+    const { reread, client } = mount();
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    active = [];
+    await reread();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: SCREENER_ALL_KEY }));
   });
 
   it('says so when part of it failed, until dismissed', async () => {

@@ -29,6 +29,8 @@ import {
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
+import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
+
 import { TRIAGE_BOOTSTRAP_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
 
@@ -36,7 +38,9 @@ import { useTriageStore } from './store';
  * Mark every surface a confirmed undo touches as stale: the tray
  * itself (token now reverted), the triage queue (the reverted sender
  * is no longer "decided", so it returns to the queue), stats, the
- * activity feed, and the senders list (inbox counts moved back).
+ * activity feed, and the senders list (inbox counts moved back). The
+ * pill also calls this when a decision stops, and a Screener decision
+ * leaves its queue only once its job lands, so the Screener is re-read too.
  */
 export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
   // The tray list's refetch is RETURNED: the tray keeps its revert slot
@@ -47,6 +51,7 @@ export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
   void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
+  void qc.invalidateQueries({ queryKey: SCREENER_ALL_KEY });
   return trayRefreshed;
 }
 

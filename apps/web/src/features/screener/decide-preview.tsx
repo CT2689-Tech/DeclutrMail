@@ -226,13 +226,12 @@ export function DecidePreview({
   // away to unprotect a sender they are about to act on anyway.
   const overriding = needsProtectedOverride(row, verb);
   // The verb and the count, as on the Senders and Triage confirms.
-  const confirmLabel = confirming
-    ? 'Confirming…'
-    : overriding
-      ? `${VERB_LABEL[verb]} anyway`
-      : moves && liveCount !== null && liveCount > 0
-        ? `${VERB_LABEL[verb]} ${liveCount.toLocaleString('en-US')}`
-        : VERB_LABEL[verb];
+  const restingLabel = overriding
+    ? `${VERB_LABEL[verb]} anyway`
+    : moves && liveCount !== null && liveCount > 0
+      ? `${VERB_LABEL[verb]} ${liveCount.toLocaleString('en-US')}`
+      : VERB_LABEL[verb];
+  const confirmLabel = confirming ? 'Confirming…' : restingLabel;
 
   // A bare "0" beside the row's "Messages received" count reads as lost
   // mail. Same reconciliation the senders confirm modal does, from the
@@ -459,8 +458,9 @@ export function DecidePreview({
           onClick={onConfirm}
           disabled={confirmDisabled}
           // Stable across the in-flight transition — a button that
-          // renames itself mid-action loses its accessible identity.
-          ariaLabel={`${VERB_LABEL[verb]}${overriding ? ' anyway' : ''} for ${name}`}
+          // renames itself mid-action loses its accessible identity — and
+          // it contains the visible label (WCAG 2.5.3).
+          ariaLabel={`${restingLabel} for ${name}`}
         >
           {confirmLabel}
         </Button>

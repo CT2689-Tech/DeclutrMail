@@ -1880,6 +1880,34 @@ export class ActionsService {
       };
     }
 
+    // One request at a time per sender. A click after a 5xx cannot know
+    // whether the first started, and a second one-click request is one
+    // more send nobody can recall (D58) plus a second cleanup unit. Any
+    // execution still queued or executing — this route's, a bulk's or
+    // Autopilot's — means one is already on its way. Same-key replays
+    // returned above; a click after it ends is a new attempt.
+    if (method === 'one_click') {
+      const [live] = await this.db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.verb, 'unsubscribe'),
+            eq(actionJobs.direction, 'forward'),
+            inArray(actionJobs.status, ['queued', 'executing']),
+            sql`${actionJobs.selector}->>'senderKey' = ${senderKey}`,
+          ),
+        )
+        .limit(1);
+      if (live) {
+        throw new ConflictException({
+          code: 'UNSUBSCRIBE_IN_FLIGHT',
+          message: 'An unsubscribe request to this sender is already on its way.',
+        });
+      }
+    }
+
     const txResult = await this.db.transaction(async (tx) => {
       // Finite cleanup quotas are serialized per workspace. Re-check
       // both deterministic keys after acquiring the lock so a request

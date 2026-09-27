@@ -22,7 +22,9 @@ import {
   jsonServerError,
   resetFetchStub,
 } from '@/test/fetch-stub';
+import { QueryClient } from '@tanstack/react-query';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { activityKeys } from './api/query-keys';
 import { tokens, useUiStore } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
@@ -1917,6 +1919,9 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       );
     });
 
+    // Confirm re-applies the whole verified set: mail moved back since the
+    // check moves again. The button and the line say so (adversarial review
+    // 2026-09-27), and a Delete reads as the Delete it is.
     it('names the confirm for what it does when Gmail already reflects the action', async () => {
       stub(
         recoveryPreview({
@@ -1927,15 +1932,10 @@ describe('ActivityScreen — outcome-aware recovery', () => {
         }),
       );
       const dialog = await openReview();
-      expect(
-        await within(dialog).findByText(
-          'Gmail already reflects this action. Confirming updates Activity.',
-        ),
-      ).toBeInTheDocument();
-      const markDone = within(dialog).getByRole('button', { name: 'Mark as done' });
-      expect(markDone).toBeEnabled();
-      // Only a button that names Delete takes the danger tone.
-      expect(markDone.style.background).not.toBe(tokens.color.danger);
+      expect(await within(dialog).findByText(/Confirming runs it again/)).toBeInTheDocument();
+      const again = within(dialog).getByRole('button', { name: 'Delete again' });
+      expect(again).toBeEnabled();
+      expect(again.style.background).toBe(tokens.color.danger);
     });
 
     it('still says so when no reason comes with the review', async () => {
@@ -1963,7 +1963,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
           'Sender One is Protected because you wrote to them at least 3 times.',
         ),
       ).toBeInTheDocument();
-      expect(within(dialog).queryByRole('button', { name: 'Mark as done' })).toBeNull();
+      expect(within(dialog).queryByRole('button', { name: 'Delete again' })).toBeNull();
       await userEvent.click(within(dialog).getByRole('button', { name: 'Delete anyway' }));
       await waitFor(() => expect(bodies).toEqual([{ senderProtected: true }]));
     });
@@ -1998,6 +1998,31 @@ describe('ActivityScreen — outcome-aware recovery', () => {
         "Couldn't start the retry — nothing changed. Check Gmail again.",
       );
       expect(within(dialog).getByRole('button', { name: 'Check Gmail again' })).toBeEnabled();
+    });
+
+    // A refusal that settles it: this review has nothing left to do, so a
+    // second confirm would only be refused again (flow gate 2026-09-27).
+    it('stops at a review already used, and re-reads Activity', async () => {
+      const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+      try {
+        stub(recoveryPreview({ verb: 'delete', senderProtected: false }), {
+          retry: () =>
+            new Response(
+              JSON.stringify({ error: { code: 'RECOVERY_ALREADY_REQUESTED', message: 'used' } }),
+              { status: 409, headers: { 'content-type': 'application/json' } },
+            ),
+        });
+        const dialog = await openReview();
+        const confirm = await within(dialog).findByRole('button', { name: 'Delete 3' });
+        await userEvent.click(confirm);
+        const alert = await within(dialog).findByRole('alert');
+        expect(alert).toHaveTextContent('already used');
+        expect(alert).not.toHaveTextContent('Refresh Activity');
+        expect(confirm).toBeDisabled();
+        expect(invalidate).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+      } finally {
+        invalidate.mockRestore();
+      }
     });
 
     // A legacy message-list action has no single sender to name.

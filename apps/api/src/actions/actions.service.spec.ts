@@ -2859,6 +2859,41 @@ describe('ActionsService', () => {
       expect(queue.count).toBe(0);
     });
 
+    it('one_click: refuses a second request while the first is still on its way', async () => {
+      // A 5xx on the first click cannot prove nothing started; a second
+      // click would send a second one-way request and spend a second unit.
+      await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+      const service = svcWithUnsubQueue();
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'first-unsub-1',
+      });
+      const before = await db.select().from(actionJobs);
+
+      await expect(
+        service.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'second-unsub-1',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'UNSUBSCRIBE_IN_FLIGHT' } });
+      expect(await db.select().from(actionJobs)).toHaveLength(before.length);
+      expect(unsubQueue.count).toBe(1);
+
+      // Once it has ended, a fresh click is a new attempt.
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed' })
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-first-unsub-1'));
+      await service.recordUnsubscribeIntent({
+        mailboxAccountId: mailboxId,
+        senderId,
+        idempotencyKey: 'third-unsub-1',
+      });
+      expect(unsubQueue.count).toBe(2);
+    });
+
     it('one_click on a sender Protected at the click: "…anyway" rides the job, fresh and on replay (D245)', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
       await db.insert(senderPolicies).values({
@@ -2897,7 +2932,12 @@ describe('ActionsService', () => {
         idempotencyKey: 'plain-unsub-1',
         override: true,
       });
-      // Protected at the click, but the user did not confirm "…anyway".
+      // That request has ended, so the next click is a new attempt…
+      await db
+        .update(actionJobs)
+        .set({ status: 'done' })
+        .where(eq(actionJobs.idempotencyKey, 'unsubexec-plain-unsub-1'));
+      // …on a sender Protected at the click, without "…anyway".
       await db
         .update(senderPolicies)
         .set({ isProtected: true, protectionReason: 'user_defined' })

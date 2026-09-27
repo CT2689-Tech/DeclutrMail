@@ -139,6 +139,24 @@ export const RowExpanded: Story<typeof ScreenerRow> = {
   },
 };
 
+export const RowOutcomeUnknown: Story<typeof ScreenerRow> = {
+  render: () => (
+    <Shell>
+      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+        <ScreenerRow {...rowBase} expanded={false} busy unknownVerb="Archive" />
+      </div>
+    </Shell>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Held (D245): the decision answered 5xx or its status read was lost, so it may still be running. The row takes no new decision and says what is known: the outcome is unknown.',
+      },
+    },
+  },
+};
+
 export const PreviewPending: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>

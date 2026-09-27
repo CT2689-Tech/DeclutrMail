@@ -883,7 +883,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       return;
     }
     toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
-    // Nothing moved, so the senders stay checked and a retry is safe.
+    // The job has ended, so the senders stay checked and a retry cannot
+    // overlap it; part of the mail may have moved (see `failed`).
     setFailureOutcome({ kind: 'failed' });
     setInFlight(null);
   }, [

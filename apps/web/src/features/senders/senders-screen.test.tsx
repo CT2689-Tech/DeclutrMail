@@ -105,6 +105,7 @@ import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts
 import { UNSUBSCRIBE_ACCEPTED_CAVEAT } from '@declutrmail/shared/actions';
 import { NO_ACTIONABLE_SENDERS_COPY } from '@/lib/bulk-action-copy';
 import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
+import { HOLD_SETTLE_MS } from '@/features/undo/unconfirmed-holds';
 
 // Typed against the wire contract so a field the API always sends cannot
 // go missing here unnoticed. These fixtures reach the app as `unknown`
@@ -1943,6 +1944,39 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() =>
       expect(unsubscribeBody).toEqual({ senderId: 'a', includesBacklogAction: true }),
     );
+  });
+
+  it('says an unsubscribe already on its way was not sent again', async () => {
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(3),
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'UNSUBSCRIBE_IN_FLIGHT', message: 'on its way' } }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: /Actions for Sender A/i })).getByRole('menuitem', {
+        name: 'Unsubscribe',
+      }),
+    );
+    const confirm = within(await screen.findByRole('dialog')).getByRole('button', {
+      name: /^Unsubscribe/,
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    expect(
+      await screen.findByText('An unsubscribe request to Sender A is already on its way.'),
+    ).toBeInTheDocument();
   });
 
   it('never advertises more sample subjects than the real total in "Show what currently matches" (live smoke 2026-06-09)', async () => {
@@ -4182,6 +4216,97 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       "Can't tell if Archive for Sender A started — check Activity before retrying.",
     );
     expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
+  });
+
+  // Any confirmed undo clears this screen's marks, but an "unknown" one is
+  // not that undo's to clear: the job behind it may still be running
+  // (flow gate 2026-09-27).
+  it('keeps an "unknown" mark and its hold through an unrelated undo', async () => {
+    let posts = 0;
+    installFetchStub([
+      TWO_SENDER_LIST,
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posts += 1;
+          return new Response(
+            JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'queue timeout' } }),
+            { status: 503, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-other',
+        respond: () =>
+          jsonOk({
+            data: {
+              token: 'tok-other',
+              actionKind: 'archive',
+              reverted: true,
+              expired: false,
+              revertedAt: '2026-09-27T00:00:00.000Z',
+              actionId: null,
+            },
+          }),
+      },
+    ]);
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/rechecked when it runs/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
+
+    await undoFromThePill('tok-other');
+
+    expect(screen.getByText('Archive: unknown')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(posts).toBe(1);
+  });
+
+  // Nothing is left running for the mailbox, so nothing can land any more:
+  // the row says nothing it cannot know and takes a decision again.
+  it('releases an "unknown" row once nothing is left running', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      installFetchStub([
+        TWO_SENDER_LIST,
+        compositePreviewHandler(12),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            new Response(
+              JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'queue timeout' } }),
+              { status: 503, headers: { 'content-type': 'application/json' } },
+            ),
+        },
+        { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      ]);
+      renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+      fireEvent.keyDown(document.body, { key: 'a' });
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(await screen.findByText('Archive: unknown')).toBeInTheDocument();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(HOLD_SETTLE_MS * 3);
+      });
+
+      await waitFor(() => expect(screen.queryByText('Archive: unknown')).toBeNull());
+      expect(screen.getByRole('checkbox', { name: /select sender a/i })).not.toHaveAttribute(
+        'aria-disabled',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps the selection when the bulk enqueue is refused (no optimistic clear)', async () => {

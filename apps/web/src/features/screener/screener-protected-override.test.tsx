@@ -376,12 +376,10 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
     expect(invalidate).toHaveBeenCalledWith({ queryKey: SCREENER_QUEUE_KEY });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all });
     // …and the row stays held: a second decision would run it twice.
-    await waitFor(() =>
-      expect(screen.getAllByText(plainRow.senderName)[0]!.closest('[aria-busy]')).toHaveAttribute(
-        'aria-busy',
-        'true',
-      ),
-    );
+    const row = () => screen.getAllByText(plainRow.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+    // It says what is known — the outcome — not that it is still applying.
+    expect(within(row() as HTMLElement).getByText('Delete: unknown')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'd' });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.queryByText(/Inbox now.*rechecked/i)).toBeNull();
