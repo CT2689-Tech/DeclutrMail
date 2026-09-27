@@ -103,6 +103,26 @@ export function enqueueMayHaveStarted(error: unknown): boolean {
 }
 
 /**
+ * An Unsubscribe was recorded, but the cleanup of older email that rode
+ * with it failed to enqueue. One sentence for Senders, Sender Detail and
+ * Triage. The request stands (D58), so it is "recorded", never "started":
+ * a mailto request is the user's to send.
+ */
+export function backlogAfterUnsubFailureCopy(options: {
+  readonly verb: 'Archive' | 'Delete';
+  /** Omitted for a multi-sender batch. */
+  readonly senderName?: string;
+  readonly error: unknown;
+}): string {
+  const { verb, senderName, error } = options;
+  const requests = senderName ? 'Unsubscribe request' : 'Unsubscribe requests';
+  const mail = senderName ? `older email from ${senderName}` : 'older email';
+  return enqueueMayHaveStarted(error)
+    ? `${requests} recorded, but can't tell if ${verb} started for ${mail} — ${CHECK_ACTIVITY}.`
+    : `${requests} recorded, but ${mail} wasn't ${verb === 'Delete' ? 'deleted' : 'archived'} — ${verb} it separately.`;
+}
+
+/**
  * D245 — senders an action left alone because they are Protected. One
  * phrase for the pill, the undo line and the click-time toasts, so a skip
  * reads the same wherever it is reported.

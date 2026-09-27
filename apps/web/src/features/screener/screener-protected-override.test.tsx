@@ -21,6 +21,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 
 import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY } from './api/use-screener';
 import { SCREENER_QUEUE } from './data';
@@ -270,8 +271,49 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
 
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
     const messages = h.toast.mock.calls.map((c) => String(c[0]));
-    expect(messages.some((m) => /Couldn.t delete/i.test(m))).toBe(true);
+    expect(messages.some((m) => /Couldn.t start Delete/.test(m))).toBe(true);
     expect(messages.some((m) => /Protected/i.test(m))).toBe(false);
+  });
+
+  // A 5xx does not prove the decision never started: the queue is re-read
+  // so a row its job took leaves, and the pill finds the job.
+  it('re-reads the queue and the pill when a decision may have started', async () => {
+    h.toast.mockClear();
+    installFetchStub([
+      previewHandler(plainRow, 4),
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'queue timeout' } }),
+            { status: 503, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    render(
+      <QueryWrapper client={client}>
+        <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
+    );
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByText(/Inbox now.*rechecked/i);
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Can't tell if Delete for ${plainRow.senderName} started — check Activity before retrying.`,
+        'warn',
+      ),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: SCREENER_QUEUE_KEY });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 });
 

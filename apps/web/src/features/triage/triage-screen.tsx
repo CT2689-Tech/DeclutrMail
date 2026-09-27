@@ -23,6 +23,7 @@ import {
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
+  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
@@ -1066,10 +1067,13 @@ export function TriageScreen({
                         surface: 'triage',
                         reason: 'enqueue_archive_after_unsub',
                       });
+                      if (enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
                       toast(
-                        enqueueMayHaveStarted(err)
-                          ? `Unsubscribe request recorded, but couldn't confirm Archive for older email from ${row.senderName} — check Activity before retrying.`
-                          : `Unsubscribe request recorded, but older email from ${row.senderName} wasn't archived — Archive it from Senders.`,
+                        backlogAfterUnsubFailureCopy({
+                          verb: 'Archive',
+                          senderName: row.senderName,
+                          error: err,
+                        }),
                         'warn',
                       );
                     },
@@ -1173,7 +1177,9 @@ export function TriageScreen({
             // this row's protection changed after the queue loaded.
             // Refetch, or the reopened sheet shows the same stale row and
             // 409s again — forever.
-            if (staleProtection) invalidateAfterDecision(qc);
+            // …and a job that may have started: the queue drops a row it
+            // took, and the pill finds the job through the in-flight read.
+            if (staleProtection || enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
@@ -1407,10 +1413,16 @@ export function TriageScreen({
             toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
             return;
           }
-          captureFeatureException(err, {
-            surface: 'triage',
-            reason: 'enqueue_domain_batch',
-          });
+          // The mailbox guard's 409s are designed states too.
+          if (!(err instanceof ApiError && err.status === 409)) {
+            captureFeatureException(err, {
+              surface: 'triage',
+              reason: 'enqueue_domain_batch',
+            });
+          }
+          // Some members may have started (a bulk answers 5xx when any one
+          // add fails while the rest run).
+          if (enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
           toast(
             getActionFailureCopy('enqueue', {
               action: `${verb} for the ${batch.domain} batch`,

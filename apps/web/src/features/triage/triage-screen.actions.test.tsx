@@ -1200,10 +1200,10 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await confirmOpenSheet('Unsubscribe');
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
-    // only the backlog archive did not (recoverable from Senders).
+    // only the backlog archive did not.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived.*Senders/),
+        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived — Archive it/),
         'warn',
       ),
     );
@@ -1229,7 +1229,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe request recorded, but couldn't confirm Archive for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        `Unsubscribe request recorded, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
         'warn',
       ),
     );
@@ -2351,6 +2351,46 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     );
     expect(h.captureFeatureException).not.toHaveBeenCalled();
     // The rows still read as before the click: the queue is re-read.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+  });
+
+  // The mailbox guard answers 409 too: a designed state, not a defect.
+  it('reports no crash for a mailbox conflict on the batch', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'SELECT_MAILBOX' } }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Couldn't start Archive for the .* batch — nothing changed\.$/),
+        'warn',
+      ),
+    );
+    expect(h.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // Some members may have started: the queue drops the rows their jobs
+  // took, and the pill finds the jobs.
+  it('re-reads the queue when a batch may have started', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'x' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const invalidate = vi.spyOn(batchClient, 'invalidateQueries');
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Can't tell if Archive for the .* batch started/),
+        'warn',
+      ),
+    );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   });
 

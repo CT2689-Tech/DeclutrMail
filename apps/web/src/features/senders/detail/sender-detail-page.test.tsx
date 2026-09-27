@@ -1875,6 +1875,44 @@ describe('SenderDetailRoute', () => {
           headers: { 'content-type': 'application/json' },
         });
 
+      async function archiveEnqueueFails(respond: () => Response) {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          { method: 'POST', path: '/api/actions', respond },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+        await screen.findByText(/rechecked when it runs/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      }
+
+      // A 5xx does not prove the job never started: a second click could
+      // run it twice.
+      it('locks the verb when an Archive may have started', async () => {
+        await archiveEnqueueFails(apiFailure(503, 'ENQUEUE_FAILED'));
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
+        expect(screen.getByRole('button', { name: 'Archive not confirmed' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      });
+
+      it('leaves the verb armed when an Archive was refused', async () => {
+        await archiveEnqueueFails(apiFailure(400, 'VALIDATION_FAILED'));
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(
+            expect.stringMatching(/^Couldn't start Archive/),
+            'warn',
+          ),
+        );
+        expect(pill('unconfirmed')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).not.toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      });
+
       it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
         await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));

@@ -18,6 +18,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
 import dynamic from 'next/dynamic';
@@ -600,14 +601,20 @@ export function ScreenerScreen({
             // carried no override. Refetch so the reopened preview shows
             // the acknowledgement — without this the retry 409s forever.
             if (staleProtection) invalidateAfterDecision(qc);
+            // A decision that may have started: the queue drops a row its
+            // job took, and the pill finds the job through the in-flight
+            // read.
+            if (enqueueMayHaveStarted(err)) {
+              invalidateAfterDecision(qc);
+              void qc.invalidateQueries({ queryKey: undoKeys.all });
+            }
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
-                : enqueueMayHaveStarted(err)
-                  ? getActionFailureCopy('status', {
-                      action: `${VERB_LABEL[verb]} for ${row.senderName}`,
-                    })
-                  : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
+                : getActionFailureCopy('enqueue', {
+                    action: `${VERB_LABEL[verb]} for ${row.senderName}`,
+                    error: err,
+                  }),
               'warn',
             );
           },

@@ -869,6 +869,46 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(sentry.captureFeatureException).not.toHaveBeenCalled();
   });
 
+  // A 5xx does not prove nothing ran: the senders must not stay armed for
+  // a second run.
+  it('disarms the senders when the archive may have started', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      { method: 'POST', path: '/api/actions', respond: () => jsonServerError() },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/^Can't tell if Archive for those \d+ senders started/);
+    await screen.findByText(/couldn.t confirm what that archive did/i);
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+  });
+
+  it('keeps the senders checked when the archive was refused', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'VALIDATION_FAILED', message: 'bad' } }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/^Couldn't start Archive for those \d+ senders — nothing changed/);
+    await screen.findByText(
+      'Nothing was archived. The senders are still checked, so you can try again.',
+    );
+    expect(archiveButton()).not.toHaveAccessibleName('Archive 0 senders');
+  });
+
   // A mailbox switch: the section now lists another mailbox's senders.
   it("drops the last mailbox's receipt and ✓ marks on a mailbox switch", async () => {
     installFetchStub([

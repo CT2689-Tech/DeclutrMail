@@ -52,6 +52,7 @@ import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-res
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import {
+  enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
   protectedSkippedCopy,
@@ -613,7 +614,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   const enqueueBulk = useEnqueueBulkAction();
 
   const onEnqueueError = useCallback(
-    (err: unknown, senderCount: number) => {
+    (err: unknown, senderKeys: string[]) => {
+      const senderCount = senderKeys.length;
       setPending(null);
       // 402 is the entitlement cap — the global UpgradeModal already
       // explains it, so neither Sentry nor a second toast helps.
@@ -647,6 +649,15 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       // EVERY other failure — including the remaining 409s — is a real
       // defect signal and keeps its Sentry event.
       captureFeatureException(err, { surface: 'brief', reason: 'noise_bulk_enqueue' });
+      if (enqueueMayHaveStarted(err)) {
+        // It may be running: the senders must not stay armed for a second
+        // run, and the pill finds a job that did start.
+        clearSelection(senderKeys);
+        setFailureOutcome({ kind: 'unconfirmed' });
+        void qc.invalidateQueries({ queryKey: undoKeys.all });
+      } else {
+        setFailureOutcome({ kind: 'failed' });
+      }
       toast(
         getActionFailureCopy('enqueue', {
           action: `Archive for ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
@@ -655,7 +666,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         'warn',
       );
     },
-    [refreshRows],
+    [refreshRows, clearSelection, qc],
   );
 
   const confirm = useCallback(() => {
@@ -698,7 +709,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
               mailboxId: activeMailboxId,
             });
           },
-          onError: (err) => onEnqueueError(err, 1),
+          onError: (err) => onEnqueueError(err, senderKeys),
         },
       );
       return;
@@ -735,7 +746,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
             mailboxId: activeMailboxId,
           });
         },
-        onError: (err) => onEnqueueError(err, senderIds.length),
+        onError: (err) => onEnqueueError(err, senderKeys),
       },
     );
   }, [

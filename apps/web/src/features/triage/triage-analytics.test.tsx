@@ -369,7 +369,7 @@ describe('triage_action_taken (D159)', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't confirm Archive for ${GROUPON.senderName} — check Activity before retrying.`,
+        `Can't tell if Archive for ${GROUPON.senderName} started — check Activity before retrying.`,
         'warn',
       ),
     );

@@ -63,12 +63,14 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import {
+  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   NO_ACTIONABLE_SENDERS_COPY,
   skippedAtClickCopy,
 } from '@/lib/action-error-copy';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { undoKeys } from '@/features/undo/query-keys';
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
@@ -1279,12 +1281,20 @@ function SendersScreenContent({
               // list loaded. Refetch, or the reopened modal shows the same
               // stale row and 409s again — forever.
               if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // The job may be running: the row must not read as untouched
+              // (and re-armed for a second run), and the pill finds a job
+              // that did start through the in-flight read.
+              if (enqueueMayHaveStarted(err)) {
+                settleRowsRef.current([sender.id], { phase: 'unconfirmed', verb: primaryType });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : enqueueMayHaveStarted(err)
-                    ? getActionFailureCopy('status', { action: `${verb} for ${sender.name}` })
-                    : `Couldn't ${primaryType} ${sender.name}`,
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb} for ${sender.name}`,
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -1409,10 +1419,19 @@ function SendersScreenContent({
                           surface: 'senders',
                           reason: `enqueue_${secondary.type}_after_unsub`,
                         });
+                        if (enqueueMayHaveStarted(err)) {
+                          settleRowsRef.current([sref.id], {
+                            phase: 'unconfirmed',
+                            verb: secondary.type,
+                          });
+                          void qc.invalidateQueries({ queryKey: undoKeys.all });
+                        }
                         toast(
-                          enqueueMayHaveStarted(err)
-                            ? `Unsubscribe started, but couldn't confirm ${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email from ${sref.name} — check Activity before retrying`
-                            : `Unsubscribe started, but couldn't ${secondary.type} the older email from ${sref.name}`,
+                          backlogAfterUnsubFailureCopy({
+                            verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                            senderName: sref.name,
+                            error: err,
+                          }),
                           'warn',
                         );
                       },
@@ -1434,11 +1453,11 @@ function SendersScreenContent({
                 }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
                 toast(
-                  enqueueMayHaveStarted(err)
-                    ? getActionFailureCopy('status', {
-                        action: `the unsubscribe from ${sref.name}`,
-                      })
-                    : `Couldn't request the unsubscribe from ${sref.name}`,
+                  getActionFailureCopy('enqueue', {
+                    action: `Unsubscribe for ${sref.name}`,
+                    outcome: 'no request was sent',
+                    error: err,
+                  }),
                   'warn',
                 );
               },
@@ -1547,10 +1566,18 @@ function SendersScreenContent({
                         reason: `enqueue_bulk_${secondary.type}_after_unsub`,
                       });
                     }
+                    if (enqueueMayHaveStarted(err)) {
+                      settleRowsRef.current(
+                        senderRefs.map((sref) => sref.id),
+                        { phase: 'unconfirmed', verb: secondary.type },
+                      );
+                      void qc.invalidateQueries({ queryKey: undoKeys.all });
+                    }
                     toast(
-                      enqueueMayHaveStarted(err)
-                        ? `Unsubscribes started, but couldn't confirm ${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email — check Activity before retrying`
-                        : `Unsubscribes started, but couldn't ${secondary.type} the older email — see Activity`,
+                      backlogAfterUnsubFailureCopy({
+                        verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                        error: err,
+                      }),
                       'warn',
                     );
                   },
@@ -1579,9 +1606,11 @@ function SendersScreenContent({
               toast(
                 apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
                   ? 'No unsubscribe requests sent — open each sender for its options.'
-                  : enqueueMayHaveStarted(err)
-                    ? getActionFailureCopy('status', { action: 'the unsubscribe requests' })
-                    : "Couldn't send the unsubscribe requests — try again.",
+                  : getActionFailureCopy('enqueue', {
+                      action: `Unsubscribe for ${senderRefs.length} senders`,
+                      outcome: 'no request was sent',
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -1731,12 +1760,24 @@ function SendersScreenContent({
               const noneActionable = apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS';
               // The rows still read as before the click; re-read them.
               if (noneActionable) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // Some adds may have landed (a bulk answers 5xx when any one
+              // fails while the rest run): the selection is spent, its rows
+              // must not re-arm, and the pill finds what did start.
+              if (enqueueMayHaveStarted(err)) {
+                setSelected(new Set());
+                settleRowsRef.current(
+                  senders.map((s) => s.id),
+                  { phase: 'unconfirmed', verb: primaryType },
+                );
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 noneActionable
                   ? NO_ACTIONABLE_SENDERS_COPY
-                  : enqueueMayHaveStarted(err)
-                    ? getActionFailureCopy('status', { action: `${verb} for ${n} senders` })
-                    : `Couldn't ${primaryType} email from ${n} senders`,
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb} for ${n} senders`,
+                      error: err,
+                    }),
                 'warn',
               );
             },

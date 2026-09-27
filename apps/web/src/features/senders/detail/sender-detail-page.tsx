@@ -65,7 +65,12 @@ import { relTime } from './data';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
-import { enqueueMayHaveStarted, getActionFailureCopy } from '@/lib/action-error-copy';
+import {
+  backlogAfterUnsubFailureCopy,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+} from '@/lib/action-error-copy';
+import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
 import styles from '../sender-workspace.module.css';
@@ -821,12 +826,20 @@ function ReadyState({
               // page loaded. Refetch, or the reopened modal shows the same
               // stale sender and 409s again — forever.
               if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // The job may be running: the verb must not re-arm for a
+              // second run, and the pill finds a job that did start
+              // through the in-flight read.
+              if (enqueueMayHaveStarted(err)) {
+                setSettled({ phase: 'unconfirmed', verb: primaryType });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : enqueueMayHaveStarted(err)
-                    ? getActionFailureCopy('status', { action: `${verb} for ${sender.name}` })
-                    : `Couldn't ${primaryType} ${sender.name}`,
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb} for ${sender.name}`,
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -935,16 +948,17 @@ function ReadyState({
                         phase: unconfirmed ? 'unconfirmed' : 'failed',
                         verb: secondary.type,
                       });
+                      if (unconfirmed) void qc.invalidateQueries({ queryKey: undoKeys.all });
                       captureFeatureException(err, {
                         surface: 'senders',
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        unconfirmed
-                          ? getActionFailureCopy('status', {
-                              action: `${secondary.type === 'delete' ? 'Delete' : 'Archive'} for the older email from ${sender.name}`,
-                            })
-                          : `Couldn't ${secondary.type} the older email from ${sender.name}`,
+                        backlogAfterUnsubFailureCopy({
+                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                          senderName: sender.name,
+                          error: err,
+                        }),
                         'warn',
                       );
                     },
@@ -960,11 +974,11 @@ function ReadyState({
               }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
               toast(
-                enqueueMayHaveStarted(err)
-                  ? getActionFailureCopy('status', {
-                      action: `the unsubscribe from ${sender.name}`,
-                    })
-                  : `Couldn't request the unsubscribe from ${sender.name}`,
+                getActionFailureCopy('enqueue', {
+                  action: `Unsubscribe for ${sender.name}`,
+                  outcome: 'no request was sent',
+                  error: err,
+                }),
                 'warn',
               );
             },

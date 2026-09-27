@@ -3921,14 +3921,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
     await confirmBulk('u');
     await screen.findByText(
-      "Couldn't confirm the unsubscribe requests — check Activity before retrying.",
+      "Can't tell if Unsubscribe for 2 senders started — check Activity before retrying.",
     );
   });
 
   it('blames no sender for a mailbox conflict', async () => {
     refusedBulk('SELECT_MAILBOX');
     await confirmBulk('u');
-    await screen.findByText("Couldn't send the unsubscribe requests — try again.");
+    await screen.findByText("Couldn't start Unsubscribe for 2 senders — no request was sent.");
   });
 
   it('re-reads the list when an Archive refused every sender', async () => {
@@ -3939,7 +3939,35 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await waitFor(() => expect(listReads()).toBeGreaterThan(before));
   });
 
-  it('keeps the selection when the bulk enqueue fails (no optimistic clear)', async () => {
+  // A single Archive whose start the server could not confirm: the row
+  // must not re-arm for a second run.
+  it('marks a single Archive whose start is unconfirmed as not confirmed', async () => {
+    installFetchStub([
+      TWO_SENDER_LIST,
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(
+            JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'queue timeout' } }),
+            { status: 503, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreenWithToasts();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/rechecked when it runs/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await screen.findByText(
+      "Can't tell if Archive for Sender A started — check Activity before retrying.",
+    );
+    expect(await screen.findByText('Archive not confirmed')).toBeInTheDocument();
+  });
+
+  it('keeps the selection when the bulk enqueue is refused (no optimistic clear)', async () => {
     let enqueueAttempted = false;
     installFetchStub([
       TWO_SENDER_LIST,
@@ -3949,7 +3977,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         path: '/api/actions',
         respond: () => {
           enqueueAttempted = true;
-          return jsonServerError('boom');
+          return new Response(
+            JSON.stringify({ error: { code: 'VALIDATION_FAILED', message: 'bad request' } }),
+            { status: 400, headers: { 'content-type': 'application/json' } },
+          );
         },
       },
     ]);
@@ -3960,10 +3991,31 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(enqueueAttempted).toBe(true));
-    // The selection survives the failure so the user can retry.
+    // A refusal proves nothing ran: the selection survives for a retry.
     expect(await screen.findByText(/senders selected/i)).toBeInTheDocument();
     // And no receipt was fabricated.
     expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  // A 5xx does not prove nothing ran (a bulk answers it when one add fails
+  // while the rest run): a retry could run the same senders twice.
+  it('spends the selection when a failed bulk may have started', async () => {
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      { method: 'POST', path: '/api/actions', respond: () => jsonServerError('boom') },
+    ]);
+
+    renderScreenWithToasts();
+    await selectBothAndPress('a');
+    await screen.findByText(/rechecked when it runs/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await screen.findByText(
+      "Can't tell if Archive for 2 senders started — check Activity before retrying.",
+    );
+    expect(await screen.findAllByText('Archive not confirmed')).toHaveLength(2);
+    expect(screen.queryByText(/senders selected/i)).toBeNull();
   });
 
   it('surfaces a partial batch failure but keeps the succeeded portion undoable', async () => {
