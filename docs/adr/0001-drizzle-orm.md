@@ -33,7 +33,10 @@ The team needs:
   and emits forward migrations under `packages/db/migrations/`.
 - **Migration tooling hybrid (D152):** Drizzle Kit generates; Atlas
   lints in CI for dangerous changes (`destructive`, `data_depend`,
-  `incompatible`, `concurrent_index`). Each migration ships with a
+  `incompatible`). _Corrected 2026-09-26: `concurrent_index` was listed
+  here too, but it is an Atlas Pro analyzer that CI never ran, so lint
+  does not catch a CREATE INDEX without CONCURRENTLY (FOUNDER-FOLLOWUPS,
+  2026-09-26)._ Each migration ships with a
   companion `*.rollback` file (no `.sql` extension — Atlas reads every
   `*.sql` in the dir and would otherwise apply the rollback before the
   forward, since alphabetical sort places `.rollback.sql` before `.sql`).

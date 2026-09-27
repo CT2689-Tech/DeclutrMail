@@ -13,6 +13,10 @@ on:
       - 'packages/db/src/schema/**'
       - 'packages/db/drizzle.config.ts'
       - 'packages/db/atlas.hcl'
+      # The workflow and the Atlas it installs, so a change to either is
+      # exercised before merge rather than on the next migration PR.
+      - '.github/workflows/migration-lint.yml'
+      - 'scripts/install-atlas.sh'
   # MERGE QUEUE — and this one is not bookkeeping. Two PRs can each add
   # migration `0063`, pass this lint independently, and merge cleanly as
   # text. The collision only exists in the combination, which is the one
@@ -72,27 +76,60 @@ jobs:
           echo "✓ Existing forward migrations are unchanged."
 
       - name: Set up Atlas
-        # Pinned to v0.37.0 — Atlas v0.38+ gates `migrate lint` behind a
-        # paid (or login-required) Atlas Pro plan. v0.37.0 is the last
-        # release where the community CLI runs lint unauthenticated.
-        # See https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
-        # If we later add `ATLAS_CLOUD_TOKEN` (see FOUNDER-FOLLOWUPS.md),
-        # bump this back to `v0` and add `atlas login` before `lint`.
-        uses: ariga/setup-atlas@v0
-        with:
-          version: v0.37.0
+        # Pinned community build, checksum-verified before it runs. Since
+        # v0.38 the default build runs `migrate lint` only for paid Atlas Pro
+        # users (https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint);
+        # scripts/install-atlas.sh has the why and the bump procedure. Same
+        # installer as migration-apply.yml.
+        run: |
+          ./scripts/install-atlas.sh "$RUNNER_TEMP/atlas"
+          echo "$RUNNER_TEMP/atlas" >> "$GITHUB_PATH"
 
       - name: Run atlas migrate lint
         # Postgres 16 runs as a service container above (more reliable than
         # Atlas's `docker://` driver, which spawns its own container per run).
         # Atlas applies each migration against the empty `dev` DB and flags
-        # any dangerous operation per atlas.hcl's lint config:
-        #   destructive / data_depend / incompatible / concurrent_index
+        # dangerous operations per the top-level `lint` block in
+        # packages/db/atlas.hcl. `--config` is what loads that block:
+        # `migrate lint` reads no config file unless `--config` or `--env` is
+        # given, whatever the working directory, and on its built-in defaults
+        # data_depend is only a warning.
+        #
+        # A lint whose config silently stopped applying still passes every
+        # real migration, so the same command must also REJECT a known-bad
+        # one: a NOT NULL column with no default (MF103), which fails only
+        # under atlas.hcl. The probe makes its own table, so it does not
+        # depend on the real schema.
         run: |
-          atlas migrate lint \
-            --dir 'file://packages/db/migrations' \
-            --dev-url 'postgres://atlas:atlas@localhost:5432/dev?sslmode=disable' \
-            --latest 1
+          set -euo pipefail
+          lint() {
+            atlas migrate lint \
+              --config 'file://packages/db/atlas.hcl' \
+              --dir "file://$1" \
+              --dev-url "postgres://atlas:atlas@localhost:5432/$2?sslmode=disable" \
+              --latest 1
+          }
+          lint packages/db/migrations dev
+
+          probe="$RUNNER_TEMP/lint-probe"
+          cp -R packages/db/migrations "$probe"
+          echo 'CREATE TABLE "lint_probe" ("id" integer);' > "$probe/9998_lint_probe_table.sql"
+          echo 'ALTER TABLE "lint_probe" ADD COLUMN "required" text NOT NULL;' > "$probe/9999_lint_probe_column.sql"
+          atlas migrate hash --dir "file://$probe"
+          psql 'postgres://atlas:atlas@localhost:5432/postgres?sslmode=disable' \
+            -v ON_ERROR_STOP=1 -qc 'CREATE DATABASE lint_probe;'
+          if lint "$probe" lint_probe > "$RUNNER_TEMP/lint-probe.log" 2>&1; then
+            cat "$RUNNER_TEMP/lint-probe.log"
+            echo "::error::Lint accepted a NOT NULL column with no default: packages/db/atlas.hcl is not being applied."
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/lint-probe.log"
+          if ! grep -q 'MF103' "$RUNNER_TEMP/lint-probe.log" ||
+            ! grep -q 'version with errors' "$RUNNER_TEMP/lint-probe.log"; then
+            echo "::error::The lint probe failed, but not with an MF103 error, so it did not test atlas.hcl."
+            exit 1
+          fi
+          echo "✓ Lint rejects the known-bad probe, so atlas.hcl is applied."
 
       - name: Apply every migration to a throwaway database
         # THE CHECK THAT WAS MISSING, AND IT COST TWO PRODUCTION FAILURES.
@@ -133,6 +170,19 @@ jobs:
             --url 'postgres://atlas:atlas@localhost:5432/apply_probe?sslmode=disable' \
             --dir 'file://packages/db/migrations'
           echo "✓ Every migration applies cleanly from empty."
+          # migration-apply.yml's post-apply check reads this same status
+          # template against production. Prove it prints OK here first, so an
+          # Atlas bump that changed it fails on the bump PR, not after a real
+          # production apply.
+          status=$(atlas migrate status \
+            --url 'postgres://atlas:atlas@localhost:5432/apply_probe?sslmode=disable' \
+            --dir 'file://packages/db/migrations' \
+            --format '{{ .Status }}')
+          if [ "$status" != "OK" ]; then
+            echo "::error::migrate status printed '$status' after a full apply, expected OK."
+            exit 1
+          fi
+          echo "✓ migrate status reports OK."
 
       - name: Verify rollback companion exists for every migration
         # Rollback files use the `.rollback` (no `.sql`) extension so Atlas
