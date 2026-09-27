@@ -8,6 +8,7 @@ import {
   stuckMailboxPolicy,
   watchdogSilentPolicy,
   starveTestResources,
+  alertsPageQuery,
 } from './setup-stuck-mailbox-alert.mjs';
 
 const WORKER = readFileSync('packages/workers/src/stuck-mailbox-watchdog.ts', 'utf8');
@@ -82,6 +83,16 @@ test('every policy it creates obeys the API limits that refused one live', () =>
     const autoClose = policy.alertStrategy?.autoClose;
     if (autoClose) assert.ok(Number.parseInt(autoClose, 10) >= 1800, policy.displayName);
   }
+});
+
+test('the starve test polls alerts with a sort order the API accepts', () => {
+  // 2026-09-26: the real alerts.list refused orderBy "openTime desc" (HTTP
+  // 400); only the dry runs' fake API accepted it. The reference sorts by
+  // open_time or close_time, optionally "desc", even though the Alert JSON
+  // it returns spells the field openTime.
+  for (const field of alertsPageQuery().get('orderBy').split(','))
+    assert.match(field.trim(), /^(open_time|close_time)( desc)?$/);
+  assert.equal(alertsPageQuery('next-page').get('pageToken'), 'next-page');
 });
 
 test('a silent watchdog pages, including one whose heartbeat never arrived', () => {
