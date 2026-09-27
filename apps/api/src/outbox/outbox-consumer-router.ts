@@ -1,11 +1,17 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, not, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
-import { screenerQuarantine, senderPolicies } from '@declutrmail/db';
+import {
+  followupReplyExists,
+  followupTracker,
+  screenerQuarantine,
+  senderPolicies,
+} from '@declutrmail/db';
 import {
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
   AutopilotRuleActivatedPayloadSchema,
+  MailboxNonMailPurgedPayloadSchema,
   MailboxSyncFailedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
@@ -16,6 +22,7 @@ import type {
   ActionLabelAppliedPayload,
   ActionsUnsubscribeExecutedPayload,
   ActionsUnsubscribeIntentRecordedPayload,
+  MailboxNonMailPurgedPayload,
   MailboxSyncFailedPayload,
   MailboxSyncReadyPayload,
   TriageVerdictAppliedPayload,
@@ -61,6 +68,18 @@ export interface OutboxConsumerDeps {
     eventId: string,
   ) => Promise<void>;
   onMailboxSyncFailed?: (payload: MailboxSyncFailedPayload, eventId: string) => Promise<void>;
+  /**
+   * `mailbox.non_mail_purged` — enqueue a score job per recounted sender
+   * (the ScoreWorker is the only writer of `triage_decisions`).
+   * `producedAtMs` is the purge's clock, so a redelivery dedups by jobId.
+   * Optional so other roles can build the router, but an event that
+   * needs a re-score throws without it rather than being acked.
+   */
+  rescoreSenders?: (
+    mailboxAccountId: string,
+    senderKeys: readonly string[],
+    producedAtMs: number,
+  ) => Promise<void>;
 }
 
 /**
@@ -223,6 +242,9 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
           ActionsUnsubscribeExecutedPayloadSchema.parse(event.payload),
         );
         return;
+      case TOPICS.MAILBOX_NON_MAIL_PURGED:
+        await handleNonMailPurged(db, deps, MailboxNonMailPurgedPayloadSchema.parse(event.payload));
+        return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
         // to `dispatched` rather than blocking the queue. A future
@@ -319,6 +341,60 @@ async function enqueueAutopilotApply(
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
   });
+}
+
+/**
+ * `mailbox.non_mail_purged` — repair, in the features that own them, what
+ * purged drafts and chat lines fed (D204). The purge itself only touches
+ * the sender index.
+ *
+ * Follow-ups: `FollowupCheckWorker.flipReplied` marked a thread replied
+ * once an inbound message followed the user's send, and a draft saved in
+ * the thread used to count as one. Reopen a replied row on those threads
+ * when no reply is left — `followupReplyExists`, the same definition
+ * `flipReplied` uses, negated over the mail that remains. Only
+ * `flipReplied` sets `replied` (a user can only dismiss), so this undoes
+ * no choice of theirs. Idempotent: a reopened row is `awaiting`, which
+ * this never matches.
+ *
+ * Triage: the recounted senders' verdicts quote counts that changed, so
+ * they are re-scored by the ScoreWorker, the only writer of
+ * `triage_decisions`.
+ *
+ * Unwired re-score throws before touching anything. Acking the event
+ * without it would drop the repair for good (the rows that described
+ * those senders are gone), so the row stays for the dispatcher to retry,
+ * then fail where the operator sees it.
+ */
+async function handleNonMailPurged(
+  db: DrizzleDb,
+  deps: OutboxConsumerDeps,
+  payload: MailboxNonMailPurgedPayload,
+): Promise<void> {
+  const rescore = deps.rescoreSenders;
+  if (payload.recountedSenderKeys.length > 0 && !rescore) {
+    throw new Error('mailbox.non_mail_purged: rescoreSenders is not wired');
+  }
+  if (payload.threadIds.length > 0) {
+    await db
+      .update(followupTracker)
+      .set({ status: 'awaiting', updatedAt: sql`now()` })
+      .where(
+        and(
+          eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
+          eq(followupTracker.status, 'replied'),
+          inArray(followupTracker.providerThreadId, payload.threadIds),
+          not(followupReplyExists(payload.mailboxAccountId)),
+        ),
+      );
+  }
+  if (rescore && payload.recountedSenderKeys.length > 0) {
+    await rescore(
+      payload.mailboxAccountId,
+      payload.recountedSenderKeys,
+      Date.parse(payload.purgedAt),
+    );
+  }
 }
 
 /**

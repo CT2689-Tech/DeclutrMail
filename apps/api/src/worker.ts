@@ -2916,6 +2916,19 @@ async function bootstrap(): Promise<void> {
         emailQueue: emailSendQueue,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
       }),
+      // `mailbox.non_mail_purged` — one signal_change score job per
+      // recounted sender. The ScoreWorker stays the only writer of
+      // `triage_decisions`; jobIds reuse the purge's clock, so a
+      // redelivered event dedups.
+      rescoreSenders: async (mailboxAccountId, senderKeys, producedAtMs) => {
+        await scoreProducerQueue.addBulk(
+          senderKeys.map((senderKey) => ({
+            name: SCORE_JOB,
+            data: { mailboxAccountId, senderKey, trigger: 'signal_change' as const, producedAtMs },
+            opts: { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
+          })),
+        );
+      },
     }),
     observer: {
       captureBackgroundFailure: (err, ctx) =>

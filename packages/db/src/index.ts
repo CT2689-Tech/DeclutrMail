@@ -87,6 +87,7 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {
   ALL_MAIL_EXCLUDED_LABELS,
+  followupReplyExists,
   readStateNotSweeperMarked,
   readStateSweeperMarked,
   senderActionWhere,
