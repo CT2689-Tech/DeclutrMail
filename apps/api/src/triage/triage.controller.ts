@@ -3,13 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   HttpException,
   HttpStatus,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ok, type Envelope } from '@declutrmail/shared/contracts';
+import { EXPLAIN_BATCH_MAX, ok, type Envelope } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -28,6 +29,7 @@ import { TriageService } from './triage.service.js';
  * Triage routes (D20, D25, D29, D30, D33).
  *
  *   POST /api/triage/score-sender   { senderKey } → idempotencyKey
+ *   POST /api/triage/explain        { senderIds } → ids now pending
  *   GET  /api/triage/queue-size                    → adaptive D30 size
  *   GET  /api/triage/queue?limit=…                 → TriageQueueRow[]
  *   GET  /api/triage/stats                         → TriageSessionStats
@@ -69,6 +71,11 @@ export class TriageController {
     // back, and the mailbox-scoped lookup means a guessed id 404s
     // rather than enqueueing work against another mailbox.
     const senderId = typeof body?.senderId === 'string' ? body.senderId : null;
+    // Before the lookup: `senders.id` is a uuid column, and a malformed id
+    // there is a Postgres cast error — a 500 for what is a bad request.
+    if (senderId !== null && !isUuid(senderId)) {
+      throw new BadRequestException('Sender id must be a UUID.');
+    }
     const senderKey = senderId
       ? await this.triage.resolveSenderKey(mailbox.id, senderId)
       : typeof body?.senderKey === 'string'
@@ -87,6 +94,42 @@ export class TriageController {
       mailboxAccountId: mailbox.id,
       senderKey,
       reason,
+    });
+    return ok(result);
+  }
+
+  /**
+   * Ask for the LLM sentences behind the template reasons a page is showing
+   * (D24, founder decision 2026-09-25). Queues background work and returns —
+   * the request never waits on a model; the page refetches its own read to
+   * pick the sentences up.
+   *
+   * At most `EXPLAIN_BATCH_MAX` ids — a full Triage queue: a page asks about
+   * what it shows, never about the mailbox. Its OWN counter (a route-scoped
+   * limit): not `gmail-action`, whose budget a user's Archive needs, and not
+   * the shared `triage-load` pool, which the reads showing these very
+   * reasons spend. Page loads ask about once per decision; 60/min is an
+   * order of magnitude above that and still a wall for a script.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 60, windowSec: 60 })
+  @Post('explain')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async explain(
+    @CurrentMailbox() mailbox: { id: string },
+    @Body() body: { senderIds?: unknown },
+  ): Promise<Envelope<{ queued: string[] }>> {
+    const raw = body?.senderIds;
+    if (
+      !Array.isArray(raw) ||
+      raw.length === 0 ||
+      raw.length > EXPLAIN_BATCH_MAX ||
+      !raw.every((id) => typeof id === 'string' && isUuid(id))
+    ) {
+      throw new BadRequestException(`senderIds must be 1–${EXPLAIN_BATCH_MAX} sender ids.`);
+    }
+    const result = await this.triage.explainSenders({
+      mailboxAccountId: mailbox.id,
+      senderIds: [...new Set(raw as string[])],
     });
     return ok(result);
   }
@@ -215,4 +258,9 @@ export class TriageController {
  */
 function notFound(message: string): HttpException {
   return new HttpException({ message }, HttpStatus.NOT_FOUND);
+}
+
+/** UUID v4 (relaxed — accepts any RFC 4122 hex layout). */
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

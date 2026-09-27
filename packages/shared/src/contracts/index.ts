@@ -397,3 +397,4 @@ export {
   ENGAGEMENT_WINDOW_MS,
   engagementWindowStart,
 } from './engagement-window';
+export { EXPLAIN_BATCH_MAX } from './triage-explain';

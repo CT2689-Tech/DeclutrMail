@@ -106,6 +106,13 @@ export interface TriageDecisionRow {
   /** D24 reasoning copy — LLM (Haiku) or template fallback. */
   reasoning: string;
   /**
+   * Whose sentence `reasoning` is (D24). A row still on the template asks
+   * for its LLM sentence (`useExplainReasons`); never rendered. OPTIONAL:
+   * the demo fixtures and the public simulator have no engine behind them,
+   * and an API predating the field makes no claim — neither asks.
+   */
+  generatedBy?: 'llm_haiku' | 'template';
+  /**
    * ISO-8601 — when the engine produced this read (D25).
    *
    * OPTIONAL because the demo fixtures and the public inbox simulator

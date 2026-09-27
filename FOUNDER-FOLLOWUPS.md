@@ -23,6 +23,132 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-26 — Decide whether a red migration lint should block a merge
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790) review, session 2026-09-26
+
+**Why:** the `atlas migrate lint` job is not a required check. Branch
+protection on main requires nine checks, and it is not one of them. So
+every check in that job can be red while auto-merge and the merge queue
+proceed:
+- lint itself, which PR #790 makes enforce `data_depend` as an error
+- the known-bad-migration probe
+- the full apply from empty
+- the forward-only check and the rollback-companion check
+
+`migration-apply.yml` then runs the migration on production. Merging past
+a red lint has been suggested here before (the PR #131 entry below).
+
+**How:** repo settings are yours to change, so this needs your hands. Two
+steps, in this order:
+1. Make the job report on every PR: drop its `pull_request` `paths`
+   filter and skip the steps when no migration file changed, so the check
+   still passes. A required check that never reports leaves other PRs
+   waiting on "Expected" forever.
+2. Add `atlas migrate lint` to main's required checks.
+
+**Verifies by:** a PR adding `ALTER TABLE … ADD COLUMN … NOT NULL` with no
+default cannot merge.
+
+**Status:** Open
+
+### 2026-09-26 — Bump Atlas before Ariga stops serving v1.3.0
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
+
+**Why:** CI's lint, the production migration apply, and the daily infra
+snapshot all install Atlas v1.3.0 through `scripts/install-atlas.sh`.
+Ariga's published policy removes binaries more than 6 months old from its
+download hosts (https://atlasgo.io/cli-reference#supported-version-policy),
+so v1.3.0 (published 2026-08-02) can disappear from 2027-02-02. Removals
+have not run on schedule: v0.37.0 still downloaded at 12 months old
+(checked 2026-09-26). Once v1.3.0 is gone the installer fails, and
+`migration-apply.yml` stops applying migrations. Merging a bump changes
+the tool that applies production migrations, so it needs your OK.
+
+**How:** set `ATLAS_VERSION` and both checksums in
+`scripts/install-atlas.sh` to the newest release. Each checksum is at
+`https://atlasbinaries.com/atlas/atlas-community-<platform>-<version>.sha256`.
+On the new binary, the bump PR's migration-lint run:
+- applies every migration from empty
+- lints the newest
+- fails unless lint rejects its NOT NULL probe
+- fails unless `migrate status --format` prints OK
+
+Also re-run the proof harness in PR #790's body against the current and
+the new binary. It compares hash, apply, status, handoff and rollback,
+and repeats the lint negative controls, which catch an analyzer moving to
+Atlas Pro.
+
+**Verifies by:** migration-lint green on the bump PR, the harness showing
+the same results for both binaries, then `atlas community version <new>`
+in the next migration-apply log.
+
+**Status:** Open — due by 2027-01-15
+
+### 2026-09-26 — Decide how a CREATE INDEX without CONCURRENTLY gets caught
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
+
+**Why:** D152 says Atlas flags "index creation that requires
+CONCURRENTLY". It never has. The `concurrent_index` analyzer is Atlas Pro
+only (https://atlasgo.io/lint/analyzers), and CI has never run it: a
+synthetic `CREATE INDEX` on `senders` with no CONCURRENTLY passed lint on
+v0.37.0 and v1.3.0, with the old config and without it (2026-09-26). The
+59 `atlas:nolint concurrent_index` lines in migrations do nothing. Of 97
+`CREATE INDEX` statements, 24 have neither CONCURRENTLY nor that line,
+including `0063` on `senders`. A plain index build on a large table
+blocks writes to it until the build finishes.
+
+**How:** pick one. (a) Buy Atlas Pro and add its token as a secret. That
+means switching CI back to the default build and restoring a
+`concurrent_index { error = true }` block in `packages/db/atlas.hcl`;
+without the block, PG101 only warns. It also brings the PG3xx
+blocking-change checks. (b) A repo check that fails any new
+non-concurrent index without an opt-out line, on new tables too. This is
+a text match, free, and adds opt-out lines to new-table indexes.
+(c) Leave it to review. Recommendation: (b).
+
+**Verifies by:** a synthetic non-concurrent index fails the chosen check.
+
+### 2026-09-26 — After #792 deploys, re-score the stored explanations that fail a check
+
+**Source:** PR #792 (https://github.com/CT2689-Tech/DeclutrMail/pull/792), second adversarial review. Approved by the founder 2026-09-27 UTC, via the orchestrating session.
+
+**Why:** #792 refuses a Haiku sentence that names internal vocabulary or
+puts a sender Gmail files outside Primary in the Primary inbox, both fresh
+and on reuse. Sentences already stored keep their copy until their sender
+is re-scored. A read-only count on 2026-09-26 found 28 Primary claims (1
+mailbox) and 176 leaked-vocabulary rows (2 mailboxes), all past their TTL:
+Sender Detail, an expanded Triage row and an opened Screener row refresh
+them on open, but the action sheet and the collapsed card still show them.
+
+**How:** after #792 is deployed, from an up-to-date main checkout with
+production credentials:
+
+1. Dry run, which enqueues nothing:
+
+   ```bash
+   DATABASE_URL=… REDIS_URL=… pnpm tsx scripts/rescore-leaked-copy.ts --dry-run
+   ```
+
+   Expected, from the script's own selection run read-only on 2026-09-26:
+
+   ```
+   {"kind":"rescore_leaked_copy.scan","affected":203,"vocabulary":176,"primaryClaims":28,"dryRun":true}
+   ```
+
+   A smaller `affected` is fine (rows refreshed on open drop out); a much
+   larger one is worth reading before step 2.
+
+2. The same command without `--dry-run`: one `manual_rescore` job per
+   affected sender, about 203 Haiku calls, once.
+
+**Verifies by:** once the score queue drains, the dry run prints
+`"affected":0`.
+
+**Status:** Open
+
 ### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
 
 **Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
@@ -2437,8 +2563,13 @@ Then edit `.github/workflows/migration-lint.yml`:
   3. Or pass `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` to setup-atlas
 **Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
 release; lint reports appear at atlas.ariga.io.
-**Status:** Done 2026-08-23 — `ATLAS_CLOUD_TOKEN` is wired in `.github/workflows/`, and
-`migrate lint` has been passing on every migration PR through #617.
+**Status:** Skipped 2026-09-26 — not needed: CI now installs the community
+build of Atlas v1.3.0 (`scripts/install-atlas.sh`, PR #790), which lints
+without an account.
+**Correction 2026-09-26:** the "Done 2026-08-23" that stood here was wrong.
+`gh secret list` shows no `ATLAS_CLOUD_TOKEN`, and no workflow on main has
+read one. PR #5's branch passed it to setup-atlas, then removed it before
+merging. Lint passed because v0.37.0 needed no account.
 **Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
 
 ---

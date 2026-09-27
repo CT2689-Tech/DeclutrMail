@@ -50,6 +50,7 @@ import {
   useScreenerDecide,
 } from './api/use-screener';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
+import { useExplainReasons } from '@/features/senders/api/use-explain-reasons';
 import {
   SCREENER_QUEUE,
   canScreenerUnsubscribe,
@@ -217,6 +218,32 @@ export function ScreenerScreen({
     /** Delete defaults to the safe six-month window, then follows the user's choice. */
     windowDays: number | null;
   } | null>(null);
+
+  // D24 — explanations on demand (founder decision 2026-09-25). The reason
+  // is read in the expanded row and in the decide preview's "Why
+  // suggested", so those rows ask for their sentence — not the whole
+  // queue, which the user scans by name and mail count and may never open.
+  // A stale expanded row is the refresh above's (the re-score buys its
+  // own sentence). The re-read is the queue alone: an explanation cannot
+  // change which senders are waiting, so the count badge is left out.
+  const pendingScreenerRow =
+    pending !== null && state.kind === 'ready'
+      ? (state.rows.find((r) => r.id === pending.rowId) ?? null)
+      : null;
+  useExplainReasons(
+    [expandedScreenerRow, pendingScreenerRow].flatMap((row) =>
+      row?.recommendation && !(row === expandedScreenerRow && row.recommendation.stale === true)
+        ? [
+            {
+              senderId: row.senderId,
+              generatedBy: row.recommendation.generatedBy,
+              scoredAt: row.recommendation.scoredAt,
+            },
+          ]
+        : [],
+    ),
+    { invalidate: SCREENER_QUEUE_KEY },
+  );
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
     mailboxId: string | undefined;

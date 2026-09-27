@@ -23,6 +23,7 @@ import {
   senderActionWhere,
   senderPolicies,
   senders,
+  TRIAGE_DECIDED_WINDOW_DAYS,
   undoJournal,
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
@@ -58,7 +59,6 @@ import {
   type EntitlementsExecutor,
 } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
   ActionJobStatus,
   ActionStatusResult,
