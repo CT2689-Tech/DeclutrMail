@@ -13,12 +13,13 @@
 //   • ReadingBeforeTotal   — reading, mailbox not listed yet: the stage sentence
 //   • ReadingListed        — listed, first batch not in: "Found 40,898 emails"
 //   • ReadingCount         — reading: "12,400 of 40,898 emails", no time yet
-//   • ReadingTimeLeft      — live batches; time left appears after the second
-//   • ReadingLongestLine   — live, 7-digit total and the hour form (wrap check)
+//   • ReadingTimeLeft      — live batches; time left once two gaps between them agree
+//   • ReadingLongestLine   — live, 7-digit counts with an hours estimate (phone layout)
 //   • Ready                — scan done, shown until the route navigates away
 //   • Failed               — terminal error with a known error_code
 //   • FailedPermanent      — the longest failed copy; names the support address
-//   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back
+//   • FailedReconnect      — Google stopped accepting access: "Reconnect Gmail" leads
+//   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back to <primary>"
 
 import { useEffect, useState, type ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -48,7 +49,7 @@ const meta: StoryMeta<typeof SyncGate> = {
     docs: {
       description: {
         component:
-          'Onboarding sync gate (D109). "Reading your inbox…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one line under it, all from real backend state: while the scan reads the mailbox, emails read of emails in it (plus time left once the tab has watched two batches arrive); otherwise the stage sentence. No privacy badge on this screen — it sits on the promise step, at the decision point.',
+          'Onboarding sync gate (D109). "Reading your Gmail…" — the strict gate (D6) shown after a Gmail connect. One line saying the user may leave (it promises the "Your inbox is ready" email only when that email will go: switched on, and the first scan of that mailbox), one progress bar and one line under it, all from real backend state: while the scan reads the mailbox, emails read of emails in it (plus time left once the tab has watched two gaps between batches); otherwise the stage sentence. No privacy badge on this screen — it sits on the promise step, at the decision point.',
       },
     },
   },
@@ -65,6 +66,10 @@ function frame(children: React.ReactNode) {
 
 // `last_synced_at: null` — a first scan, the only kind the ready email
 // goes for.
+
+// A failed gate's buttons act on the mailbox it names; without one they
+// are drawn disabled, which is not what users see.
+const MAILBOX_ID = 'mb-story';
 const QUEUED: SyncStatus = {
   readiness_status: 'queued',
   current_stage: 'queued',
@@ -169,20 +174,21 @@ export const ReadingCount: Story<typeof SyncGate> = {
 };
 
 /**
- * Feeds a 500-email batch every 2s from the story's own counts, the way
- * the poll sees the worker's, and starts over at the end so the story
- * never runs dry.
+ * Feeds a batch every 2s from the story's own counts — `step` emails, 500
+ * like the worker unless a story needs a slower pace — the way the poll
+ * sees the worker's, and starts over at the end so the story never runs
+ * dry.
  */
-function LiveReading(args: GateArgs) {
+function LiveReading({ step = 500, ...args }: GateArgs & { step?: number }) {
   const start = args.status.message_progress ?? { processed: 12_400, total: 40_898, age_ms: 0 };
   const [processed, setProcessed] = useState(start.processed);
   useEffect(() => {
     const id = setInterval(
-      () => setProcessed((p) => (p + 500 >= start.total ? start.processed : p + 500)),
+      () => setProcessed((p) => (p + step >= start.total ? start.processed : p + step)),
       2_000,
     );
     return () => clearInterval(id);
-  }, [start.processed, start.total]);
+  }, [start.processed, start.total, step]);
   return (
     <SyncGate
       {...args}
@@ -196,8 +202,8 @@ function LiveReading(args: GateArgs) {
 }
 
 /**
- * Reading, live — "about N min left" joins the count once a second batch
- * lands, at the rate between them.
+ * Reading, live — "about N min left" joins the count once two gaps between
+ * batches agree, at the rate across them.
  */
 export const ReadingTimeLeft: Story<typeof SyncGate> = {
   args: { status: READING, readyEmail: true },
@@ -205,18 +211,20 @@ export const ReadingTimeLeft: Story<typeof SyncGate> = {
 };
 
 /**
- * The longest realistic line — a 7-digit mailbox in the hour form. At
- * phone width it may break only after the dot.
+ * The longest realistic line — seven-digit counts with an hours estimate
+ * ("1,000,015 of 1,234,567 emails · about 26 hr 5 min left", at 5 emails
+ * a batch). On a phone the time takes its own line, without the dot; from
+ * 540px up it fits on one.
  */
 export const ReadingLongestLine: Story<typeof SyncGate> = {
   args: {
     status: {
       ...READING,
-      message_progress: { processed: 12_345, total: 1_234_567, age_ms: 0 },
+      message_progress: { processed: 1_000_000, total: 1_234_567, age_ms: 0 },
     },
     readyEmail: true,
   },
-  render: (args: GateArgs) => frame(<LiveReading {...args} />),
+  render: (args: GateArgs) => frame(<LiveReading {...args} step={5} />),
 };
 
 /** Ready — shown only until the route navigates to the next step. */
@@ -227,7 +235,7 @@ export const Ready: Story<typeof SyncGate> = {
 
 /** Failed — terminal error with retry affordance. */
 export const Failed: Story<typeof SyncGate> = {
-  args: { status: FAILED },
+  args: { status: FAILED, mailboxId: MAILBOX_ID },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
@@ -236,7 +244,16 @@ export const Failed: Story<typeof SyncGate> = {
  * support@declutrmail.com because the first-run gate has no route to Help.
  */
 export const FailedPermanent: Story<typeof SyncGate> = {
-  args: { status: { ...FAILED, error_code: 'PermanentError' } },
+  args: { status: { ...FAILED, error_code: 'PermanentError' }, mailboxId: MAILBOX_ID },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Failed because Google stopped accepting our access — "Reconnect Gmail"
+ * leads, not a retry against the same dead grant (QA-sync-20260831-07).
+ */
+export const FailedReconnect: Story<typeof SyncGate> = {
+  args: { status: { ...FAILED, error_code: 'AuthExpiredError' }, mailboxId: MAILBOX_ID },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
@@ -263,6 +280,7 @@ export const SyncingSecondary: Story<typeof SyncGate> = {
 export const FailedSecondary: Story<typeof SyncGate> = {
   args: {
     status: FAILED,
+    mailboxId: MAILBOX_ID,
     escape: { returnToEmail: 'primary@example.com', onReturn: () => {} },
   },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),

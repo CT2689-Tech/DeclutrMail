@@ -311,7 +311,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
@@ -440,7 +440,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
@@ -464,9 +464,11 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    expect(await screen.findByText('Checking your inbox scan…')).toBeInTheDocument();
+    expect(await screen.findByText('Checking the scan…')).toBeInTheDocument();
     expect(screen.queryByText('Waiting to start.')).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
+    // A slow first read must not strand the user: the way back stays.
+    expect(screen.getByRole('button', { name: 'Go back to a@b.com' })).toBeInTheDocument();
 
     release();
     expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
@@ -549,7 +551,10 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       installFetchStub([secondaryMe(), syncStatus(false), setPrimaryActive]);
       renderPage();
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Go back to a@b.com' }));
+      // The gate, not the "Checking the scan…" screen it replaces — both
+      // offer the way back, and a click on the one leaving is lost.
+      await screen.findByText('Reading your Gmail…');
+      await userEvent.click(screen.getByRole('button', { name: 'Go back to a@b.com' }));
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
     },
@@ -594,7 +599,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check your inbox scan.");
+      await screen.findByText("We couldn't check the scan.");
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -623,7 +628,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check your inbox scan.");
+    await screen.findByText("We couldn't check the scan.");
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });

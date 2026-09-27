@@ -18,7 +18,7 @@ const { color, font, text, radius, motion } = tokens;
 /**
  * Onboarding sync gate (D109, D224).
  *
- * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
+ * "Reading your Gmail…" — the strict gate (D6) shown after a Gmail
  * connect, before the app opens. D109's one line saying the user may
  * leave, ONE progress bar bound to the real `progress_pct` and ONE
  * line under it: while the scan reads the mailbox, the real counts
@@ -70,14 +70,16 @@ function stageSentence(status: SyncStatus): string {
 
 /**
  * The counts, only while the scan reads the mailbox — the one stage they
- * describe. `null` before the mailbox is listed and from an API that
- * does not send the field yet: no line, never a guessed number.
+ * describe. `null` before the mailbox is listed; `undefined` when this
+ * poll could not read them, or from an API that does not send the field
+ * yet. Either way no line, never a guessed number — but a failed read
+ * leaves the time left's pace alone.
  */
-function readingCounts(status: SyncStatus): SyncMessageProgress | null {
+function readingCounts(status: SyncStatus): SyncMessageProgress | null | undefined {
   if (status.readiness_status !== 'syncing' || status.current_stage !== 'fetching_metadata') {
     return null;
   }
-  return status.message_progress ?? null;
+  return status.message_progress;
 }
 
 /** "about 10 min left" — minutes rounded up; past an hour, up to the next 5. */
@@ -246,7 +248,9 @@ function SyncProgress({
 
   return (
     <Shell>
-      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your inbox…'}</h1>
+      {/* "Gmail", not "inbox": the scan reads all mail but Spam and Trash,
+          and the count below says how much. */}
+      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your Gmail…'}</h1>
       {!ready && (
         // Same sub-line treatment as StepShell on the sibling steps.
         <p
@@ -269,7 +273,7 @@ function SyncProgress({
         aria-valuenow={pct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label="Inbox scan progress"
+        aria-label="Scan progress"
         style={{
           height: 6,
           width: '100%',
@@ -305,16 +309,17 @@ function SyncProgress({
         </p>
       )}
       {counts && (
-        <p data-testid="sync-count" style={UNDER_BAR_LINE}>
-          {countText(counts)}
-          {/* The line may break only after the dot, never inside the time. */}
-          {msLeft !== null && (
-            <>
-              {'\u00A0· '}
-              <span style={{ whiteSpace: 'nowrap' }}>{timeLeftPhrase(msLeft)}</span>
-            </>
-          )}
-        </p>
+        <>
+          <p data-testid="sync-count" style={UNDER_BAR_LINE}>
+            {countText(counts)}
+            {/* Neither the total nor the time splits across lines. */}
+            {msLeft !== null && <span className="dm-scan-sep">{'\u00A0· '}</span>}
+            <span className="dm-scan-time" style={{ whiteSpace: 'nowrap' }}>
+              {msLeft !== null && timeLeftPhrase(msLeft)}
+            </span>
+          </p>
+          <style>{SCAN_COUNT_CSS}</style>
+        </>
       )}
 
       {/* The secondary keeps syncing in the background after the hop; the
@@ -358,7 +363,7 @@ function SyncFailed({
     'Something interrupted the scan. Your Gmail is untouched — try again.';
   return (
     <Shell>
-      <h1 style={titleStyle}>The inbox scan stopped.</h1>
+      <h1 style={titleStyle}>The scan stopped.</h1>
       <p
         style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
       >
@@ -448,6 +453,19 @@ const UNDER_BAR_LINE = {
   margin: '16px 0 0',
   fontVariantNumeric: 'tabular-nums',
 } as const;
+
+/**
+ * The count and its time share one line where they fit. On a phone they
+ * do not (~333px of text in a 222–332px card, measured 2026-09-26), and a
+ * wrapped line strands the dot at its end: there the time takes a line of
+ * its own, without the dot, held open while counts show so the centred
+ * card does not jump each time a time comes or goes. From 540px up the
+ * card holds even a seven-digit count with an hours estimate on one line.
+ */
+const SCAN_COUNT_CSS = `@media (max-width: 539px) {
+  .dm-scan-sep { display: none; }
+  .dm-scan-time { display: block; min-height: 1.45em; }
+}`;
 
 const SCREEN_READER_ONLY = {
   position: 'absolute',

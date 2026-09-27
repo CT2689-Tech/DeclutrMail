@@ -265,20 +265,17 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       case 'sync-gate': {
         if (sync.isError) {
           return (
-            <FlowError
-              title="We couldn't check your inbox scan."
-              onRetry={() => void sync.refetch()}
-            />
+            <FlowError title="We couldn't check the scan." onRetry={() => void sync.refetch()} />
           );
+        }
+        // Nothing read yet: say so, never a "Waiting to start." at 0% the
+        // gate has not seen (the same rule as the secondary gate).
+        if (!sync.data) {
+          return <FlowSkeleton label="Checking the scan…" />;
         }
         // First-run strict gate (D6): no escape hatch — there is nothing
         // to return to. Ready flips the derivation to step 4 on its own.
-        const status = sync.data ?? {
-          readiness_status: 'queued' as const,
-          current_stage: 'queued' as const,
-          progress_pct: 0,
-          is_ready_for_triage: false,
-        };
+        const status = sync.data;
         // Pass the SAME id the status query is scoped to. Without it the
         // retry would resolve "active" server-side, which can differ from
         // this cached `me.activeMailboxId` (another tab switched, a
@@ -393,8 +390,8 @@ function SecondaryConnectGate({
   // this target went inactive out-of-band (disconnect / delete-indexed-
   // data in another tab) with no other active mailbox to escape to —
   // `retryTransientOnly` correctly refuses to retry a 4xx, so `sync.data`
-  // stays `undefined` forever and the fallback below would otherwise fake
-  // a "Reading your inbox… 0%" scan that will never run. `/home` is
+  // stays `undefined` forever and the screen below would otherwise hold
+  // "Checking the scan…" on a read that will never succeed. `/home` is
   // under the app shell's own well-tested `NoActiveMailbox` gate (unlike
   // this route), so route there instead of inventing a second one.
   //
@@ -416,7 +413,7 @@ function SecondaryConnectGate({
   if (sync.isError && !trapped) {
     return (
       <FlowError
-        title="We couldn't check your inbox scan."
+        title="We couldn't check the scan."
         onRetry={() => void sync.refetch()}
         escape={escape}
       />
@@ -425,9 +422,10 @@ function SecondaryConnectGate({
 
   // Nothing read yet (the server seeds only the ACTIVE mailbox's status,
   // and this target need not be it): say so, instead of a "Waiting to
-  // start." at 0% that the gate has not seen.
+  // start." at 0% that the gate has not seen. The way back stays on
+  // screen — a slow or failing first read can hold this for seconds.
   if (!sync.data) {
-    return <FlowSkeleton label="Checking your inbox scan…" />;
+    return <FlowSkeleton label="Checking the scan…" escape={escape} />;
   }
 
   // `mailboxId` — this gate watches the ?mailbox= target, NOT the
@@ -499,21 +497,39 @@ function useStepFunnel(stage: OnboardingFunnelStep | null): void {
   }, [stage]);
 }
 
-function FlowSkeleton({ label }: { label: string }) {
+function FlowSkeleton({ label, escape }: { label: string; escape?: SyncGateEscape | undefined }) {
   return (
     <main
-      role="status"
-      aria-live="polite"
       style={{
         minHeight: '100vh',
         display: 'grid',
         placeItems: 'center',
+        alignContent: 'center',
+        gap: 16,
+        padding: 24,
         background: color.bg,
         fontFamily: font.sans,
       }}
     >
-      <span style={{ color: color.fgMuted, fontSize: text.md }}>{label}</span>
+      <span role="status" aria-live="polite" style={{ color: color.fgMuted, fontSize: text.md }}>
+        {label}
+      </span>
+      {escape && <EscapeButton escape={escape} />}
     </main>
+  );
+}
+
+/** "Go back to <primary>" — the secondary connect's way out (D116). */
+function EscapeButton({ escape }: { escape: SyncGateEscape }) {
+  return (
+    <Button
+      tone="ghost"
+      disabled={escape.returning ?? false}
+      onClick={escape.onReturn}
+      style={ESCAPE_BUTTON_STYLE}
+    >
+      {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
+    </Button>
   );
 }
 
@@ -570,16 +586,7 @@ function FlowError({
       >
         Try again
       </button>
-      {escape && (
-        <Button
-          tone="ghost"
-          disabled={escape.returning ?? false}
-          onClick={escape.onReturn}
-          style={ESCAPE_BUTTON_STYLE}
-        >
-          Go back to {escape.returnToEmail}
-        </Button>
-      )}
+      {escape && <EscapeButton escape={escape} />}
     </main>
   );
 }

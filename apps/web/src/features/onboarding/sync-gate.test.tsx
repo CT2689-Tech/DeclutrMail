@@ -89,7 +89,9 @@ describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => 
 describe('SyncGate render', () => {
   it('syncing: the title, ONE progressbar at the real percent, ONE stage sentence', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    expect(html).toContain('Reading your inbox');
+    // "Gmail": the scan reads all mail but Spam and Trash, not the inbox.
+    expect(html).toContain('Reading your Gmail');
+    expect(html).toContain('aria-label="Scan progress"');
     expect(html).toContain('aria-valuenow="45"');
     expect(html.match(/role="progressbar"/g)).toHaveLength(1);
     expect(html).toContain('Grouping email by sender.');
@@ -158,7 +160,7 @@ describe('SyncGate render', () => {
   it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
     const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
     expect(html).toContain('Your inbox is ready.');
-    expect(html).not.toContain('Reading your inbox');
+    expect(html).not.toContain('Reading your Gmail');
     expect(html).not.toContain('data-testid="sync-leave"');
     expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
   });
@@ -267,8 +269,10 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
 
     const line = screen.getByTestId('sync-count');
     expect(line).toHaveTextContent('12,400 of 40,898 emails');
-    // Nothing watched arriving yet, so no time.
+    // Nothing watched arriving yet, so no time — but its place is kept,
+    // so a phone's card does not jump when one arrives.
     expect(line).not.toHaveTextContent(/left/);
+    expect(line.querySelector('.dm-scan-time')).toBeEmptyDOMElement();
     // The stage sentence stays the live status — for screen readers only,
     // so each new count is not announced.
     const status = screen.getByRole('status');
@@ -327,21 +331,23 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     }
   });
 
-  it('adds time left once a second batch is seen after the first poll', () => {
+  it('adds time left once two gaps are seen after the first poll', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
       const { rerender } = render(<SyncGate status={reading(12_400)} />);
       vi.setSystemTime(10_000);
       rerender(<SyncGate status={reading(12_900)} />);
-      expect(screen.getByTestId('sync-count')).not.toHaveTextContent(/left/);
-
       vi.setSystemTime(20_000);
       rerender(<SyncGate status={reading(13_400)} />);
-      // 27,498 left at 500 per 10s ≈ 9.2 min, rounded up.
+      expect(screen.getByTestId('sync-count')).not.toHaveTextContent(/left/);
+
+      vi.setSystemTime(30_000);
+      rerender(<SyncGate status={reading(13_900)} />);
+      // 26,998 left at 500 per 10s ≈ 9.0 min, rounded up.
       const line = screen.getByTestId('sync-count');
-      expect(line).toHaveTextContent('13,400');
-      expect(line).toHaveTextContent('about 10 min left');
+      expect(line).toHaveTextContent('13,900');
+      expect(line).toHaveTextContent('about 9 min left');
     } finally {
       vi.useRealTimers();
     }
@@ -361,23 +367,35 @@ describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 20
     expect(screen.getByTestId('sync-count')).toHaveTextContent(/^Found 1 email$/);
   });
 
-  it('keeps each fact whole when the line wraps — it may break only after "·"', () => {
+  it('never splits the total or the time across lines, and gives a phone the time on its own line', () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
-      const { rerender } = render(<SyncGate status={reading(12_400)} />);
-      vi.setSystemTime(10_000);
-      rerender(<SyncGate status={reading(12_900)} />);
-      vi.setSystemTime(20_000);
-      rerender(<SyncGate status={reading(13_400)} />);
+      const { container, rerender } = render(<SyncGate status={reading(12_400)} />);
+      for (const [at, processed] of [
+        [10_000, 12_900],
+        [20_000, 13_400],
+        [30_000, 13_900],
+      ] as const) {
+        vi.setSystemTime(at);
+        rerender(<SyncGate status={reading(processed)} />);
+      }
 
       const line = screen.getByTestId('sync-count');
       // No break inside "40,898 emails" or before the dot…
       expect(line.textContent).toContain('40,898\u00a0emails\u00a0·');
       // …and the time is one unbreakable phrase.
-      const time = line.querySelector('span');
-      expect(time).toHaveTextContent('about 10 min left');
+      const time = line.querySelector('.dm-scan-time');
+      expect(time).toHaveTextContent(/^about 9 min left$/);
       expect(time).toHaveStyle({ whiteSpace: 'nowrap' });
+      // Below 540px the dot goes and the time takes its own line (a
+      // phone cannot hold both on one). The dot is its own element so
+      // that rule can drop it.
+      expect(line.querySelector('.dm-scan-sep')).toHaveTextContent('·');
+      const css = container.querySelector('style')?.textContent ?? '';
+      expect(css).toMatch(/@media \(max-width: 539px\)/);
+      expect(css).toMatch(/\.dm-scan-sep \{ display: none; \}/);
+      expect(css).toMatch(/\.dm-scan-time \{ display: block; min-height: 1\.45em; \}/);
     } finally {
       vi.useRealTimers();
     }
