@@ -146,7 +146,7 @@ const chargeFor = (g) =>
   `Get the diff with \`git diff ${diffRef}\` and read whatever surrounding files you need for context.\n\n` +
   `Changed files:\n${files.map((f) => `- ${f}`).join('\n')}\n\n` +
   `Overrides for this run:\n` +
-  `- Do NOT post PR comments, set status checks, or write to MISTAKES.md. Return findings only.\n` +
+  `- Do NOT post PR comments, set status checks, or write MISTAKES entries (docs/log/mistakes/ or MISTAKES.md). Return findings only.\n` +
   `- Do NOT propose or apply fixes.\n` +
   `- If the diff is outside your charter, set inScope=false with an empty findings array.\n` +
   `- Every finding needs a concrete file and the evidence that proves it. A finding you cannot\n` +

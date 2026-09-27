@@ -1,5 +1,7 @@
 # Founder Follow-ups — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/founder-followups/`](docs/log/founder-followups/) (one file per entry). Existing entries stay here, and items already listed here keep being tracked here until Done.
+
 Single source of truth for actions that only the founder can take —
 repo settings toggles, secrets configuration, third-party account setup,
 domain decisions outside the D-plan, anything that needs human judgment

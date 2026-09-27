@@ -138,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(git log -1 --format='%cd' --date=short -- CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Check IMPLEMENTATION-LOG.md for current state'; echo '  - Review MISTAKES.md headers if anything was added since last session'"
+            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(git log -1 --format='%cd' --date=short -- CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Check IMPLEMENTATION-LOG.md for current state'; echo '  - Review docs/log/mistakes/ for entries added since your last session'"
           }
         ]
       }
@@ -148,7 +148,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Before closing session:'; echo '  - Update IMPLEMENTATION-LOG.md if PR shipped'; echo '  - Append to LEARNINGS.md if anything surprised you'; echo '  - Append to MISTAKES.md if a gate fired or bug was caught'"
+            "command": "echo 'Before closing session:'; echo '  - Update IMPLEMENTATION-LOG.md if PR shipped'; echo '  - Add a docs/log/learnings/ entry if anything surprised you'; echo '  - Add a docs/log/mistakes/ entry if a gate fired or bug was caught'"
           }
         ]
       }
