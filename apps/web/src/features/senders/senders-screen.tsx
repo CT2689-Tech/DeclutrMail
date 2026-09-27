@@ -64,13 +64,15 @@ import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import {
   actionLabel,
-  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
-  skippedAtClickCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
+import {
+  backlogAfterUnsubFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/bulk-action-copy';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';

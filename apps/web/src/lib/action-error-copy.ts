@@ -1,4 +1,3 @@
-import type { BulkSkipReason } from '@/lib/api/actions';
 import { ApiError, apiErrorDisplayId } from '@/lib/api/client';
 
 /**
@@ -43,7 +42,7 @@ export interface ActionFailureCopyOptions {
   readonly error?: unknown;
 }
 
-const CHECK_ACTIVITY = 'check Activity before retrying';
+export const CHECK_ACTIVITY = 'check Activity before retrying';
 const NOTHING_CHANGED = 'nothing changed';
 
 export function getActionFailureCopy(
@@ -119,26 +118,6 @@ export function enqueueMayHaveStarted(error: unknown): boolean {
 }
 
 /**
- * An Unsubscribe was recorded, but the cleanup of older email that rode
- * with it failed to enqueue. One sentence for Senders, Sender Detail and
- * Triage. The request stands (D58), so it is "recorded", never "started":
- * a mailto request is the user's to send.
- */
-export function backlogAfterUnsubFailureCopy(options: {
-  readonly verb: 'Archive' | 'Delete';
-  /** Omitted for a multi-sender batch. */
-  readonly senderName?: string;
-  readonly error: unknown;
-}): string {
-  const { verb, senderName, error } = options;
-  const requests = senderName ? 'Unsubscribe request' : 'Unsubscribe requests';
-  const mail = senderName ? `older email from ${senderName}` : 'older email';
-  return enqueueMayHaveStarted(error)
-    ? `${requests} recorded, but can't tell if ${verb} started for ${mail} — ${CHECK_ACTIVITY}.`
-    : `${requests} recorded, but ${mail} wasn't ${verb === 'Delete' ? 'deleted' : 'archived'} — ${verb} it separately.`;
-}
-
-/**
  * D245 — senders an action left alone because they are Protected. One
  * phrase for every report of a skip that happened: the pill, its undo
  * line, the Brief's outcome line and the click-time toasts. Previews
@@ -147,37 +126,6 @@ export function backlogAfterUnsubFailureCopy(options: {
 export function protectedSkippedCopy(count: number): string {
   return `${count.toLocaleString('en-US')} Protected sender${count === 1 ? '' : 's'} skipped`;
 }
-
-/**
- * What an Archive/Later/Delete bulk refused at the click, in the pill's
- * words: "Archive: 1 Protected sender skipped · 1 sender no longer in this
- * mailbox". `null` when it refused nothing. Label bulks refuse for these
- * two reasons only (an Unsubscribe bulk has its own receipt).
- */
-export function skippedAtClickCopy(
-  verb: 'Archive' | 'Later' | 'Delete',
-  skipped: readonly { reason: BulkSkipReason }[],
-): string | null {
-  const protectedCount = skipped.filter((s) => s.reason === 'protected').length;
-  const missing = skipped.filter((s) => s.reason === 'not_found').length;
-  const parts = [
-    ...(protectedCount > 0 ? [protectedSkippedCopy(protectedCount)] : []),
-    ...(missing > 0
-      ? [
-          `${missing.toLocaleString('en-US')} sender${missing === 1 ? '' : 's'} no longer in this mailbox`,
-        ]
-      : []),
-  ];
-  return parts.length > 0 ? `${verb}: ${parts.join(' · ')}` : null;
-}
-
-/**
- * `NO_ACTIONABLE_SENDERS` — an Archive/Later/Delete bulk refused every
- * sender at the click. A designed state, not a failure, and the server
- * does not say which reason was whose.
- */
-export const NO_ACTIONABLE_SENDERS_COPY =
-  'Nothing changed — those senders are Protected or no longer in this mailbox.';
 
 /**
  * The one undo-completion toast. Not "restored to your inbox": undo puts

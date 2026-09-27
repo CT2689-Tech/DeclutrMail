@@ -24,13 +24,15 @@ import { isProtectedSkip, isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import {
   actionLabel,
-  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
-  skippedAtClickCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
+import {
+  backlogAfterUnsubFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/bulk-action-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';

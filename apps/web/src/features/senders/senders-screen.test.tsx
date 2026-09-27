@@ -103,7 +103,7 @@ import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
 import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { UNSUBSCRIBE_ACCEPTED_CAVEAT } from '@declutrmail/shared/actions';
-import { NO_ACTIONABLE_SENDERS_COPY } from '@/lib/action-error-copy';
+import { NO_ACTIONABLE_SENDERS_COPY } from '@/lib/bulk-action-copy';
 import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 
 // Typed against the wire contract so a field the API always sends cannot

@@ -68,11 +68,11 @@ import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import {
   actionLabel,
-  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   stillRunningCopy,
 } from '@/lib/action-error-copy';
+import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
 import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';

@@ -4,7 +4,6 @@ import { ApiError } from '@/lib/api/client';
 
 import {
   actionLabel,
-  backlogAfterUnsubFailureCopy,
   enqueueMayHaveStarted,
   getActionFailureCopy,
   stillRunningCopy,
@@ -121,29 +120,6 @@ describe('getActionFailureCopy', () => {
       outcome: 'use Try again on each failed row',
     });
     expect(copy).toBe('2 of 3 undos completed — use Try again on each failed row.');
-  });
-});
-
-// The request itself stands (D58: it cannot be recalled), so neither
-// branch may say "nothing changed" or call the unsubscribe "started".
-describe('backlogAfterUnsubFailureCopy', () => {
-  it('says the older email did not move only when the enqueue was refused', () => {
-    expect(
-      backlogAfterUnsubFailureCopy({ verb: 'Archive', senderName: 'Acme', error: refused }),
-    ).toBe(
-      "Unsubscribe request recorded, but older email from Acme wasn't archived — Archive it separately.",
-    );
-    expect(backlogAfterUnsubFailureCopy({ verb: 'Delete', error: refused })).toBe(
-      "Unsubscribe requests recorded, but older email wasn't deleted — Delete it separately.",
-    );
-  });
-
-  it('sends a start it cannot confirm to Activity before a retry', () => {
-    for (const error of [apiError(503, 'ENQUEUE_FAILED'), new TypeError('Failed to fetch')]) {
-      expect(backlogAfterUnsubFailureCopy({ verb: 'Delete', senderName: 'Acme', error })).toBe(
-        "Unsubscribe request recorded, but can't tell if Delete started for older email from Acme — check Activity before retrying.",
-      );
-    }
   });
 });
 

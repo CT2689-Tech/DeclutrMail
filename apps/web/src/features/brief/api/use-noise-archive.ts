@@ -54,10 +54,9 @@ import { undoKeys } from '@/features/undo/query-keys';
 import {
   enqueueMayHaveStarted,
   getActionFailureCopy,
-  NO_ACTIONABLE_SENDERS_COPY,
   protectedSkippedCopy,
-  skippedAtClickCopy,
 } from '@/lib/action-error-copy';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
 import {
   getActionStatus,
   getBatchStatus,
