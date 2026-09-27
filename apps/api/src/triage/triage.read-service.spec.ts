@@ -901,3 +901,31 @@ describe('TriageReadService.listQueue — the age of the engine read (D25)', () 
     expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
   });
 });
+
+describe('TriageReadService.listQueue — whose sentence the reason is (D24)', () => {
+  /**
+   * Explanations are bought on demand (founder decision 2026-09-25), so a
+   * queue row's reason is often the deterministic template. The page asks
+   * for the LLM sentence only for rows that need one — which it can only
+   * tell from the provenance, not from the text.
+   */
+  it('reports whether each reason is the template or LLM prose', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'provenance');
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'template@ex.com');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'prose@ex.com');
+    await db
+      .update(triageDecisions)
+      .set({ generatedBy: 'llm_haiku', reasoning: 'Rarely opened; archiving keeps it findable.' })
+      .where(eq(triageDecisions.senderKey, SENDER_B));
+
+    const rows = await new TriageReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+
+    expect(byKey.get(SENDER_A)?.generatedBy).toBe('template');
+    expect(byKey.get(SENDER_B)?.generatedBy).toBe('llm_haiku');
+  });
+});
