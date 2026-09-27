@@ -191,6 +191,64 @@ export const LaterNeedsNewTime: Story<typeof ActionRecoveryDialog> = {
   } satisfies DialogArgs,
 };
 
+/** Archive confirms in the primary tone; only a button naming Delete is danger. */
+export const ReadyArchive: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    row: { ...ROW, action: 'archive' },
+    preview: { ...READY, verb: 'archive' },
+  } satisfies DialogArgs,
+};
+
+/** Gmail reflects part of it: the retry finishes the rest. */
+export const Partial: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: {
+      ...READY,
+      outcome: 'partial',
+      remainingCount: 1_400,
+      alreadyAppliedCount: 600,
+      unavailableCount: 12,
+      targetCount: 2_012,
+      verifiedCount: 2_012,
+    },
+  } satisfies DialogArgs,
+};
+
+/** Gmail has none of these messages any more: nothing to retry. */
+export const NothingLeft: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: { ...READY, status: 'consumed', outcome: 'no_change_needed', remainingCount: 0 },
+  } satisfies DialogArgs,
+};
+
+/** Gmail access needs attention before anything can be checked. */
+export const ReconnectRequired: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: { ...READY, status: 'failed', outcome: 'reconnect_required' },
+  } satisfies DialogArgs,
+};
+
+/** This action cannot be retried from Activity. */
+export const Blocked: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    preview: { ...READY, status: 'failed', outcome: 'blocked' },
+  } satisfies DialogArgs,
+};
+
+/** A Later whose saved return time is still ahead keeps it. */
+export const LaterWithReturnTime: Story<typeof ActionRecoveryDialog> = {
+  args: {
+    ...base,
+    row: { ...ROW, action: 'later' },
+    preview: { ...READY, verb: 'later', wakeAt: '2026-10-02T09:00:00.000Z' },
+  } satisfies DialogArgs,
+};
+
 /** Checking Gmail. */
 export const Checking: Story<typeof ActionRecoveryDialog> = {
   args: { ...base, preview: undefined, isStarting: true } satisfies DialogArgs,

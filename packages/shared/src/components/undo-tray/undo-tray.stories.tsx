@@ -437,7 +437,11 @@ export const ListDoneProtectedSkipped: Story<typeof UndoTray> = {
     ),
 };
 
-/** Part failed and one sender was skipped: both in the alert's own line, read aloud. */
+/**
+ * Part failed and one sender was skipped: both in the alert's own line,
+ * read aloud. No job split beside the skip — the split counts jobs, the
+ * skip counts senders.
+ */
 export const PillProblemProtectedSkipped: Story<typeof UndoTray> = {
   render: () =>
     frame(
@@ -449,7 +453,49 @@ export const PillProblemProtectedSkipped: Story<typeof UndoTray> = {
             {
               id: 'end-skip',
               tone: 'attention',
-              label: 'Delete: 2 of 12 failed · 1 Protected sender skipped',
+              label: 'Delete partly failed · 1 Protected sender skipped',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** Everything that ran failed, and one sender was skipped: the line names no one. */
+export const PillFailedProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-failed-skip',
+              tone: 'attention',
+              label: 'Delete failed · 1 Protected sender skipped',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** The rest ran and changed nothing: both facts, as a note rather than an alert. */
+export const PillSkippedNothingElseChanged: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-skip-noop',
+              tone: 'info',
+              label: 'Delete: 1 Protected sender skipped · nothing else changed',
               onDismiss: () => {},
             },
           ],
