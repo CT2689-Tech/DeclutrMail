@@ -90,6 +90,13 @@ describe('SyncController.getStatus', () => {
     await expect(controller.getStatus(MAILBOX)).rejects.toThrow('progress_pct:too_big');
   });
 
+  it('names an unexpected key in the 5xx log — shape drift has no field path', async () => {
+    const getStatus = vi.fn().mockResolvedValue({ ...VALID_STATUS, stray: 1 });
+    const controller = makeController({ getStatus });
+
+    await expect(controller.getStatus(MAILBOX)).rejects.toThrow(':unrecognized_keys[stray]');
+  });
+
   it('passes through the error_code when present (failed readiness)', async () => {
     const failed: SyncStatus = {
       readiness_status: 'failed',
@@ -121,6 +128,19 @@ describe('SyncController.getStatus', () => {
     });
     expect(readProgress).toHaveBeenCalledWith('mailbox-uuid-1', VALID_STATUS);
     expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
+  });
+
+  it('leaves the counts out when this read failed, so the gate can tell it from "none"', async () => {
+    const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
+    const readProgress = vi.fn<InitialSyncProgressReader['read']>().mockResolvedValue(undefined);
+    const controller = makeController({ getStatus, readProgress });
+
+    const wire = JSON.parse(JSON.stringify(await controller.getStatus(MAILBOX))) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(wire.data).not.toHaveProperty('message_progress');
+    expect(wire.data).toEqual(VALID_STATUS);
   });
 });
 

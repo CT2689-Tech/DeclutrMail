@@ -3,7 +3,6 @@ import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import {
   createRedisConnection,
-  createRedisProducerConnection,
   INCREMENTAL_SYNC_QUEUE,
   INITIAL_SYNC_QUEUE,
 } from '@declutrmail/workers';
@@ -12,6 +11,7 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import {
+  createScanProgressRedis,
   InitialSyncProgressReader,
   SCAN_PROGRESS_REDIS_TOKEN,
 } from './initial-sync-progress.reader.js';
@@ -89,10 +89,7 @@ import {
         if (!url) {
           throw new Error('REDIS_URL is not set — see .env.example.');
         }
-        const redis = createRedisProducerConnection(url, { commandTimeout: 500 });
-        // Failures surface at the read, as `sync.scan_progress_read_failed`.
-        redis.on('error', () => undefined);
-        return redis;
+        return createScanProgressRedis(url);
       },
     },
     InitialSyncProgressReader,

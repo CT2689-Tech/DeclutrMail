@@ -72,8 +72,8 @@ export class SyncController {
     if (status === null) {
       throw new NotFoundException('No sync state for the given mailbox.');
     }
-    // The gate's "N of M emails" line: the running scan's counts, or
-    // null whenever they cannot be vouched for (reader docs).
+    // The gate's "N of M emails" line: the running scan's counts, `null`
+    // when there are none, left out when this read failed (reader docs).
     const message_progress = await this.scanProgress.read(mailbox.id, status);
 
     // Validate at the boundary — a worker bug that wrote `progress_pct
@@ -82,8 +82,14 @@ export class SyncController {
     // truth (D224).
     const result = SyncStatusSchema.safeParse({ ...status, message_progress });
     if (!result.success) {
-      // The failing fields reach the 5xx log; the client body stays generic.
-      const fields = result.error.issues.map((i) => `${i.path.join('.')}:${i.code}`).join(',');
+      // The failing fields — and any unexpected key, by name — reach the
+      // 5xx log; the client body stays generic.
+      const fields = result.error.issues
+        .map(
+          (i) =>
+            `${i.path.join('.')}:${i.code}${i.code === 'unrecognized_keys' ? `[${i.keys.join('|')}]` : ''}`,
+        )
+        .join(',');
       throw new InternalServerErrorException(`Sync state failed contract validation (${fields}).`);
     }
     return ok(result.data);

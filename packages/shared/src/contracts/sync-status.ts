@@ -105,12 +105,13 @@ export const SyncStatusSchema = z
      * How far the scan has read: `processed` of the mailbox's `total`
      * messages, from the InitialSyncWorker's short-lived Redis key
      * (`scanProgressKey`, packages/workers/src/scan-progress.ts: written
-     * per saved batch, cleared when an attempt starts and when the read
-     * ends, expiring 30 min after its last write). Present only while the
-     * scan reads the mailbox (`current_stage === 'fetching_metadata'`);
+     * per 500 messages read, cleared when an attempt starts and when the
+     * read ends, expiring 30 min after its last write). Present only while
+     * the scan reads the mailbox (`current_stage === 'fetching_metadata'`);
      * `null` before it has listed the mailbox — the total is unknown until
-     * then — in every other stage, and whenever the key cannot be read.
-     * Optional so pre-field responses and existing fixtures stay valid.
+     * then — and in every other stage. Absent when the key could not be
+     * read this time, so a client can tell "unknown" from "none"; also
+     * optional so pre-field responses and existing fixtures stay valid.
      * Counts only — no message content.
      */
     message_progress: SyncMessageProgressSchema.nullable().optional(),
