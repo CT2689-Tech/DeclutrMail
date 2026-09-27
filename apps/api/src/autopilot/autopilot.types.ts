@@ -24,9 +24,13 @@ import type {
  * action sweep uses). Metadata only (D7): counts, never content.
  */
 export interface AutopilotObserveDigest {
-  /** Total pending Observe-mode matches for this rule (uncapped — not the 50-row page). */
+  /**
+   * Pending suggestions the user can act on (uncapped — not the 50-row
+   * page): exactly what the pending list shows and approve-all flips, so
+   * Protected senders and stale-evidence matches are not counted.
+   */
   pendingTotal: number;
-  /** Distinct senders matched in the last 7 days (all resolutions). */
+  /** Distinct senders matched in the last 7 days (all resolutions), not counting Protected senders. */
   senders7d: number;
   /** INBOX messages from those senders — what a sweep right now would act on. */
   inboxMessagesNow: number;

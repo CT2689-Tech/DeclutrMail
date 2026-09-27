@@ -64,9 +64,13 @@ export type AutopilotMatchResolution = 'pending' | 'approved' | 'dismissed';
  * action sweep uses). Counts only — no content (D7).
  */
 export interface AutopilotObserveDigestDto {
-  /** Total pending Observe-mode matches (uncapped — not the 50-row page). */
+  /**
+   * Pending suggestions the user can act on (uncapped — not the 50-row
+   * page): exactly what the pending list shows and approve-all flips, so
+   * Protected senders and stale-evidence matches are not counted.
+   */
   pendingTotal: number;
-  /** Distinct senders matched in the last 7 days (all resolutions). */
+  /** Distinct senders matched in the last 7 days (all resolutions), not counting Protected senders. */
   senders7d: number;
   /**
    * INBOX messages those senders hold RIGHT NOW — what a sweep would act
