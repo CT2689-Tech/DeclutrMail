@@ -13,7 +13,7 @@ vi.mock('@/features/auth/mailbox-action-context', () => {
 import { TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
-import { TRIAGE_QUEUE } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { findDomainBatches } from '@/features/triage/domain-batch';
 import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
 import {

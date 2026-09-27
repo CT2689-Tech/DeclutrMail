@@ -264,6 +264,8 @@ jobs:
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs
       - name: PR-body D-citation matcher
         run: node --test scripts/check-pr-body-d-ref.test.mjs
+      - name: ct-gates verdicts (a run that reviewed nothing never passes)
+        run: node --test scripts/ct-gates-workflow.test.mjs
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
       - name: Stuck-mailbox alert and sync watchdog contracts
