@@ -1,6 +1,6 @@
 ---
 name: silent-failure-hunter
-description: Advisory reviewer that hunts swallowed errors, ignored promise rejections, empty catch blocks, and other silent-failure patterns that hide bugs in production. Use on PRs touching any .ts file. Reports findings; never refactors. Advisory tier — non-blocking.
+description: Advisory reviewer that hunts swallowed errors, ignored promise rejections, empty catch blocks, and other silent-failure patterns that hide bugs in production. Use on PRs touching any .ts or .tsx file, script, shell hook or GitHub workflow. Reports findings; never refactors. Advisory tier — non-blocking.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -28,16 +28,19 @@ You report findings only. You do not refactor.
 
 ## Scope — files this agent reviews
 
-All `.ts` and `.tsx` files in the diff. The patterns this agent looks for
-appear across the full stack — API, web, workers, scripts.
+All `.ts` and `.tsx` files in the diff, plus scripts (`.mjs`, `.cjs`,
+`.js`, `.sh`), GitHub workflows (`.github/workflows/`) and Git hooks
+(`.husky/`). The patterns this agent looks for appear across the full
+stack — API, web, workers, scripts — and the scripts, hooks and workflows
+are where this repo's watchdogs, guards and CI checks live.
 
 ## Workflow
 
 ### Step 1: Establish review scope
 
 ```bash
-git diff --staged --name-only -- '*.ts' '*.tsx'
-git diff --name-only -- '*.ts' '*.tsx'
+git diff --staged --name-only -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' '*.sh' '.github/workflows/*' '.husky/*'
+git diff --name-only -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' '*.sh' '.github/workflows/*' '.husky/*'
 ```
 
 ### Step 2: Pattern grep — fast pre-checks
@@ -45,8 +48,8 @@ git diff --name-only -- '*.ts' '*.tsx'
 #### Empty catch blocks
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*\}'
-git diff -- '*.ts' '*.tsx' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*//[^\n]*\}'
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*\}'
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 2 -A 4 'catch\s*\([^)]*\)\s*\{\s*//[^\n]*\}'
 ```
 
 Empty catch = **[SUGGESTION]**. Empty catch in a security or privacy
@@ -55,7 +58,7 @@ code path = **[BLOCKING]**.
 #### Catch + console.log only
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n -B 1 -A 5 'catch\s*\(' | rg -n 'console\.(log|warn|error)'
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n -B 1 -A 5 'catch\s*\(' | rg -n 'console\.(log|warn|error)'
 ```
 
 If the catch handler only does `console.*` and the file is in a
@@ -64,7 +67,7 @@ production path, **[SUGGESTION]** — should call Sentry / structured logger.
 #### Bare `.catch()` that swallows
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n '\.catch\(\(\)\s*=>\s*\{?\s*\}?\)|\.catch\(_?\s*=>\s*\{?\s*\}?\)|\.catch\(null\)'
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n '\.catch\(\(\)\s*=>\s*\{?\s*\}?\)|\.catch\(_?\s*=>\s*\{?\s*\}?\)|\.catch\(null\)'
 ```
 
 Swallowing a rejected promise without any handling. **[SUGGESTION]** —
@@ -73,7 +76,7 @@ the rejection should at least be logged with the originating call's context.
 #### Ignored promise rejections
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n 'void\s+[a-zA-Z_][a-zA-Z0-9_]*\.then\(|void\s+[a-zA-Z_][a-zA-Z0-9_]*\('
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n 'void\s+[a-zA-Z_][a-zA-Z0-9_]*\.then\(|void\s+[a-zA-Z_][a-zA-Z0-9_]*\('
 ```
 
 `void someAsyncFn()` patterns intentionally drop the promise. If the
@@ -85,12 +88,27 @@ caller doesn't `.catch()` first, an unhandled rejection bubbles up.
 For known result-returning functions:
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n '^\s*[a-zA-Z_][a-zA-Z0-9_]*\.(result|value|error|isOk|isErr)\s*$'
+git diff -- '*.ts' '*.tsx' '*.mjs' '*.cjs' '*.js' | rg -n '^\s*[a-zA-Z_][a-zA-Z0-9_]*\.(result|value|error|isOk|isErr)\s*$'
 ```
 
 Lines that read like `result.error` standalone (not assigned) likely
 mean the implementer forgot to do something. **[NIT]** to **[SUGGESTION]**
 depending on context.
+
+#### Scripts, hooks and workflows
+
+```bash
+git diff -- '*.sh' '.husky/*' '.github/workflows/*' | rg -n '\|\|\s*(true|:)\s*$|2>\s*/dev/null|set \+e|continue-on-error:\s*true|if:\s*always\(\)'
+```
+
+A command whose failure is the verdict, run under `|| true`, `2>/dev/null`,
+`set +e`, `continue-on-error` or `if: always()`, reports success whatever
+happened. **[SUGGESTION]**.
+
+For any guard, hook, watchdog or sweep, apply CLAUDE.md §8 ("A guard that
+cannot fail is not a guard"): starve it. Empty input, a missing or
+unreadable file, an unreachable source, a shallow checkout. Flag any branch
+where that state reads as a pass or as "nothing found". **[SUGGESTION]**.
 
 ### Step 3: Semantic checks
 

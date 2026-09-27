@@ -6,9 +6,12 @@
 // where this repo's watchdogs and guards live. Each gate keeps its own
 // charter.
 //
-// Verdicts: NO_DIFF (nothing changed) · NO_GATES_IN_SCOPE (files changed,
-// no gate routes to any of them, so nothing was reviewed — not a pass) ·
-// INCOMPLETE (a gate returned nothing) · BLOCKED · NO_BLOCKERS.
+// Verdicts: NO_DIFF (the diff lists no files) · SCOUT_FAILED (the changed
+// files could not be listed) · NO_GATES_IN_SCOPE (no gate routes a changed
+// file, or every gate that ran declined the diff as outside its charter) ·
+// INCOMPLETE (a gate returned nothing) · BLOCKED · NO_BLOCKERS. Only the last
+// means gates reviewed the diff and found no blocker; SCOUT_FAILED,
+// NO_GATES_IN_SCOPE and INCOMPLETE each mean something was not reviewed.
 //
 // Every agent() call sets `model` explicitly — never omitted. The gates are
 // pinned to `opus` to match what their own .claude/agents/<name>.md frontmatter
@@ -47,10 +50,11 @@ const GATES = [
   { type: 'design-system-agent',       tier: 'gate',     when: /^(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
   { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
-  // Beyond §7's "all TS files": the guard-that-cannot-fail class (§8) keeps
-  // recurring in scripts, hooks and workflows, and before this route a PR
-  // touching only those ran zero gates and came back NO_BLOCKERS.
-  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.ts$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\// },
+  // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks and
+  // workflows: the guard-that-cannot-fail class (§8) keeps recurring there,
+  // and before this route a PR touching only those ran zero gates and came
+  // back NO_BLOCKERS. The agent's charter covers the same paths.
+  { type: 'silent-failure-hunter',     tier: 'advisory', when: /\.tsx?$|\.(mjs|cjs|js|sh)$|^\.github\/workflows\/|^\.husky\// },
   { type: 'flow-completeness-auditor', tier: 'advisory', when: /^apps\/web\/src\/features\// },
 ]
 
@@ -68,6 +72,7 @@ const SCOUT_SCHEMA = {
   required: ['files'],
   properties: {
     files: { type: 'array', items: { type: 'string' }, description: 'Repo-relative changed paths' },
+    error: { type: 'string', description: 'Set only if the git command failed: its error output' },
   },
 }
 
@@ -131,10 +136,18 @@ if (!files) {
   const scouted = await agent(
     `Run \`git diff --name-only ${diffRef}\` in the repo root and return the changed paths.\n` +
       `Return paths exactly as git prints them (repo-relative). Do not read or review the files.\n` +
-      `If the command errors or the diff is empty, return an empty array.`,
+      `If the command fails, put its error output in \`error\` and return an empty array.\n` +
+      `If it succeeds with no output, return an empty array and no \`error\`.`,
     { label: 'scout:changed-files', phase: 'Scout', schema: SCOUT_SCHEMA, model: 'haiku', effort: 'low' },
   )
-  files = scouted?.files ?? []
+  // A failed git command or a dead scout is not an empty diff: reporting it
+  // as NO_DIFF would read a mistyped ref as "nothing changed".
+  if (!scouted || scouted.error) {
+    const error = scouted?.error ?? 'the scout agent returned nothing'
+    log(`Could not list the changed files for ${diffRef}: ${error}. SCOUT_FAILED is not a pass.`)
+    return { diffRef, files: [], gatesRun: [], findings: [], error, verdict: 'SCOUT_FAILED' }
+  }
+  files = scouted.files
 }
 
 if (files.length === 0) {
@@ -247,6 +260,11 @@ const ran = reviews.filter(Boolean)
 const died = applicable.filter((g) => !ran.some((r) => r.gate === g.type)).map((g) => g.type)
 if (died.length) log(`Gates that returned nothing (treat as NOT run): ${died.join(', ')}`)
 
+// A gate that judged the diff outside its charter reviewed nothing. If every
+// gate that ran did, the run reviewed nothing: the same as none routing.
+const declined = ran.filter((r) => !r.inScope).map((r) => r.gate)
+if (declined.length) log(`Declined the diff as outside their charter, so reviewed nothing: ${declined.join(', ')}`)
+
 const findings = ran.flatMap((r) => r.findings)
 const blockers = findings.filter((f) => f.severity === 'BLOCKING' && f.tier === 'gate')
 const stops = ran.filter((r) => r.stopCondition).map((r) => ({ gate: r.gate, stopCondition: r.stopCondition }))
@@ -262,9 +280,16 @@ return {
   gatesRun: ran.map((r) => r.gate),
   gatesSkipped: skipped,
   gatesFailed: died,
+  gatesDeclined: declined,
   unrouted,
   stopConditions: stops,
   findings,
   // Structural only. CLAUDE.md §8: green gates are NOT a smoke.
-  verdict: died.length ? 'INCOMPLETE' : blockers.length ? 'BLOCKED' : 'NO_BLOCKERS',
+  verdict: died.length
+    ? 'INCOMPLETE'
+    : blockers.length
+      ? 'BLOCKED'
+      : declined.length === ran.length
+        ? 'NO_GATES_IN_SCOPE'
+        : 'NO_BLOCKERS',
 }
