@@ -80,7 +80,7 @@ describe('createMailboxActionLock', () => {
 
   function loggedStages(): string[] {
     return errorSpy.mock.calls.map(
-      (c: unknown[]) => (JSON.parse(String(c[0])) as { stage: string }).stage,
+      (c: unknown[]) => (JSON.parse(String(c[0])) as { stage?: string }).stage ?? '(none)',
     );
   }
 

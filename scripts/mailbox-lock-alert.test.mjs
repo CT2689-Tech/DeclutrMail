@@ -35,17 +35,20 @@ const OLD_PREFIX_FILTER =
   'resource.type="cloud_run_revision" AND jsonPayload.kind=~"^mailbox_lock\\."';
 
 /**
- * The lock kinds one source file logs. A `mailbox_lock.` that is not a whole
- * quoted literal (a template, a concatenation, a kind with a dot or a digit
- * the pattern does not expect) comes back in `unreadable`: a kind the scan
- * cannot name would ship unclassified and never page.
+ * The lock kinds one source file logs as a structured `kind:`, which is the
+ * only form the metric's `jsonPayload.kind` can count; a kind written as
+ * plain text lands in textPayload. A `mailbox_lock.` that is not a whole
+ * quoted literal (a template, a concatenation, an unexpected character)
+ * comes back in `unreadable`: a kind the scan cannot name would ship
+ * unclassified and never page.
  */
 function lockKindsIn(source) {
   const kinds = new Set();
   const unreadable = [];
   source.split('\n').forEach((text, i) => {
     const literals = [...text.matchAll(/['"`](mailbox_lock\.[a-z0-9_]+)['"`]/g)].map((m) => m[1]);
-    literals.forEach((kind) => kinds.add(kind));
+    for (const [, kind] of text.matchAll(/\bkind:\s*['"`](mailbox_lock\.[a-z0-9_]+)['"`]/g))
+      kinds.add(kind);
     if ((text.match(/mailbox_lock\./g) ?? []).length !== literals.length) unreadable.push(i + 1);
   });
   return { kinds, unreadable };
@@ -72,8 +75,8 @@ function emittedKinds() {
 
 /**
  * Cloud Logging's matching for the clauses these filters use: `AND`, an
- * `OR` group in parentheses, `field="v"`, `field=~"regex"` and
- * `NOT field:*` (absent). Written from the query-language reference, not
+ * `OR` group in parentheses, `field="v"`, `field=~"regex"` (spaces around
+ * the operator allowed, as Logging allows them) and `NOT field:*` (absent). Written from the query-language reference, not
  * from the script, so the script cannot grade itself.
  */
 function matches(filter, entry) {
@@ -83,9 +86,9 @@ function matches(filter, entry) {
     if (c.startsWith('(') && c.endsWith(')')) return c.slice(1, -1).split(' OR ').some(clause);
     let m = c.match(/^NOT ([\w.]+):\*$/);
     if (m) return get(m[1]) === undefined;
-    m = c.match(/^([\w.]+)=~"(.*)"$/);
+    m = c.match(/^([\w.]+)\s*=~\s*"(.*)"$/);
     if (m) return new RegExp(m[2].replace(/\\\\/g, '\\')).test(String(get(m[1]) ?? ''));
-    m = c.match(/^([\w.]+)="(.*)"$/);
+    m = c.match(/^([\w.]+)\s*=\s*"(.*)"$/);
     if (m) return String(get(m[1])) === m[2];
     m = c.match(/^timestamp>="(.*)"$/);
     if (m) return true;
@@ -313,6 +316,8 @@ test('a lock kind the scan cannot read as a literal is flagged, not skipped', ()
       "log({ kind: 'mailbox_lock.' + name })",
       "log({ kind: 'mailbox_lock.pool.exhausted' })",
       "log({ kind: 'mailbox_lock.acquire_failed_v2' })",
+      // Plain text lands in textPayload, which the metric does not read.
+      "console.error('mailbox_lock.session_probe_failed', err)",
     ].join('\n'),
   );
   assert.deepEqual([...kinds], ['mailbox_lock.acquire_failed', 'mailbox_lock.acquire_failed_v2']);
@@ -551,4 +556,36 @@ test('without the admin channel, the policy is not reported as emailing it', asy
   const lines = [];
   await run({ project: PROJECT, request: gcp.request, log: (l) => lines.push(l), now: NOW });
   assert.ok(!lines.some((l) => l.startsWith('✓') && l.includes('emails admin')), lines.join('\n'));
+});
+
+test('the starve test accepts the production filter as GCP re-spaces it', async () => {
+  // Verify compares filters normalised; the starve test must agree, or it
+  // would tell the operator to run --apply forever.
+  const respaced = { ...expectedMetric(), filter: LOG_FILTER.replaceAll('=', ' = ') };
+  const report = await starve(fakeGcp({ metric: respaced, policies: [prodPolicy] }), 'r7');
+  assert.equal(report.result, 'PASS');
+});
+
+test('the CLI refuses a flag it does not know, rather than running verify and passing', () => {
+  for (const flags of [
+    ['--aply'],
+    ['--starve-tset'],
+    ['--apply', '--starve-test'],
+    ['--project=other'],
+  ]) {
+    let status = 0;
+    let output = '';
+    try {
+      execFileSync(process.execPath, [join(here, 'setup-mailbox-lock-alert.mjs'), ...flags], {
+        env: { PATH: '' },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      status = err.status;
+      output = `${err.stdout}${err.stderr}`;
+    }
+    assert.equal(status, 2, flags.join(' '));
+    assert.match(output, /usage:/, flags.join(' '));
+  }
 });

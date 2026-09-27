@@ -171,4 +171,4 @@ EOF
 fi
 
 echo ""
-echo "Done — metric + channel + policy in place on ${PROJECT_ID}."
+echo "Done on ${PROJECT_ID}: created what was missing. Resources that already existed were not checked."

@@ -53,8 +53,14 @@ export const PAGE_KINDS = {
 
 /** Telemetry: logged for diagnosis, never paged. */
 export const NO_PAGE_KINDS = {
+  // Not a failure: the checkout returned and the acquire went ahead. The line
+  // is written after the checkout returns, so a pool that never frees writes
+  // none; its jobs wait instead, which the queue waiting-age alert pages on.
+  // In the 30 days to 2026-09-27, the 3 sustained runs (waits up to 45 s) each
+  // came with acquire_failed, which pages; the other 3 were single waits of
+  // 1.2 to 3.2 s that paging would have sent as 3 more emails.
   'mailbox_lock.pool_wait':
-    'a lock-pool checkout took over a second, then the acquire went ahead: capacity data for sizing the pool; a wait that times out logs acquire_failed',
+    'a lock-pool checkout waited over a second, then went ahead: capacity data for sizing the pool',
   'mailbox_lock.slow_operation':
     'info-level timing of a slow wait or hold; an acquire that failed also logs acquire_failed, which pages',
 };
@@ -336,7 +342,7 @@ export async function starveTest({
   const prod = ok(await request('GET', prodUrl), 'GET', prodUrl);
   // Before --apply the production metric counts every mailbox_lock line,
   // this test's failure line included, and would page the founder.
-  if (prod.filter !== LOG_FILTER)
+  if (normalizeFilter(prod.filter) !== normalizeFilter(LOG_FILTER))
     throw new Error(
       'Run --apply first: the production metric would count this test line and page.',
     );
@@ -536,6 +542,12 @@ function gcpHttp(token) {
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const project = args.find((a) => !a.startsWith('--')) ?? 'declutrmail-ai-prod';
+  // A mistyped mode must not quietly run the read-only verify and pass.
+  const flags = args.filter((a) => a.startsWith('--'));
+  if (flags.some((f) => !['--apply', '--starve-test'].includes(f)) || flags.length > 1) {
+    console.error('usage: setup-mailbox-lock-alert.mjs [project] [--apply | --starve-test]');
+    process.exit(2);
+  }
   try {
     const request = gcpHttp(gcpToken());
     if (args.includes('--starve-test')) {
