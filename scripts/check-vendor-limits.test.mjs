@@ -132,10 +132,14 @@ test('a malformed entry is refused and names its line', () => {
   }
 });
 
-function cli(listPath) {
+function cli(listPath, env = {}) {
   // No vendor credentials: every vendor is UNCONFIGURED, so no network.
   return spawnSync(process.execPath, ['scripts/check-vendor-limits.mjs'], {
-    env: { PATH: process.env.PATH, ...(listPath ? { KNOWN_VENDOR_ISSUES_FILE: listPath } : {}) },
+    env: {
+      PATH: process.env.PATH,
+      ...(listPath ? { KNOWN_VENDOR_ISSUES_FILE: listPath } : {}),
+      ...env,
+    },
     encoding: 'utf8',
   });
 }
@@ -581,5 +585,73 @@ test('a - line does not hold a measured cause, at any size', async () => {
   assert.match(
     triage([row], known, { today: TODAY }).failing[0].open[0].why,
     /^is measured, so line \d+ needs a number in up_to, not -$/,
+  );
+});
+
+test('a line that matches several failing causes in a row holds none of them', async () => {
+  // One ceiling cannot bound dollars and commands at once: a database-name
+  // line written for a volume spike also held the spend projection.
+  const row = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      {
+        [UPSTASH_DBS]: [prodDb],
+        [UPSTASH_STATS]: {
+          daily_net_commands: 3_000_000,
+          current_storage: 1,
+          total_monthly_billing: 29.99,
+        },
+      },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  const byName = parse(
+    `${LIST}Upstash Redis\tBREACH\tdeclutrmail-v2-bullmq:\t5000000\t2026-10-03\tvolume spike\n`,
+  );
+  const open = triage([row], byName, { today: TODAY }).failing[0].open;
+  assert.equal(open.length, 2);
+  for (const { why } of open) assert.match(why, /^line \d+ matches 2 failing causes in this row/);
+  // Text that covers two suspended databases would cover the next one too.
+  const suspended = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      {
+        [UPSTASH_DBS]: [
+          { ...prodDb, database_name: 'staging-cache', state: 'suspended' },
+          { ...prodDb, state: 'suspended' },
+        ],
+      },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  const generic = parse(
+    `${LIST}Upstash Redis\tBREACH\tstate=suspended\t-\t2026-10-03\tstaging, being deleted\n`,
+  );
+  assert.equal(openCauses(triage([suspended], generic, { today: TODAY })).length, 2);
+});
+
+test('a missing Supabase usage figure keeps the size as its own cause', () => {
+  // The check shells out to psql; a fake one on PATH returns no connection counts.
+  const dir = mkdtempSync(join(tmpdir(), 'fake-psql-'));
+  writeFileSync(
+    join(dir, 'psql'),
+    `#!/bin/sh\necho '{"database_bytes": ${1024 * 1024 * 1024}}'\n`,
+    { mode: 0o755 },
+  );
+  const list = join(dir, 'list.tsv');
+  writeFileSync(
+    list,
+    `${LIST}Supabase (DB size)\tERROR\tMissing database connections\t-\t2026-10-26\tquery changed\n`,
+  );
+  const run = cli(list, {
+    PATH: `${dir}:${process.env.PATH}`,
+    SUPABASE_SESSION_DSN: 'postgres://fake',
+  });
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(
+    run.stdout,
+    /Supabase \(DB size\) \(BREACH\): DB size 1024\.0 MB \(warn 400 MB\) — not acknowledged/,
   );
 });

@@ -7,7 +7,8 @@
 # One tab-separated line per cause:
 #   vendor (exactly as the run table names it)
 #   status (WARN|BREACH|ERROR)
-#   cause_contains (text the cause must contain: the one you looked at)
+#   cause_contains (text the cause must contain: the one you looked at.
+#     Text that matches two failing causes of one vendor holds neither.)
 #   up_to (the most you accept, in the cause's own unit: events, dollars,
 #     commands. Write - only for a cause with no measured value, such as
 #     an ERROR, a suspended database or a quota flag: a - line never holds

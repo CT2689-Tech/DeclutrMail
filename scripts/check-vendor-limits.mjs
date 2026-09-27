@@ -235,16 +235,20 @@ async function checkSupabaseDbSize() {
   });
   const stats = JSON.parse(stdout.trim());
   const mb = finiteNumber(stats.database_bytes, 'database size') / (1024 * 1024);
-  const connections = finiteNumber(stats.connections, 'database connections');
-  const maxConnections = finiteNumber(stats.max_connections, 'maximum connections');
   if (!Number.isFinite(mb)) throw new Error('psql returned a non-numeric DB size');
   const detail = `DB size ${mb.toFixed(1)} MB (warn ${warnMb} MB)`;
   const size = gauge(mb, warnMb);
+  // Valued in MB, so an acknowledgment can bound it.
+  const causes = [{ status: size.status, text: detail, value: mb }];
+  // Read after the size, so a missing usage figure keeps it.
+  const [connections, maxConnections] = await readKeeping(causes, () => [
+    finiteNumber(stats.connections, 'database connections'),
+    finiteNumber(stats.max_connections, 'maximum connections'),
+  ]);
   return {
     ...size,
     detail,
-    // Valued in MB, so an acknowledgment can bound it.
-    causes: [{ status: size.status, text: detail, value: mb }],
+    causes,
     usage: {
       database_mb: mb,
       database_connections: connections,
@@ -936,8 +940,9 @@ function failingCauses(r, warnIsFailure) {
  * when every one of its failing causes is: by a line for its vendor and
  * status whose text the cause contains, through the line's date, and at or
  * under the line's ceiling. A measured cause needs a numeric ceiling, and a
- * cause with no measured value needs `-`. Lines that matched no failing
- * cause come back as `unmatched`, to be deleted.
+ * cause with no measured value needs `-`. A line that matches several
+ * failing causes in one row holds none of them. Lines that matched no
+ * failing cause come back as `unmatched`, to be deleted.
  */
 export function triage(results, known, { today, warnIsFailure = false }) {
   const failing = [];
@@ -947,15 +952,26 @@ export function triage(results, known, { today, warnIsFailure = false }) {
     if (!fails(r.status, warnIsFailure)) continue;
     const open = [];
     const covered = [];
-    for (const cause of failingCauses(r, warnIsFailure)) {
-      const matches = known.filter(
+    const causes = failingCauses(r, warnIsFailure);
+    const matching = (cause) =>
+      known.filter(
         (k) => k.vendor === r.name && k.status === cause.status && cause.text.includes(k.contains),
       );
+    // A line whose text names more than one failing cause in a row holds
+    // none of them. One ceiling cannot bound a spend projection and a
+    // command count at once, and text that covers two suspended databases
+    // would cover the next one too.
+    const reach = new Map();
+    for (const cause of causes)
+      for (const k of matching(cause)) reach.set(k, (reach.get(k) ?? 0) + 1);
+    for (const cause of causes) {
+      const matches = matching(cause);
       for (const k of matches) used.add(k);
       // A ceiling bounds a measured value, and `-` is for a cause with none:
       // a `-` line on a measured cause would hold at any size (#795 review).
       const measured = Number.isFinite(cause.value);
-      const holds = (k) => (k.upTo === null ? !measured : measured && cause.value <= k.upTo);
+      const holds = (k) =>
+        reach.get(k) === 1 && (k.upTo === null ? !measured : measured && cause.value <= k.upTo);
       // When several lines name one cause, the tightest ceiling decides: a
       // broader line must not override a limit someone wrote down.
       const inDate = matches.filter((k) => today <= k.until);
@@ -970,11 +986,13 @@ export function triage(results, known, { today, warnIsFailure = false }) {
           ? matches.length
             ? `acknowledgment expired ${matches[0].until}`
             : 'not acknowledged'
-          : refusing.upTo === null
-            ? `is measured, so line ${refusing.line} needs a number in up_to, not -`
-            : measured
-              ? `above the acknowledged ${refusing.upTo} (line ${refusing.line})`
-              : `has no measured value, so the ceiling ${refusing.upTo} on line ${refusing.line} cannot hold`,
+          : reach.get(refusing) > 1
+            ? `line ${refusing.line} matches ${reach.get(refusing)} failing causes in this row; make its text name one`
+            : refusing.upTo === null
+              ? `is measured, so line ${refusing.line} needs a number in up_to, not -`
+              : measured
+                ? `above the acknowledged ${refusing.upTo} (line ${refusing.line})`
+                : `has no measured value, so the ceiling ${refusing.upTo} on line ${refusing.line} cannot hold`,
       });
     }
     if (open.length) failing.push({ ...r, open });
