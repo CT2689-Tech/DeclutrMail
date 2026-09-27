@@ -23,6 +23,9 @@ CLAUDE.md
 LEARNINGS.md
 MISTAKES.md
 FOUNDER-FOLLOWUPS.md
+# The same three logs, one file per entry. The §11 entry format puts fields
+# directly under the heading, which prettier --check rejects.
+docs/log/
 IMPLEMENTATION-LOG.md
 README.md
 .github/pull_request_template.md

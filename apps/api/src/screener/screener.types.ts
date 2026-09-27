@@ -181,6 +181,13 @@ export interface ScreenerQueueRow {
     verdict: TriageVerdict;
     confidence: number;
     reasoning: string;
+    /**
+     * Whose sentence `reasoning` is (D24). Explanations are bought on
+     * demand (founder decision 2026-09-25): an opened row still on the
+     * template asks `POST /api/triage/explain` for its sentence. Never
+     * rendered.
+     */
+    generatedBy: 'llm_haiku' | 'template';
     /** ISO-8601 — when the engine produced this read. */
     scoredAt: string;
     /**

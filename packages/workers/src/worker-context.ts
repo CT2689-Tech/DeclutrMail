@@ -21,7 +21,10 @@ export interface WorkerContext {
   mailboxAccountId?: string;
   /** 1-based attempt number (BullMQ `attemptsMade + 1`). */
   attempt: number;
-  /** Max attempts for this job (from the policy). */
+  /**
+   * Max attempts for this job: its own BullMQ `attempts` (unset or 0 is
+   * one run), or the policy's for a job object that carries no options.
+   */
   maxAttempts: number;
   /** When this attempt started. */
   startedAt: Date;

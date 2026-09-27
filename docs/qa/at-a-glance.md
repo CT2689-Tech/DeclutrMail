@@ -168,12 +168,12 @@ unverified.
 
 ## Where to look for detail
 
-| Question                                                     | File                                               |
-| ------------------------------------------------------------ | -------------------------------------------------- |
-| What happened in a specific `/ct-qa` run?                    | `docs/qa/launch-qa.md`                             |
-| What's being fixed, by whom, how far along?                  | `docs/qa/qa-worklist.md`                           |
-| Is this product question still open?                         | `FINDINGS.md`                                      |
-| Is a Section 2 guardrail or a recurring pattern behind this? | `CLAUDE.md` §2 / §8, `MISTAKES.md`, `LEARNINGS.md` |
+| Question                                                     | File                                                            |
+| ------------------------------------------------------------ | --------------------------------------------------------------- |
+| What happened in a specific `/ct-qa` run?                    | `docs/qa/launch-qa.md`                                          |
+| What's being fixed, by whom, how far along?                  | `docs/qa/qa-worklist.md`                                        |
+| Is this product question still open?                         | `FINDINGS.md`                                                   |
+| Is a Section 2 guardrail or a recurring pattern behind this? | `CLAUDE.md` §2 / §8, `docs/log/`, `MISTAKES.md`, `LEARNINGS.md` |
 
 ---
 

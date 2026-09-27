@@ -1,5 +1,7 @@
 # Learnings — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/learnings/`](docs/log/learnings/) (one file per entry). Existing entries stay here.
+
 Append-only log of what worked, what surprised us, and rules to promote
 into CLAUDE.md when patterns emerge.
 
@@ -2335,14 +2337,14 @@ on the next one, or now at the founder's discretion.
 **Rule (provisional):** When narrowing a critical section, list every value the loop reads before its first iteration and classify each: used only to SKIP (stale-safe) or to ACT / DISMISS / COUNT (re-read inside every hold).
 **Distillation trigger:** promote to CLAUDE.md §8 "Adversarial review for context-moving changes" if a second lock-narrowing change needs the same read relocation.
 
-## 2026-09-26 — Workflow pipeline() also ends an item when a stage returns null; the reference mentions only throws
-**Context:** Writing `scripts/ct-gates-workflow.test.mjs`, which runs `.claude/workflows/ct-gates.js` against stubbed Workflow runtime hooks.
-**Finding:** The workflow reference says a `pipeline()` stage that throws drops its item to null and skips the remaining stages. It says nothing about a stage that returns null. My first stub passed the null on to the next stage. Under that stub, main's `review?.findings ?? []` turned a dead gate into a clean review, so I "fixed" a bug that did not exist. A zero-agent probe of the real runtime, `pipeline(['a'], () => null, () => ({ ran: true }))`, returned `[null]`: a dead agent never reaches the later stages.
-**Rule (provisional):** Before stubbing a runtime to test code against it, probe the runtime for each behaviour the test depends on that its docs leave out. A zero-agent Workflow run costs nothing.
-**Distillation trigger:** promote to CLAUDE.md §8 ("A green test is not evidence") if a stub that disagrees with its runtime misleads a fix again. It is the same shape as the 2026-09-26 fake-GCP MISTAKES entry and the PGlite rule in §2.6.
+## 2026-09-26 — Moving LLM work on-demand: defer only the half whose readers can take a fallback
+**Context:** Haiku explanations moved from the first-scan sweep (every sender) to on-demand (founder decision 2026-09-25).
+**Finding:** The sweep kept computing EVERY verdict (cheap, deterministic) and gave up only the sentence (expensive, optional). Splitting by output made the context move safe by construction: every destructive reader (Autopilot, the queue order) reads verdicts, which never moved; only display readers see the template for a while, and the template is a true explanation. The deferred write is compare-and-set on the row version (`produced_at`), which absorbed every race (re-score mid-call, re-sync, duplicate asks) without a lock. And "who pays" became one exhaustive switch over the trigger union, so a new trigger cannot compile without deciding it.
+**Rule (provisional):** When deferring work off a sweep, split it by who reads each output; defer only outputs whose every reader can act on a correct fallback, and CAS the deferred write on the row version.
+**Distillation trigger:** promote to CLAUDE.md §8 if a second background enrichment moves on-demand.
 
-## 2026-09-26 — A haiku agent asked to run a command with a mistyped ref ran the corrected one
-**Context:** Starve-testing ct-gates' scout with `diffRef: 'origin/mian...HEAD'`, expecting SCOUT_FAILED.
-**Finding:** The scout, told to run `git diff --name-only origin/mian...HEAD` and report any error, returned the 6 files of `origin/main...HEAD` and no error. The run then gated a diff other than the one it was asked for, under the mistyped ref's name. A cheap model that meets a failing command may repair the input instead of reporting the failure.
-**Rule (provisional):** When an agent's answer depends on running an exact command, make it return the command it ran, verbatim, and compare that string in code. Tell it that a failure is the answer. Never infer "it ran what I asked" from a plausible result.
-**Distillation trigger:** promote to CLAUDE.md §8 if another workflow stage is found reporting on inputs it silently changed.
+## 2026-09-26 — A negative control that short-circuits the whole expression proves nothing
+**Context:** Negative-controlling the reuse half of the stale-Primary check in `score.worker.ts`, where `reusable` is one long `&&` chain ending `… && !misplacesInPrimary(…) && …`.
+**Finding:** "Disabling" the conjunct as `false && !misplacesInPrimary(…)` made all of `reusable` false, so reuse never happened and the test named "does NOT reuse …" stayed green. The control had removed the path the test watches, not the guard on it. Replacing the call with its identity element (a predicate that always answers "not misplaced") turned the test red at once.
+**Rule (provisional):** To disable a guard, substitute its identity: `true` for a conjunct, `false` for a disjunct, never a value that decides the whole expression. A control that stays green is a finding about the control before it is evidence about the test.
+**Distillation trigger:** promote to CLAUDE.md §8 "A green test is not evidence" if a second vacuous negative control is found.
