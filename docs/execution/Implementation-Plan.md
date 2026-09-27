@@ -10967,9 +10967,10 @@ knew both numbers the whole time.
   the key failed, which the wire marks as unknown rather than none.
 - Time left is never a fixed rate. It is the average pace of the
   worker's own batches, each timed by when the worker wrote it — so a
-  late poll cannot shorten it — counted down between batches, and shown
-  only once two gaps between batches agree: one gap alone can hold a
-  pause. It starts over after a stall against the pace already seen or a
+  late poll cannot shorten it — counted down between batches, and first
+  shown only once two gaps between batches agree within 1.5× per email
+  (otherwise the pace is measured again from the later gap): one gap
+  alone can hold a pause. It starts over after a stall against the pace already seen or a
   hidden tab; a batch far faster per email than the pace so far means
   an earlier gap held a pause, and the pace is measured again from there
   (per email, not per step: a failed read can hide batches in one step). It is
@@ -10978,9 +10979,13 @@ knew both numbers the whole time.
 - The title reads "Reading your Gmail…" (on Home too): the count covers
   all mail but Spam and Trash, which "inbox" would misstate.
 - A sign-in or connect during the scan re-queues its row without a new
-  attempt; the running read takes the row back, cursor included, at its
-  next count, so the gate never sits on "Waiting to start." for the rest
-  of the read.
+  attempt; the running read takes the row back at its next count, so the
+  gate never sits on "Waiting to start." for the rest of the read. A
+  re-queue of a scan in progress or failed keeps its first snapshot
+  cursor (only a ready mailbox's re-scan takes a new base), so no attempt
+  re-snapshots past mail an earlier one saved.
+- The counts' Redis key is registered in the D245 inventory
+  (`scan-progress-counts`).
 - The "you can close this tab" line still promises no time.
 
 `show_sync_live_counters` and `show_sync_eta` are retired with this. In
