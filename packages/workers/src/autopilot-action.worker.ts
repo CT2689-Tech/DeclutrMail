@@ -5,11 +5,15 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   actionJobs,
   activityLog,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESET_KEYS,
   type AutopilotPresetKey,
   automationRules,
   mailboxAccounts,
   mailMessages,
+  ruleMatchEvidenceIsCurrent,
+  ruleMatchIsQueuedAction,
+  ruleMatchIsStaleAction,
   ruleMatchLog,
   type schema,
   senderInboxActionWhere,
@@ -162,42 +166,6 @@ export const AUTOPILOT_ACTION_QUEUE = 'autopilot-action';
 export const AUTOPILOT_ACTION_JOB = 'autopilot-action';
 
 /**
- * Is a match's evidence still the CURRENT sender index — or already
- * claimed for execution?
- *
- * `InitialSyncWorker` rebuilds `senders` by DELETE + re-INSERT, so a
- * sender row created after the match means the rule decided on mail the
- * mailbox no longer holds; executing it would mutate Gmail on deleted
- * evidence. The second branch is the escape hatch: once the durable
- * `action_jobs` claim exists the action is legitimately in flight (the
- * rebuild's cleanup skips it for the same reason), and dropping it would
- * strand a Gmail change with no row to flip or audit against.
- *
- * ONE definition, used by both the sweep's load and the per-match
- * re-check. They were briefly written out twice and drifted on the very
- * first edit — the load filtered claimed matches the re-check would have
- * allowed.
- *
- * `sql.raw` for the outer columns: an interpolated Drizzle column emits
- * a BARE name that would bind to the subquery's own table and make this
- * a tautology (LEARNINGS — correlated-subquery pitfall).
- */
-const MATCH_EVIDENCE_CURRENT: SQL = sql`(
-  not exists (
-    select 1
-    from senders s
-    where s.mailbox_account_id = ${sql.raw('rule_match_log.mailbox_account_id')}
-      and s.sender_key = ${sql.raw('rule_match_log.sender_key')}
-      and s.created_at > ${sql.raw('rule_match_log.matched_at')}
-  )
-  or exists (
-    select 1
-    from action_jobs aj
-    where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
-  )
-)`;
-
-/**
  * Does this claim mean Gmail may ALREADY have been mutated?
  *
  * The worker persists `resolvedMessageIds` and flips the row to
@@ -216,17 +184,6 @@ function claimIsInFlight(
   if (claim == null || claim.status === 'done') return false;
   return claim.status !== 'queued' || claim.resolvedMessageIds.length > 0;
 }
-
-/**
- * Idempotency-key prefixes of a match's durable execution claim
- * (`<prefix><matchId>`). Exported for the D251 demotion facade
- * (`AutopilotReadService.demoteUnattendedRules`), whose claim-exclusion
- * SQL must recognize every claim this worker can have written — both
- * sides building from ONE constant is what keeps a future key-format
- * change from silently dismissing matches whose claim already mutated
- * Gmail.
- */
-export const AUTOPILOT_CLAIM_KEY_PREFIXES = ['autopilot-', 'autopilot-unsubexec-'] as const;
 
 /** Idempotency key of a match's durable execution claim. */
 function claimKey(match: { matchId: string; actionKind: string }): string {
@@ -271,6 +228,14 @@ export interface AutopilotActionJobData {
 export interface AutopilotActionResult {
   /** Approved, un-applied matches the sweep loaded. */
   matchesConsidered: number;
+  /**
+   * Approved, un-applied matches the sweep could NOT load because their
+   * evidence is stale (`ruleMatchIsStaleAction`): the sender was re-indexed
+   * after the match and no claim exists. Nothing runs or retires them — the
+   * sender-index rebuild's cleanup is their only exit — so this is the one
+   * place they show.
+   */
+  staleEvidenceExcluded: number;
   /** Label actions executed (incl. 0-affected decisions). */
   labelActionsExecuted: number;
   /** Unsubscribe intents recorded (one_click + mailto + none). */
@@ -521,8 +486,8 @@ const SENDER_OF_MATCH = and(
  *     `unsubscribe_unavailable` here, the terminal outcome from
  *     `UnsubExecutionWorker`): counting those charged one intent twice.
  *
- * `sql.raw` for the outer column (LEARNINGS — correlated-subquery
- * pitfall), and the window bound goes in as an ISO string with an
+ * `sql.raw` for the outer column (MISTAKES.md 2026-05-23 — correlated-
+ * subquery tautology), and the window bound goes in as an ISO string with an
  * explicit cast: a JS `Date` in a raw template breaks on postgres.js.
  */
 function ruleActionsInWindow(actionKind: string, windowStart: Date): SQL<number> {
@@ -543,7 +508,7 @@ interface FreshMatch {
   match: EligibleMatch;
   /** May this match's claim already have mutated Gmail? (`claimIsInFlight`) */
   inFlight: boolean;
-  /** `MATCH_EVIDENCE_CURRENT` for this row. */
+  /** `ruleMatchEvidenceIsCurrent` for this row. */
   evidenceCurrent: boolean;
   isProtected: boolean;
   /** The sender carries the `policy_type='unsubscribe'` projection of an intent. */
@@ -595,6 +560,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
 
     const result: AutopilotActionResult = {
       matchesConsidered: 0,
+      staleEvidenceExcluded: 0,
       labelActionsExecuted: 0,
       unsubscribeIntentsRecorded: 0,
       unsubscribeExecutionsEnqueued: 0,
@@ -680,6 +646,15 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
               error: err instanceof Error ? err.message : String(err),
             }),
           );
+          // The delayed resume is the only trigger that runs approved Observe
+          // matches once quiet ends, and console lines do not reach Sentry.
+          this.observer.captureBackgroundFailure(
+            err instanceof Error ? err : new Error(String(err)),
+            {
+              kind: 'autopilot.action.quiet_reschedule_failed',
+              tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+            },
+          );
         }
       }
       result.deferredQuiet = true;
@@ -687,6 +662,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     }
 
     const loaded = await this.loadEligibleMatches(mailboxAccountId);
+    result.staleEvidenceExcluded = await this.countStaleMatches(mailboxAccountId);
     // One batched lookup for the whole sweep, reused by the
     // completion-only filter and by every start-gate inside the loop.
     const inFlightBy = await this.loadInFlightFlags(loaded);
@@ -961,7 +937,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       // did not come back is gone for good. Retrying that forever is
       // the zombie this worker would otherwise farm — the row survives
       // the rebuild's cleanup because it carries a durable claim, and
-      // `MATCH_EVIDENCE_CURRENT` keeps passing it for the same reason,
+      // `ruleMatchEvidenceIsCurrent` keeps passing it for the same reason,
       // so nothing else would ever retire it. Terminate the match as a
       // no-op (no Gmail change was made, so no undo token) and fail
       // the claim so the abandoned `action_jobs` row is visible rather
@@ -1158,16 +1134,18 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       .from(ruleMatchLog)
       .innerJoin(automationRules, eq(automationRules.id, ruleMatchLog.ruleId))
       .leftJoin(senders, SENDER_OF_MATCH)
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.resolution, 'approved'),
-          eq(ruleMatchLog.intentApplied, false),
-          MATCH_EVIDENCE_CURRENT,
-        ),
-      )
+      .where(and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsQueuedAction()))
       .orderBy(ruleMatchLog.matchedAt, ruleMatchLog.id);
     return rows;
+  }
+
+  /** Approved, un-applied matches `loadEligibleMatches` leaves behind. */
+  private async countStaleMatches(mailboxAccountId: string): Promise<number> {
+    const [row] = await this.deps.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsStaleAction()));
+    return row?.n ?? 0;
   }
 
   /**
@@ -1195,7 +1173,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     const [row] = await this.deps.db
       .select({
         ...MATCH_COLUMNS,
-        evidenceCurrent: sql<boolean>`${MATCH_EVIDENCE_CURRENT}`,
+        evidenceCurrent: ruleMatchEvidenceIsCurrent(),
         isProtected: senderPolicies.isProtected,
         policyType: senderPolicies.policyType,
         claimStatus: actionJobs.status,
@@ -1216,6 +1194,10 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         ),
       )
       .leftJoin(actionJobs, eq(actionJobs.idempotencyKey, claimKey(snapshot)))
+      // Approved and unapplied — deliberately NOT `ruleMatchIsQueuedAction()`:
+      // a match whose evidence went stale since the load must still come
+      // back, so `evidenceCurrent` above can decide (skip it, or finish an
+      // in-flight claim).
       .where(
         and(
           eq(ruleMatchLog.id, snapshot.matchId),
@@ -1460,7 +1442,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   ): Promise<'executed' | 'stale' | 'protected' | 'retired'> {
     const { db } = this.deps;
     const verb = match.actionKind as 'archive' | 'later';
-    const idempotencyKey = `autopilot-${match.matchId}`;
+    const idempotencyKey = claimKey(match);
 
     // Durable action row — find or create. The key is the match id, so
     // a sweep retry resumes the SAME action (and its persisted ids).
@@ -1806,7 +1788,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       );
       return 'send_disabled';
     }
-    const executionKey = `autopilot-unsubexec-${match.matchId}`;
+    const executionKey = claimKey(match);
 
     // Unsubscribe records its decision, its execution row and the match
     // flip in ONE transaction, so taking the sender-index lock and
@@ -2133,14 +2115,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     const [still] = await executor
       .select({ id: ruleMatchLog.id })
       .from(ruleMatchLog)
-      .where(
-        and(
-          eq(ruleMatchLog.id, matchId),
-          eq(ruleMatchLog.resolution, 'approved'),
-          eq(ruleMatchLog.intentApplied, false),
-          MATCH_EVIDENCE_CURRENT,
-        ),
-      )
+      .where(and(eq(ruleMatchLog.id, matchId), ruleMatchIsQueuedAction()))
       .limit(1);
     return still != null;
   }

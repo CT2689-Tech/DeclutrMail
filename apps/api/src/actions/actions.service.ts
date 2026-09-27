@@ -17,6 +17,7 @@ import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 // paths below — ADR-0008 §3 exceptions to D204, which otherwise keeps
 // the table senders-owned.
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   actionJobs,
   activityLog,
   mailMessages,
@@ -28,7 +29,6 @@ import {
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
   ENQUEUE_FAILED_ERROR_CODE,
   LABEL_SENDER_PROTECTED_ERROR_CODE,

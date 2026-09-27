@@ -18,63 +18,114 @@
  * that skips the routes that matter most is the failure mode this file
  * already warns about two paragraphs down.
  *
- * WHAT IT MEASURES. For each route, the union of the JS chunks Next
- * lists for it in `.next/app-build-manifest.json`, gzipped and summed.
- * Gzip is what makes the number comparable to Next's own "First Load
- * JS" column — that column is compressed, and summing raw bytes instead
- * reads ~3.3x higher, which is how the first draft of this script
- * managed to fail every route at once.
+ * WHAT IT MEASURES. For each route, the JavaScript the browser loads to
+ * show it, as served to a signed-out request: `next start` serves the
+ * build on a free local port, every route is fetched once, and every JS
+ * chunk its HTML names — the `<script>` tags and the client references
+ * in the React Server Components payload, which React loads before it
+ * hydrates — is counted once, gzipped and summed. Gzip keeps the number
+ * comparable to a compressed transfer — summing raw bytes reads ~3.3x
+ * higher, which is how the first draft of this script managed to fail
+ * every route at once.
  *
- * WHY DERIVED, NOT LISTED. The route set comes from the manifest, so a
- * new page is budgeted the day it ships. A hand-maintained list would
- * let a new page arrive unmeasured, which is the failure mode this repo
- * already knows: a check that passes because it is looking at nothing.
+ * NOT COUNTED: `<script noModule>` (the polyfills, which modern browsers
+ * never fetch), and anything that loads after that first response — a
+ * `next/dynamic` chunk, a link prefetch, a client component that only
+ * renders once someone is signed in or data arrives.
  *
- * WHY THESE LIMITS. A per-group default plus an override table, each
- * set from the measured value rounded up to the next 5 kB. They are a
- * ratchet — "this route may not get heavier by accident" — not a claim
- * that any route is fast enough. `/senders` at 221.5 kB is emphatically
- * NOT a blessing of 221.5 kB; it is a floor under the regression.
- * Raising one is a deliberate edit that belongs in a commit message;
- * lowering one as routes get lighter is always welcome.
+ * WHY SERVED HTML, NOT THE BUILD MANIFEST (2026-09-27). This script used
+ * to sum `app-build-manifest.json`'s entry for the page alone — as does
+ * Next's "First Load JS" column. The browser loads more than that entry
+ * — 36-47 kB more on a public route, 64-132 kB on a signed-in one: every
+ * layout above the page, the error and loading boundaries on its path,
+ * and chunks filed under OTHER routes when a shared client component was
+ * bundled there first (/settings/help loads 14 kB of /settings' page
+ * entry). None of it was budgeted: it could grow with nothing failing,
+ * and moving weight off it could not register (#804 cut 4.7-4.8 kB from
+ * 16 of 17 signed-in routes' real first load while this read +0.03). A
+ * layout change now spends the headroom of every route under it at once
+ * — which is the point.
+ *
+ * WHY IT FAILS CLOSED. A measure that quietly looks at the wrong page is
+ * worse than none. The run fails, naming the route, when the server never
+ * starts or answers, a route answers anything but 200 (a redirect to
+ * sign-in included) and is not a declared redirect below, its HTML names
+ * no chunks, or it names none of the route's own page chunks — the sign
+ * of some other page served in its place (a sign-in page, a 404). Layout
+ * chunks cannot show that: the layouts list chunks every page shares. The
+ * server is stopped on every way out the script can catch.
+ *
+ * WHY DERIVED, NOT LISTED. The route set comes from the build manifest,
+ * and every route in it is measured or the run fails, so a new page is
+ * budgeted the day it ships. A hand-maintained list would let a new page
+ * arrive unmeasured, which is the failure mode this repo already knows:
+ * a check that passes because it is looking at nothing.
+ *
+ * WHY THESE LIMITS. A per-group default plus an override table. They are
+ * a ratchet — "this route may not get heavier by accident" — not a claim
+ * that any route is fast enough. `/senders` at 289.0 kB is
+ * emphatically NOT a blessing of 289.0 kB; it is a floor under the
+ * regression. Raising one is a deliberate edit that belongs in a commit
+ * message; lowering one as routes get lighter is always welcome.
+ *
+ * RE-BASED 2026-09-27 onto this measure. Each existing override moved by
+ * what its route loads beyond its old page entry, rounded up, so it kept
+ * its headroom (/settings/senders, lowered instead, says why where it
+ * sits). Routes on a default share one limit per layout chain, so
+ * equal real weight gets an equal budget: headroom that only existed
+ * because a chunk was filed under a layout or another route's entry went.
+ * Dated notes below quote the page-entry measure of their day.
  */
 
-import { gzipSync } from 'node:zlib';
-import { readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { createServer } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const nextDir = path.join(repoRoot, 'apps/web/.next');
+const webDir = path.join(repoRoot, 'apps/web');
+// The contract test points these at a fixture build and a fixture server.
+const nextDir = process.env.BUNDLE_BUDGET_NEXT_DIR ?? path.join(webDir, '.next');
+const fixtureServer = process.env.BUNDLE_BUDGET_SERVER;
+const readyTimeoutMs = Number(process.env.BUNDLE_BUDGET_READY_TIMEOUT_MS ?? 60_000);
+const ROUTE_TIMEOUT_MS = 30_000;
+const CONCURRENCY = 4;
 
 /**
  * Budget for any public route without an override, in gzipped kB.
  *
- * Baseline as of the `optimizePackageImports` change: the long tail of
- * content pages sits at 108.3-108.8 kB, the two ProductStory pages and
- * /sign-in at 113.6-113.9.
+ * Every public route renders inside the same two layouts. As served
+ * (2026-09-27), the long tail of content pages loads 147.0-147.2 kB and
+ * /cookies, the heaviest, 149.5; 151 keeps /cookies' headroom. (On the
+ * page-entry measure the same tail read 111.2-113.7 against 115.)
  */
-const DEFAULT_KB = 115;
+export const DEFAULT_KB = 151;
 
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 180 because the mid-weight cluster — settings, brief, activity,
- * autopilot, billing, screener — sits at 170.5-175.4 kB and shares
- * essentially one chunk graph. A NEW authed screen landing under this
- * is normal; landing over it means it pulled in something the others do
+ * Set at 254 because the mid-weight cluster — settings, brief, activity,
+ * autopilot, billing, screener — loads 244.3-256.0 kB as served, app
+ * chrome included, and shares essentially one chunk graph; /activity,
+ * the heaviest route on this default, keeps its headroom (it was 180 on
+ * the page-entry measure). A NEW authed screen landing under this is
+ * normal; landing over it means it pulled in something the others do
  * not, which is exactly the moment worth a second look.
  */
-const AUTHED_DEFAULT_KB = 180;
+export const AUTHED_DEFAULT_KB = 254;
 
 /**
- * Routes that legitimately carry more, keyed by manifest page key.
- * Measured 2026-08-16; comments carry the observed value so drift is
- * visible in the diff when someone edits a number.
+ * Routes that legitimately carry more, or are pinned tighter, keyed by
+ * manifest page key. Trailing comments carry the observed value as served
+ * (2026-09-27) so drift is visible in the diff when someone edits a
+ * number; dated notes quote the page-entry measure of their day.
  */
-const OVERRIDES_KB = {
-  '/(marketing)/page': 120, // 116.9 — hero + ledger demo + FAQ
-  '/(marketing)/pricing/page': 125, // 121.2 — cycle toggle, tier cards, compare table
+export const OVERRIDES_KB = {
+  '/(marketing)/page': 156, // 154.3 — hero + ledger demo + FAQ
+  '/(marketing)/pricing/page': 166, // 165.4 — cycle toggle, tier cards, compare table
   // Raised 175 -> 177 on 2026-08-27. The comment said 169.8 (measured
   // 2026-08-16) but the route had already drifted to 174.3 on main, so
   // the headroom was 0.7 kB and nobody knew. This change adds 0.7 more:
@@ -83,15 +134,26 @@ const OVERRIDES_KB = {
   // a little barrel dedupe and buys back a shipped `undefined` (see
   // that module's consumers). 177 restores real headroom AND records
   // the true number.
-  '/(marketing)/inbox-simulator/page': 177, // 175.0 — the only real interactive surface
+  '/(marketing)/inbox-simulator/page': 218, // 201.5 — the only real interactive surface
+
+  // These seven render `next/link` from server components, and Next
+  // resolves that client reference to the chunks of the home page's entry
+  // (1825, 5109 and the home page chunk), so each loads ~8 kB more than
+  // the long tail. Budgeted at the long tail's headroom, rounded up: the
+  // extra 3.4 kB they had on the page-entry measure was chunk 1705, which
+  // it filed under the layout for them and under the page for the tail.
+  '/(marketing)/alternatives/[tool]/page': 160, // 154.9
+  '/(marketing)/compare/page': 160, // 154.9
+  '/(marketing)/how-it-works/page': 160, // 154.8
+  '/(marketing)/methodology/page': 160, // 154.8
+  '/(marketing)/security/page': 160, // 155.1
+  '/(marketing)/sign-in/page': 160, // 154.8
+  '/(marketing)/vs/[competitor]/page': 160, // 154.9
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  // Raised 216 -> 217 by #805 (D245): measured 216.2, up from 214.9 on
-  // main. Rows hold after a start or status read we could not confirm, a
-  // new action clears a row's old mark, and the skip/unknown states.
-  '/(app)/senders/page': 217, // 216.2 — grid + table + compose strip + saved views + mobile dialect
+  '/(app)/senders/page': 290, // 289.0 — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -112,7 +174,7 @@ const OVERRIDES_KB = {
   // `TriageRow`, and importing the block there put it at 175.5 against
   // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
   // the next addition here still has to argue for itself.
-  '/(app)/triage/page': 206, // 202.2 (was 198.2) — action sheet, preview + verification detail, undo tray
+  '/(app)/triage/page': 276, // 273.1 — action sheet, preview + verification detail, undo tray
   // 199.9 (was 191.3), measured after the 2026-09-02 sender-detail QA
   // batch (18 findings — mailbox-scope-reset guard, fuller/more accurate
   // KPI + hero copy, the toolbar's primaryVerbReason). Checked this was
@@ -121,24 +183,16 @@ const OVERRIDES_KB = {
   // unique to the diff — none leaked into a shared chunk), not a barrel
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
-  '/(app)/senders/[id]/page': 204,
+  '/(app)/senders/[id]/page': 282, // 274.1
   // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
   // for billing / screener / admin. The public theme and refreshed shared
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
   // while keeping the general 180 kB ratchet and other routes unchanged.
-  '/(app)/billing/page': 187, // checkout + invoices + plan controls + editorial shell
-  // Raised 181 -> 183 by #805 (D245): measured 182.5, up from 180.9 on
-  // main. Rows hold after an unconfirmed start or lost status read (a
-  // second decision would run the job twice), the confirm names the
-  // count, and the pill's Protected-skip notes.
-  '/(app)/screener/page': 183, // queue + decision controls + editorial shell
-  // The scannable Brief and optional generated-note view measure 180.2 kB.
+  '/(app)/billing/page': 257, // 256.0 — checkout + invoices + plan controls + editorial shell
+  '/(app)/screener/page': 251, // 250.7 — queue + decision controls + editorial shell
+  // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
-  '/(app)/brief/page': 184,
-  // #805 (D245): measured 180.4, up from 179.3 on main — the Protected-
-  // skip line, the retry's consent and reason, and undo failures in the
-  // pill's words. Its own ceiling rather than relaxing the 180 default.
-  '/(app)/activity/page': 181,
+  '/(app)/brief/page': 254, // 250.0
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -157,16 +211,12 @@ const OVERRIDES_KB = {
   // no longer be dead-code-eliminated from the shared `api/client.ts`
   // chunk. Both deltas land in the same shared cluster; 184 covers both
   // with headroom to spare rather than stacking a second override.
-  '/(app)/settings/page': 184, // 180.0 (was ~175, drifted to the ceiling unnoticed)
+  '/(app)/settings/page': 249, // 244.3
 
-  // Below the authed default, pinned tighter than it so they cannot
-  // silently drift up into the cluster.
-  '/(app)/settings/privacy/page': 170, // 165.6 — data controls + explainer
-  '/(app)/settings/senders/page': 165, // 161.4
-  '/(app)/quiet/page': 165, // 161.7 — schedule controls + explainer
-  '/(app)/later/page': 150, // 145.2 — return queue + explainer
-  '/(app)/followups/page': 150, // 145.2 — follow-up queue + explainer
-  '/(app)/admin/security/page': 126, // 125.0 — operator log + editorial shell
+  // Loads /settings' page entry too: it renders TanStack's
+  // `HydrationBoundary` from a server component, and Next resolves that
+  // client reference to /settings' chunks (14.2 kB), so as served it
+  // weighs what the cluster does, not what its page entry suggested.
   // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
   // new "Contact support" form (subject/message fields, submit handler,
   // the postSupportRequest API wrapper, and its own track() call) landed
@@ -175,36 +225,30 @@ const OVERRIDES_KB = {
   // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
   // Rechecked after the shared editorial shell and brand update: 120.4 kB.
   // The support form remains on this route; keep a narrow 0.6 kB margin.
-  '/(app)/settings/help/page': 121, // 120.4
+  '/(app)/settings/help/page': 254, // 252.7
+
+  // Below the authed default, pinned tighter than it so they cannot
+  // silently drift up into the cluster.
+  '/(app)/settings/privacy/page': 247, // 246.7 — data controls + explainer
+  // Lowered from its re-based 266 on 2026-09-27: pinned at 165 against
+  // 161.4, it got 16.6 kB lighter and the budget never followed. 250
+  // keeps the 3.6 kB margin it was pinned with.
+  '/(app)/settings/senders/page': 250, // 245.7
+  '/(app)/quiet/page': 242, // 239.4 — schedule controls + explainer
+  '/(app)/later/page': 246, // 239.1 — return queue + explainer
+  '/(app)/followups/page': 246, // 241.3 — follow-up queue + explainer
+  '/(app)/admin/security/page': 235, // 234.4 — operator log + editorial shell
 };
 
-let manifest;
-try {
-  manifest = JSON.parse(readFileSync(path.join(nextDir, 'app-build-manifest.json'), 'utf8'));
-} catch {
-  console.error(
-    '✗ bundle budget: no .next/app-build-manifest.json.\n' +
-      '  Run `pnpm --filter @declutrmail/web build` first.',
-  );
-  process.exit(1);
-}
-
-const gzipCache = new Map();
-function gzippedSize(file) {
-  const cached = gzipCache.get(file);
-  if (cached !== undefined) return cached;
-  let size;
-  try {
-    size = gzipSync(readFileSync(path.join(nextDir, file))).length;
-  } catch {
-    // A listed chunk missing from disk is a broken build, not a budget
-    // question — surface it rather than silently under-counting.
-    console.error(`✗ bundle budget: ${file} is in the manifest but not on disk`);
-    process.exit(1);
-  }
-  gzipCache.set(file, size);
-  return size;
-}
+/**
+ * Pages that answer with a redirect by design, and where to. Such a page
+ * ships no JS of its own: the browser follows the redirect, and the
+ * target is budgeted as its own route. The run still fails if the page
+ * stops redirecting there, so a page that starts rendering gets measured.
+ */
+export const REDIRECTS = {
+  '/(marketing)/demo/page': '/inbox-simulator', // launch-post links, 308 (SEO sweep 2026-08-04)
+};
 
 /**
  * The two route groups this script budgets, each with its own default.
@@ -216,46 +260,292 @@ const GROUPS = [
   { label: 'authed', prefix: '/(app)/', defaultKb: AUTHED_DEFAULT_KB },
 ];
 
-const rows = [];
-for (const group of GROUPS) {
-  const routes = Object.keys(manifest.pages)
-    .filter((key) => key.startsWith(group.prefix) && key.endsWith('/page'))
-    .sort();
+/** A failure the run can name: the build, the server or one route. */
+class BudgetError extends Error {}
 
-  // Each group is asserted non-empty SEPARATELY. A single combined check
-  // would let one group vanish — a renamed route group, a build that
-  // emitted only half the app — while the other kept the script green,
-  // which is the "passes because it is looking at nothing" failure this
-  // file exists to avoid.
-  if (routes.length === 0) {
-    console.error(
-      `✗ bundle budget: no ${group.prefix} routes in the manifest — that group went unmeasured.`,
-    );
-    process.exit(1);
-  }
+const CHUNK = /static\/chunks\/[^"'\s<>\\]+?\.js/g;
 
-  for (const route of routes) {
-    const files = new Set(manifest.pages[route].filter((f) => f.endsWith('.js')));
-    const kb = [...files].reduce((sum, file) => sum + gzippedSize(file), 0) / 1024;
-    const budgetKb = OVERRIDES_KB[route] ?? group.defaultKb;
-    rows.push({ route, kb, budgetKb, over: kb > budgetKb, group: group.label });
+/**
+ * Every JS chunk an HTML response names, each once and decoded to its
+ * path on disk (Next URL-encodes each segment, so `[id]` arrives as
+ * `%5Bid%5D`): `<script src>` tags and the RSC payload's client
+ * references alike. A `<script noModule>` is dropped, because modern
+ * browsers never fetch it.
+ */
+export function chunkRefs(html) {
+  const named = (text) => (text.match(CHUNK) ?? []).map((file) => decodeURIComponent(file));
+  const refs = new Set(named(html));
+  for (const tag of html.match(/<script\b[^>]*\bnomodule\b[^>]*>/gi) ?? []) {
+    for (const file of named(tag)) refs.delete(file);
   }
+  return refs;
 }
 
-rows.sort((a, b) => b.kb - a.kb);
-for (const row of rows) {
-  console.log(
-    `${row.over ? 'OVER' : 'ok  '} ${row.kb.toFixed(1).padStart(6)} kB / ${String(row.budgetKb).padStart(3)} kB  ${row.route}`,
+/**
+ * The URL a page key is served at: route groups dropped, and a dynamic
+ * segment filled with a path the build prerendered FROM this route (its
+ * `srcRoute`) — else a placeholder, which a client-rendered page like
+ * /senders/[id] answers like any id.
+ */
+export function urlFor(route, prerendered) {
+  const url = `/${route
+    .split('/')
+    .slice(1, -1)
+    .filter((segment) => !/^\(.+\)$/.test(segment))
+    .join('/')}`;
+  if (!url.includes('[')) return url;
+  const built = Object.entries(prerendered).find(([, entry]) => entry.srcRoute === url);
+  return built?.[0] ?? url.replace(/\[[^\]]+\]+/g, 'budget-probe');
+}
+
+/** The chunks the manifest files under the route's own page entry. */
+function ownPageChunks(manifest, route) {
+  const prefix = `static/chunks/app${route.slice(0, -'/page'.length)}/page-`;
+  return manifest.pages[route].filter((file) => file.startsWith(prefix) && file.endsWith('.js'));
+}
+
+const gzipCache = new Map();
+function gzippedSize(file) {
+  const cached = gzipCache.get(file);
+  if (cached !== undefined) return cached;
+  let size;
+  try {
+    size = gzipSync(readFileSync(path.join(nextDir, file))).length;
+  } catch (error) {
+    // A named chunk that cannot be read is a broken build, not a budget
+    // question — surface it rather than silently under-counting.
+    throw new BudgetError(`${file} is named by the HTML but cannot be read (${error.code})`);
+  }
+  gzipCache.set(file, size);
+  return size;
+}
+
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * `next start` on the build (or the contract test's fixture server) in a
+ * process group of its own, so `stop` takes anything it forked with it.
+ * `stop` also runs on exit and on SIGINT, SIGTERM and SIGHUP; only a
+ * SIGKILL of this script can leave the server behind.
+ */
+async function startServer() {
+  const port = await freePort();
+  const entry =
+    fixtureServer ?? createRequire(path.join(webDir, 'package.json')).resolve('next/dist/bin/next');
+  const child = spawn(process.execPath, [entry, 'start', '-p', String(port), '-H', '127.0.0.1'], {
+    cwd: fixtureServer ? path.dirname(fixtureServer) : webDir,
+    env: { ...process.env, PORT: String(port), NEXT_TELEMETRY_DISABLED: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+  let log = '';
+  const keep = (data) => {
+    log = (log + data).slice(-2000);
+  };
+  child.stdout.on('data', keep);
+  child.stderr.on('data', keep);
+  let spawnError = null;
+  child.once('error', (error) => {
+    spawnError = error;
+  });
+
+  const stop = () => {
+    if (child.pid === undefined) return; // It never started.
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch (error) {
+      if (error.code !== 'ESRCH') {
+        console.error(
+          `✗ bundle budget: could not stop the server (pid ${child.pid}): ${error.message}`,
+        );
+      }
+    }
+  };
+  process.once('exit', stop);
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.once(signal, () => {
+      stop();
+      process.exit(1);
+    });
+  }
+  return {
+    base: `http://127.0.0.1:${port}`,
+    child,
+    stop,
+    log: () => log,
+    spawnError: () => spawnError,
+  };
+}
+
+async function waitUntilReady(server) {
+  const deadline = Date.now() + readyTimeoutMs;
+  let last = 'no answer yet';
+  while (Date.now() < deadline) {
+    if (server.spawnError()) {
+      throw new BudgetError(`the server could not start: ${server.spawnError().message}`);
+    }
+    if (server.child.exitCode !== null || server.child.signalCode !== null) {
+      throw new BudgetError(
+        `the server exited (${server.child.exitCode ?? server.child.signalCode}) before answering.\n${server.log()}`,
+      );
+    }
+    try {
+      await fetch(`${server.base}/`, { signal: AbortSignal.timeout(2_000) });
+      return; // Any HTTP answer means it is up; each route checks its own status.
+    } catch (error) {
+      last = error.cause?.code ?? error.message; // Not listening yet — retry until the deadline.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new BudgetError(
+    `the server did not answer within ${readyTimeoutMs / 1000}s (last: ${last}).\n${server.log()}`,
   );
 }
 
-const failed = rows.filter((row) => row.over);
-if (failed.length > 0) {
-  console.error(`\n✗ bundle budget: ${failed.length} of ${rows.length} route(s) over.`);
-  process.exit(1);
+async function measureRoute(server, manifest, route, url) {
+  const response = await fetch(server.base + url, {
+    redirect: 'manual',
+    signal: AbortSignal.timeout(ROUTE_TIMEOUT_MS),
+  });
+  const to = response.headers.get('location');
+  if (route in REDIRECTS) {
+    const redirects = response.status >= 300 && response.status < 400;
+    if (redirects && to === REDIRECTS[route]) return null;
+    throw new BudgetError(
+      `answered ${response.status}${to ? ` → ${to}` : ''}, not a redirect to ${REDIRECTS[route]} as declared`,
+    );
+  }
+  if (response.status !== 200) {
+    throw new BudgetError(
+      `answered ${response.status}${to ? ` → ${to}` : ''}, not 200: that is some other page`,
+    );
+  }
+  const refs = chunkRefs(await response.text());
+  if (refs.size === 0) throw new BudgetError('its HTML named no JS chunks at all');
+  const own = ownPageChunks(manifest, route);
+  if (!own.some((file) => refs.has(file))) {
+    throw new BudgetError(
+      `its HTML named none of the ${own.length} chunk(s) of its own page: it rendered some other page`,
+    );
+  }
+  return [...refs].reduce((sum, file) => sum + gzippedSize(file), 0) / 1024;
 }
 
-const counts = GROUPS.map(
-  (g) => `${rows.filter((r) => r.group === g.label).length} ${g.label}`,
-).join(' + ');
-console.log(`\n✓ bundle budget: ${rows.length} route(s) within budget (${counts}, gzipped).`);
+export async function main() {
+  let manifest;
+  let prerendered;
+  try {
+    manifest = JSON.parse(readFileSync(path.join(nextDir, 'app-build-manifest.json'), 'utf8'));
+    prerendered = JSON.parse(
+      readFileSync(path.join(nextDir, 'prerender-manifest.json'), 'utf8'),
+    ).routes;
+  } catch (error) {
+    console.error(
+      `✗ bundle budget: cannot read the build (${error.message}).\n` +
+        '  Run `pnpm --filter @declutrmail/web build` first.',
+    );
+    return 1;
+  }
+
+  const routes = [];
+  for (const group of GROUPS) {
+    const keys = Object.keys(manifest.pages)
+      .filter((key) => key.startsWith(group.prefix) && key.endsWith('/page'))
+      .sort();
+
+    // Each group is asserted non-empty SEPARATELY. A single combined check
+    // would let one group vanish — a renamed route group, a build that
+    // emitted only half the app — while the other kept the script green,
+    // which is the "passes because it is looking at nothing" failure this
+    // file exists to avoid.
+    if (keys.length === 0) {
+      console.error(
+        `✗ bundle budget: no ${group.prefix} routes in the manifest — that group went unmeasured.`,
+      );
+      return 1;
+    }
+    for (const route of keys) routes.push({ route, group, url: urlFor(route, prerendered) });
+  }
+
+  const server = await startServer();
+  const rows = [];
+  const redirected = [];
+  const failures = [];
+  try {
+    await waitUntilReady(server);
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: CONCURRENCY }, async () => {
+        while (next < routes.length) {
+          const { route, group, url } = routes[next++];
+          try {
+            const kb = await measureRoute(server, manifest, route, url);
+            if (kb === null) {
+              redirected.push(route);
+              continue;
+            }
+            const budgetKb = OVERRIDES_KB[route] ?? group.defaultKb;
+            rows.push({ route, kb, budgetKb, over: kb > budgetKb, group: group.label });
+          } catch (error) {
+            failures.push(`${route} (${url}): ${error.message}`);
+          }
+        }
+      }),
+    );
+  } catch (error) {
+    if (!(error instanceof BudgetError)) throw error;
+    console.error(`✗ bundle budget: ${error.message}`);
+    return 1;
+  } finally {
+    server.stop();
+  }
+
+  // Every route the build has is measured (or verified as a declared
+  // redirect), or the run fails naming it.
+  if (failures.length > 0) {
+    console.error(
+      `✗ bundle budget: ${failures.length} of ${routes.length} route(s) not measured:\n  ${failures.sort().join('\n  ')}`,
+    );
+    return 1;
+  }
+
+  rows.sort((a, b) => b.kb - a.kb);
+  for (const row of rows) {
+    console.log(
+      `${row.over ? 'OVER' : 'ok  '} ${row.kb.toFixed(1).padStart(6)} kB / ${String(row.budgetKb).padStart(3)} kB  ${row.route}`,
+    );
+  }
+
+  const failed = rows.filter((row) => row.over);
+  if (failed.length > 0) {
+    console.error(`\n✗ bundle budget: ${failed.length} of ${rows.length} route(s) over.`);
+    return 1;
+  }
+
+  const counts = GROUPS.map(
+    (g) => `${rows.filter((r) => r.group === g.label).length} ${g.label}`,
+  ).join(' + ');
+  console.log(
+    `\n✓ bundle budget: ${rows.length} route(s) within budget (${counts}, gzipped, as served to a signed-out request)` +
+      (redirected.length > 0 ? `; ${redirected.length} declared redirect(s) verified.` : '.'),
+  );
+  return 0;
+}
+
+// Both sides resolved: under --preserve-symlinks-main, import.meta.url
+// keeps a symlink's path, and a one-sided compare would exit 0 unmeasured.
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
+  process.exitCode = await main();
+}

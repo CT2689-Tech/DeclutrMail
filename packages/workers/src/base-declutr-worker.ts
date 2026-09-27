@@ -562,6 +562,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'previewId',
   'remainingCount',
   'skippedIndexRebuilt',
+  'staleEvidenceExcluded',
   'targetCount',
   'unavailableCount',
   'verifiedCount',

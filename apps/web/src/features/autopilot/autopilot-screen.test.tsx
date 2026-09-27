@@ -25,7 +25,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { useUiStore } from '@declutrmail/shared';
+import { ToastHost, useUiStore } from '@declutrmail/shared';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
@@ -1580,6 +1580,63 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
 
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toEqual({ matchIds: ['00000000-0000-0000-0000-0000000000a1'] });
+  });
+
+  it('Approve selected reports the server approvedCount, not the selection size', async () => {
+    // A ticked match whose sender became Protected after the list loaded
+    // stays pending server-side (`skippedProtectedCount`). Toasting the
+    // selection size claimed an approval that never happened.
+    const base = PENDING_SUGGESTIONS.find((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)!;
+    const names = ['Alpha Deals', 'Beta Digest', 'Gamma News', 'Delta Offers'];
+    const suggestions: SuggestionWithRule[] = names.map((senderName, i) => ({
+      match: { ...base, id: `00000000-0000-0000-0000-00000000030${i}`, senderName },
+      rule: AUTO_ARCHIVE_LOW_ENGAGEMENT,
+    }));
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/autopilot/matches/approve',
+        respond: () =>
+          jsonOk({
+            data: {
+              approvedCount: 3,
+              alreadyResolvedCount: 0,
+              skippedProtectedCount: 1,
+              executionEnqueued: true,
+            },
+          }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <AutopilotScreen
+          state={{ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions }}
+        />
+        <ToastHost />
+      </QueryClientProvider>,
+    );
+    for (const name of names) {
+      await userEvent.click(
+        screen.getByRole('checkbox', { name: new RegExp(`select suggestion for ${name}`, 'i') }),
+      );
+    }
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /review selected suggestions from rule review low-engagement senders for archive/i,
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: /approve 4 suggestions/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^approve 4$/i }));
+
+    // Pin the verb and the number, not the sentence (CLAUDE.md §8).
+    expect(await screen.findByText(/^Approved 3\b/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Approved 4\b/)).toBeNull();
+    expect(trackMock).toHaveBeenCalledWith(
+      'autopilot_suggestion_decided',
+      expect.objectContaining({ decision: 'accepted', count: 3 }),
+    );
   });
 
   it('cancelling the approve preview fires nothing', async () => {
