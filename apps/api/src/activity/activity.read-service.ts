@@ -17,6 +17,7 @@
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
 import { measureRequestOperation } from '../observability/request-performance.js';
+import { AUTOPILOT_CLAIM_KEY_PREFIXES } from '@declutrmail/workers';
 import { Inject, Injectable } from '@nestjs/common';
 import {
   engagementWindowStart,
@@ -390,6 +391,7 @@ export class ActivityReadService {
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
       lte(outcomeTime, timestamptzParam(args.snapshotCreatedAt)),
+      notAutopilotClaim(current.idempotencyKey),
       notExists(
         this.db
           .select({ id: later.id })
@@ -1020,6 +1022,7 @@ export class ActivityReadService {
       ),
       // A malformed/older recovery cannot outrank its own original intent.
       sql`(${current.recoveryAttempt}, ${current.createdAt}, ${current.id}) >= (${root.recoveryAttempt}, ${root.createdAt}, ${root.id})`,
+      notAutopilotClaim(root.idempotencyKey),
     ];
     const senderScope = this.senderScopeFilter(
       args.mailboxAccountId,
@@ -1552,6 +1555,20 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
  * ("argument must be of type string or Buffer"). PGlite (specs) accepts
  * either shape, so only the ISO-string form is safe on both drivers.
  */
+/**
+ * An Autopilot claim is an `action_jobs` row the user never clicked. Its
+ * outcome reaches Activity as the worker's own `autopilot` row; the claim
+ * itself must not read as the user's action (the in-flight list already
+ * leaves claims out the same way).
+ */
+function notAutopilotClaim(idempotencyKey: SQLWrapper): SQL {
+  return and(
+    ...AUTOPILOT_CLAIM_KEY_PREFIXES.map(
+      (prefix) => sql`${idempotencyKey} not like ${`${prefix}%`}`,
+    ),
+  )!;
+}
+
 function timestamptzParam(value: Date) {
   return sql`${value.toISOString()}::timestamptz`;
 }

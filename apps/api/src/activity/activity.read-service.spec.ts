@@ -2015,6 +2015,44 @@ describe('ActivityReadService', () => {
       return seen;
     }
 
+    // An Autopilot claim is an action_jobs row the user never clicked: it
+    // must not read as their own action (architecture-guardian 2026-09-27).
+    it('leaves Autopilot claims out of the actions it lists', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'claim-key',
+        'c@c.com',
+        'Claim',
+      );
+      const claimIds: string[] = [];
+      for (const status of ['queued', 'failed'] as const) {
+        const id = await seedExecutionAttempt(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderId,
+          senderKey: 'claim-key',
+          status,
+          createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        });
+        await db
+          .update(actionJobs)
+          .set({ idempotencyKey: `autopilot-${id}` })
+          .where(eq(actionJobs.id, id));
+        claimIds.push(id);
+      }
+      const { rows, stats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[0]]));
+      expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[1]]));
+      expect(stats.needsAttention).toBe(0);
+    });
+
     // The in-flight twin (architecture-guardian 2026-09-27): a bulk's
     // queued jobs share one timestamp too.
     it('keeps every in-flight action sharing the page boundary timestamp', async () => {

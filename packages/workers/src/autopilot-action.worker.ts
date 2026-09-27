@@ -726,9 +726,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     }
     result.matchesConsidered = matches.length;
     if (matches.length === 0) {
-      await this.deps.lock.run(mailboxAccountId, () =>
-        this.releaseUntouchedClaims(mailboxAccountId, loaded),
-      );
+      await this.releaseClaimsLeftUntouched(mailboxAccountId, loaded);
       result.durationMs = Date.now() - startedAt;
       return result;
     }
@@ -790,9 +788,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // loaded match, including those that never entered a hold (gated,
     // capped or paused before the lock was taken), whose claims an earlier
     // sweep may have left untouched.
-    await this.deps.lock.run(mailboxAccountId, () =>
-      this.releaseUntouchedClaims(mailboxAccountId, loaded),
-    );
+    await this.releaseClaimsLeftUntouched(mailboxAccountId, loaded);
     result.durationMs = Date.now() - startedAt;
     return result;
   }
@@ -1312,6 +1308,42 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
    * and never run (`MATCH_EVIDENCE_CURRENT` excludes it). Such a match is
    * deleted here exactly as the rebuild would have deleted it.
    */
+  /**
+   * Take the locks for the release only when there is something to release.
+   * Most sweeps leave no claim untouched, and the sender-index lock the
+   * release needs can wait out a whole re-sync teardown while this holds
+   * the mailbox lock. Read unlocked: an untouched claim is only ever
+   * created inside a hold, so one this read misses belongs to a sweep that
+   * releases it itself.
+   */
+  private async releaseClaimsLeftUntouched(
+    mailboxAccountId: string,
+    matches: EligibleMatch[],
+  ): Promise<void> {
+    const keys = matches.filter((m) => m.actionKind !== 'unsubscribe').map(claimKey);
+    if (keys.length === 0) return;
+    let any = false;
+    for (let i = 0; i < keys.length && !any; i += CLAIM_LOOKUP_CHUNK) {
+      const [row] = await this.deps.db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            inArray(actionJobs.idempotencyKey, keys.slice(i, i + CLAIM_LOOKUP_CHUNK)),
+            eq(actionJobs.status, 'queued'),
+            sql`cardinality(${actionJobs.resolvedMessageIds}) = 0`,
+          ),
+        )
+        .limit(1);
+      any = row !== undefined;
+    }
+    if (!any) return;
+    await this.deps.lock.run(mailboxAccountId, () =>
+      this.releaseUntouchedClaims(mailboxAccountId, matches),
+    );
+  }
+
   private async releaseUntouchedClaims(
     mailboxAccountId: string,
     matches: EligibleMatch[],

@@ -891,8 +891,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   /**
    * Mark the job `executing` — "Gmail may now change" — as the first request
    * is about to leave (`beforeFirstRequest`). When the re-check applies, the
-   * same statement refuses if the sender is Protected right now, so no gap
-   * is left between the last check and the send.
+   * same statement refuses if the sender is Protected at that moment. The
+   * request leaves one round-trip later, so a Protect landing inside that
+   * round-trip is not seen: the window is as small as the send allows, not
+   * zero.
    */
   private async markExecuting(
     jobId: string,

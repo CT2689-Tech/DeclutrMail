@@ -339,6 +339,32 @@ describe('AutopilotActionWorker', () => {
     worker = buildWorker();
   });
 
+  // Most sweeps leave no claim untouched. The release must not take the
+  // mailbox lock (and the sender-index lock, which can wait out a whole
+  // re-sync teardown) for nothing (architecture-guardian 2026-09-27).
+  it('takes no extra lock hold for the release when every claim ran', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'ran@shop.com', { inboxMessages: 2 });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    let holds = 0;
+    const counted = buildWorker({
+      lock: {
+        run: async (_mailboxAccountId, fn) => {
+          holds += 1;
+          return fn();
+        },
+      },
+    });
+
+    const result = await counted.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(holds).toBe(1);
+  });
+
   it('never executes a match whose sender row was re-created after it (rebuild invalidation)', async () => {
     // The initial-sync rebuild DELETEs and re-inserts `senders`, so a
     // sender row created after the match means the volume / read-rate
