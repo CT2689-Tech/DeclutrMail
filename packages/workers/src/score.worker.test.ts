@@ -2278,6 +2278,73 @@ describe('ScoreWorker — explanations on demand (D24, founder 2026-09-25)', () 
       }
     });
 
+    it('an explain job makes no call — and no read — while the provider is refusing the account', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const senderKey = await seedSender(db, mailboxAccountId, 'tripped@first.test', {
+        gmailCategory: 'primary',
+      });
+      const { llm: working } = recordingLlm();
+      await new ScoreWorker({ db, llm: working, now: () => NOW }).processJob(
+        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+      const noReads = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === 'select' || prop === 'execute') {
+            throw new Error('explain read the mailbox with nothing it could buy');
+          }
+          return Reflect.get(target, prop, receiver) as unknown;
+        },
+      });
+      const explain = vi.fn(async () => 'Never bought.');
+      const worker = new ScoreWorker({
+        db: noReads,
+        llm: { explain, isBlocked: () => true },
+        now: () => NOW,
+      });
+
+      const result = await worker.processJob(
+        { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+
+      expect(explain).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ llmCalls: 0, llmBlocked: 1, explainSkipped: 0 });
+      expect((await decisionFor(db, senderKey))?.generatedBy).toBe('template');
+    });
+
+    it('an explain job whose provider pauses while it waits for a slot makes no call', async () => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db);
+      const senderKey = await seedSender(db, mailboxAccountId, 'paused@first.test', {
+        gmailCategory: 'primary',
+      });
+      const { llm: working } = recordingLlm();
+      await new ScoreWorker({ db, llm: working, now: () => NOW }).processJob(
+        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+      let checks = 0;
+      const explain = vi.fn(async () => 'Never bought.');
+      // Clear at the job's own check and at the seam's first check, paused
+      // by the time the rate-limit slot comes.
+      const worker = new ScoreWorker({
+        db,
+        llm: { explain, isBlocked: () => (checks += 1) > 2 },
+        now: () => NOW,
+        reasoningRatePerMin: 1000,
+      });
+
+      const result = await worker.processJob(
+        { mailboxAccountId, senderKey, trigger: 'explain', producedAtMs: T0 },
+        FAKE_CTX,
+      );
+
+      expect(explain).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ llmCalls: 0, llmBlocked: 1 });
+    });
+
     it('a model answer with no text is logged by name and never stored as a sentence', async () => {
       const db = await freshDb();
       const { mailboxAccountId } = await seedMailbox(db);
