@@ -2,10 +2,17 @@
 #
 # Runs daily at 13:00 UTC (~6:30pm IST). Reads usage vs limits per
 # external vendor (Supabase, GCP, Upstash, Anthropic, Vercel, Sentry,
-# PostHog, GitHub Actions) via scripts/check-vendor-limits.mjs. A
-# failed workflow run = email to the founder via GH's "Send
-# notifications for failed workflows" setting — same alert channel as
-# the sync-stuck watchdog.
+# PostHog, GitHub Actions) via scripts/check-vendor-limits.mjs. When a
+# scheduled run fails, GitHub notifies the account that last changed the
+# `cron:` line, per that account's notification settings — same alert
+# channel as the sync-stuck watchdog.
+#
+# Red means something NEW. A failing vendor row listed in
+# scripts/known-vendor-issues.tsv (vendor + status, until a date) prints
+# as a warning and does not fail the run; a missing or malformed list
+# does. Before that list, Anthropic's standing ERROR held this red every
+# day from at least 2026-09-21, and the Sentry and Google Cloud budget
+# breaches of 2026-09-24/25 changed nothing anyone saw.
 #
 # Secrets resolve to empty strings when absent, which the script maps
 # to UNCONFIGURED (skipped, listed in the run summary). The watchdog is
