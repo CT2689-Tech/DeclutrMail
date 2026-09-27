@@ -52,6 +52,31 @@ export const LOCK_POOL_WAIT_WARN_MS = 1_000;
  * unit-testable — the 2026-08-12 leak survived precisely because the
  * unlock's return value was discarded inside an untested `catch {}`.
  */
+/**
+ * The one log line a blocked consumer is guaranteed to emit, whichever step
+ * failed: the pool checkout, setting lock_timeout, or the advisory lock.
+ * It is the kind the lock alert pages on. IncrementalSyncWorker takes this
+ * lock OUTSIDE its BaseDeclutrWorker envelope (worker.ts composition), so
+ * without this line a failed acquire surfaces nowhere; until 2026-09-27 a
+ * failed checkout or set_config logged nothing but a timing line.
+ */
+function logAcquireFailed(
+  mailboxAccountId: string,
+  stage: 'reserve' | 'set_lock_timeout' | 'advisory_lock',
+  err: unknown,
+): void {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      kind: 'mailbox_lock.acquire_failed',
+      stage,
+      mailboxAccountId,
+      lockTimeout: MAILBOX_LOCK_TIMEOUT,
+      message: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
+
 export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
   /**
    * Boot self-test: prove SESSION semantics on the live pool instead of
@@ -81,7 +106,13 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
       // as measured. Timing it is what makes raising the pool an
       // evidenced decision instead of a guess.
       const reserveStarted = Date.now();
-      const reserved = await lockPg.reserve();
+      let reserved: Awaited<ReturnType<Sql['reserve']>>;
+      try {
+        reserved = await lockPg.reserve();
+      } catch (err) {
+        logAcquireFailed(mailboxAccountId, 'reserve', err);
+        throw err;
+      }
       const reserveWaitMs = Date.now() - reserveStarted;
       if (reserveWaitMs >= LOCK_POOL_WAIT_WARN_MS) {
         console.warn(
@@ -106,23 +137,16 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
         // `syntax error at or near "$1"`, which failed EVERY label
         // action from #509 (2026-08-12) until caught 2026-08-16. The
         // mocked spec asserted the string, never executed it.
-        await reserved`SELECT set_config('lock_timeout', ${MAILBOX_LOCK_TIMEOUT}, false)`;
+        try {
+          await reserved`SELECT set_config('lock_timeout', ${MAILBOX_LOCK_TIMEOUT}, false)`;
+        } catch (err) {
+          logAcquireFailed(mailboxAccountId, 'set_lock_timeout', err);
+          throw err;
+        }
         try {
           await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         } catch (err) {
-          // The one log line a blocked consumer is guaranteed to emit.
-          // IncrementalSyncWorker takes this lock OUTSIDE its
-          // BaseDeclutrWorker envelope (worker.ts composition), so
-          // without this line a timed-out sync surfaces nowhere.
-          console.error(
-            JSON.stringify({
-              level: 'error',
-              kind: 'mailbox_lock.acquire_failed',
-              mailboxAccountId,
-              lockTimeout: MAILBOX_LOCK_TIMEOUT,
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          logAcquireFailed(mailboxAccountId, 'advisory_lock', err);
           throw err;
         }
         acquired = true;

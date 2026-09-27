@@ -31,8 +31,10 @@
 # creates what is missing. Safe to re-run any number of times.
 #
 # Auth: assumes gcloud is already authed against the target project.
-# Mirrors scripts/setup-billing-alerts.sh deliberately: create what is
-# missing, never mutate.
+# Create-only, like scripts/setup-billing-alerts.sh: it creates what is
+# missing and never checks or repairs what exists, so "already exists"
+# here is not proof that the page works. scripts/setup-mailbox-lock-alert.mjs
+# shows the verify-and-repair shape.
 
 set -euo pipefail
 

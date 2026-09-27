@@ -56,7 +56,7 @@ export const NO_PAGE_KINDS = {
   'mailbox_lock.pool_wait':
     'a lock-pool checkout took over a second, then the acquire went ahead: capacity data for sizing the pool; a wait that times out logs acquire_failed',
   'mailbox_lock.slow_operation':
-    'info-level timing of a slow hold; the lock was taken and released',
+    'info-level timing of a slow wait or hold; an acquire that failed also logs acquire_failed, which pages',
 };
 
 const RESOURCE = 'resource.type="cloud_run_revision"';
@@ -187,7 +187,8 @@ async function inspect(project, request, now) {
         );
     }
     problems.push(...drift);
-    if (!drift.length)
+    // Without the admin channel its notification could not be checked.
+    if (!drift.length && channel)
       passed.push(
         `alert policy "${POLICY_DISPLAY_NAME}" emails ${ADMIN_EMAIL} on the first failure line`,
       );
@@ -493,8 +494,9 @@ export async function starveTest({
     }
     // A leftover test policy stays in production, so a leak fails the run
     // even when every check passed.
+    // It keeps the verdict it would have had, and its exit code.
     if (report.cleanup.some((l) => l.startsWith('FAILED')))
-      report.result = 'CLEANUP FAILED: delete the resources listed above by hand';
+      report.result = `${report.result}; CLEANUP FAILED: delete the resources listed above by hand`;
     log(JSON.stringify(report, null, 2));
   }
   return report;

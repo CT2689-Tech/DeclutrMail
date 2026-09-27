@@ -510,7 +510,7 @@ test('a delete the API refuses fails the run and keeps its reason', async () => 
     failOn: (m) => (m === 'DELETE' ? 403 : 0),
   });
   const report = await starve(gcp, 'r5');
-  assert.match(report.result, /^CLEANUP FAILED/);
+  assert.match(report.result, /^PASS; CLEANUP FAILED/);
   assert.ok(
     report.cleanup.every((l) => /FAILED to delete .*HTTP 403 .*denied DELETE/.test(l)),
     JSON.stringify(report.cleanup),
@@ -533,4 +533,22 @@ test('the CLI with no GCP access exits 2 and does not claim the page is configur
   assert.equal(status, 2);
   assert.match(output, /NOT VERIFIED/);
   assert.doesNotMatch(output, /Configured/);
+});
+
+test('a failed cleanup keeps the verdict the run would have had', async () => {
+  const gcp = fakeGcp({
+    metric: expectedMetric(),
+    policies: [prodPolicy],
+    openAlerts: false,
+    failOn: (m) => (m === 'DELETE' ? 403 : 0),
+  });
+  const report = await starve(gcp, 'r6');
+  assert.match(report.result, /^FAIL: Timed out waiting for the test alert.*; CLEANUP FAILED/);
+});
+
+test('without the admin channel, the policy is not reported as emailing it', async () => {
+  const gcp = fakeGcp({ metric: expectedMetric(), policies: [prodPolicy], channels: [] });
+  const lines = [];
+  await run({ project: PROJECT, request: gcp.request, log: (l) => lines.push(l), now: NOW });
+  assert.ok(!lines.some((l) => l.startsWith('✓') && l.includes('emails admin')), lines.join('\n'));
 });
