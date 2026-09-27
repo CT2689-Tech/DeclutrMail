@@ -8,7 +8,7 @@ import {
   senderTimeseries,
 } from '@declutrmail/db';
 import { MailboxNonMailPurgedPayloadSchema, TOPICS } from '@declutrmail/events';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { lockSenderIndex } from './sender-index-lock.js';
@@ -45,7 +45,9 @@ export interface NonMailPurgeResult {
 
 /**
  * The purge's batch DELETE, unexecuted, so a test can check its plan.
- * The id subquery is what `mail_messages_non_mail_idx` answers.
+ * The id subquery is what `mail_messages_non_mail_idx` answers, newest
+ * first: when a run stops at its batch cap, the recent drafts — the only
+ * ones the Brief can still read — are already gone.
  */
 export function nonMailBatchDelete(tx: OutboxTx, mailboxAccountId: string, limit: number) {
   return tx
@@ -57,6 +59,7 @@ export function nonMailBatchDelete(tx: OutboxTx, mailboxAccountId: string, limit
           .select({ id: mailMessages.id })
           .from(mailMessages)
           .where(and(eq(mailMessages.mailboxAccountId, mailboxAccountId), nonMailRowWhere()))
+          .orderBy(desc(mailMessages.internalDate))
           .limit(limit),
       ),
     )

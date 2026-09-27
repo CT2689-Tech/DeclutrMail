@@ -470,7 +470,7 @@ describe('purgeNonMailMessages', () => {
     expect(rows).toEqual([{ senderKey: friendKey, total: 1, first: day(10), last: day(10) }]);
   });
 
-  it('stops at maxBatches and says so, leaving the rest for the next run', async () => {
+  it('stops at maxBatches and says so, newest first, leaving the oldest for the next run', async () => {
     const { mb } = await seedMailbox(db, OWNER);
     await seedSender(db, mb, OWNER, { total: 5, first: day(1), last: day(5) });
     for (const d of [1, 2, 3, 4, 5]) {
@@ -489,7 +489,8 @@ describe('purgeNonMailMessages', () => {
     );
 
     expect(result).toMatchObject({ messagesDeleted: 4, capped: true });
-    expect(await storedIds(db, mb)).toEqual(['draft-5']);
+    // Newest first: what a capped run leaves behind is the oldest line.
+    expect(await storedIds(db, mb)).toEqual(['draft-1']);
   });
 
   it('a clean mailbox costs one probe — no batch, so no lock and no transaction', async () => {

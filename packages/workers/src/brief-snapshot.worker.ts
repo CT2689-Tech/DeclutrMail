@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, not, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -6,6 +6,7 @@ import {
   briefRuns,
   mailMessages,
   mailboxAccounts,
+  nonMailRowWhere,
   type schema,
   senders,
   triageDecisions,
@@ -517,6 +518,11 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           eq(mailMessages.isOutbound, false),
           gte(mailMessages.internalDate, yesterdayStart),
           lt(mailMessages.internalDate, todayStart),
+          // Never a draft or a chat line: this read sends subjects and
+          // previews to the model. Ingest no longer stores them and the
+          // purge deletes old ones; this covers a row the purge has not
+          // reached yet.
+          not(nonMailRowWhere()),
         ),
       )
       .orderBy(mailMessages.internalDate);

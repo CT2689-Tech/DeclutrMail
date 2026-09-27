@@ -31,6 +31,13 @@
 -- `nonMailRowWhere()` emits, so the planner can prove the implication;
 -- tests pin both to NON_MAIL_LABELS and check the plan.
 --
+-- NEWEST FIRST. `internal_date` in the key lets each batch take the most
+-- recent non-mail rows first. A sweep run purges at most ten batches per
+-- mailbox, so a mailbox with a long chat history clears over several
+-- runs — and the rows that go first are the recent drafts, the only ones
+-- the Brief (which sends yesterday's subjects and previews to the model)
+-- could still read.
+--
 -- WRITE COST. Each INSERT/UPDATE evaluates the predicate, an overlap test
 -- against a two-element constant. Once purged the index holds no entries,
 -- because ingest never writes a matching row. `label_ids` already sits in
@@ -43,5 +50,5 @@
 -- Recovery is the rollback, then re-apply.
 
 CREATE INDEX CONCURRENTLY "mail_messages_non_mail_idx"
-  ON "mail_messages" USING btree ("mailbox_account_id")
+  ON "mail_messages" USING btree ("mailbox_account_id", "internal_date")
   WHERE "label_ids" && ARRAY['DRAFT','CHAT']::text[];

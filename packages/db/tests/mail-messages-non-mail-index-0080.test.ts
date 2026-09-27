@@ -30,10 +30,11 @@ async function indexDef(pg: Awaited<ReturnType<typeof freshTestPglite>>): Promis
 }
 
 describe('migration 0080 — non-mail partial index', () => {
-  it('indexes exactly the NON_MAIL_LABELS rows, by mailbox', async () => {
+  it('indexes exactly the NON_MAIL_LABELS rows, by mailbox and date', async () => {
     const def = await indexDef(await freshTestPglite());
 
-    expect(def).toMatch(/\(mailbox_account_id\) WHERE/);
+    // `internal_date` in the key serves the purge's newest-first batches.
+    expect(def).toMatch(/\(mailbox_account_id, internal_date\) WHERE/);
     const labels = [...def.matchAll(/'([A-Z_]+)'::text/g)].map((m) => m[1]);
     expect(labels.sort()).toEqual([...NON_MAIL_LABELS].sort());
     expect(def).toMatch(/label_ids && /);

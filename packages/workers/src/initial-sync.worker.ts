@@ -928,7 +928,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           kind: 'sync.non_mail_purge_failed',
           worker: this.workerName,
           mailboxAccountId,
-          message: purgeError.message,
+          // Name only: a Drizzle query error's message carries the
+          // statement's parameters — here up to 2,000 sender keys and
+          // thread ids.
+          errorName: purgeError.name,
         }),
       );
       this.observer.captureBackgroundFailure(purgeError, {
