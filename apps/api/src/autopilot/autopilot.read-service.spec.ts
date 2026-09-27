@@ -2002,10 +2002,11 @@ describe('AutopilotReadService', () => {
       });
     });
 
-    // `inboxMessagesNow` is what a sweep now would act on, and no sweep or
-    // approve touches a Protected sender (D245). Counting its inbox made
-    // "Would archive N emails now" include mail the user had protected.
-    it('leaves a Protected sender’s inbox out of inboxMessagesNow', async () => {
+    // No sweep or approve touches a Protected sender (D245), yet the digest
+    // counted it: "Would archive N emails now" included its inbox, and the
+    // unsubscribe copy ("would have requested unsubscribe from N senders")
+    // included the sender itself.
+    it('leaves a Protected sender out of senders7d and inboxMessagesNow', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const recent = new Date(Date.now() - 86_400_000);
       await db.insert(senderPolicies).values({
@@ -2021,8 +2022,7 @@ describe('AutopilotReadService', () => {
 
       expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
         pendingTotal: 1,
-        // It did match this week: protection changes what acts, not history.
-        senders7d: 2,
+        senders7d: 1,
         inboxMessagesNow: 3,
       });
     });

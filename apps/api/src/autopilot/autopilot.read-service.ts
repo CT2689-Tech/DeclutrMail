@@ -357,11 +357,13 @@ export class AutopilotReadService {
    *     predicate as the pending list and both approve paths
    *     (`ruleMatchIsOfferableSuggestion`), so "Approve all ~N" and the
    *     day-7 prompt never count a suggestion approve would skip.
-   *   - `senders7d`    — distinct senders matched in the last 7 days.
-   *   - `inboxMessagesNow` — INBOX messages those senders hold RIGHT NOW
-   *     (LEFT JOIN mail_messages, same resolution the action sweep
-   *     uses), excluding senders Protected now — no sweep or approve
-   *     acts on them (D245). NOT windowed, deliberately: `recent` bounds
+   *   - `senders7d`    — distinct senders matched in the last 7 days,
+   *     excluding senders Protected now: no sweep or approve acts on
+   *     them (D245), and the unsubscribe copy renders this number as
+   *     "would have requested unsubscribe from N senders".
+   *   - `inboxMessagesNow` — INBOX messages those same senders hold RIGHT
+   *     NOW (LEFT JOIN mail_messages, same resolution the action sweep
+   *     uses). NOT windowed, deliberately: `recent` bounds
    *     `rule_match_log.matched_at`, and the join carries no
    *     `internal_date` predicate, so a sender who matched once
    *     yesterday contributes its entire current inbox backlog however
@@ -385,6 +387,9 @@ export class AutopilotReadService {
       const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
       const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
       const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
+      // Both sender-based numbers read this one set, so they can never
+      // describe different senders.
+      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()})`;
       const scope = and(
         eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
         eq(ruleMatchLog.modeAtMatch, 'observe'),
@@ -398,7 +403,7 @@ export class AutopilotReadService {
           senderKey: ruleMatchLog.senderKey,
         })
         .from(ruleMatchLog)
-        .where(and(scope, recent, sql`not ${ruleMatchSenderIsProtected()}`))
+        .where(and(scope, recentUnprotected))
         .as('recent_observe_senders');
       const counts = this.db
         .select({
@@ -408,7 +413,7 @@ export class AutopilotReadService {
               'pending_total',
             ),
           senders7d:
-            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`.as(
+            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recentUnprotected})::int`.as(
               'senders_7d',
             ),
         })

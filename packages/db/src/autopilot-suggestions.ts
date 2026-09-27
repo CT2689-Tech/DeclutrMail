@@ -64,6 +64,8 @@ function senderIndexedAtMatchTime(): SQL {
  * same check — otherwise it offers, counts or approves suggestions the
  * worker will silently refuse to execute (D245: Protected senders are
  * excluded from bulk and automatic mail-changing actions).
+ *
+ * Correlates on an unaliased `rule_match_log` in the enclosing query.
  */
 export function ruleMatchSenderIsProtected(): SQL {
   return sql`exists (
@@ -81,6 +83,8 @@ export function ruleMatchSenderIsProtected(): SQL {
  * {@link ruleMatchSenderIsProtected} to split it exactly into what the
  * user can act on ({@link ruleMatchIsOfferableSuggestion}) and what an
  * approve holds back (its `skippedProtectedCount`).
+ *
+ * Correlates on an unaliased `rule_match_log` in the enclosing query.
  */
 export function ruleMatchIsPendingSuggestion(): SQL {
   // Non-empty predicate list, so `and()` can never return undefined.
@@ -96,6 +100,8 @@ export function ruleMatchIsPendingSuggestion(): SQL {
  * `pendingTotal` counts, and what both approve paths may flip. A Protected
  * sender's suggestion stays `pending` rather than being dismissed, so
  * unprotecting the sender makes it offerable again.
+ *
+ * Correlates on an unaliased `rule_match_log` in the enclosing query.
  */
 export function ruleMatchIsOfferableSuggestion(): SQL {
   return sql`(${ruleMatchIsPendingSuggestion()} and not ${ruleMatchSenderIsProtected()})`;
