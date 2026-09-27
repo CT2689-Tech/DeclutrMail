@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 import { HomeView } from './home-view';
 
@@ -215,6 +216,16 @@ describe('HomeView', () => {
     expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
     expect(screen.queryByText(/Scan again/)).toBeNull();
   });
+
+  it.each([false, true])(
+    'sync-failed: says exactly what failedScanSettingsStep says (needsReconnect=%s)',
+    (needsReconnect) => {
+      // Inline in the view for the bundle budget; pinned to the helper the
+      // toast and Triage use so the surfaces cannot drift apart.
+      render(<HomeView state={{ kind: 'sync-failed', needsReconnect }} />);
+      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+    },
+  );
 
   it('loading: a labelled skeleton and no link', () => {
     render(<HomeView state={{ kind: 'loading' }} />);

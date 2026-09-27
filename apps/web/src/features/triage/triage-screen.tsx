@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import type { ActionReach } from '@declutrmail/shared/contracts';
+import type { ActionReach, UNSUB_MANUAL_REQUIRED_ERROR_CODE } from '@declutrmail/shared/contracts';
 
 import {
   useActionStatus,
@@ -20,11 +20,7 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import {
-  isTerminalStatus,
-  UNSUB_AMBIGUOUS_ERROR_CODE,
-  UNSUB_MANUAL_ERROR_CODE,
-} from '@/lib/api/actions';
+import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -82,6 +78,11 @@ import { TodayHandledLine } from './today-handled-line';
 import { TriageQueue } from './triage-queue';
 import type { ActionVerb } from './types';
 import type { ConfirmDetails } from './action-sheet';
+
+// Pinned to the contract at compile time, with no runtime import: taking
+// it from `actions.ts` or the contracts package regrouped the shared chunks
+// of other routes over their bundle budgets.
+const UNSUB_MANUAL_ERROR_CODE: typeof UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
 
 // The two confirm sheets open only after a verb is chosen, and they carry
 // the shared modal — loading them after first paint keeps /triage inside
@@ -496,9 +497,9 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    // The same sentences as `unsubscribeOutcomeToast` (Senders), inline on
-    // purpose: importing that shared module pulled a five-route chunk into
-    // this route and over its bundle budget. A test pins the two equal.
+    // The same sentences as `unsubscribeOutcomeToast` (senders/unsub-status),
+    // inline so this route does not load the Senders pill table (bundle
+    // budget). A test pins the two equal.
     if (data.status === 'done') {
       toast(
         `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,

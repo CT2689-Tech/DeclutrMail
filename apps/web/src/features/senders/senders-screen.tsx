@@ -2,7 +2,6 @@
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
-import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -66,8 +65,8 @@ import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { isTerminalStatus, type UnsubscribeBatchOutcomes } from '@/lib/api/actions';
+import { unsubscribeOutcomeToast } from './unsub-status';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
-import { unsubscribeOutcomeToast } from './unsub-outcome-toast';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -1848,10 +1847,9 @@ function SendersScreenContent({
     if (unsubExecStatus.isError) {
       const err = unsubExecStatus.error;
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
-      toast(
-        `Couldn't confirm the unsubscribe from ${activeUnsub.senderName} — the sender's chip will show the result`,
-        'warn',
-      );
+      // No promise about where the result appears: nothing refetches the
+      // list after a failed poll, so the row can keep its last state.
+      toast(`Couldn't confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
@@ -2649,10 +2647,7 @@ function SendersScreenContent({
             ) : senders.length === 0 && mailboxSyncFailed ? (
               // Same shape for the one readiness value that guard didn't
               // cover — a search over a failed scan never really ran.
-              <EmptyState
-                title="Scan failed"
-                body={failedScanSettingsStep(mailboxNeedsReconnect)}
-              />
+              <EmptyState title="Scan failed" body={failedScanStep(mailboxNeedsReconnect)} />
             ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
               // First-visit default is active-only (launch-audit B2). A
               // mailbox with nothing ACTIVE must not read as a filter
@@ -2865,6 +2860,17 @@ function SendersScreenContent({
  * A healthy list says nothing.
  */
 /**
+ * `failedScanSettingsStep`'s two sentences, local: importing mailbox-health
+ * from this route regrouped shared chunks over other routes' bundle
+ * budgets. A test pins the two equal.
+ */
+function failedScanStep(needsReconnect: boolean): string {
+  return needsReconnect
+    ? 'Reconnect it in Settings → Gmail accounts.'
+    : 'Scan again in Settings → Gmail accounts.';
+}
+
+/**
  * The server counts a refused-but-emailable request inside `failed` AND in
  * `actionRequired` (so an older client never reads it as a success); the
  * receipt shows them as separate lines.
@@ -2896,7 +2902,7 @@ function SenderResultsWarning({
   needsReconnect: boolean;
 }) {
   const message = syncFailed
-    ? `The last scan failed, so this list may be incomplete or stale. ${failedScanSettingsStep(needsReconnect)}`
+    ? `The last scan failed, so this list may be incomplete or stale. ${failedScanStep(needsReconnect)}`
     : stillSyncing
       ? 'Still syncing — this list may be incomplete or stale.'
       : rowsReadOnly

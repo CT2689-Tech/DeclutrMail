@@ -32,7 +32,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { unsubscribeOutcomeToast } from '@/features/senders/unsub-outcome-toast';
+import { unsubscribeOutcomeToast } from '@/features/senders/unsub-status';
 import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';

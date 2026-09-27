@@ -1,6 +1,16 @@
-import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
+import type {
+  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
+  UnsubscribeLifecycleStatus,
+} from '@declutrmail/shared/contracts';
+
+import { UNSUB_AMBIGUOUS_ERROR_CODE, type ActionStatusResult } from '@/lib/api/actions';
 
 import type { Sender } from './data';
+
+// Pinned to the contract at compile time, with no runtime import: taking
+// it from `actions.ts` or the contracts package regrouped the shared chunks
+// of other routes over their bundle budgets.
+const UNSUB_MANUAL_ERROR_CODE: typeof UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
 
 /**
  * Unsubscribe status copy by execution state (D9 Wave 2 — honest states,
@@ -61,4 +71,40 @@ export function unsubscribeStatusCopy(
     status ??
     (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'unconfirmed');
   return UNSUB_PILL[resolved];
+}
+
+/**
+ * The toast for a finished one-click unsubscribe, read from the job's error
+ * code the way `UNSUB_PILL` reads the lifecycle: a request the endpoint did
+ * not accept, from a sender that also takes email (`UNSUB_MANUAL_REQUIRED`),
+ * is "Send from Gmail" on the row — not "failed — Archive still works",
+ * which hid the one step that still unsubscribes.
+ *
+ * Senders and Sender Detail call this; Triage and Screener inline the same
+ * sentences so they do not load this module (bundle budget), and a Triage
+ * test pins the two equal.
+ */
+export function unsubscribeOutcomeToast(
+  senderName: string,
+  outcome: Pick<ActionStatusResult, 'status' | 'errorCode'>,
+): { message: string; tone: 'success' | 'warn' } {
+  if (outcome.status === 'done') {
+    return {
+      message: `${senderName} accepted the unsubscribe request — stopping is up to them.`,
+      tone: 'success',
+    };
+  }
+  if (outcome.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
+    return {
+      message: `Unsubscribe from ${senderName} is unconfirmed — watch for new email.`,
+      tone: 'warn',
+    };
+  }
+  if (outcome.errorCode === UNSUB_MANUAL_ERROR_CODE) {
+    return {
+      message: `${senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
+      tone: 'warn',
+    };
+  }
+  return { message: `Unsubscribe from ${senderName} failed — Archive still works.`, tone: 'warn' };
 }

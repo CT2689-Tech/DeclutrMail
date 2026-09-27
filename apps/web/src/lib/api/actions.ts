@@ -22,10 +22,7 @@ import type {
   UnsubscribeLifecycleStatus,
   UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
-import {
-  UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
-  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
-} from '@declutrmail/shared/contracts';
+import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
@@ -440,13 +437,6 @@ export interface UnsubscribeManualStatusResult {
 
 /** `action_jobs.error_code` marking a 3xx (unconfirmed) unsub outcome. */
 export const UNSUB_AMBIGUOUS_ERROR_CODE = UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE;
-
-/**
- * `action_jobs.error_code` for a one-click request the endpoint did not
- * accept, from a sender that also takes email (D252) — the row says
- * "Send from Gmail".
- */
-export const UNSUB_MANUAL_ERROR_CODE = UNSUB_MANUAL_REQUIRED_ERROR_CODE;
 
 /**
  * Record an unsubscribe intent for a sender. Replaces the prior

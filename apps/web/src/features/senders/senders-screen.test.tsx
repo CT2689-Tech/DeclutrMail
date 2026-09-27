@@ -16,6 +16,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 
@@ -633,6 +634,7 @@ describe('SendersScreen — edge states', () => {
     // The negative control: reverting to that phrasing makes this fail.
     expect(freshness).not.toHaveTextContent(/from before this scan started/i);
     expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
+    expect(freshness).toHaveTextContent(failedScanSettingsStep(false));
   });
 
   it('sends a failed scan that needs reconnecting to Reconnect, not to a retry Settings lacks', async () => {
@@ -649,6 +651,8 @@ describe('SendersScreen — edge states', () => {
     const freshness = screen.getByTestId('sender-results-freshness');
     expect(freshness).toHaveTextContent(/Reconnect it in Settings/);
     expect(freshness).not.toHaveTextContent(/retry/i);
+    // Inline in the screen for the bundle budget; pinned to the helper.
+    expect(freshness).toHaveTextContent(failedScanSettingsStep(true));
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {
@@ -1860,6 +1864,91 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() =>
       expect(unsubscribeBody).toEqual({ senderId: 'a', includesBacklogAction: true }),
     );
+  });
+
+  describe('single-sender one-click unsubscribe toast', () => {
+    // The toast bus is module-level and a toast lives 3.6 s: expire this
+    // block's toasts so "…unsubscribe from Sender A" cannot land in a later
+    // test's "no Unsubscribe preview opened" check.
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+    afterEach(async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      vi.useRealTimers();
+    });
+
+    function installOneClick(status: () => Response) {
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-intent',
+          respond: () =>
+            jsonOk({
+              data: {
+                senderId: 'a',
+                recordedAt: '2026-07-12T12:00:00.000Z',
+                activityLogId: 'activity-a',
+                method: 'one_click',
+                executionActionId: 'exec-a',
+                mailtoUrl: null,
+              },
+            }),
+        },
+        { method: 'GET', path: '/api/actions/exec-a', respond: status },
+      ]);
+    }
+
+    async function confirmRowUnsubscribe() {
+      renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+      fireEvent.click(
+        within(screen.getByRole('menu', { name: /Actions for Sender A/i })).getByRole('menuitem', {
+          name: 'Unsubscribe',
+        }),
+      );
+      await screen.findByRole('radiogroup', { name: /also act on past emails/i });
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: /^Unsubscribe/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+    }
+
+    it('names the Gmail step when one-click was refused and the sender takes email', async () => {
+      installOneClick(() =>
+        jsonOk({
+          data: {
+            actionId: 'exec-a',
+            status: 'failed',
+            requestedCount: 1,
+            affectedCount: 0,
+            undoToken: null,
+            errorCode: 'UNSUB_MANUAL_REQUIRED',
+          },
+        }),
+      );
+      await confirmRowUnsubscribe();
+
+      expect(await screen.findByText(/send the unsubscribe email from Gmail/)).toBeInTheDocument();
+      expect(screen.queryByText(/Archive still works/)).toBeNull();
+    });
+
+    it('a failed status poll makes no promise about where the result shows', async () => {
+      // Nothing refetches the list after a failed poll, so "the sender's
+      // chip will show the result" named an update no code makes.
+      installOneClick(() => jsonServerError());
+      await confirmRowUnsubscribe();
+
+      expect(
+        await screen.findByText(/Couldn't confirm the unsubscribe from Sender A/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/chip/)).toBeNull();
+    });
   });
 
   it('never advertises more sample subjects than the real total in "Show what currently matches" (live smoke 2026-06-09)', async () => {

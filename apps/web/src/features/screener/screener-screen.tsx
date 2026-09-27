@@ -33,7 +33,6 @@ import { useCompositePreview } from '@/lib/api/use-action';
 import {
   isTerminalStatus,
   UNSUB_AMBIGUOUS_ERROR_CODE,
-  UNSUB_MANUAL_ERROR_CODE,
   type ActionReach,
   type CompositeActionPreviewResult,
 } from '@/lib/api/actions';
@@ -61,6 +60,12 @@ import {
 import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
+import type { UNSUB_MANUAL_REQUIRED_ERROR_CODE } from '@declutrmail/shared/contracts';
+
+// Pinned to the contract at compile time, with no runtime import: taking
+// it from `actions.ts` or the contracts package regrouped the shared chunks
+// of other routes over their bundle budgets.
+const UNSUB_MANUAL_ERROR_CODE: typeof UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
 
 const { color, text } = tokens;
 
@@ -453,9 +458,9 @@ export function ScreenerScreen({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    // The same sentences as `unsubscribeOutcomeToast` (Senders), inline on
-    // purpose: importing that shared module pulled a five-route chunk into
-    // this route and over its bundle budget. A test pins the two equal.
+    // The same sentences as `unsubscribeOutcomeToast` (senders/unsub-status),
+    // inline so this route does not load the Senders pill table (bundle
+    // budget). A test pins the two equal.
     if (data.status === 'done') {
       toast(
         `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,

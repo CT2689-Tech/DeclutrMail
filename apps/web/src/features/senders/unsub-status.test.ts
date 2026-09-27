@@ -4,8 +4,7 @@ import {
   UNSUB_MANUAL_REQUIRED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
-import { unsubscribeOutcomeToast } from './unsub-outcome-toast';
-import { UNSUB_PILL } from './unsub-status';
+import { UNSUB_PILL, unsubscribeOutcomeToast } from './unsub-status';
 
 describe('unsubscribeOutcomeToast', () => {
   it('names the email step when one-click was not accepted but the sender takes email', () => {

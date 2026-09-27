@@ -9,7 +9,6 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { EditorialKicker } from '@/features/editorial/page';
-import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
 import type { HomeSenderPreview } from './api/use-home-pending';
@@ -125,7 +124,14 @@ function HomeBody({
         <section className={styles.beginning} aria-label="Mailbox needs attention">
           <span className={styles.eyebrow}>Mailbox needs attention</span>
           <h2>Gmail scan failed</h2>
-          <p>{failedScanSettingsStep(state.needsReconnect)}</p>
+          {/* `failedScanSettingsStep`'s sentences, inline: a new import of
+              mailbox-health from this route regrouped shared chunks over
+              other routes' bundle budgets. A test pins the two equal. */}
+          <p>
+            {state.needsReconnect
+              ? 'Reconnect it in Settings → Gmail accounts.'
+              : 'Scan again in Settings → Gmail accounts.'}
+          </p>
           <PrimaryLink action={SYNC_FAILED_ACTION} />
         </section>
       );
