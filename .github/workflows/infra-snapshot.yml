@@ -65,9 +65,11 @@ jobs:
         uses: google-github-actions/setup-gcloud@v3
 
       - name: Install Atlas
-        uses: ariga/setup-atlas@v0
-        with:
-          version: v0.37.0
+        # The same pinned, checksum-verified community build the
+        # migration workflows use (scripts/install-atlas.sh).
+        run: |
+          ./scripts/install-atlas.sh "$RUNNER_TEMP/atlas"
+          echo "$RUNNER_TEMP/atlas" >> "$GITHUB_PATH"
 
       - name: Run snapshot
         env:
