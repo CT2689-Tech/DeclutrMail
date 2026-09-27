@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TRIAGE_QUEUE, TRIAGE_FIXTURE_SEEDS } from './data';
+import { TRIAGE_QUEUE, TRIAGE_FIXTURE_SEEDS } from './fixtures';
 
 // The demo's guided story depends on these exact verdicts: Groupon is the
 // reversible Archive lesson, LinkedIn the one-way Unsubscribe lesson, and
