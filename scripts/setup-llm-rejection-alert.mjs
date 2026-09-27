@@ -109,7 +109,12 @@ export function expectedPolicy(channelName) {
           filter: `metric.type="${METRIC_TYPE}" AND resource.type="cloud_run_revision"`,
           comparison: 'COMPARISON_GT',
           thresholdValue: 0,
-          duration: '0s',
+          // The least the API allows: it refuses a zero duration once
+          // evaluationMissingData is set (HTTP 400, prod --apply 2026-09-26).
+          // ALIGN_SUM over the 3600s alignment keeps a single refusal's count
+          // above 0 for the whole window, so a 60s hold still opens the alert
+          // about a minute after the first refusal.
+          duration: '60s',
           evaluationMissingData: 'EVALUATION_MISSING_DATA_INACTIVE',
           aggregations: [
             {
@@ -273,8 +278,12 @@ function policyDrift(policy, channel) {
   if (got.comparison !== want.comparison) differs.push(`comparison ${got.comparison}`);
   if ((got.thresholdValue ?? 0) !== want.thresholdValue)
     differs.push(`threshold ${got.thresholdValue}`);
-  // "0s" and an absent duration read as 0; anything unparseable is NaN and differs.
-  if (Number.parseFloat(got.duration ?? '0s') !== 0) differs.push(`duration ${got.duration}`);
+  // Exact, and its own line: a shorter or longer hold may still page, just
+  // not when designed, so "would not page" below would overclaim. An absent
+  // duration reads as '0s'.
+  const duration = got.duration ?? '0s';
+  if (duration !== want.duration)
+    drift.push(`${name} condition duration is ${duration}; expected ${want.duration}`);
   const trigger = got.trigger ?? {};
   if (trigger.percent !== undefined || (trigger.count ?? 1) > 1)
     differs.push(`trigger ${JSON.stringify(got.trigger)}`);

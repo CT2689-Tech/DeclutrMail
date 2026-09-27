@@ -23,9 +23,10 @@ name: Cron-stale watchdog
 
 on:
   schedule:
-    # Every 15 min. The tightest watched cron runs every 5 min with a
-    # 30-min tolerance, so this detects a stop well inside an hour even
-    # when GitHub delays the schedule under platform load.
+    # Asks for every 15 min, but GitHub started it 5-8 times a day from
+    # 2026-09-15 to 2026-09-25, so a stopped cron can go unseen here for
+    # hours. The thresholds in check-cron-stale.ts are about the watched
+    # crons; this schedule only decides how soon one is noticed.
     - cron: '*/15 * * * *'
   workflow_dispatch: {}
 
