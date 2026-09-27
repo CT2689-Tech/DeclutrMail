@@ -1083,7 +1083,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
-  it('poll error (worker/API down mid-action): warn toast, latch releases, no invalidation', async () => {
+  it('poll error (worker/API down mid-action): warn toast, the screen frees, the row stays held', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1111,7 +1111,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
-    const { container } = renderScreen(client);
+    renderScreen(client);
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
@@ -1126,7 +1126,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // The outcome is unconfirmed, so the toast must send the user to
     // Activity rather than invite a blind retry.
     expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
-    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    // The latch releases, so every OTHER row takes decisions again — but
+    // this one's job may still be running: a second Archive would run it
+    // twice, so the row stays held (flow-completeness 2026-09-27).
+    const rowOf = (name: string) => screen.getAllByText(name)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(rowOf(GROUPON.senderName)).toHaveAttribute('aria-busy', 'true'));
+    expect(rowOf(LINKEDIN.senderName)).toHaveAttribute('aria-busy', 'false');
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
     expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
@@ -1233,6 +1238,35 @@ describe('TriageScreen — D226 mutation wiring', () => {
         'warn',
       ),
     );
+  });
+
+  // A 5xx does not prove the job never started: the row must not re-arm
+  // for a second run (flow-completeness audit 2026-09-27).
+  it('holds a row whose Archive may have started', async () => {
+    let posts = 0;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posts += 1;
+          return apiFailure(503, 'ENQUEUE_FAILED');
+        },
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(posts).toBe(1));
+    const row = () => screen.getAllByText(GROUPON.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+
+    fireEvent.keyDown(window, { key: 'a' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(posts).toBe(1);
   });
 
   it('re-entry guard: a 2nd decision while one confirms is deferred with an info toast', async () => {
@@ -2392,6 +2426,10 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       ),
     );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+    // Its members may be running: they must not re-arm for a second run.
+    await waitFor(() =>
+      expect(document.querySelectorAll('[aria-busy="true"]').length).toBeGreaterThanOrEqual(3),
+    );
   });
 
   // The parked twin (ACTION_OVERDUE_MS): the late terminal read counts

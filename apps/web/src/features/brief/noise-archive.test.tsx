@@ -883,6 +883,9 @@ describe('Brief Noise bulk archive (D65)', () => {
     await screen.findByText(/^Can't tell if Archive for those \d+ senders started/);
     await screen.findByText(/couldn.t confirm what that archive did/i);
     expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+    // …and they cannot be checked again: a second archive would run twice.
+    expect(screen.getAllByText(/· Archive: unknown/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('checkbox', { name: /in the archive/i })).toHaveLength(0);
   });
 
   it('keeps the senders checked when the archive was refused', async () => {

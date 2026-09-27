@@ -3298,6 +3298,99 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ).not.toBeNull();
     });
 
+    // The click-time twins: a sender the next bulk refuses (or every sender,
+    // when it refuses them all) is not acted on, so an older mark must not
+    // read as this click's outcome (flow-completeness audit 2026-09-27).
+    async function failThenBulk(second: () => Response) {
+      let posts = 0;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            posts += 1;
+            if (posts > 1) return second();
+            return jsonOk({
+              data: {
+                batchId: 'batch-1',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 30,
+                skipped: [],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: (_req, url) => {
+            const batchId = url.pathname.split('/').pop()!;
+            return jsonOk({
+              data: {
+                batchId,
+                status: 'failed',
+                done: 0,
+                affectedCount: 0,
+                undoToken: null,
+                total: batchId === 'batch-1' ? 2 : 1,
+                failed: batchId === 'batch-1' ? 2 : 1,
+                requestedCount: 30,
+              },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(
+        () => expect(document.querySelectorAll('[data-dm-row-activity="failed"]')).toHaveLength(2),
+        { timeout: 4000 },
+      );
+      await selectBothAndPress('a');
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(posts).toBe(2));
+    }
+
+    it('drops an earlier mark from a sender the next bulk refused at the click', async () => {
+      await failThenBulk(() =>
+        jsonOk({
+          data: {
+            batchId: 'batch-2',
+            status: 'queued',
+            senderCount: 1,
+            requestedTotal: 18,
+            skipped: [{ senderId: 'a', reason: 'protected' }],
+          },
+        }),
+      );
+      await waitFor(
+        () => expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull(),
+        { timeout: 4000 },
+      );
+      await waitFor(() =>
+        expect(
+          rowOf(/select sender b/i).querySelector('[data-dm-row-activity="failed"]'),
+        ).not.toBeNull(),
+      );
+    });
+
+    it('drops every earlier mark when the next bulk refused every sender', async () => {
+      await failThenBulk(
+        () =>
+          new Response(
+            JSON.stringify({ error: { code: 'NO_ACTIONABLE_SENDERS', message: 'none' } }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
+    });
+
     it('leaves a sender skipped as Protected at the click unmarked', async () => {
       bulkStub(
         () => ({
@@ -3326,11 +3419,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         { senderId: 'a', reason: 'protected' },
       ]);
       renderScreenWithToasts();
+      // The toast store outlives a test: count, never presence (MISTAKES).
+      const skipToasts = () => screen.queryAllByText('Archive: 1 Protected sender skipped').length;
+      const before = skipToasts();
       await selectBothAndPress('a');
       await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-      await screen.findByText('Archive: 1 Protected sender skipped');
+      await waitFor(() => expect(skipToasts()).toBe(before + 1));
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(1));
       expect(rowOf(/select sender a/i).querySelector('[data-dm-row-activity]')).toBeNull();
       expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy', 'true');

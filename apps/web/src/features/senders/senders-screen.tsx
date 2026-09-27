@@ -848,11 +848,7 @@ function SendersScreenContent({
     setSettled(new Map());
     setPinnedSenders(new Map());
   }, []);
-  /**
-   * D245: rows a job skipped as Protected. Nothing happened to them, so
-   * whatever they said before (an earlier job's "Archive failed") must not
-   * resurface as this job's outcome.
-   */
+  /** Drop what these rows say about an earlier action (see `performAction`). */
   const unsettleRows = useCallback((ids: readonly string[]) => {
     setSettled((prev) => {
       if (!ids.some((id) => prev.has(id))) return prev;
@@ -1170,6 +1166,11 @@ function SendersScreenContent({
           );
           return;
         }
+        // A new action supersedes what these rows said about an earlier
+        // one: a sender it refuses or skips must not keep an old
+        // "Archive failed" as if it were this click's outcome. Sender
+        // Detail clears its mark at dispatch the same way.
+        unsettleRows(senders.map((s) => s.id));
       }
 
       // Instrumentation single-entry — every verb-fire from this screen
@@ -1812,7 +1813,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId],
+    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -1860,8 +1861,6 @@ function SendersScreenContent({
             }
           : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
       );
-    } else {
-      unsettleRows([activeAction.senderId]);
     }
     setReceipt({
       ...buildActionReceiptResult(data),
@@ -1876,7 +1875,7 @@ function SendersScreenContent({
       reconcileAction(qc, data, data.actionId);
     }
     setActiveAction(null);
-  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc, unsettleRows]);
+  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
 
   // Overdue mirror of the effect above (ACTION_OVERDUE_MS): the parked
   // handle runs the SAME terminal side effects — receipt, invalidations,
@@ -1912,8 +1911,6 @@ function SendersScreenContent({
             }
           : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
       );
-    } else {
-      unsettleRows([overdueAction.senderId]);
     }
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count.
@@ -1934,7 +1931,6 @@ function SendersScreenContent({
     overdueActionStatus.error,
     overdueAction,
     qc,
-    unsettleRows,
   ]);
 
   // D9 Wave 2 — drive the unsubscribe execution off the polled action
@@ -2097,7 +2093,6 @@ function SendersScreenContent({
     // (unmarked, they just looked untouched, and some silently vanished).
     // D245: found Protected when their job ran — skipped, so unmarked.
     const skipped = new Set(data.skippedProtectedSenderIds ?? []);
-    unsettleRows(activeBatch.senderIds.filter((id) => skipped.has(id)));
     settleRowsRef.current(
       activeBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
@@ -2135,7 +2130,7 @@ function SendersScreenContent({
     if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
     void qc.invalidateQueries({ queryKey: activityKeys.all });
     setActiveBatch(null);
-  }, [batchStatus.data, batchStatus.isError, batchStatus.error, activeBatch, qc, unsettleRows]);
+  }, [batchStatus.data, batchStatus.isError, batchStatus.error, activeBatch, qc]);
 
   // Overdue mirror of the effect above (ACTION_OVERDUE_MS): same
   // receipt, partial/no-op/failure toasts and invalidations — minus the
@@ -2163,7 +2158,6 @@ function SendersScreenContent({
     // member failed — so those rows claim no outcome and point at Activity
     // (unmarked, they just looked untouched, and some silently vanished).
     const skipped = new Set(data.skippedProtectedSenderIds ?? []);
-    unsettleRows(overdueBatch.senderIds.filter((id) => skipped.has(id)));
     settleRowsRef.current(
       overdueBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
@@ -2211,7 +2205,6 @@ function SendersScreenContent({
     overdueBatchStatus.error,
     overdueBatch,
     qc,
-    unsettleRows,
   ]);
 
   // Undo lives in the bottom pill (one channel). What this screen still

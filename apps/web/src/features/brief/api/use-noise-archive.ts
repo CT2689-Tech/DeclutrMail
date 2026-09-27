@@ -457,6 +457,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // nothing about the last one's archive may show — its receipt, ✓ marks,
   // open sheet or in-flight handle. The job itself keeps running there.
   const resetScope = useCallback(() => {
+    setUnconfirmedKeys(new Set());
     setSettled(null);
     setFailureOutcome(null);
     setPending(null);
@@ -504,6 +505,20 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   }, []);
 
   /**
+   * Senders whose archive may be running although we could not confirm it
+   * (a 5xx enqueue, or a lost status read). Unchecked AND kept from being
+   * checked again: a second archive would run it twice.
+   */
+  const [unconfirmedKeys, setUnconfirmedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const holdUnconfirmed = useCallback(
+    (keys: string[]) => {
+      clearSelection(keys);
+      setUnconfirmedKeys((prev) => new Set([...prev, ...keys]));
+    },
+    [clearSelection],
+  );
+
+  /**
    * A sender left out as Protected or gone must say so on its own row —
    * an exclusion here is always visible. The Brief (D69) carries read-time
    * protection flags next to its frozen payload, so re-reading it is what
@@ -517,9 +532,12 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     () =>
       targets.filter(
         (t) =>
-          selected.has(t.senderKey) && blockedReason(t) === null && !archivedKeys.has(t.senderKey),
+          selected.has(t.senderKey) &&
+          blockedReason(t) === null &&
+          !archivedKeys.has(t.senderKey) &&
+          !unconfirmedKeys.has(t.senderKey),
       ),
-    [targets, selected, archivedKeys],
+    [targets, selected, archivedKeys, unconfirmedKeys],
   );
 
   // ── Mandatory preview (D226) ──────────────────────────────────────
@@ -651,7 +669,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       if (enqueueMayHaveStarted(err)) {
         // It may be running: the senders must not stay armed for a second
         // run, and the pill finds a job that did start.
-        clearSelection(senderKeys);
+        holdUnconfirmed(senderKeys);
         setFailureOutcome({ kind: 'unconfirmed' });
         void qc.invalidateQueries({ queryKey: undoKeys.all });
       } else {
@@ -828,7 +846,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(inFlight.senderKeys);
+      holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
       return;
@@ -885,7 +903,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_batch_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(inFlight.senderKeys);
+      holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
       return;
@@ -973,7 +991,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(overdueInFlight.senderKeys);
+      holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
       return;
@@ -1031,7 +1049,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_batch_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(overdueInFlight.senderKeys);
+      holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
       return;
@@ -1105,6 +1123,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     deselectAll,
     selectedTargets,
     archivedKeys,
+    unconfirmedKeys,
     outcome,
     /** Sheet is mounted while a selection is pending confirmation. */
     sheetOpen: pending !== null,

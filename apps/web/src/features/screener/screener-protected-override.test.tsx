@@ -275,6 +275,67 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
     expect(messages.some((m) => /Protected/i.test(m))).toBe(false);
   });
 
+  // D245: the sender turned Protected while its job waited, so the job ran
+  // nothing. The row stays queued (no outbox event resolved it), is not
+  // held, and nothing says the decision failed (flow-completeness 2026-09-27).
+  it('leaves a decision skipped as Protected at run time listed, free, and not failed', async () => {
+    h.toast.mockClear();
+    installFetchStub([
+      previewHandler(plainRow, 4),
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: plainRow.senderId,
+              verb: 'delete',
+              resolved: true,
+              execution: {
+                kind: 'enqueued',
+                actionId: 'act-skip-1',
+                status: 'queued',
+                requestedCount: 4,
+              },
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-skip-1',
+              status: 'done',
+              requestedCount: 4,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: 'LABEL_SENDER_PROTECTED',
+            },
+          }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: new RegExp(`${plainRow.senderName} — expand`) }),
+    );
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByText(/Inbox now.*rechecked/i);
+    fireEvent.keyDown(window, { key: 'Enter' });
+
+    const row = () => screen.getAllByText(plainRow.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'false'));
+    expect(screen.getAllByText(plainRow.senderName).length).toBeGreaterThan(0);
+    const messages = h.toast.mock.calls.map((c) => String(c[0]));
+    expect(messages.some((m) => /failed|Couldn.t/i.test(m))).toBe(false);
+  });
+
   // A 5xx does not prove the decision never started: the queue is re-read
   // so a row its job took leaves, and the pill finds the job.
   it('re-reads the queue and the pill when a decision may have started', async () => {
@@ -314,6 +375,16 @@ describe('ScreenerScreen — a conflict is named from its code, not its status',
     );
     expect(invalidate).toHaveBeenCalledWith({ queryKey: SCREENER_QUEUE_KEY });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all });
+    // …and the row stays held: a second decision would run it twice.
+    await waitFor(() =>
+      expect(screen.getAllByText(plainRow.senderName)[0]!.closest('[aria-busy]')).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    );
+    fireEvent.keyDown(window, { key: 'd' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/Inbox now.*rechecked/i)).toBeNull();
   });
 });
 

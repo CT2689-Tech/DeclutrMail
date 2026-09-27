@@ -14,6 +14,7 @@ import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 
 import { outcomeNotice, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -316,6 +317,18 @@ describe('ProductUndoTray — live line', () => {
     await waitFor(() => expect(pillText()).not.toMatch(/Deleting…/));
     await waitFor(() => expect(undoReads).toBeGreaterThan(before));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  // A run-time skip gives a Free cleanup unit back, and a start we could
+  // not confirm may have spent one; `me` is otherwise read again only on
+  // an enqueue that succeeded (flow-completeness audit 2026-09-27).
+  it('re-reads the cleanup allowance when a decision stops', async () => {
+    const { reread, client } = mount();
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    active = [];
+    await reread();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ME_QUERY_KEY }));
   });
 
   it('says so when part of it failed, until dismissed', async () => {

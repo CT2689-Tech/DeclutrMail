@@ -254,6 +254,15 @@ export function ScreenerScreen({
   } | null>(null);
   /** Row whose decide POST is in flight (intent verbs settle here). */
   const [decidingRowId, setDecidingRowId] = useState<string | null>(null);
+  /**
+   * Rows whose job may be running although we could not confirm it (a 5xx
+   * decide, or a lost status read). A second decision would run it twice;
+   * the row leaves the queue once its job lands.
+   */
+  const [unconfirmedRowIds, setUnconfirmedRowIds] = useState<ReadonlySet<string>>(() => new Set());
+  const holdUnconfirmed = useCallback((rowId: string) => {
+    setUnconfirmedRowIds((prev) => new Set([...prev, rowId]));
+  }, []);
   /** D230 manual path — "finish in Gmail" callout after a mailto unsub. */
   const [mailtoFollowup, setMailtoFollowup] = useState<{
     senderId: string;
@@ -270,6 +279,7 @@ export function ScreenerScreen({
   const scopeGeneration = useRef(0);
   const resetScope = useCallback(() => {
     scopeGeneration.current += 1;
+    setUnconfirmedRowIds(new Set());
     setPending(null);
     setExpandedRowId(null);
     setMailtoFollowup(null);
@@ -390,6 +400,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
+      holdUnconfirmed(activeAction.rowId);
       setActiveAction(null);
       return;
     }
@@ -448,6 +459,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
+      holdUnconfirmed(overdueAction.rowId);
       setOverdueAction(null);
       return;
     }
@@ -508,11 +520,16 @@ export function ScreenerScreen({
   // rides the per-row busy render + per-row dispatch guards, while the
   // queue-wide re-entry latch stays on `busyRowId` alone.
   const parkedRowId = overdueAction?.rowId ?? null;
+  /** Rows that may not take another decision yet: parked, or unconfirmed. */
+  const isHeld = useCallback(
+    (rowId: string) => rowId === parkedRowId || unconfirmedRowIds.has(rowId),
+    [parkedRowId, unconfirmedRowIds],
+  );
 
   /** Verb click — opens (or swaps) the mandatory preview (D226). */
   const onVerbClick = useCallback(
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
-      if (row.id === busyRowId || row.id === parkedRowId) return;
+      if (row.id === busyRowId || isHeld(row.id)) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({
         mailboxId: activeMailbox?.id,
@@ -524,7 +541,7 @@ export function ScreenerScreen({
       });
       setExpandedRowId(row.id);
     },
-    [busyRowId, parkedRowId, activeMailbox?.id],
+    [busyRowId, isHeld, activeMailbox?.id],
   );
 
   /** Preview confirm — the only place the decide mutation fires. */
@@ -537,7 +554,7 @@ export function ScreenerScreen({
       // stay open across the park): the parked row may not re-dispatch,
       // while the queue-wide latch (`busyRowId`) frees at the overdue
       // release so every other row keeps working.
-      if (busyRowId != null || decide.isPending || row.id === parkedRowId) {
+      if (busyRowId != null || decide.isPending || isHeld(row.id)) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
       }
@@ -634,6 +651,7 @@ export function ScreenerScreen({
             // job took, and the pill finds the job through the in-flight
             // read.
             if (enqueueMayHaveStarted(err)) {
+              holdUnconfirmed(row.id);
               invalidateAfterDecision(qc);
               void qc.invalidateQueries({ queryKey: undoKeys.all });
             }
@@ -656,7 +674,8 @@ export function ScreenerScreen({
       pendingPreviewBlocked,
       previewAllMailCount,
       busyRowId,
-      parkedRowId,
+      isHeld,
+      holdUnconfirmed,
       decide,
       qc,
       activeMailbox?.id,
@@ -860,7 +879,7 @@ export function ScreenerScreen({
                 <ScreenerRow
                   row={row}
                   expanded={expandedRowId === row.id}
-                  busy={busyRowId === row.id || parkedRowId === row.id}
+                  busy={busyRowId === row.id || isHeld(row.id)}
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}
                   previewInboxTotal={previewInboxTotal}

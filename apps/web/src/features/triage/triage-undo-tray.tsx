@@ -16,6 +16,7 @@ import {
   workingNotice,
 } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
@@ -195,6 +196,9 @@ export function ProductUndoTray({
     for (const g of stopped) reported.current.add(g.groupId);
     // Whatever it changed, every list that shows mail or undo is stale now.
     void invalidateAfterUndo(qc);
+    // …and so is the cleanup allowance: a skip as Protected gives a Free
+    // unit back, and a start we could not confirm may have spent one.
+    void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     for (const group of stopped) {
       void getBatchStatus(group.groupId, mailboxId ? { mailboxId } : undefined)
         .catch(() => null)
