@@ -638,9 +638,23 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
       ]);
 
     // `t-other` held no purged row, so it is not named and not touched.
-    await buildOutboxConsumer(db)(
-      purgedEvent({ threadIds: ['t-draft', 't-draft-left', 't-real', 't-dismissed'] }),
-    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await buildOutboxConsumer(db)(
+        purgedEvent({ threadIds: ['t-draft', 't-draft-left', 't-real', 't-dismissed'] }),
+      );
+      // What the repair did is on record, not just in the table.
+      const line = log.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged');
+      expect(line).toMatchObject({
+        eventId: 'evt-purged',
+        followupsReopened: 2,
+        sendersRescored: 0,
+      });
+    } finally {
+      log.mockRestore();
+    }
 
     const rows = await db
       .select({ thread: followupTracker.providerThreadId, status: followupTracker.status })
@@ -654,6 +668,43 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
         { thread: 't-other', status: 'replied' },
       ]),
     );
+  });
+
+  it("never counts another mailbox's mail as this follow-up's reply", async () => {
+    // Gmail thread ids are per mailbox, so a second mailbox can hold the
+    // same id. Its real reply is not a reply to this mailbox's send.
+    const [other] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId: (await db.select().from(users))[0]!.id,
+        provider: 'gmail',
+        providerAccountId: 'other@x',
+      })
+      .returning({ id: mailboxAccounts.id });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: other!.id,
+      providerMessageId: 'reply-elsewhere',
+      providerThreadId: 't-shared',
+      senderKey: 'friend-key',
+      internalDate: at(22),
+      labelIds: ['INBOX'],
+      isUnread: true,
+      isOutbound: false,
+    });
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId: mailboxId,
+      providerThreadId: 't-shared',
+      recipientEmail: 'friend@example.com',
+      sentAt: at(20),
+      status: 'replied',
+    });
+
+    await buildOutboxConsumer(db)(purgedEvent({ threadIds: ['t-shared'] }));
+
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('awaiting');
   });
 
   // Sender keys are sha256 hex, as `senders.sender_key` stores them.

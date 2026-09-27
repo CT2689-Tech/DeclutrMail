@@ -332,7 +332,8 @@ export type MailboxReconnectRequiredPayload = z.infer<typeof MailboxReconnectReq
 
 /**
  * Most entries either list may carry. The purge's batch cap is this
- * bound, so one batch's senders and threads always fit one event.
+ * bound, so one batch's threads always fit one event; its senders to
+ * re-score can outnumber its rows (recipients), and then span several.
  */
 export const MAILBOX_NON_MAIL_PURGED_LIST_MAX = 1_000;
 
@@ -347,7 +348,12 @@ export const MailboxNonMailPurgedPayloadSchema = z
     mailboxAccountId: UuidSchema,
     /** ISO-8601 — when the batch ran. Clocks the re-score jobs, so a redelivery dedups. */
     purgedAt: z.string().datetime(),
-    /** Senders that also have mail, recounted without the deleted rows. */
+    /**
+     * Senders whose counts the purge changed, to re-score: inbound totals
+     * recounted without the deleted rows, or the wrote-to count of a
+     * recipient of a deleted SENT line. A batch naming more than the
+     * bound publishes several events.
+     */
     recountedSenderKeys: z.array(SenderKeySchema).max(MAILBOX_NON_MAIL_PURGED_LIST_MAX),
     /** Threads that held a deleted inbound row: follow-ups to re-check. */
     threadIds: z.array(z.string().min(1)).max(MAILBOX_NON_MAIL_PURGED_LIST_MAX),

@@ -5,7 +5,7 @@ import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
 import type { ScoreJobData } from '@declutrmail/workers';
-import { SCORE_JOB } from '@declutrmail/workers';
+import { SCORE_JOB, scoreJobId } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -163,8 +163,7 @@ export class TriageService {
    * trace the job. Stable across the duplicate-add window: two POSTs
    * with the same `producedAtMs` (clock tied to the request, not
    * `Date.now()`) get the same BullMQ `jobId` and the second is a
-   * no-op — matches the worker's
-   * `${mailbox_id}:${sender_key}:${produced_at}` idempotency contract.
+   * no-op — the id is `scoreJobId`, the worker's own idempotency key.
    */
   async scoreSender(input: {
     mailboxAccountId: string;
@@ -183,14 +182,13 @@ export class TriageService {
         'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
       );
     }
-    const producedAtMs = input.producedAtMs ?? Date.now();
-    const idempotencyKey = `${input.mailboxAccountId}:${input.senderKey}:${producedAtMs}`;
     const payload: ScoreJobData = {
       mailboxAccountId: input.mailboxAccountId,
       senderKey: input.senderKey,
       trigger: input.reason === 'stale' ? 'stale_refresh' : 'manual_rescore',
-      producedAtMs,
+      producedAtMs: input.producedAtMs ?? Date.now(),
     };
+    const idempotencyKey = scoreJobId(payload);
     await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });
     return { idempotencyKey };
   }

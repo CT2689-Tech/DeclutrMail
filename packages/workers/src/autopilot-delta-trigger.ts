@@ -49,13 +49,23 @@ export const AUTOPILOT_APPLY_DELTA_WINDOW_MS = 5 * 60_000;
  */
 export function buildAutopilotApplyDeltaTrigger(
   applyQueue: Pick<Queue<AutopilotApplyJobData>, 'add'>,
-  opts: { windowMs?: number; now?: () => Date } = {},
+  opts: {
+    windowMs?: number;
+    now?: () => Date;
+    /**
+     * Minimum wait before the sweep: it lands on the first window end at
+     * least this far off. For a caller whose writes are still queued when
+     * it fires (the purge's re-scores), so the sweep reads them done.
+     */
+    settleMs?: number;
+  } = {},
 ): (mailboxAccountId: string) => Promise<void> {
   const windowMs = opts.windowMs ?? AUTOPILOT_APPLY_DELTA_WINDOW_MS;
   const now = opts.now ?? (() => new Date());
+  const settleMs = opts.settleMs ?? 0;
   return async (mailboxAccountId: string): Promise<void> => {
     const nowMs = now().getTime();
-    const windowEndMs = (Math.floor(nowMs / windowMs) + 1) * windowMs;
+    const windowEndMs = (Math.floor((nowMs + settleMs) / windowMs) + 1) * windowMs;
     await applyQueue.add(
       AUTOPILOT_APPLY_JOB,
       { mailboxAccountId, triggeredAtMs: windowEndMs },

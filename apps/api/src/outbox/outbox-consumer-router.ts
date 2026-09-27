@@ -42,6 +42,8 @@ import type { DrizzleDb } from '../db/db.module.js';
  * The router stays the seam; feature wiring (queues, ports) lives with
  * the feature and is passed in here. A dep whose wiring is absent logs
  * loudly + ACKs so the dispatcher never wedges on a deploy-ordering gap.
+ * One exception, `rescoreSenders`: the repair its event carries cannot be
+ * re-derived later, so a missing one throws instead (`handleNonMailPurged`).
  */
 export interface OutboxConsumerDeps {
   /**
@@ -243,7 +245,12 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
         );
         return;
       case TOPICS.MAILBOX_NON_MAIL_PURGED:
-        await handleNonMailPurged(db, deps, MailboxNonMailPurgedPayloadSchema.parse(event.payload));
+        await handleNonMailPurged(
+          db,
+          deps,
+          MailboxNonMailPurgedPayloadSchema.parse(event.payload),
+          event.id,
+        );
         return;
       default:
         // Topic the API doesn't recognize. Log + ACK so the row flips
@@ -363,31 +370,35 @@ async function enqueueAutopilotApply(
  *
  * Unwired re-score throws before touching anything. Acking the event
  * without it would drop the repair for good (the rows that described
- * those senders are gone), so the row stays for the dispatcher to retry,
- * then fail where the operator sees it.
+ * those senders are gone), so the row stays for the dispatcher, which
+ * retries it and, if it gives up, logs `outbox.dispatch.event_failed`
+ * and reports it to Sentry.
  */
 async function handleNonMailPurged(
   db: DrizzleDb,
   deps: OutboxConsumerDeps,
   payload: MailboxNonMailPurgedPayload,
+  eventId: string,
 ): Promise<void> {
   const rescore = deps.rescoreSenders;
   if (payload.recountedSenderKeys.length > 0 && !rescore) {
     throw new Error('mailbox.non_mail_purged: rescoreSenders is not wired');
   }
-  if (payload.threadIds.length > 0) {
-    await db
-      .update(followupTracker)
-      .set({ status: 'awaiting', updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
-          eq(followupTracker.status, 'replied'),
-          inArray(followupTracker.providerThreadId, payload.threadIds),
-          not(followupReplyExists(payload.mailboxAccountId)),
-        ),
-      );
-  }
+  const reopened =
+    payload.threadIds.length === 0
+      ? []
+      : await db
+          .update(followupTracker)
+          .set({ status: 'awaiting', updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
+              eq(followupTracker.status, 'replied'),
+              inArray(followupTracker.providerThreadId, payload.threadIds),
+              not(followupReplyExists()),
+            ),
+          )
+          .returning({ id: followupTracker.id });
   if (rescore && payload.recountedSenderKeys.length > 0) {
     await rescore(
       payload.mailboxAccountId,
@@ -395,6 +406,16 @@ async function handleNonMailPurged(
       Date.parse(payload.purgedAt),
     );
   }
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'outbox.consumer.non_mail_purged',
+      eventId,
+      mailboxAccountId: payload.mailboxAccountId,
+      followupsReopened: reopened.length,
+      sendersRescored: payload.recountedSenderKeys.length,
+    }),
+  );
 }
 
 /**

@@ -51,7 +51,10 @@ export type DispatchedEvent = Pick<
  * Contract:
  *   - Throw on failure — the dispatcher catches and records the error.
  *     The row stays `pending` (unless `attempts` exceeds `maxAttempts`)
- *     for the next tick to retry.
+ *     for the next tick to retry. Every failure logs
+ *     `outbox.dispatch.consumer_failed`; the attempt that flips the row
+ *     to `failed` logs `outbox.dispatch.event_failed` and goes to the
+ *     observer (Sentry).
  *   - The consumer MUST be idempotent on `event.id`: at-least-once
  *     delivery is the dispatcher's guarantee, and consumer-side dedup
  *     (e.g. BullMQ `jobId: event.id`) is the at-most-once correction.
@@ -59,6 +62,15 @@ export type DispatchedEvent = Pick<
  *     row's failure from the rest of the batch.
  */
 export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
+
+/** A consumer throw whose attempt bookkeeping this tick committed. */
+interface ConsumerFailure {
+  event: DispatchedEvent;
+  error: unknown;
+  attempts: number;
+  /** This attempt flipped the row to `failed`. */
+  failed: boolean;
+}
 
 /**
  * Optional background-failure capture port (D159). Implemented in the
@@ -404,6 +416,10 @@ export class OutboxDispatcherWorker {
       consumerFailed: 0,
       flippedToFailed: 0,
     };
+    // Consumer failures this tick recorded, reported only once the claim
+    // transaction has committed them — never a log or Sentry call inside
+    // it, and nothing reported for bookkeeping that rolled back.
+    const failures: ConsumerFailure[] = [];
 
     try {
       await this.deps.db.transaction(async (tx) => {
@@ -496,7 +512,7 @@ export class OutboxDispatcherWorker {
             // column on `outbox_events`; the attempts counter doubles
             // as the optimistic-concurrency token, which is enough
             // because attempts only ever increases.
-            await tx
+            const bumped = await tx
               .update(outboxEvents)
               .set({
                 attempts: nextAttempts,
@@ -509,13 +525,20 @@ export class OutboxDispatcherWorker {
                   eq(outboxEvents.status, 'pending'),
                   eq(outboxEvents.attempts, event.attempts),
                 ),
-              );
+              )
+              .returning({ id: outboxEvents.id });
             if (shouldFail) {
               result.flippedToFailed += 1;
+            }
+            // A parallel tick that bumped the row first owns this attempt,
+            // and reports it.
+            if (bumped.length > 0) {
+              failures.push({ event, error: err, attempts: nextAttempts, failed: shouldFail });
             }
           }
         }
       });
+      for (const failure of failures) this.reportConsumerFailure(failure);
     } catch (err) {
       // Tx-level failure (db down, deadlock, etc.) — log and continue;
       // the next tick re-attempts. Never throw out of a tick: callers
@@ -534,6 +557,38 @@ export class OutboxDispatcherWorker {
       );
     }
     return result;
+  }
+
+  /**
+   * One consumer throw, after its bookkeeping committed. Every attempt
+   * logs at warn; the attempt that flips the row to `failed` logs at
+   * error and goes to the observer, because that row is never claimed
+   * again — its work is lost unless someone replays it. The error's name
+   * only: a query error's message can carry its parameters.
+   */
+  private reportConsumerFailure({ event, error, attempts, failed }: ConsumerFailure): void {
+    const fields = {
+      worker: this.workerName,
+      topic: event.topic,
+      eventId: event.id,
+      attempts,
+      errorName: error instanceof Error ? error.name : typeof error,
+    };
+    if (!failed) {
+      console.warn(
+        JSON.stringify({ level: 'warn', kind: 'outbox.dispatch.consumer_failed', ...fields }),
+      );
+      return;
+    }
+    console.error(
+      JSON.stringify({ level: 'error', kind: 'outbox.dispatch.event_failed', ...fields }),
+    );
+    this.observer.captureBackgroundFailure(error, {
+      kind: 'outbox.dispatch.event_failed',
+      worker: this.workerName,
+      topic: event.topic,
+      eventId: event.id,
+    });
   }
 
   private logTickError(err: unknown): void {

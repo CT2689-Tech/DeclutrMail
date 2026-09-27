@@ -38,7 +38,9 @@ import {
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
+  AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
+  buildRescoreSenders,
   createAutopilotExecutionChain,
   createRedisConnection,
   createRedisProducerConnection,
@@ -93,6 +95,7 @@ import {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobId,
   ScoreWorker,
   OPS_RETENTION_INTERVAL_MS,
   OPS_RETENTION_QUEUE,
@@ -871,12 +874,12 @@ async function bootstrap(): Promise<void> {
     // `sync.sync_ready_publish_skipped` on every ready flip.
     outbox: new OutboxPublisher(),
     onSenderIndexBuilt: async (mailboxAccountId) => {
-      const producedAtMs = Date.now();
-      await scoreProducerQueue.add(
-        SCORE_JOB,
-        { mailboxAccountId, trigger: 'sync_complete', producedAtMs },
-        { jobId: `${mailboxAccountId}:*:${producedAtMs}` },
-      );
+      const data: ScoreJobData = {
+        mailboxAccountId,
+        trigger: 'sync_complete',
+        producedAtMs: Date.now(),
+      };
+      await scoreProducerQueue.add(SCORE_JOB, data, { jobId: scoreJobId(data) });
     },
   });
   // D159: install the Sentry seam on every BaseDeclutrWorker BEFORE the
@@ -933,12 +936,13 @@ async function bootstrap(): Promise<void> {
     // produces the trigger. jobId matches ScoreWorker's idempotency
     // key shape so a BullMQ redelivery of the same trigger dedups.
     onNewSender: async (mailboxAccountId, senderKey) => {
-      const producedAtMs = Date.now();
-      await scoreProducerQueue.add(
-        SCORE_JOB,
-        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs },
-        { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
-      );
+      const data: ScoreJobData = {
+        mailboxAccountId,
+        senderKey,
+        trigger: 'signal_change',
+        producedAtMs: Date.now(),
+      };
+      await scoreProducerQueue.add(SCORE_JOB, data, { jobId: scoreJobId(data) });
     },
     // Delta processed → debounced Autopilot apply sweep (D100 "on new
     // message arrival"; 2026-07-07 P0 — known-sender mail never
@@ -2917,18 +2921,15 @@ async function bootstrap(): Promise<void> {
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
       }),
       // `mailbox.non_mail_purged` — one signal_change score job per
-      // recounted sender. The ScoreWorker stays the only writer of
-      // `triage_decisions`; jobIds reuse the purge's clock, so a
-      // redelivered event dedups.
-      rescoreSenders: async (mailboxAccountId, senderKeys, producedAtMs) => {
-        await scoreProducerQueue.addBulk(
-          senderKeys.map((senderKey) => ({
-            name: SCORE_JOB,
-            data: { mailboxAccountId, senderKey, trigger: 'signal_change' as const, producedAtMs },
-            opts: { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
-          })),
-        );
-      },
+      // sender whose counts the purge changed (the ScoreWorker stays the
+      // only writer of `triage_decisions`), then one Autopilot sweep a
+      // full window later, so it reads the verdicts they wrote.
+      rescoreSenders: buildRescoreSenders({
+        scoreQueue: scoreProducerQueue,
+        sweepAfter: buildAutopilotApplyDeltaTrigger(autopilotApplyQueue, {
+          settleMs: AUTOPILOT_APPLY_DELTA_WINDOW_MS,
+        }),
+      }),
     }),
     observer: {
       captureBackgroundFailure: (err, ctx) =>

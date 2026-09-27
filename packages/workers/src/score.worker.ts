@@ -571,9 +571,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
-    // `${mailbox_id}:${sender_key}:${produced_at}` per the task spec.
-    // `'*'` for the all-senders sync_complete sweep so its key is stable.
-    const key = `${payload.mailboxAccountId}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+    // The same key every producer uses as the BullMQ jobId.
+    const key = scoreJobId(payload);
     // An explain job's `producedAtMs` is the row version it explains —
     // the same number the re-score that wrote that row carried. Marked, so
     // the two never share an `idempotencyRef` in the logs.
@@ -1829,6 +1828,25 @@ export function isWorthScreening(signals: SenderSignals): boolean {
 /** Queue name + job name for the score worker (matches initial-sync pattern). */
 export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
+
+/**
+ * A score job's BullMQ `jobId`, and the worker's idempotency key:
+ * `${mailboxAccountId}:${senderKey ?? '*'}:${producedAtMs}` (`*` is the
+ * all-senders sweep). One definition, so a producer's id cannot drift
+ * from the key the worker logs, and a redelivered trigger dedups.
+ *
+ * New ids use hyphens (BullMQ throws "Custom Id cannot contain :"). This
+ * one predates that rule and is accepted only because bullmq 6 allows
+ * exactly two colons (measured in `domain-icon.queue.ts`); neither a
+ * mailbox uuid nor a sha256 sender key holds a colon, so the count is
+ * fixed here. It is not re-spelled: every live producer and the worker's
+ * logs share this format.
+ */
+export function scoreJobId(
+  job: Pick<ScoreJobData, 'mailboxAccountId' | 'senderKey' | 'producedAtMs'>,
+): string {
+  return `${job.mailboxAccountId}:${job.senderKey ?? '*'}:${job.producedAtMs}`;
+}
 
 /**
  * `explain` jobs ride their own queue, consumed by the same `ScoreWorker`.
