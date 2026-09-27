@@ -1,0 +1,14 @@
+-- atlas:txmode none
+-- Rollback for 0080_mail_messages_non_mail_idx.sql
+--
+-- CONCURRENTLY to match the forward build, and IF EXISTS because this is
+-- also the recovery path for an INVALID index a failed build leaves behind.
+--
+-- Reverting makes the non-mail purge read each mailbox's rows instead of
+-- probing the index. It still finds and deletes the same rows; only the
+-- cost changes. Rows the purge already deleted are not restored, and are
+-- not meant to be: they were drafts and chat lines, which the product no
+-- longer stores, and bringing them back would mean re-fetching them from
+-- Gmail.
+
+DROP INDEX CONCURRENTLY IF EXISTS "mail_messages_non_mail_idx";

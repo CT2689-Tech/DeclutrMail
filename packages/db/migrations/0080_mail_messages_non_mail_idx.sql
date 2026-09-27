@@ -1,0 +1,55 @@
+-- atlas:txmode none
+-- 0080_mail_messages_non_mail_idx.sql
+--
+-- Partial index over the rows the sync workers no longer store: Gmail
+-- drafts and chat lines (`NON_MAIL_LABELS`, packages/db/src/predicates.ts).
+-- Additive: no column, no data change, no Gmail field (D7, D228 unaffected).
+--
+-- WHY. Both sync workers stored every message Gmail listed and derived
+-- direction from SENT alone. A draft carries only DRAFT, so it landed as
+-- INBOUND mail From the mailbox owner: a senders row for the owner, scored
+-- and carded. On the dev database (2026-09-26) one mailbox's row for its
+-- own address was built from 4 drafts and scored Keep at 95%, and chat
+-- lines counted as email: 790 rows and 23 chat-only senders on the
+-- founder's mailbox. Founder decision 2026-09-26: ingest stops storing
+-- both, and a purge (`purgeNonMailMessages`, PR #791), run per mailbox by
+-- SenderIndexSweepWorker at worker boot and then nightly, deletes the rows
+-- stored before that and repairs what they fed. This file only adds the
+-- index that purge reads.
+--
+-- THE PURGE, NOT THIS FILE, DELETES DATA, and it lives in worker code on
+-- purpose. `migration-apply.yml` applies on merge, 10-20 minutes before the
+-- deploy, so an old worker still ingesting drafts in that window would
+-- re-create rows a one-shot SQL delete had already passed over.
+--
+-- WHY THIS INDEX. Nothing indexes `label_ids` today, so without an index
+-- the purge would read every row of a mailbox every night to find none. A
+-- GIN index could answer `&&`, but it would hold the labels of every
+-- message — the whole table, rewritten on every label change — to serve a
+-- probe that should find nothing. This partial btree holds only non-mail
+-- rows: the first run touches exactly the rows it deletes, and every run
+-- after probes an empty index. Its predicate matches the purge's
+-- (`nonMailRowWhere()`), which is what lets the planner prove the
+-- implication; tests pin the label set and check the plan.
+--
+-- NEWEST FIRST. `internal_date` in the key lets each batch take the most
+-- recent non-mail rows first. A sweep run purges a bounded number of
+-- batches per mailbox, so a mailbox with a long chat history clears over
+-- several runs, and the rows that go first are the recent ones: the
+-- drafts behind an owner's own sender row, this month's volume and
+-- last-seen dates. Years-old chat logs follow.
+--
+-- WRITE COST. Each INSERT/UPDATE evaluates the predicate, an overlap test
+-- against a two-element constant. Once purged the index holds no entries,
+-- because ingest never writes a matching row. `label_ids` already sits in
+-- 0070's predicate, so no HOT update is lost here that was not already.
+--
+-- CONCURRENTLY because mail_messages is live: the build does not block
+-- writes (it scans the table twice and waits out open transactions
+-- instead). No IF NOT EXISTS, matching 0070: a leftover
+-- INVALID index from a failed concurrent build must fail loudly on retry.
+-- Recovery is the rollback, then re-apply.
+
+CREATE INDEX CONCURRENTLY "mail_messages_non_mail_idx"
+  ON "mail_messages" USING btree ("mailbox_account_id", "internal_date")
+  WHERE "label_ids" && ARRAY['DRAFT','CHAT']::text[];
