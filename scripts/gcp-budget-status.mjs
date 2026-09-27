@@ -64,5 +64,7 @@ export function budgetStatus(budgets, spend, now = new Date()) {
   return {
     status: evaluated.reduce((s, e) => (rank[e.status] > rank[s] ? e.status : s), 'OK'),
     detail: evaluated.map((e) => e.detail).join('; '),
+    // One cause per budget, so acknowledging one budget cannot cover another.
+    causes: evaluated.map((e) => ({ status: e.status, text: e.detail, value: spend.costMtdUsd })),
   };
 }
