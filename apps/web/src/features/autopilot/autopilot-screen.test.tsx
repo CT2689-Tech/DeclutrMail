@@ -1630,8 +1630,9 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     const dialog = screen.getByRole('dialog', { name: /approve 4 suggestions/i });
     await userEvent.click(within(dialog).getByRole('button', { name: /^approve 4$/i }));
 
-    expect(await screen.findByText('Approved 3 suggestions')).toBeInTheDocument();
-    expect(screen.queryByText('Approved 4 suggestions')).toBeNull();
+    // Pin the verb and the number, not the sentence (CLAUDE.md §8).
+    expect(await screen.findByText(/^Approved 3\b/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Approved 4\b/)).toBeNull();
     expect(trackMock).toHaveBeenCalledWith(
       'autopilot_suggestion_decided',
       expect.objectContaining({ decision: 'accepted', count: 3 }),

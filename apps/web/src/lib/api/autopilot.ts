@@ -110,8 +110,9 @@ export interface AutopilotRuleDto {
    */
   observePromptDismissedAt: string | null;
   /**
-   * D10/D101 — Observe-mode digest ("would have archived N emails from
-   * M senders in the last 7 days"). Non-null only in Observe mode.
+   * D10/D101 — Observe-mode digest: senders matched in the last 7 days
+   * and the Inbox mail they hold now (see `AutopilotObserveDigestDto`).
+   * Non-null only in Observe mode.
    */
   observeDigest: AutopilotObserveDigestDto | null;
   confidenceThreshold: number | null;

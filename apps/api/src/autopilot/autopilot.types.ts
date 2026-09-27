@@ -70,9 +70,9 @@ export interface AutopilotRule {
    */
   observePromptDismissedAt: string | null;
   /**
-   * D10/D101 — Observe-mode digest ("would have archived N emails from
-   * M senders in the last 7 days"). Non-null only while the rule is in
-   * Observe mode.
+   * D10/D101 — Observe-mode digest: senders matched in the last 7 days
+   * and the Inbox mail they hold now (see `AutopilotObserveDigest`).
+   * Non-null only while the rule is in Observe mode.
    */
   observeDigest: AutopilotObserveDigest | null;
   /** Null when the preset does not gate on confidence. */
