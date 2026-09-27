@@ -565,14 +565,15 @@ describe('AutopilotActionWorker', () => {
 
   // Every start-gating guard answers "should we START this action?".
   // None may answer "should we RECORD one that already happened" — an
-  // in-flight claim skipped by a paused rule never retries, and one
-  // dismissed by the Protect re-check is retired outright. Both leave
-  // the user's mail moved with no Activity row and no undo token.
+  // in-flight claim skipped by a paused rule never retries, which leaves
+  // the user's mail moved with no Activity row and no undo token. Protect
+  // is the exception the user chose: the claim waits instead of finishing
+  // (founder decision (c), extended to automatic retries 2026-09-27).
   for (const scenario of [
     { name: 'the rule was paused', setup: 'paused' as const },
     { name: 'the sender was newly Protected', setup: 'protected' as const },
   ]) {
-    it(`still completes an in-flight mutation when ${scenario.name}`, async () => {
+    it(`handles an in-flight mutation when ${scenario.name}`, async () => {
       const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
       const { senderKey, senderId } = await seedSender(db, mailboxId, 'noisy@shop.com', {
         inboxMessages: 3,
@@ -606,9 +607,19 @@ describe('AutopilotActionWorker', () => {
         { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
         CTX,
       );
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
 
+      if (scenario.setup === 'protected') {
+        // Nothing more is sent, nothing is claimed, and it stays in flight
+        // to finish once the sender is not Protected.
+        expect(result.skippedProtected).toBe(1);
+        expect(result.labelActionsExecuted).toBe(0);
+        expect(gmail.calls).toHaveLength(0);
+        expect(await db.select().from(activityLog)).toHaveLength(0);
+        expect(row).toMatchObject({ resolution: 'approved', intentApplied: false });
+        return;
+      }
       expect(result.skippedRuleInactive).toBe(0);
-      expect(result.skippedProtected).toBe(0);
       expect(result.labelActionsExecuted).toBe(1);
 
       const activity = await db.select().from(activityLog);
@@ -617,7 +628,6 @@ describe('AutopilotActionWorker', () => {
       const undo = await db.select().from(undoJournal);
       expect(undo).toHaveLength(1);
       expect(activity[0]!.undoToken).toBe(undo[0]!.token);
-      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
       expect(row!.intentApplied).toBe(true);
     });
   }
@@ -882,6 +892,55 @@ describe('AutopilotActionWorker', () => {
       .where(eq(outboxEvents.topic, TOPICS.ACTION_LABEL_APPLIED));
     expect(events).toHaveLength(1);
     expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
+  });
+
+  // A Later that stops part-way — its sender turned Protected after the
+  // first request landed — never reaches the transaction that records it.
+  // What moved must still come back on schedule (2026-09-27).
+  it('sets the return timer as the first Later request lands, even if the rest never runs', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders', 'observe');
+    const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 1 });
+    await db.insert(mailMessages).values(
+      Array.from({ length: 1_500 }, (_, i) => ({
+        mailboxAccountId: mailboxId,
+        providerMessageId: `later-${i}`,
+        providerThreadId: `later-t-${i}`,
+        senderKey,
+        internalDate: NOW,
+        labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+        isUnread: true,
+      })),
+    );
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+    gmail.beforeBatchModify = async () => {
+      if (gmail.calls.length !== 1) return;
+      await db
+        .insert(senderPolicies)
+        .values({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          isProtected: true,
+          protectionReason: 'user_defined',
+          protectionSetAt: NOW,
+        })
+        .onConflictDoUpdate({
+          target: [senderPolicies.mailboxAccountId, senderPolicies.senderKey],
+          set: { isProtected: true, protectionReason: 'user_defined', protectionSetAt: NOW },
+        });
+    };
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(gmail.calls).toHaveLength(1);
+    expect(result.labelActionsExecuted).toBe(0);
+    const [policy] = await db
+      .select()
+      .from(senderPolicies)
+      .where(eq(senderPolicies.senderKey, senderKey));
+    expect(policy!.snoozedUntil?.toISOString()).toBe('2026-06-17T08:00:00.000Z');
   });
 
   // The wake sweep and the Later page read ONLY `sender_policies`. The
@@ -1288,7 +1347,7 @@ describe('AutopilotActionWorker', () => {
     expect(exec!.status).toBe('queued');
     expect(exec!.verb).toBe('unsubscribe');
     // The decision names its execution job, as the manual intents do, so
-    // Activity can close it — e.g. as "Skipped — sender is Protected" when
+    // Activity can close it — e.g. as "Skipped — sender was Protected" when
     // the send is refused (D245).
     expect(activity[0]!.actionJobId).toBe(exec!.id);
 
@@ -1809,25 +1868,59 @@ describe('AutopilotActionWorker', () => {
       expect(await claimOf(matchId)).toBeUndefined();
     });
 
-    it('stays in flight after an ambiguous failure — the next sweep finishes it for a now-Protected sender', async () => {
+    it('re-checks before every request: a Protect after the first lands sends nothing more, and waits', async () => {
+      await seedLargeInbox(1_500);
+      gmail.beforeBatchModify = async () => {
+        if (gmail.calls.length === 1) await protect(senderKey);
+      };
+
+      const result = await sweep(NOW.getTime());
+
+      expect(gmail.calls).toHaveLength(1);
+      expect(result.labelActionsExecuted).toBe(0);
+      expect(await claimOf(matchId)).toMatchObject({ status: 'executing' });
+      const [waiting] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(waiting).toMatchObject({ resolution: 'approved', intentApplied: false });
+    });
+
+    // It may already have reached Gmail, so it is not a skip — and a
+    // Protected sender's mail is not touched without consent (founder
+    // decision (c), extended to automatic retries 2026-09-27). It waits,
+    // re-checked every sweep, and finishes once the sender is not Protected.
+    it('stays in flight after an ambiguous failure, sends nothing while the sender is Protected, finishes after', async () => {
       gmail.shouldThrow = new TransientError('Gmail returned 503');
       await sweep(NOW.getTime());
       expect(await claimOf(matchId)).toMatchObject({ status: 'executing' });
 
       await protect(senderKey);
       gmail.shouldThrow = null;
-      const result = await sweep(NOW.getTime() + 1);
+      let attempts = 0;
+      gmail.beforeBatchModify = async () => {
+        attempts += 1;
+      };
+      const held = await sweep(NOW.getTime() + 1);
 
-      expect(result.labelActionsExecuted).toBe(1);
+      expect(held.labelActionsExecuted).toBe(0);
+      expect(held.skippedProtected).toBe(1);
+      // Not even attempted: no token refresh or quota wait for it.
+      expect(attempts).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+      expect(await db.select().from(activityLog)).toHaveLength(0);
+      expect(await claimOf(matchId)).toMatchObject({ status: 'executing' });
+      const [waiting] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(waiting).toMatchObject({ resolution: 'approved', intentApplied: false });
+
+      await db
+        .update(senderPolicies)
+        .set({ isProtected: false })
+        .where(eq(senderPolicies.senderKey, senderKey));
+      const finished = await sweep(NOW.getTime() + 2);
+
+      expect(finished.labelActionsExecuted).toBe(1);
       expect(gmail.calls).toHaveLength(1);
       const [activity] = await db.select().from(activityLog);
       expect(activity).toMatchObject({ action: 'archive', affectedCount: 2 });
-      const [claim] = await db
-        .select()
-        .from(actionJobs)
-        .where(eq(actionJobs.idempotencyKey, `autopilot-${matchId}`));
-      expect(claim).toMatchObject({ status: 'done' });
-      expect(claim!.resolvedMessageIds).toHaveLength(2);
+      expect(await claimOf(matchId)).toMatchObject({ status: 'done' });
     });
   });
 
@@ -1995,7 +2088,7 @@ describe('AutopilotActionWorker', () => {
     expect(match!.dismissReason).toBe('protected');
   });
 
-  it('finishes a claim another sweep left in flight mid-sweep, even once its sender is Protected', async () => {
+  it('leaves a claim another sweep left in flight mid-sweep waiting once its sender is Protected', async () => {
     const { second, secondMatchId } = await seedTwoArchiveMatches();
     let injected = false;
     gmail.beforeBatchModify = async () => {
@@ -2021,14 +2114,12 @@ describe('AutopilotActionWorker', () => {
       CTX,
     );
 
-    // The mail already moved: the only correct outcome is to record it
-    // (Activity row + undo token). Dismissing would strand it.
-    expect(result.skippedProtected).toBe(0);
-    expect(result.labelActionsExecuted).toBe(2);
+    // It may have moved mail, so it is not dismissed ("skipped" would be
+    // false); the sender is Protected, so nothing more is sent. It waits.
+    expect(result.skippedProtected).toBe(1);
+    expect(result.labelActionsExecuted).toBe(1);
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, secondMatchId));
-    expect(match!.resolution).toBe('approved');
-    expect(match!.intentApplied).toBe(true);
-    expect(match!.intentToken).not.toBeNull();
+    expect(match).toMatchObject({ resolution: 'approved', intentApplied: false });
   });
 
   it('charges intents another sweep records between our holds against the daily cap', async () => {

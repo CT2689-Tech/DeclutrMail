@@ -1515,19 +1515,23 @@ describe('LabelActionWorker', () => {
       expect(result.affectedCount).toBe(2);
     });
 
-    it('a retry that may already have reached Gmail finishes, even for a now-Protected sender', async () => {
-      // `executing` is written as the first request leaves, so this row
-      // may have moved mail. Skipping it would leave that mail moved with
-      // no Activity row and no Undo.
+    it('a retry that may already have reached Gmail stops for a now-Protected sender, reviewable', async () => {
+      // `executing` is written as the first request leaves, so this row may
+      // have moved mail: not a skip. It fails, and its review reads what
+      // Gmail shows and names the Protected sender (founder decision (c),
+      // extended to automatic retries 2026-09-27).
       const job = await forwardJob({ status: 'executing', resolvedMessageIds: ['p1', 'p2'] });
       await protect();
 
       const result = await run(job);
 
-      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
-      expect(result.undoToken).not.toBeNull();
-      const [act] = await db.select().from(activityLog);
-      expect(act).toMatchObject({ action: 'delete', affectedCount: 2 });
+      expect(gmail.calls).toHaveLength(0);
+      expect(result.undoToken).toBeNull();
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
+      expect(await db.select().from(activityLog)).toHaveLength(0);
     });
 
     it('a retry that never reached Gmail is re-checked', async () => {
@@ -1654,7 +1658,11 @@ describe('LabelActionWorker', () => {
       expect((await statusOf(job.id)).errorCode).toBe(LABEL_SENDER_PROTECTED_ERROR_CODE);
     });
 
-    it('stays executing after an ambiguous failure — the retry finishes for a now-Protected sender', async () => {
+    // Retry + Protect: stop it, keep it retryable (founder decision (c),
+    // extended to automatic retries 2026-09-27). The first attempt may have
+    // reached Gmail, so it is not a skip: it fails, and its review reads
+    // Gmail and names the Protected sender.
+    it('stops a retry after an ambiguous failure once the sender is Protected, and keeps it reviewable', async () => {
       const job = await forwardJob();
       gmail.shouldThrow = new TransientError('Gmail returned 503');
 
@@ -1665,8 +1673,55 @@ describe('LabelActionWorker', () => {
       gmail.shouldThrow = null;
       const result = await run(job);
 
-      expect(gmail.calls[0]!.ids.sort()).toEqual(['p1', 'p2']);
-      expect(result.undoToken).not.toBeNull();
+      expect(gmail.calls).toHaveLength(0);
+      expect(result.undoToken).toBeNull();
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
+    });
+
+    // What moved to Later must come back even though the job stopped
+    // before the transaction that records it (2026-09-27).
+    it('sets the return timer as the first Later request lands, even when the job stops there', async () => {
+      const wakeAt = new Date('2099-01-01T08:00:00.000Z');
+      const ids = Array.from({ length: 1_500 }, (_, i) => `later-${i}`);
+      const job = await forwardJob({
+        verb: 'later',
+        wakeAt,
+        resolvedMessageIds: ids,
+        requestedCount: ids.length,
+      });
+      gmail.onSend = async () => {
+        if (gmail.calls.length === 0) await protect();
+      };
+
+      await run(job);
+
+      expect(gmail.calls).toHaveLength(1);
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.senderKey, SENDER_KEY));
+      expect(policy!.snoozedUntil?.toISOString()).toBe(wakeAt.toISOString());
+    });
+
+    it('re-checks before every chunk: a Protect after the first lands stops the rest, reviewable', async () => {
+      const ids = Array.from({ length: 1_500 }, (_, i) => `big-${i}`);
+      const job = await forwardJob({ resolvedMessageIds: ids, requestedCount: ids.length });
+      // The Protect commits while the first request is on its way.
+      gmail.onSend = async () => {
+        if (gmail.calls.length === 0) await protect();
+      };
+
+      const result = await run(job);
+
+      expect(gmail.calls).toHaveLength(1);
+      expect(result.undoToken).toBeNull();
+      expect(await statusOf(job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+      });
     });
 
     it('re-checks a job the API reported as not enqueued that ran anyway', async () => {

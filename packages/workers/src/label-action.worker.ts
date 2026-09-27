@@ -364,11 +364,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       );
     }
 
-    // Checked twice: here, before any work, and again atomically with the
-    // `executing` write as the first request leaves (`markExecuting`).
+    // Checked here, before any work; atomically with the `executing` write
+    // as the first request leaves (`markExecuting`); and before every later
+    // request (`assertNotProtected`).
     const subject = protectionSubject(job, protectedConfirmed);
     if (subject !== null && (await this.subjectIsProtected(mailboxAccountId, subject))) {
-      return this.recordProtected(job);
+      return this.stopProtected(job, 0);
     }
 
     // Resolve the durable execution set (sender selector resolves the
@@ -476,14 +477,32 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
                   await this.markExecuting(job.id, mailboxAccountId, subject);
                 },
               }
-            : {},
+            : subject === null
+              ? {}
+              : { beforeFirstRequest: () => this.assertNotProtected(mailboxAccountId, subject) },
         );
         if (first && !hookRan) await this.recordHookSkipped(job);
         landed += 1;
+        // What moved to Later must come back even if a later request never
+        // runs (a stop, a terminal failure): the return timer is set as the
+        // first one lands. The terminal transaction writes it again.
+        if (
+          landed === 1 &&
+          labelVerb === 'later' &&
+          job.selector.type === 'sender' &&
+          job.wakeAt !== null
+        ) {
+          await scheduleLaterReturn(db, {
+            mailboxAccountId,
+            senderKey: job.selector.senderKey,
+            wakeAt: job.wakeAt,
+            setAt: new Date(),
+          });
+        }
       }
     } catch (err) {
       if (err instanceof SenderProtectedAtSend) {
-        return this.recordProtected(job);
+        return this.stopProtected(job, landed);
       }
       // Gmail refused before any request landed, so nothing was applied:
       // back to `queued`, and the retry is re-checked like a first attempt.
@@ -818,11 +837,14 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   }
 
   /**
-   * A reviewed retry whose sender turned Protected after a review that did
-   * not say so (founder decision 2026-09-26). Nothing is sent, and — unlike
-   * a skip — it FAILS: the lineage stays reviewable, and the next review
-   * names the Protected sender and offers "…anyway", the only consent a
-   * Protected sender's mail has. Nothing else is written, as with a skip.
+   * A job stopped because its sender turned Protected without the user's
+   * consent, where a skip would not be true: a reviewed retry whose review
+   * did not say so (founder decision 2026-09-26), or a job that may already
+   * have reached Gmail — an automatic retry, or a request after one that
+   * landed (2026-09-27). Nothing more is sent, and — unlike a skip — it
+   * FAILS: the lineage stays reviewable, and the next review reads what
+   * Gmail shows, names the Protected sender and offers "…anyway", the only
+   * consent a Protected sender's mail has. Nothing else is written.
    */
   private async recordRecoveryProtected(
     job: typeof actionJobs.$inferSelect,
@@ -847,7 +869,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           actionId: job.id,
           mailboxAccountId: job.mailboxAccountId,
           verb: job.verb,
-          message: 'Stopped a retry: its sender is Protected now and its review did not say so.',
+          message: 'Stopped an action: its sender is Protected now and the user did not confirm.',
         }),
       );
     return { affectedCount: 0, undoToken: null, alreadyDone: false, stoppedProtected: true };
@@ -886,6 +908,33 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   ): Promise<boolean> {
     const [row] = await protectedSubjectRow(this.deps.db, mailboxAccountId, subject).limit(1);
     return row !== undefined;
+  }
+
+  /** Before a later request of the same job: refuse if the sender is Protected now. */
+  private async assertNotProtected(
+    mailboxAccountId: string,
+    subject: ProtectionSubject,
+  ): Promise<void> {
+    if (await this.subjectIsProtected(mailboxAccountId, subject)) {
+      throw new SenderProtectedAtSend();
+    }
+  }
+
+  /**
+   * A job whose sender is Protected now, without the user's consent. When
+   * nothing of it can have reached Gmail it is a skip, as at the click.
+   * Otherwise — a retry of an attempt that may have landed, or a request
+   * after one that did — it stops and stays reviewable: its review reads
+   * what Gmail shows and names the Protected sender (founder decision (c),
+   * extended to automatic retries 2026-09-27).
+   */
+  private stopProtected(
+    job: typeof actionJobs.$inferSelect,
+    landed: number,
+  ): Promise<LabelActionResult> {
+    return landed === 0 && neverReachedGmail(job)
+      ? this.recordProtected(job)
+      : this.recordRecoveryProtected(job);
   }
 
   /**
@@ -1099,12 +1148,12 @@ type ProtectionSubject =
 /**
  * What this forward job must re-check before touching Gmail, or `null` when
  * nothing needs re-checking. D245 keeps Protected senders out of every
- * action the user did not confirm for them, retries from Activity included
- * (founder decision 2026-09-26). Exempt:
- *   - `protectedConfirmed` — an "…anyway" confirm on a Protected sender,
- *     at the click or in a recovery review;
- *   - a job that may already have reached Gmail — skipping it would leave
- *     that change with no Activity row or Undo.
+ * action the user did not confirm for them, retries included — from
+ * Activity (founder decision 2026-09-26) and automatic ones (2026-09-27).
+ * Exempt only `protectedConfirmed`: an "…anyway" confirm on a Protected
+ * sender, at the click or in a recovery review. A job that may already
+ * have reached Gmail is not exempt: it stops and stays reviewable
+ * (`stopProtected`).
  * A message list only runs as a recovery attempt; its frozen set is what
  * its review checked, so it is what is re-checked.
  */
@@ -1112,7 +1161,7 @@ function protectionSubject(
   job: ActionJobRow,
   protectedConfirmed: boolean,
 ): ProtectionSubject | null {
-  if (protectedConfirmed || !neverReachedGmail(job)) return null;
+  if (protectedConfirmed) return null;
   if (job.selector.type === 'sender') {
     return { kind: 'sender', senderKey: job.selector.senderKey };
   }

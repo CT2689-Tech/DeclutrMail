@@ -130,8 +130,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *      match resolves to `dismissed` (D43, defense-in-depth). The
  *      request leaves one round-trip after that statement, so a Protect
  *      landing inside it is not seen: the window is as small as the send
- *      allows, not zero. A claim already in
- *      flight still finishes, so a change Gmail may have applied keeps
+ *      allows, not zero. A label claim already in
+ *      flight whose sender turned Protected waits, re-checked every
+ *      sweep, and finishes once the sender is not Protected; any other
+ *      in-flight claim finishes, so a change Gmail may have applied keeps
  *      its Activity row and undo (see `claimIsInFlight`).
  *   5. ALREADY-UNSUBSCRIBED: an unsub match whose sender already has
  *      the `sender_policies.policy_type='unsubscribe'` projection
@@ -935,6 +937,17 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       result.skippedProtected += 1;
       return;
     }
+    // A label claim already in flight may have reached Gmail, so it is not
+    // dismissed ("skipped" would be false) — and a Protected sender's mail
+    // is not touched without consent. It waits, re-checked every sweep, and
+    // finishes once the sender is not Protected (founder decision (c),
+    // extended to automatic retries 2026-09-27). An in-flight unsubscribe
+    // finishes as before: its request is re-checked when it is due
+    // (`UnsubExecutionWorker`).
+    if (fresh.isProtected && match.actionKind !== 'unsubscribe') {
+      result.skippedProtected += 1;
+      return;
+    }
 
     if (!match.senderId) {
       // A missing sender row is one of THREE very different things.
@@ -1262,12 +1275,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       .where(
         and(
           eq(actionJobs.id, jobId),
-          ...(inFlight
-            ? []
-            : [
-                eq(actionJobs.status, 'queued'),
-                notExists(protectedSenderRow(db, mailboxAccountId, senderKey)),
-              ]),
+          notExists(protectedSenderRow(db, mailboxAccountId, senderKey)),
+          ...(inFlight ? [] : [eq(actionJobs.status, 'queued')]),
         ),
       )
       .returning({ id: actionJobs.id });
@@ -1278,8 +1287,20 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       .where(eq(actionJobs.id, jobId))
       .limit(1);
     if (!row) throw new ValidationError(`claim ${jobId} vanished before its Gmail request`);
-    if (inFlight || row.status !== 'queued') throw new ClaimRetired(jobId);
+    const retired = inFlight
+      ? row.status === 'done' || row.status === 'failed'
+      : row.status !== 'queued';
+    if (retired) throw new ClaimRetired(jobId);
     throw new SenderProtectedAtSend();
+  }
+
+  /** Before a later request of the same claim: refuse if the sender is Protected now. */
+  private async assertSenderNotProtected(
+    mailboxAccountId: string,
+    senderKey: string,
+  ): Promise<void> {
+    const [row] = await protectedSenderRow(this.deps.db, mailboxAccountId, senderKey).limit(1);
+    if (row) throw new SenderProtectedAtSend();
   }
 
   /**
@@ -1572,15 +1593,36 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
                   );
                 },
               }
-            : {},
+            : {
+                beforeFirstRequest: () =>
+                  this.assertSenderNotProtected(mailboxAccountId, match.senderKey),
+              },
         );
         if (first && !hookRan)
           await this.recordClaimHookSkipped(job.id, mailboxAccountId, freshIds);
         landed += 1;
+        // What moved to Later must come back even if the claim never
+        // finishes — it may wait on a Protected sender (guard 4): the return
+        // timer is set as the first request lands. The terminal transaction
+        // writes it again.
+        if (landed === 1 && verb === 'later' && job.wakeAt !== null) {
+          await scheduleLaterReturn(
+            db,
+            {
+              mailboxAccountId,
+              senderKey: match.senderKey,
+              wakeAt: job.wakeAt,
+              setAt: (this.deps.now ?? (() => new Date()))(),
+            },
+            { keepExisting: true },
+          );
+        }
       }
     } catch (err) {
       if (err instanceof SenderProtectedAtSend) {
-        await this.dismissShieldedMatch(match, now);
+        // Only a claim nothing of which can have reached Gmail is dismissed;
+        // one that may have waits in flight (guard 4).
+        if (!inFlight && landed === 0) await this.dismissShieldedMatch(match, now);
         return 'protected';
       }
       if (err instanceof ClaimRetired) return 'retired';

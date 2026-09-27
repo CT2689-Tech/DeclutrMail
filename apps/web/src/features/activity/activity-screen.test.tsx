@@ -2761,7 +2761,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
       'true',
     );
     expect(screen.getAllByText('Dismissed by you').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Skipped — sender is Protected').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Skipped — sender was Protected').length).toBeGreaterThan(0);
   });
 
   // D245 (founder decision D3): an action of yours skipped because the
@@ -2789,7 +2789,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
     ]);
     renderScreen();
 
-    const [label] = await screen.findAllByText('Skipped — sender is Protected');
+    const [label] = await screen.findAllByText('Skipped — sender was Protected');
     const line = label!.closest('li')!;
     expect(within(line).getByText('By you')).toBeInTheDocument();
     expect(within(line).queryByRole('button', { name: /^Undo/ })).toBeNull();

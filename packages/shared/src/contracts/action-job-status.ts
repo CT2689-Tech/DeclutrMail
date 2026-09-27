@@ -24,12 +24,14 @@ export type ActionJobStatus = 'queued' | 'executing' | 'done' | 'failed';
 export const LABEL_SENDER_PROTECTED_ERROR_CODE = 'LABEL_SENDER_PROTECTED';
 
 /**
- * `action_jobs.error_code` on a recovery attempt (a reviewed retry from
- * Activity) stopped before it touched Gmail: its sender — for a legacy
- * message list, one of its senders — became Protected after a review that
- * did not say so (D245; founder decision 2026-09-26). It ends `failed`, not
- * skipped, so the lineage stays reviewable: the next review names the
- * Protected sender, and its "…anyway" confirm is the consent.
+ * `action_jobs.error_code` on a job stopped because its sender — for a
+ * legacy message list, one of its senders — became Protected without the
+ * user's consent, where a skip would not be true (D245): a recovery attempt
+ * whose review did not say so (founder decision 2026-09-26), or a job that
+ * may already have reached Gmail — an automatic retry, or a request after
+ * one that landed (2026-09-27). It ends `failed`, not skipped, so the
+ * lineage stays reviewable: the next review reads what Gmail shows, names
+ * the Protected sender, and its "…anyway" confirm is the consent.
  */
 export const RECOVERY_SENDER_PROTECTED_ERROR_CODE = 'RECOVERY_SENDER_PROTECTED';
 

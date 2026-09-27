@@ -1517,7 +1517,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Unsubscribe from ${LINKEDIN.senderName} not sent — sender is Protected.`,
+        `Unsubscribe from ${LINKEDIN.senderName} not sent — sender was Protected.`,
         'info',
       ),
     );

@@ -26,7 +26,7 @@ export function unsubscribeOutcomeToast(
   // Refused before anything was sent: the sender was Protected when the
   // request was due (D245).
   if (outcome.errorCode === UNSUB_SENDER_PROTECTED_ERROR_CODE) {
-    return [`Unsubscribe from ${senderName} not sent — sender is Protected.`, 'info'];
+    return [`Unsubscribe from ${senderName} not sent — sender was Protected.`, 'info'];
   }
   return [`Unsubscribe from ${senderName} failed — Archive still works.`, 'warn'];
 }
