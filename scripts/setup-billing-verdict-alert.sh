@@ -31,8 +31,8 @@
 # creates what is missing. Safe to re-run any number of times.
 #
 # Auth: assumes gcloud is already authed against the target project.
-# Mirrors scripts/setup-mailbox-lock-alert.sh deliberately — one shape for
-# every log-line-to-page alert in this project.
+# Mirrors scripts/setup-billing-alerts.sh deliberately: create what is
+# missing, never mutate.
 
 set -euo pipefail
 
