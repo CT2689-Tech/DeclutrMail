@@ -465,7 +465,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
         <p className="dm-compare-lede">{comparison.verdict}</p>
         {alternativesHref ? (
           <p>
-            <a href={alternativesHref}>See all {comparison.name} alternatives</a>
+            <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
           </p>
         ) : null}
         <p className="dm-compare-verified">
@@ -590,7 +590,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
           )}
           {alternativesHref ? (
             <li>
-              <a href={alternativesHref}>See all {comparison.name} alternatives</a>
+              <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
             </li>
           ) : null}
         </ul>

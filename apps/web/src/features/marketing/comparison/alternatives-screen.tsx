@@ -51,8 +51,7 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
         </nav>
         <h1>{`${subject.name} alternatives for Gmail cleanup`}</h1>
         <p className="dm-compare-lede">
-          Looking past {subject.name}? If it is not the shape you need, here is what else exists,
-          described by the job each one does, not ranked. DeclutrMail comes last, after the others.
+          {`Looking past ${subject.name}? If it is not the shape you need, here is what else exists, described by the job each one does, not ranked. DeclutrMail comes last, after the others.`}
         </p>
         <dl className="dm-compare-facts">
           <div>
