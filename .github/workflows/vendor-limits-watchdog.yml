@@ -197,11 +197,10 @@ jobs:
           SNAPSHOT_RUN_ID: ${{ inputs.snapshot_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/validate-finance-snapshot-source.mjs
-      # Paired with upload-artifact@v4 in the collect job, which still
-      # zips the artifact (v7's `archive: false` is not set). v8 extracts
-      # that zip into `path`, so the file lands at
+      # The collect job still archives this snapshot as a zip. v8 extracts
+      # zip artifacts into `path`, so the file lands at
       # finance-snapshot/infra-snapshot.json. The artifact name matches
-      # the upload: infra-snapshot-<run id>.
+      # the collect job: infra-snapshot-<run id>.
       - name: Download existing operational snapshot only
         uses: actions/download-artifact@v8
         with:
