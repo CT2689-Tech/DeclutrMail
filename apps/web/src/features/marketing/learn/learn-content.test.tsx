@@ -8,6 +8,8 @@ import { ArticlePage } from './article-page';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
+import { MARKETING_PATHS } from '@/app/sitemap';
+
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from './how-to-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import {
@@ -98,6 +100,73 @@ describe('public learning content registry', () => {
       'sender-level-vs-message-level-cleanup',
     ]);
     expect(new Set(ALL_ARTICLES.map((article) => article.path)).size).toBe(ALL_ARTICLES.length);
+  });
+
+  it('points each how-to at the approved guides, comparisons, and one answer', () => {
+    const expected: Record<(typeof HOW_TO_SLUGS)[number], readonly string[]> = {
+      'clean-gmail-by-sender': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/vs/gmail',
+        '/compare',
+        '/answers/sender-level-vs-message-level-cleanup',
+      ],
+      'bulk-delete-emails-from-one-sender': [
+        '/how-to/clean-gmail-by-sender',
+        '/how-to/gmail-storage-full',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/vs/gmail',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'gmail-storage-full': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/clean-gmail-by-sender',
+        '/how-to/stop-promotional-emails-gmail',
+        '/vs/clean-email',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'auto-archive-future-emails-in-gmail': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/stop-promotional-emails-gmail',
+        '/how-to/clean-gmail-by-sender',
+        '/vs/gmail-filters',
+        '/vs/sanebox',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'stop-promotional-emails-gmail': [
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/clean-gmail-by-sender',
+        '/vs/unroll-me',
+        '/vs/leave-me-alone',
+        '/answers/is-it-safe-to-connect-gmail-app',
+      ],
+      'unsubscribe-from-emails-gmail': [
+        '/how-to/stop-promotional-emails-gmail',
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/vs/unroll-me',
+        '/vs/trimbox',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+    };
+    for (const slug of HOW_TO_SLUGS) {
+      expect(
+        HOW_TO_ARTICLES[slug].related.map((link) => link.href),
+        slug,
+      ).toEqual(expected[slug]);
+    }
+  });
+
+  it('resolves every related href to a sitemap path', () => {
+    const paths = new Set<string>(MARKETING_PATHS);
+    for (const article of ALL_ARTICLES) {
+      for (const link of article.related) {
+        expect(paths.has(link.href), `${article.path} → ${link.href}`).toBe(true);
+      }
+    }
   });
 
   it('keeps every guide and answer substantive instead of shipping thin SEO shells', () => {
