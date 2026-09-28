@@ -26,16 +26,17 @@ import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Privacy Policy — DeclutrMail',
   description:
-    'DeclutrMail’s Gmail message-field disclosure, operational records, processors, full-body boundary, retention, deletion, and your privacy rights.',
+    'What DeclutrMail stores from Gmail, what it never fetches, processors, retention, deletion and your rights. We do not sell Gmail data or use it for advertising.',
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-09-19';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/privacy'];
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },

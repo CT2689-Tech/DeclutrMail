@@ -9,6 +9,7 @@
 import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { BUSINESS_POSTAL_ADDRESS, hasPostalAddress } from '@declutrmail/shared/copy';
 
@@ -19,7 +20,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/contact',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/contact'];
 
 const TOC = [
   { id: 'support', label: 'General questions and support' },
