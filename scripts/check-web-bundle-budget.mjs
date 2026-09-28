@@ -107,15 +107,18 @@ export const DEFAULT_KB = 151;
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 254 because the mid-weight cluster — settings, brief, activity,
+ * Set at 256 because the mid-weight cluster — settings, brief, activity,
  * autopilot, billing, screener — loads 244.3-256.0 kB as served, app
  * chrome included, and shares essentially one chunk graph; /activity,
  * the heaviest route on this default, keeps its headroom (it was 180 on
- * the page-entry measure). A NEW authed screen landing under this is
- * normal; landing over it means it pulled in something the others do
- * not, which is exactly the moment worth a second look.
+ * the page-entry measure). Raised 254 -> 256 on 2026-09-28: zone-explicit
+ * `daysSince` (DECLUTRMAIL-WEB-2C) added `Intl.DateTimeFormat` calendar
+ * math to the shared senders/data chunk, which tipped /activity over
+ * 254.0. A NEW authed screen landing under this is normal; landing over
+ * it means it pulled in something the others do not, which is exactly
+ * the moment worth a second look.
  */
-export const AUTHED_DEFAULT_KB = 254;
+export const AUTHED_DEFAULT_KB = 256;
 
 /**
  * Routes that legitimately carry more, or are pinned tighter, keyed by
@@ -153,7 +156,10 @@ export const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 290, // 289.0 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 290 -> 292 on 2026-09-28 (DECLUTRMAIL-WEB-2C): measured 290.4
+  // after zone-explicit `daysSince` landed in the shared senders/data
+  // chunk. 292 restores ~1.6 kB headroom, same shape as the prior raise.
+  '/(app)/senders/page': 292, // 290.4 — list + compose strip + saved views + inspector pane
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
