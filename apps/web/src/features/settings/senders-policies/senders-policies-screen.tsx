@@ -78,7 +78,7 @@ export function SendersPoliciesScreen() {
   // rather than implying a global ranking.
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
-    const now = Number.isFinite(snapshotNow) ? snapshotNow : 0;
+    const now = Number.isFinite(snapshotNow) ? snapshotNow : Date.now();
     return pages
       .flatMap((p) => p.data.map((row) => enrichSenderRow(row, now, timeZone)))
       .sort(byShieldedMail);

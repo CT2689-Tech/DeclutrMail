@@ -320,7 +320,7 @@ export function SendersScreen() {
   const snapshotNow = Date.parse(queryMeta?.asOf ?? '');
   const allSenders = useMemo<Sender[]>(() => {
     const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
-    const now = Number.isFinite(snapshotNow) ? snapshotNow : 0;
+    const now = Number.isFinite(snapshotNow) ? snapshotNow : Date.now();
     return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row, now, timeZone)));
   }, [sendersQuery.data, widenProbe.data, showingWidened, snapshotNow, timeZone]);
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
