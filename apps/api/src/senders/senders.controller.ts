@@ -161,6 +161,7 @@ export class SendersController {
     @Query('domain') rawDomain: string | undefined,
     @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
     @Query('current_mail_only') rawCurrentMailOnly?: string,
+    @Query('has_inbox_mail') rawHasInboxMail?: string,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -179,6 +180,7 @@ export class SendersController {
     // mirroring the protected flag's stance.
     const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
     const currentMailOnly = parseTriState(rawCurrentMailOnly) === true;
+    const hasInboxMail = parseTriState(rawHasInboxMail) === true;
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -211,6 +213,7 @@ export class SendersController {
     const [rows, query] = await Promise.all([
       this.reads.listSenders({
         ...(currentMailOnly ? { currentMailOnly: true } : {}),
+        ...(hasInboxMail ? { hasInboxMail: true } : {}),
         mailboxAccountId: accountId,
         category,
         isProtected,
@@ -229,6 +232,7 @@ export class SendersController {
       isFirstPage
         ? this.reads.getSenderListQueryMeta({
             ...(currentMailOnly ? { currentMailOnly: true } : {}),
+            ...(hasInboxMail ? { hasInboxMail: true } : {}),
             mailboxAccountId: accountId,
             category,
             isProtected,
@@ -455,12 +459,17 @@ export class SendersController {
     @Param('id') id: string,
     @Query('limit') rawLimit: string | undefined,
     @Query('cursor') rawCursor: string | undefined,
+    @Query('scope') rawScope?: string,
   ): Promise<PaginatedEnvelope<MailMessageRow>> {
     const accountId = mailbox.id;
     if (!isUuid(id)) {
       throw new BadRequestException('Sender id must be a UUID.');
     }
     const limit = clampLimit(rawLimit, MESSAGES_LIMIT);
+    if (rawScope && !['all_mail', 'inbox', 'archived'].includes(rawScope)) {
+      throw new BadRequestException('Invalid message scope.');
+    }
+    const scope = (rawScope ?? 'all_mail') as 'all_mail' | 'inbox' | 'archived';
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -476,6 +485,7 @@ export class SendersController {
       senderId: id,
       cursor,
       limit,
+      scope,
     });
     if (rows === null) {
       throw notFound('Sender not found.');

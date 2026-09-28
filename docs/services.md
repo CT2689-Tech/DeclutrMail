@@ -157,17 +157,17 @@ _why_, _which tier_, and _where the credential lives_.
 
 ### Atlas Cloud
 
-| Field                | Value                                                                                                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Status**           | ➕ Optional                                                                                                                                                                                                               |
-| **Purpose**          | Migration history dashboard + drift detection via Atlas Cloud UI                                                                                                                                                          |
-| **Account email**    | —                                                                                                                                                                                                                         |
-| **Plan / tier**      | Free tier available                                                                                                                                                                                                       |
-| **Approximate cost** | $0                                                                                                                                                                                                                        |
-| **Key / secret**     | `ATLAS_CLOUD_TOKEN`                                                                                                                                                                                                       |
-| **Key location**     | 1Password → _Atlas Cloud_ item (once created)                                                                                                                                                                             |
-| **D-reference**      | D152                                                                                                                                                                                                                      |
-| **Notes**            | CI linting works without this (currently configured without token). Add token + re-wire `migration-lint.yml` only if cloud reporting UI is wanted. See `FOUNDER-FOLLOWUPS.md` → "(Optional) Configure ATLAS_CLOUD_TOKEN". |
+| Field                | Value                                                                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Status**           | ➕ Optional — not needed for lint or apply                                                                                                                                                                                                                                     |
+| **Purpose**          | Atlas Pro analyzers (`concurrent_index`, PG3xx blocking changes) and the Atlas Cloud dashboard                                                                                                                                                                                 |
+| **Account email**    | —                                                                                                                                                                                                                                                                              |
+| **Plan / tier**      | Atlas Pro (paid). Since v0.38 the free Starter plan excludes `migrate lint` on the default build                                                                                                                                                                               |
+| **Approximate cost** | Not checked                                                                                                                                                                                                                                                                    |
+| **Key / secret**     | `ATLAS_CLOUD_TOKEN` (never created)                                                                                                                                                                                                                                            |
+| **Key location**     | —                                                                                                                                                                                                                                                                              |
+| **D-reference**      | D152                                                                                                                                                                                                                                                                           |
+| **Notes**            | CI installs the Atlas community build (`scripts/install-atlas.sh`), which lints and applies migrations without an account. Whether Pro is worth it for the index-lock checks is open in `FOUNDER-FOLLOWUPS.md` → "Decide how a CREATE INDEX without CONCURRENTLY gets caught". |
 
 ---
 
@@ -192,4 +192,4 @@ _why_, _which tier_, and _where the credential lives_.
 1. Add a row to this file (PR preferred, or commit directly to `main` for docs-only changes).
 2. Store the actual credential in **1Password** under a vault item named `<Service> — DeclutrMail`.
 3. If CI needs it: add it as a **GitHub repo secret** at https://github.com/CT2689-Tech/DeclutrMail/settings/secrets/actions.
-4. If it's a stop-condition service (OAuth, billing, webhooks): add a **FOUNDER-FOLLOWUPS.md** entry before wiring it up.
+4. If it's a stop-condition service (OAuth, billing, webhooks): add a founder follow-up entry in `docs/log/founder-followups/` before wiring it up.

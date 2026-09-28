@@ -1,32 +1,6 @@
-'use client';
-
-import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
-import {
-  ActionPreviewPresentation,
-  type ActionPreviewPresentationProps,
-} from './action-preview-presentation';
-
-export type { PreviewCount } from './action-preview-presentation';
-
 /**
- * Auth-aware app wrapper for the mandatory action preview.
- *
- * Keep authenticated account lookup here so public/demo consumers can import
- * `ActionPreviewPresentation` without pulling the preview's AuthProvider or
- * TanStack Query edge into their route-specific chunk. The props and rendered
- * order remain identical to the pre-split app component.
+ * The preview's live count type. The preview itself is `PreviewSheet`
+ * content built by `action-sheet.tsx` (modal) and `inline-preview.tsx`
+ * (D34 skip-sheet path) from `buildPreviewFacts`.
  */
-export function ActionPreview({
-  mailboxEmail,
-  ...presentationProps
-}: Omit<ActionPreviewPresentationProps, 'accountContext'> & {
-  /** Explicit override for isolated previews; app surfaces use active auth context. */
-  mailboxEmail?: string | undefined;
-}) {
-  return (
-    <ActionPreviewPresentation
-      {...presentationProps}
-      accountContext={<MailboxActionContextView mailboxEmail={mailboxEmail} />}
-    />
-  );
-}
+export type { PreviewCount } from './action-preview-presentation';

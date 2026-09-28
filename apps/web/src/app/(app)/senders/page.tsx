@@ -22,8 +22,6 @@ export default async function SendersPage({
       cookieHeader={cookieHeader}
       enabled={hasServerAccessCookie(cookieHeader)}
       query={query}
-      summaryQ={query.q}
-      includeSummary={query.q !== undefined && query.q.length > 0}
     >
       <SendersScreen />
     </ServerSendersBoundary>

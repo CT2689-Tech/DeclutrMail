@@ -1,117 +1,121 @@
-// Honest-nav contract for the sidebar (U-NAV, D207).
-//
-// The nav must list ONLY surfaces that are real on main. The two
-// entries trimmed while their routes were placeholders — Screener
-// (PR #220) and Billing (PR #219) — shipped, so both are back in
-// `NAV` and asserted here as kept surfaces.
-//
-// SSR-rendered (`react-dom/server`) like the other shared-package
-// tests — no jsdom toolchain is wired into this package.
-
-import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { Sidebar } from './sidebar';
+import { NAV, Sidebar, SectionNavigation, WORKSPACE_NAV, workspaceSection } from './sidebar';
 
-/** Power-mode labels (the `useLabels` default) for every kept surface. */
-const KEPT_LABELS = [
+const routes = [
+  'home',
+  'senders',
+  'triage',
+  'screener',
+  'autopilot',
+  'quiet',
+  'brief',
+  'followups',
+  'snoozed',
+  'activity',
+];
+const labels = [
+  'Home',
   'Senders',
   'Triage',
+  'Screener',
+  'Autopilot',
+  'Quiet',
   'Brief',
   'Follow-ups',
   'Later',
-  'Screener',
-  'Quiet',
   'Activity',
-  'Autopilot',
-  'Billing',
-  'Settings',
-] as const;
+];
+const groups = ['Overview', 'Clean up', 'Automations', 'Catch up', 'Activity'];
+const render = (props: Partial<Parameters<typeof Sidebar>[0]> = {}) =>
+  renderToStaticMarkup(<Sidebar active="senders" onNavigate={() => {}} collapsed {...props} />);
 
-function renderSidebar(counts: Partial<Record<string, string | number | ReactNode>> = {}) {
-  return renderToStaticMarkup(
-    <Sidebar active="senders" onNavigate={() => undefined} counts={counts} />,
-  );
-}
-
-describe('Sidebar — honest nav (D207)', () => {
-  it('lists every built surface', () => {
-    const html = renderSidebar();
-    for (const label of KEPT_LABELS) {
-      expect(html, `nav must list "${label}"`).toContain(`>${label}</span>`);
+describe('Sidebar — approved workspace rail', () => {
+  it('renders five named groups in order at 72px, plus brand and settings', () => {
+    const html = render();
+    expect(html).toContain('width:72px');
+    let position = -1;
+    for (const name of groups) {
+      const next = html.indexOf(`aria-label="${name}"`);
+      expect(next).toBeGreaterThan(position);
+      position = next;
     }
+    expect(html).toContain('aria-label="DeclutrMail overview"');
+    expect(html).toContain('aria-label="Workspace settings"');
+    expect(html).not.toContain('Expand sidebar');
+    expect(html).not.toContain('Collapse sidebar');
   });
 
-  it('groups destinations by user job in journey order', () => {
-    const html = renderSidebar();
-    const expectedOrder = [
-      'Decide',
-      'Senders',
-      'Triage',
-      'Screener',
-      'Automate',
-      'Autopilot',
-      'Quiet',
-      'Review',
-      'Brief',
-      'Follow-ups',
-      'Later',
-      'Activity',
-      'Account',
-      'Billing',
-      'Settings',
-    ] as const;
-
-    let previous = -1;
-    for (const label of expectedOrder) {
-      const position = html.indexOf(`>${label}<`);
-      expect(position, `nav must contain "${label}"`).toBeGreaterThan(-1);
-      expect(position, `"${label}" must follow the previous nav item`).toBeGreaterThan(previous);
-      previous = position;
+  it('assigns every real feature to exactly one group without dropping routes', () => {
+    expect(NAV.map((item) => item.id)).toEqual(routes);
+    expect(WORKSPACE_NAV.flatMap((item) => [...item.members])).toEqual(routes);
+    for (const route of routes) {
+      const html = render({ active: route });
+      expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+      const group = workspaceSection(route)!;
+      expect(html).toContain(`aria-current="page" aria-label="${group.label}"`);
     }
+    expect(workspaceSection('billing')).toBeUndefined();
   });
 
-  it('exposes heading-linked navigation groups to assistive technology', () => {
-    const html = renderSidebar();
-    expect(html).toContain('<nav aria-label="Product navigation"');
-
-    const groups = [
-      { heading: 'decide', items: ['Senders', 'Triage', 'Screener'] },
-      { heading: 'automate', items: ['Autopilot', 'Quiet'] },
-      { heading: 'review', items: ['Brief', 'Follow-ups', 'Later', 'Activity'] },
-      { heading: 'account', items: ['Billing', 'Settings'] },
-    ] as const;
-    for (const [index, group] of groups.entries()) {
-      const id = `sidebar-group-${group.heading}-heading`;
-      const start = html.indexOf(`<section aria-labelledby="${id}"`);
-      const end =
-        index === groups.length - 1
-          ? html.indexOf('</nav>', start)
-          : html.indexOf('<section aria-labelledby=', start + 1);
-      const section = html.slice(start, end);
-
-      expect(start, `${group.heading} section must exist`).toBeGreaterThan(-1);
-      expect(section).toContain(`<h2 id="${id}"`);
-      for (const item of group.items) {
-        expect(section, `${item} must belong to ${group.heading}`).toContain(`>${item}</span>`);
-      }
-    }
-  });
-
-  it('marks the active item with aria-current', () => {
-    expect(renderSidebar()).toContain('aria-current="page"');
-  });
-
-  it('renders string | number badges in the built-in pill', () => {
-    expect(renderSidebar({ senders: '12+' })).toContain('12+');
-    expect(renderSidebar({ senders: 3 })).toContain('>3</span>');
-  });
-
-  it('renders a React-element badge as-is (bring-your-own badge, D74)', () => {
-    const html = renderSidebar({
-      screener: <span data-testid="custom-badge">7</span>,
+  it('exposes child counts and gates without changing the group name', () => {
+    const html = render({
+      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' }, senders: 0 },
+      locks: { brief: 'Pro' },
     });
-    expect(html).toContain('data-testid="custom-badge"');
+    expect(html).toContain(
+      'aria-label="Clean up" aria-description="Senders: 0 · 7 new senders waiting in Screener"',
+    );
+    expect(html).toContain('data-testid="nav-dot-senders"');
+    expect(html).toContain('aria-label="Catch up" aria-description="Brief: Pro feature"');
+    expect(html).not.toContain('data-testid="nav-dot-brief"');
+    expect(render({ counts: { senders: 0, triage: '0' } })).not.toContain('nav-dot-senders');
+  });
+
+  it('retains the complete labelled mobile drawer and real count/gate labels', () => {
+    const html = render({
+      collapsed: false,
+      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' } },
+      locks: { brief: 'Pro' },
+    });
+    for (const label of labels) expect(html).toContain(`>${label}</span>`);
+    expect(html).toContain('aria-label="7 new senders waiting in Screener"');
+    expect(html).toContain('aria-label="Pro feature"');
     expect(html).toContain('>7</span>');
   });
+});
+
+describe('SectionNavigation', () => {
+  it.each([
+    ['screener', 'Clean up views', ['Senders', 'Triage', 'Screener']],
+    ['quiet', 'Automations views', ['Autopilot', 'Quiet']],
+    ['snoozed', 'Catch up views', ['Brief', 'Follow-ups', 'Later']],
+  ])('exposes the complete contextual group for %s', (active, name, expectedLabels) => {
+    const html = renderToStaticMarkup(
+      <SectionNavigation active={active as string} onNavigate={() => {}} />,
+    );
+    expect(html).toContain(`aria-label="${name}"`);
+    for (const label of expectedLabels) expect(html).toContain(`>${label}</button>`);
+    expect(html.match(/aria-current="page"/g)).toHaveLength(1);
+  });
+  it('keeps exact child counts and entitlement labels', () => {
+    const html = renderToStaticMarkup(
+      <SectionNavigation
+        active="triage"
+        onNavigate={() => {}}
+        counts={{ screener: { text: 7, label: '7 new senders' } }}
+        locks={{ screener: 'Pro' }}
+      />,
+    );
+    expect(html).toContain('aria-label="7 new senders"');
+    expect(html).toContain('aria-label="Pro feature"');
+  });
+  it.each(['home', 'activity', 'settings', 'billing'])(
+    'omits redundant context for %s',
+    (active) => {
+      expect(
+        renderToStaticMarkup(<SectionNavigation active={active} onNavigate={() => {}} />),
+      ).toBe('');
+    },
+  );
 });

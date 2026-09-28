@@ -6,13 +6,66 @@ import {
   PRIVACY_STORAGE_LABEL,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, VERB_REGISTRY, type VerbId } from '@declutrmail/shared/actions';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
-// All five render in Triage as of the 2026-08-06 founder amendment to
-// ADR-0019. Delete is never an engine recommendation — it is user-chosen,
-// danger-toned, and always previewed — but it IS on the toolbar, so this
-// figure must show it or the page draws a Triage that no longer exists.
-const TRIAGE_VERBS = [
+/*
+ * Product vignettes are drawn in HTML/CSS with the app's own tokens.
+ * Every sender name and count below is made up and labelled as such.
+ */
+
+// One number for the whole ladder since 2026-08-23 (undo is uniform).
+// Reduced across tiers rather than pinned, so if the windows ever diverge
+// again this renders the FLOOR instead of a stale split.
+const UNDO_DAYS = MIN_UNDO_WINDOW_DAYS;
+
+/** Plans that include Autopilot, read from the tier manifest. */
+const AUTOPILOT_PLANS = Object.values(TIER_MANIFEST)
+  .filter((tier) => tier.purchasable && tier.capabilities.includes('autopilot'))
+  .map((tier) => tier.name)
+  .join(' and ');
+
+const HERO_SENDERS = [
+  { initial: 'D', name: 'Daily Deals', count: 212, verb: 'Unsubscribe' },
+  { initial: 'L', name: 'LinkedIn Updates', count: 47, verb: 'Archive' },
+  { initial: 'W', name: 'Weekly Digest', count: 38, verb: 'Later' },
+  { initial: 'S', name: 'Shipping Alerts', count: 26, verb: 'Archive' },
+] as const;
+
+export function HeroSendersFigure() {
+  return (
+    <figure className="dm-story-device" aria-labelledby="dm-story-hero-visual-title">
+      <div className="dm-story-device-bar">
+        <strong>Senders</strong>
+        <span>Most email first</span>
+      </div>
+      <ul className="dm-story-senders">
+        {HERO_SENDERS.map((sender) => (
+          <li key={sender.name}>
+            <span className="dm-story-avatar" aria-hidden="true">
+              {sender.initial}
+            </span>
+            <span className="dm-story-sender-name">{sender.name}</span>
+            <span className="dm-story-sender-count">{sender.count} emails</span>
+            <span className="dm-story-pill">{sender.verb}</span>
+          </li>
+        ))}
+        <li className="dm-story-sender-protected">
+          <span className="dm-story-avatar" aria-hidden="true">
+            M
+          </span>
+          <span className="dm-story-sender-name">Maya Chen</span>
+          <span className="dm-story-sender-count">9 emails</span>
+          <span className="dm-story-pill dm-story-pill-quiet">Protected</span>
+        </li>
+      </ul>
+      <figcaption id="dm-story-hero-visual-title">
+        Illustrative inbox — made-up senders and counts
+      </figcaption>
+    </figure>
+  );
+}
+
+const DECISION_VERBS = [
   'keep',
   'archive',
   'unsubscribe',
@@ -20,94 +73,62 @@ const TRIAGE_VERBS = [
   'delete',
 ] as const satisfies readonly VerbId[];
 
-const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
-  keep: 'Keep records your decision and leaves email where it is. Protect is separate: it keeps a sender out of bulk and automatic changes.',
-  archive:
-    'Archive applies only to the emails shown before you confirm. New email from the sender is unchanged.',
-  unsubscribe:
-    'A sent one-click unsubscribe request cannot be taken back. Existing email stays where it is unless you choose another action.',
-  later:
-    'Later moves the emails shown in the preview to DeclutrMail/Later until the return time you choose. New email from the sender is unchanged.',
-  delete:
-    'Delete is never recommended for you — you pick it yourself, and it always shows a full preview first. It moves the previewed email to Gmail Trash, where Gmail normally keeps it for 30 days.',
-};
-
-/** All content remains visible; motion only moves the focus ring between steps. */
-export function ProductWalkthroughFigure() {
+/** One sender, the reason for the suggestion, and the five decisions. */
+export function SenderDecisionFigure() {
   return (
-    <figure
-      className="dm-story-figure dm-story-walkthrough"
-      aria-labelledby="dm-story-walkthrough-title"
-    >
-      <figcaption id="dm-story-walkthrough-title">
+    <figure className="dm-story-vignette" aria-labelledby="dm-story-decision-title">
+      <div className="dm-story-device dm-story-decision">
+        <div className="dm-story-decision-head">
+          <span className="dm-story-avatar" aria-hidden="true">
+            L
+          </span>
+          <div>
+            <strong>LinkedIn Updates</strong>
+            <span>47 inbox messages, 8% marked read</span>
+          </div>
+        </div>
+        <p className="dm-story-decision-why">
+          Archive is suggested because of the volume and low marked-read rate.
+        </p>
+        <div className="dm-story-verbs">
+          {DECISION_VERBS.map((id) => {
+            const verb = VERB_REGISTRY.find((entry) => entry.id === id);
+            if (!verb) return null;
+            return (
+              <span
+                key={id}
+                className={
+                  id === 'archive' ? 'dm-story-verb dm-story-verb-suggested' : 'dm-story-verb'
+                }
+              >
+                {ACTION_REGISTRY[id].copy.primary}
+                <kbd>{verb.shortcut}</kbd>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <figcaption id="dm-story-decision-title">
         Made-up walkthrough — sample sender and counts, never a real mailbox
       </figcaption>
-      <ol>
-        <li className="dm-story-walkthrough-step">
-          <span className="dm-story-step-label">1 · Review</span>
-          <strong>LinkedIn Updates</strong>
-          <span>47 inbox messages · 8% read</span>
-          <small>Archive is suggested because of the volume and low read rate.</small>
-        </li>
-        <li className="dm-story-walkthrough-step">
-          <span className="dm-story-step-label">2 · Preview</span>
-          <strong>Archive 47 current messages?</strong>
-          <span>Moves them out of Inbox and keeps them searchable in Gmail All Mail.</span>
-          <small>Future LinkedIn email is unaffected by this manual action.</small>
-        </li>
-        <li className="dm-story-walkthrough-step">
-          <span className="dm-story-step-label">3 · Confirmed</span>
-          <strong>Archived · 47 messages</strong>
-          <span>Recorded in Activity after Gmail confirms the change.</span>
-          <small>Undo available for {MIN_UNDO_WINDOW_DAYS} days on every plan.</small>
-        </li>
-      </ol>
     </figure>
   );
 }
 
-export function ActionSemanticsGrid() {
-  return (
-    <div className="dm-story-action-grid">
-      {TRIAGE_VERBS.map((id) => {
-        const presentation = VERB_REGISTRY.find((verb) => verb.id === id);
-        const action = ACTION_REGISTRY[id];
-        if (!presentation) return null;
-        return (
-          <article
-            key={id}
-            // Delete keeps its danger styling, but as a modifier on the
-            // ONE card the map produces. It used to be a second hardcoded
-            // card appended below, because `TRIAGE_VERBS` deliberately
-            // excluded delete — adding delete to that array without
-            // removing the card rendered Delete twice on /how-it-works.
-            className={
-              id === 'delete'
-                ? 'dm-story-action-card dm-story-action-card-delete'
-                : 'dm-story-action-card'
-            }
-          >
-            <div className="dm-story-action-title">
-              <kbd>{presentation.shortcut}</kbd>
-              <h3>{action.copy.primary}</h3>
-            </div>
-            <p>{action.copy.description}</p>
-            <p className="dm-story-action-clarifier">{ACTION_CLARIFIERS[id]}</p>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-export function GmailBridgeTable() {
-  // One number for the whole ladder since 2026-08-23 (undo is uniform).
-  // Still reduced across tiers rather than pinned to one, so if the
-  // windows ever diverge again this renders the FLOOR instead of a
-  // stale split — the previous copy hardcoded the shape "N on
-  // Free/Plus, M on Pro" AROUND derived numbers, which is how true
-  // values end up inside a false sentence.
-  const undoDays = MIN_UNDO_WINDOW_DAYS;
+/** The five decisions in Gmail terms — the page's one table of verb semantics. */
+export function DecisionsTable() {
+  const row = (id: VerbId) => {
+    const verb = VERB_REGISTRY.find((entry) => entry.id === id);
+    return (
+      <th scope="row">
+        <span className="dm-story-verb-cell">
+          {ACTION_REGISTRY[id].copy.primary}
+          {verb ? <kbd>{verb.shortcut}</kbd> : null}
+        </span>
+      </th>
+    );
+  };
+  const futureUnchanged = 'Unchanged, unless you turn on an Autopilot rule.';
   return (
     <div
       className="dm-story-table-wrap"
@@ -116,55 +137,62 @@ export function GmailBridgeTable() {
       aria-labelledby="dm-story-gmail-table-title"
     >
       <table className="dm-story-table">
-        <caption id="dm-story-gmail-table-title">
+        <caption id="dm-story-gmail-table-title" className="dm-story-sr-only">
           How each DeclutrMail decision maps to Gmail
         </caption>
         <thead>
           <tr>
-            <th scope="col">DeclutrMail decision</th>
+            <th scope="col">Decision</th>
             <th scope="col">What changes in Gmail</th>
             <th scope="col">Future email</th>
-            <th scope="col">Undo or recovery</th>
+            <th scope="col">Undo</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <th scope="row">Keep</th>
-            <td>No Gmail label changes; your decision is recorded.</td>
-            <td>
-              Keep remains your decision for this sender. Protect is a separate safety control.
+            {row('keep')}
+            <td data-label="What changes in Gmail">Nothing. Your decision is recorded.</td>
+            <td data-label="Future email">
+              The sender stops coming up in Triage. Keep is not Protect: only Protect keeps a sender
+              out of bulk and automatic changes.
             </td>
-            <td>Nothing in Gmail changes.</td>
+            <td data-label="Undo">Change the decision any time.</td>
           </tr>
           <tr>
-            <th scope="row">Archive</th>
-            <td>Moves the previewed emails out of Inbox; they remain in All Mail.</td>
-            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
-            <td>Undo: {undoDays} days on every plan.</td>
-          </tr>
-          <tr>
-            <th scope="row">Unsubscribe</th>
-            <td>
-              Sends a published one-click request, or prepares a Gmail draft for manual mailto.
+            {row('archive')}
+            <td data-label="What changes in Gmail">
+              The previewed emails leave Inbox and stay in All Mail.
             </td>
-            <td>The sender may stop mailing after accepting the request.</td>
-            <td>
-              A sent request is one-way. Any action on existing email has its own preview and Undo.
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">{UNDO_DAYS} days, on every plan.</td>
+          </tr>
+          <tr>
+            {row('unsubscribe')}
+            <td data-label="What changes in Gmail">
+              Sends the sender&rsquo;s one-click request, or prepares a Gmail draft for you to send.
+              Existing email stays where it is unless you choose a separate Archive or Delete.
             </td>
+            <td data-label="Future email">
+              The sender may stop mailing once it accepts the request.
+            </td>
+            <td data-label="Undo">A sent request cannot be undone.</td>
           </tr>
           <tr>
-            <th scope="row">Later</th>
-            <td>Moves the previewed email out of Inbox and adds DeclutrMail/Later.</td>
-            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
-            <td>Undo: {undoDays} days on every plan.</td>
+            {row('later')}
+            <td data-label="What changes in Gmail">
+              The previewed emails leave Inbox for DeclutrMail/Later until the return time you
+              choose.
+            </td>
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">{UNDO_DAYS} days, on every plan.</td>
           </tr>
           <tr>
-            <th scope="row">Delete</th>
-            <td>Moves previewed current email to Gmail Trash.</td>
-            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
-            <td>
-              Activity Undo: {undoDays} days on every plan. Gmail Trash is a separate fallback,
-              normally up to 30 days unless emptied sooner.
+            {row('delete')}
+            <td data-label="What changes in Gmail">The previewed emails move to Gmail Trash.</td>
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">
+              {UNDO_DAYS} days from Activity. Gmail Trash is a separate fallback, normally up to 30
+              days unless emptied sooner.
             </td>
           </tr>
         </tbody>
@@ -173,71 +201,48 @@ export function GmailBridgeTable() {
   );
 }
 
-export function DataBoundaryFigure() {
+/** The confirm card: a question, one sentence, one button. */
+export function ConfirmCardFigure() {
   return (
-    <figure className="dm-story-figure" aria-labelledby="dm-story-data-title">
-      <figcaption id="dm-story-data-title">What DeclutrMail stores from Gmail</figcaption>
-      <div className="dm-story-boundary">
-        <div className="dm-story-boundary-node">
-          <span className="dm-story-step-label">Your inbox stays here</span>
-          <strong>Gmail</strong>
-          <p>
-            Gmail remains the system of record and the place where messages are read and replied to.
-          </p>
-        </div>
-        <div className="dm-story-boundary-node dm-story-boundary-allow">
-          <span className="dm-story-step-label">DeclutrMail stores</span>
-          <strong>{PRIVACY_STORAGE_LABEL}</strong>
-          <ul>
-            {PRIVACY_STORAGE_ITEMS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
-        <div className="dm-story-boundary-node dm-story-boundary-stop">
-          <span className="dm-story-step-label">DeclutrMail does not take</span>
-          <strong>{PRIVACY_NEVER_LABEL}</strong>
-          <ul>
-            {PRIVACY_NEVER_ITEMS.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </div>
+    <figure className="dm-story-vignette" aria-labelledby="dm-story-confirm-title">
+      <div className="dm-story-confirm" aria-hidden="true">
+        <p className="dm-story-confirm-title">Archive 47 emails?</p>
+        <p>From LinkedIn Updates. They leave your inbox and stay in Gmail.</p>
+        <span className="dm-story-button dm-story-button-primary">Archive 47</span>
       </div>
-      <p className="dm-story-figure-note">
-        <strong>{PRIVACY_BADGE_HEADLINE}</strong> A Gmail preview snippet is the short text Gmail
-        already shows in your inbox list.
-      </p>
+      <figcaption id="dm-story-confirm-title">
+        Made-up preview. Once Gmail confirms, the change is recorded in Activity with Undo for{' '}
+        {UNDO_DAYS} days on every plan.
+      </figcaption>
     </figure>
   );
 }
 
 export function ActionLifecycleFigure() {
   const steps = [
-    ['Choose', 'You choose an action or approve a suggested batch.'],
-    ['Options', 'Choose a time range or return time when the action needs one.'],
-    ['Preview', 'See the current number of affected emails and a sample when available.'],
-    ['Confirm', 'DeclutrMail makes the confirmed Gmail change or sends the unsubscribe request.'],
-    ['Activity', 'See the result after Gmail or the sender confirms it.'],
+    [
+      'Choose',
+      'Pick an action or approve a suggested batch. Some actions ask for a time range or return time first.',
+    ],
+    ['Preview', 'See the current number of affected emails, and a sample when available.'],
+    ['Confirm', 'DeclutrMail makes the Gmail change or sends the unsubscribe request.'],
+    ['Activity', 'The result appears after Gmail or the sender confirms it.'],
     ['Undo', 'Reverse Archive, Later, or Delete until the deadline shown in Activity.'],
   ] as const;
   return (
-    <figure className="dm-story-figure" aria-labelledby="dm-story-lifecycle-title">
+    <figure className="dm-story-steps-figure" aria-labelledby="dm-story-lifecycle-title">
       <figcaption id="dm-story-lifecycle-title">What happens when you confirm an action</figcaption>
-      <ol className="dm-story-flow">
-        {steps.map(([title, body], index) => (
+      <ol className="dm-story-steps">
+        {steps.map(([title, body]) => (
           <li key={title}>
-            <span>{index + 1}</span>
             <strong>{title}</strong>
-            <small>{body}</small>
+            <span>{body}</span>
           </li>
         ))}
       </ol>
-      <p className="dm-story-figure-note">
-        Gmail confirms each label change. For one-click lists, the sender&rsquo;s system reports
-        whether it accepted the request. The delivered unsubscribe request cannot be undone; any
-        paired Archive has its own Undo record. Autopilot follows the separate rule path below and
-        does not ask for approval on each matching batch once you turn a rule on.
+      <p className="dm-story-note">
+        For one-click lists, the sender&rsquo;s system reports whether it accepted the request. A
+        delivered unsubscribe request cannot be undone; a paired Archive has its own Undo.
       </p>
     </figure>
   );
@@ -245,32 +250,61 @@ export function ActionLifecycleFigure() {
 
 export function AutomationBoundaryFigure() {
   return (
-    <figure className="dm-story-figure" aria-labelledby="dm-story-automation-title">
-      <figcaption id="dm-story-automation-title">
+    <figure className="dm-story-split-figure" aria-labelledby="dm-story-automation-title">
+      <figcaption id="dm-story-automation-title" className="dm-story-sr-only">
         Manual decisions and future automation are separate
       </figcaption>
-      <div className="dm-story-rule-paths">
+      <div className="dm-story-split">
         <div>
-          <span className="dm-story-step-label">Free · Plus · Pro</span>
           <h3>Manual cleanup</h3>
+          <p className="dm-story-plan">Every plan</p>
           <p>
-            Archive, Later, and Delete act on the current messages named in the mandatory preview.
-            They do not quietly turn into future-mail rules.
+            Archive, Later, and Delete act on the current messages named in the preview. They do not
+            quietly turn into rules for future mail.
           </p>
         </div>
         <div>
-          {/* Preset rules start at Plus. Both run modes are a user
-              choice on any plan that has Autopilot, so the body states
-              the behaviour without a plan claim. */}
-          <span className="dm-story-step-label">Plus · Pro</span>
-          <h3>Autopilot preset rule</h3>
+          <h3>Autopilot rules</h3>
+          <p className="dm-story-plan">{AUTOPILOT_PLANS}</p>
           <p>
             Turning a preset on shows what it would do first, then it acts on future matches. Choose
-            Watch first instead and it records what it would match without moving mail, for your
-            approval. It can be paused again.
+            Watch first instead and it records what it would match, without moving mail, for your
+            approval. You can pause it again.
           </p>
         </div>
       </div>
+    </figure>
+  );
+}
+
+export function DataBoundaryFigure() {
+  return (
+    <figure className="dm-story-split-figure" aria-labelledby="dm-story-data-title">
+      <figcaption id="dm-story-data-title" className="dm-story-sr-only">
+        What DeclutrMail stores from Gmail
+      </figcaption>
+      <div className="dm-story-split dm-story-split-lists">
+        <div>
+          <h3>{PRIVACY_STORAGE_LABEL}</h3>
+          <ul>
+            {PRIVACY_STORAGE_ITEMS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <h3>{PRIVACY_NEVER_LABEL}</h3>
+          <ul>
+            {PRIVACY_NEVER_ITEMS.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+      <p className="dm-story-callout">
+        <strong>{PRIVACY_BADGE_HEADLINE}</strong> Gmail remains where messages are read and replied
+        to.
+      </p>
     </figure>
   );
 }
@@ -279,7 +313,7 @@ export function RecommendationCascadeFigure() {
   const steps = [
     [
       'Protected senders first',
-      'A sender you protect is excluded. Replies, stars, and frequent reading can also protect a sender automatically.',
+      'A sender you protect is excluded. Writing to a sender, starring their email, or Gmail marking it important can also protect a sender automatically.',
     ],
     [
       'Enough information?',
@@ -296,18 +330,17 @@ export function RecommendationCascadeFigure() {
   ] as const;
 
   return (
-    <figure className="dm-story-figure" aria-labelledby="dm-story-recommendation-title">
+    <figure className="dm-story-steps-figure" aria-labelledby="dm-story-recommendation-title">
       <figcaption id="dm-story-recommendation-title">How DeclutrMail suggests an action</figcaption>
-      <ol className="dm-story-flow dm-story-flow-four">
-        {steps.map(([title, body], index) => (
+      <ol className="dm-story-steps">
+        {steps.map(([title, body]) => (
           <li key={title}>
-            <span>{index + 1}</span>
             <strong>{title}</strong>
-            <small>{body}</small>
+            <span>{body}</span>
           </li>
         ))}
       </ol>
-      <p className="dm-story-figure-note">
+      <p className="dm-story-note">
         DeclutrMail does not predict email categories. When a Gmail category is present, it is
         Gmail&rsquo;s own label and only one of the facts DeclutrMail considers.
       </p>

@@ -1,19 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import {
-  Button,
-  DESTRUCTIVE_ACTIONS_PREVIEW_HINT,
-  Kbd,
-  Tooltip,
-  tokens,
-} from '@declutrmail/shared';
+import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
 import { VERB_ORDER, VERB_SHORTCUT, recommendedVerb, type ActionVerb } from './types';
 
-const { color, font, radius } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Pure key→verb resolver — exported so tests assert the K/A/U/L/D
@@ -60,6 +54,9 @@ export function ActionToolbar({
   onAction,
   keyboardEnabled = true,
   disabled = false,
+  layout = 'row',
+  size = 'md',
+  align = 'center',
 }: {
   row: TriageDecisionRow;
   onAction: (verb: ActionVerb) => void;
@@ -75,16 +72,26 @@ export function ActionToolbar({
    * server-side (D226 busy state).
    */
   disabled?: boolean;
+  /**
+   * `'bar'` is the touch layout: 44px targets, the suggested verb on its
+   * own full-width line, no key hints (there is no keyboard to press).
+   */
+  layout?: 'row' | 'bar';
+  /** `lg` is the focus card's row of 44px capsules; list rows stay `md`. */
+  size?: 'md' | 'lg';
+  /** Row layout only — the list row lines its verbs up under the name. */
+  align?: 'center' | 'start';
 }) {
+  const bar = layout === 'bar';
   // Same verdict-aware gate the row's verdict pill reads
   // (`types.ts`). It was a flat `> 0.85` duplicated in both files,
   // which made Archive — whose reachable band tops out at 0.74 without
   // manual-archive history — permanently unhighlightable here too.
   const recommended = recommendedVerb(row.verdict, row.confidence);
 
-  // No-channel reason, surfaced as visible text below the verbs (W2).
-  // Protection affects recommendations and automatic/bulk cleanup, not
-  // the explicit row actions, so it must not hide this capability fact.
+  // The no-channel reason. Pointer devices read it in the verb's tooltip;
+  // touch has no hover, so at ≤900px or `(hover: none)` it ALSO renders
+  // as one muted line under the verbs (CSS only — no hydration flip).
   const unsubNoChannelReason = verbDisabledReason('Unsubscribe', row);
 
   useEffect(() => {
@@ -111,121 +118,131 @@ export function ActionToolbar({
       role="toolbar"
       aria-label={`Decide on ${row.senderName}`}
       style={{
-        display: 'flex',
-        alignItems: 'center',
+        // Bar: a two-column grid — five labelled 44px targets do not fit
+        // one 375px row ("Unsubscribe" alone is ~115px).
+        ...(bar
+          ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
+          : {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: align === 'start' ? 'flex-start' : 'center',
+              flexWrap: 'wrap',
+            }),
         gap: 8,
-        padding: '10px 12px',
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        flexWrap: 'wrap',
         fontFamily: font.sans,
       }}
     >
       {VERB_ORDER.map((verb) => {
-        const verbIsDisabled = disabled || verbDisabled(verb, row);
-        // Why this verb is inert (W2 — a disabled pill with no reason
-        // is a dead end; the audit caught "Unsubscribe · 95%
-        // RECOMMENDED" beside a disabled U pill). Gate reasons only —
-        // the transient busy state already announces via the row's
-        // SR status line.
+        // Why this verb is unavailable (W2 — a disabled pill with no
+        // reason is a dead end). Gate reasons only — the transient busy
+        // state already announces via the row's SR status line.
         const reason = verbDisabledReason(verb, row);
-        const isHighlighted = recommended === verb && !verbIsDisabled;
-        const tone = isHighlighted
-          ? verb === 'Unsubscribe'
-            ? 'warn'
-            : verb === 'Keep'
-              ? 'primary'
-              : 'dark'
-          : verb === 'Delete'
-            ? 'danger'
-            : 'default';
+        const gated = verbDisabled(verb, row);
+        const isHighlighted = recommended === verb && !disabled && !gated;
+        // The suggestion is the only filled button; every other verb is
+        // a quiet neutral capsule so the eye lands on one thing. Delete
+        // keeps danger lettering — a colour, not a fill.
+        const tone = isHighlighted ? (verb === 'Unsubscribe' ? 'warn' : 'primary') : 'default';
         // D38 — what this verb does to the sender's mail, on hover AND
-        // on focus. The button's aria-label already carries the verb and
-        // its shortcut; the tooltip is the DESCRIPTION, wired through
-        // `aria-describedby` so it is announced rather than seen only.
+        // on focus. A GATED verb's tooltip is its reason instead: it
+        // stays focusable (`inert`, not native `disabled`) so hover,
+        // focus and `aria-describedby` all reach it — the reason used
+        // to be a permanent grey sentence under the row.
         const lesson = lessonForVerb(verb);
         const button = (describedBy?: string) => (
           <Button
             tone={tone}
-            size="md"
-            disabled={verbIsDisabled}
+            size={bar ? 'lg' : size}
+            disabled={disabled}
+            inert={!disabled && gated}
             onClick={() => onAction(verb)}
+            style={{
+              ...(bar ? { width: '100%' } : null),
+              ...(!isHighlighted && verb === 'Delete' ? { color: color.danger } : null),
+            }}
             {...(reason != null ? { title: reason } : {})}
             {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
-            iconRight={
-              isHighlighted ? (
-                <Kbd
-                  style={{
-                    background: color.lineInverse,
-                    border: 'none',
-                    color: color.fgInverse,
-                  }}
-                >
-                  {VERB_SHORTCUT[verb]}
-                </Kbd>
-              ) : (
-                <Kbd>{VERB_SHORTCUT[verb]}</Kbd>
-              )
-            }
-            ariaLabel={
-              reason != null
-                ? `${verb} (${VERB_SHORTCUT[verb]}) — ${reason}`
-                : `${verb} (${VERB_SHORTCUT[verb]})`
-            }
+            {...(bar
+              ? {}
+              : {
+                  iconRight: isHighlighted ? (
+                    <Kbd
+                      style={{
+                        background: color.lineInverse,
+                        border: 'none',
+                        color: color.fgInverse,
+                      }}
+                    >
+                      {VERB_SHORTCUT[verb]}
+                    </Kbd>
+                  ) : (
+                    // A card-coloured key on the neutral capsule.
+                    <Kbd style={{ background: color.card }}>{VERB_SHORTCUT[verb]}</Kbd>
+                  ),
+                })}
+            ariaLabel={`${verb} (${VERB_SHORTCUT[verb]})`}
           >
             {verb}
           </Button>
         );
-        if (lesson === undefined) return <span key={verb}>{button()}</span>;
+        // Column flex so the Tooltip's inline wrapper stretches and the
+        // button's `width: 100%` resolves against the slot, not itself.
+        const slotStyle = bar
+          ? ({
+              display: 'flex',
+              flexDirection: 'column',
+              // The suggestion leads, on its own full-width line.
+              ...(isHighlighted ? { gridColumn: '1 / -1', order: -1 } : null),
+            } as const)
+          : undefined;
+        const content =
+          reason != null ? (
+            reason
+          ) : lesson === undefined ? null : (
+            <>
+              <span style={{ fontWeight: 600 }}>{lesson.label}</span>
+              <br />
+              {lesson.effect}
+            </>
+          );
+        if (content == null) {
+          return (
+            <span key={verb} style={slotStyle}>
+              {button()}
+            </span>
+          );
+        }
         return (
-          <Tooltip
-            key={verb}
-            content={
-              <>
-                <span style={{ fontWeight: 600 }}>{lesson.label}</span>
-                <span style={{ fontFamily: font.mono }}> · {lesson.shortcut}</span>
-                <br />
-                {lesson.effect}
-              </>
-            }
-          >
-            {({ describedBy }) => button(describedBy)}
-          </Tooltip>
+          <span key={verb} style={slotStyle}>
+            <Tooltip content={content}>{({ describedBy }) => button(describedBy)}</Tooltip>
+          </span>
         );
       })}
-      <span style={{ flex: 1 }} />
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          color: color.fgMuted,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {DESTRUCTIVE_ACTIONS_PREVIEW_HINT}
-      </span>
-      {/* Visible reason when Unsubscribe is gated off for lack of a
-          channel — the title attr alone is hover-only and disabled
-          buttons drop out of the tab order, so the reason must also
-          exist as plain text (W2). */}
       {unsubNoChannelReason != null && (
-        <span
-          role="note"
-          style={{
-            width: '100%',
-            fontSize: 11.5,
-            color: color.fgSoft,
-            lineHeight: 1.5,
-          }}
-        >
-          {unsubNoChannelReason}
-        </span>
+        <>
+          <style>{REASON_LINE_CSS}</style>
+          <span
+            role="note"
+            className="dm-toolbar-reason"
+            style={{
+              width: '100%',
+              gridColumn: '1 / -1',
+              textAlign: align === 'start' && !bar ? 'left' : 'center',
+              fontSize: text.sm,
+              color: color.fgMuted,
+              lineHeight: 1.5,
+            }}
+          >
+            {unsubNoChannelReason}
+          </span>
+        </>
       )}
     </div>
   );
 }
+
+const REASON_LINE_CSS =
+  '.dm-toolbar-reason{display:none}@media (max-width:900px),(hover:none){.dm-toolbar-reason{display:block}}';
 
 /** Capability gate per verb — Keep is always enabled. */
 function verbDisabled(verb: ActionVerb, row: TriageDecisionRow): boolean {

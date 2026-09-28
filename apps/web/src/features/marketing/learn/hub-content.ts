@@ -13,7 +13,6 @@ import type { LearnArticle } from './types';
 
 export interface LearnHubDefinition {
   readonly path: string;
-  readonly eyebrow: string;
   /** Rendered as the `<h1>` and reused as the document title. */
   readonly heading: string;
   readonly lead: string;
@@ -27,7 +26,6 @@ export interface LearnHubDefinition {
 
 export const HOW_TO_HUB: LearnHubDefinition = {
   path: '/how-to',
-  eyebrow: 'Step-by-step · native Gmail first',
   heading: 'Gmail cleanup how-to guides',
   lead: 'Each guide shows the native Gmail method first, states exactly what it changes and what it leaves alone, and cites Google’s own documentation. Where DeclutrMail helps, it is named as one option rather than the only one.',
   description:
@@ -39,7 +37,6 @@ export const HOW_TO_HUB: LearnHubDefinition = {
 
 export const ANSWERS_HUB: LearnHubDefinition = {
   path: '/answers',
-  eyebrow: 'Straight answers · stated limits',
   heading: 'Answers about Gmail cleanup',
   lead: 'Direct answers to the questions people ask before granting Gmail access — what a cleanup app can see, what each action changes, and where recovery stops. Every answer states its limits instead of rounding them away.',
   description:

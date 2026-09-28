@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import type { ReactNode } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 import {
@@ -11,7 +13,7 @@ import {
 
 import { StepShell } from './step-shell';
 
-const { color, font } = tokens;
+const { color, font, text, radius, shadow } = tokens;
 
 /**
  * Step 2 — Connect (D108).
@@ -38,44 +40,46 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
 
   return (
     <StepShell
-      eyebrow="Step 2 of 5 · Connect"
+      phase="connect"
       title={variant === 'fresh' ? 'Connect your Gmail.' : 'Reconnect your Gmail.'}
       sub={
         variant === 'fresh'
-          ? "You'll see Google's consent screen next. Here's what it covers."
-          : 'Your account has no connected mailbox right now — reconnect to continue.'
+          ? "Google's consent screen is next."
+          : 'No mailbox is connected right now.'
       }
     >
       <ol
         style={{
           listStyle: 'none',
-          padding: '16px 20px',
-          margin: '0 0 24px',
+          padding: 0,
+          margin: '4px 0 32px',
           width: '100%',
           textAlign: 'left',
+          // A sequence, so a numbered list — inside one raised group.
           background: color.card,
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 10,
+          boxShadow: shadow.card,
+          borderRadius: radius.xl,
+          overflow: 'hidden',
           display: 'grid',
-          gap: 10,
-          fontSize: 13,
+          fontSize: text.md,
           lineHeight: 1.5,
           fontFamily: font.sans,
         }}
       >
+        {/* A consent disclosure, so it stays complete — but each step is
+            at most two sentences; the field lists sit behind <details>. */}
         <ConsentStep number="1" title="Access">
           Google asks for {GMAIL_OAUTH_ACCESS.map((item) => item.label.toLowerCase()).join(' and ')}
           . Connecting grants that access, but does not change any email.
         </ConsentStep>
         <ConsentStep number="2" title="Fetched during the scan">
-          DeclutrMail fetches only sender and message metadata used to group email and show
-          previews. Full bodies and attachments are not fetched.
+          Only the sender and message metadata used to group email and show previews. Full bodies
+          and attachments are not fetched.
           <ConsentDetails label="Show fetched fields" items={GMAIL_MESSAGE_STORAGE_LABELS} />
         </ConsentStep>
         <ConsentStep number="3" title="Stored in DeclutrMail">
-          The fetched metadata is stored with connection records, sender facts, your decisions, and
-          records needed to run and reverse actions. Settings → Privacy &amp; Data lists every Gmail
-          dataset with its purpose and retention.
+          That metadata, plus connection records, sender facts, your decisions, and the records
+          needed to run and reverse actions. Settings → Privacy &amp; data lists every dataset.
           <ConsentDetails
             label="Show stored and derived data"
             items={[
@@ -85,17 +89,16 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
           />
         </ConsentStep>
         <ConsentStep number="4" title="Actions you approve">
-          After the scan, every Archive, Unsubscribe, Later, or Delete confirmation identifies the
-          affected email, future-mail behavior, and available recovery before anything changes. Keep
-          records a sender decision without moving email.
+          Every Archive, Unsubscribe, Later or Delete shows what moves and what can be undone,
+          before anything changes.
         </ConsentStep>
       </ol>
 
       <Button
         tone="primary"
-        size="lg"
+        size="xl"
         onClick={() => window.location.assign(startUrl)}
-        style={{ minWidth: 220, height: 44 }}
+        style={editorialOnboardingActionStyle}
       >
         Continue to Google
       </Button>
@@ -113,26 +116,42 @@ function ConsentStep({
   children: ReactNode;
 }) {
   return (
-    <li style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 10 }}>
+    <li
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '28px 1fr',
+        gap: 12,
+        padding: '14px 16px',
+        // Inset hairline above every step but the first.
+        backgroundImage:
+          number === '1' ? undefined : `linear-gradient(${color.lineSoft}, ${color.lineSoft})`,
+        backgroundSize: 'calc(100% - 56px) 1px',
+        backgroundPosition: 'right top',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
       <span
         aria-hidden="true"
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: 999,
+          width: 28,
+          height: 28,
+          borderRadius: radius.pill,
           display: 'grid',
           placeItems: 'center',
           background: color.primarySoft,
-          color: color.primaryDeep,
-          fontFamily: font.mono,
-          fontSize: 11,
-          fontWeight: 600,
+          color: color.primary,
+          fontFamily: font.sans,
+          fontSize: text.sm,
+          fontWeight: 650,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {number}
       </span>
-      <span>
-        <strong style={{ display: 'block', fontWeight: 600, color: color.fg }}>{title}</strong>
+      <span style={{ fontSize: text.sm, lineHeight: 1.5 }}>
+        <strong style={{ display: 'block', fontSize: text.md, fontWeight: 600, color: color.fg }}>
+          {title}
+        </strong>
         <span style={{ color: color.fgMuted }}>{children}</span>
       </span>
     </li>
@@ -143,7 +162,11 @@ function ConsentStep({
 function ConsentDetails({ label, items }: { label: string; items: readonly string[] }) {
   return (
     <details style={{ marginTop: 5 }}>
-      <summary style={{ color: color.primary, cursor: 'pointer', fontSize: 12 }}>{label}</summary>
+      <summary
+        style={{ color: color.primary, cursor: 'pointer', fontSize: text.sm, fontWeight: 500 }}
+      >
+        {label}
+      </summary>
       <ul style={{ margin: '6px 0 0', paddingLeft: 18, display: 'grid', gap: 3 }}>
         {items.map((item) => (
           <li key={item}>{item}</li>

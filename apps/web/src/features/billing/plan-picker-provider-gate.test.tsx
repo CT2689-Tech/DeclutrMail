@@ -136,7 +136,7 @@ describe('checkout provider gate (D117)', () => {
   it('offers Razorpay on a price point that carries a Razorpay id', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
 
     // Founding Pro now defaults OFF — the claim is an opt-in, so standard
     // annual is where the picker already stands. Asserted rather than
@@ -146,9 +146,7 @@ describe('checkout provider gate (D117)', () => {
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'annual', provider: 'razorpay' }),
@@ -158,7 +156,7 @@ describe('checkout provider gate (D117)', () => {
   it('a Razorpay pick never outlives the price point that offered it', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
 
     // Standard annual (the default) → Razorpay is offered; pick it.
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
@@ -169,9 +167,7 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(within(panel).getByRole('checkbox'));
     expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
 
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
@@ -188,7 +184,7 @@ describe('checkout currency (D117/D226)', () => {
   it('the preview quotes the currency the SELECTED provider will charge', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
 
     // Founding Pro is unprovisioned on Razorpay in this fixture. The claim
     // defaults OFF, so the picker already stands on the standard annual
@@ -208,7 +204,7 @@ describe('checkout currency (D117/D226)', () => {
   it('switching back to Paddle restores USD', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
@@ -220,7 +216,7 @@ describe('checkout currency (D117/D226)', () => {
   it('an India-defaulted picker opens on Razorpay + INR without a click', async () => {
     renderScreen({ initialProvider: 'razorpay' });
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
 
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
@@ -235,7 +231,7 @@ describe('checkout currency (D117/D226)', () => {
     // ₹10,999/yr" over a checkout that charges $129.
     renderScreen({ initialProvider: 'razorpay' });
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
 
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
     expect(panel).toHaveTextContent(/₹15,999 billed annually/);
@@ -306,7 +302,7 @@ describe('Founding Pro availability gate', () => {
     expect(await within(proCard).findByText(/Founding Pro:/)).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByRole('checkbox')).toBeInTheDocument();
   });
 
@@ -332,7 +328,7 @@ describe('Founding Pro availability gate', () => {
     await waitFor(() => expect(within(proCard).queryByText(/Founding Pro:/)).toBeNull());
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).queryByRole('checkbox')).toBeNull();
   });
 });

@@ -1,0 +1,325 @@
+.dm-mkt-hero-workspace-figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.dm-mkt-hero-workspace {
+  overflow: hidden;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-line);
+  border-radius: 9px;
+  box-shadow: 0 28px 70px color-mix(in srgb, var(--dm-nav-bg) 19%, transparent);
+  color: var(--dm-fg);
+}
+
+.dm-mkt-hero-window-bar {
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: var(--dm-paper);
+  border-bottom: 1px solid var(--dm-line);
+  color: var(--dm-fg-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.dm-mkt-hero-window-bar > span:last-child {
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.11em;
+}
+
+.dm-mkt-hero-window-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.dm-mkt-hero-window-dots i {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--dm-line);
+  border-radius: 50%;
+}
+
+.dm-mkt-hero-workspace-body {
+  min-height: 418px;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) minmax(225px, 0.89fr);
+}
+
+.dm-mkt-hero-workspace-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 25px;
+  padding: 13px 0;
+  background: var(--dm-nav-bg);
+  color: var(--dm-nav-muted);
+  font-size: 17px;
+}
+
+.dm-mkt-hero-workspace-monogram {
+  margin-bottom: 19px;
+  font-family: var(--dm-font-display);
+  color: var(--dm-nav-fg);
+  font-size: 23px;
+  line-height: 1;
+}
+
+.dm-mkt-hero-workspace-monogram span,
+.dm-mkt-hero-workspace-rail-active {
+  color: var(--dm-lilac);
+}
+
+.dm-mkt-hero-workspace-list {
+  min-width: 0;
+  padding: 20px 14px 12px;
+}
+
+.dm-mkt-hero-workspace-kicker,
+.dm-mkt-hero-workspace-detail-top,
+.dm-mkt-hero-workspace-messages > span {
+  color: var(--dm-primary);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+
+.dm-mkt-hero-workspace-list h3 {
+  margin: 12px 0 17px;
+  font-family: var(--dm-font-display);
+  font-size: clamp(22px, 2.2vw, 31px);
+  font-weight: 520;
+  line-height: 1.07;
+}
+
+.dm-mkt-hero-workspace-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 8px;
+  border: 1px solid var(--dm-line);
+  border-radius: 4px;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+}
+
+.dm-mkt-hero-workspace-search span {
+  font-size: 9px;
+}
+
+.dm-mkt-hero-workspace-filters {
+  display: flex;
+  gap: 5px;
+  margin: 9px 0 12px;
+  white-space: nowrap;
+}
+
+.dm-mkt-hero-workspace-filters > * {
+  padding: 4px 6px;
+  font-size: 8px;
+  color: var(--dm-fg-muted);
+}
+
+.dm-mkt-hero-workspace-filters b {
+  border-radius: 3px;
+  background: var(--dm-primary-wash);
+  color: var(--dm-primary);
+}
+
+.dm-mkt-hero-workspace-rows > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 49px;
+  padding: 6px;
+  border-bottom: 1px solid var(--dm-line-soft);
+  font-size: 9px;
+}
+
+.dm-mkt-hero-workspace-rows .dm-mkt-hero-workspace-row-on {
+  border-left: 2px solid var(--dm-primary);
+  background: var(--dm-primary-wash);
+}
+
+.dm-mkt-hero-workspace-avatar,
+.dm-mkt-hero-workspace-profile-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 27px;
+  height: 27px;
+  border-radius: 5px;
+  color: #fff;
+  font-family: var(--dm-font-display);
+  font-size: 15px;
+}
+
+.dm-mkt-hero-workspace-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+}
+
+.dm-mkt-hero-workspace-name strong {
+  font-size: 10px;
+}
+
+.dm-mkt-hero-workspace-name small {
+  overflow: hidden;
+  color: var(--dm-fg-muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dm-mkt-hero-workspace-detail {
+  min-width: 0;
+  padding: 18px 17px 14px;
+  border-left: 1px solid var(--dm-line);
+  background: var(--dm-paper);
+}
+
+.dm-mkt-hero-workspace-detail-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 21px;
+}
+
+.dm-mkt-hero-workspace-profile-avatar {
+  width: 36px;
+  height: 36px;
+  background: #8b4e32;
+  font-size: 18px;
+}
+
+.dm-mkt-hero-workspace-detail h3 {
+  margin: 7px 0 1px;
+  font-family: var(--dm-font-display);
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.dm-mkt-hero-workspace-detail p {
+  margin: 0;
+  color: var(--dm-fg-muted);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+
+.dm-mkt-hero-workspace-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 17px 0;
+  padding: 11px 0;
+  border-block: 1px solid var(--dm-line);
+}
+
+.dm-mkt-hero-workspace-metrics span {
+  display: grid;
+  gap: 3px;
+}
+
+.dm-mkt-hero-workspace-metrics strong {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.dm-mkt-hero-workspace-metrics small {
+  color: var(--dm-fg-muted);
+  font-size: 8px;
+}
+
+.dm-mkt-hero-workspace-messages > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+
+.dm-mkt-hero-workspace-messages strong,
+.dm-mkt-hero-workspace-messages small {
+  font-size: 8px;
+}
+
+.dm-mkt-hero-workspace-messages strong {
+  font-weight: 600;
+}
+
+.dm-mkt-hero-workspace-messages small {
+  flex: none;
+  color: var(--dm-fg-muted);
+}
+
+.dm-mkt-hero-workspace-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 15px;
+}
+
+.dm-mkt-hero-workspace-actions span {
+  padding: 8px 6px;
+  border-radius: 4px;
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+  font-size: 8px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dm-mkt-hero-workspace-actions span + span {
+  border: 1px solid var(--dm-line);
+  background: var(--dm-card);
+  color: var(--dm-primary);
+}
+
+.dm-mkt-hero-workspace-caption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 9px;
+  color: var(--dm-fg-muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 580px) {
+  .dm-mkt-hero-workspace-body {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .dm-mkt-hero-workspace-rail {
+    display: none;
+  }
+
+  .dm-mkt-hero-workspace-list,
+  .dm-mkt-hero-workspace-detail {
+    padding: 16px;
+  }
+
+  .dm-mkt-hero-workspace-list h3 {
+    font-size: 27px;
+  }
+
+  .dm-mkt-hero-workspace-rows > div:nth-child(n + 3) {
+    display: none;
+  }
+
+  .dm-mkt-hero-workspace-detail {
+    border-left: 0;
+    border-top: 1px solid var(--dm-line);
+  }
+
+  .dm-mkt-hero-workspace-actions {
+    flex-wrap: wrap;
+  }
+}

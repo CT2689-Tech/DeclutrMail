@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { correlationMiddleware } from './correlation.middleware.js';
 import { requestTimingMiddleware } from './request-timing.middleware.js';
+import { measureRequestOperation } from '../observability/request-performance.js';
 
 /**
  * Booted against a real Nest app, deliberately.
@@ -27,8 +28,8 @@ class RejectingGuard implements CanActivate {
 @Controller('probe')
 class ProbeController {
   @Get()
-  index(): { ok: true } {
-    return { ok: true };
+  async index(): Promise<{ ok: true }> {
+    return measureRequestOperation('auth.sync-state', () => ({ ok: true as const }));
   }
 
   @Get('guarded')
@@ -52,6 +53,7 @@ describe('requestTimingMiddleware', () => {
   let base: string;
 
   beforeEach(async () => {
+    vi.stubEnv('HTTP_PERFORMANCE_SAMPLE_RATE', '1');
     const moduleRef = await Test.createTestingModule({
       controllers: [ProbeController, HealthzController],
       providers: [RejectingGuard],
@@ -66,6 +68,7 @@ describe('requestTimingMiddleware', () => {
   });
 
   afterEach(async () => {
+    vi.unstubAllEnvs();
     log.mockRestore();
     await app.close();
   });
@@ -86,6 +89,7 @@ describe('requestTimingMiddleware', () => {
     const [line] = lines();
     expect(line).toMatchObject({ method: 'GET', status: 200 });
     expect(line?.route).toBe('GET /api/probe');
+    expect(line?.operations).toMatchObject({ 'auth.sync-state': { count: 1, failures: 0 } });
     // Never the raw URL (D7): query strings and path params carry emails.
     expect(JSON.stringify(line)).not.toContain('?');
   });

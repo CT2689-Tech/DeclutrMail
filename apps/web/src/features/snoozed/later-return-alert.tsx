@@ -8,7 +8,7 @@ import { ApiError } from '@/lib/api/client';
 
 import { useLaterRecovery, useWakeRecoveryNow } from './api/use-snoozed';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Persistent all-tier recovery notice for a missed Later return.
@@ -42,7 +42,7 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ fontSize: 13, fontWeight: 600, color: color.danger, minWidth: 0 }}>
+      <span style={{ fontSize: text.md, fontWeight: 600, color: color.danger, minWidth: 0 }}>
         {laterReturnIssueCopy({
           count: summary.affectedCount,
           sender,
@@ -62,7 +62,7 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
         {wake.isPending ? 'Starting…' : 'Try return now'}
       </Button>
       {wake.isError ? (
-        <span role="alert" style={{ width: '100%', fontSize: 12, color: color.danger }}>
+        <span role="alert" style={{ width: '100%', fontSize: text.sm, color: color.danger }}>
           {wake.error instanceof ApiError && wake.error.status === 503
             ? "Returns aren't available right now. Try again in a moment."
             : "Couldn't start the return. Try again in a moment."}
@@ -73,10 +73,10 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
 }
 
 /**
- * The ONE wording for an unconfirmed Later return. The app-wide banner
- * above and the Later screen's own notice used to be two hand-written
- * copies that drifted ("could not be confirmed" vs "need attention").
- * `retryAction` is the label of the button each surface actually shows.
+ * The ONE wording for an unconfirmed Later return. This banner is its
+ * only surface — the Later screen used to repeat it in a second notice,
+ * so the same failure rendered twice on /later.
+ * `retryAction` is the label of the button the banner actually shows.
  */
 export function laterReturnIssueCopy({
   count,
@@ -86,18 +86,14 @@ export function laterReturnIssueCopy({
   retryAction,
 }: {
   count: number;
-  /** Named only where the surface's retry button acts on this sender. */
-  sender: string | null;
+  /** The sender the retry button acts on. */
+  sender: string;
   lastTried: string | null;
   failureKind: LaterReturnFailureKind;
   retryAction: string;
 }): string {
   const subject =
-    sender === null
-      ? `${count} Later return${count === 1 ? '' : 's'}`
-      : count === 1
-        ? `${sender}'s Later return`
-        : `${count} Later returns, starting with ${sender},`;
+    count === 1 ? `${sender}'s Later return` : `${count} Later returns, starting with ${sender},`;
   const guidance =
     failureKind === 'reauthorize'
       ? `Reconnect Gmail from the account menu, then choose ${retryAction}.`

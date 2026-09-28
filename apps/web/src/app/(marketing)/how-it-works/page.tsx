@@ -4,14 +4,16 @@ import '@/features/marketing/product-story/product-story.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import {
   ActionLifecycleFigure,
-  ActionSemanticsGrid,
   AutomationBoundaryFigure,
+  ConfirmCardFigure,
+  DataBoundaryFigure,
+  DecisionsTable,
   FinalStoryCta,
-  GmailBridgeTable,
   ProductStoryShell,
-  ProductWalkthroughFigure,
+  SenderDecisionFigure,
   StorySection,
 } from '@/features/marketing/product-story';
+import { HeroWorkspace } from '@/features/marketing/landing/hero-workspace';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'How DeclutrMail works with Gmail — DeclutrMail',
@@ -23,165 +25,184 @@ export const metadata: Metadata = marketingPageMetadata({
 export default function HowItWorksPage() {
   return (
     <ProductStoryShell
-      eyebrow="How it works"
-      title="A sender-control layer for Gmail."
-      lede="Gmail remains where you read, reply, compose, and search. DeclutrMail groups a limited set of Gmail details by sender so you can make fewer decisions. Manual actions affect only the email shown before you confirm; Autopilot rules are separate and must be turned on."
+      title="See the sender. Know what will change."
+      lede="DeclutrMail puts recurring senders and their recent email in one place. Open the right-hand inspector, then preview the exact scope before moving mail."
+      visual={<HeroWorkspace />}
     >
+      <nav className="dm-story-jumps dm-story-shell" aria-label="Explore how it works">
+        <span>Jump to</span>
+        <a href="#walkthrough">Sender view</a>
+        <a href="#gmail-actions">Five decisions</a>
+        <a href="#past-email">Past email</a>
+        <a href="#manual-versus-automation">Automation</a>
+        <a href="#connect-boundary">Privacy & control</a>
+      </nav>
       <StorySection
         id="gmail-stays-home"
-        number="01"
-        title="Your inbox does not move."
+        layout="side"
+        title="Your inbox doesn’t move."
         intro={
           <p>
-            DeclutrMail is a companion to Gmail, not a replacement email client. The split is
-            deliberate: Gmail handles individual emails; DeclutrMail helps you decide by sender.
+            DeclutrMail is a companion to Gmail, not a replacement email client. Gmail remains where
+            you read, reply, compose, and search.
           </p>
         }
       >
-        <div className="dm-story-prose-grid">
-          <article className="dm-story-prose-card">
+        <div className="dm-story-split">
+          <div>
             <h3>Keep doing in Gmail</h3>
             <p>
-              Read full messages, reply, compose, search, use Gmail labels, and manage
-              conversations. Gmail remains the source of truth for the mailbox.
+              Read full messages, reply, compose, search, use labels, and manage conversations.
+              Gmail remains the source of truth for the mailbox.
             </p>
-          </article>
-          <article className="dm-story-prose-card">
+          </div>
+          <div>
             <h3>Do faster in DeclutrMail</h3>
             <p>
-              Review senders, see why an action is suggested, preview the affected emails, confirm a
-              cleanup action, and use Undo from Activity when it is available.
+              Review senders, see why an action is suggested, preview the affected emails, confirm,
+              and use Undo from Activity when it is available.
             </p>
-          </article>
+          </div>
         </div>
-        <p className="dm-story-callout">
-          Recent subject links return to Gmail when you need message context. DeclutrMail never
-          tries to become the place where you read the full conversation.
+        <p className="dm-story-note">
+          Overview shows your next step. Clean up contains Senders, Triage and New senders.
+          Automations contains Autopilot and Quiet hours. Activity records outcomes and available
+          Undo. Recent subject links return to Gmail when you need the full conversation.
         </p>
       </StorySection>
 
       <StorySection
         id="walkthrough"
-        number="02"
-        title="One sender decision at a time."
+        layout="side"
+        title="One decision per sender."
         intro={
           <p>
-            After Gmail is connected, a first scan groups email by sender. DeclutrMail shows the
-            current step and progress; the time varies with mailbox size and Gmail&rsquo;s limits.
-            Every plan includes the ranked Senders view and focused Triage queue.
+            After you connect Gmail, a first scan groups email by sender. DeclutrMail shows progress
+            as it goes; the time depends on mailbox size and Gmail&rsquo;s limits. Every plan
+            includes the ranked Senders view and the focused Triage queue.
           </p>
         }
-        tone="ink"
       >
-        <ProductWalkthroughFigure />
+        <SenderDecisionFigure />
       </StorySection>
 
       <StorySection
         id="gmail-actions"
-        number="03"
-        title="The actions, in Gmail terms."
+        title="The five decisions."
         intro={
           <p>
-            Daily Triage offers five decisions: Keep, Archive, Unsubscribe, Later, and Delete. The
-            same five are available from Senders and Sender Detail on every plan. Delete is never
-            recommended for you — you choose it, and it always shows a full preview first. Keep is
-            not Protect: Keep records a decision; Protect is a separate shield against destructive
-            and bulk actions.
+            Keep, Archive, Unsubscribe, Later, and Delete are available in Triage, Senders, and
+            Sender Detail on every plan. Delete is never recommended for you: you pick it yourself,
+            and it always shows a full preview first.
           </p>
         }
       >
-        <ActionSemanticsGrid />
-        <GmailBridgeTable />
+        <DecisionsTable />
       </StorySection>
 
       <StorySection
         id="preview-first"
-        number="04"
-        title="Preview before the mailbox changes."
+        layout="side"
+        title="Preview before email moves."
         intro={
           <p>
-            Some actions ask for options first, but the affected-email preview always appears before
-            anything changes. Activity updates only after Gmail confirms a mailbox change or the
-            sender reports the result of a one-click unsubscribe request.
+            Archive, Later, Delete, and unsubscribe requests have a confirmation step. Keep is an
+            inline sender decision. For mail-moving actions, the affected-email preview comes before
+            you confirm. Activity updates only after Gmail confirms the change, or the sender
+            reports the result of a one-click unsubscribe request.
           </p>
         }
+        aside={<ConfirmCardFigure />}
       >
         <ActionLifecycleFigure />
       </StorySection>
 
       <StorySection
+        id="past-email"
+        layout="side"
+        title="Unsubscribe is also a choice about past email."
+        intro={
+          <p>
+            An unsubscribe request asks a sender to stop future mail. The email already in Gmail
+            stays where it is unless you choose a separate cleanup action.
+          </p>
+        }
+      >
+        <div className="dm-story-split">
+          <div>
+            <h3>Leave it alone</h3>
+            <p>Keep past email in place while the unsubscribe request is sent.</p>
+          </div>
+          <div>
+            <h3>Archive or Delete it</h3>
+            <p>
+              Choose how far back to act. For Delete, choose Inbox only or Inbox + archived. The
+              affected count updates in the preview before you confirm.
+            </p>
+          </div>
+        </div>
+        <p className="dm-story-note">
+          The sent unsubscribe request cannot be recalled. Archive and Delete have their own Undo in
+          Activity when past email moves.
+        </p>
+      </StorySection>
+
+      <StorySection
         id="manual-versus-automation"
-        number="05"
+        layout="side"
         title="Manual cleanup is not a hidden rule."
         intro={
           <p>
-            A manual Archive, Later, or Delete applies to the current messages named in its preview.
-            It does not quietly decide what happens to future mail. Future automation lives in
-            separate Autopilot rules with their own controls: you see what a rule would do before
-            you turn it on, and only a rule you deliberately turn on acts without asking.
+            Manual actions affect only the email shown before you confirm; a manual Archive, Later,
+            or Delete does not quietly decide what happens to future mail. Autopilot rules are
+            separate and must be turned on: you see what a rule would do first, and only a rule you
+            deliberately turn on acts without asking.
           </p>
         }
       >
         <AutomationBoundaryFigure />
-      </StorySection>
-
-      <StorySection
-        id="connect-boundary"
-        number="06"
-        title="Know what Connect Gmail means."
-        intro={
+        <div id="beyond-manual" className="dm-story-beyond">
           <p>
-            DeclutrMail requests <code>gmail.modify</code> because archiving, labeling, and moving
-            messages to Trash require mailbox changes. It also requests basic identity scopes so the
-            connected account can be identified.
+            Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
+            which lists unfamiliar senders for review while their email still arrives in Gmail, the
+            whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
+            when those rules may run. Pro adds the Daily Brief, a once-a-day summary of what needs
+            your attention, and Follow-ups, a queue for senders you replied to but haven&rsquo;t
+            heard back from. <a href="/pricing">See every plan</a>.
           </p>
-        }
-        tone="ink"
-      >
-        <div className="dm-story-prose-grid">
-          <article className="dm-story-prose-card">
-            <h3>Limited Gmail details, not full emails</h3>
-            <p>
-              DeclutrMail stores the sender, subject line, Gmail preview snippet, dates, labels, and
-              read or unread state. Full email contents, attachments, embedded images, and raw email
-              source are not fetched or stored.
-            </p>
-          </article>
-          <article className="dm-story-prose-card">
-            <h3>You can leave cleanly</h3>
-            <p>
-              Revoke Gmail access or disconnect an inbox from the account menu, export your
-              DeclutrMail data, or schedule whole-account deletion from Settings. Disconnect keeps
-              historical DeclutrMail records so reconnecting can restore context; Gmail remains
-              intact.
-            </p>
-          </article>
         </div>
       </StorySection>
 
       <StorySection
-        id="beyond-manual"
-        number="07"
-        title="There's more once manual cleanup isn't enough."
+        id="connect-boundary"
+        layout="side"
+        title="What Connect Gmail means."
         intro={
           <p>
-            Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
-            which collects new senders for review instead of dropping them straight in your inbox,
-            the whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
-            when those rules are allowed to run. Pro adds the Daily Brief, a once-a-day summary of
-            what actually needs your attention, and Follow-ups, a queue for the senders you replied
-            to but haven&rsquo;t heard back from.
+            DeclutrMail requests <code>gmail.modify</code>, because archiving, labeling, and moving
+            email to Trash change the mailbox. It also requests basic identity scopes so the
+            connected account can be identified.
           </p>
         }
+        aside={
+          <>
+            <h3 className="dm-story-subhead">You can leave cleanly</h3>
+            <p className="dm-story-body">
+              Revoke Gmail access or disconnect an inbox from the account menu, export your
+              DeclutrMail data, or schedule whole-account deletion from Settings. Disconnecting
+              keeps historical DeclutrMail records so reconnecting can restore context; Gmail itself
+              is untouched. More on <a href="/methodology">privacy and control</a> and{' '}
+              <a href="/security">security</a>.
+            </p>
+          </>
+        }
       >
-        <p className="dm-story-callout">
-          See exactly what each plan includes on <a href="/pricing">the pricing page</a>.
-        </p>
+        <DataBoundaryFigure />
       </StorySection>
 
       <FinalStoryCta
         title="Bring the sender view to your Gmail."
-        body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails visible before anything changes."
+        body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails in view."
       />
     </ProductStoryShell>
   );

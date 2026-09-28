@@ -9,7 +9,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
@@ -73,6 +74,25 @@ describe('QuietRoute', () => {
     resetFetchStub();
   });
 
+  it('links only the active inbox to its Autopilot rules', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com'), mailbox(MAILBOX_B, 'b@b.com')]);
+    installFetchStub(
+      [MAILBOX_A, MAILBOX_B].map((id) => ({
+        method: 'GET' as const,
+        path: `/api/mailboxes/${id}/quiet-hours`,
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2, endsAt: null }),
+      })),
+    );
+    renderRoute();
+    await screen.findByText(/Choose this inbox in the account menu/i);
+    expect(screen.getAllByRole('link', { name: /Review Autopilot rules/i })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /Review Autopilot rules/i })).toHaveAttribute(
+      'href',
+      '/autopilot',
+    );
+  });
+
   it('renders the empty state when no mailboxes are connected', () => {
     me = makeMe([]);
     renderRoute();
@@ -126,7 +146,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    const checkbox = await screen.findByRole('checkbox', { name: 'Quiet hours on' });
+    const checkbox = await screen.findByRole('switch', { name: 'Quiet hours' });
     await userEvent.click(checkbox); // enabled: true → false (dirty)
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
@@ -134,6 +154,77 @@ describe('QuietRoute', () => {
     expect(putBody).toEqual({ ...CONFIG, enabled: false });
     // Server said activeNow: true → the pill renders from the response.
     await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+  });
+
+  it('says Saved once a never-configured mailbox saves', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0, endsAt: null }),
+      },
+      {
+        method: 'PUT',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0, endsAt: null }),
+      },
+    ]);
+
+    renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+
+    expect(await screen.findByText('Saved')).toBeInTheDocument();
+  });
+
+  it('keeps loading, not an unconfigured form, while the read waits offline', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    onlineManager.setOnline(false);
+    const { unmount } = renderRoute();
+    try {
+      expect(await screen.findByTestId('quiet-card-loading')).toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Quiet hours' })).not.toBeInTheDocument();
+    } finally {
+      // Unmount first, so the paused read never resumes against the stub.
+      unmount();
+      onlineManager.setOnline(true);
+    }
+  });
+
+  it('drops the held summary when a refresh fails', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let failing = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        respond: () =>
+          failing
+            ? new Response(JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }), {
+                status: 500,
+                headers: { 'Content-Type': 'application/json' },
+              })
+            : jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 2, endsAt: null }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
+    );
+    expect(await screen.findByText(/2 Autopilot actions/)).toBeInTheDocument();
+
+    failing = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByText(/Autopilot actions/)).not.toBeInTheDocument();
   });
 
   it('shows held actions and the scheduled quiet end', async () => {
@@ -204,7 +295,7 @@ describe('QuietRoute', () => {
     renderRoute();
 
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Quiet is off. 2 Autopilot actions are waiting to run; quiet is not delaying them.',
+      '2 Autopilot actions waiting to run — not held by quiet hours',
     );
   });
 });

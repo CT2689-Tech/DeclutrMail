@@ -226,6 +226,22 @@ describe('AdminSecurityEventsScreen — render states', () => {
 });
 
 describe('AdminSecurityEventsScreen — filter wiring', () => {
+  it('clears all filters and returns to the unfiltered audit log', async () => {
+    installFetchStub([
+      { method: 'GET', path: '/api/security-events', respond: () => jsonOk(envelope([])) },
+    ]);
+    renderScreen();
+    await screen.findByText(/No events match these filters/i);
+    const user = userEvent.setup();
+    await user.selectOptions(screen.getByLabelText('Filter by severity'), 'critical');
+    await user.type(screen.getByLabelText('Filter by event type'), 'login.failure');
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByLabelText('Filter by severity')).toHaveValue('');
+    expect(screen.getByLabelText('Filter by event type')).toHaveValue('');
+    expect(screen.getByLabelText('From timestamp')).toHaveValue('');
+    expect(screen.getByLabelText('To timestamp')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Clear filters' })).toBeDisabled();
+  });
   it('sends the selected severity as a query param', async () => {
     let lastUrl: string | null = null;
     installFetchStub([

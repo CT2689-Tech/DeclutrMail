@@ -23,10 +23,10 @@ describe('ComparisonIndexScreen', () => {
       screen.getByText(comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO), { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByText(/No affiliate rankings/i)).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Scrollable comparison summary' })).toHaveAttribute(
-      'tabindex',
-      '0',
-    );
+    fireEvent.click(screen.getByText('Open the full comparison matrix'));
+    expect(
+      screen.getByRole('region', { name: 'Scrollable side-by-side comparison matrix' }),
+    ).toHaveAttribute('tabindex', '0');
     for (const comparison of COMPARISONS) {
       expect(
         screen.getByRole('link', { name: `Compare DeclutrMail and ${comparison.name}` }),
@@ -34,11 +34,12 @@ describe('ComparisonIndexScreen', () => {
     }
   });
 
-  it('labels unknown public pricing instead of showing an invented amount', () => {
-    render(<ComparisonIndexScreen />);
-    expect(
-      screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
-    ).toBeGreaterThan(0);
+  it('keeps every direct comparison in the index', () => {
+    const { container } = render(<ComparisonIndexScreen />);
+    for (const comparison of COMPARISONS) {
+      expect(screen.getByText(comparison.indexSummary)).toBeInTheDocument();
+    }
+    expect(container.querySelector('article')).toBeNull();
   });
 
   it('links every /alternatives page from the compare index', () => {
@@ -55,7 +56,7 @@ describe('ComparisonIndexScreen', () => {
   it('tracks both lower-funnel choices in the final comparison CTA', () => {
     render(<ComparisonIndexScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /Connect Gmail/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Start free/i }));
     fireEvent.click(screen.getByRole('link', { name: 'See every tier' }));
 
     expect(track).toHaveBeenNthCalledWith(1, 'landing_cta_clicked', {
@@ -116,6 +117,19 @@ describe('ComparisonDetailScreen', () => {
     expect(
       screen.getAllByText(comparisonVerifiedLabel(unrollMe.verifiedIso), { exact: false }).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('labels unknown public pricing instead of showing an invented amount', () => {
+    render(<ComparisonDetailScreen comparison={comparisonBySlug('trimbox')!} />);
+    expect(
+      screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('keeps the sources anchor the hero links to', () => {
+    const { container } = render(<ComparisonDetailScreen comparison={COMPARISONS[0]} />);
+    expect(container.querySelector('a[href="#sources"]')).not.toBeNull();
+    expect(container.querySelector('#sources')).not.toBeNull();
   });
 
   it('renders a visible unknown state and does not disguise it as unsupported', () => {

@@ -1,52 +1,17 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import { useState } from 'react';
+import { SheetSegmented, tokens, type SheetFactItem } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import type { AutopilotRuleDto } from '@/lib/api/autopilot';
-import { ConfirmModalFrame } from './confirm-modal-frame';
-import { presetDisplayName } from './preset-labels';
-import { RulePreviewPanel } from './rule-preview-panel';
+import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
+import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
+import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
+import { RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font } = tokens;
+const { color, space, text } = tokens;
 
-/**
- * D226 mandatory preview for switching a rule Observe → Active — the
- * one mutation on this screen that STARTS automated mail actions, so
- * the preview spells out exactly what changes:
- *
- *   - **First-sweep dry-run** — the SAME `POST /rules/:id/preview`
- *     endpoint the rule card uses (it materializes the identical
- *     signals the apply worker reads), rendered inside the sheet:
- *     would-match count + top senders. Confirm is GATED on the
- *     preview resolving — the user never activates blind, and a
- *     failed preview offers retry instead of unlocking the button.
- *   - Going forward, new matches are approved and executed
- *     automatically (verb-specific copy below, honest per verb: only
- *     one-click unsubscribes auto-send; mailto stays manual per D230).
- *   - Suggestions already collected during the Observe window stay
- *     pending — activation does NOT bulk-approve them (the BE keeps
- *     the two mutations separate; "Approve all" lives on the group).
- *
- * Confirm fires `PATCH mode='active'`.
- */
-export function ActivateRuleModal({
-  rule,
-  intent = 'activate',
-  canRunUnattended = true,
-  pendingAction,
-  mailboxEmail,
-  pendingCount,
-  pendingApproximate,
-  preview,
-  undoWindowDays,
-  onRetryPreview,
-  onWatchFirst,
-  isActivating,
-  error,
-  onCancel,
-  onConfirm,
-}: {
+type ActivateRuleModalProps = {
   rule: AutopilotRuleDto | null;
   /**
    * Which mutation this preview is gating.
@@ -110,240 +75,269 @@ export function ActivateRuleModal({
   error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
-}) {
+};
+
+/**
+ * Mounted by the screen for its whole life with `rule = null` while
+ * closed. The sheet itself mounts per opening, so the Watch first / Act
+ * now choice never carries over from the last rule the user looked at.
+ */
+export function ActivateRuleModal({ rule, ...rest }: ActivateRuleModalProps) {
   if (rule == null) return null;
+  return <ActivateRuleSheet key={rule.id} rule={rule} {...rest} />;
+}
+
+/**
+ * D226 mandatory preview for switching a rule Observe → Active — the
+ * one mutation on this screen that STARTS automated mail actions, so
+ * the preview spells out exactly what changes:
+ *
+ *   - **First-sweep dry-run** — the SAME `POST /rules/:id/preview`
+ *     endpoint the rule card uses (it materializes the identical
+ *     signals the apply worker reads), rendered inside the sheet:
+ *     would-match count + top senders. Confirm is GATED on the
+ *     preview resolving — the user never activates blind, and a
+ *     failed preview offers retry instead of unlocking the button.
+ *   - Going forward, new matches are approved and executed
+ *     automatically (verb-specific copy below, honest per verb: only
+ *     one-click unsubscribes auto-send; mailto stays manual per D230).
+ *   - Suggestions already collected during the Observe window stay
+ *     pending — activation does NOT bulk-approve them (the BE keeps
+ *     the two mutations separate; "Approve all" lives on the group).
+ *
+ * Confirm fires `PATCH mode='active'`.
+ */
+function ActivateRuleSheet({
+  rule,
+  intent = 'activate',
+  canRunUnattended = true,
+  pendingAction,
+  mailboxEmail,
+  pendingCount,
+  pendingApproximate,
+  preview,
+  undoWindowDays,
+  onRetryPreview,
+  onWatchFirst,
+  isActivating,
+  error,
+  onCancel,
+  onConfirm,
+}: ActivateRuleModalProps & { rule: AutopilotRuleDto }) {
+  // Which way an entitled enable commits. "Act now" is the default
+  // because it is what the primary button did before the two commits
+  // became one choice; the requests themselves are unchanged.
+  const [choice, setChoice] = useState<'act' | 'watch'>('act');
   const name = presetDisplayName(rule.presetKey, rule.name);
+  const reviewOnly = isReviewOnlyPreset(rule.presetKey);
 
   const enabling = intent === 'enable';
   // Turning a rule on without the unattended capability can only mean
-  // Observe, so the acting label and the second button both disappear
-  // rather than offering a commit that would 402.
+  // Observe, so the choice disappears rather than offering a commit
+  // that would 402.
   const enablingToAct = enabling && canRunUnattended;
-  // Does the PRIMARY button leave the rule in `active`? Both the day-7
-  // promote (`intent='activate'`) and an entitled enable do; an enable
-  // without the capability, and the "Watch first" secondary, do not.
-  // The backlog clause below reads differently either way, because the
-  // server supersedes this rule's pending Observe suggestions only on
-  // the transition into `active`.
-  const primaryCommitsActive = !enabling || enablingToAct;
+  const offersChoice = enablingToAct && onWatchFirst != null;
+  const watching = offersChoice && choice === 'watch';
+  // Does the commit leave the rule in `active`? Both the day-7 promote
+  // (`intent='activate'`) and an entitled "Act now" do; an enable
+  // without the capability, and "Watch first", do not. The backlog
+  // sentence reads differently either way, because the server supersedes
+  // this rule's pending Observe suggestions only on the transition into
+  // `active`.
+  const commitsActive = !reviewOnly && (!enabling || enablingToAct) && !watching;
+  const presentation = rulePresentation(rule);
+  const protectedCount = preview.status === 'ready' ? preview.result.protectedWouldMatchCount : 0;
 
   return (
     <ConfirmModalFrame
-      open
-      titleId="dm-activate-title"
-      title={enabling ? `Turn on "${name}"` : `Switch "${name}" to Active`}
-      lead={
-        enablingToAct
-          ? 'Acts on matching email now and as it arrives:'
-          : enabling
-            ? 'Collects matches for your approval. Nothing moves until you approve:'
-            : 'Stops asking and starts acting:'
+      title={
+        enabling ? `Turn on ${name}?` : reviewOnly ? `Watch ${name}?` : `Switch ${name} to Active?`
       }
-      footnote="Pause any time — the rule card's toggle or Pause all."
+      subtitle={
+        reviewOnly
+          ? 'Matches become suggestions. You decide which email to act on.'
+          : matchEffectCopy(presentation)
+      }
+      note={`${
+        protectedCount > 0
+          ? `${protectedCount.toLocaleString('en-US')} Protected sender${
+              protectedCount === 1 ? ' is' : 's are'
+            } skipped.`
+          : 'Protected senders are skipped.'
+      } ${reviewOnly ? 'No mail moves until you approve a suggestion.' : undoNote(rule, undoWindowDays)}`}
       confirmLabel={
-        enablingToAct ? 'Turn on and run' : enabling ? 'Turn on and watch' : 'Switch to Active'
+        watching ? 'Watch first' : enabling ? 'Turn on' : reviewOnly ? 'Watch' : 'Switch to Active'
       }
-      confirmBusyLabel={enabling ? 'Turning on…' : 'Switching…'}
+      confirmBusyLabel={
+        pendingAction === 'secondary' || (pendingAction == null && watching)
+          ? 'Starting to watch…'
+          : enabling
+            ? 'Turning on…'
+            : 'Switching…'
+      }
+      // D226 — every commit waits for the dry-run, "Watch first" included:
+      // it moves no mail, but it still commits a mode.
       canConfirm={preview.status === 'ready'}
-      pendingAction={pendingAction}
       mailboxEmail={mailboxEmail}
-      secondaryAction={
-        enablingToAct && onWatchFirst != null
-          ? { label: 'Watch first', busyLabel: 'Starting to watch…', onClick: onWatchFirst }
-          : undefined
-      }
       isBusy={isActivating}
       error={error}
       onCancel={onCancel}
-      onConfirm={onConfirm}
+      // ⌘⏎ and the button share this, so the shortcut can only ever run
+      // the commit the user has selected and can see on the button.
+      onConfirm={watching && onWatchFirst != null ? onWatchFirst : onConfirm}
+      facts={[
+        ...(preview.status === 'ready' ? activationFacts(rule, preview.result, reviewOnly) : []),
+        ...(reviewOnly ? [] : ruleEffectFacts(presentation.primary)),
+        // Gated on the COUNT, not on the intent. A RE-enabled rule keeps
+        // its pending matches in the buffer (`listPendingSuggestions`
+        // filters on mode + resolution, never on `enabled`), and they
+        // render on this same screen.
+        //
+        // Two different truths, and saying the wrong one is not a wording
+        // slip. Going ACTIVE, the server clears this rule's pending
+        // suggestions (`dismiss_reason='superseded'`) in the same
+        // transaction as the mode change, because the sweep re-matches
+        // those senders and acts on them. Going to OBSERVE, nothing is
+        // superseded and they really do stay pending.
+        ...(pendingApproximate || pendingCount > 0
+          ? [
+              {
+                label: 'Already collected',
+                value: backlogCopy(commitsActive, pendingCount, pendingApproximate),
+              },
+            ]
+          : []),
+        // Turning a paused rule on resumes it. `{enabled:true, mode}`
+        // overwrites `paused`, so without this the commit silently undoes
+        // a "Pause all" the user had set.
+        ...(enabling && rule.mode === 'paused'
+          ? [{ label: 'Paused', value: 'Turning it on resumes it' }]
+          : []),
+        { label: 'Pause', value: 'Any time, from the rule’s toggle or Pause all' },
+      ]}
+      trailing={
+        preview.status === 'ready' ? (
+          <RulePreviewSample ruleName={name} result={preview.result} />
+        ) : undefined
+      }
     >
-      <ul
-        style={{
-          margin: 0,
-          paddingLeft: 18,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          fontSize: 12.5,
-          color: color.fgSoft,
-          lineHeight: 1.5,
-        }}
-      >
-        <li>{goingForwardCopy(rule)}</li>
-        {/* The backlog clause is gated on the COUNT, not on the intent.
-            Gating it on `intent === 'enable'` assumed a rule being turned
-            on has collected nothing — false for a RE-enabled rule:
-            disabling a rule leaves its pending matches in the buffer
-            (`listPendingSuggestions` filters on mode + resolution, never
-            on `enabled`), and they render on this same screen. Dropping
-            the clause there let a user confirm without being told those
-            suggestions stay unapproved. */}
-        {pendingApproximate || pendingCount > 0 ? (
-          <li>
-            {/* Two different truths, and saying the wrong one is not a
-                wording slip. Going ACTIVE, the server clears this rule's
-                pending suggestions (`dismiss_reason='superseded'`) in the
-                same transaction as the mode change, because the sweep
-                below re-matches those senders and acts on them — leaving
-                the old rows would show the user a second, stale copy of
-                a suggestion for mail that has already moved, and
-                approving it would fire a duplicate action (for
-                Unsubscribe, a second irreversible request). Going to
-                OBSERVE, nothing is superseded and they really do stay
-                pending. */}
-            {primaryCommitsActive
-              ? pendingApproximate
-                ? 'Already-collected suggestions are covered and clear from the pending list.'
-                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
-                    pendingCount === 1 ? 'is' : 'are'
-                  } covered by this and ${
-                    pendingCount === 1 ? 'clears' : 'clear'
-                  } from the pending list.`
-              : pendingApproximate
-                ? 'Already-collected suggestions stay pending. Approve or skip them separately.'
-                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
-                    pendingCount === 1 ? 'stays' : 'stay'
-                  } pending below. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
-          </li>
-        ) : null}
-        {/* The secondary button's different outcome, stated where the
-            user chooses. Only shown when both paths are actually on
-            offer and there is a backlog for them to differ about. */}
-        {primaryCommitsActive && enablingToAct && (pendingApproximate || pendingCount > 0) ? (
-          <li>
-            <strong>Watch first</strong> instead and they stay pending for your approval.
-          </li>
-        ) : null}
-        {/* Turning a paused rule on resumes it. `{enabled:true, mode}`
-            overwrites `paused`, so without this line the commit
-            silently undoes a "Pause all" the user had set. */}
-        {enabling && rule.mode === 'paused' ? (
-          <li>This rule is paused. Turning it on resumes it.</li>
-        ) : null}
-        {!pendingApproximate && pendingCount === 0 && enablingToAct ? (
-          <li>
-            <strong>Watch first</strong> collects matches for your approval instead of acting.
-          </li>
-        ) : null}
-        <li>Senders you mark Protected are always skipped.</li>
-      </ul>
-
-      {/* D226 — what the FIRST active sweep would do right now (same
-          signal materializer as the apply worker). Confirm stays
-          disabled until this resolves. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.02em',
-            textTransform: 'uppercase',
-            color: color.fgMuted,
-            fontFamily: font.sans,
-          }}
-        >
-          First sweep, right now
-        </span>
-        <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
-        <ActivationReport rule={rule} preview={preview} undoWindowDays={undoWindowDays} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space[4] }}>
+        {/* D226 — what the FIRST active sweep would act on right now (same
+            signal materializer as the apply worker). */}
+        <RulePreviewHero state={preview} onRetry={onRetryPreview} requiresApproval={reviewOnly} />
+        {offersChoice ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
+            <SheetSegmented
+              label="How this rule runs"
+              value={choice}
+              onChange={setChoice}
+              options={[
+                { value: 'watch', label: 'Watch first', disabled: isActivating },
+                { value: 'act', label: 'Act now', disabled: isActivating },
+              ]}
+            />
+            <span style={{ fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
+              {watching
+                ? 'Nothing moves until you approve each match.'
+                : 'Acts on matching email now and as it arrives.'}
+            </span>
+          </div>
+        ) : (
+          <span style={{ fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
+            {reviewOnly || enabling
+              ? 'Nothing moves until you approve each match.'
+              : 'Stops asking and starts acting.'}
+          </span>
+        )}
       </div>
     </ConfirmModalFrame>
   );
 }
 
-/** Decision-grade report shown only after the server dry-run resolves. */
-function ActivationReport({
-  rule,
-  preview,
-  undoWindowDays,
-}: {
-  rule: AutopilotRuleDto;
-  preview: RulePreviewState;
-  /** The caller's own undo window — see the prop note on the modal. */
-  undoWindowDays: number;
-}) {
-  if (preview.status !== 'ready') return null;
-  const { result } = preview;
-  const weeklyCopy =
-    result.weeklyVolume.basis === 'observed_7d'
-      ? `7-day observed volume: ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} match${
-          result.weeklyVolume.observedMatches === 1 ? '' : 'es'
-        }.`
-      : `Early weekly estimate: about ${result.weeklyVolume.estimatedMatches.toLocaleString('en-US')} match${
-          result.weeklyVolume.estimatedMatches === 1 ? '' : 'es'
-        }, extrapolated from ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} over ${
-          result.weeklyVolume.observedDays
-        } day${result.weeklyVolume.observedDays === 1 ? '' : 's'}.`;
-
-  return (
-    <section
-      aria-labelledby="dm-activation-report-title"
-      style={{
-        border: `1px solid ${color.line}`,
-        borderRadius: 9,
-        padding: '12px 14px',
-        background: color.paper,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-        fontFamily: font.sans,
-      }}
-    >
-      <h3
-        id="dm-activation-report-title"
-        style={{ margin: 0, fontSize: 12.5, color: color.fg, fontFamily: font.sans }}
-      >
-        Activation report
-      </h3>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        {actionableNowCopy(rule, result.actionableSenderCount, result.actionableMessageCount)}
-      </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        {result.protectedWouldMatchCount.toLocaleString('en-US')} additional matching sender
-        {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} Protected and will be skipped.
-      </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
-        {result.dailyActionCap === 1 ? '' : 's'}. The rest wait for the next check.
-      </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
-        {recoveryCopy(rule, undoWindowDays)}
-      </div>
-    </section>
-  );
+function backlogCopy(commitsActive: boolean, pendingCount: number, approximate: boolean): string {
+  const one = pendingCount === 1;
+  const n = `${pendingCount} suggestion${one ? '' : 's'}`;
+  if (commitsActive) {
+    return approximate
+      ? 'Covered by this; they clear from pending'
+      : `${n} covered by this; ${one ? 'it clears' : 'they clear'} from pending`;
+  }
+  return approximate
+    ? 'Stay pending; approve or skip them separately'
+    : `${n} ${one ? 'stays' : 'stay'} pending; approve or skip ${one ? 'it' : 'them'} separately`;
 }
 
-function actionableNowCopy(
+const fmt = (value: number) => value.toLocaleString('en-US');
+const plural = (count: number, word: string, suffix = 's') =>
+  `${fmt(count)} ${word}${count === 1 ? '' : suffix}`;
+
+/** Decision-grade report as Details facts, only after the dry-run resolves. */
+function activationFacts(
   rule: AutopilotRuleDto,
-  senderCount: number,
-  messageCount: number,
-): string {
-  if (rule.actionKind === 'unsubscribe') {
-    return `${senderCount.toLocaleString('en-US')} unsubscribe request${
-      senderCount === 1 ? '' : 's'
-    } actionable now. Those senders currently account for ${messageCount.toLocaleString('en-US')} inbox message${
-      messageCount === 1 ? '' : 's'
-    }; unsubscribing does not remove existing email.`;
-  }
-  return `${senderCount.toLocaleString('en-US')} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString('en-US')} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
+  result: AutopilotRulePreviewResultDto,
+  reviewOnly = false,
+): SheetFactItem[] {
+  const weekly =
+    result.weeklyVolume.basis === 'observed_7d'
+      ? { label: 'Last 7 days', value: plural(result.weeklyVolume.observedMatches, 'match', 'es') }
+      : {
+          label: 'Weekly estimate',
+          value: `About ${plural(result.weeklyVolume.estimatedMatches, 'match', 'es')}, from ${fmt(
+            result.weeklyVolume.observedMatches,
+          )} over ${plural(result.weeklyVolume.observedDays, 'day')}`,
+        };
+  return [
+    {
+      label: 'Matches',
+      value: `${fmt(result.wouldMatchCount)} of ${plural(result.evaluatedSenders, 'sender')}`,
+    },
+    {
+      // "Actionable" = the rule has something to do for that sender now.
+      label: reviewOnly ? 'If approved' : 'Actionable now',
+      value:
+        rule.actionKind === 'unsubscribe'
+          ? `${plural(result.actionableSenderCount, 'request')} · ${plural(
+              result.actionableMessageCount,
+              'inbox email',
+            )}`
+          : `${plural(result.actionableSenderCount, 'sender')} · ${plural(
+              result.actionableMessageCount,
+              'inbox email',
+            )}`,
+    },
+    weekly,
+    {
+      label: 'Daily cap',
+      value: `${plural(result.dailyActionCap, 'action')}, the rest wait for the next check`,
+    },
+  ];
 }
 
-function recoveryCopy(rule: AutopilotRuleDto, undoWindowDays: number): string {
-  if (rule.actionKind === 'archive') {
-    return `Recovery: archive results can be undone from Activity for ${undoWindowDays} days.`;
-  }
-  if (rule.actionKind === 'later') {
-    return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${undoWindowDays} days.`;
-  }
-  // Existing email staying put is already said twice above (the "For each
-  // new match" line and the activation report).
-  return 'Recovery: unsubscribe requests cannot be undone.';
+/**
+ * The sheet's one-line undo posture — the whole recovery story: Details
+ * adds only Later's scheduled return (`ruleEffectFacts`).
+ */
+function undoNote(rule: AutopilotRuleDto, undoWindowDays: number): string {
+  return rule.actionKind === 'unsubscribe'
+    ? 'Unsubscribe requests can’t be undone.'
+    : `Undo from Activity for ${undoWindowDays} days.`;
 }
 
-/** Verb-honest description of Active mode (D227 canonical verbs; D230 mailto stays manual). */
-function goingForwardCopy(rule: AutopilotRuleDto): string {
-  const presentation = buildActionPresentation({
+type RulePresentation = ReturnType<typeof rulePresentation>;
+
+/**
+ * What the rule does to ONE match, in one sentence: the unsubscribe
+ * request for an Unsubscribe rule (its existing-mail sentence only says
+ * nothing moves), where the email goes for Archive and Later.
+ */
+function matchEffectCopy(presentation: RulePresentation): string {
+  const { primary } = presentation;
+  return primary.verb === 'unsubscribe' ? primary.futureMail.summary : primary.currentMail.summary;
+}
+
+/** Verb-honest presentation of the rule's action (D227; D230 mailto stays manual). */
+function rulePresentation(rule: AutopilotRuleDto) {
+  return buildActionPresentation({
     verb: rule.actionKind,
     liveCount: null,
     planUndoDeadline: null,
@@ -353,8 +347,4 @@ function goingForwardCopy(rule: AutopilotRuleDto): string {
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',
   });
-  // `effectCopy`, not `previewCopy`: the Recovery line below owns the undo
-  // facts, and `previewCopy` carries those same sentences — an Unsubscribe
-  // rule printed "cannot be undone" twice.
-  return `For each new match: ${presentation.primary.effectCopy}`;
 }

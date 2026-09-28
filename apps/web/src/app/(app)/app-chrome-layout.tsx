@@ -14,7 +14,6 @@ import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge'
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
-import { PlanChip } from '@/features/billing/pro-chip';
 import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
@@ -25,9 +24,9 @@ import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
-import { ScreenerBadge } from '@/features/screener/screener-badge';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
+import { BannerSlot } from '@/features/shell/banner-slot';
 import { MailboxReconnectBanner } from '@/features/mailboxes/mailbox-reconnect-banner';
 import { SyncErrorBanner } from '@/features/sync/sync-error-banner';
 import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-button';
@@ -79,6 +78,8 @@ function shellRoute(id: string): string {
  *                           additive: renders above branches 5 + 7 only
  *                           while a deletion request is pending (it is
  *                           user-scoped and must survive zero mailboxes).
+ *                           It leads the single `BannerSlot`, whose child
+ *                           order IS the banner priority order.
  *   7. normal             — AppShell + children.
  *
  * Sender-count chip: derived from the default senders list (same query
@@ -86,12 +87,13 @@ function shellRoute(id: string): string {
  * more data behind the cursor. Hidden until the first page returns so
  * we never flash a stale `0`.
  *
- * Screener badge (D74): `ScreenerBadge` fed by `useScreenerCount`,
- * mounted only for tiers with the `screener` capability (D77) — see
- * the gating comment at the hook call.
+ * Screener count (D74): fed by `useScreenerCount`, fetched only for
+ * tiers with the `screener` capability (D77) — see the gating comment
+ * at the hook call.
  *
  * Account menu (D116 surface — partial): the topbar's right slot
- * carries the switcher / disconnect / connect-another / sign-out menu.
+ * carries the switcher / disconnect / connect-another / sign-out menu,
+ * plus the Settings and Billing links that used to be sidebar rows.
  * The menu reads `useAuth` so the AuthProvider must wrap this layout —
  * it does, right here: since the D134 public-route split, the
  * `(app)` group owns its own AuthProvider (the root `providers.tsx`
@@ -200,23 +202,19 @@ function AppChrome({ children }: { children: ReactNode }) {
   const screenerCount = useScreenerCount({ enabled: screenerUnlocked && hasActiveMailbox });
   const screenerPending = screenerUnlocked ? screenerCount.data?.pending : undefined;
 
-  // Plan chips on locked nav items (2026-07-10 dogfood): paid nav
-  // surfaces are tier-gated but nothing marked them, so users
-  // discovered paywalls by clicking into them. Chip only when LOCKED —
-  // an unlocked feature's slot stays free for real badges (screener
-  // pending count below).
+  // Plan locks on nav items (2026-07-10 dogfood): paid nav surfaces are
+  // tier-gated but nothing marked them, so users discovered paywalls by
+  // clicking into them. Only LOCKED rows are marked, and the sidebar
+  // keeps the marker off the resting nav (shown on hover/focus, always
+  // announced).
   // D251 — every nav id here doubles as its own gating capability. The
   // Autopilot chip keys on `autopilot` (the Plus screen capability), never
   // `autopilot-active`: the behaviour upgrade must not mark a screen Plus
   // owns as locked.
-  const tierChips = Object.fromEntries(
+  const navLocks = Object.fromEntries(
     (['triage', 'brief', 'followups', 'snoozed', 'screener', 'quiet', 'autopilot'] as const)
       .filter((navId) => !hasCapability(tier, navId))
-      .map((navId) => {
-        const requiredTier = minimumTierForCapability(navId);
-        const plan = TIER_MANIFEST[requiredTier].name;
-        return [navId, <PlanChip key={navId} plan={plan === 'Plus' ? 'Plus' : 'Pro'} />];
-      }),
+      .map((navId) => [navId, TIER_MANIFEST[minimumTierForCapability(navId)].name]),
   );
 
   // Onboarding incomplete — `useOnboardingGate` has already issued
@@ -249,8 +247,10 @@ function AppChrome({ children }: { children: ReactNode }) {
   if (!hasActiveMailbox && !userScopedRoute) {
     return (
       <>
-        <HeardFromPrompt />
-        <GracePeriodBanner />
+        <BannerSlot>
+          <GracePeriodBanner />
+          <HeardFromPrompt />
+        </BannerSlot>
         <NoActiveMailbox />
         <ToastHost />
       </>
@@ -259,36 +259,48 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <HeardFromPrompt />
       <SyncNowAnimationStyle />
       <div className="dm-app-viewport" style={{ display: 'flex', flexDirection: 'column' }}>
-        <GracePeriodBanner />
-        {/* Passive incremental-sync failure surface (D224). Active-mailbox
-            ONLY — its session-scoped status poll 409-storms without one, so
-            it stays off on the user-scoped-route fallback (settings/billing
-            rendered with no active mailbox). */}
-        {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
-        {/* The same gate for every OTHER broken mailbox (D224). Reads no
-            endpoint — `me.mailboxes[].needsReconnect` is server-computed —
-            so it is safe on the user-scoped fallback above and costs no
-            per-mailbox status observers. */}
-        <MailboxReconnectBanner />
-        {/* Return recovery is an all-tier safety guarantee. Successful
-            returns stay silent; only missed/failed timers surface. */}
-        <LaterReturnAlert enabled={hasActiveMailbox} />
+        {/* ONE banner slot. Child order is the priority order: the first
+            banner that renders is shown, the rest sit behind "+N more". */}
+        <BannerSlot>
+          <GracePeriodBanner />
+          {/* Passive incremental-sync failure surface (D224). Active-mailbox
+              ONLY — its session-scoped status poll 409-storms without one,
+              so it stays off on the user-scoped-route fallback (settings/
+              billing rendered with no active mailbox). */}
+          {me.activeMailboxId !== null && <SyncErrorBanner mailboxId={me.activeMailboxId} />}
+          {/* The same gate for every OTHER broken mailbox (D224). Reads no
+              endpoint — `me.mailboxes[].needsReconnect` is server-computed —
+              so it is safe on the user-scoped fallback above and costs no
+              per-mailbox status observers. */}
+          <MailboxReconnectBanner />
+          {/* Return recovery is an all-tier safety guarantee. Successful
+              returns stay silent; only missed/failed timers surface. */}
+          <LaterReturnAlert enabled={hasActiveMailbox} />
+          <HeardFromPrompt />
+        </BannerSlot>
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
+            accountInitial={me.user.email.charAt(0).toUpperCase()}
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
+            routeKey={pathname}
+            locks={navLocks}
             counts={{
-              ...tierChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),
-              // Element badge — the sidebar renders it as-is, so the
-              // D74 pulse + aria-label + hide-at-zero all apply.
-              ...(screenerPending === undefined
+              // D74 — nothing at zero (a calm sidebar is the resting
+              // state), and the rendered count is capped: a first sync
+              // can queue thousands. The spoken label keeps the real one.
+              ...(screenerPending === undefined || screenerPending <= 0
                 ? {}
-                : { screener: <ScreenerBadge count={screenerPending} /> }),
+                : {
+                    screener: {
+                      text: screenerPending > 99 ? '99+' : screenerPending,
+                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting a first review in Screener`,
+                    },
+                  }),
             }}
             topbarRight={
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>

@@ -12,7 +12,11 @@
     "e2e:hydration": "playwright test hydration-smoke --project=default",
     "e2e:install": "playwright install chromium",
     "typecheck": "tsc --noEmit",
-    "build": "echo 'no build'"
+    "build": "echo 'no build'",
+    "e2e:journeys": "playwright test triage-keep sender-policy protection-review followups-dismiss brief-preview senders-search-typing public-journeys cookie-consent --project=default",
+    "test:harness": "node --experimental-strip-types --test contracts/*.test.mjs",
+    "seed": "tsx helpers/seed-local.ts",
+    "stack": "node --experimental-strip-types helpers/start-isolated.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",

@@ -24,6 +24,7 @@ export {
 } from './mailbox-reconnect.js';
 export {
   findStuckMailboxes,
+  reportStuckMailboxes,
   STUCK_MAILBOX_GRACE_MS,
   type StuckMailbox,
   type StuckMailboxReason,
@@ -43,6 +44,7 @@ export {
   perMailboxWorkerSettings,
 } from './rate-limit-backoff.js';
 export {
+  addCoalescedJob,
   createRedisConnection,
   createRedisProducerConnection,
   ensureIncrementalSyncJob,
@@ -55,7 +57,7 @@ export {
   initialSyncJobOptions,
   workerTuningOptions,
 } from './queue.js';
-export type { IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
+export type { CoalescedJobOptions, IncrementalSyncJobData, InitialSyncJobData } from './queue.js';
 export type {
   GmailAccess,
   GmailGrantClient,
@@ -233,8 +235,8 @@ export {
 export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   autopilotActionJobOptions,
+  autopilotActionSweepJobOptions,
   AutopilotActionWorker,
   isQuietStateActive,
 } from './autopilot-action.worker.js';
@@ -339,7 +341,13 @@ export {
   followupCheckJobOptions,
   scheduledAtMinute as followupCheckScheduledAtMinute,
 } from './followup-check.queue.js';
-export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
+export {
+  FIRST_VIEW_QUEUE_ROWS,
+  SCORE_EXPLAIN_QUEUE,
+  SCORE_JOB,
+  SCORE_QUEUE,
+  ScoreWorker,
+} from './score.worker.js';
 export type {
   ScoreJobData,
   ScoreJobResult,
@@ -406,6 +414,7 @@ export type {
 } from './sender-index-sweep.worker.js';
 export {
   enqueueSenderIndexSweepTick,
+  enqueueSenderIndexSweepContinuation,
   scheduledAtMinute as senderIndexSweepScheduledAtMinute,
   SENDER_INDEX_SWEEP_INTERVAL_MS,
   SENDER_INDEX_SWEEP_JOB,
@@ -515,3 +524,17 @@ export {
 } from './billing-verdict.queue.js';
 
 export { writeWorkerHeartbeat, workerHeartbeatIsFresh } from './worker-heartbeat.js';
+
+export { workerRuntimeConfig } from './worker-runtime-config.js';
+export { measuredMailboxLock } from './measured-mailbox-lock.js';
+
+export {
+  SupportRequestWorker,
+  SupportRequestJobSchema,
+  type SupportRequestJobData,
+} from './support-request.worker.js';
+export {
+  SUPPORT_REQUEST_QUEUE,
+  SupportRequestQueue,
+  supportRequestJobOptions,
+} from './support-request.queue.js';

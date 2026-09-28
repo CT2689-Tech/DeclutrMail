@@ -77,7 +77,10 @@ describe('UpgradeModal', () => {
       });
     });
     const dialog = screen.getByTestId('upgrade-modal');
-    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    // Phone layout is pure CSS now (tokens.css ≤520px): the sheet classes
+    // pin the panel to the bottom edge with no post-hydration jump.
+    expect(dialog).toHaveClass('dm-sheet-panel');
+    expect(dialog.parentElement).toHaveClass('dm-sheet-layer');
   });
 
   it('renders nothing without a gate hit', () => {
@@ -124,11 +127,11 @@ describe('UpgradeModal', () => {
       screen.getByText("You've used all 50 cleanup actions for this month"),
     ).toBeInTheDocument();
     // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
-    expect(screen.getByText(/Plus removes the monthly cap for \$9\/mo/)).toBeInTheDocument();
-    expect(screen.getByText(/\$9\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
+    expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
+    expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
-    expect(screen.getByRole('link', { name: 'Upgrade to Plus' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=plus&cycle=monthly',
     );
@@ -179,8 +182,8 @@ describe('UpgradeModal', () => {
     render(<UpgradeModal />);
 
     expect(screen.getByText('All-matching actions are part of Pro')).toBeInTheDocument();
-    expect(screen.getByText(/Pro unlocks all-matching cleanup for \$19\/mo/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
+    expect(screen.getByText(/Pro unlocks all-matching cleanup/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
     );
@@ -199,7 +202,7 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByText(/Pro raises the limit to 5 connected Gmail accounts/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly',
     );

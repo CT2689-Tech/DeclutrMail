@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TRIAGE_QUEUE } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { StepFirstTriage } from './step-first-triage';
 
 const onboarding = vi.hoisted(() => ({
@@ -67,7 +67,7 @@ describe('StepFirstTriage', () => {
 
     expect(screen.getByText(/Review senders/i)).toBeInTheDocument();
     expect(screen.getByText(/recurring newsletters/i)).toBeInTheDocument();
-    expect(screen.getByText(/Review 1 of 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 3/)).toBeInTheDocument();
     expect(screen.getByTestId('triage-screen')).toHaveAttribute('data-journey', 'first_relief');
     expect(analytics.track).toHaveBeenCalledWith('first_relief_session_started', {
       goal: 'reduce_newsletters',
@@ -83,7 +83,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/shows what changes before you confirm/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: /Review senders/ })).toBeVisible();
     expect(screen.queryByText(/real sender decisions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/practice run|first-triage candidates/i)).not.toBeInTheDocument();
   });

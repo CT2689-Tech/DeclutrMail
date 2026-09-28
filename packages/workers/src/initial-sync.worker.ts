@@ -3,6 +3,7 @@ import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
+  ruleMatchLabelClaimKey,
   ruleMatchLog,
   senders,
   senderTimeseries,
@@ -23,12 +24,13 @@ import {
 import { and, eq, gt, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
+import { boundedMap } from './bounded-map.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
-import { syncMailboxLabels } from './mailbox-label-sync.js';
+import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -83,9 +85,10 @@ export interface InitialSyncDeps {
    * first sync — without it a freshly-synced mailbox has senders but
    * an empty Triage queue.
    *
-   * Best-effort: a failure here is logged and swallowed (the cron
-   * re-score sweep is the safety net), so a Redis blip at score-enqueue
-   * time never fails an otherwise-successful sync.
+   * Best-effort: a failure here is logged and swallowed, so a Redis blip
+   * at score-enqueue time never fails an otherwise-successful sync.
+   * Nothing retries it — `cron_sweep` has no producer — so the logged
+   * `sync.score_enqueue_failed` is the only trace.
    */
   onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
   /**
@@ -311,6 +314,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     payload: InitialSyncJobData,
     ctx: WorkerContext,
   ): Promise<InitialSyncResult> {
+    ctx.signal?.throwIfAborted();
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
       throw new ValidationError('initial-sync job is missing mailboxAccountId');
@@ -409,7 +413,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // means any change during the fetch is replayed by the first
     // incremental run — upserts are idempotent so re-processing is safe.
     initialSyncLog('getProfile_begin', mailboxAccountId);
-    const profile = await client.getProfile();
+    const profile = await client.getProfile(ctx.signal);
     initialSyncLog('getProfile_done', mailboxAccountId, { historyId: profile.historyId });
     const snapshotHistoryId = await this.captureInitialHistorySnapshot(
       mailboxAccountId,
@@ -421,7 +425,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       messagesSynced,
       gmailApiCalls: fetchCalls,
       unreadable,
-    } = await this.fetchAndStoreMetadata(mailboxAccountId, client);
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal);
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -429,16 +433,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
+    ctx.signal?.throwIfAborted();
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
-    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client);
+    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
     lap('building_sender_index');
 
+    ctx.signal?.throwIfAborted();
     // Stage 3 — computing_recommendations. The sender index is built,
     // so fire the `sync_complete` score trigger (D25): the score sweep
     // runs the cascade over every sender and writes `triage_decisions`.
-    // Best-effort — a score-enqueue failure must not fail the sync; the
-    // cron re-score sweep is the safety net.
+    // Best-effort — a score-enqueue failure must not fail the sync
+    // (nothing retries it: `cron_sweep` has no producer).
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
     if (this.deps.onSenderIndexBuilt) {
       try {
@@ -477,6 +483,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       durationMs: Date.now() - startedAt,
       stageTimings,
     };
+    ctx.signal?.throwIfAborted();
     await this.markReady(mailboxAccountId, snapshotHistoryId, result, ctx.attempt);
 
     return result;
@@ -675,6 +682,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
+    signal?: AbortSignal,
   ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
@@ -689,7 +697,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     let listPageCount = 0;
     initialSyncLog('listMessageIds_loop_begin', mailboxAccountId);
     do {
-      const page = await client.listMessageIds(pageToken);
+      signal?.throwIfAborted();
+      const page = await client.listMessageIds(pageToken, signal);
       gmailApiCalls += 1;
       listPageCount += 1;
       for (const id of page.ids) {
@@ -753,6 +762,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         if (!gmailIdSet.has(m.providerMessageId)) {
           toDeleteBuffer.push(m.providerMessageId);
           if (toDeleteBuffer.length >= UPSERT_BATCH) {
+            signal?.throwIfAborted();
             await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
             toDeleteBuffer = [];
           }
@@ -763,13 +773,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       lastId = page[page.length - 1]!.id;
     }
     if (toDeleteBuffer.length > 0) {
+      signal?.throwIfAborted();
       await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
     }
 
     // 4. Fetch metadata for ids not in the skip set. Iterate `gmailIdSet`
     //    directly — never materialise a `toFetch` array. Insertion order
     //    on a JS Set matches Gmail's list order (newest-first); we
-    //    reverse-process by walking the set in chunks of FETCH_CONCURRENCY.
+    //    reverse-process by walking the set in bounded persistence batches; metadata fetch slots refill
+    // as each request settles instead of waiting for every 20-request wave.
     let processed = skipSet.size;
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
@@ -779,6 +791,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const attempted = total - skipSet.size;
 
     const flush = async (): Promise<void> => {
+      signal?.throwIfAborted();
       if (pendingMessages.length === 0) {
         return;
       }
@@ -792,7 +805,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       if (chunk.length === 0) {
         return;
       }
-      const metas = await Promise.all(chunk.map((id) => client.getMessageMetadata(id)));
+      const metas = await boundedMap(chunk, FETCH_CONCURRENCY, async (id) => {
+        signal?.throwIfAborted();
+        const meta = await client.getMessageMetadata(id, signal);
+        signal?.throwIfAborted();
+        return meta;
+      });
       gmailApiCalls += chunk.length;
       chunk = [];
 
@@ -834,7 +852,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         continue;
       }
       chunk.push(id);
-      if (chunk.length === FETCH_CONCURRENCY) {
+      if (chunk.length === UPSERT_BATCH) {
         await processChunk();
       }
     }
@@ -883,6 +901,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async buildSenderIndex(
     mailboxAccountId: string,
     client: GmailMetadataClient,
+    signal?: AbortSignal,
   ): Promise<number> {
     // Sender identity (email/name/domain) was written during fetch.
     const identityRows = await this.deps.db
@@ -909,6 +928,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const aggregates = new Map<string, SenderAggregate>();
     let lastId: string | null = null;
     for (;;) {
+      signal?.throwIfAborted();
       const page = await this.deps.db
         .select({
           id: mailMessages.id,
@@ -1012,7 +1032,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // threshold (two-way: >=3 addressed outbound AND >=1 inbound).
     // Both run inside the rebuild tx so a partial pass rolls back
     // with the rest.
+    // Gmail is read BEFORE the rebuild transaction opens: no network call
+    // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
+    const labels = await listMailboxLabels(client);
     await this.deps.db.transaction(async (tx) => {
+      signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
       // Without it an apply sweep that read signals a moment ago can
       // INSERT matches derived from the index this transaction is about
@@ -1059,18 +1083,20 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           sql`not exists (
             select 1
             from action_jobs aj
-            where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
+            where aj.idempotency_key = ${ruleMatchLabelClaimKey()}
           )`,
         ),
       );
 
       if (senderRows.length > 0) {
         for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
+          signal?.throwIfAborted();
           await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
         }
       }
       if (timeseriesRows.length > 0) {
         for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
+          signal?.throwIfAborted();
           await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
         }
       }
@@ -1154,7 +1180,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // (mig 0064, F012), so a stale label set would reconcile the
       // counters against the wrong exclusion. `null` = the client could
       // not list; the existing rows stand rather than being emptied.
-      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, labels);
       if (labelSync) {
         console.log(
           JSON.stringify({
@@ -1172,7 +1198,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // mailbox whose read state drifted while the cursor was stale.
       await reconcileSenderTimeseries(tx, mailboxAccountId);
 
+      signal?.throwIfAborted();
       await applyAutomaticProtection(tx, mailboxAccountId);
+      signal?.throwIfAborted();
     });
 
     if (orphans > 0) {
@@ -1558,7 +1586,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * exists iff the ready state committed). The consumer router seeds
    * the D101 Autopilot presets + enqueues the apply sweep off it. A
    * RESUMED sync that re-reaches ready publishes again — consumers are
-   * idempotent (seeder ON CONFLICT; apply job deduped per trigger).
+   * idempotent (seeder ON CONFLICT; apply job deduped per trigger). The
+   * one consumer that is NOT idempotent across events, the "Your inbox
+   * is ready" email, reads the event's `firstReady` flag instead.
    */
   private async markReady(
     mailboxAccountId: string,
@@ -1608,6 +1638,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           progressPct: 100,
           lastHistoryId,
           historyIdUpdatedAt: sql`now()`,
+          // Ready means stamped on both branches: the stamp is what tells
+          // the next ready that this is not the mailbox's first.
+          lastSyncedAt: sql`now()`,
         })
         .onConflictDoUpdate({
           target: providerSyncState.mailboxAccountId,
@@ -1659,6 +1692,23 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
+      // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
+      // clears it — `markQueued` (any connect that needs a scan, e.g. a reconnect),
+      // the failed-scan retry and the cursor-too-old recovery all keep it —
+      // so null means no scan has finished since this row was created: the
+      // one case the "Your inbox is ready" email is for. The incremental
+      // writer cannot stamp it first; its producers require `ready`.
+      //
+      // FOR UPDATE: two runs of one mailbox can overlap after a stall
+      // reclaim. Without the lock both read null and both send. The upsert
+      // takes this same row lock one statement later anyway.
+      const [prior] = await tx
+        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update')
+        .limit(1);
+      const firstReady = (prior?.lastSyncedAt ?? null) === null;
       await readyUpsert(tx);
       await runInsert(tx);
       await outbox.publish(tx, {
@@ -1669,6 +1719,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           workspaceId: account.workspaceId,
           readyAt: new Date().toISOString(),
           messageCount: run.messagesSynced,
+          firstReady,
         },
         schema: MailboxSyncReadyPayloadSchema,
       });

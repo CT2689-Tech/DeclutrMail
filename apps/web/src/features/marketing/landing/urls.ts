@@ -1,3 +1,5 @@
+import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
+
 /**
  * URL helpers for the public marketing surface (D134).
  *
@@ -34,4 +36,16 @@ export function oauthStartUrl(returnTo?: string): string {
   const path = `${apiBase}/api/auth/google/start`;
   if (!returnTo) return path;
   return `${path}?${new URLSearchParams({ returnTo }).toString()}`;
+}
+
+/** New connections review permissions before the final Google consent hop. */
+export function permissionEntryUrl(returnTo?: string): string {
+  const destination = safePublicReturnTo(returnTo);
+  return destination ? `/sign-in?${new URLSearchParams({ returnTo: destination })}` : '/sign-in';
+}
+
+/** Preserve only the same validated checkout intent supported by the OAuth callback. */
+export function safePublicReturnTo(value?: string): string | undefined {
+  const intent = parseBillingIntentPath(value);
+  return intent ? billingIntentPath(intent) : undefined;
 }

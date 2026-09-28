@@ -1,6 +1,6 @@
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
@@ -12,49 +12,19 @@ import type { WorkerContext } from './worker-context.js';
 /** Drizzle client bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
-/**
- * Mailboxes swept per tick.
- *
- * `cronPolicy` caps the job at 60s, and `withTimeout` enforces that with
- * a bare `Promise.race` — it rejects the outer promise but does NOT
- * cancel the transaction underneath, which keeps running on its backend
- * still holding the per-mailbox advisory lock. So an unbounded serial
- * loop does not merely run long; it fails the job, and the retry starts
- * again from the FIRST mailbox and then blocks up to
- * `MAILBOX_LOCK_TIMEOUT` (45s of its own 60s budget) on the lock the
- * previous attempt leaked.
- *
- * With a stable select order that starves the tail deterministically:
- * the same head mailboxes are swept every night and the same tail
- * mailboxes are never swept at all. Since this worker is the ONLY path
- * that retires the clock-driven protections, those mailboxes would keep
- * showing "protected because you starred it" against a two-year-old
- * star — the D245 §2.6 violation this file exists to prevent, reached by
- * a different route.
- *
- * `random()` is what makes the cap a DELAY rather than an exclusion: a
- * capped tick truncates at different mailboxes each night, so every
- * mailbox is swept eventually instead of a fixed set never being swept.
- * Same reasoning and same shape as `LapseReengagementWorker`'s
- * `CANDIDATE_BATCH_SIZE`, which documents this failure mode for the same
- * policy.
- *
- * Sized against the measured worst case in the header below: ~10-15s for
- * a 100k-message mailbox, so 4 fits inside 60s with margin. Raise it
- * only alongside a real measurement, or move to one job per mailbox
- * under `perMailboxPolicy` if the fleet outgrows a single tick.
- */
-export const MAILBOX_BATCH_SIZE = 4;
+/** Each transaction batch stays bounded; keyset continuations cover the whole fleet. */
+export const MAILBOX_BATCH_SIZE = 1;
 
 /**
  * Nightly sweep payload. The cron scheduler enqueues one job per tick
- * keyed on `(worker_name, scheduled_at_minute)` per D225; the payload
- * carries no per-mailbox state because the worker sweeps every eligible
- * mailbox in one pass.
+ * keyed on `(worker_name, scheduled_at_minute)` per D225. Continuations
+ * carry an exclusive cursor so bounded jobs cover every eligible mailbox.
  */
 export interface SenderIndexSweepJobData {
   /** ISO-8601 minute (`2026-08-24T03:00`) — the D225 cron key. */
   scheduledAtMinute: string;
+  /** Exclusive mailbox cursor for a durable continuation of this sweep. */
+  afterMailboxId?: string;
 }
 
 /**
@@ -117,14 +87,12 @@ export interface SenderIndexSweepResult {
  * ## Policy and isolation
  *
  * `cronPolicy` (D203/D225). The cron driver in `apps/api/src/worker.ts`
- * ticks the queue; idempotency keys to `(worker_name,
- * scheduled_at_minute)` so concurrent enqueues collapse to one run.
+ * ticks the queue; idempotency keys include the scheduling minute and
+ * optional continuation cursor so repeated enqueues deduplicate.
  *
- * FAILURE ISOLATION: one bad mailbox must not stop the sweep. Each
- * mailbox runs inside its own try/catch — a failure is logged, counted,
- * and the sweep continues. The JOB only fails when EVERY eligible
- * mailbox failed, which indicates a systemic fault rather than one bad
- * row.
+ * FAILURE ISOLATION: each bounded job enqueues its continuation before
+ * reporting failure. A bad mailbox can retry or dead-letter without
+ * preventing later mailboxes in the same sweep from being attempted.
  *
  * Privacy (D7/D228): no Gmail call, no body, snippet, attachment or
  * non-allowlisted header. Pure recompute over columns already held.
@@ -136,18 +104,25 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
   override readonly workerName = 'SenderIndexSweepWorker';
   override readonly policy = 'cronPolicy' as const;
 
-  constructor(private readonly deps: { db: WorkerDb; lock: MailboxActionLock }) {
+  constructor(
+    private readonly deps: {
+      db: WorkerDb;
+      lock: MailboxActionLock;
+      statementTimeoutMs?: number;
+      enqueueContinuation?: (payload: SenderIndexSweepJobData) => Promise<void>;
+    },
+  ) {
     super();
   }
 
   /** D225 cron idempotency key — `(worker_name, scheduled_at_minute)`. */
   protected override getIdempotencyKey(payload: SenderIndexSweepJobData): string {
-    return `${this.workerName}:${payload.scheduledAtMinute}`;
+    return `${this.workerName}:${payload.scheduledAtMinute}:${payload.afterMailboxId ?? 'root'}`;
   }
 
   override async processJob(
-    _payload: SenderIndexSweepJobData,
-    _ctx: WorkerContext,
+    payload: SenderIndexSweepJobData,
+    ctx: WorkerContext,
   ): Promise<SenderIndexSweepResult> {
     const startedAt = Date.now();
 
@@ -161,34 +136,18 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       .from(mailboxAccounts)
       .innerJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
       .where(
-        and(eq(mailboxAccounts.status, 'active'), eq(providerSyncState.readinessStatus, 'ready')),
+        and(
+          eq(mailboxAccounts.status, 'active'),
+          eq(providerSyncState.readinessStatus, 'ready'),
+          payload.afterMailboxId ? gt(mailboxAccounts.id, payload.afterMailboxId) : undefined,
+        ),
       )
-      // RANDOM, and BOUNDED. Both matter, and neither is a performance
-      // tweak — see MAILBOX_BATCH_SIZE.
-      .orderBy(sql`random()`)
-      // ONE MORE THAN THE CAP, deliberately. The extra row is a probe:
-      // it is the difference between "the batch was full" and "there was
-      // more than the batch could take", and only the second is worth
-      // warning about. Prod currently has exactly MAILBOX_BATCH_SIZE
-      // eligible mailboxes, so a `>= cap` test would fire every single
-      // night having swept every one of them — and a guard that cries
-      // wolf nightly is one nobody reads by the time it is true.
+      .orderBy(mailboxAccounts.id)
       .limit(MAILBOX_BATCH_SIZE + 1);
 
     const overflowed = mailboxes.length > MAILBOX_BATCH_SIZE;
-    if (overflowed) {
-      // Never silent. Mailboxes went unswept this tick and
-      // `mailboxesProcessed` cannot show it — a capped run and a
-      // complete run otherwise report the same shape.
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'sender_index_sweep.batch_capped',
-          cap: MAILBOX_BATCH_SIZE,
-        }),
-      );
-      mailboxes.length = MAILBOX_BATCH_SIZE;
-    }
+    // A full batch is normal; a durable continuation, not a warning, handles the tail.
+    if (overflowed) mailboxes.length = MAILBOX_BATCH_SIZE;
 
     let mailboxesProcessed = 0;
     let mailboxesFailed = 0;
@@ -196,42 +155,59 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
     let timeseriesZeroed = 0;
 
     for (const { id: mailboxAccountId } of mailboxes) {
+      ctx.signal?.throwIfAborted();
       try {
         // Same per-mailbox advisory lock the label actions and the
         // incremental sync take. Neither recompute mutates Gmail and
         // both are idempotent, so the lock is not required for
         // correctness — it is here so a sweep and a sync never compute
         // from interleaved snapshots and write each other's answer.
-        // Nightly, at concurrency 1, the hold costs nothing a user sees.
+        // One mailbox per job bounds contention; timing logs expose slow holds.
         await this.deps.lock.run(mailboxAccountId, async () => {
+          ctx.signal?.throwIfAborted();
           await this.deps.db.transaction(async (tx) => {
+            // SET LOCAL disappears at transaction end and works through transaction pooling.
+            await tx.execute(
+              sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`,
+            );
+            ctx.signal?.throwIfAborted();
             const reconciled = await reconcileSenderTimeseries(tx, mailboxAccountId);
+            ctx.signal?.throwIfAborted();
             timeseriesCorrected += reconciled.corrected;
             timeseriesZeroed += reconciled.zeroed;
             // UNSCOPED on purpose. This call is the entire reason the
             // per-push path is allowed to be scoped.
             await applyAutomaticProtection(tx, mailboxAccountId);
+            ctx.signal?.throwIfAborted();
           });
         });
         mailboxesProcessed += 1;
-      } catch (err) {
+      } catch {
         mailboxesFailed += 1;
         console.error(
           JSON.stringify({
             level: 'error',
             kind: 'sender_index_sweep.mailbox_failed',
             worker: this.workerName,
-            mailboxAccountId,
-            message: err instanceof Error ? err.message : String(err),
+            errorKind: ctx.signal?.aborted ? 'cancelled' : 'reconciliation_failed',
           }),
         );
       }
     }
 
+    if (overflowed) {
+      if (!this.deps.enqueueContinuation)
+        throw new Error('sender index sweep continuation is not configured');
+      await this.deps.enqueueContinuation({
+        scheduledAtMinute: payload.scheduledAtMinute,
+        afterMailboxId: mailboxes[mailboxes.length - 1]!.id,
+      });
+    }
+
+    ctx.signal?.throwIfAborted();
     if (mailboxes.length > 0 && mailboxesProcessed === 0) {
-      // Every eligible mailbox failed — systemic, so let the job fail
-      // into retry + dead-letter rather than reporting a clean pass that
-      // swept nothing. A partial failure is isolated above.
+      // Retry this batch instead of reporting a clean pass that swept
+      // nothing. Its durable continuation has already been enqueued.
       throw new Error(`sender index sweep failed for all ${mailboxesFailed} eligible mailboxes`);
     }
 

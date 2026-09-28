@@ -21,7 +21,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'Direct answer',
-    eyebrow: 'Gmail access · risk checklist',
     title: 'Is it safe to connect a Gmail cleanup app?',
     description:
       'A practical checklist for evaluating Gmail cleanup apps: Gmail permissions, fetched data, access-token handling, action previews, recovery, and deletion.',
@@ -127,7 +126,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'Direct answer',
-    eyebrow: 'Privacy boundary · published fields',
     title: 'What is metadata-only email analysis?',
     description:
       'Metadata-only email analysis explained precisely, including Gmail snippets, subject lines, sender totals, external processing, and what is never fetched.',
@@ -221,9 +219,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     slug: 'how-undo-works-for-gmail-cleanup',
     path: '/answers/how-undo-works-for-gmail-cleanup',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-14',
+    updatedAt: '2026-09-22',
     kind: 'Direct answer',
-    eyebrow: 'Recovery · action by action',
     title: 'How does undo work for Gmail cleanup?',
     description:
       'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
@@ -255,7 +252,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Archive and Later are inverse label changes',
         paragraphs: [
           'Archive removes the Inbox label. Undo adds Inbox back. Later removes Inbox and adds DeclutrMail/Later; undo adds Inbox and removes that Later label. These are current-mail changes, not permanent future sender rules.',
-          'The active entry appears in Activity, and Triage also shows a recent-action tray. Do not assume the undo control follows you globally across every screen; Activity is the dependable recovery destination.',
+          'Activity is the dependable recovery destination. Recent-action recovery also follows you across mailbox screens; it stays off account surfaces such as Billing and Settings.',
         ],
       },
       {
@@ -319,9 +316,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     slug: 'best-way-to-clean-gmail-2026',
     path: '/answers/best-way-to-clean-gmail-2026',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-14',
+    updatedAt: '2026-09-22',
     kind: 'Direct answer',
-    eyebrow: '2026 field guide · choose by job',
     title: 'What is the best way to clean Gmail in 2026?',
     description:
       'A practical 2026 comparison of Gmail search, filters, unsubscribe, sender-first cleanup, and automation based on the job you need done.',
@@ -383,7 +379,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
             text: 'Use Gmail filters for known senders or explicit conditions. Do not assume a manual Archive installed a future rule.',
           },
           {
-            name: 'Observe before automating fuzzy patterns',
+            name: 'Choose Watch first for uncertain patterns',
             text: 'Review at least a representative week of would-be matches before activating DeclutrMail’s preset automation.',
           },
         ],
@@ -433,9 +429,8 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     slug: 'sender-level-vs-message-level-cleanup',
     path: '/answers/sender-level-vs-message-level-cleanup',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-14',
+    updatedAt: '2026-09-22',
     kind: 'Direct answer',
-    eyebrow: 'Mental model · unit of decision',
     title: 'Sender review vs email-by-email cleanup',
     description:
       'Compare reviewing Gmail by sender with reviewing it email by email, including where each approach is strong and how to combine them.',
@@ -444,6 +439,26 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     quickAnswer:
       'Review by sender to discover recurring volume and make durable decisions. Review email by email when content, conversation context, attachments, deadlines, or exceptions determine the outcome. The safest workflow moves between both.',
     readingMinutes: 7,
+    example: {
+      label: 'Made-up example',
+      caption: 'The same sender can call for a broad cleanup or a closer look at one message.',
+      rows: [
+        {
+          sender: 'Weekly Garden Notes',
+          detail: '24 routine updates in Inbox',
+          action: 'Review by sender',
+          result:
+            'Inspect the preview, then archive the matching updates together if they are no longer needed.',
+        },
+        {
+          sender: 'Weekly Garden Notes',
+          detail: 'One update contains a workshop booking',
+          action: 'Review in Gmail',
+          result:
+            'Open the full email and keep the booking accessible before choosing a broader cleanup scope.',
+        },
+      ],
+    },
     sections: [
       {
         id: 'message-strength',

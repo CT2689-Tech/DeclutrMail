@@ -1,9 +1,13 @@
 import type { NextConfig } from 'next';
+import path from 'node:path';
 import { withSentryConfig } from '@sentry/nextjs';
 
 import { legacyDomainRedirects, wwwApexRedirects } from './src/lib/legacy-domain-redirects';
 
 const nextConfig: NextConfig = {
+  // Keep nested worktrees inside their own monorepo, rather than inferring
+  // the parent checkout from an unrelated outer lockfile.
+  outputFileTracingRoot: path.join(__dirname, '../..'),
   transpilePackages: ['@declutrmail/shared'],
 
   /**

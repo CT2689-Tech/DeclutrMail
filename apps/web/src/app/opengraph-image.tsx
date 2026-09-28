@@ -11,14 +11,14 @@ import { ogFonts } from '@/features/marketing/og/fonts';
  * route (marketing + legal) inherits it until a page overrides.
  */
 
-export const alt = 'DeclutrMail — Clear years of clutter. One sender at a time.';
+export const alt = 'DeclutrMail — Clear Gmail clutter. See what moves first.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-const INK = '#0E1413';
-const PAPER = '#FAFAF7';
-const TEAL = '#006B5F';
-const MUTED = '#646D69';
+const INK = '#2D2630';
+const PAPER = '#F6F2EB';
+const PLUM = '#59415F';
+const MUTED = '#625A63';
 
 export default async function OpenGraphImage() {
   return new ImageResponse(
@@ -52,7 +52,7 @@ export default async function OpenGraphImage() {
           left: 0,
           right: 0,
           height: 2,
-          background: 'rgba(14,20,19,0.25)',
+          background: 'rgba(45,38,48,0.25)',
           display: 'flex',
         }}
       />
@@ -88,11 +88,11 @@ export default async function OpenGraphImage() {
             }}
           >
             <span style={{ color: INK }}>Declutr</span>
-            <span style={{ color: TEAL }}>Mail</span>
+            <span style={{ color: PLUM }}>Mail</span>
           </div>
         </div>
         <span style={{ fontSize: 26, color: MUTED, letterSpacing: 4 }}>
-          A FRESH START FOR GMAIL
+          A CLEARER WAY THROUGH GMAIL
         </span>
       </div>
 
@@ -111,8 +111,8 @@ export default async function OpenGraphImage() {
           letterSpacing: -2,
         }}
       >
-        <span>Clear years of clutter.</span>
-        <span style={{ color: TEAL }}>One sender at a time.</span>
+        <span>Clear Gmail clutter.</span>
+        <span style={{ color: PLUM }}>See what moves first.</span>
       </div>
 
       <div
@@ -120,7 +120,7 @@ export default async function OpenGraphImage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          borderTop: `2px solid rgba(14,20,19,0.18)`,
+          borderTop: `2px solid rgba(45,38,48,0.18)`,
           paddingTop: 28,
           fontSize: 27,
           color: MUTED,

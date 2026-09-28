@@ -174,6 +174,29 @@ describe('InitialSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it('drains active metadata requests on cancellation without persisting the interrupted batch', async () => {
+    const client = new FakeGmailClient(makeMessages(30, 6));
+    const original = client.getMessageMetadata.bind(client);
+    const controller = new AbortController();
+    let started = 0;
+    let finished = 0;
+    client.getMessageMetadata = async (id) => {
+      started++;
+      await Promise.resolve();
+      controller.abort(new Error('fixture deadline'));
+      const value = await original(id);
+      finished++;
+      return value;
+    };
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+    await expect(
+      worker.processJob({ mailboxAccountId }, { ...CTX, signal: controller.signal }),
+    ).rejects.toThrow('fixture deadline');
+    expect(started).toBe(20);
+    expect(finished).toBe(started);
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
   it('no-ops a disconnected mailbox before Gmail access or sync-state writes', async () => {
     await db
       .update(mailboxAccounts)
@@ -1684,9 +1707,12 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       workspaceId: string;
       readyAt: string;
       messageCount: number;
+      firstReady?: boolean;
     };
     expect(payload.mailboxAccountId).toBe(mailboxAccountId);
     expect(payload.messageCount).toBe(result.messagesSynced);
+    // No scan of this mailbox had finished before: the one email-worthy ready.
+    expect(payload.firstReady).toBe(true);
     expect(Date.parse(payload.readyAt)).not.toBeNaN();
     const [mb] = await db
       .select({ workspaceId: mailboxAccounts.workspaceId })
@@ -1728,6 +1754,11 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       outbox: new OutboxPublisher(),
     });
     await worker.processJob({ mailboxAccountId }, CTX); // → ready
+    const firstRunEventIds = new Set(
+      (await db.select().from(outboxEvents))
+        .filter((e) => e.topic === TOPICS.MAILBOX_SYNC_READY)
+        .map((e) => e.id),
+    );
 
     // What SyncService.markQueued does before any intended re-sync.
     await resetToQueued(db, mailboxAccountId);
@@ -1743,6 +1774,14 @@ describe('InitialSyncWorker — mailbox.sync_ready outbox publish (U14)', () => 
       (e) => e.topic === TOPICS.MAILBOX_SYNC_READY,
     );
     expect(readyEvents).toHaveLength(2); // legit re-sync re-publishes
+    // …but only the first says so: a re-scan (a reconnect, a retry) must
+    // not send a second "Your inbox is ready" (the email trigger reads this).
+    const flagOf = (e: (typeof readyEvents)[number]) =>
+      (e.payload as { firstReady?: boolean }).firstReady;
+    const [first] = readyEvents.filter((e) => firstRunEventIds.has(e.id));
+    const [rescan] = readyEvents.filter((e) => !firstRunEventIds.has(e.id));
+    expect(flagOf(first!)).toBe(true);
+    expect(flagOf(rescan!)).toBe(false);
     const [state] = await db.select().from(providerSyncState);
     expect(state?.readinessStatus).toBe('ready');
   });

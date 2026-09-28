@@ -15,7 +15,7 @@ Companion drafts (not yet posted; rewrite banned privacy copy before using):
 `docs/execution/launch-content-drafts-2026-08-04.md`.
 Positioning source: `docs/adr/0030-positioning-preview-guarantee.md`.
 Public agent file: `.agents/product-marketing.md`.
-Reddit operating skill: `~/.claude/skills/reddit-comments-declutrmail/SKILL.md`.
+Reddit operating skill: `~/.claude/skills/ct-reddit/SKILL.md`.
 
 ---
 
@@ -77,7 +77,7 @@ Use these when drafting or reviewing any public sentence. Do not invent a second
 
 | Artifact                               | Role in marketing                                                                                                                                  | Status after this sweep                                                                                                                                                                                                                                |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reddit-comments-declutrmail` skill    | Drafts Reddit comments. Classify thread first; native Gmail method first; URL in bio.                                                              | Context bank updated 2026-08-24: `.com`, locked privacy headline, preset rules not auto-clean, no category prediction, 7-day Free undo, simulator as the link.                                                                                         |
+| `ct-reddit` skill                      | Drafts Reddit comments. Classify thread first; native Gmail method first; URL in bio.                                                              | Context bank updated 2026-08-24: `.com`, locked privacy headline, preset rules not auto-clean, no category prediction, 7-day Free undo, simulator as the link.                                                                                         |
 | `.agents/product-marketing.md`         | Positioning, personas, objections, banned vocabulary for any marketing surface.                                                                    | Privacy string aligned 2026-08-24. Still pre-customer; do not treat personas as validated.                                                                                                                                                             |
 | `design-system-agent`                  | Gate: K/A/U/L/D, preview-before-mutation, Storybook.                                                                                               | Runs on `apps/web` / `packages/shared` PRs. Social copy that names a sixth verb will fail the hook even if it never ships in UI.                                                                                                                       |
 | `privacy-auditor`                      | Gate: no body/attachment/non-allowlisted-header fetch or storage.                                                                                  | Public claims must match `gmail-data-inventory.ts`. Never upgrade CASA from “Google approved a verification.”                                                                                                                                          |
@@ -231,7 +231,7 @@ native-Gmail method first, mention the product in one disclosed line only when t
 tools or hits a native limit. r/digitalminimalism: participation only, never links. Product posts
 only in r/SideProject. Every mention carries "I built it." ≤2 replies/day, simulator URL in
 profile bio so most comments need no link, never reuse a comment verbatim, no alt accounts ever.
-The `reddit-comments-declutrmail` skill drafts; a human reads the live thread and clicks submit.
+The `ct-reddit` skill drafts; a human reads the live thread and clicks submit.
 
 ---
 

@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { schema } from '@declutrmail/db';
 import postgres from 'postgres';
 
+import { apiPoolOptions } from './pool-config.js';
+
 /** NestJS DI token for the Drizzle database instance. */
 export const DRIZZLE = 'DRIZZLE';
 
@@ -35,7 +37,7 @@ export type DrizzleDb = PostgresJsDatabase<typeof schema>;
         // work fine; setting prepare:false is a no-op there. See
         // ADR-0022 + apps/api/src/worker.ts for the same rationale on
         // the worker side.
-        const client = postgres(url, { prepare: false });
+        const client = postgres(url, { prepare: false, ...apiPoolOptions() });
         return drizzle(client, { schema });
       },
     },

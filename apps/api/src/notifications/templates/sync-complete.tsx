@@ -37,16 +37,16 @@ const FOOTER = 'You received this because you connected this mailbox to DeclutrM
 
 /** D6 — sent when a mailbox's initial sync reaches `ready`. */
 export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<RenderedEmail> {
-  const messages = formatCount(input.messageCount, 'message', 'messages');
+  // "emails", matching the HTML body — the text part and preview said
+  // "messages" while the body said "emails".
+  const emails = formatCount(input.messageCount, 'email', 'emails');
   const triageUrl = `${input.appUrl}/triage`;
   const preferencesUrl = `${input.appUrl}/settings`;
 
   const text = [
     `DeclutrMail finished scanning ${input.mailboxEmail}.`,
     '',
-    `${messages} scanned — your senders are grouped and ready to`,
-    'triage. The first pass usually takes a few minutes and clears',
-    'the bulk of the noise.',
+    `${emails} scanned — your senders are grouped and ready to triage.`,
     '',
     `Jump back in: ${triageUrl}`,
     '(Still in setup? That link drops you right back where you left off.)',
@@ -65,7 +65,7 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
 
   const html = await renderShell(
     <Shell
-      preview={`${messages} scanned and ready to review`}
+      preview={`${emails} scanned and ready to review`}
       footer={FOOTER}
       optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
     >
@@ -87,9 +87,10 @@ export async function syncCompleteEmail(input: SyncCompleteEmailInput): Promise<
         </a>
       </Text>
 
+      {/* No time or outcome promise: nothing measures how long a first
+          pass takes or how much it clears. */}
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
-        Your senders are grouped and ready to triage. The first pass usually takes a few minutes and
-        clears the bulk of the noise.
+        Your senders are grouped and ready to triage.
       </Text>
 
       <Button href={triageUrl} style={CTA_BUTTON}>

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EmailService, type ResendLikeClient } from './email.service.js';
@@ -102,6 +103,19 @@ describe('EmailService', () => {
       const service = new EmailService(fakeSuppression(false), fakeClient({ data: null, error }));
       const outcome = await service.deliver(INPUT);
       expect(outcome).toMatchObject({ ok: false, reason: 'transient' });
+    }
+  });
+
+  it('keeps user-authored support text out of transport error logs', async () => {
+    const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    try {
+      const client = fakeClient({ data: null, error: null });
+      client.emails.send.mockRejectedValue(new Error('private support request text'));
+      const result = await new EmailService(fakeSuppression(false), client).deliver(INPUT);
+      expect(result).toMatchObject({ ok: false, reason: 'transient' });
+      expect(JSON.stringify(log.mock.calls)).not.toContain('private support request text');
+    } finally {
+      log.mockRestore();
     }
   });
 

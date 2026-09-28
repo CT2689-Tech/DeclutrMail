@@ -3,7 +3,7 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { syncMailboxLabels } from './mailbox-label-sync.js';
+import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
 import type { OutboxTx } from './outbox-publisher.js';
 import type { GmailMetadataClient } from './ports.js';
 
@@ -65,15 +65,11 @@ describe('syncMailboxLabels', () => {
   }
 
   it('stores names and flags only the sweeper labels', async () => {
-    const result = await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([
-        { id: 'INBOX', name: 'INBOX' },
-        { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
-        { id: 'Label_9', name: 'Receipts' },
-      ]),
-    );
+    const result = await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'INBOX', name: 'INBOX' },
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+      { id: 'Label_9', name: 'Receipts' },
+    ]);
 
     expect(result).toEqual({ total: 3, sweeper: 1, pruned: 0 });
     const rows = await storedLabels();
@@ -88,14 +84,14 @@ describe('syncMailboxLabels', () => {
   // senders back toward looking engaged. Both shapes of "we did not
   // learn anything" are tested before any success path is trusted.
   it('leaves stored labels alone when the client cannot list them', async () => {
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'Label_117', name: 'Unroll.me/Unsubscribed' }]),
-    );
+    await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+    ]);
 
-    const result = await syncMailboxLabels(asTx(), mailboxAccountId, clientWithoutLabels());
+    const listing = await listMailboxLabels(clientWithoutLabels());
+    const result = await syncMailboxLabels(asTx(), mailboxAccountId, listing);
 
+    expect(listing).toBeNull();
     expect(result).toBeNull();
     expect(await storedLabels()).toHaveLength(1);
   });
@@ -103,14 +99,14 @@ describe('syncMailboxLabels', () => {
   it('leaves stored labels alone on an empty response', async () => {
     // Gmail always returns the system labels, so `[]` is a malformed or
     // failed response — never a mailbox with no labels.
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'Label_117', name: 'Unroll.me/Unsubscribed' }]),
-    );
+    await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+    ]);
 
-    const result = await syncMailboxLabels(asTx(), mailboxAccountId, clientListing([]));
+    const listing = await listMailboxLabels(clientListing([]));
+    const result = await syncMailboxLabels(asTx(), mailboxAccountId, listing);
 
+    expect(listing).toBeNull();
     expect(result).toBeNull();
     const rows = await storedLabels();
     expect(rows).toHaveLength(1);
@@ -122,16 +118,10 @@ describe('syncMailboxLabels', () => {
     // stood the day they were created, so adding a vendor would apply
     // only to mailboxes connected afterwards. Simulated here by a label
     // being RENAMED out of a sweeper's namespace.
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'Label_117', name: 'Unroll.me/Unsubscribed' }]),
-    );
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'Label_117', name: 'Newsletters' }]),
-    );
+    await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+    ]);
+    await syncMailboxLabels(asTx(), mailboxAccountId, [{ id: 'Label_117', name: 'Newsletters' }]);
 
     const rows = await storedLabels();
     expect(rows).toHaveLength(1);
@@ -140,22 +130,16 @@ describe('syncMailboxLabels', () => {
   });
 
   it('prunes labels the user deleted in Gmail', async () => {
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([
-        { id: 'INBOX', name: 'INBOX' },
-        { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
-      ]),
-    );
+    await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'INBOX', name: 'INBOX' },
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+    ]);
 
     // A stale sweeper row would keep excluding read state forever on a
     // label id that no longer exists.
-    const result = await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'INBOX', name: 'INBOX' }]),
-    );
+    const result = await syncMailboxLabels(asTx(), mailboxAccountId, [
+      { id: 'INBOX', name: 'INBOX' },
+    ]);
 
     expect(result).toEqual({ total: 1, sweeper: 0, pruned: 1 });
     expect(await storedLabels()).toHaveLength(1);
@@ -180,18 +164,12 @@ describe('syncMailboxLabels', () => {
       })
       .returning({ id: mailboxAccounts.id });
 
-    await syncMailboxLabels(
-      asTx(),
-      other!.id,
-      clientListing([{ id: 'Label_117', name: 'Unroll.me/Unsubscribed' }]),
-    );
+    await syncMailboxLabels(asTx(), other!.id, [
+      { id: 'Label_117', name: 'Unroll.me/Unsubscribed' },
+    ]);
     // The same label id means something different in each mailbox, so a
     // prune scoped too widely would delete a live row next door.
-    await syncMailboxLabels(
-      asTx(),
-      mailboxAccountId,
-      clientListing([{ id: 'INBOX', name: 'INBOX' }]),
-    );
+    await syncMailboxLabels(asTx(), mailboxAccountId, [{ id: 'INBOX', name: 'INBOX' }]);
 
     const otherRows = await db
       .select()

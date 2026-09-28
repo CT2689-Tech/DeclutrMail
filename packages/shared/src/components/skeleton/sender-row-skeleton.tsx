@@ -1,15 +1,14 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { color, radius, shadow } from '../../tokens/tokens';
+import { color, radius } from '../../tokens/tokens';
 import { Skeleton } from './skeleton';
 
 /**
  * Composite skeleton for a single Senders-list row (D38–D43).
  *
- * Mirrors the eventual layout: avatar + name/domain stack on the
- * left, a small metrics group in the middle (volume + read-rate),
- * a category chip on the right. The senders screen renders these
+ * Mirrors the row: logo + name/address stack on the left, the count,
+ * then the verb capsule. The senders screen renders these
  * inside its own `role=status` region; for that reason the wrapper
  * component is the multi-row `<SendersListSkeleton>` below, which
  * owns the announcement.
@@ -20,30 +19,24 @@ export function SenderRowSkeleton({ style }: { style?: CSSProperties }) {
       aria-hidden="true"
       data-dm-skeleton-composite="sender-row"
       style={{
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 12,
-        boxShadow: shadow.card,
-        padding: '12px 16px',
+        // A flat list row: hairline under it, no card.
+        borderBottom: `1px solid ${color.lineSoft}`,
+        minHeight: 72,
+        padding: '0 12px',
         display: 'grid',
-        gridTemplateColumns: '36px minmax(0, 1fr) 96px 88px',
+        gridTemplateColumns: '44px minmax(0, 1fr) 72px 96px',
         alignItems: 'center',
-        gap: 16,
+        columnGap: 14,
         ...style,
       }}
     >
-      <Skeleton variant="circle" width={36} height={36} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <Skeleton variant="rect" width={44} height={44} borderRadius={radius.lg} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <Skeleton variant="text" height={14} width="38%" />
-        <Skeleton variant="text" height={11} width="58%" />
+        <Skeleton variant="text" height={12} width="58%" />
       </div>
-      <Skeleton variant="text" height={12} width="100%" />
-      <Skeleton
-        variant="rect"
-        height={22}
-        borderRadius={radius.pill}
-        style={{ justifySelf: 'end', width: 80 }}
-      />
+      <Skeleton variant="text" height={14} width="100%" />
+      <Skeleton variant="pill" width={96} height={30} style={{ justifySelf: 'end' }} />
     </div>
   );
 }
@@ -72,7 +65,6 @@ export function SendersListSkeleton({ rows = 6, style }: SendersListSkeletonProp
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
         ...style,
       }}
     >

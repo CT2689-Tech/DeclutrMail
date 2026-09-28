@@ -86,7 +86,7 @@ upstream already prevents it. Say who is affected and how often — if the answe
 is nobody, the finding dies here.
 
 **6 — Already known.**
-Grep `FINDINGS.md`, `MISTAKES.md` and `FOUNDER-FOLLOWUPS.md`. A duplicate is
+Grep `FINDINGS.md`, `docs/log/`, `MISTAKES.md` and `FOUNDER-FOLLOWUPS.md`. A duplicate is
 refuted as a *new* finding and returned as a pointer to the existing entry.
 
 ## Rules

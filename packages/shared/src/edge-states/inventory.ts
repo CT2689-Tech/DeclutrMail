@@ -86,6 +86,7 @@ export type EdgeState = (typeof EDGE_STATES)[number];
 /** Stable identifier for a launch screen. */
 export type ScreenId =
   // Feature screens (data-driven).
+  | 'home'
   | 'triage'
   | 'senders'
   | 'sender-detail'
@@ -118,6 +119,7 @@ export type ScreenId =
  * inventory row (or keeping a row for a deleted route) fails CI.
  */
 export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
+  home: 'home',
   triage: 'triage',
   senders: 'senders',
   'sender-detail': 'senders/[id]',
@@ -182,6 +184,41 @@ export type EdgeStateCoverage = Record<EdgeState, StateCoverage>;
  * and the senders surfaces' actual coverage is recorded directly.
  */
 export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
+  // Home — one number, one next action. `composeHomeState` branches
+  // error → loading → empty (new user / still syncing) → ready; each
+  // branch is storied in `home-view.stories.tsx`.
+  home: {
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/home/home-view.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/home/home-view.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/home/home-view.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': {
+      required: true,
+      storybook: 'apps/web/src/features/home/home-view.stories.tsx',
+      status: 'covered',
+    },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
   triage: {
     loading: {
       required: true,

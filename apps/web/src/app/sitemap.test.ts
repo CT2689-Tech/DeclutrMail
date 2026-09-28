@@ -74,7 +74,7 @@ function sitemapPaths(): string[] {
 describe('sitemap — D134', () => {
   it('recursively covers every indexable marketing route and dynamic route family', () => {
     const patterns = marketingRoutePatternsFromFs();
-    const nonIndexedRedirects = ['/demo'];
+    const nonIndexedRedirects = ['/demo', '/changelog'];
     const indexablePatterns = patterns.filter((pattern) => !nonIndexedRedirects.includes(pattern));
     const routes = sitemapPaths();
 
@@ -105,6 +105,10 @@ describe('sitemap — D134', () => {
     }
   });
 
+  it('omits the stale historical changelog until its entries are curated', () => {
+    expect(sitemapPaths()).not.toContain('/changelog');
+  });
+
   it('robots.txt points crawlers at this sitemap (D132 SEO batch)', () => {
     expect(robots().sitemap).toBe('https://declutrmail.com/sitemap.xml');
   });
@@ -127,9 +131,9 @@ describe('sitemap — D134', () => {
       const childDates = COMPARISONS.map((comparison) => comparison.verifiedIso);
       const compare = entryFor('/compare')?.lastModified;
       expect(compare).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
-      // The floor is genuinely weaker than the freshest child, so this
-      // assertion would fail if the hub ever started claiming the max.
-      expect(compare).not.toBe(childDates.reduce((a, b) => (a > b ? a : b)));
+      // A source review can refresh every child on the same day. The
+      // minimum remains correct even when the minimum and maximum tie.
+      expect(compare).toBe([...childDates].sort()[0]);
     });
 
     it('omits lastModified where no attributable date exists', () => {

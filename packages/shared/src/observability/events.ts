@@ -121,6 +121,7 @@ export type DecisionJourney = 'first_relief' | 'daily';
 
 export type PageSurface =
   | 'landing'
+  | 'home'
   | 'senders'
   | 'sender_detail'
   | 'activity'
@@ -415,7 +416,7 @@ export interface EventPayloads {
     /**
      * Positional section on the current public page; page_viewed carries the
      * route family. `nav_sign_in` is the header's secondary returning-user
-     * affordance — kept distinct from `nav` so the primary "Get started" CTA
+     * affordance — kept distinct from `nav` so the primary "Start free" CTA
      * keeps a comparable series after both started emitting (2026-08-05).
      */
     placement: 'nav' | 'nav_sign_in' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
@@ -539,9 +540,10 @@ export interface EventPayloads {
     suggestion_kind: 'preset_rule' | 'sender_policy' | 'preset_change';
     /**
      * How many suggestions this decision covered — 1 for a per-row
-     * dismiss, N for the D104 batch approves (approve-all /
+     * dismiss; for the D104 batch approves, the server's `approvedCount`
+     * (a match skipped as Protected is not counted). Approve-all /
      * approve-selected fire ONE event per mutation, not per row, to
-     * keep cardinality bounded like `rule_fired`).
+     * keep cardinality bounded like `rule_fired`.
      */
     count: number;
   };

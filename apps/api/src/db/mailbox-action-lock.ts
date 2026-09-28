@@ -1,4 +1,4 @@
-import type { Sql } from 'postgres';
+import type { ReservedSql, Sql } from 'postgres';
 
 import { MAILBOX_ACTION_LOCK_NS, type MailboxActionLock } from '@declutrmail/workers';
 
@@ -7,14 +7,17 @@ import { MAILBOX_ACTION_LOCK_NS, type MailboxActionLock } from '@declutrmail/wor
  *
  * MUST stay BELOW the smallest job-level cap of any lock consumer:
  * `SnoozeWakeWorker` and `AccountDeletionPurgeWorker` run under
- * `cronPolicy.timeoutMs = 60_000`, and `BaseDeclutrWorker.withTimeout`
- * is a bare `Promise.race` that does NOT cancel the racing promise — a
- * lock wait longer than the job cap would fail-and-retry the job while
- * the original acquire kept waiting, then acquired and ran its body
- * DETACHED from any job (on the deletion path, after the request row
- * was already claimed — a duplicate-purge shape). 45s < 60s closes
- * that; five BullMQ attempts give a stuck lock ~4 minutes of total
- * patience before the dead-letter alert fires.
+ * `cronPolicy.timeoutMs = 60_000`, so one wait never outlasts its job.
+ * (`BaseDeclutrWorker.withTimeout` was once a bare `Promise.race`: a
+ * longer wait failed-and-retried the job while the acquire kept waiting,
+ * then ran its body DETACHED from any job — on the deletion path, a
+ * duplicate-purge shape. It now signals the deadline and waits for the
+ * attempt to settle.) A consumer that takes the lock per item — Autopilot
+ * per match, the Later wake per sender — can wait more than once per
+ * job; the wake stops a mailbox at its first failed acquisition, so a
+ * stuck lock costs it one wait per mailbox, not one per sender. Five
+ * BullMQ attempts give a stuck lock ~4 minutes of total patience before
+ * the dead-letter alert fires.
  */
 export const MAILBOX_LOCK_TIMEOUT = '45s';
 
@@ -28,6 +31,29 @@ export const MAILBOX_LOCK_TIMEOUT = '45s';
  * production, so a real contention window cannot pass unlogged.
  */
 export const LOCK_POOL_WAIT_WARN_MS = 1_000;
+
+/**
+ * Logs a failed acquire, whichever step failed: the pool checkout, setting
+ * lock_timeout, or the advisory lock. This is the line the lock alert pages
+ * on. Until 2026-09-27 a failed checkout or set_config wrote only the
+ * info-level timing line, which the alert does not count.
+ */
+function logAcquireFailed(
+  mailboxAccountId: string,
+  stage: 'reserve' | 'set_lock_timeout' | 'advisory_lock',
+  err: unknown,
+): void {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      kind: 'mailbox_lock.acquire_failed',
+      stage,
+      mailboxAccountId,
+      lockTimeout: MAILBOX_LOCK_TIMEOUT,
+      message: err instanceof Error ? err.message : String(err),
+    }),
+  );
+}
 
 /**
  * Per-mailbox advisory lock for destructive actions (D226).
@@ -70,7 +96,7 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
       // no log line of its own, which is why 26.5 h of accumulated lock
       // wait showed up as "slow sync" and never as "pool too small".
       //
-      // Peak demand across the six lock-taking workers is 38 against a
+      // Peak demand across the six lock-taking workers is 41 against a
       // pool of 10 (see `LOCK_POOL_MAX` in worker.ts). That overcommit
       // is survivable rather than deadlocking — a holder's inner queries
       // run on the separate main pool, so it always completes and
@@ -78,7 +104,13 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
       // as measured. Timing it is what makes raising the pool an
       // evidenced decision instead of a guess.
       const reserveStarted = Date.now();
-      const reserved = await lockPg.reserve();
+      let reserved: ReservedSql;
+      try {
+        reserved = await lockPg.reserve();
+      } catch (err) {
+        logAcquireFailed(mailboxAccountId, 'reserve', err);
+        throw err;
+      }
       const reserveWaitMs = Date.now() - reserveStarted;
       if (reserveWaitMs >= LOCK_POOL_WAIT_WARN_MS) {
         console.warn(
@@ -103,23 +135,16 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
         // `syntax error at or near "$1"`, which failed EVERY label
         // action from #509 (2026-08-12) until caught 2026-08-16. The
         // mocked spec asserted the string, never executed it.
-        await reserved`SELECT set_config('lock_timeout', ${MAILBOX_LOCK_TIMEOUT}, false)`;
+        try {
+          await reserved`SELECT set_config('lock_timeout', ${MAILBOX_LOCK_TIMEOUT}, false)`;
+        } catch (err) {
+          logAcquireFailed(mailboxAccountId, 'set_lock_timeout', err);
+          throw err;
+        }
         try {
           await reserved`SELECT pg_advisory_lock(${MAILBOX_ACTION_LOCK_NS}, hashtext(${mailboxAccountId}))`;
         } catch (err) {
-          // The one log line a blocked consumer is guaranteed to emit.
-          // IncrementalSyncWorker takes this lock OUTSIDE its
-          // BaseDeclutrWorker envelope (worker.ts composition), so
-          // without this line a timed-out sync surfaces nowhere.
-          console.error(
-            JSON.stringify({
-              level: 'error',
-              kind: 'mailbox_lock.acquire_failed',
-              mailboxAccountId,
-              lockTimeout: MAILBOX_LOCK_TIMEOUT,
-              message: err instanceof Error ? err.message : String(err),
-            }),
-          );
+          logAcquireFailed(mailboxAccountId, 'advisory_lock', err);
           throw err;
         }
         acquired = true;

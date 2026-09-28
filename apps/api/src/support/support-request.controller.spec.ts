@@ -9,7 +9,9 @@ const PRINCIPAL = { userId: 'user-1', workspaceId: 'workspace-1' } as SessionPri
 
 describe('SupportRequestController', () => {
   it('validates and delegates a bounded request', async () => {
-    const submit = vi.fn().mockResolvedValue({ submittedAt: '2026-09-01T00:00:00.000Z' });
+    const submit = vi
+      .fn()
+      .mockResolvedValue({ status: 'accepted', submittedAt: '2026-09-01T00:00:00.000Z' });
     const controller = new SupportRequestController({
       submit,
     } as unknown as SupportRequestService);
@@ -23,7 +25,9 @@ describe('SupportRequestController', () => {
       subject: 'Cannot connect Gmail',
       message: 'I keep hitting an error at step 2.',
     });
-    expect(result).toEqual({ data: { submittedAt: '2026-09-01T00:00:00.000Z' } });
+    expect(result).toEqual({
+      data: { status: 'accepted', submittedAt: '2026-09-01T00:00:00.000Z' },
+    });
   });
 
   it('rejects a too-short message and an unknown field without calling the service', async () => {

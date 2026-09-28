@@ -74,9 +74,11 @@ export interface TriageState {
   expandedRowId: string | null;
   /** In-flight action awaiting preview-confirm. */
   pendingAction: PendingAction | null;
+  /** Mailbox whose confirmed session counts are stored below. */
+  sessionMailboxId: string | undefined;
   /**
-   * Decisions confirmed since this tab mounted — feeds the session
-   * burn-down in the header ("3 decided · 5 to go"). Client-only per
+   * Decisions confirmed for the active mailbox since its review session
+   * began — feeds the header's "3 decided" count. Client-only per
    * D200 (the durable per-day count is `stats.decidedToday`, a server
    * read). Incremented ONLY on server confirmation (D226 — never
    * optimistically); a domain batch increments by its sender count.
@@ -107,8 +109,10 @@ export interface TriageActions {
   openPending: (verb: ActionVerb, rowId: string, surface: 'sheet' | 'inline') => void;
   /** Clear any pending action (cancel or post-confirm). */
   clearPending: () => void;
-  /** Bump the session burn-down by `by` confirmed decisions (default 1). */
+  /** Bump the session count by `by` confirmed decisions (default 1). */
   incrementSessionDecided: (by?: number) => void;
+  /** Begin a fresh mailbox-scoped review session. */
+  resetSessionCounts: (mailboxId: string | undefined) => void;
   /** Add a terminal worker result's affected-message count. */
   addSessionMessagesMoved: (by: number) => void;
   /** Collapse a domain-batch card back to per-sender rows for this session. */
@@ -126,6 +130,7 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   rememberPreference: { ...DEFAULT_PREFS },
   expandedRowId: null,
   pendingAction: null,
+  sessionMailboxId: undefined,
   sessionDecidedCount: 0,
   sessionMessagesMoved: 0,
   dismissedBatchDomains: [],
@@ -154,6 +159,9 @@ export const useTriageStore = create<TriageState & TriageActions>((set) => ({
   incrementSessionDecided: (by = 1) =>
     set((s) => ({ sessionDecidedCount: s.sessionDecidedCount + by })),
 
+  resetSessionCounts: (mailboxId) =>
+    set({ sessionMailboxId: mailboxId, sessionDecidedCount: 0, sessionMessagesMoved: 0 }),
+
   addSessionMessagesMoved: (by) =>
     set((s) => ({ sessionMessagesMoved: s.sessionMessagesMoved + Math.max(0, by) })),
 
@@ -175,6 +183,7 @@ export function resetTriageStore(): void {
     rememberPreference: { ...DEFAULT_PREFS },
     expandedRowId: null,
     pendingAction: null,
+    sessionMailboxId: undefined,
     sessionDecidedCount: 0,
     sessionMessagesMoved: 0,
     dismissedBatchDomains: [],

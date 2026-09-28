@@ -1,7 +1,13 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog, users } from '@declutrmail/db';
+import {
+  mailboxAccounts,
+  mailboxDataDeletionRequests,
+  ruleMatchIsHeldAction,
+  ruleMatchLog,
+  users,
+} from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import {
   ERROR_CODES,
@@ -260,7 +266,14 @@ export class MailboxAccountsService {
   /**
    * Upsert at OAuth-connect time. MUST be called inside a tx provided
    * by `AuthSignupOrchestrator`. Returns the row id so the orchestrator
-   * can wire up sync state in the same transaction.
+   * can wire up sync state in the same transaction, and `wasActive` —
+   * whether the row was already `active` before this connect. A new or
+   * disconnected mailbox needs a full scan; only an already-active one
+   * can keep its synced state. `disconnect()` takes neither the workspace
+   * lock nor a transaction, so a racing disconnect can leave this a stale
+   * `true` — which is safe: disconnect leaves the sync row and cursor
+   * alone, this upsert re-activates the row with the fresh grant, and the
+   * Gmail watch is re-armed after commit.
    */
   async upsertConnect(
     tx: EntitlementsTransaction,
@@ -272,7 +285,7 @@ export class MailboxAccountsService {
       dekEncrypted: Buffer;
       keyVersion: number;
     },
-  ): Promise<{ id: string }> {
+  ): Promise<{ id: string; wasActive: boolean }> {
     const providerAccountId = canonicalizeGmailProviderAccountId(input.email);
     // Every transition to `active` linearizes on the workspace row. The
     // provider re-read must happen after that lock: an OAuth-start lookup is
@@ -389,7 +402,7 @@ export class MailboxAccountsService {
           eq(mailboxDataDeletionRequests.status, 'completed'),
         ),
       );
-    return row;
+    return { id: row.id, wasActive: existing?.status === 'active' };
   }
 
   /**
@@ -407,24 +420,22 @@ export class MailboxAccountsService {
   }
 
   /**
-   * Held-work count for the quiet surface (D96): approved autopilot
-   * actions the sweep has not applied yet (`resolution = 'approved' AND
-   * intent_applied = false`). An ACTION count (one per sender × rule) —
-   * the only held-work figure queryable today. Computed whether or not
-   * quiet is active (outside quiet it is the transient approve→sweep
-   * in-flight figure).
+   * Held-work count for the quiet surface (D96), by `ruleMatchIsHeldAction`
+   * — the definition, including what it leaves out. Approved-and-unapplied
+   * alone also counted matches no sweep ever runs or retires. An ACTION
+   * count, not a message count. Computed whether or not quiet is active.
    */
   private async quietHeldCount(mailboxAccountId: string): Promise<number> {
+    // ADR-0008 §3 exception: mailboxes reads the autopilot-owned
+    // `rule_match_log` (count only, through the shared predicate, which
+    // also reads `automation_rules`, `senders`, `sender_policies` and
+    // `action_jobs`). The AutopilotReadService facade would add a
+    // `forwardRef` module cycle for one count — AutopilotModule imports
+    // MailboxAccountsModule.
     const [held] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(ruleMatchLog)
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.resolution, 'approved'),
-          eq(ruleMatchLog.intentApplied, false),
-        ),
-      );
+      .where(and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsHeldAction()));
     return held?.count ?? 0;
   }
 

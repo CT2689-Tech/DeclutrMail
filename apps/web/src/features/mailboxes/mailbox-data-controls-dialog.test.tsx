@@ -66,7 +66,8 @@ describe('MailboxDataControlsDialog', () => {
     setViewportWidth(375);
     renderDialog();
     const dialog = screen.getByRole('dialog', { name: /disconnect person@example\.com/i });
-    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    // Phone layout is pure CSS (the shared sheet's ≤520px rule).
+    expect(dialog).toHaveClass('dm-sheet-panel');
     expect(
       screen.getByRole('heading', { name: /disconnect and keep saved data/i }),
     ).toBeInTheDocument();

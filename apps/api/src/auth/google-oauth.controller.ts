@@ -200,7 +200,7 @@ export class GoogleOAuthController {
 
     if (await this.hasLiveSession(req)) {
       const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
-      res.redirect(302, `${webBase}${safeReturnTo ?? '/senders'}`);
+      res.redirect(302, `${webBase}${safeReturnTo ?? '/home'}`);
       return;
     }
 
@@ -709,11 +709,9 @@ export class GoogleOAuthController {
       },
     });
     // New signups land on the onboarding sync gate (D6, D109) — it
-    // polls real sync state and auto-advances to /senders once
-    // readiness = ready. Returning users skip straight to /senders
-    // (their sync is already done). Senders is the post-onboarding
-    // home: it has real data immediately, whereas Triage is empty
-    // until the scoring pipeline (D20/D25) runs. The gate route lives
+    // polls real sync state and auto-advances once readiness = ready.
+    // Returning users skip straight to /home (their sync is already
+    // done): one number and the next thing to do. The gate route lives
     // at apps/web/src/app/onboarding/page.tsx.
     // Re-validate the cookie value at the trust boundary even though
     // `/start` canonicalized it. This keeps a forged/dev cookie from
@@ -725,7 +723,7 @@ export class GoogleOAuthController {
         : `${webBase}/onboarding`
       : returnTo
         ? `${webBase}${returnTo}`
-        : `${webBase}/senders`;
+        : `${webBase}/home`;
     res.redirect(302, target);
   }
 

@@ -14,9 +14,8 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     slug: 'why-cleanup-starts-with-senders',
     path: '/blog/why-cleanup-starts-with-senders',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-14',
+    updatedAt: '2026-09-22',
     kind: 'Launch essay',
-    eyebrow: 'Product thesis · attention over volume',
     title: 'Why email cleanup should start with senders',
     description:
       'The product thesis behind sender-first Gmail cleanup: compress recurrence, preserve message context, and separate current cleanup from future delivery.',
@@ -86,7 +85,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         paragraphs: [
           'Sender volume and engagement are falsifiable facts. Category labels such as “promotional,” “financial,” or “security-sensitive” are model judgments that can sound more certain than their evidence. DeclutrMail deliberately avoids machine-learning category prediction and auto-protection based on guessed content classes.',
           'The recommendation system can say that a sender arrived often, was rarely marked read, and was never written back to. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protected decisions above the recommendation.',
-          'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Observe mode exists so a user can see multiple would-be matches before an Autopilot preset becomes Active.',
+          'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Optional Watch first lets you review would-be matches without moving email. You can instead choose Act now after the activation preview; neither a seven-day wait nor an automatic promotion is required.',
         ],
       },
       {
@@ -132,7 +131,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
-    eyebrow: 'Privacy engineering · capability follows data',
     title: 'Metadata-only should be a design constraint',
     description:
       'Why a metadata-only email product must name stored snippets, constrain its features, disclose external processing, and make the missing body visible.',
@@ -224,7 +222,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
-    eyebrow: 'Trust design · previews before recovery',
     title: 'Reversible does not mean risk-free',
     description:
       'Why each Gmail cleanup action needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
@@ -307,11 +304,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         href: '/how-to/bulk-delete-emails-from-one-sender',
         label: 'Delete with a clear preview',
         description: 'A checked workflow for Gmail Trash.',
-      },
-      {
-        href: '/changelog',
-        label: 'Build log',
-        description: 'Evidence-linked product changes from repository history.',
       },
     ],
   },

@@ -17,9 +17,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     slug: 'clean-gmail-by-sender',
     path: '/how-to/clean-gmail-by-sender',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-28',
+    updatedAt: '2026-09-22',
     kind: 'How-to guide',
-    eyebrow: 'Inbox method · sender first',
     title: 'How to clean Gmail by sender',
     description:
       'A precise sender-first Gmail cleanup workflow, with native Gmail steps and an honest explanation of what DeclutrMail changes.',
@@ -47,7 +46,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           sender: 'Coupon Parade',
           detail: '61 messages · no recent engagement',
           action: 'Unsubscribe',
-          result: 'Future delivery is stopped where the sender supports it.',
+          result:
+            'An opt-out request is submitted or a draft prepared; the sender controls delivery.',
         },
       ],
     },
@@ -95,7 +95,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'What DeclutrMail changes about the workflow',
         paragraphs: [
           'DeclutrMail stores the sender, subject line, Gmail preview snippet, dates, labels, and read state, then shows useful totals such as volume and read rate. Full email contents and attachments are never fetched. You still open Gmail when you need to read a message.',
-          'In Senders or Triage, choose a sender, review what will move, and confirm the action. The pricing page lists the plan limits for individual and bulk actions.',
+          'Open a sender in Clean up to inspect recent subjects, volume, read rate, and decision history. Gmail remains the place to read the full message. Select several senders for a bulk pass only after checking each source. The pricing page lists the current plan limits.',
         ],
         steps: [
           {
@@ -104,11 +104,11 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Review the noisiest sender',
-            text: 'Use sender volume, read rate, whether you write back, and recent subjects as evidence. Recommendations are guidance; the decision remains yours.',
+            text: 'Use the sender inspector to review volume, read rate, whether you write back, recent subjects, and past decisions. Open a message in Gmail when a subject or preview snippet is not enough. Recommendations are guidance; the decision remains yours.',
           },
           {
             name: 'Preview the email-moving action',
-            text: 'Archive, Later, Delete, and Unsubscribe show what they will affect before you confirm. Check both what changes and what remains untouched.',
+            text: 'Archive, Later, Delete, and Unsubscribe show their scope before you confirm. For historical cleanup, check How far back. Delete lets you choose Inbox only or Inbox + archived. Unsubscribe can leave old mail alone or include an explicit Archive or Delete action; inspect that secondary scope separately.',
           },
           {
             name: 'Verify in Activity and Gmail',
@@ -129,7 +129,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           // is uniform: there is no plan-dependency left to describe. A
           // divergent ladder restores it, because it would then be true.
           body:
-            'Archive, Later, and Delete can be reversed from Activity while their undo window is open' +
+            `Archive, Later, and Delete can be reversed from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `within the ${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan`}` +
             (UNIFORM_UNDO_WINDOW_DAYS === null ? ' (its length depends on your plan)' : '') +
             '. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
           tone: 'truth',
@@ -174,14 +174,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     slug: 'bulk-delete-emails-from-one-sender',
     path: '/how-to/bulk-delete-emails-from-one-sender',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-08-13',
+    updatedAt: '2026-09-22',
     kind: 'How-to guide',
-    eyebrow: 'Gmail cleanup · exact affected email',
     title: 'How to delete all emails from one sender in Gmail',
     description:
       'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
     intro:
-      'Bulk delete is safe only when the search is precise and the effect is understood. Gmail moves deleted messages to Trash; it does not unsubscribe you or stop the sender from writing again.',
+      'Before bulk deletion, make the search precise and understand its effect. Gmail moves deleted messages to Trash; it does not unsubscribe you or stop the sender from writing again.',
     readingMinutes: 6,
     example: {
       label: 'Made-up example',
@@ -239,21 +238,21 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-steps',
         title: 'Delete by sender in DeclutrMail',
         paragraphs: [
-          'DeclutrMail groups the saved Gmail details by sender. Delete is intentionally placed behind the action menu and a confirmation preview because its recovery model differs from Archive and Later.',
+          'DeclutrMail groups the saved Gmail details by sender. Delete is an explicit action with a confirmation preview because its recovery model differs from Archive and Later.',
           'The preview names the sender and affected count available from the current index. The action moves matching email to Gmail Trash and removes it from Inbox. It does not install a future sender rule.',
         ],
         steps: [
           {
             name: 'Open the sender',
-            text: 'Find the sender in Senders, then review recent subjects and its current inbox count.',
+            text: 'Open the sender inspector in Clean up, then review recent subjects, current inbox count, and past decisions. Open Gmail for the full message when needed.',
           },
           {
-            name: 'Choose Delete from the full action menu',
+            name: 'Choose Delete for this sender',
             text: 'Delete is not promoted as a recommendation. It remains an explicit decision separate from Archive, Later, Keep, and Unsubscribe.',
           },
           {
             name: 'Read the preview',
-            text: 'Confirm the sender and affected email. The recovery note should say that Gmail Trash, not DeclutrMail, provides the roughly 30-day window.',
+            text: 'Confirm the sender, How far back, and whether the scope is Inbox only or Inbox + archived. Check the affected count and sample again after changing a control. The preview explains Activity Undo and its deadline. Gmail Trash offers a separate fallback, normally up to 30 days unless emptied sooner.',
           },
           {
             name: 'Confirm and inspect Activity',
@@ -293,7 +292,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       },
       {
         href: '/how-to/unsubscribe-from-emails-gmail',
-        label: 'Stop future delivery',
+        label: 'Request an unsubscribe',
         description: 'Use unsubscribe when deletion is not enough.',
       },
       {
@@ -308,9 +307,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     slug: 'gmail-storage-full',
     path: '/how-to/gmail-storage-full',
     publishedAt: '2026-08-13',
-    updatedAt: '2026-08-13',
+    updatedAt: '2026-09-22',
     kind: 'How-to guide',
-    eyebrow: 'Storage quota · what actually frees space',
     title: 'Gmail storage full? How to free up space',
     description:
       'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
@@ -390,7 +388,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Archive, unsubscribe, and inbox zero free no space',
         paragraphs: [
           'Archiving removes the Inbox label. The message, and every byte of its attachments, stays in All Mail and stays on your quota. The same is true of labels, filters that skip the inbox, and any tool that promises a cleaner inbox without deleting anything.',
-          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working mailbox today, deletion of large email plus an emptied Trash is the only lever that moves the number.',
+          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it asks the sender to stop future delivery and removes nothing that has already landed. The sender controls whether and when delivery stops. If the goal is a working mailbox today, deletion of large email plus an emptied Trash is the only lever that moves the number.',
         ],
         callout: {
           title: 'Only permanent deletion returns bytes',
@@ -489,9 +487,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     slug: 'auto-archive-future-emails-in-gmail',
     path: '/how-to/auto-archive-future-emails-in-gmail',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-08-13',
+    updatedAt: '2026-09-22',
     kind: 'How-to guide',
-    eyebrow: 'Automation · with a review phase',
     title: 'How to auto archive emails in Gmail',
     description:
       'Archive Gmail automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
@@ -500,13 +497,14 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     readingMinutes: 7,
     example: {
       label: 'Made-up example',
-      caption: 'Made-up rule matches show why Observe should come before Active automation.',
+      caption:
+        'Made-up rule matches show how the low-engagement preset waits for your review before moving email.',
       rows: [
         {
           sender: 'Product Roundup',
           detail: 'Observed match · low engagement · 9 messages',
           action: 'Would archive',
-          result: 'Nothing moves while the preset remains in Observe.',
+          result: 'Nothing moves while the preset remains in Watch first.',
         },
         {
           sender: 'Billing Alerts',
@@ -522,7 +520,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Choose between an exact filter and an observed preset',
         paragraphs: [
           'Gmail filters are best when you can state an exact condition such as one sender address or a stable subject prefix. They are transparent, free, and run entirely in Gmail. A filter can Skip Inbox, apply a label, mark as read, forward, or delete future matches.',
-          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its “Auto-archive low-engagement” preset watches sender volume and read rate. Every preset begins in Observe, where matches are collected but email is not moved. After seven days, you review the matching email before choosing Active.',
+          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its low-engagement Archive preset uses sender volume and Gmail marked-read flags, not proof of reading. On Plus and Pro, preview the sample and affected count, then turn it on to collect suggestions. You approve each match before mail moves.',
         ],
       },
       {
@@ -558,25 +556,25 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-autopilot',
         title: 'Use DeclutrMail Autopilot without blind activation',
         paragraphs: [
-          'Autopilot ships five launch presets on Plus and Pro; turning one on previews what it would do, then lets it act on future matches without per-batch approval. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
-          'The low-engagement preset evaluates the signals defined by the product and records matches. Observe mode is the evidence-gathering step; Active is a separate decision after reviewing the sample and affected count.',
+          'Autopilot ships five launch presets on Plus and Pro. The low-engagement Archive preset always collects matches for review; it cannot be set to act on its own. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
+          'You approve or dismiss collected matches yourself. For other eligible presets, switching to Active requires a preview and a deliberate choice; no rule promotes itself automatically.',
         ],
         steps: [
           {
-            name: 'Enable the low-engagement preset in Observe',
-            text: 'Observe records would-be matches. It does not move the messages it sees during this review window.',
+            name: 'Turn on review',
+            text: 'The low-engagement Archive preset records possible matches without moving email. It always waits for your approval.',
           },
           {
             name: 'Wait for representative traffic',
-            text: 'Seven days gives the preset a chance to see ordinary sender behavior. A quiet day is not enough evidence for automation.',
+            text: 'Let the preset collect representative traffic, then review the senders and current Inbox counts before deciding.',
           },
           {
             name: 'Review names, counts, and exceptions',
-            text: 'Review the sample before turning on the rule. Mark important senders Protected so automatic cleanup leaves them alone.',
+            text: 'Review the sample before turning on the rule. Mark important senders Protected so they stay out of bulk and automatic cleanup.',
           },
           {
-            name: 'Activate only if the sample is acceptable',
-            text: 'The activation preview describes the first sweep. Active applies the preset to future matches; you can pause it later, but already delivered external unsubscribe requests remain one-way.',
+            name: 'Approve individual matches',
+            text: 'Approve only the senders whose Inbox mail you want archived. You can dismiss suggestions or pause the rule later. Archived mail remains in Gmail All Mail.',
           },
         ],
       },
@@ -584,7 +582,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'manual-is-not-future',
         title: 'Do not mistake manual Archive for a standing rule',
         paragraphs: [
-          'A manual Archive in Senders or Triage targets matching email currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo window is open. New email from the sender may still arrive in Inbox.',
+          'A manual Archive in Clean up targets matching email currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo window is open. New email from the sender may still arrive in Inbox.',
           'The same boundary applies to manual Later and Delete: they change current matched email, not future delivery. Use Gmail filters or an explicitly activated Autopilot preset when future behavior is the goal.',
         ],
         callout: {
@@ -634,7 +632,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'How-to guide',
-    eyebrow: 'Future delivery · sender by sender',
     title: 'How to stop promotional emails in Gmail',
     description:
       'Use unsubscribe, filters, or spam reporting for the right kind of promotional email, with guidance organized by sender.',
@@ -769,9 +766,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     slug: 'unsubscribe-from-emails-gmail',
     path: '/how-to/unsubscribe-from-emails-gmail',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-08-04',
+    updatedAt: '2026-09-22',
     kind: 'How-to guide',
-    eyebrow: 'List email · delivery control',
     title: 'How to unsubscribe from emails in Gmail',
     description:
       'Unsubscribe safely in Gmail or DeclutrMail, with the difference between one-click, mailto, old-mail cleanup, and undo made explicit.',
@@ -836,7 +832,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Unsubscribe by sender in DeclutrMail',
         paragraphs: [
           'DeclutrMail reads the sender’s unsubscribe information along with the other listed Gmail details. When a sender offers the standard one-click method, DeclutrMail can submit the request. When it offers only an email address, DeclutrMail opens a Gmail draft with the supplied address and text; you remain the person who sends it.',
-          'The confirmation preview states that existing email will not move. If you also choose to archive or delete old email, that is a second action with a separately visible count.',
+          'Unsubscribe alone leaves existing email in place. In the preview, you can instead choose a secondary Archive or Delete of old mail. Check its How far back period and count; Delete also offers Inbox only or Inbox + archived. A bulk selection keeps these controls and each sender’s own unsubscribe method.',
         ],
         steps: [
           {
@@ -845,7 +841,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Open the Unsubscribe preview',
-            text: 'Confirm the future-delivery effect and whether an optional backlog action is selected.',
+            text: 'Check whether the method submits a request or prepares a Gmail draft, and whether an optional backlog action is selected. The sender controls whether and when delivery stops.',
           },
           {
             name: 'Complete the correct delivery path',

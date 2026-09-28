@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 
 import { Button } from '../button';
 import { InlineProgress } from '../inline-progress/inline-progress';
-import { color, font, radius, shadow } from '../../tokens/tokens';
+import { color, font, radius, shadow, text } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
 import type {
   UndoActionKind,
@@ -250,12 +250,12 @@ function UndoTrayBody({
           minWidth: 0,
           maxWidth: 480,
           background: color.card,
-          border: `1px solid ${color.redBorder}`,
-          borderRadius: radius.lg,
-          boxShadow: shadow.card,
+          border: 'none',
+          borderRadius: radius.xl,
+          boxShadow: shadow.pop,
           padding: '10px 14px',
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: text.base,
           color: color.fg,
           display: 'flex',
           alignItems: 'center',
@@ -265,7 +265,7 @@ function UndoTrayBody({
           ...style,
         }}
       >
-        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.xs, fontWeight: 600 }}>
           Couldn’t load recent actions
         </span>
         {onViewActivity ? (
@@ -278,7 +278,7 @@ function UndoTrayBody({
               padding: 0,
               color: color.primary,
               fontFamily: font.sans,
-              fontSize: 12,
+              fontSize: text.sm,
               cursor: 'pointer',
               textDecoration: 'underline',
               textUnderlineOffset: 2,
@@ -307,11 +307,12 @@ function UndoTrayBody({
     right: 16,
     marginInline: 'auto',
     minWidth: 0,
+    // A floating object: raised card, no outline.
     background: color.card,
-    border: `1px solid ${color.line}`,
-    boxShadow: shadow.card,
+    border: 'none',
+    boxShadow: shadow.pop,
     fontFamily: font.sans,
-    fontSize: 13,
+    fontSize: text.base,
     color: color.fg,
     zIndex: 50,
   };
@@ -332,8 +333,8 @@ function UndoTrayBody({
           ...shell,
           width: 'fit-content',
           maxWidth: 'min(640px, calc(100vw - 32px))',
-          borderRadius: 999,
-          padding: compact ? '4px 6px' : '6px 8px 6px 16px',
+          borderRadius: radius.pill,
+          padding: compact ? '4px 6px' : '6px 6px 6px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -387,8 +388,8 @@ function UndoTrayBody({
         ...shell,
         width: 'min(640px, calc(100vw - 32px))',
         maxWidth: 640,
-        borderRadius: radius.lg,
-        padding: '10px 14px',
+        borderRadius: radius.xl,
+        padding: '12px 16px',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -407,7 +408,7 @@ function UndoTrayBody({
           gap: 12,
         }}
       >
-        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.xs, fontWeight: 600 }}>
           Recent actions
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
@@ -582,7 +583,7 @@ function ActivityLink({ onClick }: { onClick: () => void }) {
         padding: 0,
         color: color.primary,
         fontFamily: font.sans,
-        fontSize: 12,
+        fontSize: text.sm,
         cursor: 'pointer',
         textDecoration: 'underline',
         textUnderlineOffset: 2,
@@ -683,8 +684,7 @@ function DecisionRow({
             style={{
               display: 'block',
               color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 10,
+              fontSize: text.xs,
             }}
           >
             Undo until {formatExpiry(entry.expiresAt)}
@@ -707,9 +707,8 @@ function DecisionRow({
             style={{
               cursor: 'pointer',
               color: color.fgSoft,
-              fontFamily: font.mono,
-              fontSize: 11.5,
-              letterSpacing: '0.04em',
+              fontFamily: font.sans,
+              fontSize: text.sm,
             }}
           >
             {mixed ? 'Show what changed' : `Show ${senderCount.toLocaleString('en-US')} senders`}
@@ -740,7 +739,7 @@ function DecisionRow({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   gap: 12,
-                  fontSize: 12,
+                  fontSize: text.sm,
                   color: color.fgSoft,
                 }}
               >
@@ -771,7 +770,7 @@ function DecisionRow({
             ))}
           </ul>
           {unlisted > 0 ? (
-            <span style={{ fontSize: 11, color: color.fgMuted }}>
+            <span style={{ fontSize: text.xs, color: color.fgMuted }}>
               {unlisted.toLocaleString('en-US')} more in Activity — “Undo all” still covers them.
             </span>
           ) : null}
@@ -818,8 +817,8 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
             style={{
               display: 'block',
               color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 10,
+              fontFamily: font.sans,
+              fontSize: text.xs,
             }}
           >
             {notice.detail}

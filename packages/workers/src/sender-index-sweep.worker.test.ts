@@ -4,8 +4,13 @@ import { and, eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as protection from './automatic-protection.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
-import { MAILBOX_BATCH_SIZE, SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+import {
+  MAILBOX_BATCH_SIZE,
+  SenderIndexSweepWorker,
+  type SenderIndexSweepJobData,
+} from './sender-index-sweep.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -53,10 +58,13 @@ describe('SenderIndexSweepWorker', () => {
     return mb!.id;
   }
 
-  function run() {
+  function run(
+    enqueueContinuation: (payload: SenderIndexSweepJobData) => Promise<void> = async () => {},
+  ) {
     return new SenderIndexSweepWorker({
       db: db as never,
       lock: PASSTHROUGH_MAILBOX_LOCK,
+      enqueueContinuation,
     }).processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
   }
 
@@ -376,87 +384,95 @@ describe('SenderIndexSweepWorker', () => {
     expect(succeeded?.result).toHaveProperty('mailboxesProcessed');
   });
 
-  it('caps the mailboxes per tick and says so, rather than running past the budget', async () => {
-    // `cronPolicy` allows 60s and `withTimeout` is a bare `Promise.race`
-    // — it does not cancel the transaction underneath. So an unbounded
-    // serial loop does not run long, it FAILS, and the retry restarts
-    // from the first mailbox while blocking on the advisory lock the
-    // previous attempt leaked. With a stable order that starves the tail
-    // forever, and this worker is the only thing that retires
-    // clock-driven protections.
-    db = await freshTestDb();
-    for (let i = 0; i < MAILBOX_BATCH_SIZE + 3; i += 1) await seedMailbox();
-
-    // Collected into a plain array, not read off `warn.mock.calls` after
-    // the fact: `mockRestore()` resets the recorded calls as well as
-    // restoring the original, so reading them afterwards yields `[]` and
-    // the assertion fails against perfectly correct code.
-    const kinds: string[] = [];
-    const warn = vi.spyOn(console, 'warn').mockImplementation((line: unknown) => {
-      try {
-        kinds.push(JSON.parse(String(line)).kind);
-      } catch {
-        /* non-JSON warn lines are not this test's business */
-      }
-    });
-    let result;
-    try {
-      result = await run();
-    } finally {
-      warn.mockRestore();
-    }
-
+  it('bounds each job and queues a continuation rather than dropping overflow', async () => {
+    for (let i = 0; i < MAILBOX_BATCH_SIZE + 2; i++) await seedMailbox();
+    const enqueue = vi.fn(async (_payload: SenderIndexSweepJobData) => {});
+    const result = await run(enqueue);
     expect(result.mailboxesProcessed).toBe(MAILBOX_BATCH_SIZE);
-    // Bounded is not enough on its own: a capped tick and a complete
-    // tick report the same shape, so the truncation has to be visible.
-    expect(kinds).toContain('sender_index_sweep.batch_capped');
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls[0]![0].afterMailboxId).toBeTruthy();
   });
 
-  it('does NOT cry wolf when the eligible set exactly fills the batch', async () => {
-    // Production has exactly MAILBOX_BATCH_SIZE eligible mailboxes right
-    // now, so a `length >= cap` test would warn every night having swept
-    // every one of them. A guard that fires on a clean run is one nobody
-    // reads by the time it means something.
-    db = await freshTestDb();
-    for (let i = 0; i < MAILBOX_BATCH_SIZE; i += 1) await seedMailbox();
-
-    const kinds: string[] = [];
-    const warn = vi.spyOn(console, 'warn').mockImplementation((line: unknown) => {
-      try {
-        kinds.push(JSON.parse(String(line)).kind);
-      } catch {
-        /* not this test's business */
-      }
-    });
-    let result;
-    try {
-      result = await run();
-    } finally {
-      warn.mockRestore();
-    }
-
-    expect(result.mailboxesProcessed).toBe(MAILBOX_BATCH_SIZE);
-    expect(kinds).not.toContain('sender_index_sweep.batch_capped');
-  });
-
-  it('keeps sweeping after one mailbox throws, and fails only when all do', async () => {
-    const second = await seedMailbox();
-    const lock = {
-      run: vi.fn(async (mailboxAccountId: string, fn: () => Promise<unknown>) => {
-        if (mailboxAccountId === second) throw new Error('boom');
-        return fn();
-      }),
-    };
-    const worker = new SenderIndexSweepWorker({ db: db as never, lock: lock as never });
-    const result = await worker.processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
-    expect(result).toMatchObject({ mailboxesProcessed: 1, mailboxesFailed: 1 });
-
-    const allFail = new SenderIndexSweepWorker({
+  it('continues ordered batches until every eligible mailbox is visited exactly once', async () => {
+    for (let i = 0; i < MAILBOX_BATCH_SIZE + 2; i++) await seedMailbox();
+    const visited: string[] = [];
+    const pending: SenderIndexSweepJobData[] = [{ scheduledAtMinute: '2026-09-22T03:00' }];
+    const worker = new SenderIndexSweepWorker({
       db: db as never,
-      lock: { run: () => Promise.reject(new Error('boom')) } as never,
+      lock: {
+        run: async (id, fn) => {
+          visited.push(id);
+          return fn();
+        },
+      },
+      enqueueContinuation: async (payload) => {
+        pending.push(payload);
+      },
     });
-    await expect(
-      allFail.processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX),
-    ).rejects.toThrow(/all 2 eligible mailboxes/);
+    while (pending.length) await worker.processJob(pending.shift()!, CTX);
+    expect(visited).toHaveLength(MAILBOX_BATCH_SIZE + 3);
+    expect(new Set(visited).size).toBe(visited.length);
+    expect(visited).toEqual([...visited].sort());
+  });
+
+  it('finishes a complete batch without another continuation', async () => {
+    const enqueue = vi.fn(async (_payload: SenderIndexSweepJobData) => {});
+    const result = await run(enqueue);
+    expect(result.mailboxesProcessed).toBe(1);
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rolls back protection changes when cancelled during the last transaction query', async () => {
+    await seedProtection('expired', 'starred');
+    const controller = new AbortController();
+    const apply = protection.applyAutomaticProtection;
+    const spy = vi
+      .spyOn(protection, 'applyAutomaticProtection')
+      .mockImplementation(async (...args) => {
+        const result = await apply(...args);
+        controller.abort(new Error('fixture deadline'));
+        return result;
+      });
+    try {
+      const worker = new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+      });
+      await expect(
+        worker.processJob(
+          { scheduledAtMinute: '2026-09-22T03:00' },
+          { ...CTX, signal: controller.signal },
+        ),
+      ).rejects.toThrow('fixture deadline');
+      expect((await policyFor('expired'))?.isProtected).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('persists the tail before failing a mailbox, so retries cannot starve later mailboxes', async () => {
+    const second = await seedMailbox();
+    const firstId = [mailboxId, second].sort()[0]!;
+    const continuations: SenderIndexSweepJobData[] = [];
+    const visited: string[] = [];
+    const worker = new SenderIndexSweepWorker({
+      db: db as never,
+      lock: {
+        run: async (id, fn) => {
+          visited.push(id);
+          if (id === firstId) throw new Error('boom');
+          return fn();
+        },
+      },
+      enqueueContinuation: async (payload) => {
+        continuations.push(payload);
+      },
+    });
+    await expect(worker.processJob({ scheduledAtMinute: '2026-09-22T03:00' }, CTX)).rejects.toThrow(
+      /all 1 eligible/,
+    );
+    expect(continuations).toHaveLength(1);
+    await worker.processJob(continuations[0]!, CTX);
+    expect(visited).toEqual([mailboxId, second].sort());
   });
 });

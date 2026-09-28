@@ -55,3 +55,65 @@ describe('AuthController refresh failure classification', () => {
     expect(response.clearCookie).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthController me', () => {
+  function meHarness() {
+    let releaseMailboxes!: (rows: unknown[]) => void;
+    const users = {
+      findById: vi.fn().mockResolvedValue({
+        id: 'user-1',
+        email: 'a@example.com',
+        workspaceId: 'ws-1',
+        timezone: null,
+        preferences: {},
+        signupAttributionRef: null,
+        signupAttributionHeardFrom: 'friend',
+      }),
+    };
+    const mailboxes = {
+      listByWorkspace: vi.fn(
+        () => new Promise<unknown[]>((resolve) => (releaseMailboxes = resolve)),
+      ),
+    };
+    const sync = {
+      getMailboxHealth: vi
+        .fn()
+        .mockResolvedValue(new Map([['mb-1', { readiness: 'ready', needsReconnect: false }]])),
+    };
+    const entitlements = {
+      cleanupSummary: vi.fn().mockResolvedValue({
+        tier: 'free',
+        limit: 50,
+        used: 8,
+        remaining: 42,
+        resetsAt: new Date('2026-10-01T00:00:00.000Z'),
+      }),
+    };
+    const controller = new AuthController(
+      ...([{}, {}, {}, users, mailboxes, sync, entitlements] as unknown as ConstructorParameters<
+        typeof AuthController
+      >),
+    );
+    const principal = { userId: 'user-1', workspaceId: 'ws-1', sessionId: 's', jti: 'j' };
+    return {
+      controller,
+      principal,
+      entitlements,
+      release: (rows: unknown[]) => releaseMailboxes(rows),
+    };
+  }
+
+  it('starts the quota read without waiting for the mailbox list', async () => {
+    const h = meHarness();
+    const pending = h.controller.me(h.principal);
+    await Promise.resolve();
+    expect(h.entitlements.cleanupSummary).toHaveBeenCalledWith('ws-1');
+    h.release([{ id: 'mb-1', email: 'a@example.com', status: 'active', connectedAt: null }]);
+    const { data } = await pending;
+    expect(data.tier).toBe('free');
+    expect(data.cleanupRemaining).toBe(42);
+    expect(data.cleanupResetsAt).toBe('2026-10-01T00:00:00.000Z');
+    expect(data.activeMailboxId).toBe('mb-1');
+    expect(data.mailboxes[0]).toMatchObject({ readiness: 'ready', needsReconnect: false });
+  });
+});

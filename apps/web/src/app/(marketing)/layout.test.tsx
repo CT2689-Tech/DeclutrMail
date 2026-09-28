@@ -20,7 +20,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { TIER_MANIFEST } from '@declutrmail/shared';
 
 import MarketingLayout from './layout';
@@ -55,7 +55,12 @@ describe('(marketing) layout — D134', () => {
     expect(screen.getByText('public page body')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
-    expect(screen.getByText('We never fetch or store full email contents.')).toBeInTheDocument();
+    // The footer is chrome on every public page, so it links to the privacy
+    // policy instead of restating the trust badge (copy budget: trust copy
+    // once per flow, at the decision point).
+    const footer = within(screen.getByRole('contentinfo'));
+    expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(document.querySelector('[data-dm-privacy-badge]')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

@@ -28,10 +28,12 @@ function renderReady() {
   );
 }
 
-// QA-archive-20260901-01: the eyebrow now names the verb instead of a
-// generic "Preview · before anything changes" everywhere.
+// QA-archive-20260901-01: the preview names its verb — now in the inline
+// preview region's accessible name ("Preview · Keep <sender>").
 const PREVIEW_KEEP = 'Preview · Keep';
 const PREVIEW_ARCHIVE = 'Preview · Archive';
+const previewRegion = (label: string) =>
+  screen.queryByRole('region', { name: new RegExp(`^${label} `) });
 const firstRow = SCREENER_QUEUE[0]!;
 const noChannelRow = SCREENER_QUEUE.find((row) => row.unsubscribeMethod === 'none')!;
 
@@ -39,7 +41,7 @@ afterEach(() => {
   resetFetchStub();
 });
 
-function livePreviewHandler(all: number, allMailTotal?: number) {
+function livePreviewHandler(all: number, allMailTotal?: number, olderThan180d = all) {
   return {
     method: 'GET' as const,
     path: '/api/actions/preview',
@@ -63,7 +65,7 @@ function livePreviewHandler(all: number, allMailTotal?: number) {
             // these fixtures realistic (a sender whose mail is all older
             // than 6 months); a fixture that left this at 0 would now
             // silently test Delete's empty-window edge case instead.
-            olderThan180d: all,
+            olderThan180d,
             olderThan365d: all,
           },
           recentMessages: {
@@ -112,31 +114,31 @@ describe('Screener keyboard handler (#220, D226)', () => {
   it('K on the EXPANDED row opens the mandatory preview (never a direct mutation)', () => {
     renderReady();
     expandFirstRow();
-    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.getByText(PREVIEW_KEEP)).toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
   });
 
   it('Escape cancels the open preview', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.getByText(PREVIEW_KEEP)).toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('does nothing when NO row is expanded (no ghost preview)', () => {
     renderReady();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('a modifier chord (Cmd/Ctrl) is ignored', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
-    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('disables click and U shortcut when the sender publishes no unsubscribe channel', () => {
@@ -149,7 +151,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     expect(unsubscribe).toBeDisabled();
     expect(unsubscribe).toHaveAttribute('title', expect.stringMatching(/No unsubscribe channel/i));
     fireEvent.keyDown(window, { key: 'u' });
-    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
+    expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('Enter cannot confirm Archive when its live preview is unavailable', async () => {
@@ -178,7 +180,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     fireEvent.keyDown(window, { key: 'Enter' });
     await Promise.resolve();
     expect(decidePosted).toBe(false);
-    expect(screen.getByText(PREVIEW_ARCHIVE)).toBeInTheDocument();
+    expect(previewRegion(PREVIEW_ARCHIVE)).toBeInTheDocument();
   });
 
   it('Enter confirms Archive after the current-match preview resolves', async () => {
@@ -221,7 +223,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByText(/Inbox now.*rechecked/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
@@ -231,9 +233,13 @@ describe('Screener keyboard handler (#220, D226)', () => {
 describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () => {
   const actionId = '99999999-9999-4999-8999-999999999999';
 
-  function installDecideStub(opts: { allMailTotal?: number; bodies: Record<string, unknown>[] }) {
+  function installDecideStub(opts: {
+    allMailTotal?: number;
+    olderThan180d?: number;
+    bodies: Record<string, unknown>[];
+  }) {
     installFetchStub([
-      livePreviewHandler(2, opts.allMailTotal),
+      livePreviewHandler(2, opts.allMailTotal, opts.olderThan180d ?? 2),
       {
         method: 'POST',
         path: '/api/screener/decide',
@@ -310,6 +316,24 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
   });
 
+  it('widens a zero-match Delete to any age and sends the matching unwindowed scope', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ allMailTotal: 2, olderThan180d: 0, bodies });
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByRole('combobox', { name: 'How far back to delete' });
+    expect(screen.getByRole('button', { name: /Confirm Delete for/ })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('button', { name: /Confirm Delete for/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /Confirm Delete for/ }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty('olderThanDays');
+  });
+
   it('hides the chips entirely against an API without the all-mail block (deploy skew)', async () => {
     const bodies: Record<string, unknown>[] = [];
     installDecideStub({ bodies });
@@ -317,7 +341,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/emails in Inbox now/i);
+    await screen.findByText(/Inbox now.*rechecked/i);
     expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Enter' });

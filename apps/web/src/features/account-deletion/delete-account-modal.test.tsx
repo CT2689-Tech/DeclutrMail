@@ -85,7 +85,8 @@ describe('DeleteAccountModal', () => {
     setViewportWidth(375);
     renderModal();
     const dialog = screen.getByRole('dialog');
-    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    // Phone layout is pure CSS (the shared sheet's ≤520px rule).
+    expect(dialog).toHaveClass('dm-sheet-panel');
     expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
     advanceToStep2();
     expect(

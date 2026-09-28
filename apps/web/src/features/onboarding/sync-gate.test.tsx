@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
-import { SyncGate, activeStageIndex, UI_STAGES } from './sync-gate';
+import { SyncGate, stageSentence } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
@@ -31,6 +31,8 @@ const SYNCING: SyncStatus = {
   current_stage: 'building_sender_index',
   progress_pct: 45,
   is_ready_for_triage: false,
+  // A first scan: nothing has finished yet.
+  last_synced_at: null,
 };
 
 const READY: SyncStatus = {
@@ -48,84 +50,140 @@ const FAILED: SyncStatus = {
   error_code: 'RateLimitError',
 };
 
-describe('activeStageIndex (D109 stage mapping)', () => {
-  it('maps progress_pct into one of six buckets while syncing', () => {
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 0 })).toBe(0);
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 45 })).toBe(2);
-    // 99% lands on "Preparing recommendations", not "Done".
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 99 })).toBe(4);
+describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => {
+  it('names the stage the worker reports, not a bucket of the percentage', () => {
+    expect(stageSentence(SYNCING)).toBe('Grouping email by sender.');
+    // Same percentage, different real stage ⇒ different sentence.
+    expect(stageSentence({ ...SYNCING, current_stage: 'fetching_metadata' })).toBe(
+      'Reading sender info.',
+    );
+    expect(stageSentence({ ...SYNCING, current_stage: 'queued', progress_pct: 0 })).toBe(
+      'Waiting to start.',
+    );
   });
 
-  // This assertion used to be `toBeLessThan(UI_STAGES.length)` — i.e.
-  // `< 6`. Index 5 IS "Done — your inbox is ready", and 5 < 6, so the
-  // test passed for the entire time the bug was live: the worker writes
-  // 90 then 97 while still `syncing`, and the gate showed "Done" under a
-  // heading still reading "Reading your inbox…". A guard has to assert
-  // the thing its NAME claims, so this now names the label.
-  it('never highlights "Done" while still syncing', () => {
-    for (const pct of [90, 97, 99, 100]) {
-      const index = activeStageIndex({ ...SYNCING, progress_pct: pct });
-      expect(UI_STAGES[index]).not.toBe('Done — your inbox is ready');
-      expect(index).toBeLessThan(UI_STAGES.length - 1);
+  // The worker writes `computing_recommendations, 90` then `finalizing, 97`
+  // while still `syncing` — minutes on a large mailbox — and the old
+  // six-row list lit "Done" for that whole span (audit 2026-08-21).
+  it('never says the inbox is ready while still syncing', () => {
+    for (const stage of [
+      'queued',
+      'fetching_metadata',
+      'building_sender_index',
+      'computing_recommendations',
+      'finalizing',
+      // A stage/readiness disagreement must not read as done either.
+      'ready',
+    ] as const) {
+      expect(stageSentence({ ...SYNCING, current_stage: stage, progress_pct: 99 })).not.toMatch(
+        /ready/i,
+      );
     }
   });
 
-  // Every clamp comparison against NaN is false, so a non-finite
-  // percentage would propagate through `Math.min`/`Math.max` unchanged
-  // and light up no row at all — a gate that looks frozen.
-  it('falls back to the first stage on a non-finite percentage', () => {
-    expect(activeStageIndex({ ...SYNCING, progress_pct: Number.NaN })).toBe(0);
-  });
-
-  it('marks every stage complete when readiness is ready', () => {
-    expect(activeStageIndex(READY)).toBe(UI_STAGES.length);
+  it('says ready only from readiness_status', () => {
+    expect(stageSentence(READY)).toBe('Your inbox is ready.');
   });
 });
 
 describe('SyncGate render', () => {
-  it('syncing: shows the title, a progressbar with the real percent, and the trust badge', () => {
+  it('syncing: the title, ONE progressbar at the real percent, ONE stage sentence', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
     expect(html).toContain('Reading your inbox');
     expect(html).toContain('aria-valuenow="45"');
-    // D228 trust artifact — locked headline + storage list (shared PrivacyBadge).
-    expect(html).toContain('We never fetch or store full email contents.');
-    expect(html).toContain('Sender name and email address');
-    // Pre-D228 wording is BANNED in product UI (CLAUDE.md §2.1).
+    expect(html.match(/role="progressbar"/g)).toHaveLength(1);
+    expect(html).toContain('Grouping email by sender.');
+    // Journey orientation is separate from the real worker progress.
+    expect(html).toContain('aria-label="Getting started"');
+    expect(html).toMatch(/aria-current="step"[^>]*>Scan<\/li>/);
+    expect(html).not.toContain('Preparing recommendations');
+    // A waiting screen is not a decision point: the trust badge lives on
+    // the promise step. Banned counter copy stays absent (CLAUDE.md §2.1).
+    expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
-    // No time promise (D109 hard rule).
-    expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    // No time promise (D109 hard rule) — in either leave-line variant.
+    for (const variant of [html, renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />)]) {
+      expect(variant).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
+    }
   });
 
-  it('does not prompt for browser notifications while preserving email-ready copy', () => {
+  it('a non-finite percentage renders an empty bar, never NaN', () => {
+    const html = renderToStaticMarkup(
+      <SyncGate status={{ ...SYNCING, progress_pct: Number.NaN }} />,
+    );
+    expect(html).toContain('aria-valuenow="0"');
+    expect(html).not.toContain('NaN');
+  });
+
+  it('does not prompt for browser notifications and promises no email it cannot prove', () => {
     const requestPermission = vi.fn().mockResolvedValue('granted');
     vi.stubGlobal('Notification', { permission: 'default', requestPermission });
 
     render(<SyncGate status={SYNCING} />);
 
-    expect(screen.getByText(/we’ll email you when your inbox is ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/email you/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /get notified when ready/i })).toBeNull();
     expect(requestPermission).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
-  it('syncing: renders all six stage labels', () => {
-    const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    for (const label of UI_STAGES) {
-      // React escapes `&` to `&amp;` in the served markup.
-      expect(html).toContain(label.replace(/&/g, '&amp;'));
+  it('says the user may leave, and promises the ready email only when it will send (D109)', () => {
+    const withEmail = renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />);
+    expect(withEmail).toContain('You can close this tab');
+    expect(withEmail).toContain('we’ll email you when your inbox is ready');
+
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail={false} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+    ]) {
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
     }
   });
 
-  it('failed: shows the error copy + retry, still shows the trust badge', () => {
+  it('promises no ready email on a re-scan — it goes only for a first scan', () => {
+    // A retry after a failed re-scan, or a reconnect, re-runs the scan of
+    // a mailbox that finished before; the sync-ready trigger sends
+    // nothing for it. A missing field is unknown, and promises nothing.
+    const { last_synced_at: _drop, ...unknown } = SYNCING;
+    for (const status of [{ ...SYNCING, last_synced_at: '2026-09-01T10:00:00.000Z' }, unknown]) {
+      const html = renderToStaticMarkup(<SyncGate status={status} readyEmail />);
+      expect(html).toContain('You can close this tab');
+      expect(html).not.toMatch(/email you/i);
+    }
+  });
+
+  it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
+    const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
+    expect(html).toContain('Your inbox is ready.');
+    expect(html).not.toContain('Reading your inbox');
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
+  });
+
+  it('failed: the leave line gives way to cause + next action', () => {
+    const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} readyEmail />));
+    expect(html).not.toContain('data-testid="sync-leave"');
+    expect(html).not.toMatch(/email you/i);
+  });
+
+  it('failed: cause + next action, with a real retry', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
-    expect(html).toContain('snag');
+    expect(html).toContain('scan stopped');
     expect(html).toContain('Try again');
-    // D228 trust artifact present on the failed state too — banned copy absent.
-    expect(html).toContain('We never fetch or store full email contents.');
-    expect(html).toContain('Sender name and email address');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
+  });
+
+  it('failed: a "reach us" step carries the address — the first-run gate has no route to Help', () => {
+    for (const error_code of ['PermanentError', 'ValidationError']) {
+      const html = renderToStaticMarkup(
+        withClient(<SyncGate status={{ ...FAILED, error_code }} />),
+      );
+      expect(html, error_code).toContain('support@declutrmail.com');
+      expect(html, error_code).not.toMatch(/contact support/i);
+    }
   });
 
   it('never promises an automatic retry it cannot deliver', () => {
@@ -179,8 +237,13 @@ describe('SyncGate render', () => {
   });
 
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
-    const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    expect(html).not.toMatch(/\bScreen\b/);
+    for (const html of [
+      renderToStaticMarkup(<SyncGate status={SYNCING} />),
+      renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />),
+      renderToStaticMarkup(<SyncGate status={READY} readyEmail />),
+    ]) {
+      expect(html).not.toMatch(/\bScreen\b/);
+    }
   });
 });
 
@@ -242,16 +305,15 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
 });
 
 describe('SyncGate escape hatch (D116 — secondary connect)', () => {
-  it('renders "Stay here" + "Go back to <primary>" when an escape is passed', () => {
+  it('renders ONE quiet "Go back to <primary>" when an escape is passed', () => {
     const html = renderToStaticMarkup(
       <SyncGate
         status={SYNCING}
         escape={{ returnToEmail: 'primary@example.com', onReturn() {} }}
       />,
     );
-    expect(html).toContain('Stay here');
     expect(html).toContain('Go back to primary@example.com');
-    expect(html).toContain('keep syncing this inbox in the background');
+    expect(html).not.toContain('Stay here');
   });
 
   it('first-run (no escape): renders no escape hatch — strict gate preserved (D6)', () => {
@@ -297,16 +359,5 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Go back to primary@example\.com/ }));
     expect(onReturn).toHaveBeenCalledOnce();
-  });
-
-  it('"Stay here" dismisses the hatch (keeps waiting on the gate)', () => {
-    render(
-      <SyncGate
-        status={SYNCING}
-        escape={{ returnToEmail: 'primary@example.com', onReturn: vi.fn() }}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
-    expect(screen.queryByText(/Go back to/)).toBeNull();
   });
 });

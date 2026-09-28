@@ -61,6 +61,30 @@ describe('/methodology', () => {
     expect(copy).not.toMatch(/every action (?:is |stays |remains )?(?:reversible|undoable)/i);
   });
 
+  it('names only the signals that actually auto-protect a sender (D245)', () => {
+    const { container } = render(<MethodologyPage />);
+    const copy = container.textContent ?? '';
+
+    // Automatic protection comes from replies, stars, and Gmail's
+    // Important label — never from reading. The page said "frequent
+    // reading" until 2026-09-21.
+    expect(copy).toMatch(
+      /Writing to a sender, starring their email, or Gmail marking it important/,
+    );
+    expect(copy).not.toMatch(/frequent(?:ly)? (?:reading|read|used)/i);
+  });
+
+  it('lists every section in the On this page navigation', () => {
+    const { container } = render(<MethodologyPage />);
+    const nav = screen.getByRole('navigation', { name: 'On this page' });
+    for (const link of nav.querySelectorAll('a')) {
+      expect(container.querySelector(link.getAttribute('href')!)).not.toBeNull();
+    }
+    expect(nav.querySelectorAll('a')).toHaveLength(
+      container.querySelectorAll('.dm-doc-section').length,
+    );
+  });
+
   it('does not expose internal product-writing terms', () => {
     const { container } = render(<MethodologyPage />);
     const copy = container.textContent ?? '';
@@ -79,7 +103,7 @@ describe('/methodology', () => {
         /What the Gmail preview snippet contains|Where language generation fits/i,
       ),
     ).toHaveLength(2);
-    expect(container.querySelectorAll('details')).toHaveLength(2);
+    expect(container.querySelectorAll('details:not(.dm-story-scope)')).toHaveLength(2);
     expect(figures.length).toBeGreaterThanOrEqual(4);
     for (const figure of figures) {
       expect(figure.querySelector('figcaption')).not.toBeNull();
