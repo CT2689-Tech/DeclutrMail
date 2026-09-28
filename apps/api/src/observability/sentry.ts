@@ -13,9 +13,11 @@ import {
  * — so local dev (and the test suite) run unaffected.
  *
  * Privacy posture (D7, D228):
- *   - Captures EXCEPTIONS ONLY. No performance traces, no profiling,
- *     no replay (server-side replay doesn't exist, but the principle
- *     stands: opt out of anything that could carry user data).
+ *   - Captures exceptions, plus one closed message
+ *     (`llm.provider_rejected`) when the LLM breaker trips. No
+ *     performance traces, no profiling, no replay (server-side replay
+ *     doesn't exist, but the principle stands: opt out of anything
+ *     that could carry user data).
  *   - `beforeSend` runs every event through the shared scrubber, which
  *     strips body / snippet / attachment / non-allowlisted header keys
  *     wherever they appear in the event tree.
