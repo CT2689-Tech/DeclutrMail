@@ -36,6 +36,9 @@ export class SupportRequestWorker extends BaseDeclutrWorker<
       },
     });
   }
+  protected override getIdempotencyKey(payload: SupportRequestJobData): string {
+    return payload.idempotencyKey;
+  }
   override async processJob(
     input: SupportRequestJobData,
     ctx: WorkerContext,

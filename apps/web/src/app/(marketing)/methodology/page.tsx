@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import '@/features/marketing/product-story/product-story.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -79,18 +80,13 @@ export default function MethodologyPage() {
         id="recommendations"
         title="Suggestions come from clear rules, not guessed categories."
       >
-        <p>
-          Protected senders are handled first. New or low-volume senders are suggested for Later.
-          For the rest, DeclutrMail compares Archive and Unsubscribe using facts such as volume and
-          read rate. It does not use machine learning to guess email categories.
-        </p>
         <RecommendationCascadeFigure />
         <details>
           <summary>Where language generation fits</summary>
           <p>
             Anthropic may turn the selected sender facts into a short explanation. It receives the
-            sender, suggested action, volume, read rate, and Gmail&rsquo;s own category label. It
-            does not receive subject lines, preview snippets, or full email contents for this
+            sender&rsquo;s name and domain, the suggested action, and the facts behind it. It does
+            not receive subject lines, preview snippets, or full email contents for this
             explanation. If Anthropic is unavailable, DeclutrMail shows a standard explanation.
           </p>
         </details>
@@ -130,8 +126,8 @@ export default function MethodologyPage() {
         </div>
         <p className="dm-story-callout">
           Anthropic sets its own retention and training terms. DeclutrMail&rsquo;s{' '}
-          <a href="/privacy">privacy policy</a> links to those terms and explains when Anthropic
-          receives data.
+          <Link href="/privacy">privacy policy</Link> links to those terms and explains when
+          Anthropic receives data.
         </p>
       </DocSection>
 
@@ -170,9 +166,9 @@ export default function MethodologyPage() {
           Disconnecting preserves historical DeclutrMail records for reconnection.
         </p>
         <p>
-          The <a href="/security">Security page</a> explains OAuth and encryption. The{' '}
-          <a href="/privacy">Privacy Policy</a> covers stored account data, the other companies that
-          help provide the service, access controls, and deletion.
+          The <Link href="/security">Security page</Link> explains OAuth and encryption. The{' '}
+          <Link href="/privacy">Privacy Policy</Link> covers stored account data, the other
+          companies that help provide the service, access controls, and deletion.
         </p>
       </DocSection>
 

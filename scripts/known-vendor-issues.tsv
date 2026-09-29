@@ -27,3 +27,4 @@
 # This repository is public: notes say what is known and who owns it,
 # nothing secret.
 Anthropic	ERROR	The Admin API requires an Admin API key	-	2026-10-26	no Admin API key, so LLM spend is unreadable here (FOUNDER-FOLLOWUPS 2026-08-29); LLM refusals page through #779 (verified configured 2026-09-27)
+Google Cloud (budgets)	BREACH	declutrmail-monthly-alert-20:	100	2026-10-26	month-to-date spend up to $100 while the budget is resized; founder

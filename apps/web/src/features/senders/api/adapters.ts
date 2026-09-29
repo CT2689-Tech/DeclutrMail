@@ -44,6 +44,7 @@ const CATEGORY_TO_LABEL: Record<GmailCategory, string> = {
   social: 'Gmail: Social',
   updates: 'Gmail: Updates',
   forums: 'Gmail: Forums',
+  unknown: 'Gmail: no single tab',
 };
 
 /**

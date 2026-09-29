@@ -359,6 +359,9 @@ export function summarize({ mailboxRows, workerRows, quota, ref, now = Date.now(
       template: r.p.result?.templateExplanations ?? 0,
       // Calls skipped because Anthropic had refused the account.
       blocked: r.p.result?.llmBlocked ?? 0,
+      // Templates written by policy (a Gmail tab recount re-score buys no
+      // prose), not because a call failed.
+      notRequested: r.p.result?.explanationsNotRequested ?? 0,
     }));
   // Every other line that names this mailbox. A worker's own failure line
   // carries only an error class; the provider's reason (a Gmail 403
@@ -459,7 +462,7 @@ export function summarize({ mailboxRows, workerRows, quota, ref, now = Date.now(
         'LLM_REFUSED',
         `${run.blocked} of ${run.decisions} recommendations ${stamp(run.at)} got a template without a call — Anthropic was refusing the account; check llm.provider_rejected for the reason`,
       );
-    } else if (run.decisions >= 10 && run.llm === 0) {
+    } else if (run.decisions - run.notRequested >= 10 && run.llm === 0) {
       flag(
         'user',
         'LLM_OFF',

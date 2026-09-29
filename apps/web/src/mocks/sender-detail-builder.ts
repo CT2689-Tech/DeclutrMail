@@ -35,6 +35,7 @@ const GMAIL_CATEGORY: Record<SenderGroup, string> = {
   social: 'Gmail: Social',
   updates: 'Gmail: Updates',
   forums: 'Gmail: Forums',
+  unknown: 'Gmail: no single tab',
 };
 
 /** Recent-subject seeds per group — same pool the prototype used. */
@@ -74,6 +75,8 @@ const SUBJECT_POOL: Record<SenderGroup, string[]> = {
     'Someone mentioned you',
     'Digest #34',
   ],
+  // No tab holds most of the sender's mail — often old mail and chats.
+  unknown: ['Re: old thread', 'Chat with you'],
 };
 
 const SNIPPETS: Record<SenderGroup, string[]> = {
@@ -102,6 +105,7 @@ const SNIPPETS: Record<SenderGroup, string[]> = {
     'Two new replies on a thread you started, and one mention by another member you should see.',
     'This week: 12 new posts, 4 high-traffic threads, and the monthly community digest.',
   ],
+  unknown: ['Picking this back up from our last conversation.'],
 };
 
 /**

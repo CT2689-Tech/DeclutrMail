@@ -70,8 +70,13 @@ export type { ErrorCode, ErrorCodeSpec } from './error-codes';
 export { ERROR_CODES, isErrorCode } from './error-codes';
 
 // D224 sync status transport — Zod schema + types for /api/v1/sync/status.
-export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
-export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
+export {
+  SyncStatusSchema,
+  SyncReadinessSchema,
+  SyncStageSchema,
+  SyncMessageProgressSchema,
+} from './sync-status';
+export type { SyncStatus, SyncReadiness, SyncStage, SyncMessageProgress } from './sync-status';
 
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {

@@ -13,6 +13,7 @@
 import type { Metadata } from 'next';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
@@ -26,7 +27,7 @@ export const metadata: Metadata = marketingPageMetadata({
 // refund is issued. The behaviour changed with it — a full refund used
 // to hold entitlement to `current_period_end`, which on an annual plan
 // returned the whole charge AND granted the rest of the year.
-const LAST_UPDATED = '2026-07-31';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/refunds'];
 
 const TOC = [
   { id: 'summary', label: 'The short version' },

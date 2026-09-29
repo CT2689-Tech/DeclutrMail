@@ -186,7 +186,7 @@ describe('HomeScreen', () => {
     authCell.me = meFor('pro', 'syncing');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Reading your inbox')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail')).toBeInTheDocument();
   });
 
   it('new user whose scan failed: says so and links to Gmail accounts', async () => {

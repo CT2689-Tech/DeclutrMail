@@ -69,7 +69,14 @@ import type {
 } from './senders.types.js';
 
 /** Allowed `?category=` values — mirrors the `gmail_category` enum. */
-const CATEGORIES = new Set<GmailCategory>(['primary', 'promotions', 'social', 'updates', 'forums']);
+const CATEGORIES = new Set<GmailCategory>([
+  'primary',
+  'promotions',
+  'social',
+  'updates',
+  'forums',
+  'unknown',
+]);
 
 /**
  * `?sort=` values implemented at Slice 1 (ADR-0014). `read` and
@@ -124,8 +131,9 @@ export class SendersController {
    * GET /api/senders — list senders for the caller's mailbox (D39).
    *
    * Query params:
-   *   - `category`  — optional `primary|promotions|social|updates|forums`
-   *                   to scope to one Gmail category.
+   *   - `category`  — optional `primary|promotions|social|updates|forums|unknown`
+   *                   to scope to one Gmail category (`unknown`: no tab holds
+   *                   most of the sender's labelled mail).
    *   - `protected` — optional `true` to return only standing-protected
    *                   senders (D42/D43). Backs the Settings → Standing
    *                   Policies surface so it no longer needs to fetch the

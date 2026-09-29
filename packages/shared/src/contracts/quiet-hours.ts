@@ -4,9 +4,11 @@
  * One recurring daily quiet window per mailbox: local wall-clock start +
  * end ("HH:MM", 24h) interpreted in an IANA timezone, plus an enabled
  * flag. While the window covers "now", Autopilot mutations DEFER —
- * matches stay durable (`rule_match_log.intent_applied=false`) and the
- * next sweep executes them after the window ends. Manual user actions
- * are never deferred (user intent wins; quiet gates automation only).
+ * matches stay durable (`rule_match_log.intent_applied=false`) and a
+ * sweep re-scheduled for the window's end picks them up, within each
+ * rule's daily cap. Suggestions the user approves run through that same
+ * sweep, so they wait too; actions the user takes directly are never
+ * deferred (quiet gates Autopilot only).
  *
  * Windows may CROSS MIDNIGHT: `startLocal > endLocal` (e.g. 18:00 →
  * 09:00) means the window spans the day boundary. `startLocal ===
@@ -79,13 +81,6 @@ export interface QuietHoursState {
    * whether or not quiet is active.
    */
   heldCount: number;
-  /**
-   * When the CURRENT quiet spell ends (ISO-8601), from the same
-   * `msUntilQuietEnds` hint the deferred sweep re-schedules on. `null`
-   * when quiet is not active, is indefinite (manual quiet without
-   * `until_at`), or is unevaluable.
-   */
-  endsAt: string | null;
 }
 
 /** Parse "HH:MM" → minutes-of-day. Assumes the schema regex already matched. */
@@ -140,11 +135,17 @@ export function isWithinQuietWindow(config: QuietHoursConfig, at: Date): boolean
 /**
  * Milliseconds until the active window ends — a RE-SCHEDULE HINT for
  * deferred sweeps, not a source of truth (the quiet guard re-checks at
- * execution time, so a DST-shifted early wake simply re-defers).
+ * execution time, so an early wake simply re-defers).
  *
  * Returns `null` when the window is not active at `at`, or when the
  * timezone cannot be evaluated (no hint is computable). The value is
- * minute-granular and always lands AT or AFTER the window end.
+ * minute-granular — the seconds past `at`'s minute carry over — and
+ * lands at the end's wall-clock time even when a DST change falls in
+ * between. An end the clocks skip that night (inside the spring-forward
+ * gap) keeps the uncorrected span — usually after the window, but for a
+ * near-24h window whose only skipped slot IS its end, still inside it;
+ * the quiet guard re-checking at execution time re-defers once more
+ * either way.
  */
 export function msUntilQuietWindowEnd(config: QuietHoursConfig, at: Date): number | null {
   if (!isWithinQuietWindow(config, at)) return null;
@@ -158,5 +159,15 @@ export function msUntilQuietWindowEnd(config: QuietHoursConfig, at: Date): numbe
   const minutesLeft = (end - nowMin + 1440) % 1440;
   // minutesLeft is in [1, 1439]: end===nowMin is impossible while the
   // window is active (end is exclusive).
-  return minutesLeft * 60_000;
+  const span = minutesLeft * 60_000;
+  const wallMinutesAt = (ms: number) =>
+    minutesOfDayInZone(new Date(at.getTime() + ms), config.timezone);
+
+  // A DST change inside the span moves the wall clock by its size: take
+  // that drift back out, but only when doing so lands on the end itself.
+  const drift = ((wallMinutesAt(span) - end + 1440 + 720) % 1440) - 720;
+  if (drift === 0) return span;
+  const corrected = span - drift * 60_000;
+  // Never a zero or negative delay: the sweep would wake straight back into quiet.
+  return corrected > 0 && wallMinutesAt(corrected) === end ? corrected : span;
 }
