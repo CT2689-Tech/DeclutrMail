@@ -48,15 +48,18 @@ describe('D245 Gmail data inventory contract', () => {
     expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY).not.toHaveLength(0);
     expect(GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.map((item) => item.id)).toEqual([
       'gmail-account-identity',
-      // Two counts and a time in Redis, gone within 30 minutes of the scan's
-      // last update; a mailbox purge does not clear the key (open founder
-      // decision, docs/log/founder-followups/2026-09-26-redis-sync-count-retention.md).
-      'scan-progress-counts',
       // Domain-keyed logo cache: shared across users, no mailbox link,
       // so a mailbox purge has nothing of the user's to remove from it.
       'sender-logo-lookup',
       'mailbox-security-and-deletion-audit',
     ]);
+    // Founder decision 2026-09-28 (docs/log/founder-followups/
+    // 2026-09-26-redis-sync-count-retention.md): a mailbox purge clears
+    // this key immediately (AccountDeletionPurgeWorker.clearScanProgress),
+    // so it moved into the purge-removed set, not the retained one.
+    expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY.map((item) => item.id)).toContain(
+      'scan-progress-counts',
+    );
 
     const generatedIds = [
       ...GMAIL_DISCONNECT_DATA_INVENTORY,

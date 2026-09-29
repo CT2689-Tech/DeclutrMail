@@ -2724,6 +2724,10 @@ async function bootstrap(): Promise<void> {
     emailQueue: emailSendQueue,
     renderReceiptEmail: deletionReceiptEmail,
     mailboxLock,
+    // Reuses the same fail-fast connection the sync gate's own counts use
+    // (D245 scan-progress-counts) — a Redis outage here costs only this
+    // clear, never the purge.
+    scanProgress: createRedisScanProgressStore(scanProgressConnection),
     observer,
   });
   deletionPurgeWorker.setObserver(observer);

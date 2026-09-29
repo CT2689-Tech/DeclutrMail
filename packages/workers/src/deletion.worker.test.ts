@@ -43,6 +43,7 @@ import {
 import { isSyncPausedForDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { GmailLifecycleAccess, GmailLifecycleClient } from './ports.js';
+import type { ScanProgressStore } from './scan-progress.js';
 import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -110,6 +111,26 @@ function fakeEmailQueue(): { queue: Queue<EmailSendJobData>; jobs: EmailSendJobD
     },
   } as unknown as Queue<EmailSendJobData>;
   return { queue, jobs };
+}
+
+/** Records every clear (`write(id, null)`); optionally throws for given ids first. */
+function fakeScanProgress(opts?: { failFor?: string[] }): {
+  store: ScanProgressStore;
+  cleared: string[];
+} {
+  const cleared: string[] = [];
+  const failFor = new Set(opts?.failFor ?? []);
+  const store: ScanProgressStore = {
+    write: async (mailboxAccountId, counts) => {
+      if (counts !== null) throw new Error('fixture only clears counts');
+      if (failFor.has(mailboxAccountId)) {
+        failFor.delete(mailboxAccountId); // fail once, then succeed on retry
+        throw new Error('redis unavailable');
+      }
+      cleared.push(mailboxAccountId);
+    },
+  };
+  return { store, cleared };
 }
 
 interface Seeded {
@@ -194,6 +215,7 @@ async function seedDueDeletion(
 function makeWorker(db: Db) {
   const lifecycle = fakeLifecycle();
   const email = fakeEmailQueue();
+  const scanProgress = fakeScanProgress();
   const worker = new AccountDeletionPurgeWorker({
     db: db as never,
     gmailLifecycle: lifecycle.access,
@@ -203,8 +225,9 @@ function makeWorker(db: Db) {
       subject: 'Your DeclutrMail data has been deleted',
       text: `Deleted on ${deletedAt}.`,
     }),
+    scanProgress: scanProgress.store,
   });
-  return { worker, lifecycle, email };
+  return { worker, lifecycle, email, scanProgress };
 }
 
 interface MailboxGraph {
@@ -414,10 +437,10 @@ async function seedMailboxGraph(
 }
 
 describe('AccountDeletionPurgeWorker', () => {
-  it('purges a due request end-to-end (rows gone, audit survives, receipt enqueued, watches stopped)', async () => {
+  it('purges a due request end-to-end (rows gone, audit survives, receipt enqueued, watches stopped, scan-progress cleared)', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
-    const { worker, lifecycle, email } = makeWorker(db);
+    const { worker, lifecycle, email, scanProgress } = makeWorker(db);
 
     const result = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:00' }, ctx);
 
@@ -425,6 +448,10 @@ describe('AccountDeletionPurgeWorker', () => {
     expect(result.due).toBe(1);
     expect(result.purged).toBe(1);
     expect(result.failed).toBe(0);
+    // Every mailbox on the deleted account, not just one (D109/D245: the
+    // sync gate's in-progress count is gone the moment the account is,
+    // never left to expire on its own 30-minute TTL).
+    expect(scanProgress.cleared.sort()).toEqual([...seeded.mailboxIds].sort());
 
     // Data drop — every workspace-scoped row is gone.
     expect(await db.select().from(mailMessages)).toHaveLength(0);
@@ -599,6 +626,27 @@ describe('AccountDeletionPurgeWorker', () => {
     expect(await db.select().from(users)).toHaveLength(0);
   });
 
+  it('a failed scan-progress clear never blocks the purge (best-effort)', async () => {
+    const db = await freshDb();
+    const seeded = await seedDueDeletion(db);
+    const { store, cleared } = fakeScanProgress({ failFor: [seeded.mailboxIds[0]!] });
+    const { queue: emailQueue } = fakeEmailQueue();
+    const worker = new AccountDeletionPurgeWorker({
+      db: db as never,
+      gmailLifecycle: fakeLifecycle().access,
+      topicName: TOPIC,
+      emailQueue,
+      renderReceiptEmail: async () => ({ subject: 's', text: 't' }),
+      scanProgress: store,
+    });
+
+    const result = await worker.processJob({ scheduledAtMinute: '2026-06-11T10:21' }, ctx);
+
+    expect(result.purged).toBe(1);
+    expect(cleared).toEqual([seeded.mailboxIds[1]]);
+    expect(await db.select().from(users)).toHaveLength(0);
+  });
+
   it('keeps data and encrypted tokens until Google grant revocation can succeed', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
@@ -711,12 +759,15 @@ describe('mailbox indexed-data purge', () => {
       .values({ mailboxAccountId: target.mailboxId })
       .returning({ id: mailboxDataDeletionRequests.id });
 
-    const { worker, lifecycle } = makeWorker(db);
+    const { worker, lifecycle, scanProgress } = makeWorker(db);
     const result = await worker.processJob({ scheduledAtMinute: '2026-07-14T10:00' }, ctx);
 
     expect(result).toMatchObject({ outcome: 'swept', due: 1, purged: 1, failed: 0 });
     expect(lifecycle.stopped).toEqual([target.mailboxId]);
     expect(lifecycle.revoked).toEqual([target.mailboxId]);
+    // Only the target's scan-progress key is cleared — sibling and
+    // stranger keep theirs, matching every other table checked below.
+    expect(scanProgress.cleared).toEqual([target.mailboxId]);
 
     for (const table of MAILBOX_PURGE_DIRECT_CHILD_TABLES) {
       const targetCount = await pg.query<{ count: string }>(

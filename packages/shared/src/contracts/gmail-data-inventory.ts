@@ -433,8 +433,9 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['redis:declutr:scan-progress:{mailboxAccountId}'],
     derived: true,
     purpose: 'Show how far a running scan has read, and its time left.',
-    retention: 'Gone within 30 minutes of the scan’s last update.',
-    removalTrigger: 'retention-policy',
+    retention:
+      'Cleared immediately when this mailbox’s saved data is deleted; otherwise gone within 30 minutes of the scan’s last update.',
+    removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
