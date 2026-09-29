@@ -22,6 +22,9 @@ import {
   adaptTimeseriesPoint,
 } from './adapters';
 
+const ADAPT_NOW = Date.parse('2026-06-01T00:00:00.000Z');
+const ADAPT_TZ = 'UTC';
+
 function historyRow(overrides: Partial<DecisionHistoryRowDto> = {}): DecisionHistoryRowDto {
   return {
     id: 'd1',
@@ -157,6 +160,8 @@ describe('adaptSenderDetail — the engine suggestion', () => {
       messages: [],
       timeseries: [],
       history: [],
+      now: ADAPT_NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(detail.recommendation).toEqual({
       verdict: 'keep',
@@ -175,6 +180,8 @@ describe('adaptSenderDetail — the engine suggestion', () => {
       messages: [],
       timeseries: [],
       history: [],
+      now: ADAPT_NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(withNull.recommendation).toBeNull();
 
@@ -185,6 +192,8 @@ describe('adaptSenderDetail — the engine suggestion', () => {
       messages: [],
       timeseries: [],
       history: [],
+      now: ADAPT_NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(withoutKey.recommendation).toBeNull();
   });
@@ -271,6 +280,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
       timeseries: [],
       history: [],
       now: NOW,
+      timeZone: ADAPT_TZ,
     });
 
     expect(detail.gmailCategory).toBe('Gmail: Social');
@@ -287,6 +297,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
       timeseries: [],
       history: [],
       now: NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(detail.stats.readRate).toBeNull();
     expect(detail.sender.readRate).toBeNull();
@@ -299,6 +310,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
       timeseries: [],
       history: [],
       now: NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(detail.sender.wroteToCount).toBe(7);
   });
@@ -316,6 +328,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
       timeseries: [],
       history: [],
       now: NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(detail.isProtected).toBe(true);
     expect(detail.protectionReason).toBe('gmail-important');
@@ -329,6 +342,7 @@ describe('adaptSenderDetail — honest wire composition', () => {
       timeseries: [{ yearMonth: '2026-05', volume: 8, readCount: 2 } as TimeseriesPointDto],
       history: [historyRow()],
       now: NOW,
+      timeZone: ADAPT_TZ,
     });
     expect(detail.recentMessages[0]?.threadId).toBe('thread-m1');
     expect(detail.timeseries[0]?.opens).toBe(2);

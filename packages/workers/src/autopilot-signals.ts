@@ -97,6 +97,8 @@ export async function materializeAutopilotSignals(
       senderKey: triageDecisions.senderKey,
       verdict: triageDecisions.verdict,
       confidence: triageDecisions.confidence,
+      producedAt: triageDecisions.producedAt,
+      expiresAt: triageDecisions.expiresAt,
     })
     .from(triageDecisions)
     .where(
@@ -111,6 +113,12 @@ export async function materializeAutopilotSignals(
   // mis-evaluate; treating it as "no decision" is the safe default.
   const decisionBy = new Map<string, { verdict: TriageVerdict; confidence: number }>();
   for (const r of decisionRows) {
+    // Awaiting re-score: the Gmail tab recount found this verdict was
+    // computed from the wrong tab and marked it (`expires_at =
+    // produced_at`, a value the score worker never writes). Until the
+    // new verdict lands, no preset may act on the old one — treated as
+    // "no decision", which every verdict-gated preset already skips.
+    if (r.expiresAt.getTime() === r.producedAt.getTime()) continue;
     const c = Number.parseFloat(r.confidence);
     if (!Number.isFinite(c)) {
       console.warn(

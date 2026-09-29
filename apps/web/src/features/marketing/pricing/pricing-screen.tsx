@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
@@ -89,7 +90,7 @@ export function PricingScreen() {
           (cta.ts routes a live session to the app instead), so the scope
           and the D228 boundary ride with the plan choice. */}
       <p className="dm-pricing-oauth">
-        {OAUTH_SCOPE_DISCLOSURE} <a href="/sign-in">Review Gmail permissions</a>
+        {OAUTH_SCOPE_DISCLOSURE} <Link href="/sign-in">Review Gmail permissions</Link>
       </p>
 
       <section aria-label="Compare plans" className="dm-pricing-section">
@@ -117,7 +118,7 @@ export function PricingScreen() {
             <li key={fact}>{fact}</li>
           ))}
           <li>
-            {REFUND_FACT} <a href="/refunds">Read the refund policy</a>
+            {REFUND_FACT} <Link href="/refunds">Read the refund policy</Link>
           </li>
         </ul>
       </section>

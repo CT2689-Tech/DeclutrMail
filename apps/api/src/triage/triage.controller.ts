@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { EXPLAIN_BATCH_MAX, ok, type Envelope } from '@declutrmail/shared/contracts';
+import { asSenderKey } from '@declutrmail/shared/ids';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -86,6 +87,22 @@ export class TriageController {
     }
     if (!senderKey) {
       throw new BadRequestException('senderKey or senderId is required.');
+    }
+    // Same reasoning as the uuid check above, for the raw-senderKey path:
+    // a colon here reaches `scoreJobId`'s BullMQ jobId unescaped, which
+    // is a 500 (bullmq's own `Custom Id cannot contain :`) for what is a
+    // bad request. `resolveSenderKey` above always returns a real
+    // `sender_key`, so this only ever rejects the raw-body path.
+    // `asSenderKey` (not a local regex — one more hand-written copy of
+    // this shape was the gate's own next finding) has no `/i`: a stored
+    // `sender_key` is always lowercase, so an uppercase-but-well-shaped
+    // value must still 400, not enqueue a job that can never match one.
+    if (!senderId) {
+      try {
+        asSenderKey(senderKey);
+      } catch {
+        throw new BadRequestException('senderKey must be a sha256 hex hash.');
+      }
     }
     // Unknown values fail closed to `user` rather than 400: the reason is
     // telemetry, and a typo in it is no reason to refuse a re-score.

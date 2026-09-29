@@ -91,6 +91,13 @@ export interface LlmCircuitBreakerOptions {
   cooldownMs?: number;
   /** Clock, ms since epoch. Tests inject one. */
   now?: () => number;
+  /**
+   * Called once when calls go from not paused to paused. Not called for a
+   * refusal that does not pause, and not called again while already paused.
+   * Must not throw — a reporter failure is logged and does not change the
+   * pause or the caller's fallback.
+   */
+  onTrip?: (rejection: ProviderRejection) => void;
 }
 
 /**
@@ -105,11 +112,13 @@ export interface LlmCircuitBreakerOptions {
 export class LlmCircuitBreaker {
   private readonly cooldownMs: number;
   private readonly now: () => number;
+  private readonly onTrip: ((rejection: ProviderRejection) => void) | undefined;
   private pausedUntil = 0;
 
   constructor(options: LlmCircuitBreakerOptions = {}) {
     this.cooldownMs = options.cooldownMs ?? DEFAULT_LLM_COOLDOWN_MS;
     this.now = options.now ?? Date.now;
+    this.onTrip = options.onTrip;
   }
 
   /** True while calls are paused. */
@@ -120,8 +129,10 @@ export class LlmCircuitBreaker {
   /**
    * The call threw. A provider refusal is logged as
    * `llm.provider_rejected` and, unless it is `other`, pauses calls.
-   * Returns the refusal, or `null` for a transient failure (rate limit,
-   * 5xx, timeout, network), which the caller reports as it always has.
+   * The first refusal that starts a pause notifies `onTrip`; further
+   * refusals during that pause do not. Returns the refusal, or `null`
+   * for a transient failure (rate limit, 5xx, timeout, network), which
+   * the caller reports as it always has.
    */
   recordFailure(
     err: unknown,
@@ -130,6 +141,7 @@ export class LlmCircuitBreaker {
     const rejection = classifyProviderRejection(err);
     if (rejection === null) return null;
     const pauses = PAUSES[rejection.reason];
+    const tripped = pauses && !this.isBlocked();
     if (pauses) this.pausedUntil = this.now() + this.cooldownMs;
     console.error(
       JSON.stringify({
@@ -145,7 +157,22 @@ export class LlmCircuitBreaker {
         pausedMs: pauses ? this.cooldownMs : 0,
       }),
     );
+    if (tripped) this.reportTrip(rejection);
     return rejection;
+  }
+
+  private reportTrip(rejection: ProviderRejection): void {
+    try {
+      this.onTrip?.(rejection);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'llm.provider_rejected_report_failed',
+          error: err instanceof Error ? err.constructor.name : typeof err,
+        }),
+      );
+    }
   }
 }
 

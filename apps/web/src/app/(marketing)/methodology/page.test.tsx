@@ -21,7 +21,7 @@ describe('/methodology', () => {
     const copy = container.textContent ?? '';
 
     expect(copy).toContain('Suggestions come from clear rules, not guessed categories');
-    expect(copy).toContain('does not use machine learning to guess email categories');
+    expect(copy).toContain('does not predict email categories');
     expect(copy).toContain('Anthropic may turn the selected sender facts into a short explanation');
     expect(copy).toContain(
       'does not receive subject lines, preview snippets, or full email contents',

@@ -45,8 +45,8 @@ export function relTime(days: number): string {
  * for one row while this list printed "yesterday" for a message a few
  * hours apart (QA-archive-20260828-03).
  */
-export function relTimeFromIso(iso: string, now: Date = new Date()): string {
-  return relTime(daysSince(iso, now.getTime()));
+export function relTimeFromIso(iso: string, now: Date, timeZone: string): string {
+  return relTime(daysSince(iso, now.getTime(), timeZone));
 }
 
 /**

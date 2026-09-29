@@ -18,9 +18,15 @@
  *                          timestamp of the last completed sync run, so
  *                          the shell can render "synced Xm ago" and the
  *                          Sync-now button can confirm completion.
+ *   - `message_progress` — 2026-09-26 founder-requested extension:
+ *                          `{processed, total, age_ms}` while the scan
+ *                          reads the mailbox, so the gate can show
+ *                          "12,400 of 40,898 emails" and time left from
+ *                          observed progress (reverses D109's "no live
+ *                          counters").
  *
  * No body data, no headers, no message content of any kind — stage
- * enum + numeric progress + an allowlisted boolean. Safe by construction
+ * enum + numeric progress + message counts + an allowlisted boolean. Safe by construction
  * for the §2.1 privacy guardrail.
  */
 
@@ -41,6 +47,22 @@ export const SyncStageSchema = z.enum([
   'failed',
 ]);
 export type SyncStage = z.infer<typeof SyncStageSchema>;
+
+/**
+ * Messages read so far of the messages in the mailbox — never more read
+ * than exist — and how long ago the worker wrote them, measured by the
+ * API. The age lets the gate time each count on its own clock, however
+ * late its poll saw it.
+ */
+export const SyncMessageProgressSchema = z
+  .object({
+    processed: z.number().int().min(0),
+    total: z.number().int().min(1),
+    age_ms: z.number().int().min(0),
+  })
+  .strict()
+  .refine((p) => p.processed <= p.total, { message: 'processed exceeds total' });
+export type SyncMessageProgress = z.infer<typeof SyncMessageProgressSchema>;
 
 /**
  * The full sync-status payload.
@@ -79,6 +101,20 @@ export const SyncStatusSchema = z
      */
     last_sync_error_at: z.string().datetime().nullable().optional(),
     last_sync_error_code: z.string().min(1).nullable().optional(),
+    /**
+     * How far the scan has read: `processed` of the mailbox's `total`
+     * messages, from the InitialSyncWorker's short-lived Redis key
+     * (`scanProgressKey`, packages/workers/src/scan-progress.ts: written
+     * per 500 messages read, cleared when an attempt starts and when the
+     * read ends, expiring 30 min after its last write). Present only while
+     * the scan reads the mailbox (`current_stage === 'fetching_metadata'`);
+     * `null` before it has listed the mailbox — the total is unknown until
+     * then — and in every other stage. Absent when the key could not be
+     * read this time, so a client can tell "unknown" from "none"; also
+     * optional so pre-field responses and existing fixtures stay valid.
+     * Counts only — no message content.
+     */
+    message_progress: SyncMessageProgressSchema.nullable().optional(),
   })
   .strict();
 
