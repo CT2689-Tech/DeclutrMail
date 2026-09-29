@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
 
@@ -144,7 +144,7 @@ jobs:
 
       - name: Retain daily snapshot even when a vendor fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: infra-snapshot-${{ github.run_id }}
           path: ${{ runner.temp }}/infra-snapshot.json
@@ -159,7 +159,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Validate encrypted triage contracts
@@ -172,7 +172,7 @@ jobs:
           SENTRY_TRIAGE_OUTPUT: ${{ runner.temp }}/sentry-triage.encrypted.json
         run: node scripts/sentry-private-triage.mjs
       - name: Retain encrypted report only
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sentry-triage-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/sentry-triage.encrypted.json
@@ -189,7 +189,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Verify existing snapshot provenance
