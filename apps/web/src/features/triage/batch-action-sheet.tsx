@@ -190,7 +190,7 @@ export function BatchActionSheet({
     />
   ) : nothingActionable ? (
     <StatusWithAction
-      message="Every sender here is now Protected or gone."
+      message="Every sender here is now Protected or no longer in this mailbox."
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
     />
   ) : null;

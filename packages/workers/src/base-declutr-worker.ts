@@ -557,6 +557,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'skippedRuleInactive',
   'source',
   'stageTimings',
+  'stoppedProtected',
   'templateExplanations',
   'timeseriesCorrected',
   'timeseriesZeroed',

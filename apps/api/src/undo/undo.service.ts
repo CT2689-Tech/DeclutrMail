@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { mailboxAccounts, undoJournal } from '@declutrmail/db';
 import type { NewUndoJournalEntry, UndoJournalEntry } from '@declutrmail/db';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -19,6 +20,7 @@ interface DecisionRow {
   member_count: number;
   affected_total: number;
   kind_count: number;
+  protected_skipped: number;
   token: string;
   action_kind: UndoActionKind;
   job_id: string | null;
@@ -325,6 +327,39 @@ export class UndoService {
         order by max(created_at) desc, group_id
         limit ${limit}
       ),
+      -- D245 / founder decision D4: senders this decision skipped because
+      -- they were Protected when their job ran. They hold no token, so they
+      -- are not in the active CTE; counted here so the Undo line carries the skip
+      -- in the same read. Two indexed probes (pkey; composite_id), as in
+      -- ActionsService.listInFlight — an OR across the columns tends to
+      -- plan as a scan.
+      skips as (
+        select g.group_id, count(*)::int as protected_skipped
+        from grouped g
+        cross join lateral (
+          select m.sender_id
+          from (
+            select a.selector->>'senderId' as sender_id, a.status, a.error_code,
+                   a.direction, a.mailbox_account_id
+            from action_jobs a where a.id = g.group_id
+            union all
+            select c.selector->>'senderId', c.status, c.error_code,
+                   c.direction, c.mailbox_account_id
+            from action_jobs c where c.composite_id = g.group_id
+          ) m
+          where m.mailbox_account_id = ${mailboxAccountId}
+            and m.direction = 'forward'
+            and m.sender_id is not null
+          group by m.sender_id
+          -- A sender counts only when EVERY one of its jobs was skipped,
+          -- the same rule the batch status uses. NULL-safe: a job that ran
+          -- has no error_code, and bool_and would silently skip a NULL row.
+          having bool_and(
+            m.status = 'done' and m.error_code is not distinct from ${LABEL_SENDER_PROTECTED_ERROR_CODE}
+          )
+        ) skipped_sender
+        group by g.group_id
+      ),
       ranked as (
         select
           a.*,
@@ -345,12 +380,14 @@ export class UndoService {
       select
         g.group_id, g.newest_at, g.expires_at, g.sender_count,
         g.member_count, g.affected_total, g.kind_count,
+        coalesce(k.protected_skipped, 0)::int as protected_skipped,
         r.token, r.action_kind, r.job_id, r.affected_count,
         r.size_rank::int as size_rank, r.lead_rank::int as lead_rank,
         nullif(s.display_name, '') as sender_name,
         s.email::text as sender_email
       from grouped g
       join ranked r using (group_id)
+      left join skips k using (group_id)
       left join senders s
         -- Cast the JSON text, not the indexed column, so senders_pkey serves it.
         on s.id = r.sender_id::uuid
@@ -378,6 +415,7 @@ export class UndoService {
           memberCount: row.member_count,
           affectedCount: row.member_count === 0 ? null : row.affected_total,
           mixedKinds: row.kind_count > 1,
+          protectedSkippedCount: row.protected_skipped,
           members: [],
         };
         decisions.set(row.group_id, decision);

@@ -134,6 +134,13 @@ export const triageDecisions = pgTable(
       table.expiresAt,
       table.mailboxAccountId,
     ),
+    /**
+     * Mirrors migration 0066 — the actionable-verdict join. Its verdict
+     * list must stay equal to the join's; the migration says why.
+     */
+    actionableIdx: index('triage_decisions_actionable_idx')
+      .on(table.mailboxAccountId, table.senderKey)
+      .where(sql`${table.verdict} IN ('unsubscribe', 'archive')`),
   }),
 );
 

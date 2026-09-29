@@ -15,7 +15,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OutboxPublisher } from './outbox-publisher.js';
 import {
@@ -30,7 +30,7 @@ import {
   unsubExecutionJobOptions,
   unsubSendsEnabled,
 } from './unsub-execution.worker.js';
-import type { UnsubHttpPort } from './unsub-execution.worker.js';
+import type { UnsubExecutionJobData, UnsubHttpPort } from './unsub-execution.worker.js';
 import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -369,10 +369,35 @@ describe('UnsubExecutionWorker', () => {
       resolveHost: PUBLIC_RESOLVE,
     });
 
-    const result = await worker.processJob(
-      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' },
-      ctx(1),
-    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let warned: unknown[][] = [];
+    const result = await worker
+      .processJob({ actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' }, ctx(1))
+      .finally(() => {
+        warned = [...warn.mock.calls];
+        warn.mockRestore();
+      });
+
+    // D7: the refusal's one trace is ids — pinned key for key, so the
+    // unsubscribe URL or an address cannot join it without this failing.
+    const lines = warned.flatMap(([line]) => {
+      try {
+        const parsed = JSON.parse(String(line)) as Record<string, unknown>;
+        return parsed.kind === 'unsub.sender_protected' ? [parsed] : [];
+      } catch {
+        return [];
+      }
+    });
+    expect(lines).toHaveLength(1);
+    expect(Object.keys(lines[0]!).sort()).toEqual([
+      'actionId',
+      'kind',
+      'level',
+      'mailboxAccountId',
+      'message',
+      'senderKey',
+      'severity',
+    ]);
 
     // The load-bearing assertion: nothing left the process. A fake that
     // would have answered 200 was never asked — the sender became
@@ -426,12 +451,52 @@ describe('UnsubExecutionWorker', () => {
     expect(result.outcome).toBe('endpoint_accepted');
   });
 
-  it('skips the Protected guard for an explicit single-sender intent (D245 — bulk/automatic only)', async () => {
-    // actions.service.ts's `recordUnsubscribeIntent` (the single-sender
-    // click) never checks protection by design — D245 excludes Protected
-    // senders from BULK and AUTOMATIC actions only. `explicit: true` is
-    // what that path sets on the job payload; this pins that the worker
-    // honors it and still sends.
+  it('re-checks a single-sender Unsubscribe: a sender Protected after the click is not sent (D245)', async () => {
+    // A single-sender click carries consent only for protection the user
+    // saw. Jobs queued by the previous API all carry `explicit: true`;
+    // that flag no longer exempts a job, so one queued across the deploy
+    // is re-checked rather than sent.
+    await seedSender(db, mailboxId);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      policyType: 'unsubscribe',
+      unsubStatus: 'requested',
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const actionId = await seedExecutionJob(db, mailboxId);
+    const http = fakeHttp([200]);
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: PUBLIC_RESOLVE,
+    });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await worker
+      .processJob(
+        {
+          actionId,
+          mailboxAccountId: mailboxId,
+          idempotencyKey: 'single-1',
+          explicit: true,
+        } as UnsubExecutionJobData,
+        ctx(1),
+      )
+      .finally(() => warn.mockRestore());
+
+    expect(http.calls).toEqual([]);
+    expect(result.outcome).toBe('failed');
+    const { job, activities, events } = await readState(actionId);
+    expect(job.status).toBe('failed');
+    expect(job.errorCode).toBe(UNSUB_SENDER_PROTECTED_ERROR_CODE);
+    expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it('sends an Unsubscribe the user confirmed "anyway" on a Protected sender (D245)', async () => {
     await seedSender(db, mailboxId);
     await db.insert(senderPolicies).values({
       mailboxAccountId: mailboxId,
@@ -451,12 +516,52 @@ describe('UnsubExecutionWorker', () => {
     });
 
     const result = await worker.processJob(
-      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'explicit-1', explicit: true },
+      {
+        actionId,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: 'anyway-1',
+        protectedConfirmed: true,
+      },
       ctx(1),
     );
 
     expect(http.calls).toHaveLength(1);
     expect(result.outcome).toBe('endpoint_accepted');
+  });
+
+  it('re-checks again as the request leaves: a Protect landing during the pre-flight stops the send (D245)', async () => {
+    await seedSender(db, mailboxId);
+    await seedPendingPolicy(db, mailboxId);
+    const actionId = await seedExecutionJob(db, mailboxId);
+    const http = fakeHttp([200]);
+    // The DNS pre-flight is the last await before the request leaves, so
+    // it stands in for any Protect that commits after the first check.
+    const protectDuringPreflight = async (): Promise<string[]> => {
+      await db
+        .update(senderPolicies)
+        .set({ isProtected: true, protectionReason: 'user_defined' })
+        .where(eq(senderPolicies.senderKey, SENDER_KEY));
+      return ['93.184.216.34'];
+    };
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: protectDuringPreflight,
+    });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await worker
+      .processJob({ actionId, mailboxAccountId: mailboxId, idempotencyKey: 'late-1' }, ctx(1))
+      .finally(() => warn.mockRestore());
+
+    expect(http.calls).toEqual([]);
+    expect(result.outcome).toBe('failed');
+    const { job, activities, events } = await readState(actionId);
+    expect(job.status).toBe('failed');
+    expect(job.errorCode).toBe(UNSUB_SENDER_PROTECTED_ERROR_CODE);
+    expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+    expect(events).toHaveLength(0);
   });
 
   it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {

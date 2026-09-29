@@ -163,7 +163,14 @@ export const actionJobs = pgTable(
     undoToken: uuid('undo_token').references(() => undoJournal.token, {
       onDelete: 'set null',
     }),
-    /** Classified failure code, set when `status='failed'`. */
+    /**
+     * Classified outcome code. Read `status` first and match exact codes:
+     * a `failed` row may carry none, and a row re-armed for retry may keep
+     * an old one — a `done` row can still hold `ENQUEUE_FAILED`. The one
+     * code a `done` row is written with on purpose is
+     * `LABEL_SENDER_PROTECTED`: a label job skipped before any message
+     * changed, because its sender was Protected when it ran (D245).
+     */
     errorCode: text('error_code'),
     /**
      * Recovery lineage. Attempt 0 is the original action and keeps both
@@ -206,8 +213,8 @@ export const actionJobs = pgTable(
      * Drizzle cannot express DEFERRABLE INITIALLY DEFERRED — that
      * timing remains migration-only. The `.references()` annotation
      * below records the ON DELETE CASCADE so the schema reflects the
-     * actual DB shape (introspection, type-safe joins, generate-no-diff
-     * gate). The self-reference uses the `AnyPgColumn` forward-ref
+     * actual DB shape (introspection, type-safe joins). The
+     * self-reference uses the `AnyPgColumn` forward-ref
      * pattern because `actionJobs` is the table being defined.
      */
     compositeId: uuid('composite_id').references((): AnyPgColumn => actionJobs.id, {
@@ -282,6 +289,11 @@ export const actionJobs = pgTable(
     reachVerbCheck: check(
       'action_jobs_reach_verb_check',
       sql`${table.reach} = 'inbox_only' OR ${table.verb} = 'delete'`,
+    ),
+    /** Mirrors migration 0020 — ADR-0020's 1–3650 day window; NULL means no time filter. */
+    olderThanDaysRangeCheck: check(
+      'action_jobs_older_than_days_range_chk',
+      sql`${table.olderThanDays} IS NULL OR (${table.olderThanDays} >= 1 AND ${table.olderThanDays} <= 3650)`,
     ),
   }),
 );

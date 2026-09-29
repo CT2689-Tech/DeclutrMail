@@ -85,7 +85,7 @@ export const ERROR_CODES = {
     status: 500,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Something went wrong on our side. Your email is untouched — try again in a moment.',
+    message: 'Something went wrong on our side. Try again in a moment.',
   },
 
   // --- domain: mailbox scope (current-mailbox.guard, auth orchestrator) ---
@@ -508,6 +508,14 @@ export const ERROR_CODES = {
     retryable: true,
     message: 'This recovery review expired. Refresh it before trying again.',
   },
+  // D245 — the review the user confirmed did not say the sender is
+  // Protected, but it is now; its Confirm is only consent once it does.
+  RECOVERY_SENDER_PROTECTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This sender is Protected now. Check again before retrying.',
+  },
   IDEMPOTENCY_KEY_CONFLICT: {
     status: 409,
     severityTier: 'inline_recoverable',
@@ -545,6 +553,14 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message: "This sender hasn't been checked for an unsubscribe option yet.",
+  },
+  // A one-click request to this sender is still queued or sending; a second
+  // would be one more send nobody can recall (D58).
+  UNSUBSCRIBE_IN_FLIGHT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'An unsubscribe request to this sender is already on its way.',
   },
   UNSUBSCRIBE_INTENT_REQUIRED: {
     status: 409,
@@ -694,13 +710,13 @@ export const ERROR_CODES = {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "That couldn't be queued just now. Your email is untouched — try again in a moment.",
+    message: "We couldn't confirm that started. Check Activity before trying again.",
   },
   RECOVERY_ENQUEUE_FAILED: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "Recovery couldn't be queued just now. Your email is untouched — try again.",
+    message: "We couldn't confirm the retry started. Try again — it won't run twice.",
   },
   SERVICE_UNAVAILABLE: {
     status: 503,

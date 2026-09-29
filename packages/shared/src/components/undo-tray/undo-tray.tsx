@@ -144,9 +144,10 @@ function headlineSpeech(headline: TrayHeadline | null): string {
   const { entry } = headline;
   const total =
     typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
-      ? ` ${emailCount(entry.affectedCount)}`
-      : '';
-  return `${doneLabel(entry.actionKind)}${total}. Undo available.`;
+      ? emailCount(entry.affectedCount)
+      : null;
+  const note = entry.note ? ` ${entry.note}.` : '';
+  return `${doneLine(entry.actionKind, total)}.${note} Undo available.`;
 }
 
 /**
@@ -529,7 +530,7 @@ function Headline({
         </span>
         {attention && onViewActivity ? (
           <Button size="sm" tone="ghost" onClick={onViewActivity}>
-            See Activity
+            View Activity
           </Button>
         ) : null}
         {notice.onDismiss ? (
@@ -556,9 +557,9 @@ function Headline({
   return (
     <>
       <span style={{ minWidth: 0 }}>
-        {doneLabel(entry.actionKind)}
-        {total !== null ? ` ${total}` : ''}
+        {doneLine(entry.actionKind, total)}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
+        {entry.note ? <span style={{ color: color.fgSoft }}>{` · ${entry.note}`}</span> : null}
       </span>
       <Button
         size="sm"
@@ -680,6 +681,7 @@ function DecisionRow({
               {who !== null ? ` · ${who}` : ''}
             </span>
           ) : null}
+          {entry.note ? ` · ${entry.note}` : null}
           <span
             style={{
               display: 'block',
@@ -837,6 +839,16 @@ function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
       ) : null}
     </li>
   );
+}
+
+/**
+ * The pill's line: verb, then how much. Later names a destination, so its
+ * count goes before it — "Moved 1,400 emails to Later", never "Moved to
+ * Later 1,400 emails".
+ */
+function doneLine(kind: UndoActionKind, total: string | null): string {
+  if (total === null) return doneLabel(kind);
+  return kind === 'later' ? `Moved ${total} to Later` : `${doneLabel(kind)} ${total}`;
 }
 
 /**
