@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
 import {
   createRedisConnection,
   INCREMENTAL_SYNC_QUEUE,
@@ -9,6 +10,11 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
 
 import { AuthModule } from '../auth/auth.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
+import {
+  createScanProgressRedis,
+  InitialSyncProgressReader,
+  SCAN_PROGRESS_REDIS_TOKEN,
+} from './initial-sync-progress.reader.js';
 import { SyncController } from './sync.controller.js';
 import {
   INCREMENTAL_SYNC_QUEUE_TOKEN,
@@ -73,6 +79,20 @@ import {
         });
       },
     },
+    {
+      // The status poll's one Redis read (the gate's "N of M emails"):
+      // fail-fast and deadline-bound, so an outage or a silent Redis drops
+      // the line instead of holding the poll.
+      provide: SCAN_PROGRESS_REDIS_TOKEN,
+      useFactory: (): Redis => {
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          throw new Error('REDIS_URL is not set — see .env.example.');
+        }
+        return createScanProgressRedis(url);
+      },
+    },
+    InitialSyncProgressReader,
     SyncService,
   ],
   exports: [SyncService, INITIAL_SYNC_QUEUE_TOKEN, INCREMENTAL_SYNC_QUEUE_TOKEN],

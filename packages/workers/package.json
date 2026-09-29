@@ -14,18 +14,18 @@
     "@declutrmail/db": "workspace:*",
     "@declutrmail/events": "workspace:*",
     "@declutrmail/shared": "workspace:*",
-    "bullmq": "^6.0.5",
-    "drizzle-orm": "^0.45.2",
+    "bullmq": "^6.3.8",
+    "drizzle-orm": "^0.45.3",
     "ioredis": "5.10.1",
     "sharp": "^0.35.3",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.3",
-    "@types/node": "^22.10.5",
+    "@types/node": "^22.20.4",
     "postgres": "^3.4.9",
     "typescript": "^5.7.3",
-    "vite": "^7.3.6",
+    "vite": "^8.3.1",
     "vitest": "^5.0.1"
   }
 }

@@ -42,6 +42,7 @@ import {
   createAutopilotExecutionChain,
   createRedisConnection,
   createRedisProducerConnection,
+  createRedisScanProgressStore,
   GMAIL_QUOTA_SCRIPT,
   type GmailQuotaLimiter,
   DEAD_LETTER_INTERVAL_MS,
@@ -216,6 +217,7 @@ import { billingVerdictDeps } from './billing/billing-verdict.deps.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
+import { captureLlmProviderRejection } from './observability/llm-provider-rejection.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -415,10 +417,11 @@ async function bootstrap(): Promise<void> {
   // imports). Cloud Run worker rev 12 + 13 hung at `initSentry_begin`;
   // rev 14 + 15 hung at `createSentryWorkerObserver_begin` even with
   // `defaultIntegrations: false`. The correct long-term fix is to
-  // preload Sentry via `node --import @sentry/node/preload …` BEFORE
-  // `@swc-node/register` so OTel auto-instrumentation patches modules
-  // at load time, not after. Tracked in FOUNDER-FOLLOWUPS as the
-  // "Sentry preload on worker" item.
+  // preload Sentry via `node --import @sentry/node/import …` BEFORE
+  // `@swc-node/register` so the v11 diagnostics-channel hook (including
+  // Anthropic auto-capture) patches modules at load time, not after.
+  // `/preload` was removed in Sentry 11. Tracked in FOUNDER-FOLLOWUPS
+  // as the "Sentry preload on worker" item.
   //
   // Until then this gate keeps the worker boot reliable: set
   // `WORKER_SENTRY_ENABLED=true` to opt in once the preload flag is
@@ -862,9 +865,38 @@ async function bootstrap(): Promise<void> {
   // idempotency key for the all-senders sweep.
   const scoreProducerQueue = new Queue<ScoreJobData>(SCORE_QUEUE, { connection });
 
+  // The sync gate's "N of M emails" counts: display-only, so on their own
+  // fail-fast, bounded connection. A Redis outage costs the line, never the
+  // scan — on the Worker's connection a write would wait the outage out.
+  const scanProgressConnection = createRedisProducerConnection(requireEnv('REDIS_URL'), {
+    commandTimeout: 2_000,
+  });
+  // Writes fail as `sync.scan_progress_write_failed`, but a handshake that
+  // times out (the deadline bounds it too) only says why here. Once a
+  // minute: the client retries every couple of seconds while Redis is down.
+  let scanProgressErrorAt = 0;
+  let scanProgressErrorsHeld = 0;
+  scanProgressConnection.on('error', (err: Error) => {
+    const now = Date.now();
+    if (now - scanProgressErrorAt < 60_000) {
+      scanProgressErrorsHeld += 1;
+      return;
+    }
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'sync.scan_progress_connection_error',
+        message: err.message,
+        ...(scanProgressErrorsHeld > 0 ? { suppressed: scanProgressErrorsHeld } : {}),
+      }),
+    );
+    scanProgressErrorAt = now;
+    scanProgressErrorsHeld = 0;
+  });
   const initialSync = new InitialSyncWorker({
     db,
     gmailAccess,
+    scanProgress: createRedisScanProgressStore(scanProgressConnection),
     // U14/U-WIRE: publish `mailbox.sync_ready` in the ready transition
     // (transactional outbox) — drives preset seeding, the Autopilot
     // apply sweep, and the D6 sync-complete email via the consumer
@@ -1053,9 +1085,10 @@ async function bootstrap(): Promise<void> {
    *
    * One breaker for both Anthropic adapters (Brief here, reasoning
    * below): they bill the same account, so a credit or key refusal seen
-   * by either pauses both.
+   * by either pauses both. `onTrip` is the one Sentry capture for that
+   * pause; it does not run again until the pause lifts.
    */
-  const anthropicBreaker = new LlmCircuitBreaker();
+  const anthropicBreaker = new LlmCircuitBreaker({ onTrip: captureLlmProviderRejection });
   const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
@@ -2709,6 +2742,10 @@ async function bootstrap(): Promise<void> {
     emailQueue: emailSendQueue,
     renderReceiptEmail: deletionReceiptEmail,
     mailboxLock,
+    // Reuses the same fail-fast connection the sync gate's own counts use
+    // (D245 scan-progress-counts) — a Redis outage here costs only this
+    // clear, never the purge.
+    scanProgress: createRedisScanProgressStore(scanProgressConnection),
     observer,
   });
   deletionPurgeWorker.setObserver(observer);
@@ -3008,6 +3045,7 @@ async function bootstrap(): Promise<void> {
       // doesn't race a fresh dispatch tick that touched the same db.
       await outboxDispatcher.stop();
       await bullWorker.close();
+      await scanProgressConnection.quit().catch(() => undefined);
       await incrementalBullWorker.close();
       await briefSnapshotBullWorker.close();
       await briefSchedulerQueue.close();

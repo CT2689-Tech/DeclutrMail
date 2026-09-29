@@ -125,6 +125,13 @@ export class SyncService {
    * that makes a prior `InvalidGrantError` stale, so both evidence fields
    * are cleared together on conflict. Cursor/history failures remain valid
    * evidence after re-authentication. Ordinary retries keep every error.
+   *
+   * The cursor: an initial scan keeps the snapshot its first attempt took
+   * across every later attempt, so a sign-in mid-scan or during a retry's
+   * backoff does not re-snapshot — that would skip every Gmail change,
+   * between the two snapshots, to mail an earlier attempt already saved.
+   * Incremental sync replays from the kept one (idempotent). A READY
+   * mailbox's applied cursor is still cleared: its re-scan takes a new base.
    */
   async markQueued(
     executor: DrizzleExecutor,
@@ -146,14 +153,19 @@ export class SyncService {
           readinessStatus: 'queued',
           progressPct: 0,
           errorCode: null,
-          // A queued row represents a fresh full-sync attempt. Clear the
-          // previous applied cursor so InitialSync can capture a new base;
-          // BullMQ retries do not call markQueued and therefore preserve it.
+          // Only a READY row's applied cursor is cleared (see above); any
+          // other row holds its initial scan's snapshot, which stays.
           // `last_synced_at` is deliberately NOT cleared: it is how the
           // next ready knows this mailbox already had its "Your inbox is
           // ready" email (InitialSyncWorker.markReady).
-          lastHistoryId: null,
-          historyIdUpdatedAt: null,
+          lastHistoryId: sql`CASE
+            WHEN ${providerSyncState.readinessStatus} = 'ready' THEN NULL
+            ELSE ${providerSyncState.lastHistoryId}
+          END`,
+          historyIdUpdatedAt: sql`CASE
+            WHEN ${providerSyncState.readinessStatus} = 'ready' THEN NULL
+            ELSE ${providerSyncState.historyIdUpdatedAt}
+          END`,
           ...(options.freshCredentials
             ? {
                 lastIncrementalErrorAt: sql`CASE
@@ -283,6 +295,8 @@ export class SyncService {
    *
    * Compare and update in one statement: concurrent retries must not
    * overwrite a newly queued/running scan or clear its captured cursor.
+   * The failed attempt's snapshot cursor is kept (see `markQueued`): the
+   * retry resumes the mail it saved, so incremental replays from there.
    */
   async retryFailedInitialSync(mailboxAccountId: string): Promise<InitialSyncRetryOutcome> {
     const claimed = await this.db
@@ -292,8 +306,6 @@ export class SyncService {
         readinessStatus: 'queued',
         progressPct: 0,
         errorCode: null,
-        lastHistoryId: null,
-        historyIdUpdatedAt: null,
         updatedAt: sql`now()`,
       })
       .where(

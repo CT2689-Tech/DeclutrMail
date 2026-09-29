@@ -40,8 +40,9 @@ fi
 #   - `idempotencyKey: <something>` (field)
 #   - `idempotencyKey(...)` (method)
 #   - `get idempotencyKey()` (getter)
+#   - `getIdempotencyKey(...)` (BaseDeclutrWorker's actual override — base-declutr-worker.ts)
 #   - `@IdempotencyKey(...)` (decorator)
-if ! grep -qE "(idempotencyKey\s*[:=(]|get\s+idempotencyKey\s*\(|@IdempotencyKey)" "$file_path"; then
+if ! grep -qE "(idempotencyKey\s*[:=(]|get\s+idempotencyKey\s*\(|getIdempotencyKey\s*\(|@IdempotencyKey)" "$file_path"; then
   echo "❌ require-idempotency: worker class missing idempotencyKey declaration" >&2
   echo "   File: $file_path" >&2
   echo "" >&2

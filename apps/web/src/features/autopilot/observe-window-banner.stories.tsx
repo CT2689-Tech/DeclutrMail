@@ -4,8 +4,8 @@
 // The banner's honest-copy contract: matches were collected WITHOUT
 // acting, and nothing auto-promotes — the user explicitly switches a
 // rule to Active (which then goes through the D226 preview modal).
-// Each row carries the Observe-mode digest ("would have archived N
-// emails from M senders in the last 7 days") and a persisted "Not now"
+// Each row carries the Observe-mode digest (senders matched in the last
+// 7 days and the Inbox mail they hold now) and a persisted "Not now"
 // dismissal (D10).
 
 import type { ComponentProps } from 'react';

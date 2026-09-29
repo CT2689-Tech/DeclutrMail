@@ -82,7 +82,10 @@ export interface GmailDataInventoryItem {
   label: string;
   /** Gmail API envelope fields or headers read to obtain this dataset. */
   fetchedFrom: readonly string[];
-  /** Database table.column references that persist this dataset. */
+  /**
+   * Database table.column references that persist this dataset, or
+   * `redis:<key pattern>` for a short-lived Redis key.
+   */
   storageRefs: readonly string[];
   /** Whether the stored value is calculated from fetched Gmail data. */
   derived: boolean;
@@ -417,6 +420,21 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose:
       'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
+    id: 'scan-progress-counts',
+    category: 'derived',
+    label: 'Scan progress counts',
+    fetchedFrom: ['message-identifiers'],
+    storageRefs: ['redis:declutr:scan-progress:{mailboxAccountId}'],
+    derived: true,
+    purpose: 'Show how far a running scan has read, and its time left.',
+    retention:
+      'Cleared immediately when this mailbox’s saved data is deleted; otherwise gone within 30 minutes of the scan’s last update.',
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],

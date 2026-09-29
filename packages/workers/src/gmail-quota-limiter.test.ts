@@ -359,6 +359,17 @@ describe('the connection the limiter must be given', () => {
     }
   });
 
+  it('bounds how long a command may wait when asked, keeping both of those', () => {
+    const c = createRedisProducerConnection('redis://127.0.0.1:6379', { commandTimeout: 500 });
+    try {
+      expect(c.options.commandTimeout).toBe(500);
+      expect(c.options.maxRetriesPerRequest).toBe(0);
+      expect(c.options.enableOfflineQueue).toBe(false);
+    } finally {
+      c.disconnect();
+    }
+  });
+
   it("does NOT have those semantics on BullMQ's connection", () => {
     // The negative half. If this ever starts matching the producer
     // shape, the test above stops proving anything — and if someone
