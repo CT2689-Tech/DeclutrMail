@@ -6,6 +6,7 @@ import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
 import type { MailboxHealth } from '@/features/settings/api/use-mailbox-health';
 import { AccountMenu } from './account-menu';
+import type { loadMailboxDataControls } from './load-mailbox-data-controls';
 
 const MAILBOX_A: MeMailbox = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -79,6 +80,19 @@ vi.mock('@/features/auth/api/use-logout', () => ({
   useLogout: () => ({ isPending: false, mutate: logoutMutateSpy }),
 }));
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(async () => undefined) }));
+// The dialog's code loads on demand; count each load, then load it for real.
+const { loadDialogSpy } = vi.hoisted(() => ({ loadDialogSpy: vi.fn() }));
+vi.mock('./load-mailbox-data-controls', async (importOriginal) => {
+  const actual = await importOriginal<{
+    loadMailboxDataControls: typeof loadMailboxDataControls;
+  }>();
+  return {
+    loadMailboxDataControls: () => {
+      loadDialogSpy();
+      return actual.loadMailboxDataControls();
+    },
+  };
+});
 
 function makeMe(mailboxes: MeMailbox[] = [MAILBOX_A, MAILBOX_B]): Me {
   return {
@@ -117,6 +131,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       connectedInboxes: 2,
       atInboxLimit: true,
     };
+    loadDialogSpy.mockClear();
     startMailboxConnectSpy.mockClear();
     startMailboxReactivationSpy.mockClear();
     setActiveMutateSpy.mockClear();
@@ -138,6 +153,24 @@ describe('AccountMenu Gmail reconnect health', () => {
     );
     expect(screen.getByRole('dialog', { name: 'Gmail accounts' })).toBeInTheDocument();
     expect(selector).toBeEnabled();
+  });
+
+  // Orchestrator review (2026-09-27): loaded only on the click, a slow
+  // connection showed nothing for a moment after pressing a delete control.
+  it('starts loading the data dialog when the menu opens, and still opens it on the click', async () => {
+    const user = userEvent.setup();
+    render(<AccountMenu />);
+    expect(loadDialogSpy).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: MAILBOX_A.email }));
+    expect(loadDialogSpy).toHaveBeenCalled();
+
+    await user.click(
+      screen.getByRole('button', { name: `Manage connection and data for ${MAILBOX_A.email}` }),
+    );
+    expect(
+      await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` }),
+    ).toBeVisible();
   });
 
   it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {
@@ -165,7 +198,10 @@ describe('AccountMenu Gmail reconnect health', () => {
         name: `Manage connection and data for ${MAILBOX_A.email}`,
       }),
     );
-    expect(screen.getByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` })).toBeVisible();
+    // Loaded on first open, so it arrives a moment after the click.
+    expect(
+      await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` }),
+    ).toBeVisible();
   });
 
   it('keeps another revoked mailbox selectable and reconnects its exact target at the limit', async () => {

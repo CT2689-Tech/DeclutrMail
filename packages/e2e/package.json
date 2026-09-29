@@ -21,11 +21,11 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.12.1",
     "@declutrmail/shared": "workspace:*",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "postgres": "^3.4.5",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }

@@ -24,8 +24,8 @@ export async function generateMetadata({ params }: ComparisonPageProps): Promise
   if (!comparison) return {};
 
   return marketingPageMetadata({
-    title: `${comparison.title} — honest 2026 comparison`,
-    description: comparison.description,
+    title: comparison.metaTitle ?? `${comparison.title} — honest 2026 comparison`,
+    description: comparison.metaDescription ?? comparison.description,
     path: `/vs/${comparison.slug}`,
   });
 }

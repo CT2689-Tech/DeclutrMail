@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { demoForTopic } from '../learn/journey-links';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -14,8 +16,10 @@ import {
   ROUNDUP_DIMENSIONS,
   type ComparisonCell,
   type ComparisonDefinition,
+  type ComparisonSlug,
   type EvidenceState,
 } from './comparison-data';
+import { COMPARE_DIY_GUIDES, COMPARISON_RELATED_GUIDES } from './related-guides';
 
 /**
  * Spelled from `COMPARISONS`, never hand-written. Three places said
@@ -204,20 +208,20 @@ export function ComparisonIndexScreen() {
               DeclutrMail lets you review a sender, preview the current match and planned Gmail
               change, then check the outcome in Activity.
             </p>
-            <a href="/inbox-simulator?workspace=senders">
+            <Link href="/inbox-simulator?workspace=senders">
               Try a sender review <span aria-hidden="true">→</span>
-            </a>
+            </Link>
           </div>
           <div className="dm-compare-fit-options">
             {QUICK_FITS.map((fit) => (
-              <a key={fit.href} href={fit.href} aria-label={`${fit.action}: ${fit.tool}`}>
+              <Link key={fit.href} href={fit.href} aria-label={`${fit.action}: ${fit.tool}`}>
                 <span className="dm-compare-fit-kicker">{fit.job}</span>
                 <strong>{fit.tool}</strong>
                 <span className="dm-compare-fit-description">{fit.description}</span>
                 <span className="dm-compare-fit-action">
                   {fit.action} <span aria-hidden="true">→</span>
                 </span>
-              </a>
+              </Link>
             ))}
           </div>
         </div>
@@ -231,12 +235,12 @@ export function ComparisonIndexScreen() {
           {COMPARISONS.map((comparison) => (
             <li key={comparison.slug}>
               <span className="dm-compare-list-category">{comparison.category}</span>
-              <a
+              <Link
                 href={`/vs/${comparison.slug}`}
                 aria-label={`Compare DeclutrMail and ${comparison.name}`}
               >
                 DeclutrMail vs {comparison.name} <span aria-hidden="true">→</span>
-              </a>
+              </Link>
               <p>{comparison.indexSummary}</p>
             </li>
           ))}
@@ -258,13 +262,25 @@ export function ComparisonIndexScreen() {
             if (!subject) return null;
             return (
               <li key={slug}>
-                <a href={`/alternatives/${slug}`} aria-label={`Alternatives to ${subject.name}`}>
+                <Link href={`/alternatives/${slug}`} aria-label={`Alternatives to ${subject.name}`}>
                   Alternatives to {subject.name}
-                </a>
+                </Link>
                 <p>What to use instead of {subject.name}, and when to stay.</p>
               </li>
             );
           })}
+        </ul>
+      </section>
+
+      <section className="dm-compare-section dm-compare-narrow" aria-labelledby="diy-guides-title">
+        <h2 id="diy-guides-title">Prefer to do it in Gmail yourself?</h2>
+        <ul className="dm-compare-list">
+          {COMPARE_DIY_GUIDES.map((guide) => (
+            <li key={guide.href}>
+              <a href={guide.href}>{guide.label}</a>
+              <p>{guide.description}</p>
+            </li>
+          ))}
         </ul>
       </section>
 
@@ -324,7 +340,7 @@ function MatrixSection() {
                 <th scope="col">DeclutrMail</th>
                 {COMPARISONS.map((comparison) => (
                   <th scope="col" key={comparison.slug}>
-                    <a href={`/vs/${comparison.slug}`}>{comparison.name}</a>
+                    <Link href={`/vs/${comparison.slug}`}>{comparison.name}</Link>
                   </th>
                 ))}
               </tr>
@@ -415,18 +431,45 @@ export function ToolFacts({ tool }: { tool: ComparisonDefinition }) {
   );
 }
 
+function alternativesPageHref(slug: ComparisonSlug): string | undefined {
+  return ALTERNATIVES_SLUGS.some((candidate) => candidate === slug)
+    ? `/alternatives/${slug}`
+    : undefined;
+}
+
+function RelatedGuides({ slug }: { slug: ComparisonSlug }) {
+  return (
+    <nav className="dm-compare-more dm-compare-narrow" aria-label="Related guides">
+      <h2>Related guides</h2>
+      <ul>
+        {COMPARISON_RELATED_GUIDES[slug].map((guide) => (
+          <li key={guide.href}>
+            <a href={guide.href}>{guide.label}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonDefinition }) {
+  const alternativesHref = alternativesPageHref(comparison.slug);
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={comparisonJsonLd(comparison)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <a href="/compare">All comparisons</a>
+          <Link href="/compare">All comparisons</Link>
           <span aria-hidden="true">/</span>
           <span>{comparison.name}</span>
         </nav>
         <h1>DeclutrMail vs {comparison.name}</h1>
         <p className="dm-compare-lede">{comparison.verdict}</p>
+        {alternativesHref ? (
+          <p>
+            <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
+          </p>
+        ) : null}
         <p className="dm-compare-verified">
           {comparisonVerifiedLabel(comparison.verifiedIso)}. Official primary sources only.{' '}
           <a href="#sources">Check the sources</a>
@@ -521,11 +564,11 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
             </li>
           ))}
           <li>
-            <a href="/pricing">DeclutrMail pricing and tiers</a>
+            <Link href="/pricing">DeclutrMail pricing and tiers</Link>
             <p>Current public plan prices, inbox limits, capabilities, and undo windows.</p>
           </li>
           <li>
-            <a href="/privacy">DeclutrMail privacy policy</a>
+            <Link href="/privacy">DeclutrMail privacy policy</Link>
             <p>Current data categories, Gmail access, retention, and account-deletion details.</p>
           </li>
         </ol>
@@ -535,16 +578,23 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
 
       <FinalCta competitorName={comparison.name} topic={comparison.slug} />
 
+      <RelatedGuides slug={comparison.slug} />
+
       <nav className="dm-compare-more dm-compare-narrow" aria-label="More comparisons">
         <h2>Compare another approach</h2>
         <ul>
           {COMPARISONS.filter((candidate) => candidate.slug !== comparison.slug).map(
             (candidate) => (
               <li key={candidate.slug}>
-                <a href={`/vs/${candidate.slug}`}>DeclutrMail vs {candidate.name}</a>
+                <Link href={`/vs/${candidate.slug}`}>DeclutrMail vs {candidate.name}</Link>
               </li>
             ),
           )}
+          {alternativesHref ? (
+            <li>
+              <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
+            </li>
+          ) : null}
         </ul>
       </nav>
     </div>

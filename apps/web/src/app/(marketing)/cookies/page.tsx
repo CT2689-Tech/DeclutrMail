@@ -13,16 +13,17 @@ import type { Metadata } from 'next';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Cookie Preferences — DeclutrMail',
   description:
-    'View or change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent. Public pages also keep a cookieless page-view count.',
+    'Change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent.',
   path: '/cookies',
 });
 
-const LAST_UPDATED = '2026-09-18';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/cookies'];
 
 const TOC = [
   { id: 'your-choice', label: 'Your preference' },

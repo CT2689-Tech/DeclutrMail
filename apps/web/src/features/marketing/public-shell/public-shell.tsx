@@ -4,8 +4,10 @@ import { Logo } from '@declutrmail/shared';
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { isFeatureEnabled } from '@/lib/flags';
 
+import { ALTERNATIVES_SLUGS, COMPARISONS, alternativesFor } from '../comparison/comparison-data';
 import { permissionEntryUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
+import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '../learn/how-to-content';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
 
@@ -18,6 +20,27 @@ const PRODUCT_LINKS = [
   { href: '/methodology', label: 'Privacy & control' },
 ] as const;
 
+const COMPARE_LINKS = [
+  { href: '/compare', label: 'All comparisons' },
+  ...COMPARISONS.map((comparison) => ({
+    href: `/vs/${comparison.slug}`,
+    label: comparison.title,
+  })),
+  ...ALTERNATIVES_SLUGS.flatMap((slug) => {
+    const page = alternativesFor(slug);
+    if (!page) return [];
+    return [{ href: `/alternatives/${slug}`, label: `${page.subject.name} alternatives` }];
+  }),
+];
+
+const GUIDE_LINKS = [
+  { href: '/how-to', label: 'All how-to guides' },
+  ...HOW_TO_SLUGS.map((slug) => ({
+    href: HOW_TO_ARTICLES[slug].path,
+    label: HOW_TO_ARTICLES[slug].title,
+  })),
+];
+
 const FOOTER_GROUPS = [
   {
     label: 'Product',
@@ -29,11 +52,17 @@ const FOOTER_GROUPS = [
     ],
   },
   {
+    label: 'Compare',
+    links: COMPARE_LINKS,
+  },
+  {
+    label: 'Guides',
+    links: GUIDE_LINKS,
+  },
+  {
     label: 'Learn',
     links: [
       { href: '/methodology', label: 'Privacy & control' },
-      { href: '/compare', label: 'Compare' },
-      { href: '/how-to', label: 'Guides' },
       { href: '/answers', label: 'Answers' },
       { href: '/blog', label: 'Articles' },
       { href: '/faq', label: 'FAQ' },
@@ -56,7 +85,7 @@ const FOOTER_GROUPS = [
       { href: '/cookies', label: 'Cookie preferences' },
     ],
   },
-] as const;
+];
 
 export function PublicHeader() {
   return (

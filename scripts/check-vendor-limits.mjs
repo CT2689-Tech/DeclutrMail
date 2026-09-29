@@ -360,7 +360,10 @@ export async function checkUpstash() {
     // cannot take the spend cause down with it.
     //
     // Only an explicit number is a budget: a missing or unreadable one is not
-    // "no cap", since the cap is the kill switch (#795 review).
+    // "no cap", since the cap is the kill switch (#795 review). Upstash
+    // documents `budget` as an integer on the Database object
+    // (devops/developer-api/openapi.yaml, read 2026-09-27), so a response
+    // without one is read as unreadable, not as uncapped.
     const budget = db.budget == null || db.budget === '' ? NaN : Number(db.budget);
     const monthCost =
       stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);

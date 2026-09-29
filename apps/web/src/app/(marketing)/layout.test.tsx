@@ -23,6 +23,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import { TIER_MANIFEST } from '@declutrmail/shared';
 
+import { siteUrl } from '@/features/marketing/landing/urls';
+
 import MarketingLayout from './layout';
 
 afterEach(() => {
@@ -60,6 +62,21 @@ describe('(marketing) layout — D134', () => {
     // once per flow, at the decision point).
     const footer = within(screen.getByRole('contentinfo'));
     expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(footer.getByRole('link', { name: 'All comparisons' })).toHaveAttribute(
+      'href',
+      '/compare',
+    );
+    expect(footer.getByRole('link', { name: 'DeclutrMail vs SaneBox' })).toHaveAttribute(
+      'href',
+      '/vs/sanebox',
+    );
+    expect(footer.getByRole('link', { name: 'SaneBox alternatives' })).toHaveAttribute(
+      'href',
+      '/alternatives/sanebox',
+    );
+    expect(
+      footer.getByRole('link', { name: 'How to auto archive emails in Gmail' }),
+    ).toHaveAttribute('href', '/how-to/auto-archive-future-emails-in-gmail');
     expect(document.querySelector('[data-dm-privacy-badge]')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -86,11 +103,14 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
     // No SearchAction — there is no /search route to point one at.
     expect(website).not.toHaveProperty('potentialAction');
     expect(app).toMatchObject({
+      '@id': `${siteUrl()}/#software`,
       name: 'DeclutrMail',
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       publisher: { '@id': org?.['@id'] },
     });
+    expect(website).not.toHaveProperty('alternateName');
+    expect(org).not.toHaveProperty('sameAs');
   });
 
   it('derives one Offer per purchasable price point PER BUYABLE CURRENCY — and never the promo', () => {
