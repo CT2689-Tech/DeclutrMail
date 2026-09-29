@@ -178,6 +178,53 @@ describe('msUntilQuietWindowEnd', () => {
   it('returns null when the timezone is unevaluable (no hint computable)', () => {
     expect(msUntilQuietWindowEnd(window({ timezone: 'Not/A_Zone' }), new Date())).toBeNull();
   });
+
+  // Counting wall-clock minutes alone lands an hour off when the clocks
+  // change inside the span. New York, overnight window 22:00 → 07:00.
+  const overnight = window({
+    startLocal: '22:00',
+    endLocal: '07:00',
+    timezone: 'America/New_York',
+  });
+  const wakeAt = (cfg: QuietHoursConfig, at: Date) =>
+    new Date(at.getTime() + msUntilQuietWindowEnd(cfg, at)!).toISOString();
+
+  it('lands on the end across the spring-forward change', () => {
+    // 23:00 EST on Mar 7 → 07:00 EDT on Mar 8.
+    expect(wakeAt(overnight, new Date('2026-03-08T04:00:00Z'))).toBe('2026-03-08T11:00:00.000Z');
+  });
+
+  it('lands on the end across the fall-back change', () => {
+    // 23:00 EDT on Oct 31 → 07:00 EST on Nov 1.
+    expect(wakeAt(overnight, new Date('2026-11-01T03:00:00Z'))).toBe('2026-11-01T12:00:00.000Z');
+  });
+
+  it('applies no drift correction in a zone without DST', () => {
+    // Kolkata never shifts clocks — the span alone is the answer on the
+    // US DST-change dates too, not just on an ordinary day.
+    for (const at of ['2026-03-08T18:00:00Z', '2026-11-01T18:00:00Z', '2026-06-10T18:00:00Z']) {
+      expect(msUntilQuietWindowEnd(window(), new Date(at))).toBe(6.5 * 60 * 60_000);
+    }
+  });
+
+  it('still returns null for an unevaluable timezone on the DST-corrected path', () => {
+    // A window whose span could cross a DST change, but with a zone
+    // Intl can't resolve — the existing fail-safe (no hint, no throw,
+    // no loop) must survive the fold-correction code added around it.
+    const badZone = window({ startLocal: '22:00', endLocal: '07:00', timezone: 'Not/A_Zone' });
+    expect(msUntilQuietWindowEnd(badZone, new Date('2026-03-08T04:00:00Z'))).toBeNull();
+  });
+
+  it('lands after the window when its end falls in the spring-forward gap', () => {
+    // 02:30 never happens on Mar 8: quiet is over once the clocks read 03:00.
+    const gap = window({ startLocal: '22:00', endLocal: '02:30', timezone: 'America/New_York' });
+    // 23:00 EST, then 01:30 EST — half an hour before the clocks jump.
+    for (const at of [new Date('2026-03-08T04:00:00Z'), new Date('2026-03-08T06:30:00Z')]) {
+      const ms = msUntilQuietWindowEnd(gap, at);
+      expect(ms).toBeGreaterThan(0);
+      expect(isWithinQuietWindow(gap, new Date(at.getTime() + ms!))).toBe(false);
+    }
+  });
 });
 
 describe('parseTimeToMinutes', () => {

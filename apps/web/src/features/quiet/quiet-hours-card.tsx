@@ -23,7 +23,8 @@ const { color, font, radius, text } = tokens;
  * One recurring daily window per mailbox: local start/end ("HH:MM") in
  * an IANA timezone. `startLocal > endLocal` = crosses midnight (the
  * "ends next day" hint renders). While the window covers now, Autopilot
- * mutations defer; manual actions always run (user intent wins).
+ * mutations defer, suggestions the user approved included; actions the
+ * user takes directly always run.
  */
 
 export type QuietHoursCardState =
@@ -37,11 +38,15 @@ export interface QuietHoursCardProps {
   state: QuietHoursCardState;
   /** True while the PUT is in flight — disables the form. */
   saving: boolean;
-  /** True once the latest save succeeded — announced by the save status region. */
+  /** True from a successful save until the next edit — announced by the save status region. */
   justSaved?: boolean;
+  /** Called on every edit, so the screen can end a finished save. */
+  onEdit?: () => void;
   onSave: (config: QuietHoursConfig) => void;
   onRetry?: () => void;
 }
+
+const noop = () => undefined;
 
 /** Browser timezone, with a safe fallback. */
 function browserTimeZone(): string {
@@ -67,9 +72,12 @@ const visuallyHidden = {
   position: 'absolute',
   width: 1,
   height: 1,
+  padding: 0,
+  margin: -1,
   overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
+  clip: 'rect(0, 0, 0, 0)',
   whiteSpace: 'nowrap',
+  border: 0,
 } as const;
 
 const DEFAULT_DRAFT: QuietHoursConfig = {
@@ -80,7 +88,16 @@ const DEFAULT_DRAFT: QuietHoursConfig = {
 };
 
 export function QuietHoursCard(props: QuietHoursCardProps) {
-  const { mailboxEmail, mailboxStatus, state, saving, justSaved = false, onSave, onRetry } = props;
+  const {
+    mailboxEmail,
+    mailboxStatus,
+    state,
+    saving,
+    justSaved = false,
+    onEdit = noop,
+    onSave,
+    onRetry,
+  } = props;
 
   return (
     <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
@@ -143,6 +160,8 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
           initial={state.config ?? DEFAULT_DRAFT}
           useBrowserDefault={state.config === null}
           saving={saving}
+          announced={justSaved}
+          onEdit={onEdit}
           onSave={onSave}
         />
       )}
@@ -150,7 +169,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
       {/* Outside the keyed form, which remounts on every save: a live region
           has to exist before its text changes to be announced. */}
       <span role="status" aria-label={`Save status for ${mailboxEmail}`} style={visuallyHidden}>
-        {justSaved ? 'Saved' : ''}
+        {state.kind === 'ready' && justSaved ? 'Saved' : ''}
       </span>
     </section>
   );
@@ -167,11 +186,16 @@ function QuietHoursForm({
   initial,
   useBrowserDefault,
   saving,
+  announced,
+  onEdit,
   onSave,
 }: {
   initial: QuietHoursConfig;
   useBrowserDefault: boolean;
   saving: boolean;
+  /** The save status region is saying "Saved" right now. */
+  announced: boolean;
+  onEdit?: () => void;
   onSave: (config: QuietHoursConfig) => void;
 }) {
   const [baseline, setBaseline] = useState<QuietHoursConfig>(initial);
@@ -199,6 +223,7 @@ function QuietHoursForm({
   const set = (patch: Partial<QuietHoursConfig>) => {
     setValidationError(null);
     setDraft((d) => ({ ...d, ...patch }));
+    onEdit?.();
   };
 
   const submit = () => {
@@ -307,8 +332,14 @@ function QuietHoursForm({
         <Button tone="primary" size="md" onClick={submit} disabled={saving || !dirty}>
           {saving ? 'Saving…' : 'Save quiet hours'}
         </Button>
-        {!dirty && !saving && (
-          <span style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}>
+        {/* `useBrowserDefault` means no config is stored yet: nothing is saved.
+            While the save status region says "Saved", screen readers hear it
+            there, so they do not hear it twice. */}
+        {!dirty && !saving && !useBrowserDefault && (
+          <span
+            aria-hidden={announced || undefined}
+            style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}
+          >
             Saved
           </span>
         )}

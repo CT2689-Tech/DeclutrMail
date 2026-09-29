@@ -166,7 +166,7 @@ export default function HowItWorksPage() {
             Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
             which lists unfamiliar senders for review while their email still arrives in Gmail, the
             whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
-            when those rules may run. Pro adds the Daily Brief, a once-a-day summary of what needs
+            when those rules may act. Pro adds the Daily Brief, a once-a-day summary of what needs
             your attention, and Follow-ups, a queue for senders you replied to but haven&rsquo;t
             heard back from. <a href="/pricing">See every plan</a>.
           </p>

@@ -10,13 +10,13 @@ import {
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/contracts';
+import { EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
+import type { QuietHoursConfig } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { track } from '@/lib/posthog';
-import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { addBreadcrumb } from '@/lib/sentry';
 import { useQuietHours } from './api/use-quiet-hours';
 import { useUpdateQuietHours } from './api/use-update-quiet-hours';
 import { QuietHoursCard, type QuietHoursCardState } from './quiet-hours-card';
@@ -29,7 +29,9 @@ const { color, font, text } = tokens;
  * V2 scope: per-mailbox quiet-hours WINDOW config (one recurring daily
  * window: start/end local + timezone + enabled). While the window
  * covers now, Autopilot mutations defer (`AutopilotActionWorker`
- * Guard 1); manual actions always run. Out of scope at this unit (the
+ * Guard 2) — suggestions the user approved included, since approving
+ * queues that same sweep; actions the user takes directly always run.
+ * Out of scope at this unit (the
  * rest of D92-D98): the ad-hoc "Quiet until" toggle, the held-messages
  * list (D96), multi-window schedules with day bitmasks, and the D190
  * preview mode — those land with the QuietHold/QuietRelease pipeline.
@@ -59,13 +61,12 @@ export function QuietRoute() {
       <EditorialKicker>Automations / On your schedule</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
       <EditorialDescription>
-        Autopilot holds its actions during quiet hours. Gmail delivery and your own actions
-        continue.
+        Autopilot holds its actions during quiet hours. Gmail delivery continues.
       </EditorialDescription>
       <ScreenIntro
         id="quiet"
         title="Quiet hours"
-        body="Autopilot holds its actions during quiet hours. Your own actions still run."
+        body="During quiet hours, Autopilot also holds suggestions you approve."
       />
       {mailboxes.length === 0 ? (
         <EmptyState
@@ -92,18 +93,21 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
   const query = useQuietHours(mailbox.id);
   const update = useUpdateQuietHours(mailbox.id);
 
-  const state: QuietHoursCardState = query.isLoading
-    ? { kind: 'loading' }
-    : query.isError
+  // No data yet — the first fetch, or one waiting to go back online — is
+  // loading. It used to fall through to an unconfigured form showing the
+  // defaults, and saving that form would replace the stored window.
+  const state: QuietHoursCardState = query.isError
+    ? {
+        kind: 'error',
+        message: "We couldn't load quiet hours right now.",
+      }
+    : query.data
       ? {
-          kind: 'error',
-          message: "We couldn't load quiet hours right now.",
-        }
-      : {
           kind: 'ready',
-          config: query.data?.config ?? null,
-          activeNow: query.data?.activeNow ?? false,
-        };
+          config: query.data.config,
+          activeNow: query.data.activeNow,
+        }
+      : { kind: 'loading' };
 
   const onSave = (config: QuietHoursConfig) => {
     addBreadcrumb({
@@ -111,22 +115,23 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
       message: 'quiet: hours saved',
       level: 'info',
     });
-    update.mutate(config, {
-      onSuccess: () => {
-        // Server-confirmed save — never optimistic (taxonomy contract).
-        void track('quiet_hours_updated', {
-          mailbox_id: mailbox.id,
-          enabled: config.enabled,
-          crosses_midnight:
-            parseTimeToMinutes(config.startLocal) > parseTimeToMinutes(config.endLocal),
-        });
-      },
-      onError: (err) => {
-        captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
-        toast('Saving failed. Try again.', 'warn');
-      },
-    });
+    update.mutate(config);
   };
+
+  // "Saved" answers the latest save only: the next edit, or a retry
+  // after a failed refresh, ends it.
+  const endSaved = () => {
+    if (update.isSuccess) update.reset();
+  };
+
+  // Quiet holds nothing while it is off. A failed refresh shows the error
+  // card, which a count from the last good read would contradict. A
+  // disconnected inbox runs nothing until it is reconnected, and its row
+  // in the account menu is disabled.
+  const heldCount =
+    state.kind === 'ready' && state.activeNow && mailbox.status !== 'disconnected'
+      ? (query.data?.heldCount ?? 0)
+      : 0;
 
   return (
     // One raised settings group per mailbox, its address as the group title.
@@ -138,17 +143,18 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
         state={state}
         saving={update.isPending}
         justSaved={update.isSuccess}
+        onEdit={endSaved}
         onSave={onSave}
-        onRetry={() => void query.refetch()}
+        onRetry={() => {
+          endSaved();
+          void query.refetch();
+        }}
       />
-      {query.data && (
+      {heldCount > 0 && (
         <QuietQueueSummary
           mailboxEmail={mailbox.email}
           activeInbox={active}
-          activeNow={query.data.activeNow}
-          heldCount={query.data.heldCount}
-          endsAt={query.data.endsAt}
-          timezone={query.data.config?.timezone ?? 'UTC'}
+          heldCount={heldCount}
         />
       )}
     </div>
@@ -158,23 +164,14 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
 function QuietQueueSummary({
   mailboxEmail,
   activeInbox,
-  activeNow,
   heldCount,
-  endsAt,
-  timezone,
 }: {
   mailboxEmail: string;
   activeInbox: boolean;
-  activeNow: boolean;
   heldCount: number;
-  endsAt: string | null;
-  timezone: string;
 }) {
-  // Quiet holds nothing while it is off.
-  if (!activeNow) return null;
-  const endLabel = endsAt ? formatQuietEnd(endsAt, timezone) : null;
-  if (heldCount === 0 && !endLabel) return null;
-
+  // No end time: the End row states it, and a rule's daily cap can keep
+  // some of these past it.
   return (
     <p
       role="status"
@@ -189,38 +186,14 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {heldCount > 0 && (
-        <>
-          {heldCount} {heldCount === 1 ? 'Autopilot action is' : 'Autopilot actions are'} held.{' '}
-        </>
+      {heldCount} {heldCount === 1 ? 'Autopilot action is' : 'Autopilot actions are'} held.{' '}
+      {activeInbox ? (
+        <Link href="/autopilot" style={{ color: color.primary }}>
+          Review Autopilot rules →
+        </Link>
+      ) : (
+        <span>Choose this inbox in the account menu to review its rules.</span>
       )}
-      {/* When quiet ends, not when they run: a rule's daily cap can hold some past it. */}
-      {endLabel && (
-        <>
-          Quiet ends at <time dateTime={endsAt ?? undefined}>{endLabel}</time>.{' '}
-        </>
-      )}
-      {heldCount > 0 &&
-        (activeInbox ? (
-          <Link href="/autopilot" style={{ color: color.primary }}>
-            Review Autopilot rules →
-          </Link>
-        ) : (
-          <span>Choose this inbox in the account menu to review its rules.</span>
-        ))}
     </p>
   );
-}
-
-function formatQuietEnd(value: string, timezone: string): string | null {
-  const end = new Date(value);
-  if (Number.isNaN(end.getTime())) return null;
-
-  // Always the window's next end, under a day away: a time is enough.
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-    timeZone: timezone,
-  }).format(end);
 }

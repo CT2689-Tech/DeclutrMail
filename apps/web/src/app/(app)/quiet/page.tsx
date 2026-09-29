@@ -1,8 +1,8 @@
 // /quiet — Quiet hours configuration (U18 — D92, D95).
 //
 // Per-mailbox recurring quiet window: while it covers "now", Autopilot
-// mutations defer (AutopilotActionWorker Guard 1) and run after the
-// window ends. Manual user actions are never deferred.
+// mutations defer (AutopilotActionWorker Guard 2), suggestions the user
+// approved included. Actions the user takes directly are never deferred.
 //
 // Gated on the `quiet` capability, resolved from the manifest — Quiet
 // governs Autopilot, so it is granted wherever Autopilot is. Without

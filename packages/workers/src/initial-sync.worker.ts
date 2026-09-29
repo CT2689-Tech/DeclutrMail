@@ -3,6 +3,7 @@ import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
+  ruleMatchLabelClaimKey,
   ruleMatchLog,
   senders,
   senderTimeseries,
@@ -1082,7 +1083,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           sql`not exists (
             select 1
             from action_jobs aj
-            where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
+            where aj.idempotency_key = ${ruleMatchLabelClaimKey()}
           )`,
         ),
       );
