@@ -17,7 +17,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NEEDS_REVIEW_VERDICTS, SendersReadService } from './senders.read-service.js';
 
@@ -203,6 +203,57 @@ describe('SendersReadService', () => {
     db = await freshDb();
     mailboxId = await seedMailbox(db, 'a');
     svc = new SendersReadService(db as never);
+  });
+
+  it('does not probe outbound mail when list/detail have no correspondence protection', async () => {
+    const sender = await seedSender(db, {
+      mailboxAccountId: mailboxId,
+      email: 'fast@example.com',
+      lastSeenAt: new Date(),
+    });
+    const select = vi.spyOn(db, 'select');
+    const detail = await svc.getSenderDetail(mailboxId, sender.id);
+    expect(detail?.protectionFlags.protectionEvidenceCurrent).toBe(true);
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockClear();
+    await svc.listSenders({ mailboxAccountId: mailboxId, category: null, cursor: null, limit: 10 });
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockRestore();
+  });
+
+  it('still distinguishes unknown from unsupported correspondence protection', async () => {
+    const sender = await seedSender(db, {
+      mailboxAccountId: mailboxId,
+      email: 'protected@example.com',
+      lastSeenAt: new Date(),
+    });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      isProtected: true,
+      protectionReason: 'replied',
+      protectionSetAt: new Date(),
+    });
+    expect(
+      (await svc.getSenderDetail(mailboxId, sender.id))?.protectionFlags.protectionEvidenceCurrent,
+    ).toBeNull();
+    await seedMessage(db, {
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      internalDate: new Date(),
+      isOutbound: true,
+      labelIds: ['SENT'],
+    });
+    expect(
+      (await svc.getSenderDetail(mailboxId, sender.id))?.protectionFlags.protectionEvidenceCurrent,
+    ).toBe(false);
+    const rows = await svc.listSenders({
+      mailboxAccountId: mailboxId,
+      category: null,
+      cursor: null,
+      limit: 10,
+    });
+    expect(rows[0]?.protectionFlags.protectionEvidenceCurrent).toBe(false);
   });
 
   it('removes cleared senders from cleanup rows and counts, and restores them on Undo or new mail', async () => {
@@ -441,6 +492,14 @@ describe('SendersReadService', () => {
         internalDate: new Date('2026-07-20T00:00:00Z'),
         labelIds: ['Label_29', 'CATEGORY_UPDATES'],
       });
+      for (const label of ['TRASH', 'SPAM', 'DRAFT', 'CHAT']) {
+        await seedMessage(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: filtered.senderKey,
+          internalDate: new Date('2026-07-19T00:00:00Z'),
+          labelIds: [label],
+        });
+      }
       const inboxy = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'news@inboxy.example',
@@ -480,6 +539,72 @@ describe('SendersReadService', () => {
 
       const detail = await svc.getSenderDetail(mailboxId, inboxy.id);
       expect(detail!.inboxCount).toBe(2);
+      expect(detail!.archivedCount).toBe(0);
+      const archivedDetail = await svc.getSenderDetail(mailboxId, filtered.id);
+      expect(archivedDetail!.inboxCount).toBe(0);
+      expect(archivedDetail!.archivedCount).toBe(1);
+    });
+
+    it('filters across the mailbox by live inbound Inbox membership without hiding unsubscribe-only senders by default', async () => {
+      const inbox = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'inbox@example.com',
+        lastSeenAt: new Date('2026-07-21T00:00:00Z'),
+      });
+      const archived = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'unsubscribe-only@example.com',
+        lastSeenAt: new Date('2026-07-20T00:00:00Z'),
+        unsubscribeMethod: 'one_click',
+      });
+      const outbound = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'outbound@example.com',
+        lastSeenAt: new Date('2026-07-19T00:00:00Z'),
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inbox.senderKey,
+        internalDate: new Date('2026-07-21T00:00:00Z'),
+        labelIds: ['INBOX'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: archived.senderKey,
+        internalDate: new Date('2026-07-20T00:00:00Z'),
+        labelIds: ['CATEGORY_PROMOTIONS'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: outbound.senderKey,
+        internalDate: new Date('2026-07-19T00:00:00Z'),
+        labelIds: ['INBOX', 'SENT'],
+        isOutbound: true,
+      });
+
+      const all = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      expect(all.map((r) => r.id)).toContain(archived.id);
+
+      const filtered = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        hasInboxMail: true,
+        cursor: null,
+        limit: 10,
+      });
+      expect(filtered.map((r) => r.id)).toEqual([inbox.id]);
+      expect(filtered[0]!.inboxCount).toBe(1);
+      const meta = await svc.getSenderListQueryMeta({
+        mailboxAccountId: mailboxId,
+        category: null,
+        hasInboxMail: true,
+      });
+      expect(meta.totalMatching).toBe(1);
     });
 
     describe('q search (#145)', () => {
@@ -2136,6 +2261,46 @@ describe('SendersReadService', () => {
   });
 
   describe('listMessagesForSender', () => {
+    it('shows current inbox and archived mail separately, excluding trash, spam, drafts, and sent mail', async () => {
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'location@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      for (const [subject, labelIds, isOutbound] of [
+        ['inbox', ['INBOX'], false],
+        ['archived', ['CATEGORY_UPDATES'], false],
+        ['trash', ['TRASH'], false],
+        ['spam', ['SPAM'], false],
+        ['draft', ['DRAFT'], false],
+        ['chat', ['CHAT'], false],
+        ['sent', ['SENT'], true],
+      ] as const) {
+        await seedMessage(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: sender.senderKey,
+          internalDate: new Date('2026-05-01T00:00:00Z'),
+          subject,
+          labelIds: [...labelIds],
+          isOutbound,
+        });
+      }
+      const base = { mailboxAccountId: mailboxId, senderId: sender.id, cursor: null, limit: 10 };
+      const all = await svc.listMessagesForSender({ ...base, scope: 'all_mail' });
+      expect(all?.map((row) => [row.subject, row.location]).sort()).toEqual([
+        ['archived', 'archived'],
+        ['inbox', 'inbox'],
+      ]);
+      expect(
+        (await svc.listMessagesForSender({ ...base, scope: 'inbox' }))?.map((row) => row.subject),
+      ).toEqual(['inbox']);
+      expect(
+        (await svc.listMessagesForSender({ ...base, scope: 'archived' }))?.map(
+          (row) => row.subject,
+        ),
+      ).toEqual(['archived']);
+    });
+
     it('orders by internal_date DESC and respects the +1 sentinel', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,

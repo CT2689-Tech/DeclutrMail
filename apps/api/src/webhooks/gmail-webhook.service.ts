@@ -63,6 +63,13 @@ export type ProcessOutcome =
       // enqueue was attempted post-commit."
       previousHistoryId: bigint;
       historyId: bigint;
+      /**
+       * What that post-commit enqueue did: a new sync job (`added`); the
+       * push absorbed by the mailbox's queued or running sync
+       * (`coalesced` — per-mailbox coalescing covers it); or Redis refused
+       * it (`failed` — the unmoved cursor lets the drift sweep recover).
+       */
+      queue: 'added' | 'coalesced' | 'failed';
     }
   | {
       // Deferred — webhook arrived while InitialSync is still mid-flight
@@ -84,6 +91,10 @@ export type ProcessOutcome =
       incomingHistoryId: bigint;
     };
 
+type EnqueuedOutcome = Extract<ProcessOutcome, { kind: 'enqueued' }>;
+/** What the transaction decides; the post-commit enqueue supplies `queue`. */
+type PlannedOutcome = Exclude<ProcessOutcome, EnqueuedOutcome> | Omit<EnqueuedOutcome, 'queue'>;
+
 /** TTL for dedup rows — 24h, well beyond Pub/Sub's 10-minute ack deadline. */
 const DEDUP_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -104,10 +115,10 @@ export class GmailWebhookService {
    * the enqueue of the incremental-sync job.
    *
    * Returns a discriminated outcome. The controller maps each kind
-   * to an HTTP status: all return 200 except `unknown_mailbox`
-   * which returns 404 so Pub/Sub stops retrying (per Pub/Sub's
-   * retry semantics, 4xx is a permanent failure; 5xx triggers
-   * redelivery — exactly what we want for stale unknown mailboxes).
+   * to HTTP 200, including `unknown_mailbox`: stale watches for
+   * disconnected/deleted mailboxes are terminal no-ops. Pub/Sub retries
+   * 4xx as well as 5xx responses. Database errors still throw; they must
+   * never be converted to a successful no-op.
    *
    * Note: D229's contract says ALL OIDC failures map to 401. This
    * method is only called AFTER OIDC verify succeeds, so it never
@@ -134,9 +145,9 @@ export class GmailWebhookService {
     // timeout) would leave the job visible before the dedup transaction
     // commits. Keeping Redis after commit preserves that ordering while
     // the unchanged applied cursor supplies the recovery point. Symmetric to
-    // `SyncModule.connect` which enqueues `initial-sync` AFTER the
-    // OAuth tx commits.
-    const outcome = await this.db.transaction(async (tx): Promise<ProcessOutcome> => {
+    // `AuthSignupOrchestrator`, which enqueues the initial sync or the
+    // incremental catch-up AFTER the connect tx commits.
+    const outcome = await this.db.transaction(async (tx): Promise<PlannedOutcome> => {
       // Step 7: messageId dedup. Atomic PK insert; conflict means
       // we've already processed this delivery. Insert FIRST, before
       // any other state lookup, so a duplicate burst from Pub/Sub
@@ -246,18 +257,22 @@ export class GmailWebhookService {
     // The applied cursor remains at `previousHistoryId` until the worker
     // successfully persists the range.
     //
-    // `ensureIncrementalSyncJob` is idempotent on
-    // `${mailboxAccountId}:${endHistoryId}` so a Pub/Sub redelivery
-    // re-running this path cannot double-enqueue. BigInts are
+    // `ensureIncrementalSyncJob` coalesces per MAILBOX — at most one
+    // queued and one running job — so neither a Pub/Sub redelivery nor a
+    // burst of pushes from one bulk action can stack jobs behind the
+    // mailbox lock (2026-09-25: one bulk Delete made ten jobs for one
+    // mailbox in nine minutes; eight dead-lettered). BigInts are
     // stringified — BullMQ's payload goes through `JSON.stringify`
     // which throws on bigint; the worker parses back via `BigInt(...)`.
     if (outcome.kind === 'enqueued') {
+      let queue: EnqueuedOutcome['queue'];
       try {
-        await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
+        const result = await ensureIncrementalSyncJob(this.incrementalSyncQueue, {
           mailboxAccountId: outcome.mailboxAccountId,
           startHistoryId: outcome.previousHistoryId.toString(),
           endHistoryId: outcome.historyId.toString(),
         });
+        queue = result === 'added' ? 'added' : 'coalesced';
       } catch (err) {
         // The applied cursor is deliberately unchanged, so the drift
         // sweep can recover the complete range after Redis returns.
@@ -265,8 +280,11 @@ export class GmailWebhookService {
           `webhook.incremental_enqueue_failed mailbox=${outcome.mailboxAccountId} ` +
             `error=${err instanceof Error ? err.message : String(err)}`,
         );
+        queue = 'failed';
       }
-    } else if (outcome.kind === 'deferred_initial_sync_in_flight') {
+      return { ...outcome, queue };
+    }
+    if (outcome.kind === 'deferred_initial_sync_in_flight') {
       this.logger.log(
         `webhook.deferred_initial_sync_in_flight mailbox=${outcome.mailboxAccountId} ` +
           `incomingHistoryId=${outcome.incomingHistoryId}`,

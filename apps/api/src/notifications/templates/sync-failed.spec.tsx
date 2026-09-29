@@ -9,6 +9,15 @@ describe('sync-failed', () => {
     appUrl: 'https://app.declutrmail.com',
   };
 
+  it('does not invite a reply no person would receive', async () => {
+    // Sends carry no Reply-To until EMAIL_REPLY_TO names a verified
+    // mailbox; a reply to the From address reaches a bounce handler.
+    const email = await syncFailedEmail(input);
+    for (const part of [email.text, email.html]) {
+      expect(part).not.toMatch(/reply to this email/i);
+    }
+  });
+
   it('renders subject, text and html with the retry link', async () => {
     const email = await syncFailedEmail(input);
     expect(email.subject).toBe("We couldn't finish scanning you@gmail.com");

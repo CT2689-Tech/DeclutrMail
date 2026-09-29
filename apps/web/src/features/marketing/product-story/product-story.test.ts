@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { describe, expect, it } from 'vitest';
 
 const css = readFileSync(
@@ -8,19 +9,15 @@ const css = readFileSync(
   'utf8',
 );
 
-describe('product-story motion contract', () => {
-  it('keeps the walkthrough readable without animation and honors reduced motion', () => {
+describe('product-story style contract', () => {
+  it('has no looping motion and honors reduced motion', () => {
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
-    expect(css).not.toMatch(/dm-story-focus[^;]*infinite/);
-    expect(css).toMatch(/\.dm-story-walkthrough-step\s*{[^}]*opacity:\s*1;/s);
-    expect(css).toMatch(/\.dm-story-walkthrough-step\s*{[^}]*animation:\s*none !important;/s);
-    expect(css).toMatch(/\.dm-story-button:hover\s*{[^}]*transform:\s*none;/s);
+    expect(css).not.toMatch(/infinite/);
+    expect(css).not.toMatch(/@keyframes/);
   });
 
-  it('uses inverse text for callouts placed on ink sections', () => {
-    expect(css).toMatch(
-      /\.dm-story-section-ink \.dm-story-callout\s*{[^}]*color:\s*var\(--dm-fg-inverse-soft\);/s,
-    );
+  it('uses no ALL-CAPS labels', () => {
+    expect(css).not.toMatch(/text-transform:\s*uppercase/);
   });
 });
 
@@ -30,11 +27,12 @@ describe('automation boundary figure — plan labels (D251)', () => {
     'utf8',
   );
 
-  it('labels the Autopilot preset-rule column with both granting tiers', () => {
-    // Round-3 design gate failed on exactly this string reading "Pro"
-    // while preset rules (Observe + batch approval) start at Plus —
-    // only the switch to Active is Pro. Pin the corrected label.
-    expect(diagrams).toContain('Plus · Pro</span>');
-    expect(diagrams).not.toMatch(/dm-story-step-label">Pro</);
+  it('derives the Autopilot plans from the tier manifest, never a literal', () => {
+    // A hand-written "Pro" label here once contradicted the manifest
+    // (preset rules start at Plus). Reading `capabilities` keeps the
+    // label true when the ladder moves.
+    expect(diagrams).toMatch(/capabilities\.includes\('autopilot'\)/);
+    expect(diagrams).not.toMatch(/>\s*(?:Plus · Pro|Plus and Pro|Pro)\s*</);
+    expect(TIER_MANIFEST.plus.capabilities).toContain('autopilot');
   });
 });

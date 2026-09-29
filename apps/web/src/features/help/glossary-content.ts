@@ -37,17 +37,17 @@ export const GLOSSARY_TERMS = {
   rule: {
     term: 'Rule',
     definition:
-      'An instruction for future matching email. Observe only suggests; Active can perform the rule’s action automatically.',
+      'An instruction for future matching email. Watch first only suggests; Active can perform the rule’s action automatically.',
   },
   protected: {
     term: 'Protected',
     definition:
-      'A standing safety policy that locks a sender to Keep, prevents cleanup suggestions, and excludes the sender from bulk and automatic actions.',
+      'A standing safety policy that recommends Keep and excludes the sender from bulk and automatic cleanup. You can still choose a single-sender action after acknowledging the override.',
   },
   observe: {
-    term: 'Observe',
+    term: 'Watch first',
     definition:
-      'An Autopilot rule records what it would do but does not change Gmail. You review and approve its suggestions yourself.',
+      'An optional Autopilot mode that records what a rule would do without changing Gmail. You review and approve its suggestions yourself. It never switches to Active automatically.',
   },
   active: {
     term: 'Active',
@@ -77,32 +77,26 @@ export type GlossaryTermId = keyof typeof GLOSSARY_TERMS;
 
 export const GLOSSARY_GROUPS: ReadonlyArray<{
   title: string;
-  description: string;
   terms: readonly GlossaryTermId[];
 }> = [
   {
     title: 'Mail and sender context',
-    description: 'What DeclutrMail groups and shows while you review.',
     terms: ['sender', 'gmailPreview'],
   },
   {
     title: 'Decisions and actions',
-    description: 'The difference between your intent, advice, and a Gmail change.',
     terms: ['decision', 'action', 'suggestion', 'rule'],
   },
   {
     title: 'Standing sender controls',
-    description: 'How to tell DeclutrMail to leave a sender alone.',
     terms: ['protected'],
   },
   {
     title: 'Autopilot modes',
-    description: 'Whether a rule only suggests or can apply changes itself.',
     terms: ['observe', 'active'],
   },
   {
     title: 'Destinations and recovery',
-    description: 'Where email goes and which recovery window applies.',
     terms: ['later', 'activityUndo', 'gmailTrashRecovery'],
   },
 ];

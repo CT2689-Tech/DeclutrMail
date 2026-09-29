@@ -120,14 +120,14 @@ describe('SnoozedScreen — edge states', () => {
     ]);
     renderScreen();
     expect(await screen.findByText(/couldn't load Later/i)).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Needs attention');
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't load Later/i);
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
   it('shows the empty state pointing at the Later verb', async () => {
     installFetchStub([listHandler([])]);
     renderScreen();
-    expect(await screen.findByText('Nothing in Later.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing in Later')).toBeInTheDocument();
     expect(screen.getAllByText('Later').length).toBeGreaterThan(0);
   });
 });
@@ -168,7 +168,9 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     ]);
     renderScreen();
     expect(await screen.findByText('Return retrying')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/could not be confirmed/i);
+    // The app-wide LaterReturnAlert owns the banner; this page must not
+    // render a second copy of the same failure.
+    expect(screen.queryByText(/could not be confirmed/i)).not.toBeInTheDocument();
     expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
     expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
@@ -200,7 +202,7 @@ describe('SnoozedScreen — wake now flow', () => {
     // Step 1 — the click opens a confirm; nothing has mutated yet.
     await user.click(screen.getByRole('button', { name: 'Bring back now' }));
     expect(wakePosted).toBe(0);
-    expect(screen.getByText(/12 messages return to your inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/12 emails return to your inbox/i)).toBeInTheDocument();
     // Wake-now has no Activity undo, so the confirm must say the scheduled
     // return is discarded — on the populated branch, not only the empty one.
     expect(screen.getByText(/return time clears/i)).toBeInTheDocument();
@@ -268,7 +270,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time' }));
     expect(
       screen.getByRole('button', {
         name: 'Cancel return-time changes for Quarterly Newsletter',
@@ -289,7 +291,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time' }));
     expect(screen.queryByRole('button', { name: /clear return time/i })).not.toBeInTheDocument();
   });
 });

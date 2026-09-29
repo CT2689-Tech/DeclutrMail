@@ -1,5 +1,7 @@
 # Founder Follow-ups — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/founder-followups/`](docs/log/founder-followups/) (one file per entry). Existing entries stay here, and items already listed here keep being tracked here until Done.
+
 Single source of truth for actions that only the founder can take —
 repo settings toggles, secrets configuration, third-party account setup,
 domain decisions outside the D-plan, anything that needs human judgment
@@ -22,6 +24,288 @@ When an item moves to **Done**, cut + paste the entry from the Open
 section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
+
+### 2026-09-26 — Decide whether a red migration lint should block a merge
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790) review, session 2026-09-26
+
+**Why:** the `atlas migrate lint` job is not a required check. Branch
+protection on main requires nine checks, and it is not one of them. So
+every check in that job can be red while auto-merge and the merge queue
+proceed:
+- lint itself, which PR #790 makes enforce `data_depend` as an error
+- the known-bad-migration probe
+- the full apply from empty
+- the forward-only check and the rollback-companion check
+
+`migration-apply.yml` then runs the migration on production. Merging past
+a red lint has been suggested here before (the PR #131 entry below).
+
+**How:** repo settings are yours to change, so this needs your hands. Two
+steps, in this order:
+1. Make the job report on every PR: drop its `pull_request` `paths`
+   filter and skip the steps when no migration file changed, so the check
+   still passes. A required check that never reports leaves other PRs
+   waiting on "Expected" forever.
+2. Add `atlas migrate lint` to main's required checks.
+
+**Verifies by:** a PR adding `ALTER TABLE … ADD COLUMN … NOT NULL` with no
+default cannot merge.
+
+**Status:** Open
+
+### 2026-09-26 — Bump Atlas before Ariga stops serving v1.3.0
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
+
+**Why:** CI's lint, the production migration apply, and the daily infra
+snapshot all install Atlas v1.3.0 through `scripts/install-atlas.sh`.
+Ariga's published policy removes binaries more than 6 months old from its
+download hosts (https://atlasgo.io/cli-reference#supported-version-policy),
+so v1.3.0 (published 2026-08-02) can disappear from 2027-02-02. Removals
+have not run on schedule: v0.37.0 still downloaded at 12 months old
+(checked 2026-09-26). Once v1.3.0 is gone the installer fails, and
+`migration-apply.yml` stops applying migrations. Merging a bump changes
+the tool that applies production migrations, so it needs your OK.
+
+**How:** set `ATLAS_VERSION` and both checksums in
+`scripts/install-atlas.sh` to the newest release. Each checksum is at
+`https://atlasbinaries.com/atlas/atlas-community-<platform>-<version>.sha256`.
+On the new binary, the bump PR's migration-lint run:
+- applies every migration from empty
+- lints the newest
+- fails unless lint rejects its NOT NULL probe
+- fails unless `migrate status --format` prints OK
+
+Also re-run the proof harness in PR #790's body against the current and
+the new binary. It compares hash, apply, status, handoff and rollback,
+and repeats the lint negative controls, which catch an analyzer moving to
+Atlas Pro.
+
+**Verifies by:** migration-lint green on the bump PR, the harness showing
+the same results for both binaries, then `atlas community version <new>`
+in the next migration-apply log.
+
+**Status:** Open — due by 2027-01-15
+
+### 2026-09-26 — Decide how a CREATE INDEX without CONCURRENTLY gets caught
+
+**Source:** PR #790 (https://github.com/CT2689-Tech/DeclutrMail/pull/790), session 2026-09-26
+
+**Why:** D152 says Atlas flags "index creation that requires
+CONCURRENTLY". It never has. The `concurrent_index` analyzer is Atlas Pro
+only (https://atlasgo.io/lint/analyzers), and CI has never run it: a
+synthetic `CREATE INDEX` on `senders` with no CONCURRENTLY passed lint on
+v0.37.0 and v1.3.0, with the old config and without it (2026-09-26). The
+59 `atlas:nolint concurrent_index` lines in migrations do nothing. Of 97
+`CREATE INDEX` statements, 24 have neither CONCURRENTLY nor that line,
+including `0063` on `senders`. A plain index build on a large table
+blocks writes to it until the build finishes.
+
+**How:** pick one. (a) Buy Atlas Pro and add its token as a secret. That
+means switching CI back to the default build and restoring a
+`concurrent_index { error = true }` block in `packages/db/atlas.hcl`;
+without the block, PG101 only warns. It also brings the PG3xx
+blocking-change checks. (b) A repo check that fails any new
+non-concurrent index without an opt-out line, on new tables too. This is
+a text match, free, and adds opt-out lines to new-table indexes.
+(c) Leave it to review. Recommendation: (b).
+
+**Verifies by:** a synthetic non-concurrent index fails the chosen check.
+
+### 2026-09-26 — After #792 deploys, re-score the stored explanations that fail a check
+
+**Source:** PR #792 (https://github.com/CT2689-Tech/DeclutrMail/pull/792), second adversarial review. Approved by the founder 2026-09-27 UTC, via the orchestrating session.
+
+**Why:** #792 refuses a Haiku sentence that names internal vocabulary or
+puts a sender Gmail files outside Primary in the Primary inbox, both fresh
+and on reuse. Sentences already stored keep their copy until their sender
+is re-scored. A read-only count on 2026-09-26 found 28 Primary claims (1
+mailbox) and 176 leaked-vocabulary rows (2 mailboxes), all past their TTL:
+Sender Detail, an expanded Triage row and an opened Screener row refresh
+them on open, but the action sheet and the collapsed card still show them.
+
+**How:** after #792 is deployed, from an up-to-date main checkout with
+production credentials:
+
+1. Dry run, which enqueues nothing:
+
+   ```bash
+   DATABASE_URL=… REDIS_URL=… pnpm tsx scripts/rescore-leaked-copy.ts --dry-run
+   ```
+
+   Expected, from the script's own selection run read-only on 2026-09-26:
+
+   ```
+   {"kind":"rescore_leaked_copy.scan","affected":203,"vocabulary":176,"primaryClaims":28,"dryRun":true}
+   ```
+
+   A smaller `affected` is fine (rows refreshed on open drop out); a much
+   larger one is worth reading before step 2.
+
+2. The same command without `--dry-run`: one `manual_rescore` job per
+   affected sender, about 203 Haiku calls, once.
+
+**Verifies by:** once the score queue drains, the dry run prints
+`"affected":0`.
+
+**Status:** Done 2026-09-27
+
+- Dry run at 08:37Z: affected 203, vocabulary 176, primaryClaims 28.
+- Enqueued 203 `manual_rescore` jobs.
+- 203 `llm_haiku` rewrites 08:37–08:39Z, all on `declutrmail-worker-00081-6lr` (#792's revision); llmBlocked 0.
+- Re-scan: affected 0.
+
+### 2026-09-26 — Two customers' email addresses are in the public MISTAKES.md
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778) review, session 2026-09-26
+
+**Why:** the MISTAKES.md entry "2026-09-03 — Gmail quota limiter started
+every mailbox's bucket FULL" names two real signups by email address, and
+this repository is public. Their mailbox IDs and first-scan failure dates
+are also public (every `sync-stuck-watchdog` run log, and now
+`scripts/known-stuck-mailboxes.tsv`), so a reader can pair an address
+with "this account's first scan never finished". MISTAKES.md is
+append-only for agents and a history rewrite needs a force-push to main,
+so both calls are yours.
+
+**How:** either (a) replace the two addresses in that entry with "two
+signups (2026-08-06, 2026-08-26)", accepting that git history keeps
+them, or (b) do (a) and also purge them from history (`git filter-repo`
+or GitHub support), or (c) accept the exposure.
+
+**Verifies by:** `git grep -nE '@gmail\.com' -- MISTAKES.md` shows no
+customer address.
+
+**Status:** Open
+
+### 2026-09-26 — Apply the per-mailbox stuck-mailbox alert, then run its starve test
+
+**Source:** PR #778 (https://github.com/CT2689-Tech/DeclutrMail/pull/778), session 2026-09-26
+
+**Why:** the new alert definitions ship in code, but Cloud Monitoring only
+changes when the script runs against prod. Until then the old policy
+stays: one alert, open since 2026-09-05, that a newly stuck mailbox
+cannot fire again. Prod metric and policy changes wait for your OK, and
+the stored `admin@declutrmail.ai` gcloud login needs an interactive
+re-auth before anything can run.
+
+**How:** after the PR merges and the worker deploys:
+
+1. `gcloud auth login` as admin@declutrmail.ai.
+2. `node scripts/setup-stuck-mailbox-alert.mjs declutrmail-ai-prod` —
+   review the printed plan.
+3. Same command with `--apply`. Expect one email at admin@declutrmail.ai
+   per mailbox stuck at that moment (three were reported on 2026-09-26);
+   acknowledge each in Monitoring → Alerting.
+4. Same command with `--starve-test` (about 25 minutes, pages nobody).
+
+**Verifies by:** step 4 prints `"result": "PASS"` with a `freshAlert` that
+opened beside the already-stuck ones and a `silentProbe` open time, and
+its `cleanup` lists three deletions.
+
+**Status:** Open. Step 4 already passed on 2026-09-27 (run muj27vv2, from
+main after #788), since it does not depend on the apply. Step 3, `--apply`,
+is still to run.
+
+### 2026-09-26 — Two vendor breaches will fail the daily watchdog until you act on them
+
+**Source:** vendor-limits known-issues PR, session 2026-09-26; figures in
+run 36256853826 (2026-09-26)
+
+**Why:** the vendor-limits watchdog now fails only for failing rows missing
+from `scripts/known-vendor-issues.tsv`. Only Anthropic's ERROR (no Admin
+API key; item 2026-08-29 below) is listed, until 2026-10-26. Two failing
+rows are new since 2026-09-24/25 and were hidden behind it: Google Cloud
+(budgets) BREACH — spend past the monthly budget alert — and Sentry BREACH
+— errors dropped for quota or rate limits.
+
+**How:** for each, fix it (budget, spend, Sentry quota) or acknowledge it
+with a line in `scripts/known-vendor-issues.tsv`: the text of the cause
+you looked at (so a different cause for the same vendor still fails), a
+ceiling (the most you accept, such as 1,000 dropped errors a day or $100
+month-to-date, so a bigger failure fails again; `-` only for a cause with
+no number, such as an ERROR), and a date at most 30 days out. The list's header has both lines written out. Confirm or delete
+the Anthropic line too.
+
+**Verifies by:** the next scheduled vendor-limits run is green, or red only
+for something new.
+
+**Status:** Open
+
+### 2026-09-26 — Turn on the page for a refused Anthropic account
+
+**Source:** the LLM refusal breaker + alert PR (branch
+`fix/d024-llm-rejection-breaker`); the 2026-09-24 credit outage.
+
+**Why:** the worker now logs `llm.provider_rejected` on every refused
+Anthropic call and stops calling, but a log line pages nobody until the
+GCP log metric and alert policy exist. Creating them needs GCP
+credentials; the session that wrote the PR had none (gcloud asked for
+re-authentication).
+
+**How:** after the PR merges and deploys:
+
+```bash
+gcloud auth login
+node scripts/setup-llm-rejection-alert.mjs --apply
+```
+
+It creates the log metric `llm_provider_rejected` and the alert policy
+"LLM provider refused our calls (credit, limit or key)", reuses the
+existing admin@declutrmail.ai email channel, then reads both back.
+
+Then the drill, the only step that proves an email arrives: write one
+synthetic line, labelled as a drill, and expect one alert email within
+about 5 minutes.
+
+```bash
+curl -s -X POST https://logging.googleapis.com/v2/entries:write -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" -d '{"entries":[{"logName":"projects/declutrmail-ai-prod/logs/llm-alert-drill","resource":{"type":"cloud_run_revision","labels":{"project_id":"declutrmail-ai-prod","service_name":"declutrmail-worker","revision_name":"drill","location":"us-central1","configuration_name":"declutrmail-worker"}},"jsonPayload":{"kind":"llm.provider_rejected","reason":"other","note":"DRILL, safe to ignore"}}]}'
+```
+
+**Verifies by:** `node scripts/setup-llm-rejection-alert.mjs` prints
+`Configured:` and exits 0, and the drill produces an alert email naming
+`reason=other`.
+
+**Status:** Open
+
+### 2026-09-24 — Add the return-path records so SPF counts for declutrmail.com
+**Source:** session 2026-09-24 (a friend's "Your inbox is ready" landed in spam; PR #772)
+**Why:** Resend sends through Amazon SES with the envelope sender (return-path) on `send.send.declutrmail.com`, and that host has no records. So SPF passes only for `amazonses.com`, not for our domain; DKIM and DMARC still pass (DMARC aligns via DKIM). Resend's dashboard still says "verified" from an older check. Fixing it gives mailbox providers a second aligned signal. Checked 2026-09-24 with `dig`: the MX and SPF records sit on `send.declutrmail.com`, and `send.send.declutrmail.com` returns nothing.
+**How:** Squarespace → Domains → declutrmail.com → DNS → add two custom records:
+1. Host `send.send`, type **MX**, priority `10`, value `feedback-smtp.us-east-1.amazonses.com`
+2. Host `send.send`, type **TXT**, value `v=spf1 include:amazonses.com ~all`
+
+Then Resend → Domains → declutrmail.com → Verify.
+**Verifies by:** `dig +short MX send.send.declutrmail.com` returns the SES host, and a fresh send to Gmail shows `spf=pass` with `smtp.mailfrom=…send.declutrmail.com` in "Show original".
+**Status:** Open
+
+### 2026-09-24 — Send one test email to support@declutrmail.com, then turn on Reply-To
+**Source:** session 2026-09-24 (PR #772 review)
+**Why:** Our emails go out with no Reply-To (`EMAIL_REPLY_TO` is unset in both deploy manifests and the live revisions), so a reply reaches Amazon SES's feedback handler, not a person. PR #772 removed the sync-failed email's "reply to this email and a human will look" for that reason. Help, contact, refunds, billing errors, the in-app support form and the failed-scan screen all point people at support@, and nobody has confirmed that inbox receives mail: the 2026-07-02 legal-pages item (under Done) closed with ".com delivery pending the declutrmail.com domain-alias add".
+**How:** From your phone, email support@declutrmail.com and say whether it arrives. If it does, reply here and an agent adds `EMAIL_REPLY_TO=support@declutrmail.com` to the worker and API env in `deploy-cloud-run.yml`.
+**Verifies by:** The test email arrives, and a later "scan stopped" email shows `Reply-To: support@declutrmail.com`.
+**Status:** Open
+
+### 2026-09-24 — Top up Anthropic credits (they ran out, and nothing alerted)
+**Source:** session 2026-09-24 (prod logs)
+**Why:** The balance hit zero at ~08:15 UTC on 2026-09-24. Since then every AI explanation and the Brief fall back to templates without telling anyone. A new user's first scan on 2026-09-25 got 2,929 "credit balance is too low" errors, so every one of their senders got a template reason. The drain came from one sweep: a returning Google sign-in re-scanned an already-synced mailbox and re-scored all 7,999 senders, which made 6,022 Haiku calls. `scripts/check-vendor-limits.mjs` watches only for spend that is too HIGH, so nothing checks for credits running out.
+**How:** console.anthropic.com → Plans & Billing → buy credits (consider auto-reload). Two engineering follow-ups: an out-of-credit check in the vendor watchdog (now a log-based page, see 2026-09-26 above), and stopping the sign-in re-scan (decision pending).
+**Verifies by:** `llm.provider_rejected` stops appearing in worker logs (refusals log there since the 2026-09-26 breaker, no longer as `reasoning.adapter_error`), and the next score sweep reports `llmExplanations` greater than `llmReused`.
+**Status:** Open
+
+### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
+**Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
+**Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:
+1. **Confirm in place (inline confirm instead of the modal).** Not built. It changes the D226 preview surface, and the dev DB is connected to a real Gmail account, so a confirm path cannot be smoked safely without a sandbox mailbox.
+2. **"Biggest senders by size" sort.** `mail_messages.size_bytes` is stored but there is no per-sender aggregate; a sort needs a new column/index on the senders aggregate = a production migration (Tier 1).
+3. **"Recommended" sort.** `SenderListSort` names `'recommended'` but the API returns 400 for it, so it was not added to the menu. Either implement it server-side or delete the type member.
+4. **Sender Detail keyboard shortcuts.** The full page showed K/A/U/L/D key hints that were bound to nothing. They are now bound: `K` applies Keep immediately (D40, no mail moves), the other four open the preview. Off in the split-view pane. Remove the `shortcuts` prop in `detail/action-toolbar.tsx` to revert.
+5. **One name for the sync.** The product says "sync", "scan" and "reading your inbox" for the same operation (pre-existing; Home added the third). Pick one.
+6. **Senders vs Triage disagree on the suggested verb** for the same sender (e.g. Bank of America: Senders leads with Keep, Triage suggests Archive). Pre-existing — two engines; now more visible because both screens show one primary verb.
+**How:** Reply per item; each is its own small PR.
+**Verifies by:** Items move to Done with the PR number or the decision.
+**Status:** Open
 
 ### 2026-09-21 — Confirm the five historical checkouts in Paddle / Razorpay dashboards
 **Source:** session 2026-09-21 (checkout funnel investigation)
@@ -88,6 +372,13 @@ is on for this account, so a future `vendor-limits-watchdog` BREACH
 **Verifies by:** a deliberate `workflow_dispatch` re-run of
 `vendor-limits-watchdog` with a low threshold produces a visible
 notification.
+
+**Update 2026-09-26:** a Gmail search of chintan.a.thakkar@gmail.com
+found no `notifications@github.com` "Run failed" or watchdog mail in the
+past 40 days, while `sync-stuck-watchdog` failed 155 scheduled runs in a
+row (2026-09-03 23:21 UTC onward). If GitHub sends these, they go to
+another address or are filtered before that inbox. The account that
+last changed that workflow's `cron:` line is CT2689.
 
 **Status:** Open
 
@@ -2286,8 +2577,13 @@ Then edit `.github/workflows/migration-lint.yml`:
   3. Or pass `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` to setup-atlas
 **Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
 release; lint reports appear at atlas.ariga.io.
-**Status:** Done 2026-08-23 — `ATLAS_CLOUD_TOKEN` is wired in `.github/workflows/`, and
-`migrate lint` has been passing on every migration PR through #617.
+**Status:** Skipped 2026-09-26 — not needed: CI now installs the community
+build of Atlas v1.3.0 (`scripts/install-atlas.sh`, PR #790), which lints
+without an account.
+**Correction 2026-09-26:** the "Done 2026-08-23" that stood here was wrong.
+`gh secret list` shows no `ATLAS_CLOUD_TOKEN`, and no workflow on main has
+read one. PR #5's branch passed it to setup-atlas, then removed it before
+merging. Lint passed because v0.37.0 needed no account.
 **Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
 
 ---

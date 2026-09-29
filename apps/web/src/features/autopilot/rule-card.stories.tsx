@@ -38,7 +38,7 @@ const meta: StoryMeta<typeof RuleCard> = {
     docs: {
       description: {
         component:
-          'One preset rule in the D101 rules-management list: enabled toggle, confidence-threshold slider (presets 1–2 only), last-run summary, pending-suggestion count, observe-window countdown, dry-run preview (D103 scoped per D192) and Resume for paused rules. Canonical K/A/U/L/D verbs only (D227) — the action pill reads Archives / Unsubscribes / Moves to Later.',
+          'One preset rule in the D101 rules-management list, as a quiet row: name, status word, enabled switch, a one-line description, dry-run preview (D103 scoped per D192) and Resume for paused rules. Last-run summary, pending count, observe-window countdown and the confidence-threshold slider (presets 1–2 only) sit behind Details. Canonical K/A/U/L/D verbs only (D227) — the description reads Archives / Unsubscribes / Moves to Later.',
       },
     },
   },
@@ -74,7 +74,7 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Observe window complete — threshold slider visible (confidence preset). */
+/** Observe window complete — threshold slider behind Details (confidence preset). */
 export const ObserveWindowComplete: Story<typeof RuleCard> = {
   args: baseArgs,
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
@@ -86,7 +86,7 @@ export const Observing: Story<typeof RuleCard> = {
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
 };
 
-/** Active rule — emerald pill; acts automatically on new matches. */
+/** Active rule — teal status word; acts automatically on new matches. */
 export const Active: Story<typeof RuleCard> = {
   args: {
     ...baseArgs,
@@ -105,7 +105,7 @@ export const Active: Story<typeof RuleCard> = {
 /**
  * D251 — a leftover `active` rule on a plan without `autopilot-active`
  * (the Pro→Plus downgrade window before the demotion converges it).
- * Amber "Not running" pill, never a green Active asserting automation
+ * Amber "Not running" status, never an Active one asserting automation
  * that is not happening; the explanation names the plan and states the
  * rule returns to Observe on its own.
  */
@@ -146,7 +146,7 @@ export const NotRunningOnPlusUnsubscribe: Story<typeof RuleCard> = {
   render: (args: CardArgs) => frame(<RuleCard {...args} />),
 };
 
-/** Paused rule — amber pill + the Resume affordance. */
+/** Paused rule — amber status + the Resume affordance. */
 export const Paused: Story<typeof RuleCard> = {
   args: {
     ...baseArgs,

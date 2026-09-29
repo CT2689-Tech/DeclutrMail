@@ -18,7 +18,7 @@ import { useRecordUnsubscribeManualStatus } from '@/lib/api/use-action';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from './api/query-keys';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * The D230 manual-unsubscribe affordance. Rendered AFTER an
@@ -95,7 +95,7 @@ export function UnsubMailtoCallout({
         fontFamily: font.sans,
       }}
     >
-      <span style={{ flex: 1, fontSize: 13, color: color.fg, lineHeight: 1.5 }}>
+      <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.5 }}>
         <strong style={{ fontWeight: 600 }}>One step left for {senderName}.</strong>{' '}
         <span style={{ color: color.fgSoft }}>
           {markedSent
@@ -119,7 +119,7 @@ export function UnsubMailtoCallout({
               color: color.fgInverse,
               borderRadius: 6,
               padding: '5px 12px',
-              fontSize: 12,
+              fontSize: text.sm,
               fontWeight: 600,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -138,7 +138,7 @@ export function UnsubMailtoCallout({
               border: `1px solid ${color.primaryBorder}`,
               borderRadius: 6,
               padding: '5px 12px',
-              fontSize: 12,
+              fontSize: text.sm,
               fontWeight: 600,
               whiteSpace: 'nowrap',
               cursor: progress.isPending ? 'wait' : 'pointer',
@@ -158,7 +158,7 @@ export function UnsubMailtoCallout({
             border: 'none',
             color: color.fgMuted,
             cursor: 'pointer',
-            fontSize: 16,
+            fontSize: text.lg,
             lineHeight: 1,
             padding: '0 4px',
           }}
@@ -208,11 +208,13 @@ export function UnsubMailtoChecklist({
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <strong style={{ color: color.fg, fontSize: 13 }}>
+          <strong style={{ color: color.fg, fontSize: text.base }}>
             {drafts.length} email unsubscribe draft{drafts.length === 1 ? '' : 's'} still{' '}
             {drafts.length === 1 ? 'needs' : 'need'} you
           </strong>
-          <p style={{ margin: '3px 0 0', color: color.fgSoft, fontSize: 12.5, lineHeight: 1.45 }}>
+          <p
+            style={{ margin: '3px 0 0', color: color.fgSoft, fontSize: text.sm, lineHeight: 1.45 }}
+          >
             DeclutrMail did not send these. Open each draft and send it from the subscribed account.
           </p>
         </div>
@@ -225,7 +227,7 @@ export function UnsubMailtoChecklist({
             border: 'none',
             color: color.fgMuted,
             cursor: 'pointer',
-            fontSize: 16,
+            fontSize: text.lg,
             lineHeight: 1,
             padding: '0 4px',
           }}
@@ -245,7 +247,7 @@ export function UnsubMailtoChecklist({
             }}
           >
             <span
-              style={{ minWidth: 0, color: color.fg, fontSize: 12.5, overflowWrap: 'anywhere' }}
+              style={{ minWidth: 0, color: color.fg, fontSize: text.sm, overflowWrap: 'anywhere' }}
             >
               {draft.senderName}
             </span>
@@ -258,7 +260,7 @@ export function UnsubMailtoChecklist({
                 background: color.primary,
                 borderRadius: 6,
                 padding: '5px 10px',
-                fontSize: 12,
+                fontSize: text.sm,
                 fontWeight: 600,
                 textDecoration: 'none',
                 whiteSpace: 'nowrap',

@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { tokens } from '@declutrmail/shared';
 
 const { color, font, radius } = tokens;
@@ -65,7 +67,7 @@ export function FirstCleanupNudge({ href }: { href: string }) {
           Open a sender you recognize and finish your first cleanup.
         </p>
       </div>
-      <a
+      <Link
         href={href}
         style={{
           display: 'inline-flex',
@@ -83,7 +85,7 @@ export function FirstCleanupNudge({ href }: { href: string }) {
         }}
       >
         Open a sender
-      </a>
+      </Link>
     </div>
   );
 }

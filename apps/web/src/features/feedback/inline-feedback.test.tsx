@@ -38,8 +38,16 @@ describe('InlineFeedback', () => {
 
   it('saves a changed rating before selection and analytics confirm', async () => {
     let resolve!: (value: unknown) => void;
+    const onSaved = vi.fn();
     h.post.mockReturnValue(new Promise((done) => (resolve = done)));
-    renderFeedback(<InlineFeedback surface="followups" referenceId="row-2" initialRating={null} />);
+    renderFeedback(
+      <InlineFeedback
+        surface="followups"
+        referenceId="row-2"
+        initialRating={null}
+        onSaved={onSaved}
+      />,
+    );
     const useful = screen.getByRole('button', { name: 'Useful' });
     fireEvent.click(useful);
 
@@ -67,6 +75,7 @@ describe('InlineFeedback', () => {
       surface: 'followups',
       rating: 'useful',
     });
+    expect(onSaved).toHaveBeenCalledWith('useful');
   });
 
   it('offers all Brief ratings and keeps the prior value on failure', async () => {

@@ -20,8 +20,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { TIER_MANIFEST } from '@declutrmail/shared';
+
+import { siteUrl } from '@/features/marketing/landing/urls';
 
 import MarketingLayout from './layout';
 
@@ -55,7 +57,27 @@ describe('(marketing) layout — D134', () => {
     expect(screen.getByText('public page body')).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toBeInTheDocument();
     expect(screen.getByRole('contentinfo')).toBeInTheDocument();
-    expect(screen.getByText('We never fetch or store full email contents.')).toBeInTheDocument();
+    // The footer is chrome on every public page, so it links to the privacy
+    // policy instead of restating the trust badge (copy budget: trust copy
+    // once per flow, at the decision point).
+    const footer = within(screen.getByRole('contentinfo'));
+    expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(footer.getByRole('link', { name: 'All comparisons' })).toHaveAttribute(
+      'href',
+      '/compare',
+    );
+    expect(footer.getByRole('link', { name: 'DeclutrMail vs SaneBox' })).toHaveAttribute(
+      'href',
+      '/vs/sanebox',
+    );
+    expect(footer.getByRole('link', { name: 'SaneBox alternatives' })).toHaveAttribute(
+      'href',
+      '/alternatives/sanebox',
+    );
+    expect(
+      footer.getByRole('link', { name: 'How to auto archive emails in Gmail' }),
+    ).toHaveAttribute('href', '/how-to/auto-archive-future-emails-in-gmail');
+    expect(document.querySelector('[data-dm-privacy-badge]')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
@@ -81,11 +103,14 @@ describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
     // No SearchAction — there is no /search route to point one at.
     expect(website).not.toHaveProperty('potentialAction');
     expect(app).toMatchObject({
+      '@id': `${siteUrl()}/#software`,
       name: 'DeclutrMail',
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       publisher: { '@id': org?.['@id'] },
     });
+    expect(website).not.toHaveProperty('alternateName');
+    expect(org).not.toHaveProperty('sameAs');
   });
 
   it('derives one Offer per purchasable price point PER BUYABLE CURRENCY — and never the promo', () => {

@@ -94,7 +94,23 @@ export {
   senderInboxActionWhere,
 } from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
+export {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
+  ruleMatchEvidenceIsCurrent,
+  ruleMatchIsHeldAction,
+  ruleMatchIsOfferableSuggestion,
+  ruleMatchIsPendingSuggestion,
+  ruleMatchIsQueuedAction,
+  ruleMatchIsStaleAction,
+  ruleMatchLabelClaimKey,
+  ruleMatchSenderIsProtected,
+} from './autopilot-suggestions';
 export { deriveSenderId } from './sender-id';
+export {
+  TRIAGE_DECIDED_WINDOW_DAYS,
+  triageNotDecidedRecently,
+  triageQueueOrder,
+} from './triage-queue';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
 export { mailboxLabels } from './schema/mailbox-labels';

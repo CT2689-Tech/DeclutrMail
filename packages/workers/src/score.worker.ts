@@ -1,4 +1,4 @@
-import { and, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { ENGAGEMENT_WINDOW_MS } from '@declutrmail/shared/contracts';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -10,6 +10,8 @@ import {
   senderPolicies,
   senders,
   triageDecisions,
+  triageNotDecidedRecently,
+  triageQueueOrder,
 } from '@declutrmail/db';
 import type { schema, TriageVerdict } from '@declutrmail/db';
 import { TOPICS, TriageScoreRunCompletedPayloadSchema } from '@declutrmail/events';
@@ -34,6 +36,7 @@ import {
   isGovernmentDomain,
   renderTemplate,
   runCascade,
+  type CascadeResult,
   type SenderSignals,
 } from '@declutrmail/shared/triage-engine';
 import { ValidationError } from './worker-errors.js';
@@ -99,8 +102,11 @@ interface SignalBatch {
     string,
     {
       verdict: TriageVerdict;
+      /** `numeric(3,2)` as the driver returns it — a string such as `'0.95'`. */
+      confidence: string;
       generatedBy: string;
       reasoning: string | null;
+      producedAt: Date;
       expiresAt: Date;
     }
   >;
@@ -108,8 +114,13 @@ interface SignalBatch {
 
 /**
  * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`;
- * the weekly safety-net cron re-computes any row past `expires_at`.
- * Seven days matches D25's stated "weekly safety-net rebuild" cadence.
+ * a read past it counts as stale. Nothing re-scores on a timer: the
+ * founder chose lazy refresh on attention (`stale_refresh`, 2026-08-19)
+ * over D25's weekly sweep, and `cron_sweep` has no producer. Scoring runs
+ * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
+ * longer re-scans),
+ * `signal_change` (first-seen senders, and senders whose Gmail tab the
+ * sender-index sweep corrected), `stale_refresh` and `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -133,12 +144,31 @@ export type ScoreTrigger =
    * the user never had.
    */
   | 'stale_refresh'
-  | 'cron_sweep';
+  | 'cron_sweep'
+  /**
+   * Someone is about to read this sender's reason and it is still the
+   * template (founder decision 2026-09-25): write the LLM sentence for the
+   * row the reader was shown, and nothing else.
+   *
+   * NOT a re-score, and deliberately not `stale_refresh`. A re-score
+   * rewrites verdict, confidence and age — the Triage queue orders by
+   * those, so explaining a queue's worth of rows through it would re-sort
+   * the queue and retire cards mid-decision, the reason Triage limits
+   * `stale_refresh` to one expanded row and turns it off in onboarding
+   * (D112). A re-score also publishes `triage.score_run_completed`, and
+   * every one of those fans out an Autopilot apply sweep; no verdict moves
+   * here, so nothing is published.
+   *
+   * `producedAtMs` names the ROW VERSION to explain (its `produced_at`),
+   * not the time of the ask, and `senderKey` is required: an explanation
+   * is asked for one sender, never a mailbox.
+   */
+  | 'explain';
 
 /**
- * One score job. Either runs for a single `senderKey` (signal-change
- * event, manual rescore) or for every active sender in the mailbox
- * (sync-complete sweep).
+ * One score job. Runs for a single `senderKey` (signal-change event,
+ * manual rescore), a named `senderKeys` set (Gmail tab recount), or every
+ * active sender in the mailbox (sync-complete sweep).
  *
  * `producedAtMs` is the trigger event's clock — passed in so the worker
  * is testable without `Date.now()` and so the idempotency key is stable
@@ -146,8 +176,17 @@ export type ScoreTrigger =
  */
 export interface ScoreJobData {
   mailboxAccountId: string;
-  /** If set, score just this sender. If unset, score every active sender. */
+  /** If set, score just this sender. If unset (and no `senderKeys`), score every active sender. */
   senderKey?: string;
+  /**
+   * If set (and `senderKey` is not), score exactly these senders — the
+   * ones a Gmail tab recount marked stale (`sendersAwaitingRescore`). One
+   * job for the set, so the run publishes ONE `score_run_completed` and
+   * one Autopilot sweep follows, not one per sender. Scored under the
+   * `never` explain policy whatever the trigger: their reasoning is the
+   * template (see `processJob`).
+   */
+  senderKeys?: readonly string[];
   trigger: ScoreTrigger;
   producedAtMs: number;
 }
@@ -156,9 +195,57 @@ export interface ScoreJobData {
 export interface ScoreJobResult {
   /** Number of senders scored this run. */
   decisionsWritten: number;
-  /** Number of those that hit the LLM successfully vs the template fallback. */
+  /**
+   * Rows carrying LLM prose vs the template fallback — what the user sees.
+   * `llmExplanations` includes prose REUSED from a stored row, so it is not
+   * what this run bought; read `llmCalls` / `llmReused` for that.
+   */
   llmExplanations: number;
   templateExplanations: number;
+  /**
+   * `explain()` calls this run started. The provider bills a call that
+   * produced output even when the worker then discards it (timeout, word
+   * ceiling, internal vocabulary); a call refused up front (for example,
+   * credit balance) is not billed but still counts here.
+   */
+  llmCalls: number;
+  /** Rows that kept stored LLM prose instead of calling `explain()`. */
+  llmReused: number;
+  /**
+   * Rows that needed a call but got the template without one, because the
+   * provider was refusing the account (`ReasoningLlmPort.isBlocked`).
+   */
+  llmBlocked: number;
+  /**
+   * Rows a sweep's first-view phase or an `explain` job was allowed to buy
+   * a sentence for: the first-view set the sweep left on the template, or
+   * the one row the job names. On those runs `llmCalls` can only be lower —
+   * a row can qualify and still be skipped (`explainSkipped`) or blocked
+   * (`llmBlocked`). A re-score that always pays (`manual_rescore`,
+   * `stale_refresh`) has no candidates; its calls are in `llmCalls` alone.
+   */
+  explainCandidates: number;
+  /**
+   * Candidates left on the template without a call, because the row no
+   * longer matched the ask: already explained, re-scored since, or no
+   * longer the verdict the engine reaches.
+   */
+  explainSkipped: number;
+  /**
+   * Explanations lost to an error: a sentence paid for whose write threw,
+   * or a first-view selection that threw (counted once). Zero on a healthy
+   * run — a sweep whose sentences all broke must not read like a re-sync
+   * with nothing to explain.
+   */
+  explainFailed: number;
+  /**
+   * Rows left on the template BY POLICY: the run's explain policy is
+   * `never` (background work nobody is looking at — a first-seen sender,
+   * or a Gmail tab recount's `senderKeys` set), so no sentence was bought.
+   * Kept apart from `templateExplanations` so "0 from the LLM" on such a
+   * run reads as the policy it is, not as the provider being down.
+   */
+  explanationsNotRequested: number;
   /**
    * Number of LLM calls that hit the per-call timeout (subset of
    * `templateExplanations`). Surfaced so the success log carries enough
@@ -246,7 +333,94 @@ export interface ScoreWorkerDeps {
    * `score.run_completed_publish_skipped` warning surfaces the gap.
    */
   outbox?: OutboxPublisher;
+  /**
+   * How many senders a `sync_complete` sweep explains — see
+   * {@link FIRST_VIEW_QUEUE_ROWS} and {@link FIRST_VIEW_VOLUME_ROWS}.
+   * Tests shrink both so a handful of seeded senders can show the cut.
+   */
+  firstView?: { queueRows: number; volumeRows: number };
 }
+
+/**
+ * Senders a `sync_complete` sweep explains from the top of the Triage
+ * queue: the D30 ceiling (`TRIAGE_QUEUE_MAX`, 12), so whatever size the
+ * adaptive queue settles on, the rows it shows first are explained with
+ * the sweep — usually before the user opens one. Not always: the mailbox
+ * turns ready as the sweep is enqueued, so a fast user's own asks can race
+ * it (a row then costs two calls; the second write is dropped). Pinned
+ * against the API constant by `triage.service.spec.ts` — `packages/workers`
+ * cannot import `apps/api`.
+ */
+export const FIRST_VIEW_QUEUE_ROWS = 12;
+
+/**
+ * Concurrent scoring writes per worker when no sentence is being bought —
+ * the database's fan-out, matching the previous sweep-wide default.
+ */
+const SCORE_WRITE_CONCURRENCY = 4;
+
+/**
+ * Senders a `sync_complete` sweep explains by volume
+ * (`senders.total_received`, highest first). Unfiltered on purpose: the
+ * places a new user opens senders from both rank by this count but filter
+ * it differently — the Senders list defaults to senders active in the last
+ * 30 days, onboarding's cleanup goals to senders with mail still in the
+ * inbox, of any age — so neither filter serves both. Everyone else is
+ * explained when first opened.
+ */
+export const FIRST_VIEW_VOLUME_ROWS = 50;
+
+/**
+ * Who pays for a sentence (D24, founder decision 2026-09-25).
+ *
+ * Every trigger computes every verdict it covers — that part is cheap and
+ * deterministic. The LLM sentence is bought only for a sender someone is
+ * about to read:
+ *
+ *   - `always`     — a person is looking at this one sender: a re-score
+ *                    they asked for, or a stale read they opened.
+ *   - `first_view` — a whole-mailbox sweep: verdicts for everyone, prose for
+ *                    the senders the user sees first (the first Triage queue
+ *                    and the loudest senders).
+ *   - `never`      — background work nobody is looking at. The template is
+ *                    the reason until someone opens the sender, which asks
+ *                    for `explain`.
+ *
+ * Stored prose that is still valid is reused under every policy — it costs
+ * nothing. A switch, so a new trigger cannot compile without deciding who
+ * pays.
+ */
+type ExplainPolicy = 'always' | 'first_view' | 'never';
+
+function explainPolicy(trigger: Exclude<ScoreTrigger, 'explain'>): ExplainPolicy {
+  switch (trigger) {
+    case 'manual_rescore':
+    case 'stale_refresh':
+      return 'always';
+    case 'sync_complete':
+      return 'first_view';
+    case 'signal_change':
+    case 'cron_sweep':
+      return 'never';
+  }
+}
+
+/** One stored row an explanation is asked for, by version. */
+interface ExplainTarget {
+  senderKey: string;
+  /** The row version (`produced_at`) the sentence is written for. */
+  producedAt: Date;
+}
+
+/** Why an explanation was not bought — logged, and counted in `explainSkipped`. */
+type ExplainSkip =
+  'no_llm' | 'no_decision' | 'no_sender' | 'rescored' | 'already_explained' | 'verdict_moved';
+
+type ExplainOutcome =
+  | { kind: 'skipped'; reason: ExplainSkip }
+  /** The provider is refusing the account: no call, counted in `llmBlocked`. */
+  | { kind: 'blocked' }
+  | { kind: 'called'; written: boolean; timedOut: boolean; error?: Error };
 
 /**
  * ScoreWorker (D20 / D21 / D24 / D25) — the deterministic decision
@@ -263,7 +437,9 @@ export interface ScoreWorkerDeps {
  *
  * `produced_at_ms` is the TRIGGER event's clock (passed in the payload),
  * not the worker's `Date.now()` — so a BullMQ retry of the same job
- * computes the same key. A duplicate trigger (Pub/Sub redelivery) carries
+ * computes the same key. (An `explain` job carries the ROW VERSION it
+ * explains instead, and its key is prefixed `explain:` so it never
+ * collides with the re-score that wrote that version.) A duplicate trigger (Pub/Sub redelivery) carries
  * the same `producedAtMs` because the trigger event is the source.
  *
  * Privacy (D7 / D228): the worker reads `senders`, `sender_timeseries`,
@@ -310,12 +486,70 @@ export function foreignIdentifierToken(reasoning: string, senderIdentity: string
   return null;
 }
 
+/**
+ * `true` when a sentence puts the sender in Primary and Gmail files them
+ * somewhere else.
+ *
+ * The model says "the primary inbox" for the inbox itself — "keeping this
+ * sender in the primary inbox", "whether it belongs in the primary inbox
+ * or should be archived" — and wrote exactly that for Updates senders.
+ * For them it names a tab their mail never reaches: Keep leaves mail where
+ * Gmail filed it. Checked on stored sentences too, because a sentence can
+ * outlive the tab it was written for, and reuse compares only the verdict
+ * and its confidence.
+ *
+ * Only Primary: the stored sentences use the word for Gmail's tab, while
+ * "updates" and "promotions" are also what senders send. The sender's own
+ * name and address may still say it ("Primary Care Partners"), so they are
+ * taken out of the sentence before it is checked — the word anywhere else
+ * still counts.
+ */
+export function misplacesInPrimary(
+  reasoning: string,
+  gmailCategory: SenderSignals['gmailCategory'],
+  sender: SenderIdentity,
+): boolean {
+  if (gmailCategory === 'primary') return false;
+  let rest = reasoning.toLowerCase();
+  for (const own of [sender.displayName, sender.domain, sender.email]) {
+    const needle = own.trim().toLowerCase();
+    if (needle.length > 0) rest = rest.split(needle).join(' ');
+  }
+  return /\bprimary\b/.test(rest);
+}
+
+/** The sender's own name and address — what a sentence may quote. */
+interface SenderIdentity {
+  displayName: string;
+  domain: string;
+  email: string;
+}
+
+/**
+ * The identity as one string, for `foreignIdentifierToken`. One
+ * definition, because a fresh sentence and a reused one must be judged
+ * against the same identity.
+ */
+function senderIdentity(s: SenderIdentity): string {
+  return `${s.displayName} ${s.domain} ${s.email}`;
+}
+
 export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult> {
   override readonly workerName = 'ScoreWorker';
   override readonly policy = 'perMailboxPolicy' as const;
 
-  /** Bounded fan-out for the all-senders sweep; built once at construction. */
+  /**
+   * Bounded fan-out for work that calls the LLM — a sweep's first-view
+   * sentences, a paid re-score. Sized for Haiku (`REASONING_CONCURRENCY`),
+   * and shared by every job in the process.
+   */
   private readonly limiter: ConcurrencyLimiter;
+  /**
+   * Bounded fan-out for scoring that buys no sentence — sized for the
+   * database, not for Haiku. Separate so a sweep's verdicts never queue
+   * behind another job's LLM calls in the FIFO above.
+   */
+  private readonly scoreLimiter = createLimiter(SCORE_WRITE_CONCURRENCY);
   /**
    * Sustained-rate limiter for `llm.explain()` calls. Sequenced before
    * the concurrency limiter wraps the work — pacing decides WHEN a call
@@ -325,6 +559,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   private readonly rateLimiter: RateLimiter | null;
   /** Per-call timeout for `llm.explain()`. */
   private readonly explainTimeoutMs: number;
+  /** How many senders a `sync_complete` sweep explains. */
+  private readonly firstView: { queueRows: number; volumeRows: number };
 
   constructor(private readonly deps: ScoreWorkerDeps) {
     super();
@@ -340,6 +576,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     this.rateLimiter = Number.isFinite(ratePerMin) ? new RateLimiter(ratePerMin, 60_000) : null;
     this.explainTimeoutMs =
       deps.explainTimeoutMs ?? resolveExplainTimeoutMs(process.env['REASONING_TIMEOUT_MS']);
+    this.firstView = deps.firstView ?? {
+      queueRows: FIRST_VIEW_QUEUE_ROWS,
+      volumeRows: FIRST_VIEW_VOLUME_ROWS,
+    };
   }
 
   /** Test-only: peek at the limiter's in-flight count (for cap assertions). */
@@ -349,8 +589,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
     // `${mailbox_id}:${sender_key}:${produced_at}` per the task spec.
-    // `'*'` for the all-senders sync_complete sweep so its key is stable.
-    return `${payload.mailboxAccountId}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+    // `'*'` for the all-senders sync_complete sweep so its key is stable;
+    // `'subset'` for a named set, so it never collides with either.
+    const scope = payload.senderKey ?? (payload.senderKeys ? 'subset' : '*');
+    const key = `${payload.mailboxAccountId}:${scope}:${payload.producedAtMs}`;
+    // An explain job's `producedAtMs` is the row version it explains —
+    // the same number the re-score that wrote that row carried. Marked, so
+    // the two never share an `idempotencyRef` in the logs.
+    return payload.trigger === 'explain' ? `explain:${key}` : key;
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
@@ -360,14 +606,42 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     if (!payload.producedAtMs || !Number.isFinite(payload.producedAtMs)) {
       throw new ValidationError('score job is missing producedAtMs');
     }
+    // An empty set is a producer bug, never "score everyone": falling
+    // through to the whole mailbox would re-buy every explanation.
+    if (payload.senderKeys && payload.senderKeys.length === 0) {
+      throw new ValidationError('score job names an empty senderKeys set');
+    }
+
+    if (payload.trigger === 'explain') {
+      // Without a key this would fall through to the whole-mailbox branch
+      // below and buy a sentence for every sender — the spend this trigger
+      // exists to avoid.
+      if (!payload.senderKey) {
+        throw new ValidationError('explain job is missing senderKey');
+      }
+      return this.processExplain(payload.mailboxAccountId, {
+        senderKey: payload.senderKey,
+        producedAt: new Date(payload.producedAtMs),
+      });
+    }
+    // A named set is the Gmail tab recount's re-score. It runs on a timer
+    // across every mailbox and buys no prose, whatever its trigger (the
+    // founder's standing choice: no bulk re-buy on a schedule, 2026-08-19,
+    // 2026-09-25). Nor can it reuse the old sentence — the recount expired
+    // each decision as of its own production — so the template it writes
+    // is true by construction.
+    const policy: ExplainPolicy = payload.senderKeys ? 'never' : explainPolicy(payload.trigger);
 
     const producedAt = new Date(payload.producedAtMs);
     const expiresAt = new Date(payload.producedAtMs + RESCORE_TTL_MS);
 
-    // Which senders to score: one (signal-change) or all (sync-complete sweep).
+    // Which senders to score: one (signal-change), a named set (Gmail tab
+    // recount), or all (sync-complete sweep).
     const senderKeys = payload.senderKey
       ? [payload.senderKey]
-      : await this.listMailboxSenderKeys(payload.mailboxAccountId);
+      : payload.senderKeys
+        ? [...new Set(payload.senderKeys)]
+        : await this.listMailboxSenderKeys(payload.mailboxAccountId);
 
     // CHUNKED, and each chunk isolated.
     //
@@ -386,9 +660,16 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmExplanations = 0;
     let templateExplanations = 0;
     let llmTimeouts = 0;
+    let llmCalls = 0;
+    let llmReused = 0;
+    let llmBlocked = 0;
+    let explanationsNotRequested = 0;
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
+    // Senders counted in `templateExplanations`, so a first-view sentence
+    // below upgrades only a row counted there.
+    const countedAsTemplate = new Set<string>();
 
     for (let i = 0; i < senderKeys.length; i += SCORE_CHUNK_SIZE) {
       const chunk = senderKeys.slice(i, i + SCORE_CHUNK_SIZE);
@@ -416,22 +697,39 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
       const settled = await Promise.allSettled(
         chunk.map((senderKey) =>
-          this.limiter(() =>
-            this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt, batch),
+          (policy === 'always' ? this.limiter : this.scoreLimiter)(() =>
+            this.scoreOne(
+              payload.mailboxAccountId,
+              senderKey,
+              producedAt,
+              expiresAt,
+              batch,
+              policy === 'always',
+            ),
           ),
         ),
       );
 
-      for (const outcome of settled) {
+      for (const [index, outcome] of settled.entries()) {
         if (outcome.status === 'rejected') {
           sendersFailed += 1;
           continue;
         }
         const written = outcome.value;
         if (!written) continue;
-        if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
-        else templateExplanations += 1;
+        if (written.generatedBy === 'llm_haiku') {
+          llmExplanations += 1;
+        } else {
+          templateExplanations += 1;
+          countedAsTemplate.add(chunk[index]!);
+        }
         if (written.timedOut) llmTimeouts += 1;
+        if (written.called) llmCalls += 1;
+        if (written.reused) llmReused += 1;
+        if (written.blocked) llmBlocked += 1;
+        if (policy === 'never' && written.generatedBy === 'template') {
+          explanationsNotRequested += 1;
+        }
         if (written.screenerFlagged) screenerFlagged += 1;
       }
     }
@@ -441,7 +739,31 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // an empty mailbox on the ops line, and it is how a broken sweep
     // stays broken.
     if (senderKeys.length > 0 && sendersFailed === senderKeys.length) {
-      throw new Error(`score sweep failed for all ${senderKeys.length} senders in the mailbox`);
+      throw new Error(`score run failed for all ${senderKeys.length} senders it was given`);
+    }
+
+    // The sentences, after the verdicts. "First" is a position in the
+    // finished queue, so it cannot be known until every verdict exists —
+    // and nothing above made or queued behind an LLM call (the scoring
+    // limiter is not the LLM one), so the verdicts landed at database speed
+    // rather than at Haiku's rate limit.
+    let explainCandidates = 0;
+    let explainSkipped = 0;
+    let explainFailed = 0;
+    if (policy === 'first_view' && this.deps.llm) {
+      const explained = await this.explainFirstView(payload.mailboxAccountId, producedAt);
+      explainCandidates = explained.candidates;
+      explainSkipped = explained.skipped;
+      explainFailed = explained.failed;
+      llmBlocked += explained.blocked;
+      llmCalls += explained.calls;
+      llmTimeouts += explained.timeouts;
+      // A sentence written here upgrades a row counted as template above —
+      // and only such a row: one whose scoring threw after its upsert is
+      // still template on disk, but it is counted in `sendersFailed`.
+      const upgraded = explained.writtenKeys.filter((key) => countedAsTemplate.has(key)).length;
+      llmExplanations += upgraded;
+      templateExplanations -= upgraded;
     }
 
     const decisionsWritten = llmExplanations + templateExplanations;
@@ -485,10 +807,359 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       llmExplanations,
       templateExplanations,
       llmTimeouts,
+      llmCalls,
+      llmReused,
+      llmBlocked,
+      explainCandidates,
+      explainSkipped,
+      explainFailed,
+      explanationsNotRequested,
       screenerFlagged,
       sendersFailed,
       chunksFailed,
     };
+  }
+
+  /**
+   * An `explain` job: one sentence for one row version, and nothing else —
+   * no verdict, no age, no Screener flag, no `score_run_completed`.
+   */
+  private async processExplain(
+    mailboxAccountId: string,
+    target: ExplainTarget,
+  ): Promise<ScoreJobResult> {
+    const skipped = {
+      decisionsWritten: 0,
+      llmExplanations: 0,
+      templateExplanations: 0,
+      llmTimeouts: 0,
+      llmCalls: 0,
+      llmReused: 0,
+      llmBlocked: 0,
+      explainCandidates: 1,
+      explainSkipped: 1,
+      explainFailed: 0,
+      explanationsNotRequested: 0,
+      screenerFlagged: 0,
+      sendersFailed: 0,
+      chunksFailed: 0,
+    };
+    if (this.deps.llm?.isBlocked?.()) {
+      // The provider is refusing the account: the sentence cannot be bought,
+      // so the six batch reads would be wasted too. The next ask after the
+      // hour's dedupe window tries again.
+      return { ...skipped, explainSkipped: 0, llmBlocked: 1 };
+    }
+    if (!this.deps.llm) {
+      // A worker with no model is being asked for sentences — the feature
+      // is dark, which is a configuration gap, not a race. Said at warn,
+      // and before the six batch reads, which could only be wasted.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'score.explain_skipped',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey: target.senderKey,
+          reason: 'no_llm' satisfies ExplainSkip,
+        }),
+      );
+      return skipped;
+    }
+    const batch = await this.loadSignalBatch(mailboxAccountId, [target.senderKey]);
+    // Not through `this.limiter`: that bounds a sweep's fan-out and queues
+    // FIFO, so a reader's one sentence would wait behind a whole chunk of
+    // someone else's sweep. The rate limiter still paces the call.
+    const outcome = await this.explainOne(mailboxAccountId, target, batch);
+    // An explain job has one attempt (its producer sets none), so a throw
+    // here is final: Sentry and the dead-letter table, not a quiet count.
+    if (outcome.kind === 'called' && outcome.error) throw outcome.error;
+    const called = outcome.kind === 'called';
+    const blocked = outcome.kind === 'blocked';
+    return {
+      decisionsWritten: 0,
+      llmExplanations: called && outcome.written ? 1 : 0,
+      templateExplanations: 0,
+      llmTimeouts: called && outcome.timedOut ? 1 : 0,
+      llmCalls: called ? 1 : 0,
+      llmReused: 0,
+      llmBlocked: blocked ? 1 : 0,
+      explainCandidates: 1,
+      explainSkipped: outcome.kind === 'skipped' ? 1 : 0,
+      explainFailed: 0,
+      explanationsNotRequested: 0,
+      screenerFlagged: 0,
+      sendersFailed: 0,
+      chunksFailed: 0,
+    };
+  }
+
+  /**
+   * The second half of a `sync_complete` sweep: sentences for the senders
+   * the user sees first. Never throws — every verdict is already written,
+   * and the Autopilot apply sweep hangs off this job succeeding; a missing
+   * explanation is a template, not a failure.
+   */
+  private async explainFirstView(
+    mailboxAccountId: string,
+    producedAt: Date,
+  ): Promise<{
+    candidates: number;
+    calls: number;
+    /** Senders whose sentence was written. */
+    writtenKeys: string[];
+    timeouts: number;
+    skipped: number;
+    blocked: number;
+    failed: number;
+  }> {
+    const totals = {
+      candidates: 0,
+      calls: 0,
+      writtenKeys: [] as string[],
+      timeouts: 0,
+      skipped: 0,
+      blocked: 0,
+      failed: 0,
+    };
+    let targets: ExplainTarget[];
+    let batch: SignalBatch;
+    try {
+      targets = await this.firstViewTargets(mailboxAccountId, producedAt);
+      if (targets.length === 0) return totals;
+      batch = await this.loadSignalBatch(
+        mailboxAccountId,
+        targets.map((t) => t.senderKey),
+      );
+    } catch (err) {
+      totals.failed = 1;
+      this.reportExplainFailure('score.first_view_failed', mailboxAccountId, err);
+      return totals;
+    }
+    totals.candidates = targets.length;
+    const settled = await Promise.allSettled(
+      targets.map((target) => this.limiter(() => this.explainOne(mailboxAccountId, target, batch))),
+    );
+    let firstError: unknown = null;
+    for (const [index, outcome] of settled.entries()) {
+      if (outcome.status === 'rejected') {
+        totals.failed += 1;
+        firstError ??= outcome.reason;
+        continue;
+      }
+      const value = outcome.value;
+      if (value.kind === 'skipped') {
+        totals.skipped += 1;
+        continue;
+      }
+      if (value.kind === 'blocked') {
+        totals.blocked += 1;
+        continue;
+      }
+      // Counted as a call even when the write then threw: it was billed.
+      totals.calls += 1;
+      if (value.written) totals.writtenKeys.push(targets[index]!.senderKey);
+      if (value.timedOut) totals.timeouts += 1;
+      if (value.error) {
+        totals.failed += 1;
+        firstError ??= value.error;
+      }
+    }
+    // Once per sweep, not per sender: one broken write path must not
+    // spend the Sentry quota sixty times over.
+    if (firstError !== null) {
+      this.reportExplainFailure(
+        'score.explain_failed',
+        mailboxAccountId,
+        firstError,
+        totals.failed,
+      );
+    }
+    return totals;
+  }
+
+  /**
+   * A failure in the explanation half of a sweep. The sweep itself goes on
+   * succeeding — every verdict is written, and the Autopilot apply sweep
+   * hangs off it — so this is the only place the failure is seen: one log
+   * line and one Sentry event. A `console.warn` alone reaches nobody.
+   */
+  private reportExplainFailure(
+    kind: 'score.first_view_failed' | 'score.explain_failed',
+    mailboxAccountId: string,
+    err: unknown,
+    failed = 1,
+  ): void {
+    const error = err instanceof Error ? err : new Error(String(err));
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind,
+        worker: this.workerName,
+        mailboxAccountId,
+        failed,
+        message: error.message,
+      }),
+    );
+    this.observer.captureBackgroundFailure(error, {
+      kind,
+      tags: { worker: this.workerName, failed },
+    });
+  }
+
+  /**
+   * The senders a user sees first, among the rows this sweep wrote and
+   * left on the template: the top of the Triage queue — the SAME order and
+   * decided-window the queue read uses — then the loudest senders.
+   */
+  private async firstViewTargets(
+    mailboxAccountId: string,
+    producedAt: Date,
+  ): Promise<ExplainTarget[]> {
+    const row = {
+      senderKey: triageDecisions.senderKey,
+      producedAt: triageDecisions.producedAt,
+      generatedBy: triageDecisions.generatedBy,
+    };
+    // Inner-joined to `senders` on both sides, as the queue read is: a
+    // decision whose sender row is gone is never shown.
+    const joinSender = and(
+      eq(senders.mailboxAccountId, triageDecisions.mailboxAccountId),
+      eq(senders.senderKey, triageDecisions.senderKey),
+    );
+    const [queue, loudest] = await Promise.all([
+      this.deps.db
+        .select(row)
+        .from(triageDecisions)
+        .innerJoin(senders, joinSender)
+        .where(
+          and(eq(triageDecisions.mailboxAccountId, mailboxAccountId), triageNotDecidedRecently()),
+        )
+        .orderBy(...triageQueueOrder())
+        .limit(this.firstView.queueRows),
+      this.deps.db
+        .select(row)
+        .from(triageDecisions)
+        .innerJoin(senders, joinSender)
+        .where(eq(triageDecisions.mailboxAccountId, mailboxAccountId))
+        // The Senders list's default order (`total` DESC, then id).
+        .orderBy(desc(senders.totalReceived), desc(senders.id))
+        .limit(this.firstView.volumeRows),
+    ]);
+    const seen = new Set<string>();
+    const targets: ExplainTarget[] = [];
+    for (const candidate of [...queue, ...loudest]) {
+      if (seen.has(candidate.senderKey)) continue;
+      seen.add(candidate.senderKey);
+      // Reused prose costs nothing, and a row a newer trigger has since
+      // rewritten is that trigger's to explain.
+      if (candidate.generatedBy !== 'template') continue;
+      if (candidate.producedAt.getTime() !== producedAt.getTime()) continue;
+      targets.push({ senderKey: candidate.senderKey, producedAt: candidate.producedAt });
+    }
+    return targets;
+  }
+
+  /**
+   * Buy the sentence for one stored row, if it still wants one.
+   *
+   * The sentence is written from TODAY's cascade result onto a row that
+   * holds an earlier one. It only goes on when both reach the same verdict
+   * at the same confidence — the verdict and confidence band the reader
+   * sees beside it — so the prose never explains a verdict it was not
+   * written for (D24). Most confidences belong to one rule; a few are
+   * shared by several, and there the sentence gives today's reason for the
+   * same verdict. When they differ the row keeps its template; moving the
+   * verdict is a re-score's job, not this one's.
+   *
+   * The write is compare-and-set on the row version: a re-score that lands
+   * while the call is in flight wins, and the sentence is dropped.
+   */
+  private async explainOne(
+    mailboxAccountId: string,
+    target: ExplainTarget,
+    batch: SignalBatch,
+  ): Promise<ExplainOutcome> {
+    const skip = (reason: ExplainSkip): ExplainOutcome => {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          kind: 'score.explain_skipped',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey: target.senderKey,
+          reason,
+        }),
+      );
+      return { kind: 'skipped', reason };
+    };
+    const port = this.deps.llm;
+    if (!port) return skip('no_llm');
+    const existing = batch.existingDecisions.get(target.senderKey);
+    if (!existing) return skip('no_decision');
+    if (existing.producedAt.getTime() !== target.producedAt.getTime()) return skip('rescored');
+    if (existing.generatedBy !== 'template') return skip('already_explained');
+    const signals = this.loadSignals(mailboxAccountId, target.senderKey, batch);
+    if (!signals) return skip('no_sender');
+    const result = runCascade(signals.signals);
+    if (
+      result.verdict !== existing.verdict ||
+      result.confidence.toFixed(2) !== Number(existing.confidence).toFixed(2)
+    ) {
+      return skip('verdict_moved');
+    }
+
+    const prose = await this.generateProse(
+      port,
+      mailboxAccountId,
+      target.senderKey,
+      signals,
+      result,
+    );
+    if (prose.blocked) return { kind: 'blocked' };
+    if (prose.reasoning === null) {
+      return { kind: 'called', written: false, timedOut: prose.timedOut };
+    }
+    let written: { id: string }[];
+    try {
+      written = await this.deps.db
+        .update(triageDecisions)
+        .set({ reasoning: prose.reasoning, generatedBy: 'llm_haiku', updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(triageDecisions.mailboxAccountId, mailboxAccountId),
+            eq(triageDecisions.senderKey, target.senderKey),
+            // Millisecond precision on both sides: the ask carries the version
+            // as epoch ms, and a row written by a column default (`now()`)
+            // holds microseconds that would never compare equal.
+            sql`date_trunc('milliseconds', ${triageDecisions.producedAt}) = ${target.producedAt.toISOString()}::timestamptz`,
+            eq(triageDecisions.generatedBy, 'template'),
+            eq(triageDecisions.verdict, existing.verdict),
+          ),
+        )
+        .returning({ id: triageDecisions.id });
+    } catch (err) {
+      // The call is already billed; say so, and let the caller decide what
+      // a lost sentence means (a failed job, or one line in a sweep).
+      return {
+        kind: 'called',
+        written: false,
+        timedOut: false,
+        error: err instanceof Error ? err : new Error(String(err)),
+      };
+    }
+    if (written.length === 0) {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          kind: 'score.explain_superseded',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey: target.senderKey,
+        }),
+      );
+    }
+    return { kind: 'called', written: written.length > 0, timedOut: false };
   }
 
   /**
@@ -502,11 +1173,16 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     producedAt: Date,
     expiresAt: Date,
     batch: SignalBatch,
+    /** May this run BUY a sentence? See {@link explainPolicy}. Reuse is free either way. */
+    mayExplain: boolean,
   ): Promise<{
     verdict: TriageVerdict;
     generatedBy: 'llm_haiku' | 'template';
     timedOut: boolean;
     screenerFlagged: boolean;
+    reused: boolean;
+    called: boolean;
+    blocked: boolean;
   } | null> {
     const signals = this.loadSignals(mailboxAccountId, senderKey, batch);
     if (!signals) return null;
@@ -519,6 +1195,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // contract is preserved from the consumer side.
     let reasoning: string | null = null;
     let timedOut = false;
+    let reused = false;
+    let called = false;
+    let blocked = false;
     if (this.deps.llm) {
       const port = this.deps.llm;
       // Reuse before re-billing (2026-07-10): a re-score sweep calls
@@ -533,82 +1212,36 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       const reusable =
         existing &&
         existing.generatedBy === 'llm_haiku' &&
+        // Same verdict AT THE SAME CONFIDENCE — the rule `explainOne`
+        // applies too. A verdict alone is not enough: Keep at 0.95 (Gmail
+        // files them in Primary) and Keep at 1.00 (the user protected
+        // them) are different reasons, and the sentence names one of them.
         existing.verdict === result.verdict &&
+        Number(existing.confidence).toFixed(2) === result.confidence.toFixed(2) &&
         existing.reasoning &&
         // A paragraph stored before the word ceiling existed is not worth
         // keeping: fall through to a fresh (ceiling-checked) call.
         reasoningWordCount(existing.reasoning) <= MAX_REASONING_WORDS &&
+        // Nor one a fresh sentence would be refused for in `generateProse`:
+        // our internal vocabulary, or a tab Gmail does not use for the
+        // sender. A reused sentence gets every check a new one does, or it
+        // outlives the check by being re-stamped on every re-score.
+        foreignIdentifierToken(existing.reasoning, senderIdentity(signals)) === null &&
+        !misplacesInPrimary(existing.reasoning, signals.signals.gmailCategory, signals) &&
         existing.expiresAt > (this.deps.now ?? (() => new Date()))();
       if (reusable) {
         // Falls through to the monotonic upsert below so produced_at /
         // expires_at still advance — only the LLM call is skipped.
         reasoning = existing.reasoning;
-      } else {
-        // Pace BEFORE the timeout race starts. If pacing were inside the
-        // raced task, the wall-clock budget would include rate-limiter
-        // wait time and a short timeout (e.g. 5_000ms) could surface as a
-        // `reasoning.timeout` even though the port itself never started.
-        // Pacing OUTSIDE the race makes the timeout measure only the
-        // port's own latency, which is what the budget is meant to bound.
-        if (this.rateLimiter) {
-          await this.rateLimiter.acquire(1);
-        }
-        const raced = await runWithTimeout(
-          () =>
-            port.explain({
-              displayName: signals.displayName,
-              domain: signals.domain,
-              verdict: result.verdict,
-              confidence: result.confidence,
-              // The PHRASE, never the id. Handing the model
-              // `high_read_rate` is how "the high_read_rate engine rule"
-              // ended up in user-facing copy.
-              ruleLabel: CASCADE_RULE_PHRASE[result.ruleId],
-              facts: result.facts,
-              gmailCategory: signals.signals.gmailCategory,
-            }),
-          this.explainTimeoutMs,
-        );
-        const identity = `${signals.displayName} ${signals.domain} ${signals.email}`;
-        const leaked =
-          raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
-        if (raced.kind === 'ok' && leaked === null) {
-          reasoning = raced.value;
-        } else if (raced.kind === 'ok') {
-          // The prompt no longer contains an id, but the model can still
-          // reach one via few-shot drift or a future prompt edit. A
-          // sentence naming internal vocabulary is not shippable copy —
-          // fall back to the template rather than explain the user's
-          // mail to them in our jargon.
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: 'reasoning.rejected_internal_vocabulary',
-              worker: this.workerName,
-              mailboxAccountId,
-              senderKey,
-              token: leaked,
-            }),
-          );
+        reused = true;
+      } else if (mayExplain) {
+        const prose = await this.generateProse(port, mailboxAccountId, senderKey, signals, result);
+        if (prose.blocked) {
+          blocked = true;
         } else {
-          // Either way the sender falls back to its template explanation —
-          // an explanation is an enhancement, never a reason to fail the
-          // sweep. A provider ERROR is logged as itself rather than as a
-          // timeout: counting it in `llmTimeouts` would blame latency for
-          // an outage and send the next reader chasing the wrong thing.
-          timedOut = raced.kind === 'timeout';
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: raced.kind === 'timeout' ? 'reasoning.timeout' : 'reasoning.failed',
-              worker: this.workerName,
-              mailboxAccountId,
-              senderKey,
-              ...(raced.kind === 'timeout'
-                ? { timeoutMs: this.explainTimeoutMs }
-                : { error: raced.error.name }),
-            }),
-          );
+          called = true;
+          reasoning = prose.reasoning;
+          timedOut = prose.timedOut;
         }
       }
     }
@@ -703,7 +1336,157 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         );
     }
 
-    return { verdict: result.verdict, generatedBy, timedOut, screenerFlagged };
+    return {
+      verdict: result.verdict,
+      generatedBy,
+      timedOut,
+      screenerFlagged,
+      reused,
+      called,
+      blocked,
+    };
+  }
+
+  /**
+   * Wait for this row's rate-limit slot; `false` when the provider started
+   * refusing the account meanwhile.
+   *
+   * Pace BEFORE the timeout race starts. If pacing were inside the raced
+   * task, the wall-clock budget would include rate-limiter wait time and a
+   * short timeout (e.g. 5_000ms) could surface as a `reasoning.timeout`
+   * even though the port itself never started. Pacing OUTSIDE the race
+   * makes the timeout measure only the port's own latency, which is what
+   * the budget is meant to bound.
+   */
+  private async waitForSlot(port: ReasoningLlmPort): Promise<boolean> {
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire(1);
+    }
+    return !port.isBlocked?.();
+  }
+
+  /**
+   * THE place a sentence is bought — every trigger that pays (a re-score,
+   * a sweep's first-view set, an `explain` job) goes through here, so the
+   * breaker, the pacing, the timeout, and the vocabulary and Primary
+   * checks cover all of them.
+   *
+   * `blocked` when the provider is refusing the account: no call was made.
+   * Otherwise `null` reasoning when the model's answer is unusable; the
+   * caller keeps the template. Never throws (the port's contract, held
+   * from this side by `runWithTimeout`).
+   */
+  private async generateProse(
+    port: ReasoningLlmPort,
+    mailboxAccountId: string,
+    senderKey: string,
+    signals: { signals: SenderSignals; displayName: string; domain: string; email: string },
+    result: CascadeResult,
+  ): Promise<{ reasoning: string | null; timedOut: boolean; blocked: boolean }> {
+    if (port.isBlocked?.() || !(await this.waitForSlot(port))) {
+      // The provider refused the account (credit, spend limit, key),
+      // before this row's turn or while it waited for it: this call
+      // would be refused too. Template now, without the rate-limit wait
+      // — on 2026-09-24 each refused call still waited its turn, 2,927
+      // of them in 431 s for one mailbox.
+      return { reasoning: null, timedOut: false, blocked: true };
+    }
+    const raced = await runWithTimeout(
+      () =>
+        port.explain({
+          displayName: signals.displayName,
+          domain: signals.domain,
+          verdict: result.verdict,
+          confidence: result.confidence,
+          // The PHRASE, never the id. Handing the model
+          // `high_read_rate` is how "the high_read_rate engine rule"
+          // ended up in user-facing copy.
+          ruleLabel: CASCADE_RULE_PHRASE[result.ruleId],
+          facts: result.facts,
+          gmailCategory: signals.signals.gmailCategory,
+        }),
+      this.explainTimeoutMs,
+    );
+    if (raced.kind === 'ok' && !raced.value) {
+      // No sentence came back. The port answers `null` for every failure:
+      // a provider error or an over-long answer (the adapter logs those
+      // itself, so this line is their echo), and a model refusal, a
+      // truncation or an empty answer, which only this line names. So a
+      // model that starts refusing everywhere is a log kind, not just a gap
+      // between two counters — and an empty string never becomes a blank
+      // reason on the user's screen.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'reasoning.no_text',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey,
+        }),
+      );
+      return { reasoning: null, timedOut: false, blocked: false };
+    }
+    const identity = senderIdentity(signals);
+    const leaked =
+      raced.kind === 'ok' && raced.value ? foreignIdentifierToken(raced.value, identity) : null;
+    const misplaced =
+      raced.kind === 'ok' &&
+      !!raced.value &&
+      misplacesInPrimary(raced.value, signals.signals.gmailCategory, signals);
+    if (raced.kind === 'ok' && leaked === null && !misplaced) {
+      return { reasoning: raced.value, timedOut: false, blocked: false };
+    }
+    if (raced.kind === 'ok' && misplaced) {
+      // A tab Gmail does not use for this sender is a false claim about
+      // the user's own mail. The template instead.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'reasoning.rejected_primary_claim',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey,
+          gmailCategory: signals.signals.gmailCategory,
+        }),
+      );
+      return { reasoning: null, timedOut: false, blocked: false };
+    }
+    if (raced.kind === 'ok') {
+      // The prompt no longer contains an id, but the model can still
+      // reach one via few-shot drift or a future prompt edit. A
+      // sentence naming internal vocabulary is not shippable copy —
+      // fall back to the template rather than explain the user's
+      // mail to them in our jargon.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'reasoning.rejected_internal_vocabulary',
+          worker: this.workerName,
+          mailboxAccountId,
+          senderKey,
+          token: leaked,
+        }),
+      );
+      return { reasoning: null, timedOut: false, blocked: false };
+    }
+    // Either way the sender falls back to its template explanation —
+    // an explanation is an enhancement, never a reason to fail the
+    // sweep. A provider ERROR is logged as itself rather than as a
+    // timeout: counting it in `llmTimeouts` would blame latency for
+    // an outage and send the next reader chasing the wrong thing.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: raced.kind === 'timeout' ? 'reasoning.timeout' : 'reasoning.failed',
+        worker: this.workerName,
+        mailboxAccountId,
+        senderKey,
+        ...(raced.kind === 'timeout'
+          ? { timeoutMs: this.explainTimeoutMs }
+          : { error: raced.error.name }),
+      }),
+    );
+    return { reasoning: null, timedOut: raced.kind === 'timeout', blocked: false };
   }
 
   /** Senders to score on the all-senders sync_complete sweep. */
@@ -896,8 +1679,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
           .select({
             senderKey: triageDecisions.senderKey,
             verdict: triageDecisions.verdict,
+            confidence: triageDecisions.confidence,
             generatedBy: triageDecisions.generatedBy,
             reasoning: triageDecisions.reasoning,
+            producedAt: triageDecisions.producedAt,
             expiresAt: triageDecisions.expiresAt,
           })
           .from(triageDecisions)
@@ -1065,11 +1850,15 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
  * quarantine's own graduation rule already needs three.
  *
  * NO Primary carve-out. The obvious second clause — "or Gmail files it
- * in Primary, where real correspondence lands" — is unreachable: Primary
- * is Phase A rule 3, which returns Keep at 0.95 before Phase B is
- * consulted at all. A first message from a person never reaches the
- * Screener because it is never unjudged. Writing that clause and
- * watching its test fail is how this comment exists.
+ * in Primary" — is unreachable for the senders it would be written for:
+ * a Primary sender with no unsubscribe link is Phase A rule 3, which
+ * returns Keep at 0.95 before Phase B is consulted at all. What CAN reach
+ * Phase B is a Primary sender whose mail carries an unsubscribe link
+ * (sent through a list or mailing system) and first-contact mail with no
+ * Gmail tab label (mig 0079) — neither is the person-to-person case the
+ * clause means.
+ * Writing that clause and watching its test fail is how this comment
+ * exists.
  *
  * A sender that does not clear the bar is NOT hidden: it keeps its
  * engine verdict, stays in Senders, and remains eligible for Triage. It
@@ -1084,6 +1873,17 @@ export function isWorthScreening(signals: SenderSignals): boolean {
 /** Queue name + job name for the score worker (matches initial-sync pattern). */
 export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
+
+/**
+ * `explain` jobs ride their own queue, consumed by the same `ScoreWorker`.
+ *
+ * On the shared `score` queue they sat FIFO in front of every mailbox's
+ * sync sweeps and re-scores, each holding a slot while it waited on the
+ * LLM rate limiter — a page load's worth of asks could stall scoring for
+ * everyone. Separately, a worker rolled back alone never consumes this
+ * queue, instead of treating an ask as a re-score and paying for it.
+ */
+export const SCORE_EXPLAIN_QUEUE = 'score-explain';
 
 /**
  * First row of a Drizzle `execute` result, whatever the driver returns.

@@ -25,6 +25,21 @@ const EXPECTED_SLUGS = [
 ];
 
 describe('comparison data', () => {
+  it('keeps vendor-specific caveats that change the purchase or privacy decision', () => {
+    const cleanRecovery = comparisonBySlug('clean-email')!.rows.find(
+      (row) => row.label === 'Preview and recovery',
+    )!.competitor;
+    expect(cleanRecovery.detail).toMatch(/five seconds.*off by default/);
+    const sanebox = JSON.stringify(comparisonBySlug('sanebox'));
+    expect(sanebox).not.toMatch(/7-day trial|1\/2\/4|2\/6\/all/);
+    expect(sanebox).toContain('AI summaries and reply drafts');
+    expect(JSON.stringify(comparisonBySlug('unroll-me'))).toContain(
+      'additional restrictions for Gmail API data',
+    );
+    expect(JSON.stringify(comparisonBySlug('gmail'))).toContain('goes to Spam');
+    expect(JSON.stringify(comparisonBySlug('meta-muse'))).toContain('enabled initially');
+  });
+
   it('publishes exactly the requested, statically addressable comparisons', () => {
     expect(COMPARISONS.map((comparison) => comparison.slug)).toEqual(EXPECTED_SLUGS);
     for (const slug of EXPECTED_SLUGS) {
@@ -109,7 +124,7 @@ describe('comparison data', () => {
     }
     expect(comparisonVerifiedLabel('2026-07-11')).toBe('Last verified July 2026');
     expect(comparisonVerifiedLabel(comparisonBySlug('unroll-me')!.verifiedIso)).toBe(
-      'Last verified August 2026',
+      'Last verified September 2026',
     );
   });
 

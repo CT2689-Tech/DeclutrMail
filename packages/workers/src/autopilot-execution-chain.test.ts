@@ -77,7 +77,10 @@ async function seedMatchableMailbox(
     .where(
       and(
         eq(automationRules.mailboxAccountId, mailboxId),
-        eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+        eq(
+          automationRules.presetKey,
+          mode === 'active' ? 'auto_unsubscribe_noisy' : 'auto_archive_low_engagement',
+        ),
       ),
     );
 
@@ -95,8 +98,8 @@ async function seedMatchableMailbox(
   await db.insert(triageDecisions).values({
     mailboxAccountId: mailboxId,
     senderKey,
-    verdict: 'archive',
-    confidence: '0.92',
+    verdict: mode === 'active' ? 'unsubscribe' : 'archive',
+    confidence: mode === 'active' ? '0.95' : '0.92',
     reasoning: 'test',
     generatedBy: 'template',
     producedAt: NOW,
@@ -120,7 +123,10 @@ async function seedMatchableMailbox(
 }
 
 function buildChain(db: Awaited<ReturnType<typeof freshDb>>) {
-  const add = vi.fn().mockResolvedValue(undefined);
+  // BullMQ's `add` returns the job it created, whose id is the one requested.
+  const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+    id: opts?.jobId,
+  }));
   const chain = createAutopilotExecutionChain({
     db: db as never,
     gmailMutation: UNUSED_GMAIL,
@@ -149,11 +155,15 @@ describe('createAutopilotExecutionChain', () => {
     const [jobName, jobData, opts] = add.mock.calls[0] as [
       string,
       { mailboxAccountId: string; triggeredAtMs: number },
-      { jobId: string },
+      { jobId: string; deduplication?: unknown },
     ];
     expect(jobName).toBe('autopilot-action');
     expect(jobData.mailboxAccountId).toBe(mailboxId);
-    expect(opts.jobId).toBe(`${mailboxId}-${jobData.triggeredAtMs}`);
+    // The canonical prefix; `addCoalescedJob` makes each add's id unique.
+    expect(opts.jobId.startsWith(`${mailboxId}-${jobData.triggeredAtMs}__`)).toBe(true);
+    // One queued + one running sweep per mailbox: a sweep executes every
+    // pending match, so a second one queued behind it only waits on the lock.
+    expect(opts.deduplication).toEqual({ id: mailboxId, keepLastIfActive: true });
     // BullMQ reserves ':' as its Redis key separator and REJECTS custom
     // ids containing it (caught live in the U14 smoke).
     expect(opts.jobId).not.toContain(':');
@@ -203,11 +213,14 @@ describe('createAutopilotExecutionChain', () => {
     const [jobName, jobData, opts] = add.mock.calls[0] as [
       string,
       { mailboxAccountId: string; triggeredAtMs: number },
-      { jobId: string; delay?: number },
+      { jobId: string; delay?: number; deduplication?: unknown },
     ];
     expect(jobName).toBe('autopilot-action');
     expect(jobData.mailboxAccountId).toBe(mailboxId);
     expect(opts.delay).toBe(30 * 60_000);
+    // NOT coalesced: an immediate trigger absorbed into this job would wait
+    // for the quiet window to end.
+    expect(opts.deduplication).toBeUndefined();
     // jobId keyed on the RESUME instant — distinct from the deferred
     // sweep's id, '-'-separated (BullMQ rejects ':' in custom ids).
     expect(jobData.triggeredAtMs).toBe(NOW.getTime() + 30 * 60_000);

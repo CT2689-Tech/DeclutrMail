@@ -74,27 +74,26 @@ export function WaitlistForm({ tierInterest, source }: { tierInterest: TierId; s
         aria-label="Work email for the Team waitlist"
         disabled={status === 'submitting'}
         style={{
-          height: 32,
-          width: 220,
+          height: 40,
+          width: 240,
           maxWidth: '100%',
-          padding: '0 10px',
+          padding: '0 16px',
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: 14,
           color: color.fg,
           background: color.card,
           border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
-          borderRadius: radius.sm,
-          outline: 'none',
+          borderRadius: radius.pill,
         }}
       />
       <button
         type="submit"
         disabled={status === 'submitting'}
         style={{
-          height: 32,
-          padding: '0 14px',
+          height: 40,
+          padding: '0 18px',
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: 14,
           fontWeight: 600,
           // Sits on color.fg, which inverts with the theme — a literal
           // white here renders white-on-white once the public pages
@@ -102,7 +101,7 @@ export function WaitlistForm({ tierInterest, source }: { tierInterest: TierId; s
           color: color.fgInverse,
           background: status === 'submitting' ? color.fgMuted : color.fg,
           border: `1px solid ${status === 'submitting' ? color.fgMuted : color.fg}`,
-          borderRadius: radius.sm,
+          borderRadius: radius.pill,
           cursor: status === 'submitting' ? 'wait' : 'pointer',
           whiteSpace: 'nowrap',
         }}

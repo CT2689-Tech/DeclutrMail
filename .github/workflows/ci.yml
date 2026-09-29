@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
           echo "✓ No negation patterns in the path filters."
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         # Skipped in the queue; the outputs above hard-code `true` there.
         if: github.event_name != 'merge_group'
@@ -155,13 +155,22 @@ jobs:
               # 40 files under apps/api/src import @declutrmail/workers, so a
               # worker-only behaviour change still has to run this suite.
               - 'packages/workers/**'
+              # The alert's log filter is checked against the adapters'
+              # real output by an apps/api spec; editing only the script
+              # must still run it.
+              - 'scripts/setup-llm-rejection-alert.mjs'
               - *shared_server
+              # Specs here read the deploy manifest's --set-env-vars (the
+              # quota metric pairing); a manifest-only PR must run them.
+              - '.github/workflows/deploy-cloud-run.yml'
             workers:
               - *infra
               - 'packages/workers/**'
               - 'packages/db/**'
               - 'packages/events/**'
               - *shared_server
+              # unsub-send-enabled-deploy.test.ts reads the deploy manifest.
+              - '.github/workflows/deploy-cloud-run.yml'
             db:
               - *infra
               - 'packages/db/**'
@@ -169,6 +178,10 @@ jobs:
               - *infra
               - 'apps/web/**'
               - 'packages/shared/**'
+              # build-web runs these; editing only one (a budget raise) must
+              # still run the job that executes it, not wait for the queue.
+              - 'scripts/check-web-bundle-budget.mjs'
+              - 'scripts/check-prerendered-routes.mjs'
             units:
               - *infra
               - 'packages/shared/**'
@@ -190,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -217,7 +230,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -240,21 +253,56 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        # Full history: the guard-hook step diffs against the PR, queue or
+        # push base, which a depth-1 checkout does not contain. The runner
+        # fails closed on a base it cannot read rather than checking nothing.
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
-        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs
+        run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/deploy-api-safely.test.mjs
       - name: PR-body D-citation matcher
         run: node --test scripts/check-pr-body-d-ref.test.mjs
+      - name: ct-gates verdicts (a run that reviewed nothing never passes)
+        run: node --test scripts/ct-gates-workflow.test.mjs
+      - name: User-journey log trace
+        run: node --test scripts/journey-logs.test.mjs
+      - name: Stuck-mailbox alert and sync watchdog contracts
+        run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
+      - name: No personal email addresses in tracked files (D7)
+        run: node --test scripts/personal-email-guard.test.mjs
+      # The .claude/hooks guards only ran on edits made through Claude Code,
+      # and signalled violations with an exit code the agent never sees, so
+      # CLAUDE.md's "Enforced by … hook" held for nothing (2026-09-27). This
+      # feeds every changed file to every registered guard. It fails on a
+      # violation, and fails closed on an unreadable base, an empty diff, or
+      # a guard that is missing, crashes or misses its positive control.
+      # Pre-existing findings live in scripts/guard-hooks-allowlist.json.
+      - name: Guard-hook runner contracts
+        run: node --test scripts/run-guard-hooks.test.mjs
+      - name: Tier 1 guard hooks (D7, D222, D227)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            node scripts/run-guard-hooks.mjs --all
+          else
+            node scripts/run-guard-hooks.mjs --base "$BASE_SHA"
+          fi
+      - name: Performance probes and release contract
+        run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
+      - name: Bundle budget contracts (served-HTML measure, fails closed)
+        run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
       # fails when a committed file disagrees. Nothing else covers these:
       # a stale favicon or app icon passes typecheck, the suite and every
@@ -270,7 +318,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -304,7 +352,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -350,10 +398,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Same reason, for Redis: per-mailbox job coalescing and the shared
+      # Gmail quota budget both live in Lua that a fake cannot model, so
+      # their tests run `it.runIf(live)` against a real Redis — and without
+      # this service they were skipped in CI, reported as green.
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -361,6 +422,7 @@ jobs:
       # See the note on the API shard above — no `--` before the flag.
       - run: pnpm --filter @declutrmail/workers test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
+          TEST_REDIS_URL: redis://127.0.0.1:6379
           # A DEDICATED, EMPTY database — the test applies every
           # migration to it. Schema-level isolation is not an option:
           # the migrations write `CREATE TYPE "public"."<enum>"` and
@@ -377,7 +439,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -393,7 +455,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -409,7 +471,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -423,7 +485,9 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: '1'
       # D160's other unbuilt check. See the script header for what the
-      # numbers mean and why they are a ratchet rather than a target.
+      # numbers mean and why they are a ratchet rather than a target. It
+      # serves this build with `next start` on a free port and fetches
+      # every route itself, so it needs no other server.
       - name: Enforce the public bundle budget
         run: node scripts/check-web-bundle-budget.mjs
       # One per-request read in a shared node silently un-statics the
@@ -438,7 +502,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Upload Lighthouse reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-reports
           path: apps/web/.lighthouseci/
@@ -459,7 +523,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -565,12 +629,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: declutrmail
+          POSTGRES_DB: declutrmail_e2e
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d declutrmail"
+          --health-cmd "pg_isready -U postgres -d declutrmail_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -584,7 +648,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail_e2e
       REDIS_URL: redis://127.0.0.1:6379/12
       RATE_LIMIT_ENABLED: 'false'
       JWT_ACCESS_SECRET: e2e-access-secret-is-longer-than-thirty-two-bytes
@@ -599,6 +663,9 @@ jobs:
       CORS_ORIGIN: http://127.0.0.1:3104
       E2E_WEB_URL: http://127.0.0.1:3104
       E2E_API_URL: http://127.0.0.1:4104
+      E2E_ISOLATED: '1'
+      E2E_POSTHOG: '1'
+      NEXT_PUBLIC_POSTHOG_KEY: phc_e2e_dummy
       E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
@@ -611,7 +678,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -667,11 +734,18 @@ jobs:
           for migration in packages/db/migrations/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
+      # A long-lived Next dev process accumulates every public/authenticated
+      # route compiler. Its memory-threshold restart severed a valid sender
+      # navigation in run 35972390743. Exercise the shipped rendering instead
+      # of weakening navigation assertions or retrying an interrupted page.
+      # The API remains in development mode for the isolated login harness.
+      - name: Build the web app for browser verification
+        run: pnpm --filter @declutrmail/web build
       - name: Start the API and web app
         run: |
           PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
           API_PID=$!
-          PORT=3104 pnpm --filter @declutrmail/web dev > web-e2e.log 2>&1 &
+          PORT=3104 pnpm --filter @declutrmail/web start > web-e2e.log 2>&1 &
           WEB_PID=$!
 
           for attempt in $(seq 1 90); do
@@ -730,6 +804,18 @@ jobs:
       # Playwright exits 0 when every test skips, so the two steps above
       # can pass having asserted nothing. This is the required check that
       # would go green over it, so coverage is asserted, not assumed.
+      - name: Verify isolated harness guards
+        run: pnpm --filter @declutrmail/e2e run test:harness
+
+      - name: Run isolated product and public journeys
+        run: pnpm --filter @declutrmail/e2e run e2e:journeys
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-journeys-report.json
+
+      - name: Assert each required journey executed
+        if: always()
+        run: node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json
+
       - name: Assert both e2e lanes actually ran
         if: always()
         run: |
@@ -739,7 +825,7 @@ jobs:
           node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
       - name: Upload accessibility diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: accessibility-diagnostics
           if-no-files-found: ignore

@@ -8,6 +8,8 @@ import { ArticlePage } from './article-page';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
+import { MARKETING_PATHS } from '@/app/sitemap';
+
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from './how-to-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import {
@@ -56,6 +58,31 @@ const BLOG = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
 const ALL_ARTICLES = [...HOW_TO, ...ANSWERS, ...BLOG];
 
 describe('public learning content registry', () => {
+  it('keeps examples as request outcomes rather than guaranteed delivery changes', () => {
+    const senderGuide = HOW_TO_ARTICLES['clean-gmail-by-sender'];
+    const unsubscribe = senderGuide.example!.rows.find((row) => row.action === 'Unsubscribe')!;
+    expect(unsubscribe.result).toMatch(/request.*draft/);
+    expect(unsubscribe.result).toContain('sender controls delivery');
+    for (const article of ALL_ARTICLES) {
+      expect(JSON.stringify(article)).not.toMatch(
+        /Future delivery is stopped|every action is reversible/i,
+      );
+    }
+  });
+
+  it('explains real sender inspection and historical scope before bulk approval', () => {
+    const senderText = articleText(HOW_TO_ARTICLES['clean-gmail-by-sender']);
+    const deleteText = articleText(HOW_TO_ARTICLES['bulk-delete-emails-from-one-sender']);
+    for (const text of [senderText, deleteText]) {
+      expect(text).toMatch(/sender inspector/);
+      expect(text).toContain('How far back');
+      expect(text).toContain('Inbox only or Inbox + archived');
+    }
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(senderText).toContain(`${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan`);
+    }
+  });
+
   it('ships exactly the published how-to routes and five answer routes', () => {
     expect(HOW_TO_SLUGS).toEqual([
       'clean-gmail-by-sender',
@@ -73,6 +100,73 @@ describe('public learning content registry', () => {
       'sender-level-vs-message-level-cleanup',
     ]);
     expect(new Set(ALL_ARTICLES.map((article) => article.path)).size).toBe(ALL_ARTICLES.length);
+  });
+
+  it('points each how-to at the approved guides, comparisons, and one answer', () => {
+    const expected: Record<(typeof HOW_TO_SLUGS)[number], readonly string[]> = {
+      'clean-gmail-by-sender': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/vs/gmail',
+        '/compare',
+        '/answers/sender-level-vs-message-level-cleanup',
+      ],
+      'bulk-delete-emails-from-one-sender': [
+        '/how-to/clean-gmail-by-sender',
+        '/how-to/gmail-storage-full',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/vs/gmail',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'gmail-storage-full': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/clean-gmail-by-sender',
+        '/how-to/stop-promotional-emails-gmail',
+        '/vs/clean-email',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'auto-archive-future-emails-in-gmail': [
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/stop-promotional-emails-gmail',
+        '/how-to/clean-gmail-by-sender',
+        '/vs/gmail-filters',
+        '/vs/sanebox',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+      'stop-promotional-emails-gmail': [
+        '/how-to/unsubscribe-from-emails-gmail',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/how-to/clean-gmail-by-sender',
+        '/vs/unroll-me',
+        '/vs/leave-me-alone',
+        '/answers/is-it-safe-to-connect-gmail-app',
+      ],
+      'unsubscribe-from-emails-gmail': [
+        '/how-to/stop-promotional-emails-gmail',
+        '/how-to/bulk-delete-emails-from-one-sender',
+        '/how-to/auto-archive-future-emails-in-gmail',
+        '/vs/unroll-me',
+        '/vs/trimbox',
+        '/answers/how-undo-works-for-gmail-cleanup',
+      ],
+    };
+    for (const slug of HOW_TO_SLUGS) {
+      expect(
+        HOW_TO_ARTICLES[slug].related.map((link) => link.href),
+        slug,
+      ).toEqual(expected[slug]);
+    }
+  });
+
+  it('resolves every related href to a sitemap path', () => {
+    const paths = new Set<string>(MARKETING_PATHS);
+    for (const article of ALL_ARTICLES) {
+      for (const link of article.related) {
+        expect(paths.has(link.href), `${article.path} → ${link.href}`).toBe(true);
+      }
+    }
   });
 
   it('keeps every guide and answer substantive instead of shipping thin SEO shells', () => {
@@ -172,7 +266,9 @@ describe('public learning content registry', () => {
     const entry = FAQ_ENTRIES.find((candidate) => candidate.id === 'undo')!;
     expect(entry.answer).not.toContain('its length depends on your plan');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(entry.answer).toContain('while their undo window is open. Delete also has');
+      expect(entry.answer).toContain(
+        `while their undo window is open — ${UNIFORM_UNDO_WINDOW_DAYS} days on every plan. Delete also has`,
+      );
     }
     // Gmail's own Trash retention is a separate fact and stays literal.
     expect(entry.answer).toContain('separate Gmail Trash recovery for up to about 30 days');
@@ -184,7 +280,9 @@ describe('public learning content registry', () => {
     )!.callout!;
     expect(callout.body).not.toContain('its length depends on your plan');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(callout.body).toContain('while their undo window is open. Delete also has');
+      expect(callout.body).toContain(
+        `within the ${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan. Delete also has`,
+      );
     }
     // Gmail's own Trash retention is a separate fact and stays literal.
     expect(callout.body).toContain('separate Gmail Trash recovery for up to about 30 days');

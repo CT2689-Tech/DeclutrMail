@@ -19,8 +19,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: 'A Gmail sender-control companion with live previews and Activity undo.',
     start_url: '/',
     display: 'browser',
-    background_color: '#FAFAF7',
-    theme_color: '#006B5F',
+    background_color: '#F6F2EB',
+    theme_color: '#59415F',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },

@@ -29,6 +29,8 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteUrl()),
   title: 'DeclutrMail',
   description: 'A Gmail sender-control companion with live previews and Activity undo.',
+  // Bing Webmaster Tools site ownership (public token, not a secret).
+  verification: { other: { 'msvalidate.01': '9DD83ACF317403960E2CC3F5D9181A78' } },
 };
 
 /**

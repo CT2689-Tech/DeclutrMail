@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
+import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+
 import { AuthEntry } from './auth-entry';
 
 describe('AuthEntry CTA tracking', () => {
@@ -42,6 +44,20 @@ describe('AuthEntry step copy (QA-sign-in-07)', () => {
     render(<AuthEntry />);
     expect(screen.queryByText(/a few minutes/i)).not.toBeInTheDocument();
     expect(screen.getByText(/we email you when your inbox is ready/i)).toBeInTheDocument();
+  });
+});
+
+describe('AuthEntry storage list', () => {
+  it('keeps the trust line and every stored Gmail detail at the decision point', () => {
+    render(<AuthEntry />);
+    expect(screen.getByText(/We never fetch or store full email contents\./)).toBeInTheDocument();
+    for (const item of PRIVACY_STORAGE_ITEMS) {
+      expect(screen.getByText(item)).toBeInTheDocument();
+    }
+    expect(screen.getByRole('link', { name: 'privacy policy' })).toHaveAttribute(
+      'href',
+      '/privacy#what-we-store',
+    );
   });
 });
 

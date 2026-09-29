@@ -4,10 +4,12 @@ import {
   AUTOPILOT_ACTION_JOB,
   AutopilotActionWorker,
   autopilotActionJobOptions,
+  autopilotActionSweepJobOptions,
   type AutopilotActionDeps,
   type AutopilotActionJobData,
 } from './autopilot-action.worker.js';
 import { AutopilotApplyWorker } from './autopilot-apply.worker.js';
+import { addCoalescedJob } from './queue.js';
 
 /**
  * The wired Autopilot execution pair (U14 — D99/D104/D226):
@@ -37,7 +39,9 @@ export interface AutopilotExecutionChain {
  *
  * Takes the action QUEUE producer as a dep (composition root owns all
  * BullMQ Queue/Worker construction, matching every other queue in this
- * package); only `Queue.add` is required, so tests pass a fake.
+ * package). Immediate sweeps are coalesced per mailbox
+ * (`addCoalescedJob`), which reads the absorbing job back on a dedup hit,
+ * so tests pass a fake whose `add` returns `{ id }` like BullMQ's.
  *
  * The dev harness (`apps/api/scripts/dev-autopilot-harness.ts`) runs
  * its consumers through this exact fn, so the local smoke exercises
@@ -45,16 +49,17 @@ export interface AutopilotExecutionChain {
  */
 export function createAutopilotExecutionChain(
   deps: AutopilotActionDeps & {
-    actionQueue: Pick<Queue<AutopilotActionJobData>, 'add'>;
+    actionQueue: Queue<AutopilotActionJobData>;
   },
 ): AutopilotExecutionChain {
   const { actionQueue, ...actionDeps } = deps;
   const enqueueActionSweep = async (mailboxAccountId: string): Promise<void> => {
     const triggeredAtMs = (actionDeps.now ?? (() => new Date()))().getTime();
-    await actionQueue.add(
+    await addCoalescedJob(
+      actionQueue,
       AUTOPILOT_ACTION_JOB,
       { mailboxAccountId, triggeredAtMs },
-      autopilotActionJobOptions(`${mailboxAccountId}-${triggeredAtMs}`),
+      autopilotActionSweepJobOptions(mailboxAccountId, triggeredAtMs),
     );
   };
   // U18 (D92/D93) — a quiet-deferred sweep re-schedules itself for the

@@ -16,9 +16,15 @@ import { useEffect, useState } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { getResolvedTheme, setTheme, type Theme } from './theme';
 
-const { color } = tokens;
+const { color, motion, radius } = tokens;
 
-export function ThemeToggle() {
+export function ThemeToggle({
+  className = '',
+  showLabel = false,
+}: {
+  className?: string;
+  showLabel?: boolean;
+}) {
   // `null` until mounted — the server can't know the resolved theme,
   // so render a neutral placeholder first and let the client fill in
   // the real icon post-hydration (avoids a hydration mismatch).
@@ -41,45 +47,55 @@ export function ThemeToggle() {
       aria-pressed={dark}
       aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
       title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      // `dm-nav-row` = transparent at rest, neutral fill on hover, and a
+      // 44px touch height below the `sm` breakpoint (tokens.css).
+      className={`dm-nav-row ${className}`.trim()}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 30,
-        height: 30,
-        borderRadius: 8,
-        border: `1px solid ${color.border}`,
-        background: color.card,
-        color: color.fgSoft,
+        width: showLabel ? 'auto' : 36,
+        height: showLabel ? 44 : 36,
+        borderRadius: radius.pill,
+        border: showLabel ? `1px solid ${color.border}` : 'none',
+        background: showLabel ? color.fill : 'transparent',
+        color: showLabel ? color.fg : color.fgMuted,
         cursor: 'pointer',
-        padding: 0,
+        padding: showLabel ? '0 10px' : 0,
+        gap: showLabel ? 7 : 0,
+        transition: `background ${motion.fast} ${motion.ease}`,
       }}
     >
       {theme === null ? (
         // Pre-hydration placeholder — same box, no icon.
-        <span aria-hidden style={{ width: 14, height: 14 }} />
+        <span aria-hidden style={{ width: 18, height: 18 }} />
       ) : dark ? (
         // Sun — pressing returns to light.
-        <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="4.4" stroke="currentColor" strokeWidth="1.8" />
+        <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="4.4" stroke="currentColor" strokeWidth="1.75" />
           <path
             stroke="currentColor"
-            strokeWidth="1.8"
+            strokeWidth="1.75"
             strokeLinecap="round"
             d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7"
           />
         </svg>
       ) : (
         // Moon — pressing goes dark.
-        <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none">
           <path
             d="M20.2 14.1A8.3 8.3 0 0 1 9.9 3.8a8.3 8.3 0 1 0 10.3 10.3Z"
             stroke="currentColor"
-            strokeWidth="1.8"
+            strokeWidth="1.75"
             strokeLinejoin="round"
           />
         </svg>
       )}
+      {showLabel ? (
+        <span style={{ fontSize: 12, fontWeight: 600 }}>
+          {theme === null ? 'Theme' : dark ? 'Light mode' : 'Dark mode'}
+        </span>
+      ) : null}
     </button>
   );
 }

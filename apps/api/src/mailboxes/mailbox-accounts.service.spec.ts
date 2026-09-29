@@ -4,14 +4,25 @@ import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { citext } from '@electric-sql/pglite/contrib/citext';
 import {
+  actionJobs,
+  automationRules,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   mailMessages,
+  ruleMatchLog,
   schema,
+  senderPolicies,
+  senders,
   users,
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  AutopilotActionWorker,
+  OutboxPublisher,
+  PASSTHROUGH_MAILBOX_LOCK,
+  seedAutopilotPresets,
+} from '@declutrmail/workers';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -459,7 +470,9 @@ describe('MailboxAccountsService.upsertConnect', () => {
         }),
       );
 
-      expect(result).toEqual({ id: mailbox!.id });
+      // `wasActive` is the prior status: only an already-active mailbox
+      // may keep its synced state on connect (SyncService.markConnected).
+      expect(result).toEqual({ id: mailbox!.id, wasActive: status === 'active' });
       const [persisted] = await db
         .select()
         .from(mailboxAccounts)
@@ -503,6 +516,8 @@ describe('MailboxAccountsService.upsertConnect', () => {
       .from(mailboxAccounts)
       .where(eq(mailboxAccounts.id, result.id));
     expect(persisted?.providerAccountId).toBe('new.mailbox@example.com');
+    // A brand-new mailbox was not active before this connect.
+    expect(result.wasActive).toBe(false);
   });
 
   it('rejects a new activation when every inbox slot is already active', async () => {
@@ -651,5 +666,292 @@ describe('MailboxAccountsService.upsertConnect', () => {
         ),
       );
     expect(active).toHaveLength(2);
+  });
+});
+
+describe('MailboxAccountsService.getQuietHours — held Autopilot actions (D96)', () => {
+  let db: Db;
+  let service: MailboxAccountsService;
+
+  const MATCHED_AT = new Date('2026-09-10T08:00:00Z');
+  const INDEXED_BEFORE_MATCH = new Date('2026-09-01T00:00:00Z');
+  // A resync deletes and re-inserts `senders`, so a row created after
+  // the match means the match was computed from mail that is gone.
+  const REINDEXED_AFTER_MATCH = new Date('2026-09-11T00:00:00Z');
+
+  beforeEach(async () => {
+    db = await freshDb();
+    service = new MailboxAccountsService(
+      db as never,
+      {} as TokenCryptoService,
+      {} as GmailWatchService,
+      new EntitlementsService(db as never),
+    );
+  });
+
+  /** A Plus mailbox whose Archive rule is on — the sweep may act on it. */
+  async function setup() {
+    const seeded = await seed(db);
+    await db.update(workspaces).set({ tier: 'plus' }).where(eq(workspaces.id, seeded.workspaceId));
+    await seedAutopilotPresets(db as never, seeded.mailboxId);
+    const [rule] = await db
+      .update(automationRules)
+      .set({ enabled: true, mode: 'observe' })
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, seeded.mailboxId),
+          eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+        ),
+      )
+      .returning({ id: automationRules.id });
+    return { ...seeded, ruleId: rule!.id };
+  }
+
+  /** A sender row plus an approved, not-yet-applied match on it. */
+  async function approve(
+    mailboxAccountId: string,
+    ruleId: string,
+    email: string,
+    senderCreatedAt: Date,
+  ) {
+    const senderKey = email.padEnd(64, '0');
+    const [sender] = await db
+      .insert(senders)
+      .values({
+        mailboxAccountId,
+        senderKey,
+        displayName: email,
+        email,
+        domain: 'shop.com',
+        gmailCategory: 'promotions',
+        firstSeenAt: INDEXED_BEFORE_MATCH,
+        lastSeenAt: INDEXED_BEFORE_MATCH,
+        createdAt: senderCreatedAt,
+      })
+      .returning({ id: senders.id });
+    const [match] = await db
+      .insert(ruleMatchLog)
+      .values({
+        ruleId,
+        mailboxAccountId,
+        senderKey,
+        matchedAt: MATCHED_AT,
+        modeAtMatch: 'observe',
+        confidence: '0.90',
+        reason: 'test match',
+        intentApplied: false,
+        resolution: 'approved',
+      })
+      .returning({ id: ruleMatchLog.id });
+    return { senderKey, senderId: sender!.id, matchId: match!.id };
+  }
+
+  /** One real Autopilot action sweep. The seeded senders have nothing in INBOX. */
+  function sweep(mailboxAccountId: string) {
+    const worker = new AutopilotActionWorker({
+      db: db as never,
+      gmailMutation: {
+        getClient: async () => {
+          throw new Error('no sender here has mail in INBOX, so Gmail is never called');
+        },
+      },
+      outbox: new OutboxPublisher(),
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      enqueueUnsubExecution: async () => {
+        throw new Error('no unsubscribe rule is on');
+      },
+    });
+    return worker.processJob(
+      { mailboxAccountId, triggeredAtMs: Date.now() },
+      {
+        jobId: 'held-count-sweep',
+        workerName: 'AutopilotActionWorker',
+        attempt: 1,
+        maxAttempts: 1,
+        startedAt: new Date(),
+        policy: 'perMailboxPolicy',
+      },
+    );
+  }
+
+  async function heldCount(workspaceId: string, mailboxAccountId: string) {
+    return (await service.getQuietHours(workspaceId, mailboxAccountId)).heldCount;
+  }
+
+  it('counts exactly the approved matches the next sweep runs', async () => {
+    const m = await setup();
+    await approve(m.mailboxId, m.ruleId, 'current@shop.com', INDEXED_BEFORE_MATCH);
+    // The sweep never loads a match whose sender was re-indexed after it,
+    // so nothing ever runs or retires it.
+    const resynced = await approve(
+      m.mailboxId,
+      m.ruleId,
+      'resynced@shop.com',
+      REINDEXED_AFTER_MATCH,
+    );
+    // Re-indexed too, but claimed for execution first: the sweep finishes
+    // a claimed action rather than stranding it.
+    const claimed = await approve(m.mailboxId, m.ruleId, 'claimed@shop.com', REINDEXED_AFTER_MATCH);
+    await db.insert(actionJobs).values({
+      mailboxAccountId: m.mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId: claimed.senderId, senderKey: claimed.senderKey },
+      resolvedMessageIds: [],
+      requestedCount: 0,
+      status: 'queued',
+      idempotencyKey: `autopilot-${claimed.matchId}`,
+    });
+
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(2);
+
+    const result = await sweep(m.mailboxId);
+    expect(result.labelActionsExecuted).toBe(2);
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(0);
+    const [left] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.id, resynced.matchId));
+    expect(left).toMatchObject({ resolution: 'approved', intentApplied: false });
+  });
+
+  it('leaves out a paused or disabled rule until it can run again', async () => {
+    const m = await setup();
+    await approve(m.mailboxId, m.ruleId, 'current@shop.com', INDEXED_BEFORE_MATCH);
+    const setRule = (patch: { enabled?: boolean; mode?: 'observe' | 'paused' }) =>
+      db.update(automationRules).set(patch).where(eq(automationRules.id, m.ruleId));
+
+    await setRule({ mode: 'paused' });
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(0);
+    expect(await sweep(m.mailboxId)).toMatchObject({
+      skippedRuleInactive: 1,
+      labelActionsExecuted: 0,
+    });
+
+    await setRule({ mode: 'observe', enabled: false });
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(0);
+    expect(await sweep(m.mailboxId)).toMatchObject({
+      skippedRuleInactive: 1,
+      labelActionsExecuted: 0,
+    });
+
+    await setRule({ enabled: true });
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(1);
+    expect(await sweep(m.mailboxId)).toMatchObject({ labelActionsExecuted: 1 });
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(0);
+  });
+
+  it('leaves out a match whose sender was Protected after approval — the sweep dismisses it', async () => {
+    const m = await setup();
+    const { senderKey, matchId } = await approve(
+      m.mailboxId,
+      m.ruleId,
+      'guarded@shop.com',
+      INDEXED_BEFORE_MATCH,
+    );
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: m.mailboxId,
+      senderKey,
+      policyType: 'keep',
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: new Date(),
+    });
+
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(0);
+
+    const result = await sweep(m.mailboxId);
+    expect(result.skippedProtected).toBe(1);
+    expect(result.labelActionsExecuted).toBe(0);
+    const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(row).toMatchObject({ resolution: 'dismissed', dismissReason: 'protected' });
+  });
+
+  it('leaves out an unsubscribe for a sender already unsubscribed — the sweep closes it', async () => {
+    const m = await setup();
+    const [unsubRule] = await db
+      .update(automationRules)
+      .set({ enabled: true, mode: 'observe' })
+      .where(
+        and(
+          eq(automationRules.mailboxAccountId, m.mailboxId),
+          eq(automationRules.presetKey, 'newsletter_graveyard'),
+        ),
+      )
+      .returning({ id: automationRules.id });
+    const { senderKey, matchId } = await approve(
+      m.mailboxId,
+      unsubRule!.id,
+      'gone@news.com',
+      INDEXED_BEFORE_MATCH,
+    );
+    // The user unsubscribed by hand while the approved action was queued.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: m.mailboxId,
+      senderKey,
+      policyType: 'unsubscribe',
+    });
+    // Still counted: an unsubscribe whose sender is only kept here, and
+    // whose same sender key is unsubscribed in ANOTHER mailbox.
+    const kept = await approve(m.mailboxId, unsubRule!.id, 'kept@news.com', INDEXED_BEFORE_MATCH);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: m.mailboxId,
+      senderKey: kept.senderKey,
+      policyType: 'keep',
+    });
+    const [other] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: m.workspaceId,
+        userId: m.ownerId,
+        provider: 'gmail',
+        providerAccountId: 'other@example.com',
+      })
+      .returning({ id: mailboxAccounts.id });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: other!.id,
+      senderKey: kept.senderKey,
+      policyType: 'unsubscribe',
+    });
+
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(1);
+
+    const result = await sweep(m.mailboxId);
+    expect(result.skippedAlreadyUnsubscribed).toBe(1);
+    const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(row!.intentApplied).toBe(true);
+  });
+
+  it("is not moved by another mailbox's re-indexed sender with the same key", async () => {
+    const m = await setup();
+    const { senderKey } = await approve(
+      m.mailboxId,
+      m.ruleId,
+      'shared@shop.com',
+      INDEXED_BEFORE_MATCH,
+    );
+    const [other] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: m.workspaceId,
+        userId: m.ownerId,
+        provider: 'gmail',
+        providerAccountId: 'second@example.com',
+        connectedAt: new Date(),
+      })
+      .returning({ id: mailboxAccounts.id });
+    await db.insert(senders).values({
+      mailboxAccountId: other!.id,
+      senderKey,
+      displayName: 'shared@shop.com',
+      email: 'shared@shop.com',
+      domain: 'shop.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: INDEXED_BEFORE_MATCH,
+      lastSeenAt: INDEXED_BEFORE_MATCH,
+      createdAt: REINDEXED_AFTER_MATCH,
+    });
+
+    expect(await heldCount(m.workspaceId, m.mailboxId)).toBe(1);
   });
 });

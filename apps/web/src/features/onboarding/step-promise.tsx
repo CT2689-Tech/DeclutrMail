@@ -1,10 +1,12 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import { Button, PrivacyBadge, tokens } from '@declutrmail/shared';
 
 import { StepShell } from './step-shell';
 
-const { color } = tokens;
+const { color, radius, shadow, text } = tokens;
 
 /**
  * Step 1 — the Promise screen (D107).
@@ -22,17 +24,27 @@ const { color } = tokens;
 export function StepPromise({ onConnect }: { onConnect: () => void }) {
   return (
     <StepShell
-      eyebrow="Step 1 of 5 · Before we connect"
+      phase="connect"
       title="Clear thousands of emails by sender — and see exactly what moves."
-      sub="Before you connect, here is exactly what DeclutrMail will and will not access."
     >
-      <PrivacyBadge style={{ width: '100%', textAlign: 'left', marginBottom: 24 }} />
+      {/* The privacy boundary, stated once, at the decision point —
+          directly above the button that starts Google consent. */}
+      <PrivacyBadge
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          margin: '20px 0 32px',
+          border: 'none',
+          borderRadius: radius.xl,
+          boxShadow: shadow.card,
+        }}
+      />
 
-      <Button tone="primary" size="lg" onClick={onConnect} style={{ minWidth: 220, height: 44 }}>
-        Connect Gmail →
+      <Button tone="primary" size="xl" onClick={onConnect} style={editorialOnboardingActionStyle}>
+        Connect Gmail
       </Button>
 
-      <p style={{ color: color.fgMuted, fontSize: 12, marginTop: 16 }}>
+      <p style={{ color: color.fgMuted, fontSize: text.sm, marginTop: 20 }}>
         <a href="/privacy" style={{ color: color.fgMuted }}>
           Privacy policy
         </a>

@@ -1,10 +1,19 @@
-export { FinalStoryCta, ProductStoryShell, StorySection } from './story-shell';
+export {
+  DocPage,
+  DocSection,
+  FinalStoryCta,
+  ProductStoryShell,
+  ScopeNote,
+  StorySection,
+  type DocTocItem,
+} from './story-shell';
 export {
   ActionLifecycleFigure,
-  ActionSemanticsGrid,
   AutomationBoundaryFigure,
+  ConfirmCardFigure,
   DataBoundaryFigure,
-  GmailBridgeTable,
-  ProductWalkthroughFigure,
+  DecisionsTable,
+  HeroSendersFigure,
   RecommendationCascadeFigure,
+  SenderDecisionFigure,
 } from './diagrams';

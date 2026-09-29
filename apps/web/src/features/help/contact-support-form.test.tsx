@@ -28,7 +28,9 @@ describe('ContactSupportForm', () => {
   });
 
   it('submits a valid message and shows confirmation', async () => {
-    h.post.mockResolvedValue({ data: { submittedAt: '2026-09-01T00:00:00.000Z' } });
+    h.post.mockResolvedValue({
+      data: { status: 'accepted', submittedAt: '2026-09-01T00:00:00.000Z' },
+    });
     render(<ContactSupportForm />);
     fillForm('Cannot connect Gmail', 'I keep hitting an error at step 2.');
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
@@ -39,7 +41,12 @@ describe('ContactSupportForm', () => {
         message: 'I keep hitting an error at step 2.',
       }),
     );
-    expect(await screen.findByRole('status')).toHaveTextContent(/message sent/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/request received/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/message sent/i);
+    expect(screen.getByRole('link', { name: 'support@declutrmail.com' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com',
+    );
     expect(h.track).toHaveBeenCalledWith('support_request_submitted', {});
   });
 

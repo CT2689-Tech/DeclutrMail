@@ -32,15 +32,20 @@ function fakeJob<TPayload, TResult>(opts: {
   data: TPayload;
   attemptsMade?: number;
   queueName?: string;
+  /** The job's own BullMQ `attempts` option, when a test cares about it. */
+  attempts?: number;
 }): Job<TPayload, TResult> {
   return {
     id: opts.id ?? 'job-1',
     data: opts.data,
     attemptsMade: opts.attemptsMade ?? 0,
     queueName: opts.queueName ?? 'test-queue',
-    // The base only reads `id`, `data`, `attemptsMade`, `queueName`.
-    // Cast to keep the fake minimal — exercising `run()` exercises
-    // every field it touches.
+    ...(opts.attempts === undefined ? {} : { opts: { attempts: opts.attempts } }),
+    // The base reads `id`, `data`, `attemptsMade`, `queueName` and
+    // `opts.attempts`. Without `attempts` the fake has no `opts` at all, so
+    // it runs the policy fallback; a real BullMQ job always carries
+    // `opts.attempts` (default 0), which the attempt-budget tests pin.
+    // Cast to keep the fake minimal.
   } as unknown as Job<TPayload, TResult>;
 }
 
@@ -376,6 +381,68 @@ describe('BaseDeclutrWorker', () => {
       // The retry-path observer-quiet contract: D203 "Sentry once per
       // failure" means once per TERMINAL failure. Retries are noise to
       // Sentry — they show up in BullMQ's metrics, not Sentry.
+      expect(obs.captures).toHaveLength(0);
+      expect(worker.onTerminalSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * BullMQ, not the policy table, decides whether a job runs again: it
+   * retries only while `attemptsMade + 1 < job.opts.attempts`, and a
+   * producer that sets no `attempts` gets 0 — one run. Classifying by the
+   * POLICY's budget (5) called every such failure "will retry", so it
+   * never reached Sentry, the dead-letter table, or `onTerminalFailure`
+   * — the score queue sets no attempts, and unsubscribe execution sets 2.
+   */
+  describe("the job's own attempt budget", () => {
+    it('a job BullMQ will never retry is terminal on its only attempt', async () => {
+      const worker = new TestWorker(async () => {
+        throw new TransientError('db blip');
+      });
+      const obs = recordingObserver();
+      worker.setObserver(obs);
+
+      await expect(
+        worker.run(fakeJob<TestPayload, { ok: true }>({ data: {}, attempts: 0 })),
+      ).rejects.toThrow('db blip');
+
+      expect(lifecycleLines().map((l) => l.kind)).toEqual([
+        'worker.started',
+        'worker.failed',
+        'worker.dead_lettered',
+      ]);
+      expect(obs.captures).toHaveLength(1);
+      expect(worker.onTerminalSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('a job with a smaller budget than its policy is terminal on its last real attempt', async () => {
+      const worker = new TestWorker(async () => {
+        throw new TransientError('connection reset');
+      });
+      const obs = recordingObserver();
+      worker.setObserver(obs);
+
+      await expect(
+        worker.run(fakeJob<TestPayload, { ok: true }>({ data: {}, attempts: 2, attemptsMade: 1 })),
+      ).rejects.toThrow('connection reset');
+
+      expect(lifecycleLines().at(-1)?.kind).toBe('worker.dead_lettered');
+      expect(obs.captures).toHaveLength(1);
+      expect(worker.onTerminalSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('a job with attempts left is retried, not dead-lettered', async () => {
+      const worker = new TestWorker(async () => {
+        throw new TransientError('upstream 503');
+      });
+      const obs = recordingObserver();
+      worker.setObserver(obs);
+
+      await expect(
+        worker.run(fakeJob<TestPayload, { ok: true }>({ data: {}, attempts: 5, attemptsMade: 0 })),
+      ).rejects.toThrow('upstream 503');
+
+      expect(lifecycleLines().at(-1)?.kind).toBe('worker.retried');
       expect(obs.captures).toHaveLength(0);
       expect(worker.onTerminalSpy).not.toHaveBeenCalled();
     });
@@ -740,10 +807,29 @@ describe('BaseDeclutrWorker', () => {
       const startKeys = Object.keys(lines[0]!).sort();
       const successKeys = Object.keys(lines[1]!).sort();
       expect(startKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'worker'].sort(),
+        [
+          'attempt',
+          'durationMs',
+          'jobRef',
+          'kind',
+          'level',
+          'severity',
+          'mailboxRef',
+          'worker',
+        ].sort(),
       );
       expect(successKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'result', 'worker'].sort(),
+        [
+          'attempt',
+          'durationMs',
+          'jobRef',
+          'kind',
+          'level',
+          'severity',
+          'mailboxRef',
+          'result',
+          'worker',
+        ].sort(),
       );
       // None of the forbidden fields (D203 forbidden-fields list).
       for (const line of lines) {
@@ -752,5 +838,41 @@ describe('BaseDeclutrWorker', () => {
         }
       }
     });
+  });
+});
+
+describe('cooperative deadline ownership', () => {
+  it('signals expiry but keeps the attempt alive until cleanup finishes', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let signal!: AbortSignal;
+    let cleaned = false;
+    const worker = new TestWorker(async (_, ctx) => {
+      signal = ctx.signal!;
+      try {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      } finally {
+        cleaned = true;
+      }
+      return { ok: true };
+    }, 'cronPolicy');
+    let settled = false;
+    const run = worker.run(fakeJob({ data: {} })).catch((error: Error) => {
+      settled = true;
+      return error;
+    });
+    try {
+      await vi.advanceTimersByTimeAsync(WORKER_POLICIES.cronPolicy.timeoutMs!);
+      expect(signal.aborted).toBe(true);
+      expect(settled).toBe(false);
+      expect(cleaned).toBe(false);
+      release();
+      expect(await run).toHaveProperty('message', expect.stringContaining('exceeded'));
+      expect(cleaned).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

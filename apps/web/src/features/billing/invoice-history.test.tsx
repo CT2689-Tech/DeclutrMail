@@ -8,7 +8,7 @@
  * outcome is a refusal.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -53,6 +53,35 @@ beforeEach(() => {
 });
 
 describe('InvoiceHistory', () => {
+  it('filters only loaded invoice history by status and inclusive date, with recovery and older-history help', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        invoices: [
+          PAID_ROW,
+          { ...PAID_ROW, id: 'txn_2', status: 'due', issuedAt: '2026-06-01T00:00:00.000Z' },
+        ],
+        unavailableProviders: [],
+        truncated: true,
+        omittedRows: 0,
+      },
+    });
+    wrap(<InvoiceHistory />);
+    await screen.findByText('2 of 2 loaded invoices. Filters apply to this loaded history only.');
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'due' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('listitem')).toHaveAccessibleName(/status Due/);
+    fireEvent.change(screen.getByLabelText('Through'), { target: { value: '2026-05-31' } });
+    expect(screen.getByText('No loaded invoices match these filters.')).toBeInTheDocument();
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-06-01' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Request older invoices' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com?subject=Older%20invoice%20request',
+    );
+  });
+
   it('renders a paid row with its formatted amount and a download control', async () => {
     apiGet.mockResolvedValue({
       data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },

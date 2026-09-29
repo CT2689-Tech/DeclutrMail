@@ -135,15 +135,15 @@ describe('/pricing quotes the visitor rail (D117)', () => {
     expect(screen.queryByText(formatUsd(PRO_MONTHLY.usdCents))).not.toBeInTheDocument();
   });
 
-  it('the founding banner never mixes currencies across its two price points', () => {
+  it('the founding Pro card never mixes currencies across its two price points', () => {
     // "₹10,999/yr instead of $190/yr" would read as a discount between
     // two currencies. The promo is unprovisioned here, so BOTH of the
-    // banner's amounts must clamp to USD together.
+    // card's amounts must clamp to USD together.
     renderIn('razorpay', <PricingScreen />);
-    const banner = screen.getByRole('complementary', { name: PROMO.name });
-    expect(banner).toHaveTextContent(formatUsd(PROMO.annual.usdCents));
-    expect(banner).toHaveTextContent(formatUsd(PRO_ANNUAL.usdCents));
-    expect(banner).not.toHaveTextContent('₹');
+    const proCard = screen.getByRole('heading', { name: 'Pro' }).closest('.dm-tier');
+    expect(proCard).toHaveTextContent(formatUsd(PROMO.annual.usdCents));
+    expect(proCard).toHaveTextContent(formatUsd(PRO_ANNUAL.usdCents));
+    expect(proCard).not.toHaveTextContent('₹');
   });
 
   it('prices Pro in USD for everyone else', () => {

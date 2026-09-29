@@ -25,6 +25,7 @@ import {
   COMPARISONS_VERIFIED_FLOOR_ISO,
 } from '@/features/marketing/comparison/comparison-data';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '@/features/marketing/learn/how-to-content';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 
 const MARKETING_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '(marketing)');
 
@@ -74,8 +75,8 @@ function sitemapPaths(): string[] {
 describe('sitemap — D134', () => {
   it('recursively covers every indexable marketing route and dynamic route family', () => {
     const patterns = marketingRoutePatternsFromFs();
-    const nonIndexedRedirects = ['/demo'];
-    const indexablePatterns = patterns.filter((pattern) => !nonIndexedRedirects.includes(pattern));
+    const excludedFromSitemap = ['/demo', '/changelog', '/sign-in'];
+    const indexablePatterns = patterns.filter((pattern) => !excludedFromSitemap.includes(pattern));
     const routes = sitemapPaths();
 
     for (const pattern of indexablePatterns) {
@@ -105,6 +106,14 @@ describe('sitemap — D134', () => {
     }
   });
 
+  it('omits the stale historical changelog until its entries are curated', () => {
+    expect(sitemapPaths()).not.toContain('/changelog');
+  });
+
+  it('omits the noindexed sign-in page', () => {
+    expect(sitemapPaths()).not.toContain('/sign-in');
+  });
+
   it('robots.txt points crawlers at this sitemap (D132 SEO batch)', () => {
     expect(robots().sitemap).toBe('https://declutrmail.com/sitemap.xml');
   });
@@ -127,16 +136,30 @@ describe('sitemap — D134', () => {
       const childDates = COMPARISONS.map((comparison) => comparison.verifiedIso);
       const compare = entryFor('/compare')?.lastModified;
       expect(compare).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
-      // The floor is genuinely weaker than the freshest child, so this
-      // assertion would fail if the hub ever started claiming the max.
-      expect(compare).not.toBe(childDates.reduce((a, b) => (a > b ? a : b)));
+      // A source review can refresh every child on the same day. The
+      // minimum remains correct even when the minimum and maximum tie.
+      expect(compare).toBe([...childDates].sort()[0]);
+    });
+
+    it('dates legal and support pages from their visible Last updated stamp', () => {
+      for (const [pathname, iso] of Object.entries(PAGE_LAST_UPDATED)) {
+        expect(entryFor(pathname)?.lastModified).toBe(iso);
+      }
     });
 
     it('omits lastModified where no attributable date exists', () => {
-      // Legal and product pages carry no machine-readable freshness
-      // field, so they must ship NO <lastmod> rather than a build-time
-      // one — an invented date is a claim nothing can back.
-      for (const pathname of ['/', '/pricing', '/security', '/privacy', '/terms']) {
+      // These pages have no visible Last updated stamp, so they must ship
+      // NO <lastmod> rather than a build-time one — an invented date is a
+      // claim nothing can back.
+      for (const pathname of [
+        '/',
+        '/pricing',
+        '/how-it-works',
+        '/inbox-simulator',
+        '/methodology',
+        '/beta',
+        '/faq',
+      ]) {
         expect(entryFor(pathname)).toBeDefined();
         expect(entryFor(pathname)?.lastModified).toBeUndefined();
       }

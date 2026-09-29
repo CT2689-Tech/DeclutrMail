@@ -5,7 +5,15 @@ import { Avatar, tokens } from '@declutrmail/shared';
 import { useSenderSuggestions } from './api/use-sender-suggestions';
 import type { Sender } from './data';
 
-const { color, font } = tokens;
+const { color, font, radius, text: typeScale } = tokens;
+
+// A quiet input well with a visible focus ring. Inline styles
+// cannot express :focus-visible, and the global ring is an outline.
+const SEARCH_CSS = `
+.dm-search-well{outline:none;transition:box-shadow 120ms}
+.dm-search-well::placeholder{color:${color.fgMuted}}
+.dm-search-well:focus-visible{box-shadow:0 0 0 2px var(--dm-ring)}
+`;
 
 /**
  * How long after the last keystroke the BE typeahead is asked.
@@ -159,8 +167,7 @@ export function SenderSearch({
         // than guessed when the wire does not say — an unlabelled row is
         // honest; a wrong label re-creates the contradiction.
         secondary:
-          s.totalReceived.toLocaleString('en-US') +
-          ' emails' +
+          `${s.totalReceived.toLocaleString('en-US')} ${s.totalReceived === 1 ? 'email' : 'emails'}` +
           (s.activity ? ` · ${s.activity}` : ''),
       }));
     }
@@ -176,7 +183,7 @@ export function SenderSearch({
       // remote branch above; only the activity-bucket suffix is missing
       // (the local page doesn't compute one), which is a gentler swap
       // than the number itself changing meaning.
-      secondary: s.totalReceived.toLocaleString('en-US') + ' emails',
+      secondary: `${s.totalReceived.toLocaleString('en-US')} ${s.totalReceived === 1 ? 'email' : 'emails'}`,
     }));
   }, [trimmed, remote.suggestions, remote.loading, remote.error, fallbackMatches]);
 
@@ -215,8 +222,36 @@ export function SenderSearch({
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: 220 }}>
+    <div ref={ref} style={{ position: 'relative', width: 240, maxWidth: '100%' }}>
+      <style>{SEARCH_CSS}</style>
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: 14,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'inline-flex',
+          color: color.fgMuted,
+          pointerEvents: 'none',
+        }}
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+      </span>
       <input
+        className="dm-search-well"
         value={text}
         onChange={(e) => {
           commit(e.target.value);
@@ -246,16 +281,16 @@ export function SenderSearch({
         aria-autocomplete="list"
         aria-activedescendant={showList ? `dm-sender-opt-${active}` : undefined}
         style={{
-          height: 32,
+          height: 40,
           width: '100%',
-          padding: '0 10px',
+          boxSizing: 'border-box',
+          padding: '0 16px 0 38px',
           background: color.card,
           color: color.fg,
-          border: `1px solid ${color.border}`,
-          borderRadius: 7,
+          border: `1px solid ${color.lineSoft}`,
+          borderRadius: radius.md,
           fontFamily: font.sans,
-          fontSize: 12.5,
-          outline: 'none',
+          fontSize: typeScale.base,
         }}
       />
 
@@ -270,10 +305,10 @@ export function SenderSearch({
             right: 0,
             zIndex: 50,
             background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: 9,
+            border: 'none',
+            borderRadius: radius.xl,
             boxShadow: tokens.shadow.pop,
-            padding: 4,
+            padding: 6,
             maxHeight: 320,
             overflowY: 'auto',
           }}
@@ -282,13 +317,11 @@ export function SenderSearch({
             <div
               style={{
                 padding: '10px 12px',
-                fontFamily: font.mono,
-                fontSize: 11,
+                fontSize: typeScale.sm,
                 color: color.fgMuted,
-                letterSpacing: '0.04em',
               }}
             >
-              searching mailbox…
+              Searching mailbox…
             </div>
           )}
           {matches.map((s, i) => (
@@ -302,12 +335,13 @@ export function SenderSearch({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 9,
+                gap: 10,
                 width: '100%',
-                padding: '7px 8px',
-                background: i === active ? color.primarySoft : 'transparent',
+                minHeight: 44,
+                padding: '6px 10px',
+                background: i === active ? color.fill : 'transparent',
                 border: 'none',
-                borderRadius: 6,
+                borderRadius: radius.lg,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontFamily: font.sans,
@@ -318,7 +352,7 @@ export function SenderSearch({
                 <span
                   style={{
                     display: 'block',
-                    fontSize: 12.5,
+                    fontSize: typeScale.sm,
                     fontWeight: 600,
                     color: color.fg,
                     overflow: 'hidden',
@@ -331,8 +365,7 @@ export function SenderSearch({
                 <span
                   style={{
                     display: 'block',
-                    fontFamily: font.mono,
-                    fontSize: 10,
+                    fontSize: typeScale.xs,
                     color: color.fgMuted,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -344,9 +377,9 @@ export function SenderSearch({
               </span>
               <span
                 style={{
-                  fontFamily: font.mono,
-                  fontSize: 10,
+                  fontSize: typeScale.xs,
                   color: color.fgMuted,
+                  fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap',
                 }}
               >

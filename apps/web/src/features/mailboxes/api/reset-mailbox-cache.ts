@@ -3,6 +3,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import { apiErrorCode } from '@/lib/api/client';
 
 export const MAILBOX_SCOPE_RESET_EVENT = 'declutrmail:mailbox-scope-reset';
+/** Browser storage events deliver a successful account switch to other tabs. */
+export const MAILBOX_SWITCH_STORAGE_KEY = 'declutrmail:active-mailbox-switch';
 
 /**
  * Reset all mailbox-scoped server state after the active mailbox

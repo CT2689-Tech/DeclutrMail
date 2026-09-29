@@ -167,6 +167,20 @@ function hasCurrentMail(
   )`;
 }
 
+/** Same live Inbox set as the per-row inboxCount and inbox-scoped actions.
+ * EXISTS can stop at the first match and uses the partial Inbox index;
+ * ranking every sender by a correlated COUNT before LIMIT cannot.
+ */
+function hasInboxMail(): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${mailMessages}
+    WHERE ${mailMessages.mailboxAccountId} = ${senders.mailboxAccountId}
+      AND ${mailMessages.senderKey} = ${senders.senderKey}
+      AND ${mailMessages.isOutbound} = false
+      AND 'INBOX' = ANY(${mailMessages.labelIds})
+  )`;
+}
+
 /**
  * Build the server-side search predicate for the senders list (#145).
  * Matches the query case-insensitively (substring) against the three
@@ -206,6 +220,33 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
   return filter.negate ? sql`NOT (${pred})` : pred;
 }
 
+function buildLatestDecisionSubquery(includeDetail = false) {
+  const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
+  const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  // A single scalar projection runs AFTER page selection. A lateral join here
+  // can evaluate for every sorted sender before LIMIT (see the SQL benchmark).
+  return sql<{
+    producedAt: string;
+    verdict: TriageVerdict;
+    generatedBy: TriageReasoningSource;
+    confidence: string;
+    reasoning?: string;
+    expiresAt?: string;
+  } | null>`(
+    SELECT jsonb_build_object(
+      'producedAt', ${triageDecisions.producedAt},
+      'verdict', ${triageDecisions.verdict},
+      'generatedBy', ${triageDecisions.generatedBy},
+      'confidence', ${triageDecisions.confidence}::text
+      ${includeDetail ? sql`, 'reasoning', ${triageDecisions.reasoning}, 'expiresAt', ${triageDecisions.expiresAt}` : sql``}
+    ) FROM ${triageDecisions}
+    WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
+      AND ${triageDecisions.senderKey} = ${outerSenderKey}
+    ORDER BY ${triageDecisions.producedAt} DESC
+    LIMIT 1
+  )`;
+}
+
 /**
  * Build the ROLLING-WINDOW per-row stat subqueries shared by the list
  * (`listSenders`) and the detail (`getSenderDetail`) read paths.
@@ -234,82 +275,44 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
  * affects the wire encoding, not the driver decoding). Callers MUST
  * coerce at the map site via `ensureSafeIntegerNumber`.
  */
-function buildRollingWindowSubqueries(mailboxAccountId: string): {
-  last30dMsgs: SQL<number | string>;
-  last90dMsgs: SQL<number | string>;
-  last90dReadCount: SQL<number | string>;
-  last90dSweeperReadCount: SQL<number | string>;
-  baselineMsgs: SQL<number | string>;
-  inboxCount: SQL<number | string>;
-  unreadInboxCount: SQL<number | string>;
-} {
+interface RollingWindowStats {
+  last30dMsgs: number;
+  last90dMsgs: number;
+  last90dReadCount: number;
+  last90dSweeperReadCount: number;
+  baselineMsgs: number;
+}
+
+function buildRollingWindowSubqueries(mailboxAccountId: string) {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
+  const recent = sql`${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval`;
+  const engine = sql`${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval`;
+  const baseline = sql`${mailMessages.internalDate} < now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
+    AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS} || ' days')::interval`;
+  const oldestDays = Math.max(
+    WINDOWS.VOLUME_DAYS,
+    WINDOWS.ENGINE_WINDOW_DAYS,
+    WINDOWS.TREND_BASELINE_END_DAYS,
+  );
   return {
-    // Count of inbound msgs in last 30d. Drives the "47 in last 30d"
-    // label + the trend bucket's "recent" half.
-    last30dMsgs: sql<number | string>`(
-      SELECT COUNT(*)::int
+    // One bounded index scan for the rolling statistics, projected after LIMIT.
+    // Keep current Inbox counts separate: they span all time and have selective
+    // partial indexes. A single all-time aggregate would lose those benefits.
+    rollingStats: sql<RollingWindowStats>`(
+      SELECT jsonb_build_object(
+        'last30dMsgs', COUNT(*) FILTER (WHERE ${recent})::int,
+        'last90dMsgs', COUNT(*) FILTER (WHERE ${engine})::int,
+        'last90dReadCount', COUNT(*) FILTER (WHERE ${engine} AND ${mailMessages.isUnread} = false
+          AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))})::int,
+        'last90dSweeperReadCount', COUNT(*) FILTER (WHERE ${engine} AND ${mailMessages.isUnread} = false
+          AND ${readStateSweeperMarked(mailboxAccountId, getTableName(mailMessages))})::int,
+        'baselineMsgs', COUNT(*) FILTER (WHERE ${baseline})::int
+      )
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
         AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-    )`,
-    // Count of inbound msgs in the ENGINE's window (ADR-0037). This is
-    // what the row displays, because it is what the recommendation
-    // beside it was computed from. `last30dMsgs` above survives for the
-    // TREND comparison only — a different question with its own window.
-    last90dMsgs: sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-    )`,
-    // Same window, only msgs the user has read (Gmail removed the
-    // UNREAD label) — MINUS the ones a third-party sweeper marked read
-    // on their behalf (mig 0064, F012). Drives the read rate.
-    //
-    // Numerator only: a swept message still arrived, so it stays in
-    // `last30dMsgs`. Dropping it from the denominator would shrink the
-    // sender rather than correct the rate.
-    last90dReadCount: sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-        AND ${mailMessages.isUnread} = false
-        AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
-    )`,
-    // The complement, so the product can SAY why a read rate looks low
-    // ("324 of 350 marked by Unroll.me") instead of silently
-    // compensating. Same window, same denominator.
-    last90dSweeperReadCount: sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
-        AND ${mailMessages.isOutbound} = false
-        AND ${mailMessages.isUnread} = false
-        AND ${readStateSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
-    )`,
-    // Count in the prior 30-90 day window (60-day baseline span). Used
-    // by the trend bucket: recent / (baseline / 2) ratio compared
-    // against UP/DOWN multipliers. The window size is
-    // (TREND_BASELINE_END - TREND_BASELINE_START), normalised per-day
-    // in TS so the "recent vs baseline" rate comparison is fair.
-    baselineMsgs: sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} <  now() - (${WINDOWS.TREND_BASELINE_START_DAYS} || ' days')::interval
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.TREND_BASELINE_END_DAYS}   || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${oldestDays} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
     )`,
     // Messages currently carrying INBOX — the set every inbox verb can
@@ -439,6 +442,8 @@ export class SendersReadService {
     mailboxAccountId: string;
     /** Cleanup lists exclude senders with no current inbound mail. */
     currentMailOnly?: boolean;
+    /** Require at least one inbound message currently in Inbox. */
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     /**
      * When `true`, return only senders with a standing Protect policy
@@ -536,13 +541,9 @@ export class SendersReadService {
     // see `buildRollingWindowSubqueries` for the window definitions and
     // the correlation quote-trap note.
     const {
-      last30dMsgs: last30dMsgsSql,
-      last90dMsgs: last90dMsgsSql,
-      last90dReadCount: last90dReadCountSql,
-      last90dSweeperReadCount: last90dSweeperReadCountSql,
-      baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
+      rollingStats: rollingStatsSql,
     } = buildRollingWindowSubqueries(mailboxAccountId);
 
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
@@ -578,58 +579,7 @@ export class SendersReadService {
       LEFT JOIN weekly w ON w.wk = g.idx
     )`;
 
-    // Last-reviewed inputs — three scalar subqueries against
-    // `triage_decisions` for the most-recent (mailbox, sender) row.
-    // The current schema enforces ONE row per (mailbox, sender) via
-    // a unique index, but the ORDER BY + LIMIT 1 keeps us forward-
-    // compatible with the planned `triage_decision_history` table
-    // (referenced in the triage-decisions schema header). Per
-    // ADR-0008 §3 ratification: direct triage_decisions read in the
-    // senders read service (one of several sites — grep this marker
-    // to find them all when ratifying the ADR). The current schema
-    // allows it until the triage feature outgrows its single-table
-    // footprint.
-    // sql<Date | string | null> reflects driver reality: postgres-js
-    // returns scalar subquery `timestamptz` columns as `Date` under
-    // some configs and as ISO strings under others (PGlite returns
-    // `Date`). `buildLastReview` accepts both shapes — keep that
-    // contract explicit on the template type so the next reader
-    // doesn't write `.toISOString()` on what may already be a string.
-    const lastDecisionAtSql = sql<Date | string | null>`(
-      SELECT ${triageDecisions.producedAt}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const lastDecisionVerdictSql = sql<TriageVerdict | null>`(
-      SELECT ${triageDecisions.verdict}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const lastDecisionGeneratedBySql = sql<TriageReasoningSource | null>`(
-      SELECT ${triageDecisions.generatedBy}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    // `numeric(3,2)` confidence of that same most-recent decision —
-    // surfaced on the list `lastReview` so the FE confidence gate
-    // (`uplift-d/intent.ts`) suppresses low-confidence recommendations.
-    const lastDecisionConfidenceSql = sql<string | null>`(
-      SELECT ${triageDecisions.confidence}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
+    const lastDecisionSql = buildLatestDecisionSubquery();
 
     // Keyset predicate — `(sort_col, id) < (cursor.key, cursor.id)`
     // (or `>` for ASC) expressed as the equivalent OR-chain so PG can
@@ -638,6 +588,7 @@ export class SendersReadService {
     // never drifts between them.
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) conditions.push(hasCurrentMail());
+    if (args.hasInboxMail) conditions.push(hasInboxMail());
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
     }
@@ -710,18 +661,11 @@ export class SendersReadService {
         totalReceived: senders.totalReceived,
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
-        last30dMsgs: last30dMsgsSql,
-        last90dMsgs: last90dMsgsSql,
-        last90dReadCount: last90dReadCountSql,
-        last90dSweeperReadCount: last90dSweeperReadCountSql,
-        baselineMsgs: baselineMsgsSql,
+        rollingStats: rollingStatsSql,
         inboxCount: inboxCountSql,
         unreadInboxCount: unreadInboxCountSql,
+        lastDecision: lastDecisionSql,
         sparkline: sparklineSql,
-        lastDecisionAt: lastDecisionAtSql,
-        lastDecisionVerdict: lastDecisionVerdictSql,
-        lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
-        lastDecisionConfidence: lastDecisionConfidenceSql,
         // Standing-policy flags — left-joined so a sender with no
         // `sender_policies` row reads null (engine default). Mirrors the
         // join in `getSenderDetail`; `sender_policies` is unique on
@@ -738,6 +682,7 @@ export class SendersReadService {
         unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
+
       .leftJoin(
         senderPolicies,
         and(
@@ -759,7 +704,11 @@ export class SendersReadService {
     // Without outbound mail indexed, "you wrote to them" is unmeasurable
     // and every `replied` protection would otherwise read as
     // unsupported — see `evaluateProtectionEvidence`.
-    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(args.mailboxAccountId);
+    const mailboxHasOutbound = rows.some(
+      (row) => row.isProtected && row.protectionReason === 'replied',
+    )
+      ? await this.mailboxHasOutboundIndexed(args.mailboxAccountId)
+      : false;
 
     return rows.map((row) => {
       // Scalar `sql<number | string>` subqueries (last30dMsgs,
@@ -769,13 +718,22 @@ export class SendersReadService {
       // Coerce at the map boundary via `ensureSafeIntegerNumber` so
       // every downstream consumer (`computeReadRate`,
       // `computeRollingTrendBucket`, FE wire) sees a real `number`.
-      const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
-      const last90dMsgs = ensureSafeIntegerNumber(row.last90dMsgs, 'senders.last90dMsgs');
+      const last30dMsgs = ensureSafeIntegerNumber(
+        row.rollingStats.last30dMsgs,
+        'senders.last30dMsgs',
+      );
+      const last90dMsgs = ensureSafeIntegerNumber(
+        row.rollingStats.last90dMsgs,
+        'senders.last90dMsgs',
+      );
       const last90dReadCount = ensureSafeIntegerNumber(
-        row.last90dReadCount,
+        row.rollingStats.last90dReadCount,
         'senders.last90dReadCount',
       );
-      const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
+      const baselineMsgs = ensureSafeIntegerNumber(
+        row.rollingStats.baselineMsgs,
+        'senders.baselineMsgs',
+      );
       return {
         id: row.id,
         displayName: row.displayName,
@@ -807,7 +765,7 @@ export class SendersReadService {
         unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
         readRate: computeReadRate(last90dMsgs, last90dReadCount),
         readRateSweeperMarked: ensureSafeIntegerNumber(
-          row.last90dSweeperReadCount,
+          row.rollingStats.last90dSweeperReadCount,
           'senders.last90dSweeperReadCount',
         ),
         sparkline: row.sparkline ?? null,
@@ -821,10 +779,10 @@ export class SendersReadService {
         }),
         unsubscribeMethod: row.unsubscribeMethod,
         lastReview: buildLastReview(
-          row.lastDecisionAt,
-          row.lastDecisionVerdict,
-          row.lastDecisionGeneratedBy,
-          row.lastDecisionConfidence,
+          row.lastDecision?.producedAt ?? null,
+          row.lastDecision?.verdict ?? null,
+          row.lastDecision?.generatedBy ?? null,
+          row.lastDecision?.confidence ?? null,
         ),
         protectionFlags: {
           isProtected: row.isProtected ?? false,
@@ -944,6 +902,7 @@ export class SendersReadService {
   async getSenderListQueryMeta(args: {
     mailboxAccountId: string;
     currentMailOnly?: boolean;
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     isProtected?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
@@ -964,6 +923,7 @@ export class SendersReadService {
 
     const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) totalMatchingConditions.push(hasCurrentMail());
+    if (args.hasInboxMail) totalMatchingConditions.push(hasInboxMail());
     if (category) {
       totalMatchingConditions.push(eq(senders.gmailCategory, category));
     }
@@ -1511,9 +1471,8 @@ export class SendersReadService {
     args: { now?: Date } = {},
   ): Promise<SenderDetailFacts | null> {
     // Same correlated subqueries as the list to keep the read shape
-    // consistent. A LATERAL join would be more efficient at very high
-    // scale but is overkill at the per-row single-fetch path; the
-    // FE only calls this once per page navigation.
+    // consistent. Scalar aggregate projections share each bounded scan and
+    // preserve the list path's ability to project only the selected page.
     //
     // See the matching comment in `listSenders` for why the outer-scope
     // references are built via `sql.identifier(getTableName(senders))`
@@ -1526,74 +1485,25 @@ export class SendersReadService {
     // `readRate` / `volumeTrend` are one product-wide fact, so they are
     // computed from one definition.
     const {
-      last30dMsgs: last30dMsgsSql,
-      last90dMsgs: last90dMsgsSql,
-      last90dReadCount: last90dReadCountSql,
-      last90dSweeperReadCount: last90dSweeperReadCountSql,
-      baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
+      rollingStats: rollingStatsSql,
     } = buildRollingWindowSubqueries(mailboxAccountId);
-    // ADR-0008 §3 ratification: direct triage_decisions read in the
-    // senders read service (one of several sites — grep this marker to
-    // find them all when ratifying the ADR).
-    // sql<Date | string | null> reflects driver reality: postgres-js
-    // returns scalar subquery `timestamptz` columns as `Date` under
-    // some configs and as ISO strings under others (PGlite returns
-    // `Date`). `buildLastReview` accepts both shapes — keep that
-    // contract explicit on the template type so the next reader
-    // doesn't write `.toISOString()` on what may already be a string.
-    const lastDecisionAtSql = sql<Date | string | null>`(
-      SELECT ${triageDecisions.producedAt}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
+    // Detail-only current Archive count. Lifetime `totalReceived` cannot be
+    // used here: it includes mail now in Trash/Spam and is reconciled on a
+    // different cadence. Keep this predicate aligned with the archived
+    // messages scope and the Inbox + archived action preview.
+    const archivedCountSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND NOT ('INBOX' = ANY(${mailMessages.labelIds}))
+        AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
     )`;
-    const lastDecisionVerdictSql = sql<TriageVerdict | null>`(
-      SELECT ${triageDecisions.verdict}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const lastDecisionGeneratedBySql = sql<TriageReasoningSource | null>`(
-      SELECT ${triageDecisions.generatedBy}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const lastDecisionConfidenceSql = sql<string | null>`(
-      SELECT ${triageDecisions.confidence}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    // Detail-only: the one-sentence explanation behind the verdict. The
-    // list path deliberately does NOT select this — 7k rows × a sentence
-    // is payload the grid never renders.
-    const lastDecisionExpiresAtSql = sql<Date | string | null>`(
-      SELECT ${triageDecisions.expiresAt}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
-    const lastDecisionReasoningSql = sql<string | null>`(
-      SELECT ${triageDecisions.reasoning}
-      FROM ${triageDecisions}
-      WHERE ${triageDecisions.mailboxAccountId} = ${outerMailboxId}
-        AND ${triageDecisions.senderKey} = ${outerSenderKey}
-      ORDER BY ${triageDecisions.producedAt} DESC
-      LIMIT 1
-    )`;
+
+    const lastDecisionSql = buildLatestDecisionSubquery(true);
 
     const [row] = await this.db
       .select({
@@ -1619,19 +1529,11 @@ export class SendersReadService {
         unsubscribeUrl: sql<
           string | null
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
-        last30dMsgs: last30dMsgsSql,
-        last90dMsgs: last90dMsgsSql,
-        last90dReadCount: last90dReadCountSql,
-        last90dSweeperReadCount: last90dSweeperReadCountSql,
-        baselineMsgs: baselineMsgsSql,
+        rollingStats: rollingStatsSql,
         inboxCount: inboxCountSql,
+        archivedCount: archivedCountSql,
         unreadInboxCount: unreadInboxCountSql,
-        lastDecisionAt: lastDecisionAtSql,
-        lastDecisionVerdict: lastDecisionVerdictSql,
-        lastDecisionGeneratedBy: lastDecisionGeneratedBySql,
-        lastDecisionConfidence: lastDecisionConfidenceSql,
-        lastDecisionReasoning: lastDecisionReasoningSql,
-        lastDecisionExpiresAt: lastDecisionExpiresAtSql,
+        lastDecision: lastDecisionSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
         isProtected: senderPolicies.isProtected,
@@ -1646,6 +1548,7 @@ export class SendersReadService {
         unsubStatus: senderPolicies.unsubStatus,
       })
       .from(senders)
+
       .leftJoin(
         senderPolicies,
         and(
@@ -1660,7 +1563,12 @@ export class SendersReadService {
       return null;
     }
 
-    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(mailboxAccountId);
+    // Only correspondence protection consumes this evidence. Avoid a second
+    // database round trip for ordinary and manually protected senders.
+    const mailboxHasOutbound =
+      row.isProtected && row.protectionReason === 'replied'
+        ? await this.mailboxHasOutboundIndexed(mailboxAccountId)
+        : false;
     const protectionFlags: ProtectionFlags = {
       isProtected: row.isProtected ?? false,
       protectionReason: normalizeProtectionReason(row.protectionReason),
@@ -1677,13 +1585,22 @@ export class SendersReadService {
     // Coerce the scalar subquery columns at the map boundary — see the
     // matching note in `listSenders` (postgres-js returns them as
     // strings despite the `::int` cast).
-    const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
-    const last90dMsgs = ensureSafeIntegerNumber(row.last90dMsgs, 'senders.last90dMsgs');
+    const last30dMsgs = ensureSafeIntegerNumber(
+      row.rollingStats.last30dMsgs,
+      'senders.last30dMsgs',
+    );
+    const last90dMsgs = ensureSafeIntegerNumber(
+      row.rollingStats.last90dMsgs,
+      'senders.last90dMsgs',
+    );
     const last90dReadCount = ensureSafeIntegerNumber(
-      row.last90dReadCount,
+      row.rollingStats.last90dReadCount,
       'senders.last90dReadCount',
     );
-    const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
+    const baselineMsgs = ensureSafeIntegerNumber(
+      row.rollingStats.baselineMsgs,
+      'senders.baselineMsgs',
+    );
 
     return {
       id: row.id,
@@ -1701,10 +1618,11 @@ export class SendersReadService {
       // own recent-vs-baseline split.
       monthlyVolume: last90dMsgs,
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+      archivedCount: ensureSafeIntegerNumber(row.archivedCount, 'senders.archivedCount'),
       unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
       readRate: computeReadRate(last90dMsgs, last90dReadCount),
       readRateSweeperMarked: ensureSafeIntegerNumber(
-        row.last90dSweeperReadCount,
+        row.rollingStats.last90dSweeperReadCount,
         'senders.last90dSweeperReadCount',
       ),
       // Sparkline not yet wired on this path. Null so the contract holds.
@@ -1723,18 +1641,18 @@ export class SendersReadService {
       unsubscribeMailtoUrl:
         row.unsubscribeMethod === 'mailto' ? (row.unsubscribeUrl ?? null) : null,
       lastReview: buildLastReview(
-        row.lastDecisionAt,
-        row.lastDecisionVerdict,
-        row.lastDecisionGeneratedBy,
-        row.lastDecisionConfidence,
+        row.lastDecision?.producedAt ?? null,
+        row.lastDecision?.verdict ?? null,
+        row.lastDecision?.generatedBy ?? null,
+        row.lastDecision?.confidence ?? null,
       ),
       recommendation: buildRecommendation(
-        row.lastDecisionAt,
-        row.lastDecisionVerdict,
-        row.lastDecisionGeneratedBy,
-        row.lastDecisionConfidence,
-        row.lastDecisionReasoning,
-        row.lastDecisionExpiresAt,
+        row.lastDecision?.producedAt ?? null,
+        row.lastDecision?.verdict ?? null,
+        row.lastDecision?.generatedBy ?? null,
+        row.lastDecision?.confidence ?? null,
+        row.lastDecision?.reasoning ?? null,
+        row.lastDecision?.expiresAt ?? null,
         now,
       ),
       protectionFlags,
@@ -1761,8 +1679,9 @@ export class SendersReadService {
     senderId: string;
     cursor: MessagesCursor | null;
     limit: number;
+    scope?: 'all_mail' | 'inbox' | 'archived';
   }): Promise<MailMessageRow[] | null> {
-    const { mailboxAccountId, senderId, cursor, limit } = args;
+    const { mailboxAccountId, senderId, cursor, limit, scope = 'all_mail' } = args;
     const senderKey = await this.resolveSenderKey(mailboxAccountId, senderId);
     if (senderKey === null) {
       return null;
@@ -1771,7 +1690,14 @@ export class SendersReadService {
     const conditions = [
       eq(mailMessages.mailboxAccountId, mailboxAccountId),
       eq(mailMessages.senderKey, senderKey),
+      eq(mailMessages.isOutbound, false),
+      sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
     ];
+    if (scope === 'inbox') {
+      conditions.push(sql`${mailMessages.labelIds} @> ARRAY['INBOX']::text[]`);
+    } else if (scope === 'archived') {
+      conditions.push(sql`NOT (${mailMessages.labelIds} @> ARRAY['INBOX']::text[])`);
+    }
     if (cursor) {
       conditions.push(
         or(
@@ -1790,6 +1716,7 @@ export class SendersReadService {
         snippet: mailMessages.snippet,
         internalDate: mailMessages.internalDate,
         isUnread: mailMessages.isUnread,
+        labelIds: mailMessages.labelIds,
         // ADR-0021 storage-allowlist amendment — surface Gmail's
         // `sizeEstimate` so Sender Detail can render real KB/MB on the
         // Recent Messages row size cell. NULL for pre-amendment rows.
@@ -1808,6 +1735,7 @@ export class SendersReadService {
       snippet: row.snippet,
       internalDate: row.internalDate.toISOString(),
       isUnread: row.isUnread,
+      location: row.labelIds.includes('INBOX') ? 'inbox' : 'archived',
       sizeBytes: row.sizeBytes,
     }));
   }

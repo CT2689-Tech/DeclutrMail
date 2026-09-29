@@ -18,6 +18,7 @@ const VIEW: SavedSenderView = {
     windowDays: 90,
     domain: null,
     unsubIgnored: false,
+    hasInboxMail: false,
   },
   sort: 'total',
   direction: 'desc',
@@ -26,6 +27,17 @@ const VIEW: SavedSenderView = {
 describe('parseSenderViews', () => {
   it('returns stored views verbatim', () => {
     expect(parseSenderViews({ senderViews: [VIEW] })).toEqual([VIEW]);
+  });
+
+  it('keeps older saved views usable and defaults the Inbox filter off', () => {
+    const { hasInboxMail: _removed, ...oldCompose } = VIEW.compose;
+    expect(parseSenderViews({ senderViews: [{ ...VIEW, compose: oldCompose }] })).toEqual([VIEW]);
+  });
+
+  it('round-trips an Inbox-only saved view', () => {
+    const inboxView = { ...VIEW, compose: { ...VIEW.compose, hasInboxMail: true } };
+    expect(SenderViewsPutSchema.safeParse({ views: [inboxView] }).success).toBe(true);
+    expect(parseSenderViews({ senderViews: [inboxView] })).toEqual([inboxView]);
   });
 
   it('degrades a missing / malformed key to [] without throwing', () => {

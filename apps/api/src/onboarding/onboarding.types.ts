@@ -31,9 +31,9 @@ void _dbCoversContract;
 export const ONBOARDING_PRESET_CATALOG: OnboardingPresetCatalogItem[] = [
   {
     key: 'auto_archive_low_engagement',
-    name: 'Auto-archive low-engagement',
+    name: 'Review low-engagement senders for Archive',
     description:
-      'Archives mail from senders you almost never open, once the engine is highly confident.',
+      'Collects Archive suggestions from low-engagement senders for your approval; no mail moves on its own.',
     verb: 'archive',
   },
   {

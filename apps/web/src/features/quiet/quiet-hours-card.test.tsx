@@ -69,20 +69,43 @@ describe('QuietHoursCard — edge states', () => {
   });
 });
 
+describe('QuietHoursCard — save status', () => {
+  const saveStatus = () => screen.getByRole('status', { name: 'Save status for a@b.com' });
+  const visibleSaved = () =>
+    screen.getByText('Saved', { ignore: '[role="status"], script, style' });
+
+  it('announces a finished save, and screen readers hear it once', () => {
+    renderCard({ justSaved: true });
+    expect(saveStatus()).toHaveTextContent('Saved');
+    expect(visibleSaved()).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('leaves the visible label readable while no save is announced', () => {
+    renderCard();
+    expect(saveStatus().textContent).toBe('');
+    expect(visibleSaved()).not.toHaveAttribute('aria-hidden');
+  });
+
+  it('says nothing saved beside the error branch', () => {
+    renderCard({ state: { kind: 'error', message: 'Boom (HTTP 500).' }, justSaved: true });
+    expect(saveStatus().textContent).toBe('');
+  });
+});
+
 describe('QuietHoursCard — form contract', () => {
   it('renders the saved config in the form', () => {
     renderCard();
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('06:00');
     expect(screen.getByLabelText('Quiet window timezone')).toHaveValue('Asia/Kolkata');
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeChecked();
   });
 
   it('Save is disabled until the form is dirty', async () => {
     renderCard();
     const save = screen.getByRole('button', { name: 'Save quiet hours' });
     expect(save).toBeDisabled();
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Quiet hours on' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
     expect(save).toBeEnabled();
   });
 
@@ -107,7 +130,7 @@ describe('QuietHoursCard — form contract', () => {
 
   it('shows the cross-midnight hint when start > end', () => {
     renderCard();
-    expect(screen.getByText(/Crosses midnight/)).toBeInTheDocument();
+    expect(screen.getByText(/06:00 the next day/)).toBeInTheDocument();
   });
 
   it('hides the cross-midnight hint for a same-day window', () => {
@@ -118,21 +141,41 @@ describe('QuietHoursCard — form contract', () => {
         activeNow: false,
       },
     });
-    expect(screen.queryByText(/Crosses midnight/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/next day/)).not.toBeInTheDocument();
   });
 
   it('disables the whole form while saving', () => {
     renderCard({ saving: true });
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeDisabled();
     expect(screen.getByLabelText('Quiet window start')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
   });
 
   it('unconfigured mailbox gets the disabled-by-default draft', () => {
     renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
-    expect(screen.getByRole('checkbox', { name: 'Quiet hours on' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
     expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
+  });
+
+  it('says Saved only when quiet hours are stored', () => {
+    renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+  });
+
+  it('says Saved for a stored config the form still matches', () => {
+    renderCard();
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+
+  it('reports each edit, so the screen can end a finished save', async () => {
+    const onEdit = vi.fn();
+    renderCard({ onEdit });
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    fireEvent.change(screen.getByLabelText('Quiet window start'), {
+      target: { value: '20:30' },
+    });
+    expect(onEdit).toHaveBeenCalledTimes(2);
   });
 
   it('hydrates before loading the browser timezone catalog', async () => {

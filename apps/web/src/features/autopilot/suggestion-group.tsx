@@ -1,12 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 import { useNow } from '@/lib/use-now';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { PendingSuggestionRow } from './pending-suggestion-row';
 import { presetDisplayName } from './preset-labels';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 /**
  * D104 — one rule's slice of the pending-suggestions buffer:
@@ -24,6 +25,7 @@ const { color, font } = tokens;
 export function SuggestionGroup({
   rule,
   matches,
+  pendingApproximate = false,
   selectedIds,
   onToggleSelect,
   onDismiss,
@@ -33,6 +35,7 @@ export function SuggestionGroup({
 }: {
   rule: AutopilotRuleDto | null;
   matches: AutopilotMatchDto[];
+  pendingApproximate?: boolean;
   selectedIds: ReadonlySet<string>;
   onToggleSelect: (matchId: string) => void;
   onDismiss: (matchId: string) => void;
@@ -42,10 +45,16 @@ export function SuggestionGroup({
   /** Opens the approve preview covering the selected subset. */
   onApproveSelected: (rule: AutopilotRuleDto, matches: AutopilotMatchDto[]) => void;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const now = useNow();
   const name = rule == null ? 'Unknown rule' : presetDisplayName(rule.presetKey, rule.name);
   const selectedInGroup = matches.filter((m) => selectedIds.has(m.id));
   const daysLeft = observeDaysLeft(rule, now);
+  const reviewAllLabel = pendingApproximate
+    ? rule?.observeDigest?.pendingTotal != null
+      ? `Review all ~${Math.max(rule.observeDigest.pendingTotal, matches.length)}`
+      : 'Review all pending'
+    : `Review all ${matches.length}`;
 
   return (
     <section
@@ -63,9 +72,9 @@ export function SuggestionGroup({
       >
         <h3
           style={{
-            fontSize: 12.5,
+            fontSize: text.md,
             fontWeight: 600,
-            letterSpacing: '-0.008em',
+            letterSpacing: '-0.01em',
             margin: 0,
             color: color.fgSoft,
           }}
@@ -75,7 +84,9 @@ export function SuggestionGroup({
             <span style={{ fontWeight: 400, color: color.fgMuted }}> · {daysLeft}</span>
           )}
         </h3>
-        <span style={{ fontSize: 11, color: color.fgMuted, fontFamily: font.mono }}>
+        <span
+          style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
+        >
           {matches.length} waiting
         </span>
       </div>
@@ -88,10 +99,9 @@ export function SuggestionGroup({
           margin: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
         }}
       >
-        {matches.map((match) => (
+        {(showAll ? matches : matches.slice(0, 8)).map((match) => (
           <PendingSuggestionRow
             key={match.id}
             match={match}
@@ -104,6 +114,24 @@ export function SuggestionGroup({
         ))}
       </ul>
 
+      {matches.length > 8 && (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          style={{
+            alignSelf: 'flex-start',
+            border: 0,
+            background: 'none',
+            color: color.primary,
+            cursor: 'pointer',
+            fontSize: text.sm,
+            padding: '10px 0',
+          }}
+        >
+          {showAll ? 'Show fewer suggestions' : `Show all ${matches.length} suggestions`}
+        </button>
+      )}
+
       {rule != null && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Button
@@ -111,17 +139,17 @@ export function SuggestionGroup({
             size="sm"
             onClick={() => onApproveSelected(rule, selectedInGroup)}
             disabled={selectedInGroup.length === 0}
-            ariaLabel={`Approve selected suggestions from rule ${name}`}
+            ariaLabel={`Review selected suggestions from rule ${name}`}
           >
-            Approve selected{selectedInGroup.length > 0 ? ` (${selectedInGroup.length})` : ''}
+            Review selected{selectedInGroup.length > 0 ? ` (${selectedInGroup.length})` : ''}
           </Button>
           <Button
             tone="default"
             size="sm"
             onClick={() => onApproveAll(rule, matches)}
-            ariaLabel={`Approve all suggestions from rule ${name}`}
+            ariaLabel={`Review all suggestions from rule ${name}${pendingApproximate ? ' (including those not shown)' : ` (${matches.length})`}`}
           >
-            Approve all
+            {reviewAllLabel}
           </Button>
         </div>
       )}
@@ -132,7 +160,7 @@ export function SuggestionGroup({
 /** "(N days left)" while the rule's observe window is running (D104 header). */
 function observeDaysLeft(rule: AutopilotRuleDto | null, now: number | null): string | null {
   if (rule == null || rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'observe window complete';
+  if (rule.observeWindowElapsed) return 'Watch first review ready';
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;

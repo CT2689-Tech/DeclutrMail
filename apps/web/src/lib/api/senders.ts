@@ -211,7 +211,7 @@ export interface SenderListRow {
  *   - `user_defined` — the user toggled Protect on
  *   - `replied` — two-way correspondence: >=3 messages addressed to them and >=1 from them
  *   - `starred` — the user starred a message in the past year
- *   - `gmail_important` — Gmail marked at least three recent messages important and the sender is in Primary
+ *   - `gmail_important` — Gmail marked at least three recent messages important (granted only to a Primary sender)
  *   - `null` — not protected
  */
 export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gmail_important';
@@ -226,6 +226,8 @@ export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gma
  * non-existent field — keep them in lockstep.
  */
 export interface SenderDetailDto extends SenderListRow {
+  /** Current archived inbound mail; absent on older API versions. */
+  archivedCount?: number | null;
   protectionFlags: {
     isProtected: boolean;
     /** Why the sender is protected — null when `isProtected` is false. */
@@ -289,6 +291,7 @@ export interface MailMessageRow {
   /** ISO-8601 — Gmail `internalDate`. */
   internalDate: string;
   isUnread: boolean;
+  location: 'inbox' | 'archived';
   /**
    * Whole-message byte estimate from Gmail `sizeEstimate` (D7
    * amendment per ADR-0021). `null` for rows synced before the
@@ -527,6 +530,8 @@ export interface ListSendersParams {
    * negated form (not a surface). Maps to wire `?unsub_ignored=true`.
    */
   unsubIgnored?: boolean | undefined;
+  /** Only senders with inbound messages currently carrying INBOX. */
+  hasInboxMail?: boolean | undefined;
   /** Exclude senders whose inbound mail is entirely outside Inbox + archived. */
   currentMailOnly?: boolean | undefined;
 }
@@ -634,6 +639,7 @@ export function sendersListRequestQuery(
     window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
     domain: params.domain ? params.domain : undefined,
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
+    has_inbox_mail: params.hasInboxMail === true ? 'true' : undefined,
     current_mail_only: params.currentMailOnly === true ? 'true' : undefined,
   };
 }
@@ -723,6 +729,7 @@ export function patchSenderPolicy(
 export interface ListSenderMessagesParams {
   limit?: number | undefined;
   cursor?: string | undefined;
+  scope?: 'all_mail' | 'inbox' | 'archived' | undefined;
 }
 
 /** GET /api/senders/:id/messages — paginated recent messages (D41, D46). */
@@ -732,7 +739,7 @@ export function fetchSenderMessages(
   signal?: AbortSignal,
 ): Promise<PaginatedEnvelope<MailMessageRow>> {
   return apiGet<MailMessageRow[]>(`/api/senders/${encodeURIComponent(id)}/messages`, {
-    query: { limit: params.limit, cursor: params.cursor },
+    query: { limit: params.limit, cursor: params.cursor, scope: params.scope },
     signal,
   }) as Promise<PaginatedEnvelope<MailMessageRow>>;
 }
@@ -785,4 +792,19 @@ export function requestSenderRescore(
     { senderId, reason },
     { signal },
   );
+}
+
+/**
+ * POST /api/triage/explain — ask for the LLM sentences behind reasons that
+ * are still the deterministic template (D24, founder decision 2026-09-25).
+ * Returns at once: the sentences are written by a background job, and
+ * `queued` names the senders that have one (added now, or already asked
+ * for within the hour). At most `EXPLAIN_BATCH_MAX` (shared contract) ids
+ * per request.
+ */
+export function requestExplanations(
+  senderIds: readonly string[],
+  signal?: AbortSignal,
+): Promise<Envelope<{ queued: string[] }, unknown>> {
+  return apiPost<{ queued: string[] }>('/api/triage/explain', { senderIds }, { signal });
 }

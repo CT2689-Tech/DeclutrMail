@@ -16,17 +16,18 @@ import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 // on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
 // are explicitly allowed.
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   actionJobs,
   activityLog,
   mailMessages,
   senderActionWhere,
   senderPolicies,
   senders,
+  TRIAGE_DECIDED_WINDOW_DAYS,
   undoJournal,
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
   labelActionJobOptions,
   OutboxPublisher,
@@ -54,7 +55,6 @@ import {
   type EntitlementsExecutor,
 } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { TRIAGE_DECIDED_WINDOW_DAYS } from '../triage/triage.read-service.js';
 import type {
   ActionJobStatus,
   ActionStatusResult,

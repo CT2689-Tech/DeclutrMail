@@ -90,15 +90,16 @@ export const CASCADE_RULE_PHRASE: Record<CascadeRuleId, string> = {
   protect_starred: 'the user starred a message from this sender in the past year',
   protect_gmail_important: 'Gmail marked several recent messages from this sender important',
   wrote_to_at_least_once: 'the user has written to this sender',
-  gmail_primary: 'Gmail files this sender in Primary, where real correspondence lands',
+  gmail_primary: "this sender is in Gmail's Primary inbox and offers no unsubscribe link",
   starred_recently: 'the user starred a message from this sender recently',
-  high_read_rate: 'the user reads most of what this sender sends',
-  long_relationship_engaged: 'this is a long relationship the user still engages with',
+  high_read_rate: "at least half of this sender's mail from the last 90 days is marked read",
+  long_relationship_engaged:
+    "the sender has emailed the user for 5+ years and 30%+ of the last 90 days' mail is marked read",
   insufficient_signal: 'there is not enough mail yet to judge this sender',
   score_archive: 'the volume and read rate point at archiving',
   score_unsubscribe: 'the volume and read rate point at unsubscribing',
   score_inconclusive: 'the signals point in different directions',
-  score_no_unsub_channel: 'this sender offers no unsubscribe channel to use',
+  score_no_unsub_channel: 'this sender offers no unsubscribe link',
   score_quiet_stream: 'this sender is too quiet to be worth unsubscribing from',
 };
 
@@ -177,10 +178,13 @@ export interface SenderSignals {
    */
   hasWrittenTo: boolean;
   /**
-   * Gmail's own `CATEGORY_PERSONAL` (mapped to `'primary'` in our enum).
+   * The Gmail tab more than half of the sender's LABELLED mail carries
+   * (`CATEGORY_PERSONAL` is `'primary'`). `'unknown'` when none of its
+   * mail carries a tab label, or no tab holds a majority — no rule may
+   * read it as Primary, which is what the old default did (mig 0079).
    * D222: this is GMAIL's classification, not DeclutrMail's prediction.
    */
-  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+  gmailCategory: 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';
   /** D21 rule 4 — user has starred ≥ 1 message in the past year. */
   starredInLastYear: boolean;
   /**
@@ -322,8 +326,16 @@ export function runCascade(s: SenderSignals): CascadeResult {
     };
   }
 
-  // Rule 3 — Gmail's own Primary category.
-  if (s.gmailCategory === 'primary') {
+  // Rule 3 — Gmail's own Primary tab, for a sender whose mail offers no
+  // unsubscribe link. A List-Unsubscribe header marks mail sent
+  // through a list or mailing system (RFC 2369) — person-to-person mail
+  // rarely carries one, though a message relayed by a mailing list such
+  // as a Google Group does — so a Primary sender WITH a channel is judged
+  // on volume and engagement like everyone else (founder decision
+  // 2026-09-26). `gmailCategory` is 'primary' only when most of
+  // the sender's labelled mail is in Primary; mail with no tab label
+  // never counts (mig 0079).
+  if (s.gmailCategory === 'primary' && s.unsubscribeChannel === 'none') {
     return {
       verdict: 'keep',
       confidence: 0.95,

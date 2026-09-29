@@ -76,6 +76,11 @@ const V1_AI_CONTEXT = ['/llms.txt', '/llms-full.txt', '/ai.txt'] as const;
  */
 const V2_ROUTES = new Set<string>([
   ...MARKETING_PATHS,
+  // Historical URL remains live for the V1 launch-announcement redirect,
+  // but is intentionally noindexed until its stale entries are reconciled.
+  '/changelog',
+  // Noindexed, but still a live page and the target of /auth/callback.
+  '/sign-in',
   // Served from `public/`, so absent from the sitemap.
   '/llms.txt',
   // Authed app routes — redirect targets for V1's old app URLs.

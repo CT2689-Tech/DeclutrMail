@@ -1,17 +1,9 @@
 'use client';
 
 /**
- * `SenderActionRow` — the ONE per-sender action affordance on Senders
- * list surfaces (ADR-0016 A5 + ADR-0019): a derived primary verb
- * button + the `⋯` trigger opening the K/A/U/L/D ActionPopover.
- *
- * Extracted verbatim from `SenderCard`'s `CardActionRow` (2026-07-03
- * consistency pass) so the table row can render the SAME action
- * grammar instead of its former three hardcoded inline buttons —
- * ActionPopover's own docstring listed the table as a consumer, but
- * the wiring never landed with Slice 1. Layout is the only per-surface
- * variance (`stretch` — card stretches the primary button, the table
- * keeps it inline-width).
+ * `SenderActionRow` — the ONE per-sender action affordance on the
+ * Senders list (ADR-0016 A5 + ADR-0019): a derived primary verb button
+ * + the `⋯` trigger opening the K/A/U/L/D ActionPopover.
  *
  * Every pick emits through `onAction`; this component never mutates.
  * Destructive picks (Archive / Unsubscribe / Later / Delete) ride the
@@ -20,7 +12,7 @@
  */
 
 import { useState } from 'react';
-import { ActionPopover, ActionPopoverTrigger, Button } from '@declutrmail/shared';
+import { ActionPopover, ActionPopoverTrigger, Button, tokens } from '@declutrmail/shared';
 import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
 import {
   isRowBusy,
@@ -42,21 +34,7 @@ import {
   type Sender,
 } from './data';
 
-const ARROW = (
-  <svg
-    width="11"
-    height="11"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.4"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M5 12h14M12 5l7 7-7 7" />
-  </svg>
-);
+const { color } = tokens;
 
 /**
  * Fact-rule primary derivation (ADR-0019) for a row's lead CTA.
@@ -65,7 +43,7 @@ const ARROW = (
  * (mailto stays manual at launch per D230, so it never auto-recommends)
  * AND the sender passes `canUnsubscribe` — the same capability gate the
  * ⋯ popover reads, so the primary can never offer a verb the popover
- * disables on the same row (e.g. a one-click sender in group 'primary').
+ * disables on the same row.
  *
  * Registry rule order guarantees protected → Keep wins over unsub-ready
  * (`deriveDefaultPrimary` checks `protected` first — D42/D43).
@@ -77,18 +55,15 @@ const ARROW = (
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    // RECOMMENDATION, not availability — the two are deliberately
-    // different. `canUnsubscribe` asks "is there a channel to use?"; this
-    // asks "should we put it forward?". A Gmail `primary`-category sender
-    // with a live one-click header is offerable but not recommendable:
-    // primary-category mail is where real correspondence lands, so
-    // leading with Unsubscribe there is the wrong default. That category
-    // term used to live inside `canUnsubscribe`, where it silently greyed
-    // the button out with no reason text and no server counterpart.
-    unsubReady:
-      sender.unsubscribeMethod === 'one_click' &&
-      sender.gmailCategory !== 'primary' &&
-      canUnsubscribe(sender),
+    // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
+    // a channel to use?"; this asks "should we put it forward?". There is
+    // no Gmail-tab exemption: a one-click header marks mail sent through
+    // a list or mailing system, and that outranks the Primary tab — the
+    // engine's own rule since the founder decision of 2026-09-26 (Primary
+    // keeps a sender only when it offers no unsubscribe link). A Primary
+    // exemption here could never apply to a sender the engine keeps for
+    // being Primary, and would contradict it for every other one.
+    unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
 }
@@ -96,21 +71,17 @@ export function derivePrimaryVerbId(sender: Sender): VerbId {
 export function SenderActionRow({
   sender,
   onAction,
-  stretch = false,
-  onMenuOpenChange,
+  compact = false,
 }: {
   sender: Sender;
   onAction: (req: ActionRequest) => void;
-  /** Lets a host that pins this row (sticky table cell) lift it above its neighbours while the ⋯ menu is open. */
-  onMenuOpenChange?: (open: boolean) => void;
-  /** `true` (card) stretches the primary button; `false` (table row) keeps it inline. */
-  stretch?: boolean;
+  /**
+   * Phone rows: only the `⋯` menu. There is no button slot to carry the
+   * status, so the HOST row renders the activity pill beside the name.
+   */
+  compact?: boolean;
 }) {
-  const [popoverOpen, setPopoverOpenState] = useState(false);
-  const setPopoverOpen = (open: boolean) => {
-    setPopoverOpenState(open);
-    onMenuOpenChange?.(open);
-  };
+  const [popoverOpen, setPopoverOpen] = useState(false);
   // One in-flight action per sender: a second would mint a fresh
   // idempotency key (double cleanup unit, two undo tokens). The screen
   // refuses it too; disabling here is what makes that refusal visible.
@@ -122,8 +93,7 @@ export function SenderActionRow({
 
   // Capability gates — the same predicates every action surface reads
   // (data.ts). Delete follows `canDelete` (blocked for standing-
-  // protected senders) — the card previously hardcoded `delete: true`,
-  // which let the popover offer Delete on protected rows.
+  // protected senders).
   const capabilities: Record<VerbId, boolean> = {
     archive: canArchive(sender),
     later: canLater(sender),
@@ -136,38 +106,35 @@ export function SenderActionRow({
   const senderLabel = sender.name.trim() || sender.domain;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 6,
-        alignItems: 'center',
-        ...(stretch ? { marginTop: 'auto' } : {}),
-        position: 'relative',
-      }}
-    >
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', position: 'relative' }}>
       {/* Ended badly: say so, and leave the verb live — retrying is the next step. */}
-      {activity && !status && <RowActivityPill activity={activity} />}
+      {activity && !status && !compact && <RowActivityPill activity={activity} />}
       {/* ONE button element for both states: while an action's result is on
           the row, the verb the user reached for BECOMES that result. Kept
           mounted (never swapped for a span) so focus stays put. Once the job
           has ENDED the ⋯ menu is the way to act again; while it is running
           or unconfirmed the whole row stays locked — a second job for the
           same sender is the thing being prevented. */}
-      <Button
-        tone={status ? 'ghost' : leadButtonTone(primaryLegacy)}
-        size="sm"
-        inert={status != null}
-        onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
-        {...(status ? {} : { iconRight: ARROW })}
-        style={{
-          ...(stretch
-            ? { flex: 1, justifyContent: status ? 'flex-start' : 'space-between', minWidth: 0 }
-            : { whiteSpace: 'nowrap' }),
-          ...(status ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) } : {}),
-        }}
-      >
-        {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
-      </Button>
+      {!compact && (
+        <Button
+          // Quiet at rest: a list of fifty filled buttons shouts. The verb
+          // keeps its colour identity in the lettering; the ONE filled
+          // button lives in the detail pane and the confirm sheet.
+          tone={status ? 'ghost' : 'default'}
+          size="sm"
+          inert={status != null}
+          onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
+          style={{
+            whiteSpace: 'nowrap',
+            minWidth: 96,
+            ...(status
+              ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) }
+              : { color: LEAD_TEXT_COLOR[leadButtonTone(primaryLegacy)] }),
+          }}
+        >
+          {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
+        </Button>
+      )}
       {/* Trigger opens the popover only — never toggles. Toggle pattern
           races against the popover's click-outside listener (which sees
           the trigger as 'outside' and closes, then the trigger's
@@ -250,11 +217,20 @@ export function legacyVerbFromId(
 /**
  * Lead-button tone derivation for the primary CTA. Tone semantics
  * locked by ADR-0016 A5 (consolidating D26/D31) + ADR-0019: Keep =
- * teal `primary`; Archive = `dark`; Unsubscribe = amber `warn`;
+ * positive `primary`; Archive = `dark`; Unsubscribe = amber `warn`;
  * Later = neutral `default`; Delete = `danger`. Delete is overflow-
  * only today (`canBePrimary: false` in the registry) but stays mapped
  * so no future call site can collide it with Unsubscribe's amber.
  */
+/** Lettering colour for the quiet row button, keyed by the verb's tone. */
+const LEAD_TEXT_COLOR: Record<ReturnType<typeof leadButtonTone>, string> = {
+  warn: color.amber,
+  danger: color.danger,
+  primary: color.emerald,
+  dark: color.fg,
+  default: color.fg,
+};
+
 export function leadButtonTone(
   verb: 'Unsubscribe' | 'Later' | 'Keep' | 'Archive' | 'Delete',
 ): 'warn' | 'dark' | 'default' | 'primary' | 'danger' {

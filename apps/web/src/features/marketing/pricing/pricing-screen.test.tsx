@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act } from 'react';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { storeConsent } from '@/lib/cookie-consent';
+import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 
 import { formatUsd } from './pricing-model';
 import { PricingScreen } from './pricing-screen';
@@ -45,6 +49,30 @@ const annual = (id: 'plus' | 'pro') => formatUsd(TIER_MANIFEST[id].prices.annual
 const promoPrice = formatUsd(TIER_MANIFEST.pro.promo!.annual.usdCents);
 
 describe('PricingScreen (D19)', () => {
+  it.each(['paddle', 'razorpay'] as const)(
+    'hydrates the server-rendered %s price rail without replacing the tree',
+    async (provider) => {
+      const page = (
+        <BillingCurrencyProvider provider={provider}>
+          <PricingScreen />
+        </BillingCurrencyProvider>
+      );
+      const container = document.createElement('div');
+      container.innerHTML = renderToString(page);
+      const initialMarkup = container.innerHTML;
+      const recoverable: Error[] = [];
+      let root: Root | undefined;
+      await act(async () => {
+        root = hydrateRoot(container, page, {
+          onRecoverableError: (error) => recoverable.push(error as Error),
+        });
+      });
+      expect(recoverable).toEqual([]);
+      expect(container.innerHTML).toBe(initialMarkup);
+      await act(async () => root?.unmount());
+    },
+  );
+
   it('renders all five manifest tiers with ANNUAL prices by default (locked 2026-08-02)', () => {
     render(<PricingScreen />);
 
@@ -61,7 +89,7 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getAllByText('No card required')).toHaveLength(1);
     // Annual price lines carry a "/mo effective" note instead of the
     // monthly billing line, so that string is absent on the default view.
-    expect(screen.queryAllByText('Billed monthly · cancel anytime')).toHaveLength(0);
+    expect(screen.queryAllByText('Billed monthly, cancel anytime')).toHaveLength(0);
     expect(screen.getByRole('region', { name: 'Scrollable plan comparison' })).toHaveAttribute(
       'tabindex',
       '0',
@@ -83,16 +111,15 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getByText(monthly('pro'))).toBeInTheDocument();
   });
 
-  it('shows the Founding Pro banner without implying a spot is still available', () => {
+  it('shows the Founding Pro offer once, inside its plan card', () => {
     render(<PricingScreen />);
     const promo = TIER_MANIFEST.pro.promo!;
     expect(
-      screen.getByText(
-        new RegExp(`${promo.name} — \\${promoPrice}/yr for the first ${promo.maxRedemptions}`),
-      ),
+      screen.getByText(new RegExp(`first ${promo.maxRedemptions} paid subscriptions`)),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Availability is confirmed at checkout/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Check availability' })).toBeInTheDocument();
+    expect(screen.getByText(/Availability confirmed at checkout/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Get ${promo.name}` })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Check availability' })).not.toBeInTheDocument();
   });
 
   it('emits page_viewed on mount (D159)', () => {
@@ -164,5 +191,19 @@ describe('PricingScreen (D19)', () => {
   it('explains what happens when the Free monthly cap is reached', () => {
     render(<PricingScreen />);
     expect(screen.getByText(/until the next month or an upgrade/i)).toBeInTheDocument();
+  });
+
+  it('keeps the preview, undo, Trash and refund facts on the page', () => {
+    render(<PricingScreen />);
+    // Facts, not whole sentences: the shared summary's own words.
+    expect(screen.getByText(/you see the count and what changes in Gmail/)).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash for up to 30 days/)).toBeInTheDocument();
+    expect(screen.getByText(/unsubscribe request cannot be taken back/)).toBeInTheDocument();
+    expect(screen.getByText(/30-day money-back guarantee/)).toBeInTheDocument();
+    expect(screen.getByText(/gmail\.modify/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review Gmail permissions' })).toHaveAttribute(
+      'href',
+      '/sign-in',
+    );
   });
 });

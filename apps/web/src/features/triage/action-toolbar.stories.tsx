@@ -13,7 +13,8 @@
 
 import { tokens } from '@declutrmail/shared';
 import { ActionToolbar } from './action-toolbar';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 
 const { color } = tokens;
 

@@ -1,23 +1,17 @@
-// One activity model, three layouts. The row the user acted on must say
-// so in the table, the grid AND the phone list — the founder's report was
-// made in the TABLE layout, which had no busy state at all.
+// One activity model, every row. The row the user acted on must say so —
+// full-width, on the phone layout, and from behind a collapsed brand group.
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 
-import type { SenderListRow } from '@/lib/api/senders';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SenderActionRow } from './action-row';
 import { rollupByDomain } from './domain-rollup';
-import { SenderCard } from './grid/sender-card';
-import { SenderGrid } from './grid/sender-grid';
 import { RowActivityProvider, type RowActivityById } from './row-activity';
-import { SenderTable } from './sender-table';
-import { SenderListRow as SenderRowMobile } from './table/sender-list-row';
+import { SenderList } from './sender-list';
+import { SenderRow } from './sender-row';
 import { makeSender } from './testing/make-sender';
-
-vi.mock('./grid/sender-peek', () => ({ SenderPeek: () => null }));
 
 const onSelect = vi.fn();
 
@@ -117,90 +111,51 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
   });
 });
 
-describe('grid card', () => {
-  const card = (activity: RowActivityById) =>
+describe('list row', () => {
+  const row = (activity: RowActivityById, compact = false) =>
     render(
       <Wrap activity={activity}>
-        <SenderCard
-          sender={sender}
+        <SenderRow
+          s={sender}
           selected={false}
+          compact={compact}
           onToggleSelect={onSelect}
+          onOpen={() => {}}
           onAction={() => {}}
-          globalMaxTotal={500}
         />
       </Wrap>,
     );
 
-  it('reads as busy: pill, aria-busy, checkbox off', () => {
-    card(working);
-    const root = screen.getByTestId('sender-card-sender-1');
+  it('reads as busy: status in the button slot, aria-busy, checkbox off', () => {
+    row(working);
+    const root = screen.getByTestId('sender-row-sender-1');
     expect(root).toHaveAttribute('aria-busy', 'true');
     expect(within(root).getByText('Deleting…')).toBeInTheDocument();
     expectInertCheckbox(within(root).getByRole('checkbox'));
   });
 
   it('stays, marked done with the real count', () => {
-    card(done);
-    const root = screen.getByTestId('sender-card-sender-1');
+    row(done);
+    const root = screen.getByTestId('sender-row-sender-1');
     expect(root).not.toHaveAttribute('aria-busy', 'true');
     expect(within(root).getByText('Deleted 251')).toBeInTheDocument();
   });
-});
 
-describe('table row', () => {
-  const rowWire = { ...sender, displayName: 'Yankee Candle' } as unknown as SenderListRow;
-  const table = (activity: RowActivityById) =>
-    render(
-      <Wrap activity={activity}>
-        <SenderTable
-          rows={[rowWire]}
-          globalMaxTotal={500}
-          sort="total"
-          direction="desc"
-          onSortChange={() => {}}
-          selectedIds={new Set()}
-          onSelectionChange={onSelect}
-          onRowToggle={() => {}}
-          onAction={() => {}}
-        />
-      </Wrap>,
-    );
-
-  it('reads as busy in the TABLE layout — the one the report was made in', () => {
-    table(working);
-    const pill = screen.getByText('Deleting…');
-    const tr = pill.closest('tr')!;
-    expect(tr).toHaveAttribute('aria-busy', 'true');
-    expectInertCheckbox(within(tr).getByRole('checkbox'));
+  it('says it in the name link, which is what a screen reader lands on', () => {
+    row(working);
+    expect(screen.getByRole('link', { name: /Yankee Candle, Deleting…/ })).toBeInTheDocument();
   });
 
-  it('stays, marked done', () => {
-    table(done);
-    expect(screen.getByText('Deleted 251')).toBeInTheDocument();
-  });
-});
-
-describe('phone row', () => {
-  it('reads as busy', () => {
-    render(
-      <Wrap activity={working}>
-        <SenderRowMobile
-          s={sender}
-          selected={false}
-          expanded={false}
-          onToggleSelect={onSelect}
-          onToggleExpand={() => {}}
-          onAction={() => {}}
-        />
-      </Wrap>,
-    );
+  it('phone row has no button slot — the pill beside the name carries it', () => {
+    row(working, true);
     expect(screen.getByText('Deleting…')).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(1); // only ⋯
     expectInertCheckbox(screen.getByRole('checkbox'));
   });
 });
 
-describe('collapsed brand group (grid)', () => {
-  // A brand with ≥3 senders collapses into one card. Act on its members,
+describe('collapsed brand group', () => {
+  // A brand with ≥3 senders collapses into one row. Act on its members,
   // collapse it, and the founder's original complaint was fully intact:
   // nothing on screen said anything was happening.
   const members = ['g1', 'g2', 'g3'].map((id, i) =>
@@ -209,12 +164,15 @@ describe('collapsed brand group (grid)', () => {
   const group = (activity: RowActivityById) =>
     render(
       <Wrap activity={activity}>
-        <SenderGrid
+        <SenderList
           entries={rollupByDomain(members)}
           selectedIds={new Set()}
           onToggleSelect={() => {}}
           onAction={() => {}}
-          globalMaxTotal={500}
+          onOpen={() => {}}
+          activeId={null}
+          compact={false}
+          followKeys={false}
         />
       </Wrap>,
     );
@@ -260,7 +218,7 @@ describe('collapsed brand group (grid)', () => {
     group(new Map([['g1', { phase: 'done', verb: 'archive', affectedCount: null }]]));
     const card = screen.getByTestId('domain-group-brand.com');
     expect(within(card).getByText('1 done')).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole('button', { name: /show 3 senders/i }));
+    fireEvent.click(card);
     expect(document.querySelector('[data-dm-group-activity]')).toBeNull();
     expect(screen.getByText('Archived')).toBeInTheDocument();
   });

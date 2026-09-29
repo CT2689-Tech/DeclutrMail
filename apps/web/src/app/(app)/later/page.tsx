@@ -41,13 +41,8 @@ export default async function LaterPage() {
       <TierGate
         capability="snoozed"
         title="Later"
-        pitch="Every sender you deferred with Later, in one list — grouped by when they return, with bring-back and scheduling controls."
-        bullets={[
-          'See everything parked with Later at a glance',
-          'Bring a sender back now or change its return time',
-          'Grouped by return time, so nothing slips',
-        ]}
-        footnote="Your Later senders are never hidden: their email sits in the DeclutrMail/Later label in Gmail, where you can read or move it any time."
+        pitch="Every sender you moved to Later, grouped by when they return."
+        footnote="Their email stays readable in Gmail under the DeclutrMail/Later label."
       >
         <SnoozedScreen />
       </TierGate>

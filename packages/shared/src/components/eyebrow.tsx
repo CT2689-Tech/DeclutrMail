@@ -1,11 +1,11 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { color, font } from '../tokens/tokens';
+import { color, font, text } from '../tokens/tokens';
 
 export type EyebrowTone = 'default' | 'primary' | 'amber';
 
-/** Mono uppercase micro-label that sits above a heading — editorial chrome. */
+/** Quiet sentence-case micro-label. Mono is reserved for numerals and keys. */
 export function Eyebrow({
   children,
   tone = 'default',
@@ -19,11 +19,9 @@ export function Eyebrow({
   return (
     <div
       style={{
-        fontFamily: font.mono,
-        fontSize: 10.5,
+        fontFamily: font.sans,
+        fontSize: text.sm,
         fontWeight: 500,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
         color: fg,
         ...style,
       }}
