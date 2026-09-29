@@ -450,6 +450,16 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Every selected sender is Protected or no longer exists.',
   },
+  // Cross-surface sender in-flight guard (founder-approved 2026-09-28):
+  // a genuinely new request loses the race to an already-live forward job
+  // for the same sender. Transient — the same request would succeed once
+  // that job finishes, unlike PROTECTED_SENDER/NO_ACTIONABLE_SENDERS above.
+  SENDER_ACTION_IN_PROGRESS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This sender already has an action running. Wait for it to finish.',
+  },
   // The environment refuses to SEND unsubscribes (`UNSUB_SEND_ENABLED` is not
   // `true`), so the API refused before writing anything. `retryable: false` —
   // asking again cannot change it, and a retry affordance on a refusal is how
