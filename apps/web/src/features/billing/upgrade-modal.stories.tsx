@@ -132,3 +132,21 @@ export const InboxLimitPro: Story<typeof UpgradeModal> = {
   render: (_args: ComponentProps<typeof UpgradeModal>) =>
     frame('pro', { reason: 'inbox_limit', details: { limit: 2, connected: 2 } }),
 };
+
+/** Free workspace hits a Plus-gated capability (Quiet) after a downgrade. */
+export const ProFeatureQuiet: Story<typeof UpgradeModal> = {
+  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+    frame('free', {
+      reason: 'pro_feature',
+      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
+    }),
+};
+
+/** Plus workspace hits a Pro-gated capability (Follow-ups). */
+export const ProFeatureFollowups: Story<typeof UpgradeModal> = {
+  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+    frame('plus', {
+      reason: 'pro_feature',
+      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
+    }),
+};
