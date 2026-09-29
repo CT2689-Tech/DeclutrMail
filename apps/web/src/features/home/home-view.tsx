@@ -299,7 +299,7 @@ function WorkspaceOverview({
           <WorkflowLink
             href="/quiet"
             title="Quiet Hours"
-            detail="Choose when the inbox can wait"
+            detail="Choose when Autopilot holds its actions"
             locked={access('quiet')}
           />
           <WorkflowLink
