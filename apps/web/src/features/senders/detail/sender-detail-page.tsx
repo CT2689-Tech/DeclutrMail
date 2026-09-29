@@ -3,6 +3,7 @@
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -560,6 +561,14 @@ function ReadyState({
   // a second Unsubscribe on this page (see the Unsubscribe branch), but
   // its stall risk sits in the intent mutation, not this poll.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  // Server truth (via `listInFlight`) for whether THIS sender has a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this page's own unmount/navigation. By the time a job would
+  // reach `overdueAction`'s 120s park, this has already been true for
+  // most of that window (it starts reflecting the job within one ~2s poll
+  // of enqueue), so it is a strict superset of what `overdueAction` alone
+  // could cover for the re-entry guard below.
+  const sharedLock = useSenderInFlightLock(actionMailboxId);
   // What the toolbar says about this sender's own action. Live handles
   // win over a settled result.
   const pageActivity = useMemo(() => {
@@ -745,18 +754,20 @@ function ReadyState({
 
       // Re-entry guard for every destructive branch — see jsdoc above.
       // Composite + direct-enqueue share the same `activeAction` slot,
-      // so a single guard covers both. `overdueAction` counts too: this
-      // page is single-sender, so a parked (overdue) handle still owns
-      // THIS sender — re-dispatching would mint a fresh idempotency key
-      // and a SECOND real Gmail job (double cleanup unit, two undo
-      // tokens). The ACTION_OVERDUE_MS release frees other screens'
-      // subjects, never the hung sender itself. The pending confirm
-      // surface is deliberately NOT cleared here (2026-08-12 incident
-      // follow-up): clearing it dropped the user's confirmed intent —
-      // the toast explains the wait, the preview stays open, and the
-      // confirm can be retried once the latch truly frees (terminal
-      // status of the active OR parked handle).
-      if (activeAction != null || overdueAction != null || enqueueComposite.isPending) {
+      // so a single guard covers both. `sharedLock` covers what local
+      // state alone cannot: a job dispatched from a DIFFERENT surface or
+      // tab, or one that survives this page's own unmount/navigation —
+      // re-dispatching into either would mint a fresh idempotency key and
+      // a SECOND real Gmail job (double cleanup unit, two undo tokens).
+      // The pending confirm surface is deliberately NOT cleared here
+      // (2026-08-12 incident follow-up): clearing it dropped the user's
+      // confirmed intent — the toast explains the wait, the preview stays
+      // open, and the confirm can be retried once the sender is free.
+      if (
+        activeAction != null ||
+        sharedLock.senderIds.has(detail.sender.id) ||
+        enqueueComposite.isPending
+      ) {
         toast('Still confirming your last action — give it a moment.', 'info');
         return;
       }
@@ -858,7 +869,9 @@ function ReadyState({
       // compose THE USER sends (never auto-sent). No undo token exists
       // for a network unsub (D58). Single-sender by design here; the
       // additional `recordUnsubIntent.isPending` check stops a
-      // double-fire while the unsub mutation itself is in flight.
+      // double-fire while the unsub mutation itself is in flight. The
+      // sender-wide `sharedLock` check above already covers "busy from a
+      // different verb, surface or tab" for this branch too.
       if (verb === 'Unsubscribe') {
         if (recordUnsubIntent.isPending || activeUnsub != null) {
           // Visible deferral, never a silent swallow — same voice as the
@@ -983,6 +996,7 @@ function ReadyState({
       overdueAction,
       activeUnsub,
       actionMailboxId,
+      sharedLock.senderIds,
     ],
   );
 

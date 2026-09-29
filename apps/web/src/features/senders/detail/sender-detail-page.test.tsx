@@ -1682,6 +1682,66 @@ describe('SenderDetailRoute', () => {
       expect(actionPosts).toBe(1);
     });
 
+    it('refuses to dispatch when the SERVER reports this sender busy, with zero local state (2026-09-28)', async () => {
+      // No activeAction/overdueAction on this page at all — the button
+      // reads as idle (nothing local knows about a job), but a DIFFERENT
+      // surface or tab already started one. Only `GET /api/actions/active`
+      // knows that; this is the cross-surface race the shared lock closes.
+      let actionPosts = 0;
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'GET',
+          path: '/api/actions/active',
+          respond: () =>
+            jsonOk({
+              data: [
+                {
+                  groupId: 'other-tab-group',
+                  verb: 'archive',
+                  mixedVerbs: false,
+                  running: true,
+                  total: 1,
+                  done: 0,
+                  failed: 0,
+                  senderCount: 1,
+                  leadSenderName: 'LinkedIn',
+                  startedAt: '2026-09-28T10:00:00.000Z',
+                  senderIds: ['linkedin'],
+                  senderKeys: ['linkedin-key'],
+                },
+              ],
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            actionPosts += 1;
+            return jsonOk({ data: { actionId: 'act-x', requestedCount: 12, status: 'queued' } });
+          },
+        },
+      ]);
+      renderDetail();
+
+      // The button itself is NOT locally disabled — pageActivity has
+      // nothing to show, since this page never fired anything itself.
+      const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
+      expect(archiveButton).not.toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(archiveButton);
+      await screen.findByText(/rechecked when it runs/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          expect.stringMatching(/still confirming your last action/i),
+          'info',
+        ),
+      );
+      expect(actionPosts).toBe(0);
+    });
+
     // QA-delete-20260829-05 — the global undo tray (`ProductUndoTray`)
     // reverts a token through its OWN `useRevertUndo()` instance, mounted
     // in a separate component tree from this page. Before the fix, this
