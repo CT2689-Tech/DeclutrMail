@@ -50,6 +50,7 @@ import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { sendersListQueryFromScreen } from './api/query-options';
 import { useSenders } from './api/use-senders';
+import { useSendersSummary } from './api/use-senders-summary';
 
 import {
   useActionStatus,
@@ -73,6 +74,7 @@ import {
 } from '@/features/triage/unsub-send-disabled';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { SenderList } from './sender-list';
 import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
@@ -99,6 +101,7 @@ import {
   type SenderRowActivity,
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
+import { FirstCleanupNudge, shouldShowFirstCleanupNudge } from './first-cleanup-nudge';
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
@@ -305,16 +308,23 @@ export function SendersScreen() {
     query.trim() === debouncedQuery &&
     widenedCount > 0;
 
-  const allSenders = useMemo<Sender[]>(() => {
-    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
-    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row)));
-  }, [sendersQuery.data, widenProbe.data, showingWidened]);
   // When the widened rows are on screen, every derived count must come
   // from the SAME response they did. Reading `totalMatching` off the
   // filtered query while rendering unfiltered rows reproduces the exact
   // defect this fixes one line lower down — the screen said "0 senders
   // match" above a sender card.
   const queryMeta = (showingWidened ? widenProbe.data : sendersQuery.data)?.pages[0]?.meta.query;
+  const timeZone = useUserTimeZone();
+  // Snapshot clock from the dehydrated list payload — identical on the
+  // UTC server render and the first client paint, unlike `Date.now()`.
+  // Paired with `timeZone` so `lastDays` cannot hydrate as "today" in
+  // UTC and "1d" in America/Los_Angeles (DECLUTRMAIL-WEB-2C).
+  const snapshotNow = Date.parse(queryMeta?.asOf ?? '');
+  const allSenders = useMemo<Sender[]>(() => {
+    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
+    const now = Number.isFinite(snapshotNow) ? snapshotNow : Date.now();
+    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row, now, timeZone)));
+  }, [sendersQuery.data, widenProbe.data, showingWidened, snapshotNow, timeZone]);
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
   // and is preserved across the scroll (subsequent pages recompute on
   // the server but the FE caches the page-1 snapshot so chip counts
@@ -347,6 +357,13 @@ export function SendersScreen() {
   // The page-1 `totalMatching` is the canonical "All N" chip count —
   // already on the wire and search-aware. Surfaced via `totalMatching`
   // above (D38) — drives the hero number + the compose summary line.
+
+  // Mailbox-wide summary (#145) — unscoped (no `q`), the same cache key
+  // `app-chrome-layout.tsx` primes for its nav badge, so this is a cache
+  // read, not a second request in the common case. Hero/KPI/chip counts
+  // come from `queryMeta` above; this call exists only for
+  // `hasCompletedCleanup` (the first-cleanup nudge, D227).
+  const sendersSummary = useSendersSummary({});
 
   if (sendersQuery.isLoading) {
     return <SendersLoadingState />;
@@ -401,6 +418,7 @@ export function SendersScreen() {
       onWiden={() => setKeepNarrow(false)}
       query={query}
       onQueryChange={setQuery}
+      hasCompletedCleanup={sendersSummary.data?.data.hasCompletedCleanup}
       totalMatching={totalMatching}
       showingStaleRows={showingStaleRows}
       countsMayBeStale={countsMayBeStale}
@@ -466,6 +484,7 @@ function SendersScreenContent({
   onLoadMore,
   query,
   onQueryChange: setQuery,
+  hasCompletedCleanup,
   totalMatching,
   showingStaleRows,
   countsMayBeStale,
@@ -506,6 +525,12 @@ function SendersScreenContent({
    *  (#145). `senders` already arrives search-filtered from the BE. */
   query: string;
   onQueryChange: (next: string) => void;
+  /**
+   * Mailbox-wide: at least one `action_jobs` row is `done`. `undefined`
+   * while the summary is loading, failed, or from an older API that
+   * omitted the field — the nudge stays off in all three cases.
+   */
+  hasCompletedCleanup: boolean | undefined;
   /** D38 — BE-honest count for the active compose (page-1 snapshot). */
   totalMatching: number | undefined;
   /** Prior query's pages retained while the active search/filter resolves. */
@@ -612,6 +637,11 @@ function SendersScreenContent({
   // currency claim `mailboxStillSyncing` exists to prevent, for the one
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
+    mailboxReady: activeMailbox?.readiness === 'ready',
+    hasCompletedCleanup,
+    visibleSenderCount: senders.length,
+  });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<
@@ -2559,6 +2589,10 @@ function SendersScreenContent({
               label: 'Manual decisions vs automatic rules',
             }}
           />
+
+          {showFirstCleanupNudge && senders[0] !== undefined && (
+            <FirstCleanupNudge href={`/senders/${senders[0].id}`} />
+          )}
 
           {/* D248 — multi-sender unsubscribe result. Its own surface: three
             terminal outcomes, no Undo (a delivered request is one-way). */}

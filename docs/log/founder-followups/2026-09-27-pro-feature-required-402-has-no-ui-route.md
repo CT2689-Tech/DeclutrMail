@@ -25,4 +25,12 @@ capability-gated mutation's own toast is the intended UX and this is working as 
 **Verifies by:** If yes — `upgradeGateHitFrom` gets a `PRO_FEATURE_REQUIRED` branch, and a test
 mirroring the existing `FREE_CAP_REACHED`/`INBOX_LIMIT_REACHED` cases in
 `upgrade-gate.test.ts` goes green. If no — this file moves to Skipped with that reasoning.
-**Status:** Open
+**Status:** Done 2026-09-29 — `upgradeGateHitFrom` gained a `pro_feature`
+`UpgradeGateHit` variant (capability + tier from the wire, requiredTier
+derived from the D19 manifest) and `UpgradeModal` gained the matching
+title/description/CTA branches; see
+`apps/web/src/lib/entitlements/upgrade-gate.test.ts` and
+`apps/web/src/features/billing/upgrade-modal.test.tsx`.
+`use-update-quiet-hours.ts`'s `onError` now bails out on any 402 like
+every other capability-gated mutation in the app, and its doc comment
+describing this gap is updated to match.
