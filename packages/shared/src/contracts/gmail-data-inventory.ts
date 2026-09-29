@@ -441,6 +441,22 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     showInMessageStorageList: false,
   },
   {
+    id: 'initial-sync-job-status',
+    category: 'derived',
+    label: 'Sync status and result',
+    fetchedFrom: ['message-identifiers'],
+    storageRefs: ['redis:bull:initial-sync:{mailboxAccountId}', 'redis:bull:initial-sync:events'],
+    derived: true,
+    purpose:
+      'Avoid starting a second backfill for a mailbox that already has one queued or running, and let a slow or failed sync be investigated.',
+    retention:
+      'Cleared immediately when this mailbox’s saved data is deleted. Otherwise, a completed attempt’s result is dropped automatically within 24 hours, sooner if this mailbox syncs again; a failed attempt’s reason has no automatic expiry and stays until this mailbox syncs again or its data is deleted.',
+    removalTrigger: 'delete-indexed-data',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
     id: 'product-feedback',
     category: 'derived',
     label: 'Feedback you submit about Activity, Briefs, and Follow-ups',
