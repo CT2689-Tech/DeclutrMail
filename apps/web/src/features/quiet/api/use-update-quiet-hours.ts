@@ -8,7 +8,26 @@
  * The success event and the failure signals live HERE, not in the
  * callbacks passed to `mutate()`: those run only while the card is
  * mounted, so a save that failed after the user left the page reached
- * neither Sentry nor the user.
+ * neither Sentry nor the user. The toast names "quiet hours" because
+ * it can now surface on whatever screen the user is on by the time it
+ * fires.
+ *
+ * This is the only mutation hook in the app with hook-level toast +
+ * Sentry — not yet the convention, a deliberate exception pending the
+ * repo-wide unmount-lost-failure sweep (same root cause, ~16 other
+ * call sites, tracked as its own follow-up PR).
+ *
+ * A 402 (`PRO_FEATURE_REQUIRED` — this route is `@RequiresCapability
+ * ('quiet')`, reachable on an entitlement downgrade mid-session) is
+ * NOT special-cased: `upgradeGateHitFrom` (lib/entitlements/upgrade-
+ * gate.ts) only recognizes `FREE_CAP_REACHED` / `INBOX_LIMIT_REACHED`
+ * / `ACTION_TIER_REQUIRED`, so the global MutationCache handler does
+ * nothing for `PRO_FEATURE_REQUIRED` today — no capability-gated
+ * mutation in the app gets an upgrade-modal route for it. Silently
+ * dropping the toast here (matching the pattern other 402 codes use)
+ * would leave this one failure mode with no signal at all, worse than
+ * today. Flagged as a founder follow-up, not fixed here — it's a
+ * one-line entitlements-service question, not a Quiet one.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -42,7 +61,7 @@ export function useUpdateQuietHours(mailboxId: string) {
     },
     onError: (err) => {
       captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
-      toast('Saving failed. Try again.', 'warn');
+      toast("Couldn't save quiet hours. Try again.", 'warn');
     },
   });
 }

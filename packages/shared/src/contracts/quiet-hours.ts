@@ -142,7 +142,10 @@ export function isWithinQuietWindow(config: QuietHoursConfig, at: Date): boolean
  * minute-granular — the seconds past `at`'s minute carry over — and
  * lands at the end's wall-clock time even when a DST change falls in
  * between. An end the clocks skip that night (inside the spring-forward
- * gap) keeps the uncorrected span, which lands after the window.
+ * gap) keeps the uncorrected span — usually after the window, but for a
+ * near-24h window whose only skipped slot IS its end, still inside it;
+ * the quiet guard re-checking at execution time re-defers once more
+ * either way.
  */
 export function msUntilQuietWindowEnd(config: QuietHoursConfig, at: Date): number | null {
   if (!isWithinQuietWindow(config, at)) return null;

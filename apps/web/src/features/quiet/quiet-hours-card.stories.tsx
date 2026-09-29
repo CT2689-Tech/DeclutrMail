@@ -13,6 +13,7 @@
 //   • Error            — fetch failed branch with Retry
 //   • Saving           — PUT in flight, form disabled
 //   • JustSaved        — save succeeded; the save status region says "Saved"
+//                        (screen-reader difference only — same visual render as CrossesMidnight)
 //   • Disconnected     — mailbox disconnected; config still editable
 
 import type { ComponentProps } from 'react';
@@ -39,7 +40,7 @@ const meta: StoryMeta<typeof QuietHoursCard> = {
     docs: {
       description: {
         component:
-          'Per-mailbox quiet-hours config card (U18 — D92/D95). One recurring daily window (local start/end + IANA timezone + enabled). While the window covers now, Autopilot holds its actions, suggestions the user approved included; K/A/U/L/D actions the user takes directly are never deferred. Windows may cross midnight (start > end). The "Quiet now" pill reports the SAME predicate the worker defers on.',
+          'Per-mailbox quiet-hours config card (U18 — D92/D95). One recurring daily window (local start/end + IANA timezone + enabled). While the window covers now, Autopilot holds its actions, suggestions the user approved included; K/A/U/L/D actions the user takes directly are never held. Windows may cross midnight (start > end). The "Quiet now" pill reports the SAME predicate the Autopilot sweep checks before acting.',
       },
     },
   },
@@ -104,7 +105,7 @@ export const Loading: Story<typeof QuietHoursCard> = {
 export const ErrorState: Story<typeof QuietHoursCard> = {
   args: {
     ...baseArgs,
-    state: { kind: 'error', message: "We couldn't load quiet hours (HTTP 500)." },
+    state: { kind: 'error', message: "We couldn't load quiet hours right now." },
     onRetry: noop,
   },
 };

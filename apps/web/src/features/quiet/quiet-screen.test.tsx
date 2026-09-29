@@ -226,7 +226,9 @@ describe('QuietRoute', () => {
     await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
-    await waitFor(() => expect(toast).toHaveBeenCalledWith('Saving failed. Try again.', 'warn'));
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+    );
     expect(captureFeatureException).toHaveBeenCalledWith(expect.anything(), {
       surface: 'quiet',
       reason: 'save_hours_failed',
@@ -262,7 +264,9 @@ describe('QuietRoute', () => {
     unmount();
     failPut?.();
 
-    await waitFor(() => expect(toast).toHaveBeenCalledWith('Saving failed. Try again.', 'warn'));
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+    );
     expect(captureFeatureException).toHaveBeenCalledTimes(1);
   });
 
@@ -378,6 +382,53 @@ describe('QuietRoute', () => {
 
     failing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
+    expect(saveStatus('a@b.com').textContent).toBe('');
+  });
+
+  it('never says Saved after recovering WITHOUT the Retry button', async () => {
+    // A reconnect refetch, or another screen's mailbox-scope cache reset,
+    // can bring the card back to ready with nobody clicking Retry.
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let failing = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          failing
+            ? jsonServerError()
+            : jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
+    );
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
+
+    failing = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    // Recovers on its own — no Retry click.
+    failing = false;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+
     expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
     expect(saveStatus('a@b.com').textContent).toBe('');
   });

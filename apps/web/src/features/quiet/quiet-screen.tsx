@@ -118,11 +118,20 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
     update.mutate(config);
   };
 
-  // "Saved" answers the latest save only: the next edit, or a retry
-  // after a failed refresh, ends it.
+  // "Saved" answers the latest save only: the next edit ends it.
   const endSaved = () => {
     if (update.isSuccess) update.reset();
   };
+
+  // A refresh can fail and later recover without a Retry click — a
+  // reconnect refetch, or another screen's mailbox-scope cache reset.
+  // Ending the save the moment the error STARTS, rather than only when
+  // Retry is clicked, covers every recovery path: by the time the card
+  // is ready again, "Saved" no longer answers for an unrelated read.
+  const { reset: resetUpdate } = update;
+  useEffect(() => {
+    if (query.isError) resetUpdate();
+  }, [query.isError, resetUpdate]);
 
   // Quiet holds nothing while it is off. A failed refresh shows the error
   // card, which a count from the last good read would contradict. A
@@ -145,10 +154,7 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
         justSaved={update.isSuccess}
         onEdit={endSaved}
         onSave={onSave}
-        onRetry={() => {
-          endSaved();
-          void query.refetch();
-        }}
+        onRetry={() => void query.refetch()}
       />
       {heldCount > 0 && (
         <QuietQueueSummary
