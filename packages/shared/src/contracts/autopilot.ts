@@ -49,6 +49,36 @@ export const AutopilotApproveMatchesRequestSchema = z
 export type AutopilotApproveMatchesRequest = z.infer<typeof AutopilotApproveMatchesRequestSchema>;
 
 /**
+ * "Approve all" request body (founder decision 2026-09-29, recommended
+ * option (a)): the server approves exactly the set the preview showed,
+ * never whatever is offerable at click time. A suggestion that arrives
+ * between the preview loading and the confirm click must stay pending.
+ * docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+ *
+ *   - `matchIds` — below the 50-row pending-suggestions page cap, the FE
+ *     already has the exact ids the preview rendered; the server
+ *     approves only those (still scoped to this rule + still offerable).
+ *   - `matchedBefore` — at the cap ("Approve all ~N", N from the
+ *     uncapped `observeDigest.pendingTotal`), the FE cannot enumerate
+ *     every id it never fetched, so it sends the ISO timestamp the
+ *     preview was shown at; the server approves every currently
+ *     offerable suggestion for the rule matched at or before it.
+ */
+export const AutopilotApproveAllRequestSchema = z.union([
+  z
+    .object({
+      matchIds: z.array(UuidSchema).min(1).max(AUTOPILOT_PENDING_PAGE_SIZE),
+    })
+    .strict(),
+  z
+    .object({
+      matchedBefore: z.string().datetime(),
+    })
+    .strict(),
+]);
+export type AutopilotApproveAllRequest = z.infer<typeof AutopilotApproveAllRequestSchema>;
+
+/**
  * Result of either approve endpoint. Idempotency contract mirrors the
  * dismiss endpoint's (D202/D207 Phase 1): a replayed approve returns
  * 200 with `approvedCount=0` + `alreadyResolvedCount` covering the
@@ -134,6 +164,19 @@ export const AutopilotRulePreviewResultSchema = z
     weeklyVolume: AutopilotWeeklyVolumeSchema,
     /** Up to 10 sample matches, metadata only. */
     sample: z.array(AutopilotPreviewSampleSchema).max(10),
+    /**
+     * Matches already `approved, intent_applied=false` for this rule
+     * (`ruleMatchIsQueuedAction()`) — the action sweep will attempt
+     * every one of these the moment the rule becomes runnable again.
+     * Non-zero only for a rule that was Active before it was turned off
+     * or paused. An upper bound: a Protected sender among them is still
+     * re-checked and dismissed at execution time rather than run.
+     * Surfaced so the Resume / turn-on preview never lets a rule start
+     * running approvals the user was never shown (founder decision
+     * 2026-09-29):
+     * docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+     */
+    waitingApprovedCount: z.number().int().nonnegative(),
   })
   .strict();
 export type AutopilotRulePreviewResult = z.infer<typeof AutopilotRulePreviewResultSchema>;

@@ -228,8 +228,17 @@ export function ruleMatchIsStaleAction(): SQL {
  * the sweep's rule check (Guard 3) for the COUNT only — the sweep still
  * loads a paused rule's matches, because an in-flight claim among them
  * has to finish (D105).
+ *
+ * Exported (2026-09-29) so the approve endpoints can refuse to flip a
+ * suggestion to `approved` while its rule is off or paused — approving
+ * used to succeed silently and just wait as `approved,
+ * intent_applied=false` until the rule resumed, which then ran every
+ * waiting approval — irreversible Unsubscribe requests included — at a
+ * moment the user was never shown a preview. Founder decision
+ * 2026-09-29 (a):
+ * docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
  */
-function ruleMatchRuleCanStart(): SQL {
+export function ruleMatchRuleCanStart(): SQL {
   return sql`exists (
   select 1
   from automation_rules ar

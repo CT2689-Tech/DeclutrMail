@@ -172,6 +172,7 @@ export type { TriageVerdict, ProtectionReason } from './triage-enums';
 // U14 — Autopilot approve + dry-run preview contracts (D99/D101/D104).
 export {
   AUTOPILOT_PENDING_PAGE_SIZE,
+  AutopilotApproveAllRequestSchema,
   AutopilotApproveMatchesRequestSchema,
   AutopilotApproveResultSchema,
   AutopilotPreviewSampleSchema,
@@ -179,6 +180,7 @@ export {
   AutopilotWeeklyVolumeSchema,
 } from './autopilot';
 export type {
+  AutopilotApproveAllRequest,
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
