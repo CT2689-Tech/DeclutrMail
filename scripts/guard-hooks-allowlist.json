@@ -184,7 +184,7 @@
       "guard": "verify-no-body-storage",
       "file": "docs/adr/0030-positioning-preview-guarantee.md",
       "hits": [
-        "- `check-microcopy.sh` enforces only the `Bodies read: 0` ban and the D227 verb rule. The"
+        "- `check-microcopy.sh` enforces the privacy-badge ban (`Bodies read: 0` and `Full bodies fetched: 0`,"
       ],
       "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
     },
@@ -208,7 +208,7 @@
       "guard": "verify-no-body-storage",
       "file": "docs/superpowers/plans/2026-07-27-email-foundation.md",
       "hits": [
-        "- **Trust copy (D2.1):** the badge line is exactly `Full bodies fetched: 0`. Never \"Bodies read: 0 forever.\""
+        "- **Trust copy (D7, D228; CLAUDE.md §2.1):** the badge line is exactly `We never fetch or store full email contents.` plus the generated storage list from `packages/shared/src/contracts/gmail-data-inventory.ts`. Counter-style claims are banned — never `Full bodies fetched: 0` or `Bodies read: 0 forever`."
       ],
       "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
     },
