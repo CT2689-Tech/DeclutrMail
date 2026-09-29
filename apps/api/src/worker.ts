@@ -103,6 +103,7 @@ import {
   SENDER_INDEX_SWEEP_QUEUE,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   SenderIndexSweepWorker,
+  rescoreJobId,
   SendersCounterReconciliationWorker,
   SNOOZE_WAKE_INTERVAL_MS,
   SNOOZE_WAKE_QUEUE,
@@ -1759,9 +1760,11 @@ async function bootstrap(): Promise<void> {
   sendersCounterReconciliationSchedulerHandle.unref();
 
   /**
-   * SenderIndexSweepWorker consumer + nightly scheduler (D245, D159 —
-   * cronPolicy). The UNSCOPED half of the derived sender index: full
-   * auto-protection + full `sender_timeseries` reconcile, per mailbox.
+   * SenderIndexSweepWorker consumer + scheduler (D245, D159 — cronPolicy):
+   * once at every worker boot (`enqueueSenderIndexSweep()` below), so a
+   * deploy runs it too, then every 24 hours. The UNSCOPED half of the
+   * derived sender index: full auto-protection + full `sender_timeseries`
+   * reconcile, per mailbox.
    *
    * Both used to run on every Pub/Sub push inside the per-mailbox lock.
    * The push path now runs auto-protection scoped to the senders it
@@ -1772,7 +1775,7 @@ async function bootstrap(): Promise<void> {
    *
    * Takes the same per-mailbox advisory lock as the label actions so a
    * sweep and a sync never write each other's snapshot. concurrency 1 —
-   * it is nightly and holds a lock per mailbox.
+   * it holds a lock per mailbox.
    */
   const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
     SENDER_INDEX_SWEEP_QUEUE,
@@ -1784,6 +1787,18 @@ async function bootstrap(): Promise<void> {
     enqueueContinuation: (payload) =>
       enqueueSenderIndexSweepContinuation(senderIndexSweepSchedulerQueue, payload),
     statementTimeoutMs: workerBudgets.sweepStatementTimeoutMs,
+    // Senders whose Gmail tab the recount changed → ONE score job for
+    // the set (mig 0079). Their verdicts were computed from the old tab.
+    // Keyed on the sweep tick, not the clock: a sweep job that committed
+    // and then failed late re-asks under the same id on its retry, which
+    // the queue ignores instead of running a second re-score.
+    onSendersRecategorized: async (mailboxAccountId, senderKeys, sweepTick) => {
+      await scoreProducerQueue.add(
+        SCORE_JOB,
+        { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs: Date.now() },
+        { jobId: rescoreJobId(mailboxAccountId, sweepTick) },
+      );
+    },
   });
   senderIndexSweepWorker.setObserver(observer);
   senderIndexSweepWorker.setDeadLetterRecorder(deadLetterRecorder);

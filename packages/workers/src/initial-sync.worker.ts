@@ -26,8 +26,18 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { applyAutomaticProtection } from './automatic-protection.js';
+import {
+  applyAutomaticProtection,
+  logProtectionReleases,
+  type AutomaticProtectionResult,
+} from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
+import {
+  markDecisionsStale,
+  messageGmailCategory,
+  senderGmailCategory,
+  type LabelledGmailCategory,
+} from './gmail-category.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
@@ -43,25 +53,6 @@ import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
-
-/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
- * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */
-const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
-  CATEGORY_PERSONAL: 'primary',
-  CATEGORY_PROMOTIONS: 'promotions',
-  CATEGORY_SOCIAL: 'social',
-  CATEGORY_UPDATES: 'updates',
-  CATEGORY_FORUMS: 'forums',
-};
-
-/** Tie-break order when a sender's category counts are equal. */
-const CATEGORY_ORDER: readonly GmailCategory[] = [
-  'primary',
-  'promotions',
-  'social',
-  'updates',
-  'forums',
-];
 
 /** How many `messages.get` calls run in parallel (the `RateLimiter` governs rate). */
 const FETCH_CONCURRENCY = 20;
@@ -211,7 +202,8 @@ function newerUrl(current: DatedUrl | null, url: string, at: Date): DatedUrl {
 interface SenderAggregate {
   firstSeen: Date;
   lastSeen: Date;
-  categoryCounts: Map<GmailCategory, number>;
+  /** Per tab, the sender's messages Gmail labelled with it — unlabelled mail is not counted. */
+  categoryCounts: Map<LabelledGmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
   /**
@@ -1026,7 +1018,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         displayName: who.displayName,
         email: who.email,
         domain: who.domain,
-        gmailCategory: dominantCategory(agg.categoryCounts),
+        gmailCategory: senderGmailCategory(agg.categoryCounts),
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
         unsubscribeMethod,
@@ -1068,6 +1060,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // Gmail is read BEFORE the rebuild transaction opens: no network call
     // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
     const labels = await listMailboxLabels(client);
+    let released: AutomaticProtectionResult['released'] = [];
     await this.deps.db.transaction(async (tx) => {
       signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
@@ -1078,6 +1071,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // written below. The declared `perMailbox` concurrency scope does
       // not help: nothing reads that field.
       await lockSenderIndex(tx, mailboxAccountId);
+      // The tab each sender had before this rebuild. A rescan that moves a
+      // sender's tab must mark its decision stale, as the sweep's recount
+      // does, or the sync-complete score reuses prose written for the old
+      // tab (mig 0079).
+      const priorTab = new Map(
+        (
+          await tx
+            .select({ senderKey: senders.senderKey, gmailCategory: senders.gmailCategory })
+            .from(senders)
+            .where(eq(senders.mailboxAccountId, mailboxAccountId))
+        ).map((r) => [r.senderKey, r.gmailCategory]),
+      );
       await tx
         .delete(senderTimeseries)
         .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
@@ -1127,6 +1132,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
         }
       }
+      await markDecisionsStale(
+        tx,
+        mailboxAccountId,
+        senderRows
+          .filter((row) => {
+            const before = priorTab.get(row.senderKey);
+            return before !== undefined && before !== row.gmailCategory;
+          })
+          .map((row) => row.senderKey),
+      );
       if (timeseriesRows.length > 0) {
         for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
           signal?.throwIfAborted();
@@ -1232,9 +1247,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       await reconcileSenderTimeseries(tx, mailboxAccountId);
 
       signal?.throwIfAborted();
-      await applyAutomaticProtection(tx, mailboxAccountId);
+      released = (await applyAutomaticProtection(tx, mailboxAccountId)).released;
       signal?.throwIfAborted();
     });
+    // After the commit, so the line never claims a release that rolled back.
+    logProtectionReleases(this.workerName, mailboxAccountId, released);
 
     if (orphans > 0) {
       // Should be 0 after a complete run — surfaced, never swallowed.
@@ -1444,8 +1461,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // in the same transaction that re-inserts the row — authoritatively
     // closing any drift the incremental Path B accumulated.
     agg.totalReceived += 1;
-    const category = this.toGmailCategory(row.labelIds);
-    agg.categoryCounts.set(category, (agg.categoryCounts.get(category) ?? 0) + 1);
+    const category = messageGmailCategory(row.labelIds);
+    if (category) agg.categoryCounts.set(category, (agg.categoryCounts.get(category) ?? 0) + 1);
 
     const ym = monthKey(row.internalDate);
     const month = agg.months.get(ym) ?? { volume: 0, readCount: 0 };
@@ -1525,16 +1542,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     });
   }
 
-  /** Map a message's Gmail labels to its category (D222 — never predicted). */
+  /**
+   * Map a message's Gmail labels to its category (D222 — never predicted).
+   * No CATEGORY_* label is `unknown`: it says nothing about the tab.
+   */
   private toGmailCategory(labelIds: string[]): GmailCategory {
-    for (const label of labelIds) {
-      const mapped = CATEGORY_LABEL_MAP[label];
-      if (mapped) {
-        return mapped;
-      }
-    }
-    // No CATEGORY_* label → the message sits in Gmail's Primary tab.
-    return 'primary';
+    return messageGmailCategory(labelIds) ?? 'unknown';
   }
 
   /**
@@ -1875,18 +1888,4 @@ function monthKey(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${year}-${month}-01`;
-}
-
-/** The most frequent category for a sender; ties break by `CATEGORY_ORDER`. */
-function dominantCategory(counts: Map<GmailCategory, number>): GmailCategory {
-  let best: GmailCategory = 'primary';
-  let bestCount = -1;
-  for (const category of CATEGORY_ORDER) {
-    const count = counts.get(category) ?? 0;
-    if (count > bestCount) {
-      best = category;
-      bestCount = count;
-    }
-  }
-  return best;
 }

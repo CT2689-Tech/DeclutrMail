@@ -41,6 +41,34 @@ describe('renderTemplate', () => {
   // author believed. `readRate90d: null` is the production shape for a
   // sender with zero 90-day volume (`computeReadRate` returns null only
   // then), so `monthlyVolume: 0` here mirrors what the API actually sends.
+  it('states what backs an importance protection, not the tab', () => {
+    // A sender with a tie between Primary and Updates keeps an importance
+    // protection it earned, while its tab reads `unknown`: the reason
+    // names the count and the verb, never a Primary inbox.
+    const result = runCascade({
+      isProtected: true,
+      protectionReason: 'gmail_important',
+      hasWrittenTo: false,
+      gmailCategory: 'unknown',
+      starredInLastYear: false,
+      readRate90d: 0.5,
+      firstSeenMonthsAgo: 24,
+      firstSeenDaysAgo: 730,
+      lastSeenDaysAgo: 3,
+      totalMessages: 40,
+      monthlyVolume: 2,
+      spikeRatio: 1,
+      unsubscribeChannel: 'none',
+      isGovDomain: false,
+      userManuallyArchivedCount: 0,
+    });
+
+    const rendered = renderTemplate('Split Sender', result);
+    expect(rendered).toMatch(/marked at least three/);
+    expect(rendered).toMatch(/important/);
+    expect(rendered).not.toMatch(/primary/i);
+  });
+
   it('does not claim a dormant sender sends 0/mo', () => {
     const result = runCascade({
       isProtected: false,

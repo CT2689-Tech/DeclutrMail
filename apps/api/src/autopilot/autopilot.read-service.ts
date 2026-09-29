@@ -204,6 +204,11 @@ export class AutopilotReadService {
           eq(triageDecisions.mailboxAccountId, activityLog.mailboxAccountId),
           eq(triageDecisions.senderKey, activityLog.senderKey),
           sql`${triageDecisions.verdict}::text = ${automationRules.actionKind}::text`,
+          // Not a verdict the Gmail tab recount marked stale (expired AS
+          // OF its own production) — the apply sweep reads those as "no
+          // decision" (`materializeAutopilotSignals`), so evidence for a
+          // suggested rule must not count them either.
+          sql`${triageDecisions.expiresAt} <> ${triageDecisions.producedAt}`,
           // A NULL stored threshold means "use the preset default" at
           // runtime. Keep pattern evidence aligned with the apply worker's
           // effective threshold so resetting a rule cannot accidentally

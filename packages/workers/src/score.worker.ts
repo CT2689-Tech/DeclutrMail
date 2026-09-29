@@ -119,8 +119,8 @@ interface SignalBatch {
  * over D25's weekly sweep, and `cron_sweep` has no producer. Scoring runs
  * on `sync_complete` (full scans only — a sign-in of a synced mailbox no
  * longer re-scans),
- * `signal_change` (first-seen senders), `stale_refresh` and
- * `manual_rescore`.
+ * `signal_change` (first-seen senders, and senders whose Gmail tab the
+ * sender-index sweep corrected), `stale_refresh` and `manual_rescore`.
  */
 const RESCORE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -166,9 +166,9 @@ export type ScoreTrigger =
   | 'explain';
 
 /**
- * One score job. Either runs for a single `senderKey` (signal-change
- * event, manual rescore) or for every active sender in the mailbox
- * (sync-complete sweep).
+ * One score job. Runs for a single `senderKey` (signal-change event,
+ * manual rescore), a named `senderKeys` set (Gmail tab recount), or every
+ * active sender in the mailbox (sync-complete sweep).
  *
  * `producedAtMs` is the trigger event's clock — passed in so the worker
  * is testable without `Date.now()` and so the idempotency key is stable
@@ -176,8 +176,17 @@ export type ScoreTrigger =
  */
 export interface ScoreJobData {
   mailboxAccountId: string;
-  /** If set, score just this sender. If unset, score every active sender. */
+  /** If set, score just this sender. If unset (and no `senderKeys`), score every active sender. */
   senderKey?: string;
+  /**
+   * If set (and `senderKey` is not), score exactly these senders — the
+   * ones a Gmail tab recount marked stale (`sendersAwaitingRescore`). One
+   * job for the set, so the run publishes ONE `score_run_completed` and
+   * one Autopilot sweep follows, not one per sender. Scored under the
+   * `never` explain policy whatever the trigger: their reasoning is the
+   * template (see `processJob`).
+   */
+  senderKeys?: readonly string[];
   trigger: ScoreTrigger;
   producedAtMs: number;
 }
@@ -229,6 +238,14 @@ export interface ScoreJobResult {
    * with nothing to explain.
    */
   explainFailed: number;
+  /**
+   * Rows left on the template BY POLICY: the run's explain policy is
+   * `never` (background work nobody is looking at — a first-seen sender,
+   * or a Gmail tab recount's `senderKeys` set), so no sentence was bought.
+   * Kept apart from `templateExplanations` so "0 from the LLM" on such a
+   * run reads as the policy it is, not as the provider being down.
+   */
+  explanationsNotRequested: number;
   /**
    * Number of LLM calls that hit the per-call timeout (subset of
    * `templateExplanations`). Surfaced so the success log carries enough
@@ -572,8 +589,10 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
     // `${mailbox_id}:${sender_key}:${produced_at}` per the task spec.
-    // `'*'` for the all-senders sync_complete sweep so its key is stable.
-    const key = `${payload.mailboxAccountId}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+    // `'*'` for the all-senders sync_complete sweep so its key is stable;
+    // `'subset'` for a named set, so it never collides with either.
+    const scope = payload.senderKey ?? (payload.senderKeys ? 'subset' : '*');
+    const key = `${payload.mailboxAccountId}:${scope}:${payload.producedAtMs}`;
     // An explain job's `producedAtMs` is the row version it explains —
     // the same number the re-score that wrote that row carried. Marked, so
     // the two never share an `idempotencyRef` in the logs.
@@ -586,6 +605,11 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     }
     if (!payload.producedAtMs || !Number.isFinite(payload.producedAtMs)) {
       throw new ValidationError('score job is missing producedAtMs');
+    }
+    // An empty set is a producer bug, never "score everyone": falling
+    // through to the whole mailbox would re-buy every explanation.
+    if (payload.senderKeys && payload.senderKeys.length === 0) {
+      throw new ValidationError('score job names an empty senderKeys set');
     }
 
     if (payload.trigger === 'explain') {
@@ -600,15 +624,24 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         producedAt: new Date(payload.producedAtMs),
       });
     }
-    const policy = explainPolicy(payload.trigger);
+    // A named set is the Gmail tab recount's re-score. It runs on a timer
+    // across every mailbox and buys no prose, whatever its trigger (the
+    // founder's standing choice: no bulk re-buy on a schedule, 2026-08-19,
+    // 2026-09-25). Nor can it reuse the old sentence — the recount expired
+    // each decision as of its own production — so the template it writes
+    // is true by construction.
+    const policy: ExplainPolicy = payload.senderKeys ? 'never' : explainPolicy(payload.trigger);
 
     const producedAt = new Date(payload.producedAtMs);
     const expiresAt = new Date(payload.producedAtMs + RESCORE_TTL_MS);
 
-    // Which senders to score: one (signal-change) or all (sync-complete sweep).
+    // Which senders to score: one (signal-change), a named set (Gmail tab
+    // recount), or all (sync-complete sweep).
     const senderKeys = payload.senderKey
       ? [payload.senderKey]
-      : await this.listMailboxSenderKeys(payload.mailboxAccountId);
+      : payload.senderKeys
+        ? [...new Set(payload.senderKeys)]
+        : await this.listMailboxSenderKeys(payload.mailboxAccountId);
 
     // CHUNKED, and each chunk isolated.
     //
@@ -630,6 +663,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     let llmCalls = 0;
     let llmReused = 0;
     let llmBlocked = 0;
+    let explanationsNotRequested = 0;
     let screenerFlagged = 0;
     let sendersFailed = 0;
     let chunksFailed = 0;
@@ -693,6 +727,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         if (written.called) llmCalls += 1;
         if (written.reused) llmReused += 1;
         if (written.blocked) llmBlocked += 1;
+        if (policy === 'never' && written.generatedBy === 'template') {
+          explanationsNotRequested += 1;
+        }
         if (written.screenerFlagged) screenerFlagged += 1;
       }
     }
@@ -702,7 +739,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // an empty mailbox on the ops line, and it is how a broken sweep
     // stays broken.
     if (senderKeys.length > 0 && sendersFailed === senderKeys.length) {
-      throw new Error(`score sweep failed for all ${senderKeys.length} senders in the mailbox`);
+      throw new Error(`score run failed for all ${senderKeys.length} senders it was given`);
     }
 
     // The sentences, after the verdicts. "First" is a position in the
@@ -776,6 +813,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       explainCandidates,
       explainSkipped,
       explainFailed,
+      explanationsNotRequested,
       screenerFlagged,
       sendersFailed,
       chunksFailed,
@@ -801,6 +839,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       explainCandidates: 1,
       explainSkipped: 1,
       explainFailed: 0,
+      explanationsNotRequested: 0,
       screenerFlagged: 0,
       sendersFailed: 0,
       chunksFailed: 0,
@@ -848,6 +887,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       explainCandidates: 1,
       explainSkipped: outcome.kind === 'skipped' ? 1 : 0,
       explainFailed: 0,
+      explanationsNotRequested: 0,
       screenerFlagged: 0,
       sendersFailed: 0,
       chunksFailed: 0,
@@ -1810,11 +1850,15 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
  * quarantine's own graduation rule already needs three.
  *
  * NO Primary carve-out. The obvious second clause — "or Gmail files it
- * in Primary, where real correspondence lands" — is unreachable: Primary
- * is Phase A rule 3, which returns Keep at 0.95 before Phase B is
- * consulted at all. A first message from a person never reaches the
- * Screener because it is never unjudged. Writing that clause and
- * watching its test fail is how this comment exists.
+ * in Primary" — is unreachable for the senders it would be written for:
+ * a Primary sender with no unsubscribe link is Phase A rule 3, which
+ * returns Keep at 0.95 before Phase B is consulted at all. What CAN reach
+ * Phase B is a Primary sender whose mail carries an unsubscribe link
+ * (sent through a list or mailing system) and first-contact mail with no
+ * Gmail tab label (mig 0079) — neither is the person-to-person case the
+ * clause means.
+ * Writing that clause and watching its test fail is how this comment
+ * exists.
  *
  * A sender that does not clear the bar is NOT hidden: it keeps its
  * engine verdict, stays in Senders, and remains eligible for Triage. It

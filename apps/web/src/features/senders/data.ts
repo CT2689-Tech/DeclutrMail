@@ -179,9 +179,10 @@ export const GROUPS: GroupMeta[] = [
   },
 ];
 
-export const GROUP_BY_KEY: Record<SenderGroup, GroupMeta> = Object.fromEntries(
+// `unknown` (no tab holds most of the sender's labelled mail) has no group.
+export const GROUP_BY_KEY: Record<Exclude<SenderGroup, 'unknown'>, GroupMeta> = Object.fromEntries(
   GROUPS.map((g) => [g.key, g]),
-) as Record<SenderGroup, GroupMeta>;
+) as Record<Exclude<SenderGroup, 'unknown'>, GroupMeta>;
 
 // ─── Capability predicates ──────────────────────────────────────
 // Unsubscribe never applies to people, nothing destructive for a
@@ -222,9 +223,7 @@ export function canUnsubscribe(s: Sender): boolean {
   // nothing to send, which is a fact about the sender rather than a
   // policy. The former `gmailCategory !== 'primary'` term is gone — it
   // had no server, worker, or scoring counterpart and greyed the button
-  // with no reason text. `deriveDefaultPrimary` already declines to
-  // RECOMMEND Unsubscribe for those senders, which is the right place
-  // for a soft signal.
+  // with no reason text.
   return s.unsubscribeMethod === 'one_click' || s.unsubscribeMethod === 'mailto';
 }
 

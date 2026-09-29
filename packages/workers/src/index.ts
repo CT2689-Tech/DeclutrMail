@@ -414,7 +414,7 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
-export { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+export { rescoreJobId, SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
 export type {
   SenderIndexSweepJobData,
   SenderIndexSweepResult,
