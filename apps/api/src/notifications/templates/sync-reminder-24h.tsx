@@ -38,8 +38,7 @@ export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promi
   const text = [
     `Yesterday DeclutrMail finished scanning ${input.mailboxEmail}.`,
     '',
-    'Your senders are grouped and waiting. Five minutes of triage is',
-    'usually enough to feel the difference.',
+    'Your senders are grouped and waiting.',
     '',
     `Pick it up here: ${triageUrl}`,
     '',
@@ -57,7 +56,7 @@ export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promi
 
   const html = await renderShell(
     <Shell
-      preview="Five minutes of triage is usually enough."
+      preview="Your senders are grouped and waiting."
       footer={footer}
       optOut={{ unsubscribeUrl: input.unsubscribeUrl, preferencesUrl }}
     >
@@ -74,9 +73,9 @@ export async function syncReminder24hEmail(input: SyncReminderEmailInput): Promi
         </a>
         .
       </Text>
+      {/* No time or outcome promise — nothing measures either. */}
       <Text style={{ ...BODY_TEXT, margin: '0 0 26px' }}>
-        Your senders are grouped and waiting. Five minutes of triage is usually enough to feel the
-        difference.
+        Your senders are grouped and waiting.
       </Text>
       <Button href={triageUrl} style={CTA_BUTTON}>
         Open Triage

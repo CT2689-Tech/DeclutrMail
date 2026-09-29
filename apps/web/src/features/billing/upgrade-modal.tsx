@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
@@ -20,7 +20,7 @@ import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, shadow, space, text } = tokens;
 
 /**
  * UpgradeModal (D19/D77/D81 — the U13 modal-grade upgrade flow).
@@ -35,11 +35,10 @@ const { color, font, radius } = tokens;
  *   - `ACTION_TIER_REQUIRED` — an Action Registry selector requires a
  *     higher plan (A3: only all-matching cleanup sits above Free).
  *
- * Copy is tier-appropriate per D123's nudge ladder: Free hears what
- * Plus removes, Plus hears the Pro automation set, Pro gets the
- * honest limit statement with NO upgrade nudge (nothing to sell).
- * The nudged plan's price line carries the D121 30-day money-back note
- * (it applies to every paid plan — see `MONEY_BACK_NOTE`).
+ * Shape: the limit as the title, ONE sentence, ONE button carrying the
+ * nudged plan's price, and a quiet line with the D121 money-back note
+ * + Compare plans. D123's ladder still holds: Pro gets the honest
+ * limit statement with NO upgrade nudge (nothing to sell).
  *
  * Mounted once in the authed app chrome — never per feature screen.
  */
@@ -67,19 +66,14 @@ export function UpgradeModal() {
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
   const regionProvider = useRegionProvider();
-  const isPhone = useIsAtMost('xs');
 
   if (!hit) return null;
 
   // Pro+ tiers have no upgrade path to offer (Team isn't purchasable)
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
-  const proMonthly = quotedPlanPrice('pro', 'monthly', regionProvider);
   const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
   const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
-  const actionTierMonthly = actionTier
-    ? quotedPlanPrice(actionTier, 'monthly', regionProvider)
-    : null;
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
@@ -88,167 +82,161 @@ export function UpgradeModal() {
   const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (actionTier ?? 'pro');
   const upgradeHref = billingIntentPath({ plan: targetPlan, cycle: 'monthly' });
   const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
+  const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
-    <>
-      <div
-        onClick={dismiss}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
-      />
+    // The PreviewSheet grammar and classes — a centred dialog on desktop,
+    // a bottom sheet on phones (pure CSS) — but its own markup: the one
+    // action here is a LINK into /billing, not a button.
+    <div
+      className="dm-scrim dm-sheet-layer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) dismiss();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 150,
+        display: 'flex',
+        justifyContent: 'center',
+        padding: space[4],
+        overflowY: 'auto',
+      }}
+    >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-upgrade-title"
         data-testid="upgrade-modal"
-        style={
-          isPhone
-            ? {
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                maxHeight: '88vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: '16px 16px 0 0',
-                border: `1px solid ${color.border}`,
-                borderBottom: 'none',
-                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-                paddingBottom: 'env(safe-area-inset-bottom)',
-              }
-            : {
-                position: 'fixed',
-                top: '18vh',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(460px, calc(100vw - 32px))',
-                maxHeight: '70vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: 14,
-                border: `1px solid ${color.border}`,
-                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-              }
-        }
+        className="dm-sheet dm-sheet-panel"
+        style={{
+          width: '100%',
+          maxWidth: 440,
+          background: color.card,
+          boxShadow: shadow.modal,
+          fontFamily: font.sans,
+          color: color.fg,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          textAlign: 'center',
+          padding: `${space[8]}px ${space[6]}px ${space[6]}px`,
+        }}
       >
-        <div style={{ padding: '20px 24px 16px' }}>
-          <Eyebrow>
-            {hit.reason === 'free_cap'
-              ? 'Free plan limit'
-              : hit.reason === 'action_tier'
-                ? `${actionTierName} workflow`
-                : 'Inbox limit'}
-          </Eyebrow>
-          <h2
-            id="dm-upgrade-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
-          >
-            {hit.reason === 'free_cap'
-              ? freeCapTitle(hit.details)
-              : hit.reason === 'action_tier'
-                ? actionTierTitle(hit.details)
-                : inboxLimitTitle(hit.details, tierName(tier))}
-          </h2>
-          <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
-            {hit.reason === 'free_cap' ? (
-              <>
-                Completed email actions stay in place
-                {hit.details.resetsAt
-                  ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
-                  : ''}
-                . {TIER_MANIFEST.plus.name} removes the monthly cap for{' '}
-                {quotedPlanPrice('plus', 'monthly', regionProvider)}.
-                {/* The one-line Plus pitch no longer names Pro; this keeps the
-                    other plans one click away (same link as <TierGate>). */}{' '}
-                <Link
-                  href="/pricing"
-                  onClick={dismiss}
-                  style={{ color: color.primary, textDecoration: 'none' }}
-                >
-                  Compare plans →
-                </Link>
-              </>
-            ) : hit.reason === 'action_tier' ? (
-              <>
-                Your plan covers every selection this size and smaller. {actionTierName} unlocks{' '}
-                {hit.details.selector === 'sender-filter'
-                  ? 'all-matching cleanup'
-                  : 'this workflow'}
-                {actionTierMonthly ? ` for ${actionTierMonthly}` : ''}.
-              </>
-            ) : nudge ? (
-              <>
-                Your existing connection{hit.details.connected === 1 ? ' keeps' : 's keep'} working
-                &mdash; only adding is blocked. {TIER_MANIFEST.pro.name} raises the limit to{' '}
-                {TIER_MANIFEST.pro.inboxLimit} connected Gmail accounts for {proMonthly}.
-              </>
-            ) : (
-              <>
-                All {hit.details.connected} in use. Disconnect an account from the account menu to
-                connect a different one.
-              </>
-            )}
-          </p>
-          {nudge ? (
-            <p style={{ fontSize: 12, color: color.fgMuted, margin: '10px 0 0' }}>
-              {quotedPlanPrice(targetPlan, 'monthly', regionProvider)} &mdash; {MONEY_BACK_NOTE}
-            </p>
-          ) : null}
-        </div>
+        <h2
+          id="dm-upgrade-title"
+          style={{
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.022em',
+            lineHeight: 1.2,
+            margin: 0,
+            textWrap: 'balance',
+          }}
+        >
+          {hit.reason === 'free_cap'
+            ? freeCapTitle(hit.details)
+            : hit.reason === 'action_tier'
+              ? actionTierTitle(hit.details)
+              : inboxLimitTitle(hit.details, tierName(tier))}
+        </h2>
+        <p
+          style={{
+            fontSize: text.md,
+            color: color.fgSoft,
+            margin: `${space[2]}px 0 0`,
+            lineHeight: 1.45,
+            maxWidth: '34ch',
+            textWrap: 'pretty',
+          }}
+        >
+          {hit.reason === 'free_cap' ? (
+            <>
+              {TIER_MANIFEST.plus.name} removes the monthly cap
+              {hit.details.resetsAt
+                ? `; otherwise your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
+                : ''}
+              .
+            </>
+          ) : hit.reason === 'action_tier' ? (
+            <>
+              {actionTierName} unlocks{' '}
+              {hit.details.selector === 'sender-filter' ? 'all-matching cleanup' : 'this workflow'}.
+            </>
+          ) : nudge ? (
+            <>
+              {TIER_MANIFEST.pro.name} raises the limit to {TIER_MANIFEST.pro.inboxLimit} connected
+              Gmail accounts.
+            </>
+          ) : (
+            <>Disconnect an account from the account menu to connect a different one.</>
+          )}
+        </p>
 
         <div
           style={{
+            marginTop: space[6],
+            width: '100%',
             display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
+            flexDirection: 'column',
+            gap: space[2],
           }}
         >
           {nudge ? (
             <>
-              <Button tone="default" onClick={dismiss}>
-                Not now
-              </Button>
               <Link
                 href={upgradeHref}
                 onClick={dismiss}
+                data-dm-button=""
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  height: 32,
-                  padding: '0 14px',
+                  justifyContent: 'center',
+                  gap: 8,
+                  height: 50,
+                  padding: '0 28px',
                   background: color.primary,
-                  color: '#FFFFFF',
-                  borderRadius: radius.md,
-                  fontSize: 13,
+                  color: color.fgInverse,
+                  borderRadius: radius.pill,
+                  boxShadow: shadow.button,
+                  fontSize: text.lg,
                   fontWeight: 600,
+                  letterSpacing: '-0.006em',
                   textDecoration: 'none',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {upgradeLabel}
+                {targetMonthly ? (
+                  <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
+                    {' '}
+                    {targetMonthly}
+                  </span>
+                ) : null}
               </Link>
+              <Button tone="ghost" size="lg" onClick={dismiss} style={{ width: '100%' }}>
+                Not now
+              </Button>
             </>
           ) : (
-            <Button tone="default" onClick={dismiss}>
+            <Button tone="default" size="xl" onClick={dismiss} style={{ width: '100%' }}>
               Keep current inboxes
             </Button>
           )}
         </div>
+
+        {/* The money-back note and the plan comparison — once, quiet. */}
+        {nudge ? (
+          <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+            {MONEY_BACK_NOTE} ·{' '}
+            <Link href="/pricing" onClick={dismiss} style={{ color: color.fgMuted }}>
+              Compare plans
+            </Link>
+          </p>
+        ) : null}
       </div>
-    </>
+    </div>
   );
 }
 

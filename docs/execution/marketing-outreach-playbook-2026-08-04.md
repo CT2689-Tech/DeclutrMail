@@ -15,7 +15,7 @@ Companion drafts (not yet posted; rewrite banned privacy copy before using):
 `docs/execution/launch-content-drafts-2026-08-04.md`.
 Positioning source: `docs/adr/0030-positioning-preview-guarantee.md`.
 Public agent file: `.agents/product-marketing.md`.
-Reddit operating skill: `~/.claude/skills/reddit-comments-declutrmail/SKILL.md`.
+Reddit operating skill: `~/.claude/skills/ct-reddit/SKILL.md`.
 
 ---
 
@@ -64,7 +64,7 @@ Verified against this checkout, not against production HTML.
 - No “How did you hear about us?” capture.
 - No founder-mailbox anatomy post (blog slugs are thesis essays only: senders, design-constraint, reversible).
 - No shareable PII-free result card; simulator has no `?ref=simulator` copy link.
-- `docs/execution/launch-content-drafts-2026-08-04.md` still drafts “Full bodies fetched: 0” — rewrite before posting.
+- `docs/execution/launch-content-drafts-2026-08-04.md` drafted “Full bodies fetched: 0”; fixed 2026-09-28 — reconfirm against `packages/shared/src/copy/privacy.ts` wording before posting.
 - Community accounts (F5Bot, PH Coming Soon, HN seasoning, Reddit bio) are founder actions, not repo state.
 
 **Search Console baseline** (`sc-domain:declutrmail.com`, 24 May–21 Aug 2026): how-tos are in the index and matching buyer language, with **zero clicks**. Top impression pages: `/how-to/auto-archive-future-emails-in-gmail` (80, avg pos ~42), `/how-to/bulk-delete-emails-from-one-sender` (65, ~44), `/compare` (12). Do not wait for SEO to become a channel. Use those URLs as crib-sheet destinations for HN/Reddit/PH. Brand query `declutr` still hits the `.ai` property (106 impressions, 0 clicks) — keep the 301 healthy.
@@ -77,7 +77,7 @@ Use these when drafting or reviewing any public sentence. Do not invent a second
 
 | Artifact                               | Role in marketing                                                                                                                                  | Status after this sweep                                                                                                                                                                                                                                |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `reddit-comments-declutrmail` skill    | Drafts Reddit comments. Classify thread first; native Gmail method first; URL in bio.                                                              | Context bank updated 2026-08-24: `.com`, locked privacy headline, preset rules not auto-clean, no category prediction, 7-day Free undo, simulator as the link.                                                                                         |
+| `ct-reddit` skill                      | Drafts Reddit comments. Classify thread first; native Gmail method first; URL in bio.                                                              | Context bank updated 2026-08-24: `.com`, locked privacy headline, preset rules not auto-clean, no category prediction, 7-day Free undo, simulator as the link.                                                                                         |
 | `.agents/product-marketing.md`         | Positioning, personas, objections, banned vocabulary for any marketing surface.                                                                    | Privacy string aligned 2026-08-24. Still pre-customer; do not treat personas as validated.                                                                                                                                                             |
 | `design-system-agent`                  | Gate: K/A/U/L/D, preview-before-mutation, Storybook.                                                                                               | Runs on `apps/web` / `packages/shared` PRs. Social copy that names a sixth verb will fail the hook even if it never ships in UI.                                                                                                                       |
 | `privacy-auditor`                      | Gate: no body/attachment/non-allowlisted-header fetch or storage.                                                                                  | Public claims must match `gmail-data-inventory.ts`. Never upgrade CASA from “Google approved a verification.”                                                                                                                                          |
@@ -207,7 +207,7 @@ with zero audience; that is fine.
 
 - G1 — **SHIPPED in repo** (ratified hero in `hero.tsx`). Confirm production HTML before booking.
 - G2 — **SHIPPED in repo** (`/vs/gmail` + `/vs/unroll-me` in `comparison-data.ts`, linked from `/compare`). Confirm production.
-- G3 — OPEN. 12-answer crib sheet written; the restricted-scope/CASA answer first (it cannot be improvised). Rewrite any draft that still says `Full bodies fetched: 0`.
+- G3 — OPEN. 12-answer crib sheet written; the restricted-scope/CASA answer first (it cannot be improvised). Drafts no longer say `Full bodies fetched: 0` (fixed 2026-09-28); reconfirm against current copy before posting.
 - G4 — OPEN. Attribution live through the OAuth flow (see §6 and F1).
 - G5 — OPEN. PH Coming Soon collecting followers for ≥1 week.
 - G6 — OPEN. "Anatomy of ~N emails" data post published on /blog (query live count at publish; the ~121k figure is stale until re-queried).
@@ -231,7 +231,7 @@ native-Gmail method first, mention the product in one disclosed line only when t
 tools or hits a native limit. r/digitalminimalism: participation only, never links. Product posts
 only in r/SideProject. Every mention carries "I built it." ≤2 replies/day, simulator URL in
 profile bio so most comments need no link, never reuse a comment verbatim, no alt accounts ever.
-The `reddit-comments-declutrmail` skill drafts; a human reads the live thread and clicks submit.
+The `ct-reddit` skill drafts; a human reads the live thread and clicks submit.
 
 ---
 
@@ -420,8 +420,8 @@ Truth gates in the repo are done. Do not spend this week re-editing the hero.
    preview → confirm → undo capture in the same sitting; that file is the X pin and PH gallery
    lead.
 
-3. **Rewrite launch drafts onto the locked privacy headline, then write the 12-answer crib.**
-   `docs/execution/launch-content-drafts-2026-08-04.md` still says `Full bodies fetched: 0`.
+3. **Write the 12-answer crib; launch drafts already carry the locked privacy headline.**
+   `docs/execution/launch-content-drafts-2026-08-04.md` said `Full bodies fetched: 0`; fixed 2026-09-28.
    Every public sentence uses **We never fetch or store full email contents.** + the generated
    list. Crib-sheet answer 1 is restricted-scope / CASA (approved 21 April 2026 — Google
    approved a verification, it did not certify the product). Answer 2 is "Gmail already has

@@ -9,6 +9,13 @@ describe('sync-reminder-24h', () => {
     unsubscribeUrl: 'https://api.declutrmail.com/api/email/unsubscribe?t=tok',
   };
 
+  it('promises no time or outcome it cannot measure', async () => {
+    const email = await syncReminder24hEmail(input);
+    for (const part of [email.text, email.html]) {
+      expect(part).not.toMatch(/usually|minutes?\b|feel the difference/i);
+    }
+  });
+
   it('points opt-out at settings', async () => {
     const email = await syncReminder24hEmail(input);
     expect(email.subject).toBe('Your inbox is still ready');

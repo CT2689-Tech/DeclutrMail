@@ -206,19 +206,17 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 1. Paywall: Archive on /senders → D226 preview → confirm →
   // server 402 FREE_CAP_REACHED → the designed UpgradeModal.
   await page.goto('/senders');
-  const card = page.getByTestId(`sender-card-${BILLING_SEED.archiveSenderId}`);
+  const card = page.getByTestId(`sender-row-${BILLING_SEED.archiveSenderId}`);
   await expect(card).toBeVisible({ timeout: 60_000 });
   await card.scrollIntoViewIfNeeded();
   await card.getByRole('button', { name: 'More actions' }).click();
   await card.getByRole('menuitem', { name: /Archive/ }).click();
 
-  const preview = page.getByRole('dialog');
+  // The preview sheet is named by its title — the verb and the live
+  // count as a question ("Archive 3 emails?", ADR-0042), or "Nothing …"
+  // when the seeded sender has no inbox mail left.
+  const preview = page.getByRole('dialog', { name: /^(Archive .+\?|Nothing .+)$/ });
   await expect(preview).toBeVisible();
-  // QA-archive-20260901-01: the eyebrow used to be a fully generic
-  // "Preview · before anything changes" — unified across every D226
-  // preview surface to name the verb (`previewEyebrowLabel`), a bare
-  // "Preview · Archive" at n=1 with no count suffix.
-  await expect(preview).toContainText('Preview · Archive');
   // A3 client pre-refusal (#401): with the monthly allowance spent, the
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402
@@ -268,10 +266,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // D251 moved the Screener to Plus, and the upsell derives its plan
   // name from the manifest — so the CTA reads Plus, not Pro.
   await page.goto('/screener');
-  await expect(page.getByText('A queue of new senders, ready when you are.')).toBeVisible({
-    timeout: 60_000,
-  });
-  await expect(page.getByRole('button', { name: 'See Plus plans' })).toBeVisible();
+  const screenerGate = page.getByTestId('tier-gate-placeholder');
+  await expect(screenerGate).toBeVisible({ timeout: 60_000 });
+  await expect(screenerGate.getByRole('heading', { name: 'Screener' })).toBeVisible();
+  await expect(screenerGate.getByRole('link', { name: /Plus/ }).first()).toBeVisible();
   const gated = await api.getRaw('/api/screener/queue?limit=5');
   expect(gated.status, 'screener read must 402 for a Free workspace').toBe(402);
   expect((gated.body as ErrorEnvelope).error?.code).toBe('PRO_FEATURE_REQUIRED');
@@ -339,7 +337,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const queueList = page.getByRole('list', { name: 'Senders waiting for your decision' });
   await expect(queueList).toBeVisible({ timeout: 60_000 });
   await expect(queueList).toContainText(BILLING_SEED.screenerSenderName);
-  await expect(page.getByText('A queue of new senders, ready when you are.')).toHaveCount(0);
+  await expect(page.getByTestId('tier-gate-placeholder')).toHaveCount(0);
   const opened = await api.getRaw('/api/screener/queue?limit=5');
   expect(opened.status, 'screener read must open for the Pro workspace').toBe(200);
 

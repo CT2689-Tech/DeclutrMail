@@ -1,11 +1,11 @@
 'use client';
 
-import { Eyebrow, tokens } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import type { Recommendation, Verdict } from './types';
 
-const { color, font, radius } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Canonical user-facing label per verdict — K/A/U/L/D (CLAUDE.md §2.2,
@@ -78,68 +78,48 @@ export function RecommendationBanner({
   return (
     <details
       aria-label={`Optional suggestion: ${verbLabel}`}
-      style={{
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        color: color.fg,
-        fontFamily: font.sans,
-      }}
+      style={{ color: color.fg, fontFamily: font.sans }}
     >
+      {/* A quiet line, not a card: the filled verb above is the page's one
+          call to action, and this is the engine's separate read (D245). */}
       <summary
         style={{
           cursor: 'pointer',
-          padding: '10px 14px',
-          color: color.fgSoft,
-          fontSize: 12.5,
-          fontWeight: 600,
+          color: color.fgMuted,
+          fontSize: text.sm,
         }}
       >
-        Optional suggestion · {verbLabel}
-        {disagreesWithToolbar && (
-          <span style={{ fontWeight: 500, color: color.fgMuted }}>
-            {' '}
-            — highlighted button is {VERDICT_LABEL[toolbarHighlight]}
-          </span>
-        )}
-        {age && <span style={{ fontWeight: 500, color: color.fgMuted }}> · {age}</span>}
+        Suggestion · <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
+        {disagreesWithToolbar && <> — highlighted button is {VERDICT_LABEL[toolbarHighlight]}</>}
+        {age && <> · {age}</>}
       </summary>
       <div
         style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: 10,
-          padding: '12px 14px 14px',
-          borderTop: `1px solid ${color.lineSoft}`,
+          gap: 8,
+          padding: '8px 0 0',
         }}
       >
-        <div>
-          {/* QA-sender-detail-20260902-12: "Suggested action" labelled the
-              REASONING paragraph below it, which explains the suggestion,
-              not an action itself. */}
-          <Eyebrow tone="default">Why</Eyebrow>
-          <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.55 }}>{reasoning}</p>
-        </div>
+        <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55 }}>{reasoning}</p>
         {signals.length > 0 && (
-          <div>
-            <Eyebrow tone="default">Details used</Eyebrow>
-            <ul
-              style={{
-                margin: '6px 0 0',
-                padding: '0 0 0 18px',
-                fontSize: 12.5,
-                color: color.fgSoft,
-                lineHeight: 1.55,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-              }}
-            >
-              {signals.map((signal) => (
-                <li key={signal}>{signal}</li>
-              ))}
-            </ul>
-          </div>
+          <ul
+            aria-label="Details used"
+            style={{
+              margin: 0,
+              padding: '0 0 0 18px',
+              fontSize: text.sm,
+              color: color.fgSoft,
+              lineHeight: 1.55,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            {signals.map((signal) => (
+              <li key={signal}>{signal}</li>
+            ))}
+          </ul>
         )}
         {/* QA-sender-detail-20260902-12: "this suggestion does not change
             email" was the third statement of that fact on one screen —

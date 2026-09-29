@@ -44,11 +44,6 @@ export default async function FollowupsPage() {
         capability="followups"
         title="Follow-ups"
         pitch="Threads where you sent the last message and haven't heard back, sorted oldest first."
-        bullets={[
-          'Grouped by how overdue they are',
-          'Open the thread in Gmail in one click',
-          'Mark resolved when you nudged them another way',
-        ]}
       >
         <FollowupsScreen />
       </TierGate>

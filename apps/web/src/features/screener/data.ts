@@ -74,6 +74,12 @@ export interface ScreenerQueueRow {
     confidence: number;
     reasoning: string;
     /**
+     * Whose sentence `reasoning` is (D24). An opened row still on the
+     * template asks for its LLM sentence; never rendered. Optional, like
+     * the age below: the demo fixtures have no engine behind them.
+     */
+    generatedBy?: 'llm_haiku' | 'template';
+    /**
      * ISO-8601 — when the engine produced this read (D25). Optional
      * because the demo fixtures below have no engine run behind them;
      * absent means "no age to state", not "scored just now".

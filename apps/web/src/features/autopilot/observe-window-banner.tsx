@@ -2,15 +2,17 @@
 
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { bannerSurface } from './autopilot-banner-stack';
 import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
+import styles from './observe-window-banner.module.css';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 /**
  * D10 day-7 prompt — shown once a rule's 7-day Observe window has
@@ -77,31 +79,14 @@ export function ObserveWindowBanner({
   return (
     <div
       role="status"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.border}`,
-        borderRadius: 10,
-        fontFamily: font.sans,
-      }}
+      style={{ ...bannerSurface, display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      <div>
-        <Eyebrow>Observe window complete</Eyebrow>
-        <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, margin: '2px 0 0' }}>
-          {rules.length === 1
-            ? 'Autopilot has collected matches for a week.'
-            : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
-        </div>
-        {/* Under-tier gets no sub-line: each row below already says
-            "Approve or dismiss them below" and links the upgrade. */}
-        {canActivate ? (
-          <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
-            Each rule keeps observing until you switch it to Active.
-          </div>
-        ) : null}
+      {/* Under-tier and entitled alike get no sub-line: each row below
+          already says what to do next. */}
+      <div style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>
+        {rules.length === 1
+          ? 'Autopilot has collected matches for a week.'
+          : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
       </div>
 
       <ul
@@ -121,65 +106,57 @@ export function ObserveWindowBanner({
           const pending = rule.observeDigest?.pendingTotal ?? 0;
           const isDismissing = dismissingRuleId === rule.id;
           return (
-            <li
-              key={rule.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 10,
-                fontSize: 12.5,
-              }}
-            >
-              <span style={{ flex: 1, minWidth: 0, color: color.fgSoft }}>
+            <li key={rule.id} className={styles.rule} style={{ fontSize: text.sm }}>
+              <span className={styles.copy} style={{ color: color.fgSoft }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>{name}</strong>
                 {digest != null
                   ? ` — ${lowerFirst(digest)}.`
                   : ` — ${pending} pending suggestion${pending === 1 ? '' : 's'} collected.`}{' '}
                 {canActivate ? 'Activate?' : 'Approve or dismiss them below.'}
               </span>
-              <Button
-                tone="default"
-                size="sm"
-                onClick={() => onDismiss(rule)}
-                disabled={isDismissing}
-                ariaLabel={
-                  canActivate
-                    ? `Dismiss activation prompt for rule ${name}`
-                    : `Dismiss this prompt for rule ${name}`
-                }
-              >
-                {isDismissing ? 'Dismissing…' : 'Not now'}
-              </Button>
-              {canActivate ? (
+              <div className={styles.actions}>
                 <Button
                   tone="default"
                   size="sm"
-                  onClick={() => onActivate(rule)}
+                  onClick={() => onDismiss(rule)}
                   disabled={isDismissing}
-                  ariaLabel={`Switch rule ${name} to Active`}
+                  ariaLabel={
+                    canActivate
+                      ? `Dismiss activation prompt for rule ${name}`
+                      : `Dismiss this prompt for rule ${name}`
+                  }
                 >
-                  Switch to Active…
+                  {isDismissing ? 'Dismissing…' : 'Not now'}
                 </Button>
-              ) : (
-                // D251 — a link to the upgrade, never a disabled Activate
-                // button. A greyed-out control reads as "temporarily
-                // unavailable"; this states the actual reason and where to
-                // go, and it can never fire a request that 402s.
-                <Link
-                  href={upgradeHref}
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: color.fg,
-                    textDecoration: 'underline',
-                    whiteSpace: 'nowrap',
-                  }}
-                  aria-label={`Run rule ${name} without asking — requires ${actName}`}
-                >
-                  Run without asking → {actName}
-                </Link>
-              )}
+                {canActivate ? (
+                  <Button
+                    tone="default"
+                    size="sm"
+                    onClick={() => onActivate(rule)}
+                    disabled={isDismissing}
+                    ariaLabel={`Switch rule ${name} to Active`}
+                  >
+                    Switch to Active…
+                  </Button>
+                ) : (
+                  // D251 — a link to the upgrade, never a disabled Activate
+                  // button. A greyed-out control reads as "temporarily
+                  // unavailable"; this states the actual reason and where to
+                  // go, and it can never fire a request that 402s.
+                  <Link
+                    href={upgradeHref}
+                    style={{
+                      fontSize: text.sm,
+                      fontWeight: 600,
+                      color: color.fg,
+                      textDecoration: 'underline',
+                    }}
+                    aria-label={`Run rule ${name} without asking — requires ${actName}`}
+                  >
+                    Run without asking → {actName}
+                  </Link>
+                )}
+              </div>
             </li>
           );
         })}

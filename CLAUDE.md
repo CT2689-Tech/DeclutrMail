@@ -895,7 +895,7 @@ For everything else, in priority order:
    "is this allowed?" questions.
 3. **Run the relevant gate agent** locally for a second opinion.
 4. **State your assumption explicitly** and proceed if low-stakes.
-5. **Flag it in `FOUNDER-FOLLOWUPS.md`** if high-stakes and not covered.
+5. **Flag it in `docs/log/founder-followups/`** if high-stakes and not covered.
    Do NOT block, and do NOT invent a D-number.
 
 ### Stop conditions (override "do not block")
@@ -971,21 +971,26 @@ into its own ticket and exclude it from this PR's scope.
 
 Four artifacts, each with a specific role. Do not conflate them.
 
-| File | Lifecycle | Curated by |
+| Where | Lifecycle | Curated by |
 |---|---|---|
-| `LEARNINGS.md` | Append-only | Agents + founder |
-| `MISTAKES.md` | Append-only | Agents (on gate fire) + founder |
-| `FOUNDER-FOLLOWUPS.md` | Append-only; items move Open → Done | Agents + founder |
+| `docs/log/learnings/` | Append-only; one file per entry | Agents + founder |
+| `docs/log/mistakes/` | Append-only; one file per entry | Agents (on gate fire) + founder |
+| `docs/log/founder-followups/` | One file per entry; its **Status:** line goes Open → Done | Agents + founder |
 | `CLAUDE.md` (this file) | Curated; updated via PR | Founder only |
 
+One file per entry: two open PRs that each added an entry to one shared
+file conflicted, and the merge queue ejected the second (founder decision
+2026-09-27). The root `LEARNINGS.md`, `MISTAKES.md` and
+`FOUNDER-FOLLOWUPS.md` are frozen; their entries stay there.
+
 **Critical rule.** Agents do NOT write directly to CLAUDE.md. Agents
-append to `LEARNINGS.md`, `MISTAKES.md`, or `FOUNDER-FOLLOWUPS.md`. The
-founder periodically distills patterns from those logs into CLAUDE.md
-via a `chore/distill-*` PR.
+add entries under `docs/log/learnings/`, `docs/log/mistakes/`, or
+`docs/log/founder-followups/`. The founder periodically distills patterns
+from those logs into CLAUDE.md via a `chore/distill-*` PR.
 
-### LEARNINGS.md — what worked, what surprised us
+### LEARNINGS — what worked, what surprised us
 
-Append when:
+Add an entry when:
 
 - An approach worked unexpectedly well
 - A non-obvious solution was found
@@ -1002,11 +1007,12 @@ Entry format:
 **Distillation trigger:** "promote to CLAUDE.md §X if pattern recurs ≥3 times"
 ```
 
-Lives at repo root: `LEARNINGS.md` (created in PR 1).
+Lives in `docs/log/learnings/`, one file per entry, named
+`YYYY-MM-DD-<kebab-slug>.md`. Older entries: the frozen `LEARNINGS.md`.
 
-### MISTAKES.md — never repeat
+### MISTAKES — never repeat
 
-Append when:
+Add an entry when:
 
 - A gate agent fires (regardless of severity)
 - A bug ships and is caught later
@@ -1024,11 +1030,12 @@ Entry format:
 **Enforcement update:** <hook change | agent prompt update | CLAUDE.md edit | none>
 ```
 
-Lives at repo root: `MISTAKES.md` (created in PR 1).
+Lives in `docs/log/mistakes/`, one file per entry, named
+`YYYY-MM-DD-<kebab-slug>.md`. Older entries: the frozen `MISTAKES.md`.
 
-### FOUNDER-FOLLOWUPS.md — things only the founder can do
+### FOUNDER-FOLLOWUPS — things only the founder can do
 
-Append when an agent or a session identifies an action that the founder
+Add an entry when an agent or a session identifies an action that the founder
 must take outside the code — repo settings toggles, secrets, third-party
 account setup, domain decisions outside the D-plan.
 
@@ -1043,10 +1050,12 @@ Entry format:
 **Status:** Open | Done <YYYY-MM-DD> | Skipped <YYYY-MM-DD> + reason
 ```
 
-Items physically move from the **Open** section to the **Done** section
-when complete; entries are not deleted (the trail matters).
+The status changes by editing that entry's own **Status:** line; entry
+files never move and are not deleted (the trail matters).
 
-Lives at repo root: `FOUNDER-FOLLOWUPS.md`.
+Lives in `docs/log/founder-followups/`, one file per entry, named
+`YYYY-MM-DD-<kebab-slug>.md`. Items already in the frozen
+`FOUNDER-FOLLOWUPS.md` are tracked there, Open → Done section, until Done.
 
 ### Distillation — pattern-based, not calendar-based
 
@@ -1074,17 +1083,17 @@ proceed.
 `SessionStart` reminds:
 
 ```text
-- CLAUDE.md was last modified <N> days ago — re-read if you haven't
-- IMPLEMENTATION-LOG.md state: <auto-derived counts>
-- MISTAKES.md added <N> entries since last session — review headers
+- Read CLAUDE.md (last modified: <date>)
+- Check IMPLEMENTATION-LOG.md for current state
+- Review docs/log/mistakes/ for entries added since your last session
 ```
 
 `Stop` reminds:
 
 ```text
 - Update IMPLEMENTATION-LOG.md if PR shipped
-- Add to LEARNINGS.md if anything was surprising
-- Add to MISTAKES.md if a gate fired or a bug was caught
+- Add a docs/log/learnings/ entry if anything surprised you
+- Add a docs/log/mistakes/ entry if a gate fired or bug was caught
 ```
 
 ### Architecture Decision Records (ADRs)
@@ -1147,9 +1156,9 @@ pnpm --filter @declutrmail/web dev      # web (:3000), foreground
 
 - **Plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (repo mirror at `docs/execution/Implementation-Plan.md` after PR 1)
 - **Implementation log:** `./IMPLEMENTATION-LOG.md`
-- **Learnings log:** `./LEARNINGS.md`
-- **Mistakes log:** `./MISTAKES.md`
-- **Founder follow-ups:** `./FOUNDER-FOLLOWUPS.md`
+- **Learnings log:** `./docs/log/learnings/` (older entries: `./LEARNINGS.md`, frozen)
+- **Mistakes log:** `./docs/log/mistakes/` (older entries: `./MISTAKES.md`, frozen)
+- **Founder follow-ups:** `./docs/log/founder-followups/` (older items: `./FOUNDER-FOLLOWUPS.md`, frozen)
 - **ADRs:** `./docs/adr/`
 - **Agent definitions:** `./.claude/agents/`
 - **Hooks:** `./.claude/hooks/`

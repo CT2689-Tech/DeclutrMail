@@ -1,6 +1,14 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+  EditorialContents,
+} from '@/features/editorial/page';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import {
@@ -8,7 +16,6 @@ import {
   Button,
   EmptyState,
   ErrorState as RetryableErrorState,
-  Eyebrow,
   ScreenIntro,
   tokens,
   useIsAtMost,
@@ -31,27 +38,41 @@ import { useMarkBriefOpened } from './api/use-mark-brief-opened';
 import {
   blockedReason,
   buildNoiseTargets,
+  DEFAULT_NOISE_SELECTION_LIMIT,
   useNoiseArchive,
   type NoiseArchiveOutcome,
   type NoiseTarget,
 } from './api/use-noise-archive';
-import { NoiseArchiveSheet } from './noise-archive-sheet';
+import { flatRowCss } from '@/features/settings/flat-list';
+import { SelectWell } from '@/features/settings/settings-list';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
-const { color, font } = tokens;
+// Opens only from "Archive the noise"; loading it on demand keeps /brief
+// inside its first-load bundle budget. It renders nothing while closed.
+const NoiseArchiveSheet = dynamic(
+  () => import('./noise-archive-sheet').then((m) => m.NoiseArchiveSheet),
+  { ssr: false },
+);
+
+const { color, font, text } = tokens;
+
+/** One column for every Brief state — header, lists and edge states align. */
+const COLUMN = editorialColumnStyle;
+
+const H1_STYLE = editorialTitleStyle;
 
 /**
  * Daily Brief screen (D61, D63, D67, D69, D70).
  *
  * Layout (D61 + D63):
- *   1. ScreenIntro — "Daily Brief" + the local-date the snapshot covers.
- *   2. Narrative — the D62 "sharp executive assistant" pre-amble.
- *   3. Reply section (max 6 per D63).
+ *   1. One-line header — "Daily Brief" + the local-date the snapshot covers.
+ *   2. Scan-friendly section links; the generated narrative is optional.
+ *   3. Review section (the payload's `reply` candidates, max 6 per D63).
  *   4. FYI section (max 4 per D63).
- *   5. Noise section (uncapped) — per-sender checkboxes, default-all
- *      checked, over one bulk Archive (D65). See
+ *   5. Noise section (uncapped) — per-sender checkboxes, with a deliberate
+ *      selection for long generated lists, over one bulk Archive (D65). See
  *      `api/use-noise-archive.ts` for the lifecycle and the exact scope
  *      of the mutation.
  *
@@ -77,8 +98,8 @@ const { color, font } = tokens;
  * layer), so every authenticated mailbox holder sees the real Brief.
  * The tier-gate lands with the billing slice (D17-D21, D77, D81).
  *
- * D62 (provenance) is rendered as a tiny mono-font marker next to the
- * date — `via template` when the LLM fallback ran, omitted when Haiku
+ * D62 (provenance) is rendered as one muted phrase next to the
+ * date — "Standard summary" when the LLM fallback ran, omitted when Haiku
  * succeeded (the "happy path" is silent; we surface the fallback so
  * the user has context for any prose oddities).
  *
@@ -220,16 +241,25 @@ function BriefBody({
   }, [brief.id, brief.openedAt, isToday, markOpened]);
 
   return (
-    <div
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 18,
-        maxWidth: 1180,
-        fontFamily: font.sans,
-      }}
-    >
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <h1 style={H1_STYLE}>Daily Brief</h1>
+        <BriefMeta
+          brief={brief}
+          days={days}
+          selectedRunDate={selectedRunDate}
+          onSelectRunDate={onSelectRunDate}
+        />
+      </div>
       <ScreenIntro
         id="brief"
         title="Daily Brief"
@@ -238,16 +268,9 @@ function BriefBody({
           // switcher reaches back, the same sentence over Saturday's
           // mail is simply wrong, so past days name the day instead.
           isToday
-            ? `A short summary of yesterday's email. Reply first, FYI for context, Noise to clear.`
-            : `A short summary of email from ${dateLabel}. Reply first, FYI for context, Noise to clear.`
+            ? `Yesterday's email in three lists: review first, FYI for context, possible noise to assess.`
+            : `Email from ${dateLabel} in three lists: review first, FYI for context, possible noise to assess.`
         }
-        tip="Open a message in Gmail to reply or review it."
-      />
-      <BriefMeta
-        brief={brief}
-        days={days}
-        selectedRunDate={selectedRunDate}
-        onSelectRunDate={onSelectRunDate}
       />
       <BriefReturnLinks />
 
@@ -255,10 +278,17 @@ function BriefBody({
         <QuietInboxState />
       ) : (
         <>
-          {narrative.trim().length > 0 && <Narrative text={narrative} />}
+          <BriefOverview
+            reviewShown={reply.length}
+            reviewTotal={replyTotal}
+            fyiShown={fyi.length}
+            fyiTotal={fyiTotal}
+            noiseSenders={noise.length}
+          />
+          {narrative.trim().length > 0 && <Narrative narrative={narrative} />}
           {reply.length > 0 && (
             <ReplyFyiSection
-              label="Reply"
+              label="Review"
               rows={reply}
               total={replyTotal}
               isMobile={isMobile}
@@ -300,7 +330,7 @@ function BriefBody({
 // ── Header meta ───────────────────────────────────────────────────────
 
 /**
- * Sub-line under ScreenIntro showing the date the Brief covers + a
+ * Right side of the header: the date the Brief covers + a
  * provenance marker when the LLM fell back to the template (D62). The
  * happy-path Haiku case is silent — surfacing it would add noise to
  * every Brief.
@@ -331,13 +361,12 @@ function BriefMeta({
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        fontSize: 12,
+        fontSize: text.sm,
         color: color.fgMuted,
-        fontFamily: font.mono,
       }}
     >
       {hasHistory ? (
-        <select
+        <SelectWell
           // Fall back to the latest option when the selected day is not
           // among the past ones — the range can narrow (a mailbox switch
           // resets the scoped cache and refetches), and a <select> whose
@@ -350,15 +379,7 @@ function BriefMeta({
           value={selectedDayValue}
           onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
           aria-label="Brief day"
-          style={{
-            fontFamily: font.mono,
-            fontSize: 12,
-            color: color.fg,
-            background: color.card,
-            border: `1px solid ${color.line}`,
-            borderRadius: 6,
-            padding: '3px 6px',
-          }}
+          style={{ fontSize: text.sm, height: 32 }}
         >
           {days.map((row, i) => (
             <option key={row.id} value={i === 0 ? '' : row.runDateLocal}>
@@ -366,14 +387,14 @@ function BriefMeta({
               {i === 0 ? ' — latest' : ''}
             </option>
           ))}
-        </select>
+        </SelectWell>
       ) : (
         <span>{dateLabel}</span>
       )}
       {brief.generatedBy === 'template' && (
         <>
           <span aria-hidden="true">·</span>
-          <span title="A standard summary is shown for this Brief.">Standard summary</span>
+          <span>Standard summary</span>
         </>
       )}
     </div>
@@ -383,22 +404,8 @@ function BriefMeta({
 /** D69/D245 — make the frozen snapshot useful as a return surface. */
 function BriefReturnLinks() {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
-        gap: 12,
-        flexWrap: 'wrap',
-        padding: '10px 12px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 9,
-        background: color.paper,
-        fontSize: 12,
-        color: color.fgMuted,
-      }}
-    >
-      <span>Prepared in the morning — actions since then appear in Activity.</span>
+    <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+      Prepared in the morning.{' '}
       <Link
         href="/activity"
         onClick={() =>
@@ -409,37 +416,174 @@ function BriefReturnLinks() {
         }
         style={{ color: color.primary, textDecoration: 'none', whiteSpace: 'nowrap' }}
       >
-        See what changed →
+        See what changed
       </Link>
-    </div>
+    </p>
   );
 }
 
 // ── Narrative ─────────────────────────────────────────────────────────
 
-function Narrative({ text }: { text: string }) {
+function BriefOverview({
+  reviewShown,
+  reviewTotal,
+  fyiShown,
+  fyiTotal,
+  noiseSenders,
+}: {
+  reviewShown: number;
+  reviewTotal?: number | undefined;
+  fyiShown: number;
+  fyiTotal?: number | undefined;
+  noiseSenders: number;
+}) {
+  const sections = [
+    ...(reviewShown > 0
+      ? [
+          {
+            href: '#brief-reply',
+            label: 'Start here',
+            count: `${reviewShown} to review`,
+            detail:
+              reviewTotal != null && reviewTotal > reviewShown
+                ? `${reviewShown} shown from ${reviewTotal} candidates · check each message`
+                : 'Check each message before responding',
+          },
+        ]
+      : []),
+    ...(fyiShown > 0
+      ? [
+          {
+            href: '#brief-fyi',
+            label: 'For your information',
+            count: `${fyiShown} highlight${fyiShown === 1 ? '' : 's'}`,
+            detail:
+              fyiTotal != null && fyiTotal > fyiShown
+                ? `Selected from ${fyiTotal} candidates`
+                : 'Worth a glance when you have time',
+          },
+        ]
+      : []),
+    ...(noiseSenders > 0
+      ? [
+          {
+            href: '#brief-noise',
+            label: 'Review possible noise',
+            count: `${noiseSenders} sender${noiseSenders === 1 ? '' : 's'}`,
+            detail: 'Review the selection before archiving',
+          },
+        ]
+      : []),
+  ];
   return (
-    <p
+    <nav
+      aria-label="Brief sections"
       style={{
-        margin: 0,
-        padding: '14px 16px',
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
-        fontSize: 14,
-        lineHeight: 1.55,
-        color: color.fg,
-        fontStyle: 'normal',
-        // Cap the reading measure. Without this the paragraph stretches
-        // to the 1180px screen width — ~140 characters a line at 14px,
-        // against the ~65-75 the eye tracks comfortably. The card still
-        // spans the column; only the text column is bounded, so the
-        // narrative doesn't read as a wall above the lists.
-        maxWidth: '68ch',
+        display: 'grid',
+        gap: 10,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
       }}
     >
-      {text}
-    </p>
+      {sections.map((section, index) => (
+        <a
+          key={section.href}
+          href={section.href}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 7,
+            padding: '18px 20px',
+            border: `1px solid ${color.line}`,
+            borderRadius: 10,
+            background: index === 0 ? color.card : color.fill,
+            color: color.fg,
+            textDecoration: 'none',
+          }}
+        >
+          <span
+            style={{
+              color: color.primary,
+              fontSize: text.xs,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {section.label}
+          </span>
+          <strong
+            style={{ fontFamily: font.display, fontSize: 26, fontWeight: 400, lineHeight: 1.1 }}
+          >
+            {section.count}
+          </strong>
+          <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
+            {section.detail} →
+          </span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function Narrative({ narrative }: { narrative: string }) {
+  // Brief snapshots are frozen. Notes generated before the current short,
+  // grounded prompt can remain in history indefinitely; the old long-form
+  // output sometimes asserted events that limited metadata did not prove.
+  if (narrative.trim().split(/\s+/).length > 55) {
+    return (
+      <p
+        style={{
+          margin: 0,
+          padding: '4px 0 16px',
+          borderBottom: `1px solid ${color.lineSoft}`,
+          color: color.fgMuted,
+          fontSize: text.sm,
+          lineHeight: 1.5,
+        }}
+      >
+        An earlier generated note was retired because it may overstate limited email details. Use
+        the linked Review and FYI items below.
+      </p>
+    );
+  }
+  const points = narrative
+    .trim()
+    .split(/\n+|(?<=[.!?])\s+(?=[A-Z])/)
+    .map((point) => point.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean);
+  return (
+    <details
+      style={{
+        padding: '4px 0 16px',
+        borderBottom: `1px solid ${color.lineSoft}`,
+      }}
+    >
+      <summary
+        style={{ cursor: 'pointer', color: color.fgSoft, fontSize: text.sm, fontWeight: 600 }}
+      >
+        Read generated note
+      </summary>
+      <ul
+        style={{
+          maxWidth: '68ch',
+          margin: '14px 0 0',
+          paddingLeft: 22,
+          color: color.fgSoft,
+          fontSize: text.md,
+          lineHeight: 1.6,
+        }}
+      >
+        {points.map((point, index) => (
+          <li key={index} style={{ marginBottom: 10, paddingLeft: 4 }}>
+            {point}
+          </li>
+        ))}
+      </ul>
+      <p style={{ margin: '10px 0 0', color: color.fgMuted, fontSize: text.sm }}>
+        Generated from limited email details. These are observations, not confirmed actions; check
+        important details in Gmail.
+      </p>
+    </details>
   );
 }
 
@@ -457,20 +601,26 @@ function ReplyFyiSection({
   isMobile,
   mailboxEmail,
 }: {
-  label: 'Reply' | 'FYI';
+  label: 'Review' | 'FYI';
   rows: BriefItemWire[];
   /** Pre-cap candidate count from the payload; undefined on older rows. */
   total?: number | undefined;
   isMobile: boolean;
   mailboxEmail: string | null;
 }) {
-  const tone = label === 'Reply' ? 'accent' : 'muted';
   return (
     <section
+      id={label === 'Review' ? 'brief-reply' : 'brief-fyi'}
       aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
-      <SectionHeading label={label} count={rows.length} total={total} tone={tone} />
+      <style>{flatRowCss('dm-brief-row', 70)}</style>
+      <SectionHeading label={label} count={rows.length} total={total} />
+      {label === 'Review' && (
+        <p style={{ margin: '0 0 8px', color: color.fgMuted, fontSize: text.sm }}>
+          These may need attention. Read the message before deciding whether to reply.
+        </p>
+      )}
       <ul
         style={{
           listStyle: 'none',
@@ -478,7 +628,6 @@ function ReplyFyiSection({
           padding: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 6,
         }}
       >
         {rows.map((row) => (
@@ -497,7 +646,8 @@ function ReplyFyiSection({
 /**
  * Noise section (D63) with the D65 bulk-archive control.
  *
- * Every sender is a checkbox row, checked by default. Protected senders
+ * Every sender is a checkbox row. Short lists are checked by default;
+ * longer generated lists require explicit selection. Protected senders
  * (D245) and senders we can no longer address render as rows the user
  * can read but not select, each stating why — the exclusion is visible,
  * never a silent omission from the count.
@@ -531,20 +681,54 @@ function NoiseSection({
 
   const excludedCount = targets.filter((t) => blockedReason(t) !== null).length;
   const selectedCount = archive.selectedTargets.length;
+  const eligibleCount = targets.filter(
+    (t) => blockedReason(t) === null && !archive.archivedKeys.has(t.senderKey),
+  ).length;
 
   return (
     <section
+      id="brief-noise"
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
       aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
+      <style>{flatRowCss('dm-noise-row', 12)}</style>
       <SectionHeading
         label="Noise"
         count={groups.length}
         subline={`${totalMessages} messages ${dayWord}`}
-        tone="soft"
+      />
+      <p style={{ margin: '0 0 4px', color: color.fgMuted, fontSize: text.sm }}>
+        {eligibleCount > DEFAULT_NOISE_SELECTION_LIMIT
+          ? 'This is a suggested list and may include important mail. Choose senders one by one, then inspect the live Inbox preview before anything moves.'
+          : 'Selected senders are ready for one Archive preview. The preview shows what is in your Inbox now before anything moves.'}
+      </p>
+      {eligibleCount > DEFAULT_NOISE_SELECTION_LIMIT && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: text.sm }}>
+          <Link
+            href="/senders"
+            style={{ color: color.fgSoft, fontWeight: 600, textDecoration: 'underline' }}
+          >
+            Explore all senders
+          </Link>
+          <Button
+            tone="ghost"
+            size="sm"
+            disabled={archive.busy || selectedCount === 0}
+            onClick={archive.deselectAll}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
+      <NoiseArchiveBar
+        selectedCount={selectedCount}
+        excludedCount={excludedCount}
+        busy={archive.busy}
+        outcome={archive.outcome}
+        onArchive={archive.openSheet}
       />
       <ul
         style={{
@@ -553,7 +737,6 @@ function NoiseSection({
           padding: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 6,
         }}
       >
         {targets.map((target) => (
@@ -570,14 +753,6 @@ function NoiseSection({
           />
         ))}
       </ul>
-
-      <NoiseArchiveBar
-        selectedCount={selectedCount}
-        excludedCount={excludedCount}
-        busy={archive.busy}
-        outcome={archive.outcome}
-        onArchive={archive.openSheet}
-      />
 
       <NoiseArchiveSheet
         open={archive.sheetOpen}
@@ -622,10 +797,8 @@ export function NoiseArchiveBar({
         justifyContent: 'space-between',
         gap: 12,
         flexWrap: 'wrap',
-        padding: '10px 12px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 9,
-        background: color.paper,
+        padding: '16px 0 0',
+        borderTop: `1px solid ${color.lineSoft}`,
       }}
     >
       {/* Every terminal state gets a PERSISTENT line here. A toast is
@@ -633,7 +806,7 @@ export function NoiseArchiveBar({
           re-arms senders that already archived. */}
       <span
         role={outcome ? 'status' : undefined}
-        style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}
+        style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}
       >
         {outcome ? (
           <NoiseOutcomeLine outcome={outcome} />
@@ -710,14 +883,11 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
   }
 }
 
-type SectionTone = 'accent' | 'muted' | 'soft';
-
 function SectionHeading({
   label,
   count,
   total,
   subline,
-  tone,
 }: {
   label: string;
   count: number;
@@ -727,10 +897,7 @@ function SectionHeading({
    */
   total?: number | undefined;
   subline?: string;
-  tone: SectionTone;
 }) {
-  const dotColor =
-    tone === 'accent' ? color.primary : tone === 'muted' ? color.fgSoft : color.fgMuted;
   // "of N" only when N says something the count does not. This used to
   // read `${count} of ${max}` against the hardcoded cap, so a full
   // section always announced "6 of 6" — a constant dressed as a fact
@@ -741,29 +908,41 @@ function SectionHeading({
     <h2
       style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        alignItems: 'baseline',
+        gap: 6,
         margin: 0,
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        color: color.fgSoft,
-        fontFamily: font.mono,
+        fontFamily: font.display,
+        fontSize: text['2xl'],
+        fontWeight: 400,
+        letterSpacing: '-0.01em',
+        color: color.fg,
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: dotColor,
-        }}
-      />
       {label}
-      <span style={{ color: color.fgMuted, fontWeight: 500 }}>· {countLabel}</span>
-      {subline && <span style={{ color: color.fgMuted, fontWeight: 500 }}>· {subline}</span>}
+      <span
+        style={{
+          color: color.fgMuted,
+          fontSize: text.md,
+          fontWeight: 500,
+          letterSpacing: 0,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        · {countLabel}
+      </span>
+      {subline && (
+        <span
+          style={{
+            color: color.fgMuted,
+            fontSize: text.md,
+            fontWeight: 500,
+            letterSpacing: 0,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          · {subline}
+        </span>
+      )}
     </h2>
   );
 }
@@ -802,20 +981,21 @@ function ReplyFyiRow({
           : 'auto minmax(180px, 1.1fr) minmax(220px, 2fr) auto',
         alignItems: 'center',
         gap: isMobile ? '8px 12px' : 14,
-        padding: '12px 14px',
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
+        minHeight: 72,
+        boxSizing: 'border-box',
+        paddingTop: 12,
+        paddingBottom: 12,
       }}
+      className="dm-brief-row"
     >
-      <Avatar size={32} name={displayName} domain={row.senderEmail} />
+      <Avatar size={44} name={displayName} domain={row.senderEmail} />
       <div style={{ minWidth: 0 }}>
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
-            fontSize: 13.5,
+            fontSize: text.md,
             fontWeight: 600,
             color: color.fg,
             overflow: 'hidden',
@@ -833,12 +1013,12 @@ function ReplyFyiRow({
             {row.senderName || row.senderEmail}
           </span>
         </div>
-        <div style={{ fontSize: 12, color: color.fgMuted, fontFamily: font.mono }}>{domain}</div>
+        <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{domain}</div>
       </div>
       <div
         title={row.subject}
         style={{
-          fontSize: 13,
+          fontSize: text.md,
           color: color.fg,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -879,13 +1059,17 @@ function ReplyFyiRow({
               });
             }}
             style={{
-              fontSize: 12.5,
+              fontSize: text.sm,
               color: color.primary,
+              background: color.primarySoft,
+              borderRadius: 6,
+              padding: '8px 10px',
+              fontWeight: 650,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
             }}
           >
-            Open in Gmail →
+            Open in Gmail
           </a>
         )}
       </div>
@@ -945,12 +1129,13 @@ function NoiseRow({
         gridTemplateColumns: isMobile ? 'auto auto 1fr' : 'auto auto minmax(180px, 2fr) auto auto',
         alignItems: 'center',
         gap: isMobile ? '8px 12px' : 14,
-        padding: '12px 14px',
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
+        minHeight: 72,
+        boxSizing: 'border-box',
+        paddingTop: 12,
+        paddingBottom: 12,
         opacity: archived ? 0.6 : 1,
       }}
+      className="dm-noise-row"
     >
       {selectable ? (
         <input
@@ -959,20 +1144,32 @@ function NoiseRow({
           disabled={busy}
           onChange={() => onToggle(target.senderKey)}
           aria-label={`Include ${target.senderName} in the archive`}
-          style={{ width: 16, height: 16, accentColor: color.primary, cursor: 'pointer' }}
+          style={{
+            width: 18,
+            height: 18,
+            margin: 0,
+            accentColor: color.primary,
+            cursor: 'pointer',
+          }}
         />
       ) : (
         <span
           aria-hidden="true"
-          style={{ width: 16, height: 16, display: 'inline-block', textAlign: 'center' }}
+          style={{
+            width: 18,
+            height: 18,
+            display: 'inline-block',
+            textAlign: 'center',
+            color: color.fgMuted,
+          }}
         >
           {archived ? '✓' : '—'}
         </span>
       )}
-      <Avatar size={32} name={target.senderName || '·'} />
+      <Avatar size={44} name={target.senderName || '·'} />
       <div
         style={{
-          fontSize: 13.5,
+          fontSize: text.md,
           fontWeight: 600,
           color: color.fg,
           overflow: 'hidden',
@@ -985,9 +1182,9 @@ function NoiseRow({
       </div>
       <div
         style={{
-          fontSize: 12,
+          fontSize: text.sm,
           color: color.fgMuted,
-          fontFamily: font.mono,
+          fontVariantNumeric: 'tabular-nums',
           whiteSpace: 'nowrap',
           ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
@@ -1030,13 +1227,13 @@ function NoiseRow({
               });
             }}
             style={{
-              fontSize: 12.5,
+              fontSize: text.sm,
               color: color.primary,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
             }}
           >
-            Open in Gmail →
+            Open in Gmail
           </a>
         )}
       </div>
@@ -1055,9 +1252,14 @@ function SenderReviewLink({ query, label }: { query: string; label: string }) {
           target: 'sender_detail',
         })
       }
-      style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none', whiteSpace: 'nowrap' }}
+      style={{
+        fontSize: text.sm,
+        color: color.primary,
+        textDecoration: 'none',
+        whiteSpace: 'nowrap',
+      }}
     >
-      Review sender →
+      Review sender
     </Link>
   );
 }
@@ -1069,24 +1271,15 @@ function LoadingState() {
     <div
       role="status"
       aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 1180,
-      }}
+      style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      {[64, 56, 56, 56, 56].map((h, i) => (
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <h1 style={H1_STYLE}>Daily Brief</h1>
+      {[0, 1, 2, 3, 4].map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-          }}
+          style={{ height: 72, borderTop: `1px solid ${color.lineSoft}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading today&rsquo;s Brief</span>
@@ -1096,7 +1289,9 @@ function LoadingState() {
 
 function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <h1 style={H1_STYLE}>Daily Brief</h1>
       <RetryableErrorState
         title="We couldn't load your Brief"
         description={loadErrorDescription(error)}
@@ -1115,16 +1310,24 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
  */
 function NotYetState({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <Eyebrow>Daily Brief</Eyebrow>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <h1 style={H1_STYLE}>Daily Brief</h1>
       <EmptyState
-        title="Your Brief lands soon"
-        description={<>The Brief is prepared each morning. Refresh in a few minutes.</>}
+        title="Your Brief is not available yet"
+        description="Briefs summarize the previous day’s email after your inbox has been scanned. There is no edition available for this inbox yet. You can review senders while you wait."
         action={
           <Button tone="primary" onClick={onRefresh}>
             Refresh
           </Button>
         }
+      />
+      <EditorialContents
+        label="While you wait"
+        items={[
+          { href: '/senders', label: 'Review senders' },
+          { href: '/settings#notifications', label: 'Brief delivery settings' },
+        ]}
       />
     </div>
   );

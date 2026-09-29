@@ -27,6 +27,7 @@ import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
   paddleAdjustmentCreated,
+  paddleAdjustmentUpdated,
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
   razorpaySubscriptionEvent,
@@ -640,6 +641,24 @@ describe('BillingWebhookService.process', () => {
     expect(after!.entitlementEndsAt).toEqual(row!.entitlementEndsAt);
   });
 
+  it('a rejected Paddle refund update lifts the pending verdict promptly', async () => {
+    const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_rejected_1' });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+    const refund = paddleAdjustmentCreated({ eventId: 'evt_rejected_2' });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    const rejected = paddleAdjustmentUpdated({ eventId: 'evt_rejected_3', status: 'rejected' });
+    expect(await service.process('paddle', paddle.mapWebhookEvent(rejected), rejected)).toEqual({
+      kind: 'processed',
+      effect: 'cancellation_revoked:refund_rejected',
+    });
+    const [row] = await db.select().from(subscriptions);
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(row!.cancelSource).toBeNull();
+    expect(row!.entitlementEndsAt).toBeNull();
+    expect(workspace!.tier).toBe('plus');
+  });
+
   it('a SECOND live subscription for the workspace is refused loudly (0051 index)', async () => {
     const a = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_lc_1' });
     await service.process('paddle', paddle.mapWebhookEvent(a), a);
@@ -965,6 +984,39 @@ describe('BillingWebhookService.process', () => {
       // the post-flip watch pass selects on these two columns.
       expect(row!.cancelSource).toBe('refund');
       expect(row!.entitlementEndsAt).not.toBeNull();
+    });
+
+    it('an approved Paddle update ends entitlement without waiting for reconciliation', async () => {
+      await seedRefunded();
+      const approved = paddleAdjustmentUpdated({ eventId: 'evt_rs_approved', status: 'approved' });
+      expect(await service.process('paddle', paddle.mapWebhookEvent(approved), approved)).toEqual({
+        kind: 'processed',
+        effect: 'refund_settled',
+      });
+      expect(await service.process('paddle', paddle.mapWebhookEvent(approved), approved)).toEqual({
+        kind: 'duplicate',
+      });
+
+      const [row] = await db.select().from(subscriptions);
+      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(row).toMatchObject({ status: 'canceled', cancelSource: 'refund' });
+      expect(workspace!.tier).toBe('free');
+    });
+
+    it('a partial approved Paddle update leaves the pending full-refund verdict unchanged', async () => {
+      await seedRefunded();
+      const partial = paddleAdjustmentUpdated({
+        eventId: 'evt_rs_partial',
+        status: 'approved',
+        itemTypes: ['partial'],
+      });
+      expect(await service.process('paddle', paddle.mapWebhookEvent(partial), partial)).toEqual({
+        kind: 'ignored',
+      });
+      const [row] = await db.select().from(subscriptions);
+      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(row).toMatchObject({ status: 'active', cancelSource: 'refund' });
+      expect(workspace!.tier).toBe('plus');
     });
 
     // The highest-risk line in the 2026-08-25 change, and the one with no

@@ -35,6 +35,11 @@ export type EventName =
   | 'upgrade_prompt_shown'
   // — Billing surface (D119/D120, U13) —
   | 'checkout_started'
+  | 'checkout_session_created'
+  | 'checkout_failed'
+  | 'checkout_overlay_completed'
+  | 'checkout_overlay_closed'
+  | 'checkout_overlay_blocked'
   | 'plan_change_started'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
@@ -116,6 +121,7 @@ export type DecisionJourney = 'first_relief' | 'daily';
 
 export type PageSurface =
   | 'landing'
+  | 'home'
   | 'senders'
   | 'sender_detail'
   | 'activity'
@@ -308,6 +314,64 @@ export interface EventPayloads {
     founding_pro: boolean;
   };
 
+  /**
+   * POST /api/billing/checkout returned a session. The server claim
+   * (`pending_checkouts`) is written before this response, so this event
+   * is the client-visible proof the row existed — not that the overlay
+   * opened or that a payment completed.
+   */
+  checkout_session_created: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * POST /api/billing/checkout failed. `code` is the envelope error code
+   * when present, else `unknown`. Does not mean a charge happened.
+   */
+  checkout_failed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+    code: string;
+  };
+
+  /**
+   * Provider overlay reported payment complete. The tier still flips
+   * only via the webhook — this is overlay truth, not a grant.
+   */
+  checkout_overlay_completed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * Overlay dismissed without a completed event. Not proof of no
+   * payment (popup / 3DS edges).
+   */
+  checkout_overlay_closed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * Provider script failed to load after a session already existed.
+   * The server claim is held.
+   */
+  checkout_overlay_blocked: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
   /** D117/D120 — self-serve plan change on the existing subscription. */
   plan_change_started: {
     /** Purchasable target tier (D19). */
@@ -352,7 +416,7 @@ export interface EventPayloads {
     /**
      * Positional section on the current public page; page_viewed carries the
      * route family. `nav_sign_in` is the header's secondary returning-user
-     * affordance — kept distinct from `nav` so the primary "Get started" CTA
+     * affordance — kept distinct from `nav` so the primary "Start free" CTA
      * keeps a comparable series after both started emitting (2026-08-05).
      */
     placement: 'nav' | 'nav_sign_in' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
@@ -476,9 +540,10 @@ export interface EventPayloads {
     suggestion_kind: 'preset_rule' | 'sender_policy' | 'preset_change';
     /**
      * How many suggestions this decision covered — 1 for a per-row
-     * dismiss, N for the D104 batch approves (approve-all /
+     * dismiss; for the D104 batch approves, the server's `approvedCount`
+     * (a match skipped as Protected is not counted). Approve-all /
      * approve-selected fire ONE event per mutation, not per row, to
-     * keep cardinality bounded like `rule_fired`).
+     * keep cardinality bounded like `rule_fired`.
      */
     count: number;
   };

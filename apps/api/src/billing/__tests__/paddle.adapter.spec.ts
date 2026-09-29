@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import {
   paddleAdjustmentCreated,
+  paddleAdjustmentUpdated,
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
 } from './fixtures.js';
@@ -253,6 +254,30 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
         paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'partial'] }),
       ),
     ).toMatchObject({ kind: 'ignored' });
+  });
+
+  it('settles an approved full refund and lifts a rejected one on adjustment.updated', () => {
+    expect(adapter.mapWebhookEvent(paddleAdjustmentUpdated({ status: 'approved' }))).toMatchObject({
+      kind: 'refund_settled',
+      providerSubscriptionId: 'sub_01paddle000001',
+    });
+    expect(adapter.mapWebhookEvent(paddleAdjustmentUpdated({ status: 'rejected' }))).toMatchObject({
+      kind: 'cancellation_revoked',
+      reason: 'refund_rejected',
+      providerSubscriptionId: 'sub_01paddle000001',
+    });
+  });
+
+  it('ignores pending, partial, unrelated, and unlinked adjustment updates', () => {
+    for (const event of [
+      paddleAdjustmentUpdated({ status: 'pending_approval' }),
+      paddleAdjustmentUpdated({ status: 'approved', itemTypes: ['partial'] }),
+      paddleAdjustmentUpdated({ status: 'rejected', itemTypes: ['partial'] }),
+      paddleAdjustmentUpdated({ status: 'approved', action: 'credit' }),
+      paddleAdjustmentUpdated({ status: 'approved', subscriptionId: null }),
+    ]) {
+      expect(adapter.mapWebhookEvent(event)).toMatchObject({ kind: 'ignored' });
+    }
   });
 
   it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {

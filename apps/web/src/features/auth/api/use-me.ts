@@ -37,7 +37,8 @@ export { ME_QUERY_KEY, type Me, type MeMailbox, type MeUser, type Tier } from '.
  * QA-sync-20260831-05: this widens the ORIGINAL `['queued', 'syncing']`
  * set with `'failed'`. It does not close the full gap — a mailbox that
  * is already `ready` and silently transitions server-side (e.g. a
- * reconnect re-queues it) is still not observed until the next window
+ * cursor-too-old recovery, or a reconnect after a revoked grant,
+ * re-queues it) is still not observed until the next window
  * focus, because nothing is polling while every mailbox reads `ready`.
  * Fixing that fully means either polling permanently at low frequency or
  * reading `/sync/status` (which DOES poll at `ready`) instead of `me` for

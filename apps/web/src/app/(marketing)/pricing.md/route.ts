@@ -6,7 +6,7 @@
  * or a screenshot. This serves the same numbers as plain text so there is
  * nothing to misparse, and it is generated from `pricing-model.ts` — the
  * same pure derivations over `TIER_MANIFEST` that render `/pricing` — so
- * it cannot quote a price the checkout would not charge.
+ * published base prices stay aligned. The final checkout quote is authoritative.
  *
  * It is deliberately NOT in the sitemap: it is an alternate representation
  * of `/pricing`, not a second indexable page. Discovery is through
@@ -113,12 +113,12 @@ export function GET() {
   const markdown = `# DeclutrMail pricing
 
 > Generated from the same pricing manifest that renders ${origin}/pricing, so
-> these amounts are the amounts checkout charges. If a figure here disagrees
-> with a third-party listing, this file is correct.
+> these are published base plan prices. Taxes, discounts, and the final amount
+> due are confirmed at checkout; a plan price is not a confirmed renewal charge.
 
-Billing runs through Paddle as merchant of record in USD worldwide, and through
-Razorpay in INR for India. Both amounts below are independently set prices, not
-a currency conversion — an India visitor is quoted and charged the INR figure.
+USD prices use the Paddle catalog. INR prices appear only for price points
+provisioned in the Razorpay catalog; they are independently set, not currency
+conversions. Available payment options and currency are confirmed at checkout.
 
 ## Plans
 
@@ -166,6 +166,8 @@ behaviours a user chooses between, not two products and not two plans.
     headers: {
       'Content-Type': 'text/markdown; charset=utf-8',
       'Cache-Control': 'public, max-age=300, s-maxage=3600',
+      'X-Robots-Tag': 'noindex, follow',
+      Link: `<${origin}/pricing>; rel="canonical"`,
     },
   });
 }

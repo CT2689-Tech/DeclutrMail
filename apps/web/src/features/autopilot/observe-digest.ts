@@ -36,8 +36,14 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
   const matched = `${senders} matched in the last 7 days`;
   switch (rule.actionKind) {
     case 'archive':
+      if (rule.presetKey === 'auto_archive_low_engagement') {
+        return `${matched} · ${emails} could be archived if you approve them`;
+      }
       return `Would archive ${emails} now, from ${matched}`;
     case 'later':
+      if (rule.presetKey === 'auto_screen_new_senders') {
+        return `${matched} · ${emails} could move to Later if you approve them`;
+      }
       return `Would move ${emails} to Later now, from ${matched}`;
     case 'unsubscribe':
       // Unsubscribe requests act per sender, not per message. A match

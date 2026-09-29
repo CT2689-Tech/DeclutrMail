@@ -1,9 +1,14 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  EditorialKicker,
+  EditorialContents,
+} from '@/features/editorial/page';
+
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Button, Card, ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import type { ToastTone } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
@@ -12,7 +17,6 @@ import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
-import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import {
   startMailboxConnect,
   startMailboxReactivation,
@@ -29,6 +33,13 @@ import {
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
 import { useMailboxesHealth, type MailboxHealth } from '../api/use-mailbox-health';
+import {
+  DrillRow,
+  PageHeader,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowStatus,
+} from '../settings-list';
 import { VerbTourDialog } from '@/features/tour/verb-tour';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
@@ -36,7 +47,7 @@ import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
 import { VerbTourCard } from './verb-tour-card';
 
-const { color, font } = tokens;
+const { color, font, text, radius, motion } = tokens;
 
 type ReconnectResult = 'success' | 'account_mismatch' | 'target_invalid' | 'cancelled' | 'failed';
 type ConnectStartResult = 'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
@@ -137,44 +148,25 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
 /**
  * Settings index (U23 — D34 / D114 / D116 / D216).
  *
- * D114's left-nav (Linear/Notion-style) over a sectioned single page.
- * The nav is a sticky anchor rail (hidden under 900px — the sections
- * scroll fine on their own); sections map to D114's nine groups,
- * scoped to what exists at launch:
+ * One column of grouped rows (label left, control / value / chevron
+ * right). Groups, in order:
  *
- *   1. Mailboxes      — D114 "Inboxes": health + reconnect (D115)
- *   2. Actions        — D34 skip-sheet toggles (D114 "Triage & Brief",
- *                       scoped: no Brief email exists yet)
- *   3. Notifications  — D165 per-category email toggles
- *   4. Autopilot      — link to /autopilot (rules live there)
- *   5. Quiet hours    — link to /quiet (D114 "Quiet schedules")
- *   6. Senders        — link to /settings/senders (D114 "Sender lists")
- *   7. Privacy & Data — link to /settings/privacy (D116/D217)
- *   8. Help            — compact D245 product glossary
- *   9. Cookies         — D147 consent change/withdrawal card
- *  10. Plan & Billing  — current plan summary + /billing link
- *  11. Account         — signed-in row + #218's deletion section (last)
+ *   1. Gmail accounts — health + reconnect (D115)          #mailboxes
+ *   2. Actions        — D34 preview placement + D38 tour    #actions
+ *   3. Notifications  — D165 email toggles + D64 Brief hour #notifications
+ *   4. More           — drill-ins with no sidebar entry: protected
+ *                       senders, privacy & data (which also holds the
+ *                       D147 cookie choice), help, plan & billing
+ *   5. Account        — signed-in row + the D216 deletion rows #account
+ *
+ * The group ids are deep-link targets (OAuth returns, notification
+ * emails, the no-active-mailbox gate) — renaming one breaks a link
+ * that no test in this package can see.
  *
  * Deep link: `?cancelDeletion=1` (from the D216 "deletion scheduled"
- * email) scrolls to + highlights the Account section so the cancel
+ * email) scrolls to + highlights the Account group so the cancel
  * affordance is in view.
  */
-
-/** Left-nav anchor targets — ids stamped on each SectionLabel. */
-const NAV_SECTIONS = [
-  { id: 'mailboxes', label: 'Mailboxes' },
-  { id: 'actions', label: 'Actions' },
-  { id: 'notifications', label: 'Notifications' },
-  { id: 'autopilot', label: 'Autopilot' },
-  { id: 'quiet-hours', label: 'Quiet hours' },
-  { id: 'senders', label: 'Senders' },
-  { id: 'privacy', label: 'Privacy & data' },
-  { id: 'help', label: 'Help & glossary' },
-  { id: 'cookies', label: 'Cookies' },
-  { id: 'billing', label: 'Plan & billing' },
-  { id: 'account', label: 'Account' },
-] as const;
-
 export function SettingsScreen({
   initialMailboxHealth = {},
 }: {
@@ -330,132 +322,85 @@ export function SettingsScreen({
 
   return (
     <div
+      className="dm-settings-page"
       style={{
+        ...editorialColumnStyle,
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: 28,
-        maxWidth: 1180,
-        padding: '20px 24px 28px',
-        fontFamily: font.sans,
+        flexDirection: 'column',
+        gap: 32,
       }}
     >
-      {/* D114 left-nav — sticky anchor rail; hidden under 900px. */}
-      <nav
-        aria-label="Settings sections"
-        className="dm-settings-nav"
-        style={{
-          position: 'sticky',
-          top: 20,
-          width: 160,
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          paddingTop: 6,
-        }}
-      >
-        {NAV_SECTIONS.map((s) => (
-          <a
-            key={s.id}
-            href={`#${s.id}`}
-            style={{
-              fontSize: 12.5,
-              color: color.fgSoft,
-              textDecoration: 'none',
-              padding: '5px 10px',
-              borderRadius: 6,
-            }}
-          >
-            {s.label}
-          </a>
-        ))}
-      </nav>
-      <style>{`@media (max-width: 899px) { .dm-settings-nav { display: none !important; } }`}</style>
-
+      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          maxWidth: 760,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="reconnect-result-status"
+        style={screenReaderOnlyStyle}
+      >
+        {reconnectAnnouncement?.liveRole === 'status' ? reconnectAnnouncement.message : ''}
+      </div>
+      <div
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+        data-testid="reconnect-result-alert"
+        style={screenReaderOnlyStyle}
+      >
+        {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
+      </div>
+      <EditorialKicker>Your workspace / Preferences</EditorialKicker>
+      <PageHeader title="Settings" />
+      <EditorialContents
+        items={[
+          { href: '#mailboxes', label: 'Gmail accounts' },
+          { href: '#actions', label: 'Action previews' },
+          { href: '#notifications', label: 'Notifications' },
+          { href: '#more', label: 'Policies and help' },
+          { href: '#account', label: 'Account' },
+        ]}
+      />
+      <ScreenIntro
+        id="settings"
+        title="Settings"
+        body="Mailboxes, action previews, notifications, privacy and plan."
+      />
+
+      <MailboxesCard
+        mailboxes={me.mailboxes}
+        activeMailboxId={me.activeMailboxId}
+        inboxLimit={manifestTier?.inboxLimit ?? null}
+        healthById={healthById}
+        highlightMailboxId={highlightMailboxId}
+        onConnect={connectMailbox}
+        onReactivate={reactivateMailbox}
+      />
+
+      <ActionSheetPrefsCard
+        state={sheetPrefsState}
+        pendingWire={pendingWire}
+        saveFailed={updateSheetPrefs.isError}
+        onToggle={(wire, next) => {
+          setPendingWire(wire);
+          updateSheetPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingWire(null) });
         }}
       >
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          data-testid="reconnect-result-status"
-          style={screenReaderOnlyStyle}
-        >
-          {reconnectAnnouncement?.liveRole === 'status' ? reconnectAnnouncement.message : ''}
-        </div>
-        <div
-          role="alert"
-          aria-live="assertive"
-          aria-atomic="true"
-          data-testid="reconnect-result-alert"
-          style={screenReaderOnlyStyle}
-        >
-          {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
-        </div>
-        <ScreenIntro
-          id="settings"
-          title="Settings"
-          body={
-            <>
-              Your account-wide preferences — mailboxes, action behavior, email notifications,
-              privacy, and plan. Per-sender rules live under{' '}
-              <Link href="/settings/senders" style={{ color: color.primary }}>
-                protected senders
-              </Link>
-              .
-            </>
-          }
-        />
-
-        <SectionLabel id="mailboxes" focusable>
-          Mailboxes
-        </SectionLabel>
-        <MailboxesCard
-          mailboxes={me.mailboxes}
-          activeMailboxId={me.activeMailboxId}
-          inboxLimit={manifestTier?.inboxLimit ?? null}
-          healthById={healthById}
-          highlightMailboxId={highlightMailboxId}
-          onConnect={connectMailbox}
-          onReactivate={reactivateMailbox}
-        />
-
-        <SectionLabel id="actions">Actions</SectionLabel>
-        <ActionSheetPrefsCard
-          state={sheetPrefsState}
-          pendingWire={pendingWire}
-          saveFailed={updateSheetPrefs.isError}
-          onToggle={(wire, next) => {
-            setPendingWire(wire);
-            updateSheetPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingWire(null) });
-          }}
-        />
         <VerbTourCard onReplay={() => setTourOpen(true)} />
-        {tourOpen && <VerbTourDialog onClose={() => setTourOpen(false)} />}
+      </ActionSheetPrefsCard>
+      {tourOpen && <VerbTourDialog onClose={() => setTourOpen(false)} />}
 
-        <SectionLabel id="notifications">Notifications</SectionLabel>
-        <EmailPrefsCard
-          state={emailPrefsState}
-          pendingWire={pendingEmailWire}
-          saveFailed={updateEmailPrefs.isError}
-          onToggle={(wire, next) => {
-            setPendingEmailWire(wire);
-            updateEmailPrefs.mutate(
-              { [wire]: next },
-              { onSettled: () => setPendingEmailWire(null) },
-            );
-          }}
-        />
-
-        {briefUnlocked && (
+      <EmailPrefsCard
+        state={emailPrefsState}
+        pendingWire={pendingEmailWire}
+        saveFailed={updateEmailPrefs.isError}
+        onToggle={(wire, next) => {
+          setPendingEmailWire(wire);
+          updateEmailPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingEmailWire(null) });
+        }}
+      >
+        {/* The group's own row already reports a loading / failed read;
+            the Brief row joins only once there is an hour to show. */}
+        {briefUnlocked && briefPrefsState.kind === 'ready' && (
           <BriefPrefsCard
             state={briefPrefsState}
             timezone={me.user.timezone}
@@ -464,52 +409,15 @@ export function SettingsScreen({
             onChange={(hour) => updateBriefPrefs.mutate({ hour })}
           />
         )}
+      </EmailPrefsCard>
 
-        <SectionLabel id="autopilot">Autopilot</SectionLabel>
-        <LinkCard
-          title="Autopilot rules"
-          description="Preset rules that keep known noise moving on their own — review, pause, or resume them from the Autopilot screen."
-          href="/autopilot"
-          cta="Open Autopilot"
-        />
-
-        <SectionLabel id="quiet-hours">Quiet hours</SectionLabel>
-        <LinkCard
-          title="Quiet hours"
-          description="A daily window when Autopilot holds its actions instead of running them — your own actions always go through."
-          href="/quiet"
-          cta="Open Quiet hours"
-        />
-
-        <SectionLabel id="senders">Senders</SectionLabel>
-        <LinkCard
-          title="Protected senders"
-          description="Senders that automatic rules and bulk actions skip — whether you protected them or DeclutrMail did. Turn protection on or off from a sender's detail page."
-          href="/settings/senders"
-          cta="Open protected senders"
-        />
-
-        <SectionLabel id="privacy">Privacy &amp; data</SectionLabel>
-        <LinkCard
-          title="Privacy &amp; Data"
-          description="Exactly what DeclutrMail stores (and never stores), your data export, and retention details."
-          href="/settings/privacy"
-          cta="Open Privacy & Data"
-        />
-
-        <SectionLabel id="help">Help &amp; glossary</SectionLabel>
-        <LinkCard
-          title="Product glossary"
-          description="Plain-language definitions for sender controls, Autopilot modes, Later, Activity Undo, and Gmail Trash recovery."
-          href="/settings/help"
-          cta="Open product glossary"
-        />
-
-        <SectionLabel id="cookies">Cookies</SectionLabel>
-        <CookiePreferences />
-
-        <SectionLabel id="billing">Plan &amp; billing</SectionLabel>
-        <PlanCard
+      {/* Autopilot and Quiet hours live in the sidebar; these are the
+          destinations that have no other way in. */}
+      <SettingsGroup id="more" title="Policies and help">
+        <DrillRow href="/settings/senders" label="Protected senders" />
+        <DrillRow href="/settings/privacy" label="Privacy & data" />
+        <DrillRow href="/settings/help" label="Help & glossary" />
+        <PlanRow
           state={
             billing.isPending
               ? { kind: 'loading' }
@@ -527,148 +435,67 @@ export function SettingsScreen({
                   }
           }
         />
+      </SettingsGroup>
 
-        <SectionLabel id="account-label">Account</SectionLabel>
-        <div
-          ref={accountRef}
-          id="account"
-          data-testid="settings-account-section"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            scrollMarginTop: 24,
-            borderRadius: 14,
-            outline: highlightAccount ? `2px solid ${color.danger}` : 'none',
-            outlineOffset: 4,
-            transition: 'outline-color 300ms',
-          }}
-        >
-          <Card padding={0}>
-            <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
-                Signed in as
-              </h3>
-              <p style={{ ...mutedTextStyle, fontFamily: font.mono, fontSize: 12.5 }}>
-                {me.user.email}
-              </p>
-            </div>
-          </Card>
+      <div
+        ref={accountRef}
+        id="account"
+        data-testid="settings-account-section"
+        style={{
+          scrollMarginTop: 24,
+          borderRadius: radius.xl,
+          outline: highlightAccount ? `2px solid ${color.danger}` : 'none',
+          outlineOffset: 6,
+          transition: `outline-color ${motion.base} ${motion.ease}`,
+        }}
+      >
+        <SettingsGroup title="Account">
+          <SettingsRow label="Signed in as">
+            <span style={{ fontFamily: font.sans, fontSize: text.md, color: color.fgMuted }}>
+              {me.user.email}
+            </span>
+          </SettingsRow>
           <AccountDeletionSection />
-        </div>
+        </SettingsGroup>
       </div>
     </div>
   );
 }
 
-function SectionLabel({
-  id,
-  children,
-  focusable = false,
-}: {
-  id: string;
-  children: React.ReactNode;
-  focusable?: boolean;
-}) {
-  return (
-    <div
-      id={id}
-      tabIndex={focusable ? -1 : undefined}
-      style={{
-        fontFamily: font.mono,
-        fontSize: 10.5,
-        fontWeight: 500,
-        letterSpacing: '0.14em',
-        textTransform: 'uppercase',
-        color: color.fgMuted,
-        margin: '8px 0 -8px',
-        scrollMarginTop: 24,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-type PlanCardState =
+type PlanRowState =
   | { kind: 'loading' }
   /** 503 BILLING_DISABLED — the flag is off. Deterministic, so no retry. */
   | { kind: 'disabled' }
   | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
-/** Plan & Billing summary — link-only; the /billing screen owns the rest. */
-function PlanCard({ state }: { state: PlanCardState }) {
+/**
+ * Plan & billing drill-in — the only way to /billing once it leaves the
+ * sidebar, so the link renders in EVERY state; a failed read adds a
+ * retry row under it instead of replacing it.
+ */
+function PlanRow({ state }: { state: PlanRowState }) {
   return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
-          Plan &amp; Billing
-        </h3>
-        {state.kind === 'loading' ? (
-          <p role="status" style={mutedTextStyle}>
-            Loading plan…
-          </p>
-        ) : state.kind === 'disabled' ? (
-          <p style={mutedTextStyle}>Billing is not enabled in this environment yet.</p>
-        ) : state.kind === 'error' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <span style={{ fontSize: 13, color: color.danger }}>
-              Could not load your plan right now.
-            </span>
-            <Button tone="default" size="sm" onClick={state.onRetry}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <p style={mutedTextStyle}>
-            Current plan:{' '}
-            <strong style={{ color: color.fg, fontWeight: 600 }}>{state.planName}</strong>
-            {state.foundingMember ? ' · Founding member' : ''}
-          </p>
-        )}
-        <div style={{ marginTop: 12 }}>
-          <Link href="/billing" style={{ textDecoration: 'none' }}>
-            <Button tone="default">Manage plan &amp; billing →</Button>
-          </Link>
-        </div>
-      </div>
-    </Card>
+    <>
+      <DrillRow
+        href="/billing"
+        label="Plan & billing"
+        value={
+          state.kind === 'loading' ? (
+            <span role="status">Loading plan…</span>
+          ) : state.kind === 'disabled' ? (
+            'Not enabled'
+          ) : state.kind === 'ready' ? (
+            `${state.planName}${state.foundingMember ? ' · Founding member' : ''}`
+          ) : null
+        }
+      />
+      {state.kind === 'error' && (
+        <SettingsRowStatus state={state} loadingLabel="" errorLabel="Could not load your plan." />
+      )}
+    </>
   );
 }
-
-function LinkCard({
-  title,
-  description,
-  href,
-  cta,
-}: {
-  title: React.ReactNode;
-  description: string;
-  href: string;
-  cta: string;
-}) {
-  return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>{title}</h3>
-        <p style={mutedTextStyle}>{description}</p>
-        <div style={{ marginTop: 12 }}>
-          <Link href={href} style={{ textDecoration: 'none' }}>
-            <Button tone="default">{cta}</Button>
-          </Link>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-const mutedTextStyle = {
-  fontSize: 13,
-  color: color.fgSoft,
-  lineHeight: 1.55,
-  margin: '8px 0 0',
-} as const;
 
 const screenReaderOnlyStyle = {
   position: 'absolute',

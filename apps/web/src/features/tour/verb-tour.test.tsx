@@ -177,7 +177,8 @@ describe('VerbTourDialog (the Settings replay)', () => {
     mount(<VerbTourDialog onClose={() => {}} />);
 
     const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    // Phone layout is pure CSS (the shared sheet's ≤520px rule).
+    expect(dialog).toHaveClass('dm-sheet-panel');
     expect(screen.getByText('Five decisions, one sender at a time')).toBeInTheDocument();
   });
 

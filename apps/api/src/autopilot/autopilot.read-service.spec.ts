@@ -68,7 +68,7 @@ async function seedMailbox(db: Db, email: string): Promise<string> {
  *
  * The apply worker only ever writes a `rule_match_log` row for a sender
  * it read out of the senders index, and the read service now enforces
- * that ordering (`SENDER_INDEXED_AT_MATCH_TIME`) so a suggestion cannot
+ * that ordering (`ruleMatchIsPendingSuggestion`) so a suggestion cannot
  * outlive — or be resurrected by — a resync that rebuilt the index.
  * Fixtures that insert a bare match must therefore index the sender
  * too, and index it BEFORE the match: `createdAt` is backdated so every
@@ -209,8 +209,11 @@ describe('AutopilotReadService', () => {
         protected?: boolean;
         reverted?: boolean;
         pruned?: boolean;
+        /** Marked stale by the Gmail tab recount: expired AS OF production. */
+        marked?: boolean;
       } = {},
     ) {
+      const producedAt = new Date(Date.now() - 86_400_000);
       await db.insert(triageDecisions).values({
         mailboxAccountId,
         senderKey,
@@ -218,7 +221,8 @@ describe('AutopilotReadService', () => {
         confidence: options.confidence ?? '0.95',
         reasoning: 'Archive pattern evidence',
         generatedBy: 'template',
-        expiresAt: new Date(Date.now() + 86_400_000),
+        producedAt,
+        expiresAt: options.marked ? producedAt : new Date(Date.now() + 86_400_000),
       });
       if (options.protected) {
         await db.insert(senderPolicies).values({
@@ -277,6 +281,19 @@ describe('AutopilotReadService', () => {
         dailyActionCap: 100,
       });
       expect(Object.keys(suggestion!)).not.toContain('senderKey');
+    });
+
+    it('does not count a verdict the Gmail tab recount marked stale', async () => {
+      // A marked verdict was computed from a guessed tab. The apply sweep
+      // reads it as "no decision", so it cannot be evidence that the rule
+      // would have acted.
+      await seedArchiveDecision(mailboxA, 'eligible-1');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      await seedArchiveDecision(mailboxA, 'marked', { marked: true });
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({ evidenceCount: 3 });
     });
 
     it('keeps reverted evidence excluded after undo-journal pruning clears its token', async () => {
@@ -385,8 +402,54 @@ describe('AutopilotReadService', () => {
   });
 
   describe('patchRule', () => {
-    it('toggles enabled + flips mode (and resets modeChangedAt)', async () => {
+    it('keeps low-engagement Archive review-only, including legacy Active rows', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await expect(
+        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('Low-engagement archive matches require review');
+
+      const enabled = await service.patchRule(mailboxA, ruleId, {
+        enabled: true,
+        mode: 'observe',
+      });
+      expect(enabled?.mode).toBe('observe');
+      expect(enabled?.observeWindowEndsAt).toBeNull();
+      expect(enabled?.observeWindowElapsed).toBe(false);
+
+      await db
+        .update(automationRules)
+        .set({ mode: 'active' })
+        .where(eq(automationRules.id, ruleId));
+      const projected = await service.getRule(mailboxA, ruleId);
+      expect(projected?.mode).toBe('observe');
+      expect(projected?.observeWindowEndsAt).toBeNull();
+      expect(projected?.observeWindowElapsed).toBe(false);
+    });
+
+    it('keeps new-sender matches review-only, including legacy Active rows', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_screen_new_senders');
+      await expect(
+        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('New-sender matches require review');
+      const enabled = await service.patchRule(mailboxA, ruleId, {
+        enabled: true,
+        mode: 'observe',
+      });
+      expect(enabled?.mode).toBe('observe');
+      expect(enabled?.observeWindowEndsAt).toBeNull();
+
+      // Rows activated before this guard may still exist in a mailbox.
+      await db
+        .update(automationRules)
+        .set({ mode: 'active' })
+        .where(eq(automationRules.id, ruleId));
+      const projected = await service.getRule(mailboxA, ruleId);
+      expect(projected?.mode).toBe('observe');
+      expect(projected?.observeWindowElapsed).toBe(false);
+    });
+
+    it('toggles enabled + flips mode (and resets modeChangedAt)', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       const before = await service.getRule(mailboxA, ruleId);
       const beforeModeChanged = new Date(before!.modeChangedAt).getTime();
       // Wait a moment so the modeChangedAt reset is observable.
@@ -422,7 +485,7 @@ describe('AutopilotReadService', () => {
     // `active` rule acts on, unattended — Observe turns the widened set
     // back into suggestions someone approves.
     it('a threshold change drops an active rule back to Observe', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
       await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' });
       const updated = await service.patchRule(mailboxA, ruleId, { confidenceThreshold: 0.6 });
       expect(updated!.mode).toBe('observe');
@@ -453,7 +516,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('an explicit mode in the same patch wins over the Observe reset', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
       const updated = await service.patchRule(mailboxA, ruleId, {
         confidenceThreshold: 0.8,
         mode: 'active',
@@ -533,7 +596,7 @@ describe('AutopilotReadService', () => {
 
   describe('pauseAll', () => {
     it('flips all non-paused rules to paused; idempotent on second call', async () => {
-      const ruleIdA = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleIdA = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, ruleIdA, { enabled: true, mode: 'active' });
 
       const first = await service.pauseAll(mailboxA);
@@ -596,7 +659,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('flips active rules to observe with patchRule mode-change semantics', async () => {
-      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const activeRule = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, activeRule, {
         enabled: true,
         mode: 'active',
@@ -627,7 +690,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('neutralizes ONLY unapplied, unclaimed active-provenance matches', async () => {
-      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const activeRule = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
       const [kA, kB, kC, kD] = FIXTURE_SENDER_KEYS;
 
@@ -687,7 +750,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('never touches another workspace (tenant isolation)', async () => {
-      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      const ruleB = await getRuleId(db, mailboxB, 'newsletter_graveyard');
       await service.patchRule(mailboxB, ruleB, { enabled: true, mode: 'active' });
       await seedActiveMatch(mailboxB, ruleB, FIXTURE_SENDER_KEYS[4]!);
 
@@ -700,7 +763,7 @@ describe('AutopilotReadService', () => {
 
     it('SELF-ENFORCES the tier: a workspace granting autopilot-active is a no-op', async () => {
       const wsId = await workspaceOf(mailboxA);
-      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const activeRule = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
       await seedActiveMatch(mailboxA, activeRule, FIXTURE_SENDER_KEYS[0]!);
       await db.update(workspaces).set({ tier: 'pro' }).where(eq(workspaces.id, wsId));
@@ -723,7 +786,7 @@ describe('AutopilotReadService', () => {
       // re-claimable. Excluding it left the match approved-unapplied
       // forever — undismissable (claim exists) yet primed to execute on
       // a re-upgrade (arch-gate finding, 2026-08-04).
-      const activeRule = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const activeRule = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, activeRule, { enabled: true, mode: 'active' });
       const matchId = await seedActiveMatch(mailboxA, activeRule, FIXTURE_SENDER_KEYS[0]!);
       await db.insert(actionJobs).values({
@@ -750,11 +813,11 @@ describe('AutopilotReadService', () => {
     });
 
     it('demoteUnattendedRulesForUnentitledTiers converges every under-entitled workspace and no other', async () => {
-      const ruleA = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleA = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, ruleA, { enabled: true, mode: 'active' });
       await seedActiveMatch(mailboxA, ruleA, FIXTURE_SENDER_KEYS[0]!);
       // Workspace B is Pro — entitled, must remain untouched.
-      const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
+      const ruleB = await getRuleId(db, mailboxB, 'newsletter_graveyard');
       await service.patchRule(mailboxB, ruleB, { enabled: true, mode: 'active' });
       await db
         .update(workspaces)
@@ -1152,7 +1215,7 @@ describe('AutopilotReadService', () => {
     it('supersedes the rule’s pending Observe matches and publishes one sweep intent', async () => {
       const { ruleId, matchId } = await seedObservePending(
         mailboxA,
-        'auto_archive_low_engagement',
+        'newsletter_graveyard',
         'd'.repeat(64),
       );
 
@@ -1216,12 +1279,12 @@ describe('AutopilotReadService', () => {
     });
 
     it('supersedes only the activated rule’s matches, not a sibling rule’s', async () => {
-      const activated = await seedObservePending(
+      const activated = await seedObservePending(mailboxA, 'newsletter_graveyard', 'd'.repeat(64));
+      const untouched = await seedObservePending(
         mailboxA,
-        'auto_archive_low_engagement',
-        'd'.repeat(64),
+        'auto_unsubscribe_noisy',
+        'f'.repeat(64),
       );
-      const untouched = await seedObservePending(mailboxA, 'newsletter_graveyard', 'f'.repeat(64));
 
       await service.patchRule(mailboxA, activated.ruleId, { enabled: true, mode: 'active' });
 
@@ -1234,7 +1297,7 @@ describe('AutopilotReadService', () => {
       // Rewriting that row would detach the action from its match.
       const { ruleId, matchId } = await seedObservePending(
         mailboxA,
-        'auto_archive_low_engagement',
+        'newsletter_graveyard',
         'd'.repeat(64),
       );
       await db
@@ -1256,7 +1319,7 @@ describe('AutopilotReadService', () => {
       // is untouched.
       const { ruleId, matchId } = await seedObservePending(
         mailboxA,
-        'auto_archive_low_engagement',
+        'newsletter_graveyard',
         'd'.repeat(64),
       );
       const before = await service.getRule(mailboxA, ruleId);
@@ -1289,12 +1352,15 @@ describe('AutopilotReadService', () => {
     });
 
     function withQueue(): { svc: AutopilotReadService; add: ReturnType<typeof vi.fn> } {
-      const add = vi.fn().mockResolvedValue(undefined);
+      // BullMQ's `add` returns the job it created, whose id is the one requested.
+      const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }));
       const svc = new AutopilotReadService(db as never, { add } as never);
       return { svc, add };
     }
 
-    async function seedPendingMatch(mailboxId: string, presetKey = 'auto_archive_low_engagement') {
+    async function seedPendingMatch(mailboxId: string, presetKey = 'newsletter_graveyard') {
       const ruleId = await getRuleId(db, mailboxId, presetKey);
       const [m] = await db
         .insert(ruleMatchLog)
@@ -1423,6 +1489,53 @@ describe('AutopilotReadService', () => {
       expect(rows.find((r) => r.id === okMatch!.id)?.resolution).toBe('approved');
     });
 
+    // "Approve all ~N" and the day-7 prompt read `pendingTotal`; the user
+    // reviews the list; approve-all flips rows. All three must be ONE set.
+    // #715 excluded Protected senders from the list and both approve
+    // UPDATEs but not from the count, so the preview promised a
+    // suggestion the approve then skipped.
+    it('counts, lists and approves the same set when a sender is Protected', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const protectedKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: protectedKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: protectedKey,
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'protected-after-match',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'b'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'unprotected',
+        },
+      ]);
+
+      // Read the count and the list BEFORE approving — approve changes both.
+      const rule = (await svc.listRules(mailboxA)).find((r) => r.id === ruleId);
+      const listed = (await svc.listPendingSuggestions(mailboxA)).filter(
+        (m) => m.ruleId === ruleId,
+      );
+      const approved = await svc.approveAllForRule(mailboxA, ruleId);
+
+      expect(listed.map((m) => m.reason)).toEqual(['unprotected']);
+      expect(rule!.observeDigest?.pendingTotal).toBe(listed.length);
+      expect(approved!.approvedCount).toBe(listed.length);
+      expect(approved!.skippedProtectedCount).toBe(1);
+    });
+
     it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
       const { svc, add } = withQueue();
       const { matchId } = await seedPendingMatch(mailboxA);
@@ -1456,7 +1569,10 @@ describe('AutopilotReadService', () => {
     });
 
     it('approveAllForRule approves every pending row for the rule only', async () => {
-      const add = vi.fn().mockResolvedValue(undefined);
+      // BullMQ's `add` returns the job it created, whose id is the one requested.
+      const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }));
       const svc = new AutopilotReadService(db as never, { add } as never);
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const otherRuleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
@@ -1720,7 +1836,7 @@ describe('AutopilotReadService', () => {
 
   describe('observe-window projection (U14 — D10/D104)', () => {
     it('projects observeWindowEndsAt = modeChangedAt + 7d while in observe mode', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       const changed = new Date('2026-06-01T00:00:00Z');
       await db
         .update(automationRules)
@@ -1734,7 +1850,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('is null / false outside observe mode', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await db
         .update(automationRules)
         .set({ mode: 'active' })
@@ -1745,7 +1861,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('a fresh observe window has not elapsed', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await db
         .update(automationRules)
         .set({ modeChangedAt: new Date() })
@@ -1818,6 +1934,25 @@ describe('AutopilotReadService', () => {
       });
     }
 
+    it('deduplicates recent sender joins while retaining old pending and excluding resolved history', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const recent = new Date(Date.now() - 86_400_000);
+      const old = new Date(Date.now() - 30 * 86_400_000);
+      await seedPending(mailboxA, ruleId, SENDER_1, recent);
+      await seedPending(mailboxA, ruleId, SENDER_1, recent, 'dismissed');
+      await seedPending(mailboxA, ruleId, SENDER_1, old, 'dismissed');
+      await seedPending(mailboxA, ruleId, SENDER_2, old);
+      await seedPending(mailboxA, ruleId, SENDER_3, old, 'dismissed');
+      await seedMessages(mailboxA, SENDER_1, { inbox: 3, archived: 2 });
+      await seedMessages(mailboxA, SENDER_2, { inbox: 5, archived: 0 });
+      await seedMessages(mailboxA, SENDER_3, { inbox: 7, archived: 0 });
+      expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
+        pendingTotal: 2,
+        senders7d: 1,
+        inboxMessagesNow: 3,
+      });
+    });
+
     it('counts pending backlog but includes every resolution in the 7-day history', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const now = Date.now();
@@ -1884,6 +2019,31 @@ describe('AutopilotReadService', () => {
       });
     });
 
+    // No sweep or approve touches a Protected sender (D245), yet the digest
+    // counted it: "Would archive N emails now" included its inbox, and the
+    // unsubscribe copy ("would have requested unsubscribe from N senders")
+    // included the sender itself.
+    it('leaves a Protected sender out of senders7d and inboxMessagesNow', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const recent = new Date(Date.now() - 86_400_000);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: SENDER_1,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await seedPending(mailboxA, ruleId, SENDER_1, recent);
+      await seedPending(mailboxA, ruleId, SENDER_2, recent);
+      await seedMessages(mailboxA, SENDER_1, { inbox: 5, archived: 0 });
+      await seedMessages(mailboxA, SENDER_2, { inbox: 3, archived: 0 });
+
+      expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
+        pendingTotal: 1,
+        senders7d: 1,
+        inboxMessagesNow: 3,
+      });
+    });
+
     it('zero-fills the digest for an observe rule with no pending matches', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const rule = await service.getRule(mailboxA, ruleId);
@@ -1891,7 +2051,7 @@ describe('AutopilotReadService', () => {
     });
 
     it('is null outside observe mode even when stale pending rows exist', async () => {
-      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const ruleId = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await seedPending(mailboxA, ruleId, SENDER_1, new Date());
       await db
         .update(automationRules)

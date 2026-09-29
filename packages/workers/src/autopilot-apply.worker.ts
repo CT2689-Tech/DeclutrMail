@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -274,7 +274,15 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
         threshold = parsed;
       }
-      const modeAtMatch: AutopilotMatchMode = rule.mode === 'active' ? 'active' : 'observe';
+      // New-sender and low-engagement signals cannot reliably distinguish
+      // promotions from account, purchase, or security messages. Even legacy
+      // Active rows collect suggestions rather than moving mail unattended.
+      const modeAtMatch: AutopilotMatchMode =
+        rule.mode === 'active' &&
+        rule.presetKey !== 'auto_screen_new_senders' &&
+        rule.presetKey !== 'auto_archive_low_engagement'
+          ? 'active'
+          : 'observe';
       const resolution: AutopilotMatchResolution =
         modeAtMatch === 'active' ? 'approved' : 'pending';
 
@@ -315,6 +323,12 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         // the action worker flipping `intent_applied=true` concurrently
         // only makes the check conservative (skip now, re-arm next
         // sweep once the sender is actionable again).
+        //
+        // Approved and unapplied, deliberately NOT `ruleMatchIsQueuedAction()`:
+        // a row whose evidence went stale blocks here too, though the action
+        // sweep never loads it. Letting the rule act on that sender again is
+        // an open founder decision:
+        // docs/log/founder-followups/2026-09-27-stale-autopilot-action-blocks-its-rule.md
         if (modeAtMatch === 'active' && matchesForRule.length > 0) {
           const queuedRows = await this.deps.db
             .select({ senderKey: ruleMatchLog.senderKey })
@@ -573,6 +587,10 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     // than silently continuing to act on a tier that stopped paying for
     // it, while Observe rules keep running.
     //
+    // Legacy Active new-sender and low-engagement rows are exceptions: the
+    // matcher forces Observe for those presets, so a review-entitled workspace
+    // may still collect its suggestions after a future tier split.
+    //
     // 2026-08-23: both capabilities sit on Plus, so the only tier with
     // `mayActUnattended === false` is `free` — which already returned
     // above. The `ne(mode,'active')` term below is therefore unreachable
@@ -589,7 +607,15 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           eq(automationRules.mailboxAccountId, mailboxAccountId),
           eq(automationRules.enabled, true),
           ne(automationRules.mode, 'paused'),
-          ...(mayActUnattended ? [] : [ne(automationRules.mode, 'active')]),
+          ...(mayActUnattended
+            ? []
+            : [
+                or(
+                  ne(automationRules.mode, 'active'),
+                  eq(automationRules.presetKey, 'auto_screen_new_senders'),
+                  eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+                ),
+              ]),
           eq(automationRules.isPreset, true),
         ),
       );

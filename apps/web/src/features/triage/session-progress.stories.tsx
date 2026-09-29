@@ -1,17 +1,15 @@
-// Storybook CSF3 stories for the Triage session burn-down (D37, D200).
+// Storybook CSF3 stories for the Triage session count (D37, D200).
 //
 // Storybook itself is seeded in PR 3 (D210). Until the seed lands, this
 // file uses the same lightweight local CSF shims as
 // `triage-screen.stories.tsx` so it typechecks without
 // `@storybook/react` installed.
 //
-// Variants cover the burn-down's whole range:
-//   • MidSession   — some decided, more to go (the common case)
-//   • JustStarted  — one decided, a full queue behind it
-//   • AllDone      — everything decided this session (100% bar, "all done")
-//   • FreshArrival — 0 decided → renders NOTHING (a "0 decided" bar is
-//                    noise; the burn-down only appears after the first
-//                    confirmed decision).
+// Variants:
+//   • FocusPosition — focus mode: the card's current queue position
+//   • ListDecided   — list mode: confirmed decisions + current queue
+//   • JustArrived   — nothing decided yet
+//   • EmptyQueueRendersNothing — an empty queue renders NOTHING
 
 import { tokens } from '@declutrmail/shared';
 import { SessionProgress } from './session-progress';
@@ -39,7 +37,7 @@ const meta: StoryMeta<typeof SessionProgress> = {
     docs: {
       description: {
         component:
-          'Session burn-down for the triage header — "X decided · Y to go" plus a thin progress bar. `decided` is the client-session counter (D200 — ephemeral, resets on mount); it increments ONLY on server confirmation (D226), so the bar can never run ahead of reality. Renders nothing until the first confirmed decision.',
+          'Confirmed decisions in this mailbox session and the current rolling queue length. Focus mode also shows the card’s position within that queue. New senders may backfill the queue, so there is no fixed completion percentage.',
       },
     },
   },
@@ -66,30 +64,26 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Mid-session — 3 decided, 5 still waiting (the common case). */
-export const MidSession: Story<typeof SessionProgress> = {
-  args: { decided: 3, remaining: 5 },
+/** Focus mode — two decided, the third sender in the current queue on stage. */
+export const FocusPosition: Story<typeof SessionProgress> = {
+  args: { decided: 2, queued: 12, focusPosition: 3 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** Just started — one decision in, a full queue behind it. */
-export const JustStarted: Story<typeof SessionProgress> = {
-  args: { decided: 1, remaining: 11 },
+/** List mode — the label counts decisions made. */
+export const ListDecided: Story<typeof SessionProgress> = {
+  args: { decided: 3, queued: 12 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** All done — everything decided this session: full bar + "all done". */
-export const AllDone: Story<typeof SessionProgress> = {
-  args: { decided: 9, remaining: 0 },
+/** Just arrived — a full queue, no confirmed decisions. */
+export const JustArrived: Story<typeof SessionProgress> = {
+  args: { decided: 0, queued: 12, focusPosition: 1 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/**
- * Fresh arrival — 0 decided renders NOTHING. A "0 decided" bar on
- * arrival is noise; the queue legend already carries the waiting count.
- * This story is the contract proof of the null return.
- */
-export const FreshArrivalRendersNothing: Story<typeof SessionProgress> = {
-  args: { decided: 0, remaining: 8 },
+/** An empty queue renders NOTHING — this story proves the null return. */
+export const EmptyQueueRendersNothing: Story<typeof SessionProgress> = {
+  args: { decided: 3, queued: 0 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };

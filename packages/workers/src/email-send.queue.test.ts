@@ -12,7 +12,9 @@
  * `ensureInitialSyncJob`.
  */
 
-import { describe, expect, it } from 'vitest';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
+import type * as SharedCopy from '@declutrmail/shared/copy';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   enqueueEmailSend,
@@ -20,6 +22,13 @@ import {
   syncReminderEmailJobId,
 } from './email-send.queue.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
+
+vi.mock('@declutrmail/shared/copy', async (importOriginal) => ({
+  ...(await importOriginal<typeof SharedCopy>()),
+  hasPostalAddress: vi.fn(() => true),
+}));
+
+beforeEach(() => vi.mocked(hasPostalAddress).mockReturnValue(true));
 
 type JobState =
   | 'completed'
@@ -201,6 +210,14 @@ describe('lapse re-engagement dedup', () => {
 });
 
 describe('enqueueEmailSend', () => {
+  it('does not queue commercial mail when the business postal address is unset', async () => {
+    vi.mocked(hasPostalAddress).mockReturnValue(false);
+    const q = new FakeQueue();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await enqueueEmailSend(q as any, reminder())).toBe('noop');
+    expect(q.addCalls).toBe(0);
+  });
+
   it('adds when no job exists', async () => {
     expect(await enqueueAgainst(null)).toMatchObject({ outcome: 'added', addCalls: 1 });
   });

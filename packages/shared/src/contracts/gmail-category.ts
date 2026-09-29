@@ -7,4 +7,4 @@
  * server-dep — the contract test in `apps/api/src/senders/senders.types.ts`
  * fails-compile if the API/DB type and this mirror ever drift.
  */
-export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums';
+export type GmailCategory = 'primary' | 'promotions' | 'social' | 'updates' | 'forums' | 'unknown';

@@ -18,6 +18,9 @@ import type { Metadata } from 'next';
 
 import { ACTION_SEMANTICS } from '@declutrmail/shared/actions';
 
+import { MARKETING_PATHS } from '@/app/sitemap';
+import { comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
+
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
 import { metadata as pricing } from './pricing/page';
@@ -38,6 +41,21 @@ import { metadata as compare } from './compare/page';
 import { metadata as methodology } from './methodology/page';
 import { metadata as inboxSimulator } from './inbox-simulator/page';
 import { alt as simulatorCardAlt } from './inbox-simulator/opengraph-image';
+import { metadata as signIn } from './sign-in/page';
+import { generateMetadata as comparisonMetadata } from './vs/[competitor]/page';
+import { generateMetadata as alternativesMetadata } from './alternatives/[tool]/page';
+import { generateMetadata as blogPostMetadata } from './blog/[slug]/page';
+import { metadata as howToClean } from './how-to/clean-gmail-by-sender/page';
+import { metadata as howToDelete } from './how-to/bulk-delete-emails-from-one-sender/page';
+import { metadata as howToStorage } from './how-to/gmail-storage-full/page';
+import { metadata as howToArchive } from './how-to/auto-archive-future-emails-in-gmail/page';
+import { metadata as howToPromo } from './how-to/stop-promotional-emails-gmail/page';
+import { metadata as howToUnsub } from './how-to/unsubscribe-from-emails-gmail/page';
+import { metadata as answerSafe } from './answers/is-it-safe-to-connect-gmail-app/page';
+import { metadata as answerMeta } from './answers/what-is-metadata-only-email-analysis/page';
+import { metadata as answerUndo } from './answers/how-undo-works-for-gmail-cleanup/page';
+import { metadata as answerBest } from './answers/best-way-to-clean-gmail-2026/page';
+import { metadata as answerSender } from './answers/sender-level-vs-message-level-cleanup/page';
 
 const PAGES: ReadonlyArray<{
   name: string;
@@ -101,6 +119,12 @@ describe('pricing points answer engines at its machine-readable twin', () => {
   });
 });
 
+describe('historical changelog visibility', () => {
+  it('keeps the incomplete archive out of search results until release notes catch up', () => {
+    expect(changelog.robots).toEqual({ index: false, follow: true });
+  });
+});
+
 describe('the simulator carries its own share card — playbook G7', () => {
   /**
    * The card is attached by Next's file convention, at a URL carrying a
@@ -151,6 +175,162 @@ describe("meta description length — stays inside Google's display limit", () =
   it('keeps /pricing and /compare descriptions at 160 characters or fewer', () => {
     expect(pricing.description!.length).toBeLessThanOrEqual(160);
     expect(compare.description!.length).toBeLessThanOrEqual(160);
+  });
+});
+
+const STATIC_METADATA = new Map<string, Metadata>([
+  ...PAGES.map((page) => [page.path, page.metadata] as const),
+  ['/sign-in', signIn],
+  ['/how-to/clean-gmail-by-sender', howToClean],
+  ['/how-to/bulk-delete-emails-from-one-sender', howToDelete],
+  ['/how-to/gmail-storage-full', howToStorage],
+  ['/how-to/auto-archive-future-emails-in-gmail', howToArchive],
+  ['/how-to/stop-promotional-emails-gmail', howToPromo],
+  ['/how-to/unsubscribe-from-emails-gmail', howToUnsub],
+  ['/answers/is-it-safe-to-connect-gmail-app', answerSafe],
+  ['/answers/what-is-metadata-only-email-analysis', answerMeta],
+  ['/answers/how-undo-works-for-gmail-cleanup', answerUndo],
+  ['/answers/best-way-to-clean-gmail-2026', answerBest],
+  ['/answers/sender-level-vs-message-level-cleanup', answerSender],
+]);
+
+function titleText(metadata: Metadata): string {
+  const title = metadata.title;
+  if (typeof title === 'string') return title;
+  if (title && typeof title === 'object' && 'absolute' in title && title.absolute) {
+    return title.absolute;
+  }
+  return '';
+}
+
+async function metadataForPath(path: string): Promise<Metadata> {
+  if (path.startsWith('/vs/')) {
+    return comparisonMetadata({
+      params: Promise.resolve({ competitor: path.slice('/vs/'.length) }),
+    });
+  }
+  if (path.startsWith('/alternatives/')) {
+    return alternativesMetadata({
+      params: Promise.resolve({ tool: path.slice('/alternatives/'.length) }),
+    });
+  }
+  if (path.startsWith('/blog/') && path !== '/blog') {
+    return blogPostMetadata({ params: Promise.resolve({ slug: path.slice('/blog/'.length) }) });
+  }
+  const metadata = STATIC_METADATA.get(path);
+  if (!metadata) throw new Error(`no metadata fixture for ${path}`);
+  return metadata;
+}
+
+const FORBIDDEN_WORDING = /Declutr Mail|DeclutterMail|metadata only|never reads/i;
+
+describe('marketing metadata guards', () => {
+  it('gives every sitemap path a self canonical and a description of at most 160 characters', async () => {
+    for (const path of MARKETING_PATHS) {
+      const metadata = await metadataForPath(path);
+      const description = metadata.description ?? '';
+      expect(metadata.alternates?.canonical, path).toBe(path);
+      expect(description.length, `${path} (${description.length})`).toBeLessThanOrEqual(160);
+      expect(titleText(metadata), path).not.toMatch(FORBIDDEN_WORDING);
+      expect(description, path).not.toMatch(FORBIDDEN_WORDING);
+    }
+  });
+
+  it('keeps /sign-in followable but out of the index', () => {
+    expect(signIn.robots).toEqual({ index: false, follow: true });
+    expect(signIn.alternates?.canonical).toBe('/sign-in');
+  });
+
+  it('uses the approved title and description for the twelve change rows', async () => {
+    const unroll = await metadataForPath('/vs/unroll-me');
+    expect(titleText(unroll)).toBe('DeclutrMail vs Unroll.Me: how each uses your email data');
+    expect(unroll.description).toBe(
+      'A source-backed comparison: Unroll.Me is free and uses email data for market research; DeclutrMail never fetches or stores full email contents.',
+    );
+
+    const gmail = await metadataForPath('/vs/gmail');
+    expect(titleText(gmail)).toBe(
+      "DeclutrMail vs Gmail's built-in cleanup — honest 2026 comparison",
+    );
+    expect(gmail.description).toBe(
+      "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
+    );
+
+    const muse = await metadataForPath('/vs/meta-muse');
+    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — honest 2026 comparison');
+    expect(muse.description).toBe(
+      'Source-backed: DeclutrMail, a narrow Gmail cleanup tool that never fetches full message contents, vs Meta Muse, a general AI agent that can read and send mail.',
+    );
+
+    for (const [path, name] of [
+      ['/alternatives/unroll-me', 'Unroll.Me'],
+      ['/alternatives/clean-email', 'Clean Email'],
+      ['/alternatives/sanebox', 'SaneBox'],
+      ['/alternatives/leave-me-alone', 'Leave Me Alone'],
+      ['/alternatives/trimbox', 'Trimbox'],
+    ] as const) {
+      const metadata = await metadataForPath(path);
+      expect(titleText(metadata)).toBe(`${name} alternatives, compared honestly`);
+      expect(metadata.description).toBe(
+        `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
+      );
+    }
+
+    expect(inboxSimulator.description).toBe(
+      'Try Senders and Triage in a made-up inbox. Open the sender inspector, filter and select senders, and preview cleanup actions. No signup or Gmail access needed.',
+    );
+    expect(howToHub.description).toBe(
+      'Step-by-step Gmail guides: delete all emails from one sender, free up storage when Gmail is full, auto archive future email, stop promotional email, and more.',
+    );
+    expect(cookies.description).toBe(
+      'Change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent.',
+    );
+    expect(privacy.description).toBe(
+      'What DeclutrMail stores from Gmail, what it never fetches, processors, retention, deletion and your rights. We do not sell Gmail data or use it for advertising.',
+    );
+  });
+
+  it('leaves visible comparison descriptions unchanged when only the meta description moves', () => {
+    expect(comparisonBySlug('unroll-me')?.description).toBe(
+      'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
+    );
+    expect(comparisonBySlug('gmail')?.description).toBe(
+      "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
+    );
+    expect(comparisonBySlug('meta-muse')?.description).toBe(
+      'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
+    );
+  });
+
+  it('keeps the seven rows the founder left unchanged', () => {
+    expect(titleText(landing)).toBe('Clean up Gmail, one sender at a time — DeclutrMail');
+    expect(landing.description).toBe(
+      'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
+    );
+    expect(titleText(pricing)).toBe('Pricing — DeclutrMail');
+    expect(pricing.description).toBe(
+      'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
+    );
+    expect(titleText(security)).toBe('Security — DeclutrMail');
+    expect(security.description).toBe(
+      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and received Google OAuth verification approval in April 2026.',
+    );
+    expect(titleText(methodology)).toBe('Privacy and control — DeclutrMail');
+    expect(methodology.description).toBe(
+      'What DeclutrMail stores from Gmail, how suggestions are made, what changes before you confirm, and when automation can run.',
+    );
+    expect(titleText(compare)).toBe('Gmail cleanup tools compared side by side — DeclutrMail');
+    expect(compare.description).toBe(
+      'DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown.',
+    );
+    expect(titleText(answerUndo)).toBe('How does undo work for Gmail cleanup? — DeclutrMail');
+    expect(answerUndo.description).toBe(
+      'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
+    );
+    expect(titleText(changelog)).toBe('DeclutrMail product updates — what changed, and when');
+    expect(changelog.description).toBe(
+      'What changed in DeclutrMail and when, listed by date with Added, Improved, and Fixed notes.',
+    );
   });
 });
 

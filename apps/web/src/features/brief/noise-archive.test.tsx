@@ -235,6 +235,46 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(archiveButton()).toHaveAccessibleName('Archive 2 senders');
   });
 
+  it('requires a deliberate selection for a long generated Noise list', async () => {
+    const noise = Array.from({ length: 12 }, (_, index) => ({
+      senderKey: `sk-long-${index}`,
+      senderName: `Sender ${index + 1}`,
+      messageCount: 1,
+      messageIds: [`m-${index}`],
+    }));
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BRIEF,
+              briefPayload: { ...BRIEF.briefPayload, noise },
+              noiseSenders: noise.map((sender, index) => ({
+                senderKey: sender.senderKey,
+                senderId: `aaaaaaaa-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
+                isProtected: false,
+              })),
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const firstSender = await screen.findByRole('checkbox', {
+      name: 'Include Sender 1 in the archive',
+    });
+    expect(archiveButton()).toBeDisabled();
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+    expect(screen.getByText(/may include important mail/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Explore all senders' })).toBeInTheDocument();
+    fireEvent.click(firstSender);
+    expect(archiveButton()).toHaveAccessibleName('Archive 1 sender');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(archiveButton()).toBeDisabled();
+  });
+
   it('excludes a Protected sender visibly, with the reason on the row (D245)', async () => {
     installFetchStub([briefHandler()]);
     renderScreen();
@@ -259,7 +299,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /^Archive/ })).toBeInTheDocument();
     // The whole point: the click that opens a preview must not mutate.
     expect(enqueued).toHaveLength(0);
   });
@@ -329,8 +369,8 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     // 351 is what is in the inbox now; 7 is what yesterday held. The
     // preview must state the number that is about to move.
-    await within(dialog).findByText('351');
-    expect(within(dialog).getByText(/in Inbox now/i)).toBeInTheDocument();
+    await within(dialog).findByRole('heading', { name: /Archive 351 emails/ });
+    expect(within(dialog).getByText(/in\s+your inbox now/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/This archives everything/i)).toBeInTheDocument();
   });
 
@@ -355,8 +395,8 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/Nothing from these senders is in your inbox/i);
-    // The headline and every per-sender row all read 0.
+    await within(dialog).findByRole('heading', { name: /Nothing in your inbox from/i });
+    // Every per-sender row reads 0.
     expect(within(dialog).getAllByText('0').length).toBeGreaterThan(0);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     // The footer reason is the whole story — no lead describing a move

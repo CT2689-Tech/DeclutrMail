@@ -2,9 +2,8 @@
  * `useSenderTimeseries` — fixed 12-month window, no pagination (D45).
  *
  * The window is server-side fixed (no cursor) so a plain `useQuery`
- * is sufficient. A longer `staleTime` would be reasonable here (volume
- * changes daily at most) but we keep the QueryClient default for
- * predictability — the chart re-renders cheaply.
+ * is sufficient. The shared query options retain it for five minutes on revisits;
+ * explicit mutation and mailbox invalidation still reconciles server truth.
  */
 
 import { useQuery } from '@tanstack/react-query';

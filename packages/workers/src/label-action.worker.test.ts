@@ -607,6 +607,64 @@ describe('LabelActionWorker', () => {
       expect(policy!.snoozeWakeFailureCount).toBe(0);
     });
 
+    // A sender has ONE timer (D78), shared by every Later that moved its
+    // mail. Undoing one Later must not clear it while another Later's mail
+    // still waits on it — that mail would keep the label with no way back.
+    it('reverse (undo later) keeps the timer while other Later mail from the sender remains', async () => {
+      gmail.labelIdsByName.set('DeclutrMail/Later', 'Label_77');
+      await seedMessage(db, mailboxId, 'earlier', ['Label_77']);
+      await seedMessage(db, mailboxId, 'undone', ['Label_77']);
+      const [undo] = await db
+        .insert(undoJournal)
+        .values({
+          mailboxAccountId: mailboxId,
+          actionKind: 'later',
+          payload: { kind: 'later', messageIds: ['undone'], priorLabels: ['INBOX'] },
+        })
+        .returning();
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'later',
+          direction: 'reverse',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          resolvedMessageIds: ['undone'],
+          undoToken: undo!.token,
+          idempotencyKey: `revert:${undo!.token}`,
+          wakeAt: new Date('2099-07-21T09:00:00Z'),
+        })
+        .returning();
+      // The undone Later's timer replaced the earlier Later's.
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY,
+        snoozedUntil: new Date('2099-07-21T09:00:00Z'),
+        snoozedAt: new Date('2026-07-14T18:00:00Z'),
+      });
+
+      await worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: `revert:${undo!.token}` },
+        CTX,
+      );
+
+      const labels = new Map(
+        (
+          await db
+            .select({ id: mailMessages.providerMessageId, labels: mailMessages.labelIds })
+            .from(mailMessages)
+            .where(eq(mailMessages.mailboxAccountId, mailboxId))
+        ).map((m) => [m.id, m.labels]),
+      );
+      expect(labels.get('undone')).toContain('INBOX');
+      expect(labels.get('earlier')).toEqual(['Label_77']);
+      const [policy] = await db
+        .select()
+        .from(senderPolicies)
+        .where(eq(senderPolicies.mailboxAccountId, mailboxId));
+      expect(policy!.snoozedUntil?.toISOString()).toBe('2099-07-21T09:00:00.000Z');
+    });
+
     it('fails permanently on attempt 1 for a Gmail 400 (no retry storm)', async () => {
       await seedMessage(db, mailboxId, 'l1', ['INBOX']);
       gmail.shouldThrow = new PermanentError(

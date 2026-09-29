@@ -177,7 +177,11 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
     const now = (this.deps.now ?? (() => new Date()))();
 
     const mailboxes = await this.deps.db
-      .select({ id: mailboxAccounts.id, workspaceId: mailboxAccounts.workspaceId })
+      .select({
+        id: mailboxAccounts.id,
+        workspaceId: mailboxAccounts.workspaceId,
+        email: mailboxAccounts.providerAccountId,
+      })
       .from(mailboxAccounts)
       .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
       .where(inArray(workspaces.tier, FOLLOWUP_TIERS));
@@ -202,7 +206,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
       mailboxes.map((mb) =>
         limiter(async () => {
           try {
-            const upserted = await this.sweepMailbox(mb.id, mb.workspaceId, now);
+            const upserted = await this.sweepMailbox(mb.id, mb.workspaceId, mb.email, now);
             const flipped = await this.flipReplied(mb.id);
             awaitingUpserted += upserted;
             repliedFlipped += flipped;
@@ -253,6 +257,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
   private async sweepMailbox(
     mailboxAccountId: string,
     workspaceId: string,
+    mailboxEmail: string,
     now: Date,
   ): Promise<number> {
     const lookbackCutoff = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1_000);
@@ -303,6 +308,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
       WHERE is_outbound = true
         AND recipient_emails IS NOT NULL
         AND cardinality(recipient_emails) BETWEEN 1 AND ${BULK_RECIPIENT_LIMIT}
+        AND lower(recipient_emails[1]) <> lower(${mailboxEmail})
         AND NOT EXISTS (
           SELECT 1 FROM unnest(recipient_emails) AS email
           WHERE email ~* '@(googlegroups\\.com|groups\\.io)$'

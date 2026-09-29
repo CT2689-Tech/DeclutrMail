@@ -5,7 +5,7 @@
 // (D58), so broad phrases such as "every action is reversible" are false.
 
 export const ACTION_SAFETY_SUMMARY =
-  'Before a manual action moves email, you see the count and what changes in Gmail. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
+  'Before a manual action moves email, you see the count and what changes in Gmail. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox. Low-engagement Archive and new-sender Later always wait for your approval; other presets can act if you choose.';
 
 export const ACTION_PREVIEW_CLAIM =
   'Before a manual action moves email, DeclutrMail shows how many emails are affected, a sample when available, and what will change in Gmail. DeclutrMail checks Gmail again when the action runs, so the final number can change if new email arrives first.';
@@ -29,7 +29,7 @@ export const DELETE_RECOVERY_CLAIM =
   'Delete can be undone from Activity until the deadline shown there. It also moves email to Gmail Trash, where Gmail normally keeps it for up to 30 days unless you permanently delete it or empty Trash sooner.';
 
 export const MANUAL_ACTION_SCOPE_CLAIM =
-  'Archive, Later, and Delete apply only to the matching inbox email shown before you confirm. New email from that sender is unchanged. Autopilot handles future matches separately: you preview a rule before turning it on, then it keeps acting on matching email that arrives.';
+  'Archive, Later, and Delete apply only to the matching inbox email shown before you confirm. New email from that sender is unchanged. Autopilot handles future matches separately: you preview a rule before turning it on. Some rules collect suggestions for your approval; others can act automatically if you choose.';
 
 export const BRIEF_AI_DISCLOSURE =
   'To write a Pro Brief, DeclutrMail can send Anthropic the sender, subject line, and Gmail’s short preview snippet. It never sends the full contents of an email.';

@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties } from 'react';
-import { color, font, radius, shadow } from '../tokens/tokens';
+import { color, font, radius, shadow, text } from '../tokens/tokens';
 import {
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_BADGE_LEAD,
@@ -51,7 +51,7 @@ export function PrivacyBadge({
           border: `1px solid ${color.primaryBorder}`,
           borderRadius: radius.md,
           fontFamily: font.sans,
-          fontSize: 12,
+          fontSize: text.sm,
           color: color.fg,
           ...style,
         }}
@@ -91,7 +91,7 @@ export function PrivacyBadge({
         <h3
           style={{
             margin: 0,
-            fontSize: 16,
+            fontSize: text.lg,
             fontWeight: 600,
             letterSpacing: '-0.01em',
             color: color.primaryDeep,
@@ -102,7 +102,7 @@ export function PrivacyBadge({
         <p
           style={{
             margin: '6px 0 0',
-            fontSize: 13,
+            fontSize: text.base,
             lineHeight: 1.55,
             color: color.fgMuted,
           }}
@@ -138,11 +138,8 @@ function PrivacyList({
     <div style={style}>
       <div
         style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          fontWeight: 500,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
+          fontSize: text.sm,
+          fontWeight: 600,
           color: color.fgMuted,
           marginBottom: 6,
         }}
@@ -165,7 +162,7 @@ function PrivacyList({
               display: 'flex',
               alignItems: 'baseline',
               gap: 8,
-              fontSize: 13,
+              fontSize: text.base,
               lineHeight: 1.5,
             }}
           >

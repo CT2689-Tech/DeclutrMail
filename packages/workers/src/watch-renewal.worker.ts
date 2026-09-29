@@ -211,6 +211,8 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
     let watched = 0;
     let failed = 0;
     for (const { mailboxAccountId } of eligible) {
+      // Before the credential read — see `recordMailboxSyncFailure`.
+      const attemptStartedAt = new Date();
       try {
         const client = await this.deps.gmailWatch.getClient(mailboxAccountId);
         const result = await client.watch(topicName);
@@ -248,7 +250,9 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
         // `last_incremental_error_at` docblock in the schema).
         const needsReconnect = error.name === INVALID_GRANT_ERROR;
         if (needsReconnect) {
-          await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, INVALID_GRANT_ERROR);
+          await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, INVALID_GRANT_ERROR, {
+            attemptStartedAt,
+          });
         }
         console.error(
           JSON.stringify({

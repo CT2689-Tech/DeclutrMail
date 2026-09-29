@@ -3,6 +3,7 @@ import {
   mailboxAccounts,
   mailMessages,
   providerSyncState,
+  ruleMatchLabelClaimKey,
   ruleMatchLog,
   senders,
   senderTimeseries,
@@ -20,15 +21,26 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
+import { boundedMap } from './bounded-map.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
-import { applyAutomaticProtection } from './automatic-protection.js';
+import {
+  applyAutomaticProtection,
+  logProtectionReleases,
+  type AutomaticProtectionResult,
+} from './automatic-protection.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
+import {
+  markDecisionsStale,
+  messageGmailCategory,
+  senderGmailCategory,
+  type LabelledGmailCategory,
+} from './gmail-category.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
-import { syncMailboxLabels } from './mailbox-label-sync.js';
+import { listMailboxLabels, syncMailboxLabels } from './mailbox-label-sync.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
@@ -37,28 +49,10 @@ import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from '.
 import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { InitialSyncJobData } from './queue.js';
+import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
-
-/** Gmail `CATEGORY_*` label → `senders.gmail_category` enum (D222).
- * `GmailCategory` derives from the canonical pg_enum via @declutrmail/db. */
-const CATEGORY_LABEL_MAP: Record<string, GmailCategory> = {
-  CATEGORY_PERSONAL: 'primary',
-  CATEGORY_PROMOTIONS: 'promotions',
-  CATEGORY_SOCIAL: 'social',
-  CATEGORY_UPDATES: 'updates',
-  CATEGORY_FORUMS: 'forums',
-};
-
-/** Tie-break order when a sender's category counts are equal. */
-const CATEGORY_ORDER: readonly GmailCategory[] = [
-  'primary',
-  'promotions',
-  'social',
-  'updates',
-  'forums',
-];
 
 /** How many `messages.get` calls run in parallel (the `RateLimiter` governs rate). */
 const FETCH_CONCURRENCY = 20;
@@ -83,9 +77,10 @@ export interface InitialSyncDeps {
    * first sync — without it a freshly-synced mailbox has senders but
    * an empty Triage queue.
    *
-   * Best-effort: a failure here is logged and swallowed (the cron
-   * re-score sweep is the safety net), so a Redis blip at score-enqueue
-   * time never fails an otherwise-successful sync.
+   * Best-effort: a failure here is logged and swallowed, so a Redis blip
+   * at score-enqueue time never fails an otherwise-successful sync.
+   * Nothing retries it — `cron_sweep` has no producer — so the logged
+   * `sync.score_enqueue_failed` is the only trace.
    */
   onSenderIndexBuilt?: (mailboxAccountId: string) => Promise<void>;
   /**
@@ -99,6 +94,11 @@ export interface InitialSyncDeps {
    * gap. The integration PR passes `outbox: new OutboxPublisher()`.
    */
   outbox?: OutboxPublisher;
+  /**
+   * Where the read's counts go for the sync gate's "N of M emails" line.
+   * Absent, the line never shows; the scan is unaffected either way.
+   */
+  scanProgress?: ScanProgressStore;
 }
 
 /**
@@ -202,7 +202,8 @@ function newerUrl(current: DatedUrl | null, url: string, at: Date): DatedUrl {
 interface SenderAggregate {
   firstSeen: Date;
   lastSeen: Date;
-  categoryCounts: Map<GmailCategory, number>;
+  /** Per tab, the sender's messages Gmail labelled with it — unlabelled mail is not counted. */
+  categoryCounts: Map<LabelledGmailCategory, number>;
   /** year-month (`YYYY-MM-01`) → monthly volume + read count. */
   months: Map<string, { volume: number; readCount: number }>;
   /**
@@ -311,6 +312,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     payload: InitialSyncJobData,
     ctx: WorkerContext,
   ): Promise<InitialSyncResult> {
+    ctx.signal?.throwIfAborted();
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) {
       throw new ValidationError('initial-sync job is missing mailboxAccountId');
@@ -399,6 +401,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // `worker.started` and `worker.succeeded` made "is it hung or just
     // slow?" unanswerable. Each emit costs ~1 line; benign.
     initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
+    // Clear a retried attempt's counts BEFORE the row drops back to 5%:
+    // the status route reads the row, then the counts, so this attempt's
+    // bar is never paired with the last attempt's numbers.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_start');
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
@@ -409,7 +415,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // means any change during the fetch is replayed by the first
     // incremental run — upserts are idempotent so re-processing is safe.
     initialSyncLog('getProfile_begin', mailboxAccountId);
-    const profile = await client.getProfile();
+    const profile = await client.getProfile(ctx.signal);
     initialSyncLog('getProfile_done', mailboxAccountId, { historyId: profile.historyId });
     const snapshotHistoryId = await this.captureInitialHistorySnapshot(
       mailboxAccountId,
@@ -421,7 +427,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       messagesSynced,
       gmailApiCalls: fetchCalls,
       unreadable,
-    } = await this.fetchAndStoreMetadata(mailboxAccountId, client);
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
+      await this.updateProgress(
+        mailboxAccountId,
+        counts.processed,
+        counts.total,
+        snapshotHistoryId,
+      );
+      // An empty mailbox has nothing to count against.
+      if (counts.total > 0) {
+        await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts, 'count');
+      }
+    });
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -429,16 +446,20 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const gmailApiCalls = fetchCalls + 1; // +1 for getProfile.
     lap('fetching_metadata');
 
+    ctx.signal?.throwIfAborted();
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
-    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client);
+    // The read is over; its counts describe nothing the gate shows now.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_end');
+    const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
     lap('building_sender_index');
 
+    ctx.signal?.throwIfAborted();
     // Stage 3 — computing_recommendations. The sender index is built,
     // so fire the `sync_complete` score trigger (D25): the score sweep
     // runs the cascade over every sender and writes `triage_decisions`.
-    // Best-effort — a score-enqueue failure must not fail the sync; the
-    // cron re-score sweep is the safety net.
+    // Best-effort — a score-enqueue failure must not fail the sync
+    // (nothing retries it: `cron_sweep` has no producer).
     await this.upsertSyncState(mailboxAccountId, 'computing_recommendations', 90, 'syncing');
     if (this.deps.onSenderIndexBuilt) {
       try {
@@ -477,6 +498,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       durationMs: Date.now() - startedAt,
       stageTimings,
     };
+    ctx.signal?.throwIfAborted();
     await this.markReady(mailboxAccountId, snapshotHistoryId, result, ctx.attempt);
 
     return result;
@@ -675,6 +697,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
+    signal: AbortSignal | undefined,
+    onProgress: (counts: ScanCounts) => Promise<void>,
   ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
@@ -689,7 +713,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     let listPageCount = 0;
     initialSyncLog('listMessageIds_loop_begin', mailboxAccountId);
     do {
-      const page = await client.listMessageIds(pageToken);
+      signal?.throwIfAborted();
+      const page = await client.listMessageIds(pageToken, signal);
       gmailApiCalls += 1;
       listPageCount += 1;
       for (const id of page.ids) {
@@ -753,6 +778,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         if (!gmailIdSet.has(m.providerMessageId)) {
           toDeleteBuffer.push(m.providerMessageId);
           if (toDeleteBuffer.length >= UPSERT_BATCH) {
+            signal?.throwIfAborted();
             await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
             toDeleteBuffer = [];
           }
@@ -763,13 +789,15 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       lastId = page[page.length - 1]!.id;
     }
     if (toDeleteBuffer.length > 0) {
+      signal?.throwIfAborted();
       await this.deleteMessages(mailboxAccountId, toDeleteBuffer);
     }
 
     // 4. Fetch metadata for ids not in the skip set. Iterate `gmailIdSet`
     //    directly — never materialise a `toFetch` array. Insertion order
     //    on a JS Set matches Gmail's list order (newest-first); we
-    //    reverse-process by walking the set in chunks of FETCH_CONCURRENCY.
+    //    reverse-process by walking the set in bounded persistence batches; metadata fetch slots refill
+    // as each request settles instead of waiting for every 20-request wave.
     let processed = skipSet.size;
     let pendingMessages: NewMailMessage[] = [];
     let pendingSenders = new Map<string, NewSender>();
@@ -779,6 +807,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const attempted = total - skipSet.size;
 
     const flush = async (): Promise<void> => {
+      signal?.throwIfAborted();
       if (pendingMessages.length === 0) {
         return;
       }
@@ -792,8 +821,16 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       if (chunk.length === 0) {
         return;
       }
-      const metas = await Promise.all(chunk.map((id) => client.getMessageMetadata(id)));
+      const metas = await boundedMap(chunk, FETCH_CONCURRENCY, async (id) => {
+        signal?.throwIfAborted();
+        const meta = await client.getMessageMetadata(id, signal);
+        signal?.throwIfAborted();
+        return meta;
+      });
       gmailApiCalls += chunk.length;
+      // Every id fetched counts as read — stored, or skipped as unreadable,
+      // deleted since the list, or unkeyable.
+      processed += chunk.length;
       chunk = [];
 
       for (const meta of metas) {
@@ -811,12 +848,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         if (!row.facts.isOutbound && !pendingSenders.has(row.senderKey)) {
           pendingSenders.set(row.senderKey, this.toIdentityRow(mailboxAccountId, row));
         }
-        processed += 1;
       }
 
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
-        await this.updateProgress(mailboxAccountId, processed, total);
         initialSyncLog('fetch_flush', mailboxAccountId, {
           processed,
           total,
@@ -825,6 +860,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     };
 
+    // The total is known from here on — say so before the first batch,
+    // counting what an earlier attempt already saved as read.
+    await onProgress({ processed, total });
     initialSyncLog('fetch_loop_begin', mailboxAccountId, {
       total,
       toFetch: total - skipSet.size,
@@ -834,8 +872,13 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         continue;
       }
       chunk.push(id);
-      if (chunk.length === FETCH_CONCURRENCY) {
+      if (chunk.length === UPSERT_BATCH) {
         await processChunk();
+        // A count per 500 read, saved or not: a stretch the scan skips
+        // (unreadable, deleted) must not freeze the bar and the line — or
+        // outlive the counts' key. The last, partial chunk goes uncounted;
+        // the stage moves on within one chunk's time.
+        await onProgress({ processed, total });
       }
     }
     await processChunk();
@@ -883,6 +926,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async buildSenderIndex(
     mailboxAccountId: string,
     client: GmailMetadataClient,
+    signal?: AbortSignal,
   ): Promise<number> {
     // Sender identity (email/name/domain) was written during fetch.
     const identityRows = await this.deps.db
@@ -909,6 +953,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     const aggregates = new Map<string, SenderAggregate>();
     let lastId: string | null = null;
     for (;;) {
+      signal?.throwIfAborted();
       const page = await this.deps.db
         .select({
           id: mailMessages.id,
@@ -973,7 +1018,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         displayName: who.displayName,
         email: who.email,
         domain: who.domain,
-        gmailCategory: dominantCategory(agg.categoryCounts),
+        gmailCategory: senderGmailCategory(agg.categoryCounts),
         firstSeenAt: agg.firstSeen,
         lastSeenAt: agg.lastSeen,
         unsubscribeMethod,
@@ -1012,7 +1057,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // threshold (two-way: >=3 addressed outbound AND >=1 inbound).
     // Both run inside the rebuild tx so a partial pass rolls back
     // with the rest.
+    // Gmail is read BEFORE the rebuild transaction opens: no network call
+    // may hold its row locks and pooled connection (MISTAKES 2026-08-23).
+    const labels = await listMailboxLabels(client);
+    let released: AutomaticProtectionResult['released'] = [];
     await this.deps.db.transaction(async (tx) => {
+      signal?.throwIfAborted();
       // Exclude the Autopilot writers for the whole teardown+rebuild.
       // Without it an apply sweep that read signals a moment ago can
       // INSERT matches derived from the index this transaction is about
@@ -1021,6 +1071,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // written below. The declared `perMailbox` concurrency scope does
       // not help: nothing reads that field.
       await lockSenderIndex(tx, mailboxAccountId);
+      // The tab each sender had before this rebuild. A rescan that moves a
+      // sender's tab must mark its decision stale, as the sweep's recount
+      // does, or the sync-complete score reuses prose written for the old
+      // tab (mig 0079).
+      const priorTab = new Map(
+        (
+          await tx
+            .select({ senderKey: senders.senderKey, gmailCategory: senders.gmailCategory })
+            .from(senders)
+            .where(eq(senders.mailboxAccountId, mailboxAccountId))
+        ).map((r) => [r.senderKey, r.gmailCategory]),
+      );
       await tx
         .delete(senderTimeseries)
         .where(eq(senderTimeseries.mailboxAccountId, mailboxAccountId));
@@ -1059,18 +1121,30 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           sql`not exists (
             select 1
             from action_jobs aj
-            where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
+            where aj.idempotency_key = ${ruleMatchLabelClaimKey()}
           )`,
         ),
       );
 
       if (senderRows.length > 0) {
         for (let i = 0; i < senderRows.length; i += UPSERT_BATCH) {
+          signal?.throwIfAborted();
           await tx.insert(senders).values(senderRows.slice(i, i + UPSERT_BATCH));
         }
       }
+      await markDecisionsStale(
+        tx,
+        mailboxAccountId,
+        senderRows
+          .filter((row) => {
+            const before = priorTab.get(row.senderKey);
+            return before !== undefined && before !== row.gmailCategory;
+          })
+          .map((row) => row.senderKey),
+      );
       if (timeseriesRows.length > 0) {
         for (let i = 0; i < timeseriesRows.length; i += UPSERT_BATCH) {
+          signal?.throwIfAborted();
           await tx.insert(senderTimeseries).values(timeseriesRows.slice(i, i + UPSERT_BATCH));
         }
       }
@@ -1154,7 +1228,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // (mig 0064, F012), so a stale label set would reconcile the
       // counters against the wrong exclusion. `null` = the client could
       // not list; the existing rows stand rather than being emptied.
-      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, labels);
       if (labelSync) {
         console.log(
           JSON.stringify({
@@ -1172,8 +1246,12 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       // mailbox whose read state drifted while the cursor was stale.
       await reconcileSenderTimeseries(tx, mailboxAccountId);
 
-      await applyAutomaticProtection(tx, mailboxAccountId);
+      signal?.throwIfAborted();
+      released = (await applyAutomaticProtection(tx, mailboxAccountId)).released;
+      signal?.throwIfAborted();
     });
+    // After the commit, so the line never claims a release that rolled back.
+    logProtectionReleases(this.workerName, mailboxAccountId, released);
 
     if (orphans > 0) {
       // Should be 0 after a complete run — surfaced, never swallowed.
@@ -1383,8 +1461,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // in the same transaction that re-inserts the row — authoritatively
     // closing any drift the incremental Path B accumulated.
     agg.totalReceived += 1;
-    const category = this.toGmailCategory(row.labelIds);
-    agg.categoryCounts.set(category, (agg.categoryCounts.get(category) ?? 0) + 1);
+    const category = messageGmailCategory(row.labelIds);
+    if (category) agg.categoryCounts.set(category, (agg.categoryCounts.get(category) ?? 0) + 1);
 
     const ym = monthKey(row.internalDate);
     const month = agg.months.get(ym) ?? { volume: 0, readCount: 0 };
@@ -1464,29 +1542,87 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     });
   }
 
-  /** Map a message's Gmail labels to its category (D222 — never predicted). */
+  /**
+   * Map a message's Gmail labels to its category (D222 — never predicted).
+   * No CATEGORY_* label is `unknown`: it says nothing about the tab.
+   */
   private toGmailCategory(labelIds: string[]): GmailCategory {
-    for (const label of labelIds) {
-      const mapped = CATEGORY_LABEL_MAP[label];
-      if (mapped) {
-        return mapped;
-      }
-    }
-    // No CATEGORY_* label → the message sits in Gmail's Primary tab.
-    return 'primary';
+    return messageGmailCategory(labelIds) ?? 'unknown';
   }
 
-  /** Advance `progress_pct` across the fetching_metadata stage (5 → 75). */
+  /**
+   * Advance `progress_pct` across the fetching_metadata stage (5 → 75).
+   *
+   * A sign-in or connect while this read runs resets the row to `queued`
+   * but starts no attempt: this job is already active
+   * (`ensureInitialSyncJob`). So the read takes the row back at its next
+   * count; otherwise the gate would sit on "Waiting to start." at 0% for
+   * the rest of the read. Should anything have cleared the cursor, this
+   * read's snapshot fills it (`COALESCE` — never over a set one; the
+   * snapshot is older, so replaying from it is safe). A ready or failed row
+   * is not this write's to change — though the read's later stage writes
+   * (`upsertSyncState`, `markReady`) still are unconditional.
+   */
   private async updateProgress(
     mailboxAccountId: string,
     processed: number,
     total: number,
+    snapshotHistoryId: string,
   ): Promise<void> {
     const pct = total === 0 ? 75 : 5 + Math.round((70 * processed) / total);
     await this.deps.db
       .update(providerSyncState)
-      .set({ progressPct: Math.min(pct, 75), updatedAt: sql`now()` })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      .set({
+        progressPct: Math.min(pct, 75),
+        currentStage: 'fetching_metadata',
+        readinessStatus: 'syncing',
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${snapshotHistoryId}::bigint)`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          or(
+            eq(providerSyncState.currentStage, 'fetching_metadata'),
+            eq(providerSyncState.readinessStatus, 'queued'),
+          ),
+        ),
+      );
+  }
+
+  /**
+   * Put the read's counts where the status route reads them; `null` clears
+   * them (an attempt starting, the read ending). Display-only, on a
+   * fail-fast store: a failed write is logged and the scan carries on — a
+   * missing "N of M emails" line is the only cost. A failed `clear_start`
+   * can leave the previous attempt's counts beside this attempt's bar
+   * until its first count lands, which is why `phase` is logged.
+   */
+  private async reportScanProgress(
+    mailboxAccountId: string,
+    attempt: number,
+    counts: ScanCounts | null,
+    phase: 'clear_start' | 'count' | 'clear_end',
+  ): Promise<void> {
+    const store = this.deps.scanProgress;
+    if (!store) {
+      return;
+    }
+    try {
+      await store.write(mailboxAccountId, counts);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.scan_progress_write_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          attempt,
+          phase,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 
   /** Persist the first pre-fetch cursor and reuse it across BullMQ retries. */
@@ -1494,13 +1630,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     mailboxAccountId: string,
     candidateHistoryId: string,
   ): Promise<string> {
-    const candidate = BigInt(candidateHistoryId);
+    // BigInt() still rejects a malformed id; the SQL gets it as text with an
+    // explicit cast — a JS BigInt in a raw `sql` template is what CLAUDE.md
+    // §2.6 bans (PGlite passes it, postgres.js need not).
+    const candidate = BigInt(candidateHistoryId).toString();
     const [row] = await this.deps.db
       .update(providerSyncState)
       .set({
-        // First attempt wins. A BullMQ retry resumes persisted messages,
+        // First attempt wins. A BullMQ retry — or a re-queue, which keeps
+        // the cursor (SyncService.markQueued) — resumes persisted messages,
         // so it must also resume from the original pre-fetch snapshot.
-        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate})`,
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate}::bigint)`,
         updatedAt: sql`now()`,
       })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
@@ -1558,7 +1698,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
    * exists iff the ready state committed). The consumer router seeds
    * the D101 Autopilot presets + enqueues the apply sweep off it. A
    * RESUMED sync that re-reaches ready publishes again — consumers are
-   * idempotent (seeder ON CONFLICT; apply job deduped per trigger).
+   * idempotent (seeder ON CONFLICT; apply job deduped per trigger). The
+   * one consumer that is NOT idempotent across events, the "Your inbox
+   * is ready" email, reads the event's `firstReady` flag instead.
    */
   private async markReady(
     mailboxAccountId: string,
@@ -1608,6 +1750,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           progressPct: 100,
           lastHistoryId,
           historyIdUpdatedAt: sql`now()`,
+          // Ready means stamped on both branches: the stamp is what tells
+          // the next ready that this is not the mailbox's first.
+          lastSyncedAt: sql`now()`,
         })
         .onConflictDoUpdate({
           target: providerSyncState.mailboxAccountId,
@@ -1659,6 +1804,23 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     }
 
     await this.deps.db.transaction(async (tx) => {
+      // Read BEFORE the ready upsert stamps `last_synced_at`. No reset
+      // clears it — `markQueued` (any connect that needs a scan, e.g. a reconnect),
+      // the failed-scan retry and the cursor-too-old recovery all keep it —
+      // so null means no scan has finished since this row was created: the
+      // one case the "Your inbox is ready" email is for. The incremental
+      // writer cannot stamp it first; its producers require `ready`.
+      //
+      // FOR UPDATE: two runs of one mailbox can overlap after a stall
+      // reclaim. Without the lock both read null and both send. The upsert
+      // takes this same row lock one statement later anyway.
+      const [prior] = await tx
+        .select({ lastSyncedAt: providerSyncState.lastSyncedAt })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update')
+        .limit(1);
+      const firstReady = (prior?.lastSyncedAt ?? null) === null;
       await readyUpsert(tx);
       await runInsert(tx);
       await outbox.publish(tx, {
@@ -1669,6 +1831,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
           workspaceId: account.workspaceId,
           readyAt: new Date().toISOString(),
           messageCount: run.messagesSynced,
+          firstReady,
         },
         schema: MailboxSyncReadyPayloadSchema,
       });
@@ -1725,18 +1888,4 @@ function monthKey(date: Date): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   return `${year}-${month}-01`;
-}
-
-/** The most frequent category for a sender; ties break by `CATEGORY_ORDER`. */
-function dominantCategory(counts: Map<GmailCategory, number>): GmailCategory {
-  let best: GmailCategory = 'primary';
-  let bestCount = -1;
-  for (const category of CATEGORY_ORDER) {
-    const count = counts.get(category) ?? 0;
-    if (count > bestCount) {
-      best = category;
-      bestCount = count;
-    }
-  }
-  return best;
 }

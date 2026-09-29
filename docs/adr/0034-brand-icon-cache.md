@@ -424,8 +424,9 @@ to work. Production pins the value explicitly in the Cloud Run deploy
 manifest because that manifest full-replaces environment variables.
 Brandfetch is independently fail-closed: it is enabled only when the
 worker receives `BRANDFETCH_API_KEY`. The API and web services never
-receive that secret. The production deploy intentionally does not bind
-one until the caching agreement and budget gate above are satisfied.
+receive that secret. The production worker currently binds the key, as
+recorded in the 2026-09-19 amendment above; the written-agreement and
+plan question remains open.
 
 ## Consequences
 

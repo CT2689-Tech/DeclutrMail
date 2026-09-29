@@ -24,7 +24,7 @@ import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-
 import { type DecisionId, type ReviewKind, type Sender } from './data';
 import { formatReadRatePct } from './fact-language';
 
-const { color, font } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 interface Option {
   id: DecisionId;
@@ -210,9 +210,9 @@ export function ReviewSession({
           display: 'grid',
           gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
-          padding: '12px 28px',
-          background: color.card,
-          borderBottom: `1px solid ${color.line}`,
+          padding: '10px 24px',
+          background: color.bg,
+          borderBottom: `1px solid ${color.lineSoft}`,
           flexShrink: 0,
         }}
       >
@@ -223,15 +223,22 @@ export function ReviewSession({
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6,
-            padding: '6px 10px',
+            height: 36,
+            padding: '0 14px 0 10px',
             background: 'transparent',
             border: 'none',
-            borderRadius: 6,
+            borderRadius: radius.pill,
             color: color.fgSoft,
-            fontFamily: font.mono,
-            fontSize: 12.5,
-            letterSpacing: '0.04em',
+            fontFamily: font.sans,
+            fontSize: text.base,
+            fontWeight: 600,
             cursor: 'pointer',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
           }}
         >
           <svg
@@ -251,21 +258,17 @@ export function ReviewSession({
         <div
           style={{
             textAlign: 'center',
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
+            fontSize: text.sm,
             color: color.fgMuted,
           }}
         >
           Weekly review ·{' '}
-          <strong style={{ color: color.fg, fontWeight: 700 }}>{KIND_LABEL[kind]}</strong>
+          <strong style={{ color: color.fg, fontWeight: 600 }}>{KIND_LABEL[kind]}</strong>
         </div>
         <div
           style={{
             justifySelf: 'flex-end',
-            fontFamily: font.mono,
-            fontSize: 10.5,
+            fontSize: text.sm,
             color: color.fgMuted,
             display: 'inline-flex',
             alignItems: 'center',
@@ -278,7 +281,7 @@ export function ReviewSession({
 
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        <div style={{ maxWidth: 920, margin: '0 auto', width: '100%', padding: '32px 36px 24px' }}>
+        <div style={{ maxWidth: 880, margin: '0 auto', width: '100%', padding: '40px 32px 32px' }}>
           <Eyebrow tone={cfg.tag === 'warn' ? 'amber' : cfg.tag === 'ok' ? 'primary' : 'default'}>
             {cfg.eyebrow}
           </Eyebrow>
@@ -286,19 +289,19 @@ export function ReviewSession({
             id="dm-review-title"
             style={{
               margin: '12px 0 8px',
-              fontSize: 28,
-              fontWeight: 700,
+              fontSize: text['3xl'],
+              fontWeight: 650,
               letterSpacing: '-0.022em',
-              lineHeight: 1.1,
+              lineHeight: 1.15,
             }}
           >
             {cfg.headline}
           </h2>
           <p
             style={{
-              margin: '0 0 22px',
+              margin: '0 0 32px',
               color: color.fgSoft,
-              fontSize: 14,
+              fontSize: text.md,
               lineHeight: 1.55,
               maxWidth: '62ch',
             }}
@@ -311,36 +314,25 @@ export function ReviewSession({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 10,
-              padding: '10px 14px',
-              marginBottom: 14,
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 9,
+              gap: 12,
+              marginBottom: 12,
               flexWrap: 'wrap',
             }}
           >
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 10.5,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                color: color.fgMuted,
-              }}
-            >
+            <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
               Apply default to all
             </span>
             <Segmented options={cfg.options} value={bulkDefault} onChange={setBulk} />
             <span
               style={{
                 marginLeft: 'auto',
-                fontFamily: font.mono,
-                fontSize: 10.5,
+                fontSize: text.sm,
                 color: color.fgMuted,
               }}
             >
-              <strong style={{ color: color.fg, fontWeight: 700, fontSize: 12.5 }}>
+              <strong
+                style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+              >
                 {senders.length}
               </strong>{' '}
               sender{senders.length === 1 ? '' : 's'}
@@ -348,14 +340,7 @@ export function ReviewSession({
           </div>
 
           {/* Sender list */}
-          <div
-            style={{
-              background: color.card,
-              border: `1px solid ${color.line}`,
-              borderRadius: 10,
-              overflow: 'hidden',
-            }}
-          >
+          <div style={{ borderTop: `1px solid ${color.lineSoft}` }}>
             {senders.map((s, i) => (
               <ReviewRow
                 key={s.id}
@@ -375,13 +360,14 @@ export function ReviewSession({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
+                gap: 12,
                 width: '100%',
-                padding: '12px 14px',
-                marginTop: 14,
-                background: archiveHistoric ? color.primarySoft : color.paper,
-                border: `1px dashed ${archiveHistoric ? color.primaryBorder : color.line}`,
-                borderRadius: 9,
+                minHeight: 56,
+                padding: '12px 16px',
+                marginTop: 20,
+                background: archiveHistoric ? color.primarySoft : color.fill,
+                border: 'none',
+                borderRadius: radius.lg,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontFamily: font.sans,
@@ -389,15 +375,16 @@ export function ReviewSession({
             >
               <span
                 style={{
-                  width: 16,
-                  height: 16,
-                  borderRadius: 4,
-                  border: `1.5px solid ${archiveHistoric ? color.primary : 'rgba(14,20,19,0.28)'}`,
+                  width: 18,
+                  height: 18,
+                  borderRadius: 5,
+                  border: `1.5px solid ${archiveHistoric ? color.primary : color.border}`,
                   background: archiveHistoric ? color.primary : color.card,
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
+                  color: color.fgInverse,
                 }}
               >
                 {archiveHistoric && (
@@ -406,7 +393,7 @@ export function ReviewSession({
                     height="10"
                     viewBox="0 0 24 24"
                     fill="none"
-                    stroke="#FFFFFF"
+                    stroke="currentColor"
                     strokeWidth="3.5"
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -415,7 +402,7 @@ export function ReviewSession({
                   </svg>
                 )}
               </span>
-              <span style={{ fontSize: 13, color: color.fgSoft }}>{cfg.historicToggle}</span>
+              <span style={{ fontSize: text.md, color: color.fg }}>{cfg.historicToggle}</span>
             </button>
           )}
         </div>
@@ -424,9 +411,9 @@ export function ReviewSession({
       {/* Commit bar */}
       <div
         style={{
-          padding: '16px 28px',
+          padding: '14px 24px calc(14px + env(safe-area-inset-bottom))',
           background: color.card,
-          borderTop: `1px solid ${color.line}`,
+          boxShadow: shadow.lift,
           display: 'flex',
           alignItems: 'center',
           gap: 16,
@@ -436,32 +423,16 @@ export function ReviewSession({
       >
         <Tally counts={counts} options={cfg.options} />
         <span style={{ flex: 1 }} />
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            letterSpacing: '0.04em',
-          }}
-        >
+        <span style={{ fontSize: text.sm, color: color.fgMuted }}>
           {UNIFORM_UNDO_WINDOW_DAYS === null
             ? "Archive, Later, and Delete use your plan's Activity Undo window"
             : `Archive, Later, and Delete use the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`}{' '}
           · Activity logs every change
         </span>
-        <Button tone="ghost" onClick={onCancel}>
+        <Button tone="ghost" size="lg" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          tone={cfg.ctaTone}
-          disabled={changeCount === 0}
-          onClick={apply}
-          iconRight={
-            <Kbd style={{ background: color.lineInverse, border: 'none', color: color.fgInverse }}>
-              ⌘⏎
-            </Kbd>
-          }
-        >
+        <Button tone={cfg.ctaTone} size="lg" disabled={changeCount === 0} onClick={apply}>
           {ctaLabel}
         </Button>
       </div>
@@ -483,10 +454,10 @@ function Segmented({
     <div
       style={{
         display: 'inline-flex',
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: 6,
-        padding: 2,
+        gap: 2,
+        background: color.fill,
+        borderRadius: radius.pill,
+        padding: 3,
       }}
     >
       {options.map((opt) => {
@@ -498,16 +469,18 @@ function Segmented({
             key={opt.id}
             onClick={() => onChange(opt.id)}
             style={{
-              padding: '4px 10px',
+              height: 30,
+              padding: '0 12px',
               background: on ? onBg : 'transparent',
               color: on ? color.fgInverse : color.fgSoft,
               border: 'none',
-              borderRadius: 4,
+              borderRadius: radius.pill,
+              boxShadow: on ? shadow.button : 'none',
               fontFamily: font.sans,
-              fontSize: 11.5,
+              fontSize: text.sm,
               fontWeight: 600,
               cursor: 'pointer',
-              transition: 'background 0.12s, color 0.12s',
+              transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
             }}
           >
             {opt.label}
@@ -550,21 +523,27 @@ function ReviewRow({
       onMouseEnter={onFocus}
       style={{
         display: 'grid',
-        gridTemplateColumns: '32px 1fr 96px auto',
+        gridTemplateColumns: '44px minmax(0, 1fr) 88px auto',
         gap: 14,
         alignItems: 'center',
-        padding: '12px 18px',
+        minHeight: 72,
+        boxSizing: 'border-box',
+        padding: '12px 12px',
+        margin: '0 -12px',
         borderBottom: `1px solid ${color.lineSoft}`,
-        background: focused ? 'rgba(14,20,19,0.025)' : 'transparent',
-        transition: 'background 0.12s',
+        borderRadius: focused ? radius.lg : 0,
+        background: focused ? color.fill : 'transparent',
+        transition: `background ${motion.fast} ${motion.ease}`,
       }}
     >
-      <Avatar name={s.name} domain={s.domain} size={28} hasMark={s.brandMark} />
+      <span style={{ display: 'inline-flex', borderRadius: 12, boxShadow: shadow.card }}>
+        <Avatar name={s.name} domain={s.domain} size={44} hasMark={s.brandMark} />
+      </span>
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
         <span
           style={{
             fontWeight: 600,
-            fontSize: 13.5,
+            fontSize: text.md,
             color: color.fg,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -575,8 +554,7 @@ function ReviewRow({
         </span>
         <span
           style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
+            fontSize: text.sm,
             color: color.fgMuted,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -589,18 +567,17 @@ function ReviewRow({
       <div
         style={{
           textAlign: 'right',
-          fontFamily: font.mono,
-          fontSize: 12.5,
+          fontSize: text.md,
           fontWeight: 600,
           color: color.fg,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {s.monthlyVolume ?? 0}
         <small
           style={{
             display: 'block',
-            fontFamily: font.sans,
-            fontSize: 10,
+            fontSize: text.xs,
             color: color.fgMuted,
             fontWeight: 400,
           }}
@@ -618,9 +595,8 @@ function Tally({ counts, options }: { counts: Record<string, number>; options: O
     <div
       style={{
         display: 'inline-flex',
-        gap: 12,
-        fontFamily: font.mono,
-        fontSize: 11,
+        gap: 14,
+        fontSize: text.sm,
         color: color.fgMuted,
         flexWrap: 'wrap',
       }}
@@ -637,7 +613,11 @@ function Tally({ counts, options }: { counts: Record<string, number>; options: O
         return (
           <span key={opt.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 7, height: 7, borderRadius: 9999, background: swatch }} />
-            <strong style={{ color: color.fg, fontWeight: 700, fontSize: 12 }}>{n}</strong>
+            <strong
+              style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+            >
+              {n}
+            </strong>
             <span>{opt.label.toLowerCase()}</span>
           </span>
         );

@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 
-import { color, font, radius } from '../tokens/tokens';
+import { color, font, radius, text } from '../tokens/tokens';
 
 /**
  * Reusable progressive disclosure for protocol names, identifiers, and
@@ -38,7 +38,7 @@ export function TechnicalDetails({
           cursor: 'pointer',
           padding: '9px 11px',
           color: color.primary,
-          fontSize: 12.5,
+          fontSize: text.base,
           fontWeight: 600,
           lineHeight: 1.4,
         }}
@@ -49,7 +49,7 @@ export function TechnicalDetails({
         style={{
           padding: '0 11px 11px',
           color: color.fgMuted,
-          fontSize: 12,
+          fontSize: text.sm,
           lineHeight: 1.55,
           overflowWrap: 'anywhere',
         }}

@@ -1,13 +1,13 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import { tokens, type SheetFactItem } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
-import { ConfirmModalFrame } from './confirm-modal-frame';
+import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
 import { resolveSenderIdentity } from './sender-label';
 
-const { color, font } = tokens;
+const { color, space, text } = tokens;
 
 /**
  * D226 mandatory preview for the D104 approve flow — both "Approve
@@ -69,23 +69,25 @@ export function ApproveConfirmModal({
 
   const title = coversMoreThanShown
     ? approxTotal != null
-      ? `Approve ALL ~${approxTotal} pending suggestions from "${name}"`
-      : `Approve ALL pending suggestions from "${name}"`
-    : `Approve ${shown} suggestion${shown === 1 ? '' : 's'} from "${name}"`;
+      ? `Approve all ~${approxTotal} suggestions?`
+      : 'Approve all pending suggestions?'
+    : `Approve ${shown} suggestion${shown === 1 ? '' : 's'}?`;
   const confirmLabel = coversMoreThanShown
     ? approxTotal != null
-      ? `Approve all ~${approxTotal} suggestions`
-      : 'Approve all pending suggestions'
-    : `Approve ${shown === 1 ? 'suggestion' : `${shown} suggestions`}`;
+      ? `Approve all ~${approxTotal}`
+      : 'Approve all'
+    : `Approve ${shown}`;
+  const { primary } = autopilotPresentation(rule);
 
   return (
     <ConfirmModalFrame
-      open
-      titleId="dm-approve-title"
       title={title}
-      lead={approveLead(rule, shown, approxTotal, coversMoreThanShown)}
-      footnote={approveFootnote(rule)}
+      subtitle={`From ${name}. ${
+        primary.verb === 'unsubscribe' ? primary.futureMail.summary : primary.currentMail.summary
+      }`}
+      note={primary.activityUndo.summary}
       confirmLabel={confirmLabel}
+      {...(primary.verb === 'unsubscribe' ? { confirmTone: 'danger' as const } : {})}
       confirmBusyLabel="Approving…"
       canConfirm={shown > 0}
       mailboxEmail={mailboxEmail}
@@ -93,74 +95,85 @@ export function ApproveConfirmModal({
       error={error}
       onCancel={onCancel}
       onConfirm={onConfirm}
-    >
-      {coversMoreThanShown && (
-        <p style={{ margin: '0 0 8px', fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-          {approxTotal != null
-            ? `Showing ${shown} of ~${approxTotal}.`
-            : `Showing ${shown} — approving covers all pending.`}
-        </p>
-      )}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-        {matches.map((m) => (
-          <span
-            key={m.id}
-            style={{
-              fontFamily: font.mono,
-              fontSize: 11,
-              color: color.fgSoft,
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 6,
-              padding: '3px 8px',
-              maxWidth: 240,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-            title={m.senderEmail ?? resolveSenderIdentity(m).label}
-          >
-            {resolveSenderIdentity(m).label}
-          </span>
-        ))}
-      </div>
-    </ConfirmModalFrame>
+      details={
+        <ul
+          aria-label="Senders in these suggestions"
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: `${space[3]}px 0 0`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: space[2],
+          }}
+        >
+          {matches.map((m) => {
+            const identity = resolveSenderIdentity(m);
+            return (
+              <li key={m.id} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span
+                  style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}
+                >
+                  {identity.label}
+                </span>
+                {identity.source === 'name' && m.senderEmail != null && (
+                  <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
+                    {m.senderEmail}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      }
+      facts={approveFacts(rule, shown, approxTotal, coversMoreThanShown)}
+    />
   );
 }
 
-/** Verb-true "what happens on approve" lead (D227 canonical verbs). */
-function approveLead(
+const ellipsis = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
+
+/**
+ * What approving does beyond the title (the scope) and the subtitle (the
+ * effect), as Details facts (D227 canonical verbs).
+ */
+function approveFacts(
   rule: AutopilotRuleDto,
   shown: number,
   approxTotal: number | null,
   coversMoreThanShown: boolean,
-): string {
-  const scope = coversMoreThanShown
-    ? approxTotal != null
-      ? `All ~${approxTotal} pending suggestions`
-      : 'All pending suggestions'
-    : shown === 1
-      ? 'This suggestion'
-      : `These ${shown} suggestions`;
-  const presentation = autopilotPresentation(rule);
-  // The footnote owns the primary action's recovery facts, so the lead
-  // takes `effectCopy` — `previewCopy` carries those same sentences and
-  // printed "cannot be undone" twice. A secondary action has no footnote
-  // slot, so it keeps its full `previewCopy`.
-  const { primary, secondary } = presentation;
-  const effect = secondary
-    ? `${primary.effectCopy} Also: ${secondary.previewCopy}`
-    : primary.effectCopy;
-  return `${scope}: ${effect}`;
-}
-
-/** Undo posture, verb-honest (D58 — unsubscribe requests are one-way). */
-function approveFootnote(rule: AutopilotRuleDto): string {
-  const action = autopilotPresentation(rule).primary;
+): SheetFactItem[] {
+  const { primary, secondary } = autopilotPresentation(rule);
   return [
-    action.activityUndo.summary,
-    ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
-  ].join(' ');
+    // "Approve all" covers rows beyond the capped page: the list above
+    // is only the latest page, never presented as the total.
+    ...(coversMoreThanShown
+      ? [
+          {
+            label: 'Showing',
+            value:
+              approxTotal != null
+                ? `${shown} of ~${approxTotal}`
+                : `${shown}, approving covers all pending`,
+          },
+        ]
+      : []),
+    ...ruleEffectFacts(primary),
+    // A secondary action has no note slot, so it keeps its full copy.
+    ...(secondary ? [{ label: 'Also', value: secondary.previewCopy }] : []),
+    ...(primary.providerRecovery.kind === 'gmail-trash'
+      ? [
+          {
+            label: 'Gmail Trash',
+            value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+          },
+        ]
+      : []),
+  ];
 }
 
 function autopilotPresentation(rule: AutopilotRuleDto) {

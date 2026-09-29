@@ -31,8 +31,10 @@
 # creates what is missing. Safe to re-run any number of times.
 #
 # Auth: assumes gcloud is already authed against the target project.
-# Mirrors scripts/setup-mailbox-lock-alert.sh deliberately — one shape for
-# every log-line-to-page alert in this project.
+# Create-only, like scripts/setup-billing-alerts.sh: it creates what is
+# missing and never checks or repairs what exists, so "already exists"
+# here is not proof that the page works. scripts/setup-mailbox-lock-alert.mjs
+# shows the verify-and-repair shape.
 
 set -euo pipefail
 
@@ -169,4 +171,4 @@ EOF
 fi
 
 echo ""
-echo "Done — metric + channel + policy in place on ${PROJECT_ID}."
+echo "Done on ${PROJECT_ID}: created what was missing. Resources that already existed were not checked."

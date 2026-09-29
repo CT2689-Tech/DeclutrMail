@@ -18,6 +18,7 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { InitialSyncProgressReader } from './initial-sync-progress.reader.js';
 import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.service.js';
 
 /**
@@ -34,9 +35,9 @@ import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.
  *
  * `POST /incremental` is the user-facing "Sync now" surface. It does
  * NOT touch Gmail directly; it enqueues an incremental-sync job from
- * the current `provider_sync_state.last_history_id` cursor. BullMQ
- * dedups by `${mailbox}:${cursor}` so consecutive clicks for the same
- * cursor return `noop`. A separate 5-min cron in `apps/api/src/worker.ts`
+ * the current `provider_sync_state.last_history_id` cursor. Enqueues
+ * coalesce per mailbox, so a click while a sync is queued or running
+ * returns `noop` and is covered by that run. A separate 5-min cron in `apps/api/src/worker.ts`
  * sweeps mailboxes whose cursor hasn't advanced in 10+ min (drift
  * recovery while Pub/Sub registration finishes rolling out).
  *
@@ -45,14 +46,17 @@ import { SyncService, syncNotReady, type InitialSyncRetryOutcome } from './sync.
  * The pre-session `?mailboxAccountId=` query param is gone.
  *
  * Privacy posture (§2.1): both responses carry only stage enums + a
- * numeric percentage + an allowlisted boolean + a string cursor id.
- * No body content, no headers, no message-derived data of any kind.
+ * numeric percentage + message counts + an allowlisted boolean + a
+ * string cursor id. No body content, no headers, no message content.
  * `privacy-auditor` verifies this.
  */
 @Controller('v1/sync')
 @UseGuards(JwtGuard, CurrentMailboxGuard)
 export class SyncController {
-  constructor(private readonly sync: SyncService) {}
+  constructor(
+    private readonly sync: SyncService,
+    private readonly scanProgress: InitialSyncProgressReader,
+  ) {}
 
   /**
    * Rate-limit (D156): `triage-load` bucket with a per-route override
@@ -68,14 +72,25 @@ export class SyncController {
     if (status === null) {
       throw new NotFoundException('No sync state for the given mailbox.');
     }
+    // The gate's "N of M emails" line: the running scan's counts, `null`
+    // when there are none, left out when this read failed (reader docs).
+    const message_progress = await this.scanProgress.read(mailbox.id, status);
 
     // Validate at the boundary — a worker bug that wrote `progress_pct
     // = 150` (or any other shape drift) becomes a 500 here, never
     // reaches the UI. SyncStatusSchema is the wire-format source of
     // truth (D224).
-    const result = SyncStatusSchema.safeParse(status);
+    const result = SyncStatusSchema.safeParse({ ...status, message_progress });
     if (!result.success) {
-      throw new InternalServerErrorException('Sync state failed contract validation.');
+      // The failing fields — and any unexpected key, by name — reach the
+      // 5xx log; the client body stays generic.
+      const fields = result.error.issues
+        .map(
+          (i) =>
+            `${i.path.join('.')}:${i.code}${i.code === 'unrecognized_keys' ? `[${i.keys.join('|')}]` : ''}`,
+        )
+        .join(',');
+      throw new InternalServerErrorException(`Sync state failed contract validation (${fields}).`);
     }
     return ok(result.data);
   }

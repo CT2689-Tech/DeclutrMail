@@ -112,12 +112,9 @@ describe('FollowupsScreen — edge states', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /^no follow-ups$/i })).toBeInTheDocument(),
     );
-    expect(screen.getByText(/in the last 60 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/next check runs within about six hours/i)).toBeInTheDocument();
+    expect(screen.getByText(/last 60 days/i)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
@@ -126,7 +123,63 @@ describe('FollowupsScreen — populated list', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('renders the stats summary line + grouped sections per D90', async () => {
+  it('sets aside feedback-marked false positives and lets the user review them again', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [ROW_HIGH, { ...ROW_LOW, feedbackRating: 'not_followup' }] }),
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Big Boss')).toBeInTheDocument();
+    expect(screen.queryByText('Peer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 marked not a follow-up' }));
+    expect(screen.getByText('Peer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide 1 marked not a follow-up' }));
+    expect(screen.queryByText('Peer')).not.toBeInTheDocument();
+  });
+
+  it('does not call a fully set-aside queue empty of tracked conversations', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [{ ...ROW_LOW, feedbackRating: 'not_followup' }] }),
+      },
+    ]);
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: 'No follow-ups to review' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/current suggestions were marked not a follow-up/)).toBeInTheDocument();
+  });
+
+  it('retains the full subject and exposes expansion without needing a hover tooltip', async () => {
+    const subject =
+      'A longer conversation subject about the upcoming launch and the final details that need a response';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [{ ...ROW_HIGH, subject }] }),
+      },
+    ]);
+    renderScreen();
+    const expand = await screen.findByRole('button', { name: 'Read full subject' });
+    expect(screen.getByText(subject)).toBeInTheDocument();
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(expand);
+    expect(screen.getByRole('button', { name: 'Collapse subject' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(document.getElementById(expand.getAttribute('aria-controls')!)).toHaveTextContent(
+      subject,
+    );
+  });
+
+  it('renders the header + grouped sections per D90', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -137,18 +190,25 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    // Stats summary line — total + "over a week" counts.
-    await waitFor(() =>
-      expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument(),
-    );
-    expect(screen.getByText(/1 over a week/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Follow-ups' }),
+    ).toBeInTheDocument();
 
-    // Both priority group headings render.
+    await screen.findByText('Big Boss');
+    // Both priority group headings render, each carrying its count once.
     expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /1.3 days · 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /review first 1 over a week/i })).toHaveAttribute(
+      'href',
+      '#followups-overdue',
+    );
+    expect(screen.getByRole('link', { name: /keep an eye on 1 more recent/i })).toHaveAttribute(
+      'href',
+      '#followups-recent',
+    );
 
     // Each row renders recipient + subject + Open-in-Gmail link.
-    expect(screen.getByText('Big Boss')).toBeInTheDocument();
+    expect(await screen.findByText('Big Boss')).toBeInTheDocument();
     expect(screen.getAllByRole('group', { name: /useful follow-up/i })).toHaveLength(2);
     expect(screen.getByText('Q4 plans — please review')).toBeInTheDocument();
     expect(screen.getByText('Lunch?')).toBeInTheDocument();
@@ -174,17 +234,13 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    expect(await screen.findByText(/based on your sent email/i)).toBeInTheDocument();
-    expect(screen.getByText(/not live gmail status/i)).toBeInTheDocument();
-    const disclosure = screen
-      .getByText('Why a thread may still appear — and how to hide it')
-      .closest('details');
-    expect(disclosure).not.toBeNull();
-    expect(disclosure).toHaveTextContent(/run about every six\s+hours/i);
-    expect(disclosure).toHaveTextContent(/last 60 days/i);
-    expect(disclosure).toHaveTextContent(/does not mark a recipient reply or change Gmail/i);
+    // The two behaviour-changing facts stay visible beside the list.
+    const note = await screen.findByText(/about every six hours/i);
+    expect(note).toHaveTextContent(/recent reply can still show/i);
+    expect(note).toHaveTextContent(/nothing changes in Gmail/i);
+    expect(note).toHaveTextContent(/check the thread in Gmail before following up/i);
     expect(
-      screen.getByRole('button', {
+      await screen.findByRole('button', {
         name: /mark resolved in declutrmail — big boss/i,
       }),
     ).toHaveAttribute('title', 'Mark resolved in DeclutrMail');
@@ -243,8 +299,8 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // (success invalidates the list).
     await waitFor(() => expect(dismissCalls).toBe(1));
     await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
-    // Stats summary reflects the surviving row.
-    expect(screen.getByText(/1 thread with no later reply observed/i)).toBeInTheDocument();
+    // The emptied group's heading goes with its last row.
+    expect(screen.queryByRole('heading', { name: /over a week/i })).not.toBeInTheDocument();
   });
 
   it('transitions to the D91 empty state when the last row is dismissed', async () => {
@@ -271,9 +327,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     fireEvent.click(screen.getByRole('button', { name: /mark resolved in declutrmail/i }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /^no follow-ups$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText('Big Boss')).not.toBeInTheDocument();
   });
@@ -314,7 +368,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // …then the 500 rolls the snapshot back — the row returns, nothing
     // pretends to have worked.
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
-    expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
   });
 });
 

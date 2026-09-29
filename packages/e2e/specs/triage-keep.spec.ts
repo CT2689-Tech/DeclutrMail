@@ -1,28 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type postgres from 'postgres';
 
+import { applyJourneySeed } from '../helpers/seed-journeys';
+
 import { ApiClient, requireLiveStack, type TriageQueueRow } from '../helpers/api';
 import { dbConnect, getSenderPolicy, senderKeyById } from '../helpers/db';
 
-/**
- * Golden spec 1 — Triage Keep (D183 / D29 / D40 / D226).
- *
- * Walks the REAL daily ritual on /triage:
- *
- *   1. D226 preview leg: open the Archive action sheet via the `A`
- *      shortcut, assert the mandatory preview renders, cancel — and
- *      assert NOTHING mutated (the row stays queued).
- *   2. Keep leg: `K` fires the keep-intent POST (D40 — policy-only,
- *      no preview by design, no Gmail mutation). The row leaves the
- *      queue ONLY on server confirmation (refetch excludes the
- *      decided sender), then the keep policy projects into
- *      `sender_policies` via the outbox consumer (worker process).
- *
- * Restore: Keep writes an `activity_log` row + (via outbox) a
- * `sender_policies` row. The target sender is chosen to have NO
- * pre-existing policy row, so teardown is a clean delete of both —
- * the sender returns to the triage queue for the next run (idempotent).
- */
+/** Isolated synthetic API/UI journey. No Gmail credentials or worker. */
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -32,17 +16,16 @@ let testStart: Date;
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
-  test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
+  expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
+  await applyJourneySeed(sql);
 });
 
 test.afterAll(async () => {
-  // Restore the shared dev DB: remove the keep decision row (the
+  // Restore the isolated fixture DB: remove the keep decision row (the
   // sender returns to the queue) and the outbox-projected policy row.
-  // The projection is worker-async — it may land after the assertion
-  // window, so the delete runs unconditionally on the (mailbox,
-  // sender_key) pair scoped to rows created during this test.
+  // Only this synthetic sender and this run's timestamps are removed.
   if (sql && target) {
     await sql`
       DELETE FROM activity_log
@@ -71,7 +54,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   // row (clean-delete restore) and whose name is unique in the queue
   // (unambiguous aria-label selector).
   const rows = await api.get<TriageQueueRow[]>('/api/triage/queue');
-  test.skip(rows.length === 0, 'triage queue is empty for the active mailbox');
+  expect(rows.length, 'synthetic triage fixture must be queued').toBeGreaterThan(0);
   for (const row of rows) {
     const nameCount = rows.filter((r) => r.senderName === row.senderName).length;
     if (nameCount !== 1) continue;
@@ -82,12 +65,16 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
       break;
     }
   }
-  test.skip(target === null, 'no policy-free, uniquely-named sender in the triage queue');
+  expect(target, 'synthetic policy-free sender must be queued').not.toBeNull();
   const { senderName, senderKey } = target!;
 
-  // ---- Open /triage and find the target row. The header's
-  // accessible name flips expand ↔ collapse with state, so match both.
+  // ---- Open /triage. Focus mode is the default (one sender on stage);
+  // the target can sit anywhere in the queue, so switch to the list —
+  // "See all" — and find its row. The header's accessible name flips
+  // expand ↔ collapse with state, so match both.
   await page.goto('/triage');
+  await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
+  await page.getByRole('button', { name: 'List', exact: true }).click();
   const queue = page.getByRole('list', { name: 'Triage queue' });
   await expect(queue).toBeVisible();
   const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -106,8 +93,15 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await page.keyboard.press('a');
   const sheet = page.getByRole('dialog');
   await expect(sheet).toBeVisible();
-  await expect(sheet).toContainText('Preview · Archive');
-  await expect(sheet).toContainText(`Archive all inbox mail from ${senderName}`);
+  // The region wraps a fixed-position sheet, so its own box has no visible
+  // area even while the dialog is on screen.
+  await expect(page.getByRole('region', { name: `Preview · Archive ${senderName}` })).toHaveCount(
+    1,
+  );
+  // The count + verb is the title ("Archive 12 emails?"); whose email and
+  // where it goes is the subtitle.
+  await expect(sheet.getByRole('heading', { level: 2 })).toHaveText(/^Archive .*\?$/);
+  await expect(sheet).toContainText(`From ${senderName}.`);
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();
   // Cancel must leave the queue untouched (no optimistic anything).
@@ -129,15 +123,22 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   `;
   expect(activityRows.length).toBe(1);
 
-  // …and the outbox consumer (worker) projects policy_type='keep'
-  // into sender_policies (D40 / D204). Worker-async — poll.
-  await expect
-    .poll(
-      async () => {
-        const policy = await getSenderPolicy(sql, mailboxId, senderKey);
-        return policy?.policy_type ?? null;
-      },
-      { timeout: 30_000, message: 'outbox → sender_policies keep projection (worker running?)' },
-    )
-    .toBe('keep');
+  // The synchronous API contract commits the projection event atomically.
+  // Worker consumption is separately covered by worker tests, not this no-worker lane.
+  const events = await sql<{ count: string }[]>`
+    SELECT count(*)::text AS count FROM outbox_events
+    WHERE topic = 'triage.verdict_applied'
+      AND aggregate_id = ${activityRows[0]!.id}
+      AND payload->>'mailboxAccountId' = ${mailboxId}
+      AND payload->>'senderKey' = ${senderKey}
+      AND payload->>'verdict' = 'keep'
+  `;
+  expect(Number(events[0]?.count)).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: 'Triage' })).toBeVisible();
+  expect(
+    (await api.get<TriageQueueRow[]>('/api/triage/queue')).some(
+      (row) => row.senderName === senderName,
+    ),
+  ).toBe(false);
 });

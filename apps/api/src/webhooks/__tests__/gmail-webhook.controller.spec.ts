@@ -314,3 +314,62 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
     consoleWarn.mockRestore();
   });
 });
+
+describe('Gmail Pub/Sub acknowledgement semantics', () => {
+  const verified: OidcVerifyResult = {
+    ok: true,
+    claims: {
+      iss: 'https://accounts.google.com',
+      aud: 'aud',
+      email: 'sa@x',
+      email_verified: true,
+      exp: 9_999_999_999,
+      iat: 1,
+      sub: 's',
+    },
+  };
+  const envelope = {
+    message: {
+      messageId: 'terminal-noop',
+      data: Buffer.from(
+        JSON.stringify({ emailAddress: 'gone@example.com', historyId: '500' }),
+      ).toString('base64'),
+    },
+  };
+
+  it('acknowledges an authenticated absent/disconnected mailbox without retry-producing 404', async () => {
+    const { controller, service, record } = makeController({ verify: verified });
+    service.processVerifiedPush.mockResolvedValue({
+      kind: 'unknown_mailbox',
+      emailAddress: 'gone@example.com',
+    });
+    await expect(controller.push('Bearer valid', envelope)).resolves.toEqual({
+      status: 'unknown_mailbox',
+    });
+    expect(service.processVerifiedPush).toHaveBeenCalledOnce();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('propagates temporary database failures so Pub/Sub can retry', async () => {
+    const { controller, service } = makeController({ verify: verified });
+    const failure = new Error('database temporarily unavailable');
+    service.processVerifiedPush.mockRejectedValue(failure);
+    await expect(controller.push('Bearer valid', envelope)).rejects.toBe(failure);
+  });
+
+  it('never acknowledges an unknown-mailbox envelope with invalid authentication', async () => {
+    const { controller, service } = makeController({
+      verify: { ok: false, step: 2, reason: 'signature_invalid' },
+    });
+    await expect(controller.push('Bearer invalid', envelope)).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(service.processVerifiedPush).not.toHaveBeenCalled();
+  });
+
+  it('still rejects malformed authenticated notifications before mailbox lookup', async () => {
+    const { controller, service } = makeController({ verify: verified });
+    await expect(controller.push('Bearer valid', ENVELOPE)).rejects.toMatchObject({ status: 400 });
+    expect(service.processVerifiedPush).not.toHaveBeenCalled();
+  });
+});

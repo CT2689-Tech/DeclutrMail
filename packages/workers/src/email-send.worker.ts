@@ -131,9 +131,7 @@ const OPT_OUT_PREF_BY_KIND: Partial<Record<EmailKind, keyof EmailPrefs>> = {
  * `sync-reminder-24h` is commercial, and stays gated. Its body opens by
  * restating YESTERDAY's completion, which `sync-complete` already
  * reported, so it carries no new transactional information; it exists
- * only because the recipient did not come back, and "five minutes of
- * triage is usually enough to feel the difference" is a value claim
- * about the product rather than a status report. Under the mixed-message
+ * only because the recipient did not come back. Under the mixed-message
  * primary-purpose test that is promotional — and it is what every ESP
  * classifies as re-engagement/win-back. Sending it without a postal
  * address is the violation the rule is actually about.

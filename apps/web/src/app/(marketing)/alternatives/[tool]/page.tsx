@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
-import '@/features/marketing/landing/landing.css';
+import '@/features/marketing/product-story/product-story.css';
 import '@/features/marketing/comparison/comparison.css';
 
 import { AlternativesScreen } from '@/features/marketing/comparison/alternatives-screen';
@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: AlternativesPageProps): Promi
     // not rank its entries, so promising a winner in the title would
     // contradict the badge under it.
     title: `${page.subject.name} alternatives, compared honestly`,
-    description: `Source-backed alternatives to ${page.subject.name} for email cleanup. What each tool is for, when to stay with ${page.subject.name}, and where DeclutrMail fits. No rankings, no affiliate links.`,
+    description: `Source-backed alternatives to ${page.subject.name}: what each tool is for, when to stay with ${page.subject.name}, and where DeclutrMail fits. No rankings, no affiliates.`,
     path: `/alternatives/${page.slug}`,
   });
 }

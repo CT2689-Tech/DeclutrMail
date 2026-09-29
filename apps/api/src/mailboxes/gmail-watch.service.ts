@@ -21,10 +21,10 @@ export type GmailWatchOutcome =
  * Local per-call quota pacing for the API-side watch calls. These are
  * one-shot lifecycle calls (connect / disconnect / deletion purge), not
  * bulk loops, so each gets a fresh limiter — the same coarse per-call
- * accounting the worker uses (ADR-0005; `users.watch` is billed higher
- * server-side, but one call per connect cannot approach the window).
+ * accounting the worker uses (ADR-0005). The client reserves the actual
+ * `users.watch`/`users.stop` method cost before each call.
  */
-const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
+const GMAIL_QUOTA_UNITS_PER_MIN = 4_800;
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /**
@@ -34,8 +34,9 @@ const GMAIL_QUOTA_WINDOW_MS = 60_000;
  *
  * Call sites:
  *   - `AuthSignupOrchestrator.connect` / `.addMailbox` — watch right
- *     after the OAuth connect/reconnect commits. Initial sync is NOT
- *     ready yet at that point and that is fine: the webhook treats
+ *     after the OAuth connect/reconnect commits. The mailbox may not be
+ *     ready yet (a first connect or a re-scan; one that stayed ready
+ *     applies pushes immediately), and that is fine: the webhook treats
  *     pushes for unsynced mailboxes as designed no-ops
  *     (`sync_state_uninitialized` / `deferred_initial_sync_in_flight`),
  *     and the subscription is already live the moment the mailbox
@@ -194,9 +195,12 @@ export class GmailWatchService {
     }
     const oauth = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
     oauth.setCredentials({ refresh_token: refreshToken });
+    // 4,800 is the newer metric's budget (80% of 6,000), so it is priced
+    // on that metric. Watch and stop cost the same on both anyway.
     return new GmailClientService(
       oauth,
       new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS),
+      'gmail.googleapis.com/total_query_cost',
     );
   }
 }

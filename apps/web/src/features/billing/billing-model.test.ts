@@ -13,6 +13,8 @@ import type { BillingSubscription } from '@declutrmail/shared/contracts';
 import { ApiError } from '@/lib/api/client';
 
 import {
+  annualMonthsFree,
+  sharedAnnualMonthsFree,
   backingStatusNote,
   BillingPayloadError,
   complimentaryNote,
@@ -445,5 +447,13 @@ describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS
   it('a canceled row frees the slot; no record blocks nothing', () => {
     expect(nonBackingBlocksNewCheckout(record('canceled'))).toBe(false);
     expect(nonBackingBlocksNewCheckout(null)).toBe(false);
+  });
+});
+
+describe('annual savings reflect the displayed currency', () => {
+  it('only advertises exact whole-month savings on both paid plans', () => {
+    expect(sharedAnnualMonthsFree('paddle')).toBe(2);
+    expect(annualMonthsFree('plus', 'razorpay')).toBeNull();
+    expect(sharedAnnualMonthsFree('razorpay')).toBeNull();
   });
 });

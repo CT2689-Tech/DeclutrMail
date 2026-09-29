@@ -151,9 +151,7 @@ export class EmailService implements EmailDeliveryPort {
     } catch (err) {
       // Network/transport failure before Resend answered — transient.
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `email.send.transport_error idempotencyKey=${input.idempotencyKey} message=${message}`,
-      );
+      this.logger.error(`email.send.transport_error idempotencyKey=${input.idempotencyKey}`);
       return { ok: false, reason: 'transient', detail: message };
     }
   }

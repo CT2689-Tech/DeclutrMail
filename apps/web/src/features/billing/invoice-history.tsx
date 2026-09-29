@@ -1,5 +1,7 @@
 'use client';
 
+import linkStyles from './billing-links.module.css';
+
 /**
  * D119 / ADR-0035 — the invoice section.
  *
@@ -20,10 +22,11 @@
  *     open this page after leaving is to fetch last year's receipts.
  */
 
+import { useState } from 'react';
+
 import {
   Button,
   EmptyState,
-  Eyebrow,
   ErrorState as RecoverableErrorState,
   tokens,
   useIsAtMost,
@@ -32,15 +35,27 @@ import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
 import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow } = tokens;
+const { color, radius, text } = tokens;
+const FILTER_STYLE = {
+  background: color.card,
+  color: color.fg,
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.sm,
+  padding: '6px 8px',
+  minHeight: 36,
+  maxWidth: '100%',
+  minWidth: 0,
+  width: '100%',
+  boxSizing: 'border-box',
+} as const;
 
 const SECTION_STYLE = {
   background: color.card,
   border: `1px solid ${color.border}`,
-  borderRadius: radius.lg,
-  boxShadow: shadow.card,
-  padding: '20px 22px',
+  borderRadius: radius.md,
+  padding: 'clamp(16px, 3vw, 22px)',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
@@ -64,16 +79,19 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const invoices = useInvoices({ enabled });
   const mint = useInvoiceDocument();
   const isPhone = useIsAtMost('xs');
+  const [status, setStatus] = useState('all');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   if (!enabled) return null;
 
   if (invoices.isLoading) {
     return (
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <Eyebrow>Invoices</Eyebrow>
+        <GroupTitle as="div">Invoices</GroupTitle>
         <div
           aria-hidden="true"
-          style={{ height: 72, background: color.paper, borderRadius: radius.md }}
+          style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
         <span style={{ position: 'absolute', left: -9999 }}>Loading invoices</span>
       </section>
@@ -83,7 +101,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   if (invoices.isError) {
     return (
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <Eyebrow>Invoices</Eyebrow>
+        <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
           title="We couldn't load your invoices"
           description="Your payment provider didn't answer. Your plan and your billing are unaffected — this page only reads them."
@@ -96,10 +114,74 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
+  const filtered = data.invoices.filter((invoice) => {
+    const date = invoice.issuedAt.slice(0, 10);
+    return (
+      (status === 'all' || status === invoice.status) &&
+      (!from || date >= from) &&
+      (!to || date <= to)
+    );
+  });
 
   return (
     <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-      <Eyebrow>Invoices</Eyebrow>
+      <GroupTitle as="div">Invoices</GroupTitle>
+      {data.invoices.length > 0 ? (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              Status{' '}
+              <select
+                style={FILTER_STYLE}
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+              >
+                <option value="all">All statuses</option>
+                <option value="paid">Paid invoices</option>
+                <option value="due">Due invoices</option>
+                <option value="canceled">Canceled invoices</option>
+                <option value="unknown">Unknown status</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              From{' '}
+              <input
+                type="date"
+                style={FILTER_STYLE}
+                value={from}
+                onChange={(event) => setFrom(event.target.value)}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              Through{' '}
+              <input
+                type="date"
+                style={FILTER_STYLE}
+                value={to}
+                min={from || undefined}
+                onChange={(event) => setTo(event.target.value)}
+              />
+            </label>
+            {status !== 'all' || from || to ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setStatus('all');
+                  setFrom('');
+                  setTo('');
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+          <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+            {filtered.length} of {data.invoices.length} loaded invoices. Filters apply to this
+            loaded history only.
+          </p>
+          {filtered.length === 0 ? <p>No loaded invoices match these filters.</p> : null}
+        </>
+      ) : null}
 
       {data.invoices.length === 0 ? (
         // THREE distinct empty answers, never collapsed: a rail we could
@@ -109,12 +191,12 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // gate network 2026-08-16 CONFIRMED), and the genuine
         // never-billed state (D212 EmptyState primitive).
         partial ? (
-          <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
             We couldn&rsquo;t reach your payment provider, so we can&rsquo;t show your invoices
             right now.
           </p>
         ) : data.omittedRows > 0 ? (
-          <p role="status" style={{ margin: 0, fontSize: 13, color: color.amber }}>
+          <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
             <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
               support@declutrmail.com
@@ -141,10 +223,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                 display: 'flex',
                 gap: 12,
                 padding: '0 0 4px',
-                fontSize: 10.5,
+                fontSize: text.xs,
                 fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
                 color: color.fgMuted,
               }}
             >
@@ -155,7 +235,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             </div>
           ) : null}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-            {data.invoices.map((invoice) => {
+            {filtered.map((invoice) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
               const label = STATUS_LABEL[invoice.status];
@@ -183,18 +263,29 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     alignItems: isPhone ? 'flex-start' : 'center',
                     gap: isPhone ? 6 : 12,
                     flexWrap: 'wrap',
+                    minHeight: 52,
+                    boxSizing: 'border-box',
                     padding: '10px 0',
                     borderBottom: `1px solid ${color.lineSoft}`,
-                    fontSize: 13,
+                    fontSize: text.md,
                   }}
                 >
-                  <span aria-hidden="true" style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      color: color.fg,
+                      fontWeight: 500,
+                      fontVariantNumeric: 'tabular-nums',
+                      minWidth: isPhone ? 0 : 120,
+                    }}
+                  >
                     {date ?? '—'}
                   </span>
                   <span
                     aria-hidden="true"
                     style={{
                       color: color.fg,
+                      fontWeight: 600,
                       fontVariantNumeric: 'tabular-nums',
                       minWidth: isPhone ? 0 : 90,
                     }}
@@ -216,6 +307,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                   <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
                     {invoice.hostedUrl ? (
                       <a
+                        className={linkStyles.link}
                         href={invoice.hostedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -226,6 +318,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     ) : invoice.documentAvailable ? (
                       <Button
                         tone="default"
+                        size="sm"
                         disabled={mint.isPending}
                         onClick={() => mint.mutate(invoice.id)}
                       >
@@ -235,7 +328,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                       // Neither a hosted page nor a mintable document —
                       // say nothing is available rather than render a
                       // control that cannot work.
-                      <span style={{ color: color.fgMuted, fontSize: 12 }}>No document</span>
+                      <span style={{ color: color.fgMuted, fontSize: text.sm }}>No document</span>
                     )}
                   </span>
                 </li>
@@ -246,14 +339,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       )}
 
       {partial && data.invoices.length > 0 ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.amber }}>
+        <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           One of your payment providers didn&rsquo;t answer, so this list may be missing invoices.
           Reload to try again.
         </p>
       ) : null}
 
       {data.omittedRows > 0 && data.invoices.length > 0 ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.amber }}>
+        <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           {data.omittedRows === 1 ? 'One invoice' : `${data.omittedRows} invoices`} couldn&rsquo;t
           be displayed. Email support@declutrmail.com if you need{' '}
           {data.omittedRows === 1 ? 'it' : 'them'}.
@@ -261,8 +354,15 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       ) : null}
 
       {data.truncated ? (
-        <p style={{ margin: 0, fontSize: 12, color: color.fgMuted }}>
-          Showing your most recent invoices. Email support@declutrmail.com if you need older ones.
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          Showing your most recent invoices.{' '}
+          <a
+            className={linkStyles.link}
+            href="mailto:support@declutrmail.com?subject=Older%20invoice%20request"
+          >
+            Request older invoices
+          </a>
+          .
         </p>
       ) : null}
 
@@ -270,11 +370,10 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: color.redBg,
-            border: `1px solid ${color.red}`,
-            borderRadius: 8,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >

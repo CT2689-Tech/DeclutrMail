@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { and, eq, ne, lt, count } from 'drizzle-orm';
+import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
@@ -11,6 +11,26 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /** NestJS DI token for the score-worker BullMQ queue (D25 triggers). */
 export const SCORE_QUEUE_TOKEN = 'SCORE_QUEUE';
+
+/**
+ * The `score-explain` queue, on a request-path producer connection —
+ * explanation asks only (see `TriageModule`).
+ */
+export const SCORE_EXPLAIN_QUEUE_TOKEN = 'SCORE_EXPLAIN_QUEUE';
+
+/**
+ * How long an ask for one row version suppresses the next, in ms: at most
+ * one explain job per row version per hour. A row whose call failed (an
+ * outage, a timeout) is tried again on the next ask after that; a row
+ * whose call succeeded is never asked for again, because it is no longer
+ * on the template.
+ *
+ * BullMQ deduplication in throttle mode — the key outlives the job for
+ * `ttl` — rather than a fixed job id kept by an age-based
+ * `removeOnComplete`: BullMQ applies an age limit to the queue's WHOLE
+ * finished set, so it would purge whatever else shares the queue.
+ */
+const EXPLAIN_DEDUP_TTL_MS = 60 * 60 * 1000;
 
 /**
  * D30 — minimum daily queue size. The queue is never smaller than 5,
@@ -88,6 +108,12 @@ export class TriageService {
     // case; read-only methods (`getDecision`, `getQueueSize`) work
     // without Redis.
     @Inject(SCORE_QUEUE_TOKEN) private readonly scoreQueue: Queue<ScoreJobData> | null,
+    // Explanation asks only — their own queue, on a request-path
+    // connection (see `TriageModule`). Optional so a harness that never
+    // asks for an explanation can construct the service without it.
+    @Optional()
+    @Inject(SCORE_EXPLAIN_QUEUE_TOKEN)
+    private readonly explainQueue: Queue<ScoreJobData> | null = null,
   ) {}
 
   /**
@@ -170,6 +196,89 @@ export class TriageService {
   }
 
   /**
+   * Ask for the LLM sentence behind template reasons someone is about to
+   * read (D24; founder decision 2026-09-25 — explain only what the user is
+   * about to see). Enqueues one `explain` job per row that still needs one
+   * and returns WITHOUT waiting: no LLM call runs on a request.
+   *
+   * Only template rows qualify; a row with LLM prose needs nothing. Stale
+   * rows are accepted: the page asks for one only where nothing is
+   * re-scoring it (a re-score buys its own sentence), and only the page
+   * knows which surface it is. Ids resolve inside this mailbox, so a
+   * guessed id queues nothing.
+   *
+   * ADR-0008 §3 exception: triage reads the senders-owned table (the page
+   * holds sender ids, not keys) — same crossing as `resolveSenderKey`.
+   *
+   * Returns the ids that have an explain job: added now, or kept from an
+   * ask for the same row version within the hour (that job may already
+   * have finished). The page does not branch on it.
+   */
+  async explainSenders(input: {
+    mailboxAccountId: string;
+    senderIds: readonly string[];
+  }): Promise<{ queued: string[] }> {
+    const queue = this.explainQueue;
+    if (!queue) {
+      throw new Error(
+        'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
+      );
+    }
+    if (input.senderIds.length === 0) return { queued: [] };
+    const rows = await this.db
+      .select({
+        senderId: senders.id,
+        senderKey: senders.senderKey,
+        producedAt: triageDecisions.producedAt,
+      })
+      .from(senders)
+      .innerJoin(
+        triageDecisions,
+        and(
+          eq(triageDecisions.mailboxAccountId, senders.mailboxAccountId),
+          eq(triageDecisions.senderKey, senders.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(senders.mailboxAccountId, input.mailboxAccountId),
+          inArray(senders.id, [...input.senderIds]),
+          eq(triageDecisions.generatedBy, 'template'),
+        ),
+      );
+    if (rows.length === 0) return { queued: [] };
+    await queue.addBulk(
+      rows.map((row) => {
+        const producedAtMs = row.producedAt.getTime();
+        const data: ScoreJobData = {
+          mailboxAccountId: input.mailboxAccountId,
+          senderKey: row.senderKey,
+          trigger: 'explain',
+          producedAtMs,
+        };
+        return {
+          name: SCORE_JOB,
+          data,
+          opts: {
+            // Keyed to the row version. Hyphens, never colons — the house
+            // rule since BullMQ's `:` checks broke the U14 apply trigger
+            // and the domain-icon queue.
+            deduplication: {
+              id: `explain-${input.mailboxAccountId}-${row.senderKey}-${producedAtMs}`,
+              ttl: EXPLAIN_DEDUP_TTL_MS,
+            },
+            // THIS job only; the dedup key above carries the hour. A failed
+            // job stays (BullMQ's default) — and it is also parked in
+            // `dead_letter_jobs`, since it gets one attempt.
+            removeOnComplete: true,
+          },
+        };
+      }),
+    );
+    return { queued: rows.map((row) => row.senderId) };
+  }
+
+  /**
    * D30 — adaptive queue size for the Triage daily ritual.
    *
    * Computes the backlog (non-Keep verdicts in `triage_decisions` that
@@ -179,7 +288,9 @@ export class TriageService {
    *
    * "Not seen in 7 days" is approximated by `produced_at < now() - 7d`:
    * a fresh `triage_decisions` row is the engine's *current* verdict,
-   * and the worker rewrites the row on every signal change (D25). A
+   * and the worker rewrites the row whenever the sender is re-scored
+   * (D25): a full scan, a first-seen sender, an on-attention stale
+   * refresh, or a manual re-score. A
    * row that hasn't been recomputed in 7d is effectively unattended
    * for the purposes of the backlog count. The richer "user actually
    * skipped this row in the UI" signal will arrive with the activity-

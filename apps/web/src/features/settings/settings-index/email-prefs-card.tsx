@@ -1,30 +1,29 @@
 'use client';
 
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 import type { EmailPrefs } from '@declutrmail/shared/contracts';
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowStatus,
+  SettingsSaveError,
+  SettingsSwitch,
+} from '../settings-list';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 /** Toggleable categories in display order (D165). */
 const CATEGORY_ROWS: ReadonlyArray<{
   wire: keyof EmailPrefs;
   label: string;
-  detail: string;
+  detail?: string;
 }> = [
-  {
-    wire: 'syncComplete',
-    label: 'Sync completion alerts',
-    detail: '"Your inbox is ready" when a mailbox finishes its first scan.',
-  },
-  {
-    wire: 'reminders',
-    label: 'Reminder emails',
-    detail: 'The 24-hour "your inbox is still ready" nudge and similar re-engagement reminders.',
-  },
+  { wire: 'syncComplete', label: 'Sync completion alerts' },
+  { wire: 'reminders', label: 'Reminder emails' },
   {
     wire: 'weeklyReceipt',
     label: 'Weekly value receipt',
-    detail: 'For Plus and Pro: new senders waiting in Screener. Off until you opt in.',
+    detail: 'Plus and Pro: new senders in Screener.',
   },
 ];
 
@@ -40,17 +39,19 @@ export type EmailPrefsCardState =
  * `weeklyReceipt`);
  * SYSTEM emails (account-deletion notices) are non-opt-out per the
  * CAN-SPAM/GDPR transactional carve-out, so they render as a locked
- * "always send" row instead of a fake toggle.
+ * "Always on" row instead of a fake toggle.
  *
  * Dumb component (same contract as ActionSheetPrefsCard): the
- * container owns the PATCH; this card renders state + emits
- * `onToggle(wire, next)`.
+ * container owns the PATCH; this renders state + emits
+ * `onToggle(wire, next)`. `children` are extra rows the container
+ * appends to the same group (the Daily Brief hour).
  */
 export function EmailPrefsCard({
   state,
   onToggle,
   pendingWire,
   saveFailed,
+  children,
 }: {
   state: EmailPrefsCardState;
   onToggle: (wire: keyof EmailPrefs, next: boolean) => void;
@@ -58,162 +59,44 @@ export function EmailPrefsCard({
   pendingWire: keyof EmailPrefs | null;
   /** True when the last toggle PATCH failed (inline error line). */
   saveFailed: boolean;
+  children?: React.ReactNode;
 }) {
   return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
-          Email notifications
-        </h3>
-        <p style={mutedTextStyle}>
-          Which emails DeclutrMail sends you, per category. Changes apply to the very next queued
-          email.
-        </p>
-        {state.kind === 'loading' ? (
-          <p role="status" style={mutedTextStyle}>
-            Loading email preferences…
-          </p>
-        ) : state.kind === 'error' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <span style={{ fontSize: 13, color: color.danger }}>
-              Could not load email preferences.
-            </span>
-            <Button tone="default" size="sm" onClick={state.onRetry}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column' }}>
-            {CATEGORY_ROWS.map(({ wire, label, detail }, i) => (
-              <div
-                key={wire}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  padding: '10px 0',
-                  borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 500, color: color.fg }}>{label}</div>
-                  <div style={{ fontSize: 12, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
-                </div>
-                <PrefSwitch
-                  label={label}
-                  on={state.prefs[wire]}
-                  disabled={pendingWire !== null}
-                  pending={pendingWire === wire}
-                  onToggle={() => onToggle(wire, !state.prefs[wire])}
-                />
-              </div>
-            ))}
-            {saveFailed && (
-              <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '6px 0 0' }}>
-                Could not save the preference. Try again.
-              </p>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                padding: '10px 0 0',
-                borderTop: `1px solid ${color.lineSoft}`,
-                marginTop: 4,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: color.fg }}>
-                  Account notices
-                </div>
-                <div style={{ fontSize: 12, color: color.fgMuted, marginTop: 2 }}>
-                  Deletion confirmations and receipts always send — they document actions on your
-                  account.
-                </div>
-              </div>
-              <span style={{ fontSize: 11, color: color.fgMuted, flexShrink: 0 }}>Always on</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </Card>
-  );
-}
-
-/** Switch-style toggle — same shape as ActionSheetPrefsCard's SkipSwitch. */
-function PrefSwitch({
-  label,
-  on,
-  disabled,
-  pending,
-  onToggle,
-}: {
-  label: string;
-  on: boolean;
-  disabled: boolean;
-  pending: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={`${on ? 'Disable' : 'Enable'} ${label.toLowerCase()}`}
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 7,
-        background: 'transparent',
-        border: 'none',
-        padding: 0,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled && !pending ? 0.6 : 1,
-        fontFamily: font.sans,
-      }}
+    <SettingsGroup
+      id="notifications"
+      title="Notifications"
+      footer={
+        saveFailed && state.kind === 'ready' ? (
+          <SettingsSaveError>Could not save the preference. Try again.</SettingsSaveError>
+        ) : null
+      }
     >
-      <span style={{ fontSize: 11, color: color.fgMuted, minWidth: 34, textAlign: 'right' }}>
-        {pending ? 'Saving…' : on ? 'On' : 'Off'}
-      </span>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 32,
-          height: 18,
-          borderRadius: 999,
-          background: on ? color.primary : color.mutedBg,
-          border: `1px solid ${on ? color.primary : color.border}`,
-          position: 'relative',
-          transition: 'background 120ms',
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 1,
-            left: on ? 15 : 1,
-            width: 14,
-            height: 14,
-            borderRadius: 999,
-            background: '#FFFFFF',
-            boxShadow: '0 1px 2px rgba(14,20,19,0.25)',
-            transition: 'left 120ms',
-          }}
+      {state.kind === 'ready' ? (
+        <>
+          {CATEGORY_ROWS.map(({ wire, label, detail }) => (
+            <SettingsRow key={wire} label={label} detail={detail}>
+              <SettingsSwitch
+                ariaLabel={`${state.prefs[wire] ? 'Disable' : 'Enable'} ${label.toLowerCase()}`}
+                on={state.prefs[wire]}
+                stateLabel={state.prefs[wire] ? 'On' : 'Off'}
+                disabled={pendingWire !== null}
+                pending={pendingWire === wire}
+                onToggle={() => onToggle(wire, !state.prefs[wire])}
+              />
+            </SettingsRow>
+          ))}
+          <SettingsRow label="Account notices" detail="Deletion confirmations and receipts.">
+            <span style={{ fontSize: text.sm, color: color.fgMuted }}>Always on</span>
+          </SettingsRow>
+        </>
+      ) : (
+        <SettingsRowStatus
+          state={state}
+          loadingLabel="Loading email preferences…"
+          errorLabel="Could not load email preferences."
         />
-      </span>
-    </button>
+      )}
+      {children}
+    </SettingsGroup>
   );
 }
-
-const mutedTextStyle = {
-  fontSize: 13,
-  color: color.fgSoft,
-  lineHeight: 1.55,
-  margin: '8px 0 0',
-} as const;

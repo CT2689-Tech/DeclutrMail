@@ -32,9 +32,9 @@ import sharp from 'sharp';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CHECK = process.argv.includes('--check');
 
-const TEAL = '#006B5F';
-const MINT = '#79E6DC';
-const PAPER = '#FAFAF7';
+const PLUM = '#59415F';
+const LILAC = '#D1B8D6';
+const PAPER = '#FAF4ED';
 
 /**
  * The two cuts, exactly as `packages/shared/src/components/logo.tsx` draws
@@ -62,7 +62,7 @@ const MARK_SCALE = 0.75;
 const cutFor = (tilePx) => (tilePx * MARK_SCALE <= 24 ? CUTS.compact : CUTS.regular);
 
 /**
- * Card lockup — the mark inside a filled teal tile, which is what every icon
+ * Card lockup — the mark inside a filled plum tile, which is what every icon
  * surface actually shows. `inset` is the fraction of the tile left as padding
  * on each side; 0.125 puts the mark at 75%.
  *
@@ -78,10 +78,10 @@ function lockupSvg(px, { radius, inset = 0.125, safeArea = 1, cut = null } = {})
   const tx = (16 - vw * scale) / 2 - vx * scale;
   const ty = (16 - vw * scale) / 2 - vy * scale;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 16 16">
-  <rect width="16" height="16" rx="${radius}" fill="${TEAL}"/>
+  <rect width="16" height="16" rx="${radius}" fill="${PLUM}"/>
   <g transform="translate(${tx.toFixed(4)} ${ty.toFixed(4)}) scale(${scale.toFixed(6)})" fill="none">
     <path d="${c.frame}" stroke="${PAPER}" stroke-width="${c.stroke}" stroke-linecap="round"/>
-    <path d="${c.tail}" stroke="${MINT}" stroke-width="${c.stroke}" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="${c.tail}" stroke="${LILAC}" stroke-width="${c.stroke}" stroke-linejoin="round" stroke-linecap="round"/>
   </g>
 </svg>`;
 }
