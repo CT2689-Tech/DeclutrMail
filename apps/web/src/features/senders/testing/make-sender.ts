@@ -15,6 +15,8 @@ import { enrichSenderRow, type Sender } from '../data';
 
 /** Fixed "now" for deterministic derived fields (2026-07-01T00:00Z). */
 export const FIXTURE_NOW = Date.parse('2026-07-01T00:00:00.000Z');
+/** IANA zone paired with `FIXTURE_NOW` so lastDays is calendar-stable. */
+export const FIXTURE_TIME_ZONE = 'UTC';
 
 /** A complete, realistic default wire row — override per test/story. */
 export function makeSenderRow(overrides: Partial<SenderListRow> = {}): SenderListRow {
@@ -60,7 +62,7 @@ export function makeSender(
     Partial<Pick<Sender, 'name' | 'lastDays' | 'firstSeenMo'>> = {},
 ): Sender {
   const { name, lastDays, firstSeenMo, ...rowOverrides } = overrides;
-  const sender = enrichSenderRow(makeSenderRow(rowOverrides), FIXTURE_NOW);
+  const sender = enrichSenderRow(makeSenderRow(rowOverrides), FIXTURE_NOW, FIXTURE_TIME_ZONE);
   return {
     ...sender,
     ...(name !== undefined ? { name } : {}),

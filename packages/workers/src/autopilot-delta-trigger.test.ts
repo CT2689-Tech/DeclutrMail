@@ -357,6 +357,33 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     expect(jobIds[2]).not.toBe(jobIds[0]);
   });
 
+  it('settleMs lands the sweep on the first window end at least that far off', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    // One second before a window closes: without settleMs the sweep would
+    // run a second later, before work queued alongside it had run.
+    const nowMs =
+      (Math.floor(NOW.getTime() / AUTOPILOT_APPLY_DELTA_WINDOW_MS) + 1) *
+        AUTOPILOT_APPLY_DELTA_WINDOW_MS -
+      1_000;
+    const trigger = buildAutopilotApplyDeltaTrigger({ add } as never, {
+      now: () => new Date(nowMs),
+      settleMs: AUTOPILOT_APPLY_DELTA_WINDOW_MS,
+    });
+
+    await trigger('mbx-1');
+
+    const [, jobData, opts] = add.mock.calls[0] as [
+      string,
+      { triggeredAtMs: number },
+      { jobId: string; delay: number },
+    ];
+    expect(opts.delay).toBeGreaterThanOrEqual(AUTOPILOT_APPLY_DELTA_WINDOW_MS);
+    expect(opts.delay).toBeLessThan(2 * AUTOPILOT_APPLY_DELTA_WINDOW_MS);
+    expect(jobData.triggeredAtMs % AUTOPILOT_APPLY_DELTA_WINDOW_MS).toBe(0);
+    expect(jobData.triggeredAtMs - nowMs).toBe(opts.delay);
+    expect(opts.jobId).toBe(`mbx-1-delta-${jobData.triggeredAtMs}`);
+  });
+
   it('steady state — a completed unsubscribe is NOT re-matched; removing the policy re-arms it', async () => {
     const db = await freshDb();
     const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');

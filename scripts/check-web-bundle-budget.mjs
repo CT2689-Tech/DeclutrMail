@@ -127,18 +127,18 @@ export const DEFAULT_KB = 151;
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 262 on 2026-09-28. zod 4.4.3 → 4.6.5 grew the shared zod chunk
- * every authed route loads by about 7 kB gzip (a bundled
- * `import { z } from 'zod'` went 17.9 → 25.1 kB). Marketing does not
- * load that chunk, and its ceilings did not move. /activity and
- * /autopilot, the heaviest routes still on this default, measured
- * 260.1 and 260.2. `/settings/help` also rides this default at 260.2 —
- * still carrying the leak the "FIXED, NOT JUST RE-BUDGETED" note above
- * describes, not a coincidence of matching weight. 262 leaves about
- * 2 kB. A NEW authed screen landing under this is normal; landing over
- * it means it pulled in something the others do not.
+ * Set at 264, combining two same-day increases that both landed in the
+ * shared chunk graph this default's cluster pulls from: zod 4.4.3 → 4.6.5
+ * grew the shared zod chunk every authed route loads by about 7 kB gzip,
+ * and zone-explicit `daysSince` (DECLUTRMAIL-WEB-2C) added
+ * `Intl.DateTimeFormat` calendar math to the shared senders/data chunk.
+ * Measured together (PR #764 merge, 2026-09-28): /activity, the heaviest
+ * route on this default, is 261.4 kB (/autopilot and /settings/help follow
+ * at 260.4-260.5). 264 leaves about 2.6 kB. A NEW authed screen landing
+ * under this is normal; landing over it means it pulled in something the
+ * others do not, which is exactly the moment worth a second look.
  */
-export const AUTHED_DEFAULT_KB = 262;
+export const AUTHED_DEFAULT_KB = 264;
 
 /**
  * Routes that legitimately carry more, or are pinned tighter, keyed by
@@ -162,10 +162,11 @@ export const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  // 2026-09-28: the authed ceilings below moved with the zod chunk
-  // described on AUTHED_DEFAULT_KB. Each number is the served size that
-  // day plus about 2 kB, not a new feature on the route.
-  '/(app)/senders/page': 298, // 296.4 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 292 -> 300 on 2026-09-28 (PR #764 merge), combining the
+  // zod-chunk raise (see AUTHED_DEFAULT_KB) with zone-explicit `daysSince`
+  // (DECLUTRMAIL-WEB-2C) on the same route: measured 298.0 together. 300
+  // leaves ~2 kB, same shape as the prior raise.
+  '/(app)/senders/page': 300, // 298.0 — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the

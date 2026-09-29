@@ -1,7 +1,7 @@
 /**
  * Tests for the upgrade-gate store + 402 narrowing (D19/D77/D81).
  *
- * The narrowing must accept exactly the three entitlement codes on a 402
+ * The narrowing must accept exactly the four entitlement codes on a 402
  * and nothing else — a generic 402, a 403, or a non-ApiError must all
  * pass through untouched (they get the caller's normal error handling).
  */
@@ -35,6 +35,14 @@ function actionTier402(details?: Record<string, unknown>) {
     402,
     { error: { code: 'ACTION_TIER_REQUIRED', ...(details ? { details } : {}) } },
     'POST /api/actions failed: 402',
+  );
+}
+
+function proFeature402(details?: Record<string, unknown>) {
+  return new ApiError(
+    402,
+    { error: { code: 'PRO_FEATURE_REQUIRED', ...(details ? { details } : {}) } },
+    'PUT /api/mailboxes/mb-1/quiet-hours failed: 402',
   );
 }
 
@@ -85,6 +93,32 @@ describe('upgradeGateHitFrom', () => {
     expect(hit).toEqual({
       reason: 'free_cap',
       details: { remaining: 0, limit, used: limit, requiredUnits: 1, resetsAt: null },
+    });
+  });
+
+  it('extracts PRO_FEATURE_REQUIRED context for a Plus-gated capability', () => {
+    const hit = upgradeGateHitFrom(proFeature402({ capability: 'quiet', tier: 'free' }));
+    expect(hit).toEqual({
+      reason: 'pro_feature',
+      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
+    });
+  });
+
+  it('extracts PRO_FEATURE_REQUIRED context for a Pro-gated capability', () => {
+    const hit = upgradeGateHitFrom(proFeature402({ capability: 'followups', tier: 'plus' }));
+    expect(hit).toEqual({
+      reason: 'pro_feature',
+      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
+    });
+  });
+
+  it('falls back to a real capability when PRO_FEATURE_REQUIRED details are malformed', () => {
+    const hit = upgradeGateHitFrom(proFeature402({ capability: 'not-a-real-capability' }));
+    // Never a literal: the fallback capability's requiredTier is derived
+    // from the same D19 manifest as the real extraction path.
+    expect(hit).toEqual({
+      reason: 'pro_feature',
+      details: { capability: 'autopilot', tier: 'free', requiredTier: 'plus' },
     });
   });
 

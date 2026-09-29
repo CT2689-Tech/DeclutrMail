@@ -239,6 +239,7 @@ export {
   AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
 } from './autopilot-delta-trigger.js';
+export { buildRescoreSenders } from './rescore-senders.js';
 export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
@@ -353,6 +354,7 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobId,
   scoreJobOptions,
   ScoreWorker,
 } from './score.worker.js';

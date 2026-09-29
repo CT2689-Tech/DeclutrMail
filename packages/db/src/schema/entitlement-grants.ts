@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
 import { workspaceTier } from './workspaces';
@@ -75,6 +75,13 @@ export const entitlementGrants = pgTable(
      * pick the higher without anyone deciding.
      */
     emailUniq: uniqueIndex('entitlement_grants_email_uniq').on(table.email),
+    /**
+     * Mirrors migration 0077 — the sweep's expiry scan. Permanent comps
+     * (`expires_at IS NULL`) can never expire, so they are left out.
+     */
+    expiryScanIdx: index('entitlement_grants_expiry_scan_idx')
+      .on(table.expiresAt)
+      .where(sql`${table.expiresAt} IS NOT NULL`),
   }),
 );
 

@@ -21,6 +21,7 @@
     "./hooks/use-focus-trap": "./src/hooks/use-focus-trap.ts",
     "./hooks/use-local-state": "./src/hooks/use-local-state.ts",
     "./hooks/use-long-press": "./src/hooks/use-long-press.ts",
+    "./ids": "./src/ids/branded.ts",
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",
     "./senders/organizational-domain": "./src/senders/organizational-domain.ts",
