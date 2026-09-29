@@ -58,6 +58,13 @@ however long it runs. Moving it out entirely means redesigning the
 dispatcher's claim/commit boundary across every registered consumer
 (~8 topics, including the pre-existing `enqueueAutopilotApply`), which is
 still out of scope for a small consumer-registration PR. Tracked as:
-- its own task, spawned 2026-09-28 (`task_10d49b5e`), for the redesign;
+- its own task, spawned 2026-09-28 (`task_10d49b5e`), for the redesign —
+  landed as PR #826 (https://github.com/CT2689-Tech/DeclutrMail/pull/826),
+  bounding every consumer call at the dispatcher itself, more robustly
+  than this PR's own local timeout, though not literally outside the
+  transaction either — see the founder-followup entry below for why that
+  distinction matters and isn't fully resolved by #826 alone;
 - `docs/log/founder-followups/2026-09-28-waive-or-block-outbox-queue-in-transaction.md`,
   for the founder's merge-or-hold decision the gate's own words require.
+  Resolved 2026-09-29: waived, confirmed directly with the founder.
+  #807 merges with the gate verdict still BLOCKED, on that record.
