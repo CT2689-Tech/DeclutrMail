@@ -145,6 +145,13 @@ export const subscriptions = pgTable(
     ),
     /** "Current subscription for this workspace" read path (billing screen, tier gate). */
     workspaceIdx: index('subscriptions_workspace_id_idx').on(table.workspaceId),
+    /**
+     * Mirrors migration 0051 — one live subscription per workspace.
+     * `paused` is deliberately outside the predicate; the migration says why.
+     */
+    oneLivePerWorkspace: uniqueIndex('subscriptions_one_live_per_workspace')
+      .on(table.workspaceId)
+      .where(sql`${table.status} IN ('active', 'past_due')`),
     /** Mirrors migration 0048 — scheduled-change state machine vocabulary. */
     scheduledChangeStateCheck: check(
       'subscriptions_scheduled_change_state_check',

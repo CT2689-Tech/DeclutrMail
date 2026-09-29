@@ -212,6 +212,11 @@ export const senders = pgTable(
       table.totalReceived.desc(),
       table.id.desc(),
     ),
+    /** Mirrors migration 0063 — the wrote-to attribution join looks senders up by normalized address. */
+    normalizedEmailIdx: index('senders_account_normalized_email_idx').on(
+      table.mailboxAccountId,
+      sql`dm_normalize_email((${table.email})::text)`,
+    ),
     /**
      * `deriveUnsubscribe` invariant (initial-sync.worker.ts, migration
      * 0032): `unsubscribe_method` + `unsubscribe_url` always agree on
