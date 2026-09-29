@@ -452,6 +452,163 @@ describe('AutopilotApplyWorker', () => {
     expect(match!.intentToken).toBeNull();
   });
 
+  // Founder decision 2026-09-29 (a):
+  // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+  it('Observe-mode Unsubscribe presets skip a sender that already carries an unsubscribe policy', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    const ruleId = await enablePreset(db, mbId, 'auto_unsubscribe_noisy', {
+      enabled: true,
+      mode: 'observe',
+    });
+
+    const stillSubscribed = await seedSender(db, mbId, {
+      email: 'still-subscribed@example.com',
+      decision: { verdict: 'unsubscribe', confidence: 0.95 },
+      totalMessages: 10,
+    });
+    const alreadyUnsubscribed = await seedSender(db, mbId, {
+      email: 'already-unsubscribed@example.com',
+      decision: { verdict: 'unsubscribe', confidence: 0.95 },
+      totalMessages: 10,
+    });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mbId,
+      senderKey: alreadyUnsubscribed,
+      policyType: 'unsubscribe',
+    });
+
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.matchesWritten).toBe(1);
+    expect(result.observeMatches).toBe(1);
+    expect(result.observeSkippedNotActionable).toBe(1);
+
+    const matches = await db
+      .select({ senderKey: ruleMatchLog.senderKey })
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.ruleId, ruleId));
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.senderKey).toBe(stillSubscribed);
+    // Reference `alreadyUnsubscribed` so a failure names the suppressed sender.
+    expect(matches.find((m) => m.senderKey === alreadyUnsubscribed)).toBeUndefined();
+  });
+
+  // Founder decision 2026-09-29, headline (a):
+  // docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+  it('Observe-mode review-only presets (Archive) skip a sender with zero INBOX messages', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    const ruleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+      enabled: true,
+      mode: 'observe',
+    });
+
+    const hasInboxMail = await seedSender(db, mbId, {
+      email: 'has-inbox@example.com',
+      decision: { verdict: 'archive', confidence: 0.9 },
+      totalMessages: 5,
+    });
+    // Matched by verdict alone — zero INBOX messages (every message the
+    // engine scored has since been archived/deleted, or the sender has
+    // no messages materialized yet).
+    const noInboxMail = await seedSender(db, mbId, {
+      email: 'no-inbox@example.com',
+      decision: { verdict: 'archive', confidence: 0.9 },
+    });
+
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.matchesWritten).toBe(1);
+    expect(result.observeMatches).toBe(1);
+    expect(result.observeSkippedNotActionable).toBe(1);
+
+    const matches = await db
+      .select({ senderKey: ruleMatchLog.senderKey })
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.ruleId, ruleId));
+    expect(matches).toHaveLength(1);
+    expect(matches[0]!.senderKey).toBe(hasInboxMail);
+    expect(matches.find((m) => m.senderKey === noInboxMail)).toBeUndefined();
+  });
+
+  // Founder decision 2026-09-29 (yes):
+  // docs/log/founder-followups/2026-09-27-stale-autopilot-action-blocks-its-rule.md
+  it('an Active rule matches a sender again once its earlier approved action goes stale via resync', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    const ruleId = await enablePreset(db, mbId, 'auto_unsubscribe_noisy', {
+      enabled: true,
+      mode: 'active',
+    });
+
+    const senderKey = await seedSender(db, mbId, {
+      email: 'stale-then-fresh@example.com',
+      decision: { verdict: 'unsubscribe', confidence: 0.95 },
+      totalMessages: 10,
+    });
+
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    const first = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+    expect(first.activeMatches).toBe(1);
+
+    // Simulate a resync: `InitialSyncWorker` deletes + re-inserts the
+    // sender row, so its `created_at` moves forward past the first
+    // pass's `matched_at`. The earlier approved-but-unapplied match's
+    // evidence is now stale — `AutopilotActionWorker` will never load it
+    // (`ruleMatchEvidenceIsCurrent`) — but until this fix the apply
+    // worker's OWN already-queued dedup still treated it as blocking,
+    // so the rule could never record a fresh match for this sender again.
+    const rebuildAt = new Date(NOW.getTime() + 60_000);
+    await db
+      .delete(senders)
+      .where(and(eq(senders.mailboxAccountId, mbId), eq(senders.senderKey, senderKey)));
+    await db.insert(senders).values({
+      mailboxAccountId: mbId,
+      senderKey,
+      displayName: 'stale-then-fresh@example.com',
+      email: 'stale-then-fresh@example.com',
+      domain: 'example.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+      lastSeenAt: rebuildAt,
+      createdAt: rebuildAt,
+    });
+
+    const secondNow = new Date(rebuildAt.getTime() + 60_000);
+    const worker2 = new AutopilotApplyWorker({ db: db as never, now: () => secondNow });
+    const second = await worker2.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: secondNow.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(second.activeMatches).toBe(1);
+    expect(second.activeSkippedAlreadyQueued).toBe(0);
+
+    const rows = await db
+      .select({ resolution: ruleMatchLog.resolution })
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.ruleId, ruleId));
+    // The stale row from pass 1 is still there (nothing retires it here
+    // — only a fresh index rebuild's own cleanup does) alongside pass
+    // 2's fresh match.
+    expect(rows).toHaveLength(2);
+  });
+
   /**
    * Tiers denied unattended action, DERIVED. Hardcoded `['free','plus']`
    * until 2026-08-23, when `autopilot-active` moved to Plus and this
