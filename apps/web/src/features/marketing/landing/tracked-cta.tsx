@@ -19,6 +19,7 @@ export function TrackedCta({
   cta,
   placement,
   className,
+  describedBy,
   onClick,
   children,
 }: {
@@ -26,6 +27,8 @@ export function TrackedCta({
   cta: LandingCta;
   placement: LandingPlacement;
   className?: string | undefined;
+  /** Id of on-page text that explains this link (`aria-describedby`). */
+  describedBy?: string | undefined;
   onClick?: (() => void) | undefined;
   children: ReactNode;
 }) {
@@ -33,6 +36,7 @@ export function TrackedCta({
     <a
       href={href}
       className={className}
+      aria-describedby={describedBy}
       onClick={() => {
         // Fire-and-forget: navigation must never wait on telemetry.
         void track('landing_cta_clicked', { cta, placement });

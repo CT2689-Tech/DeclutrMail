@@ -1,0 +1,8 @@
+## 2026-09-26 — A missing field read as the user's answer, and a production id in a public commit
+
+**PR:** fix/d108-require-gmail-scope (Gmail scope check at the OAuth callback)
+**Caught by:** architecture-guardian + privacy-auditor + design-system-agent gates (pre-PR)
+**What happened:** The new check refused a Google grant whose token response carried no `scope` list and sent it to the same result as a real refusal: "DeclutrMail needs Gmail access … allow it". A missing list says nothing about what the user chose. Had Google ever dropped the field, every sign-in, add and reconnect would have told people who DID allow Gmail to allow it, in a loop nothing would flag: the redirect is a 302, the exception filter captures only status ≥ 500 for Sentry, and the API's Sentry init has no log integration, so the `Logger.error` I added went to Cloud Logging only. The same commit's message named a production mailbox id, and the repo is public.
+**Correct approach:** When the field a check needs is absent, ask the provider (Google's token-info endpoint); a failed lookup fails like any other token-exchange error. Never map absence to either verdict. The commit message now dates the incident without the id, amended before anything was pushed.
+**Rule:** Missing evidence is a third state — fetch it or fail, never present it as the user's choice. No production ids in commits or PR bodies; this repo is public.
+**Enforcement update:** service spec for absent/empty/blank scope lists (token info shows Gmail → accepted; no Gmail → refused; lookup fails → exchange error), negative-controlled both ways. None to hooks.

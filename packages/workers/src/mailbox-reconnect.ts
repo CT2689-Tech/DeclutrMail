@@ -13,10 +13,9 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *
  * A string, not an imported class: this package must not depend on
  * `apps/api`, and the value travels as `error.name` anyway. The same
- * literal is the contract at three other sites — the API's
- * `markQueued` clearing rule, `IncrementalSyncWorker.onTerminalFailure`,
- * and the web app's `INVALID_GRANT_CODE` — so changing it means changing
- * all four together.
+ * literal is matched by name across the API, the workers, the web app
+ * and `AUTH_RECOVERY_ERROR_CODES` in `@declutrmail/shared/contracts`, so
+ * changing it means changing every copy together (grep for the string).
  */
 export const INVALID_GRANT_ERROR = 'InvalidGrantError';
 
