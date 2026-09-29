@@ -126,6 +126,29 @@ describe('scoreJobId', () => {
     for (const id of [single, sweep]) expect(id.split(':')).toHaveLength(3);
   });
 
+  it("uses 'subset' for a named senderKeys set — a Gmail tab recount — never '*' or a raw key", () => {
+    // A subset job must not collide with the all-senders sweep's `*` id.
+    const subset = scoreJobId({
+      mailboxAccountId: MAILBOX,
+      senderKeys: [KEY_A, KEY_B],
+      producedAtMs: CLOCK,
+    });
+
+    expect(subset).toBe(`${MAILBOX}:subset:${CLOCK}`);
+    expect(subset.split(':')).toHaveLength(3);
+  });
+
+  it('prefers senderKey over senderKeys when a caller somehow sets both', () => {
+    const id = scoreJobId({
+      mailboxAccountId: MAILBOX,
+      senderKey: KEY_A,
+      senderKeys: [KEY_B],
+      producedAtMs: CLOCK,
+    });
+
+    expect(id).toBe(`${MAILBOX}:${KEY_A}:${CLOCK}`);
+  });
+
   it("refuses a senderKey that would change the id's colon count", () => {
     // `scoreJobId` is a shared guard across producers whose own input
     // validation differs: the HTTP controller checks shape with
