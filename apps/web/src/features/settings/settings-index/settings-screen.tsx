@@ -9,7 +9,6 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import type { ToastTone } from '@declutrmail/shared';
 import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
@@ -22,10 +21,22 @@ import {
   startMailboxReactivation,
 } from '@/features/mailboxes/connect-mailbox-url';
 import {
+  CONNECT_START_RESULT_COPY,
+  connectStartResultOf,
+  type OAuthResultCopy,
+  RECONNECT_RESULT_COPY,
+  reconnectResultOf,
+} from '@/features/mailboxes/oauth-result';
+import {
+  onboardingGateVerdict,
+  useOnboardingState,
+} from '@/features/onboarding/api/use-onboarding';
+import {
   isBillingDisabledError,
   useBillingSubscription,
 } from '@/features/billing/api/use-billing-subscription';
 import { track } from '@/lib/posthog';
+import { replaceUrl } from '@/lib/replace-url';
 import {
   useMeSettings,
   useUpdateActionSheetPrefs,
@@ -49,97 +60,7 @@ import { VerbTourCard } from './verb-tour-card';
 
 const { color, font, text, radius, motion } = tokens;
 
-type ReconnectResult = 'success' | 'account_mismatch' | 'target_invalid' | 'cancelled' | 'failed';
-type ConnectStartResult = 'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
-
-/**
- * Closed, privacy-safe copy for the OAuth return contract. Never echo
- * provider errors, mailbox ids, or email addresses from the URL.
- */
-type ReconnectResultCopy = {
-  message: string;
-  tone: ToastTone;
-  liveRole: 'status' | 'alert';
-};
-
-const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
-  success: {
-    message: 'Gmail reconnected. Sync status is shown below.',
-    tone: 'success',
-    liveRole: 'status',
-  },
-  account_mismatch: {
-    message: 'That was a different Google account. Retry Reconnect next to the mailbox you meant.',
-    tone: 'danger',
-    liveRole: 'alert',
-  },
-  target_invalid: {
-    message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
-    tone: 'danger',
-    liveRole: 'alert',
-  },
-  cancelled: {
-    message: 'Gmail reconnect was cancelled. Nothing changed.',
-    tone: 'info',
-    liveRole: 'status',
-  },
-  failed: {
-    message: 'Could not reconnect Gmail. Try again from this mailbox list.',
-    tone: 'danger',
-    liveRole: 'alert',
-  },
-};
-
-const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy> = {
-  target_invalid: {
-    message: 'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
-    tone: 'danger',
-    liveRole: 'alert',
-  },
-  inbox_limit: {
-    message:
-      'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
-    tone: 'warn',
-    liveRole: 'status',
-  },
-  session_retry: {
-    message: 'We couldn’t verify your session for that Gmail connection. Try again.',
-    tone: 'warn',
-    liveRole: 'status',
-  },
-  rate_limited: {
-    message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
-    tone: 'warn',
-    liveRole: 'status',
-  },
-};
-
 const MAILBOX_HASH = /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
-
-function reconnectResultOf(value: string | null): ReconnectResult | null {
-  switch (value) {
-    case 'success':
-    case 'account_mismatch':
-    case 'target_invalid':
-    case 'cancelled':
-    case 'failed':
-      return value;
-    default:
-      return null;
-  }
-}
-
-function connectStartResultOf(value: string | null): ConnectStartResult | null {
-  switch (value) {
-    case 'target_invalid':
-    case 'inbox_limit':
-    case 'session_retry':
-    case 'rate_limited':
-      return value;
-    default:
-      return null;
-  }
-}
 
 function reconnectMailboxIdFromHash(hash: string): string | null {
   return MAILBOX_HASH.exec(hash)?.[1] ?? null;
@@ -213,16 +134,19 @@ export function SettingsScreen({
   // toast or retain a mailbox id in browser history.
   const reconnectResultParam = searchParams.get('reconnect_result');
   const connectStartResultParam = searchParams.get('connect_start_result');
-  const reconnectSearch = searchParams.toString();
   const didHandleReconnectResult = useRef(false);
   const [highlightMailboxId, setHighlightMailboxId] = useState<string | null>(null);
-  const [reconnectAnnouncement, setReconnectAnnouncement] = useState<ReconnectResultCopy | null>(
-    null,
-  );
+  const [reconnectAnnouncement, setReconnectAnnouncement] = useState<OAuthResultCopy | null>(null);
+  // Someone who has not finished onboarding reaches this screen only to be
+  // sent to /onboarding, and the gate carries the result there to show
+  // (D108). Using it up here first would lose it. A failed read counts as
+  // done, so the result still shows here.
+  const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
     if (
       (reconnectResultParam === null && connectStartResultParam === null) ||
-      didHandleReconnectResult.current
+      didHandleReconnectResult.current ||
+      !onboarded
     )
       return;
     didHandleReconnectResult.current = true;
@@ -247,13 +171,12 @@ export function SettingsScreen({
     scrollTarget?.focus({ preventScroll: true });
     scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    const nextParams = new URLSearchParams(reconnectSearch);
-    nextParams.delete('reconnect_result');
-    nextParams.delete('connect_start_result');
-    const nextSearch = nextParams.toString();
-    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#mailboxes`;
-    window.history.replaceState(window.history.state, '', nextUrl);
-  }, [connectStartResultParam, reconnectResultParam, reconnectSearch]);
+    replaceUrl((url) => {
+      url.searchParams.delete('reconnect_result');
+      url.searchParams.delete('connect_start_result');
+      url.hash = 'mailboxes';
+    });
+  }, [connectStartResultParam, onboarded, reconnectResultParam]);
 
   // Keep highlight lifetime independent from the URL effect: Next's
   // native-history integration updates useSearchParams after replaceState.

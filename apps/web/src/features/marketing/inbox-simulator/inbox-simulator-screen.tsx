@@ -36,6 +36,7 @@ import { ActivateRuleModal } from '@/features/autopilot/activate-rule-modal';
 import { permissionEntryUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
+import { replaceUrl } from '@/lib/replace-url';
 import {
   buildSyntheticBulkPreview,
   buildSyntheticRulePreview,
@@ -845,27 +846,27 @@ export function InboxSimulatorScreen() {
         ? (firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null)
         : null,
     );
-    const url = new URL(window.location.href);
-    url.searchParams.delete('step');
-    if (nextMode === 'guided') url.searchParams.set('tour', '1');
-    else url.searchParams.delete('tour');
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl((url) => {
+      url.searchParams.delete('step');
+      if (nextMode === 'guided') url.searchParams.set('tour', '1');
+      else url.searchParams.delete('tour');
+    });
   };
 
   const changeWorkspace = (next: 'triage' | 'senders') => {
     setWorkspace(next);
     if (next === 'triage') changeMode('explore');
-    const url = new URL(window.location.href);
-    if (next === 'senders') {
-      url.searchParams.set('workspace', 'senders');
-      url.searchParams.delete('step');
-      url.searchParams.delete('tour');
-    } else {
-      url.searchParams.set('workspace', 'triage');
-      url.searchParams.delete('step');
-      url.searchParams.delete('tour');
-    }
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl((url) => {
+      if (next === 'senders') {
+        url.searchParams.set('workspace', 'senders');
+        url.searchParams.delete('step');
+        url.searchParams.delete('tour');
+      } else {
+        url.searchParams.set('workspace', 'triage');
+        url.searchParams.delete('step');
+        url.searchParams.delete('tour');
+      }
+    });
   };
 
   const pendingInboxCount = pending ? syntheticInboxCount(pending.row) : 0;

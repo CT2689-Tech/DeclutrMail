@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { OAuth2Client } from 'google-auth-library';
 import { and, eq } from 'drizzle-orm';
 
 import { mailboxAccounts } from '@declutrmail/db';
@@ -8,6 +7,7 @@ import { clearGmailWatchState, persistGmailWatchState, RateLimiter } from '@decl
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { TokenCryptoService } from '../auth/token-crypto.service.js';
 import { GmailClientService } from '../gmail/gmail-client.service.js';
+import { googleOAuthClient } from '../gmail/google-oauth-client.js';
 
 /** Outcome of one best-effort watch/stop call — for logs + tests. */
 export type GmailWatchOutcome =
@@ -193,7 +193,10 @@ export class GmailWatchService {
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
       throw new Error('Google OAuth is not configured: set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET.');
     }
-    const oauth = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
+    const oauth = googleOAuthClient({
+      clientId: GOOGLE_CLIENT_ID,
+      clientSecret: GOOGLE_CLIENT_SECRET,
+    });
     oauth.setCredentials({ refresh_token: refreshToken });
     // 4,800 is the newer metric's budget (80% of 6,000), so it is priced
     // on that metric. Watch and stop cost the same on both anyway.
