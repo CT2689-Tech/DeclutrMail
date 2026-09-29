@@ -49,6 +49,7 @@ import { toast } from '@declutrmail/shared';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { getActionStatus, isTerminalStatus } from '@/lib/api/actions';
@@ -219,6 +220,16 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
+
+  // Server truth (via `listInFlight`) for which senders have a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this section's own unmount/navigation. Additive to
+  // `inFlight`/`overdueInFlight` below, which stay exactly as they are.
+  const sharedLock = useSenderInFlightLock(activeMailboxId ?? undefined);
+  const sharedlyBusy = useMemo(
+    () => targets.some((t) => sharedLock.senderKeys.has(t.senderKey)),
+    [targets, sharedLock.senderKeys],
+  );
 
   const selectableKeys = useMemo(
     () => targets.filter((t) => blockedReason(t) === null).map((t) => t.senderKey),
@@ -522,7 +533,10 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     // these senders would mint a second real Gmail job under a fresh
     // idempotency key. The sheet stays open — the confirmed intent
     // survives for a retry once the parked handle terminates.
-    if (overdueInFlight !== null) {
+    if (
+      overdueInFlight !== null ||
+      pending.senderKeys.some((key) => sharedLock.senderKeys.has(key))
+    ) {
       toast('The earlier archive is still running — give it a moment.', 'info');
       return;
     }
@@ -567,10 +581,14 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
           // on screen said so. The section's contract is that an
           // exclusion is always visible.
           const protectedCount = res.skipped.filter((s) => s.reason === 'protected').length;
-          const missingCount = res.skipped.length - protectedCount;
+          const inProgressCount = res.skipped.filter((s) => s.reason === 'in_progress').length;
+          const missingCount = res.skipped.length - protectedCount - inProgressCount;
           const parts: string[] = [];
           if (protectedCount > 0) {
             parts.push(`${protectedCount} Protected`);
+          }
+          if (inProgressCount > 0) {
+            parts.push(`${inProgressCount} already busy`);
           }
           if (missingCount > 0) {
             parts.push(`${missingCount} no longer in this mailbox`);
@@ -597,6 +615,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     pending,
     preview,
     overdueInFlight,
+    sharedLock.senderKeys,
     activeMailboxId,
     enqueueComposite,
     enqueueBulk,
@@ -913,11 +932,14 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
      * INCLUDING while the handle is parked overdue (see the
      * ACTION_OVERDUE_MS doc): this section is one bulk entry point over
      * the very senders a parked archive may still be moving, so it must
-     * never assert idle mid-archive.
+     * never assert idle mid-archive. `sharedlyBusy` adds the same fact
+     * when a DIFFERENT surface or tab (or a reload that lost `inFlight`
+     * entirely) is the one running a job over one of these senders.
      */
     busy:
       inFlight !== null ||
       overdueInFlight !== null ||
+      sharedlyBusy ||
       enqueueComposite.isPending ||
       enqueueBulk.isPending,
   };
