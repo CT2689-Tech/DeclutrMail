@@ -13,6 +13,7 @@ import { freshTestPglite } from '@declutrmail/db/testing';
 
 import {
   OUTBOX_NOTIFY_CHANNEL,
+  OutboxConsumerTimeoutError,
   OutboxDispatcherWorker,
   type DispatchedEvent,
   type OutboxConsumer,
@@ -703,13 +704,17 @@ describe('OutboxDispatcherWorker', () => {
     // settlement — generous slack for CI scheduling jitter, still far
     // below vitest's 30s test timeout that a true hang would hit.
     expect(elapsedMs).toBeLessThan(2_000);
+    // skippedOrphaned is a snapshot of orphanedEvents.size at the END of
+    // the tick, including an orphan THIS tick just created — the row was
+    // still claimed and genuinely attempted (claimed: 1), but by the time
+    // this result is read the timeout has already registered the orphan.
     expect(result).toEqual({
       claimed: 1,
       dispatched: 0,
       consumerFailed: 1,
       consumerTimedOut: 1,
       flippedToFailed: 0,
-      skippedOrphaned: 0,
+      skippedOrphaned: 1,
     });
 
     const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
@@ -717,17 +722,19 @@ describe('OutboxDispatcherWorker', () => {
     expect(row?.attempts).toBe(1);
     expect(row?.lastError).toContain('exceeded 50ms');
 
-    // Many more ticks than maxAttempts (3): the event is now orphan-
-    // guarded, so every one of these is a fast no-op — the row is left
-    // completely untouched, never re-bumped, never re-claimed-and-
-    // retried, because the original abandoned call is still "running"
-    // (it never settles in this test).
+    // Many more ticks than maxAttempts (3): the event's (topic,
+    // aggregateId) is now orphan-guarded, so every one of these is a
+    // fast no-op — the claim query itself excludes it (never even
+    // `claimed`), and the row is left completely untouched, never
+    // re-bumped, never re-claimed-and-retried, because the original
+    // abandoned call is still "running" (it never settles in this
+    // test).
     for (let i = 0; i < 5; i += 1) {
       const tickStartedAt = Date.now();
       const later = await dispatcher.tick();
       expect(Date.now() - tickStartedAt).toBeLessThan(2_000);
       expect(later).toEqual({
-        claimed: 1,
+        claimed: 0,
         dispatched: 0,
         consumerFailed: 0,
         consumerTimedOut: 0,
@@ -889,12 +896,14 @@ describe('OutboxDispatcherWorker', () => {
     expect(first.consumerTimedOut).toBe(1);
     expect(totalInvocations).toBe(1);
 
-    // Ticks 2 and 3: the event is orphan-guarded — these must NOT
-    // re-invoke the consumer while the first call is still outstanding.
+    // Ticks 2 and 3: the event's (topic, aggregateId) is orphan-guarded
+    // — the claim query itself excludes it, so these must NOT even claim
+    // the row, let alone re-invoke the consumer while the first call is
+    // still outstanding.
     const second = await dispatcher.tick();
     const third = await dispatcher.tick();
-    expect(second).toMatchObject({ claimed: 1, skippedOrphaned: 1 });
-    expect(third).toMatchObject({ claimed: 1, skippedOrphaned: 1 });
+    expect(second).toMatchObject({ claimed: 0, skippedOrphaned: 1 });
+    expect(third).toMatchObject({ claimed: 0, skippedOrphaned: 1 });
     expect(totalInvocations).toBe(1); // still only the one real entry
     expect(maxConcurrentSeen).toBe(1); // never ran twice at once
 
@@ -920,6 +929,348 @@ describe('OutboxDispatcherWorker', () => {
 
     const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
     expect(row?.status).toBe('dispatched');
+  });
+
+  /**
+   * BLOCKING finding (architecture-guardian, 2026-09-29): the orphan
+   * guard above proves the SAME event is never invoked concurrently
+   * with itself, but it was keyed on `event.id` — which does nothing
+   * for two DIFFERENT outbox events that share the same downstream
+   * concurrency unit. `mailbox.sync_ready`'s reminder email is keyed by
+   * mailbox alone (`syncReminderEmailJobId`), and a sync retry after a
+   * crash re-publishes a FRESH `mailbox.sync_ready` event (new id, same
+   * `firstReady: true`) for the same mailbox — reproducing the exact
+   * duplicate-send race the same-event guard above already closed, one
+   * key over.
+   *
+   * Both events are published BEFORE the first tick runs, so SKIP
+   * LOCKED claims them TOGETHER in one batch (`ORDER BY created_at`)
+   * and processes them one at a time, in the SAME transaction. That is
+   * the scenario that actually exercises the KEY CHOICE: the claim
+   * SQL's own orphan exclusion (built from the map's STORED topic/
+   * aggregateId fields, populated directly from each orphaned event
+   * regardless of the map's key) already protects the cross-TICK case
+   * either way — it is the WITHIN-tick guard, checked via
+   * `orphanGuardKey`, that only catches the second row here if the key
+   * is (topic, aggregateId) rather than `event.id`.
+   *
+   * This proves the second, DIFFERENT event is never invoked while the
+   * first's orphaned call — created moments earlier by an EARLIER row
+   * in this SAME batch — is still outstanding, and that both eventually
+   * run, sequentially, never concurrently, once it clears.
+   *
+   * NEGATIVE CONTROL: keying `orphanGuardKey` by `event.id` instead of
+   * `(event.topic, event.aggregateId)` makes this test fail — the
+   * second (different-id) event is ALSO invoked and ALSO times out
+   * within the SAME tick (`consumerTimedOut: 2`, not `1`), proving its
+   * consumer ran concurrently with the first's still-outstanding
+   * orphaned call — confirmed while
+   * developing this fix.
+   */
+  it('never invokes a DIFFERENT event sharing the same (topic, aggregateId) concurrently with an orphan', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const publisher = new OutboxPublisher();
+    let firstId = '';
+    let secondId = '';
+    // Both published BEFORE any tick, so they are claimed TOGETHER in
+    // one batch — see the docstring above for why that matters.
+    await db.transaction(async (tx) => {
+      firstId = await publisher.publish(tx, {
+        topic: 'mailbox.sync_ready',
+        aggregateId: 'shared-mailbox-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+    await db.transaction(async (tx) => {
+      secondId = await publisher.publish(tx, {
+        topic: 'mailbox.sync_ready',
+        aggregateId: 'shared-mailbox-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+    expect(secondId).not.toBe(firstId);
+
+    let concurrentCount = 0;
+    let maxConcurrentSeen = 0;
+    const invokedEventIds: string[] = [];
+    let releaseFirstCall!: () => void;
+    const firstCallGate = new Promise<void>((r) => {
+      releaseFirstCall = r;
+    });
+
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async (event) => {
+        invokedEventIds.push(event.id);
+        concurrentCount += 1;
+        maxConcurrentSeen = Math.max(maxConcurrentSeen, concurrentCount);
+        try {
+          await firstCallGate; // already-resolved by the time either row is retried
+        } finally {
+          concurrentCount -= 1;
+        }
+      },
+      pollIntervalMs: 60_000,
+      maxAttempts: 5,
+      consumerTimeoutMs: 30,
+    });
+    activeDispatcher = dispatcher;
+
+    // Tick 1 claims BOTH rows in one batch (`claimed: 2`) and processes
+    // them one at a time. firstId (older) runs first: it hangs on
+    // firstCallGate and times out at 30ms, becoming an orphan keyed by
+    // (topic, aggregateId) — still genuinely running. secondId — a
+    // LATER row in this SAME batch, sharing that same key — must then
+    // be left completely untouched by the in-loop guard, never invoked
+    // at all this tick.
+    const first = await dispatcher.tick();
+    expect(first).toMatchObject({ claimed: 2, consumerTimedOut: 1, skippedOrphaned: 1 });
+    expect(invokedEventIds).toEqual([firstId]); // second event never invoked this tick
+    expect(maxConcurrentSeen).toBe(1); // never ran twice at once
+
+    // Ticks 2 and 3: the SHARED (topic, aggregateId) is still
+    // orphan-guarded — the claim query excludes BOTH rows entirely, so
+    // the second (different) event is still never claimed, let alone
+    // invoked concurrently with the first's still-outstanding call.
+    const second = await dispatcher.tick();
+    const third = await dispatcher.tick();
+    expect(second).toMatchObject({ claimed: 0, skippedOrphaned: 1 });
+    expect(third).toMatchObject({ claimed: 0, skippedOrphaned: 1 });
+    expect(invokedEventIds).toEqual([firstId]); // still never invoked
+    expect(maxConcurrentSeen).toBe(1); // never ran twice at once
+
+    // Release the original call and let its `.then()` clear the orphan
+    // tracking (a microtask — flush it before the next tick).
+    releaseFirstCall();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Now both rows are free to run — the original (a legitimate later
+    // retry, since its abandoned attempt never reported success) and
+    // the second, different event. Whether one or two ticks are needed
+    // is an implementation detail of claim-batch ordering; what matters
+    // is they never run concurrently with EACH OTHER either.
+    for (let i = 0; i < 4; i += 1) {
+      const [firstRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, firstId));
+      const [secondRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, secondId));
+      if (firstRow?.status === 'dispatched' && secondRow?.status === 'dispatched') break;
+      await dispatcher.tick();
+    }
+
+    const [firstRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, firstId));
+    const [secondRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, secondId));
+    expect(firstRow?.status).toBe('dispatched');
+    expect(secondRow?.status).toBe('dispatched');
+    expect(maxConcurrentSeen).toBe(1); // never ran twice at once, even across both events
+  });
+
+  /**
+   * Non-blocking finding (architecture-guardian, 2026-09-29), but a real
+   * livelock during a sustained outage: an orphaned row's `created_at`
+   * and `attempts` never change while it is orphan-guarded, so it sorts
+   * at the SAME position in the claim query's `ORDER BY created_at`
+   * FOREVER. A claim-then-skip design (claim `claimBatchSize` rows, skip
+   * the orphaned ones in the loop) still spends one of that tick's
+   * claim slots on it every single tick — once the count of distinct
+   * orphaned keys reaches `claimBatchSize`, no OTHER row is ever claimed
+   * again, for any topic. This proves a genuinely-processable, NEWER
+   * row behind an orphaned one is still claimed and dispatched, using a
+   * `claimBatchSize` of 1 — the tightest possible budget, so the fix
+   * cannot hide behind a generous LIMIT.
+   *
+   * NEGATIVE CONTROL: reverting the claim SQL to the pre-fix
+   * claim-then-skip shape (removing the `orphanExclusion` fragment and
+   * restoring the per-row `if (this.orphanedEvents.has(...)) { continue
+   * }` as the ONLY guard) makes this test fail — the second tick claims
+   * the STUCK row again (oldest by `created_at`, `claimBatchSize: 1`
+   * admits exactly one row), skips it, and the fresh row is never
+   * claimed at all — confirmed while developing this fix.
+   */
+  it('an orphaned key does not starve a different, newer row behind it in FIFO order', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const publisher = new OutboxPublisher();
+    let stuckId = '';
+    await db.transaction(async (tx) => {
+      stuckId = await publisher.publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'stuck-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async (event) => {
+        if (event.aggregateId === 'stuck-1') {
+          return new Promise<void>(() => undefined); // never settles
+        }
+        // Every other event dispatches immediately.
+      },
+      pollIntervalMs: 60_000,
+      claimBatchSize: 1,
+      consumerTimeoutMs: 30,
+    });
+    activeDispatcher = dispatcher;
+
+    // Tick 1: claims and times out the stuck row — it is now orphaned.
+    const first = await dispatcher.tick();
+    expect(first).toMatchObject({ claimed: 1, consumerTimedOut: 1 });
+
+    // A NEWER, unrelated event arrives after the stuck one.
+    let freshId = '';
+    await db.transaction(async (tx) => {
+      freshId = await publisher.publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'fresh-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    // claimBatchSize is 1 — a claim-then-skip design would spend this
+    // tick's ONLY slot re-claiming the orphaned row (oldest by
+    // created_at) and never reach the fresh one. Excluding it at the
+    // SQL level lets SKIP LOCKED's plan move past it to the fresh row
+    // within the same LIMIT.
+    const second = await dispatcher.tick();
+    expect(second).toMatchObject({ claimed: 1, dispatched: 1, skippedOrphaned: 1 });
+
+    const [freshRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, freshId));
+    expect(freshRow?.status).toBe('dispatched');
+    const [stuckRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, stuckId));
+    expect(stuckRow?.status).toBe('pending'); // still stuck, untouched, never re-claimed
+  });
+
+  /**
+   * Also-fix finding (architecture-guardian, 2026-09-29): the timeout
+   * exemption from `maxAttempts` had no end state — a row whose OWN
+   * streak of timeouts never breaks would retry forever with no Sentry
+   * signal, indistinguishable in logs from a healthy skip (CLAUDE.md's
+   * "a guard that cannot fail is not a guard"). `maxAttempts` is set
+   * absurdly high here so ONLY `timeoutStuckCeilingMs` can explain a
+   * `failed` row. Each attempt settles a bit later than the next tick's
+   * claim (never permanently orphaned), so the streak accumulates across
+   * repeated, genuinely-real timeouts — matching the "genuinely slow
+   * (not stuck) consumer" test's shape, the realistic way a row stays
+   * stuck in production (a truly-eternal single hang cannot re-trigger
+   * this check at all, since the orphan guard never lets it be
+   * reclaimed to try again).
+   *
+   * NEGATIVE CONTROL: removing the `timeoutStreakExceededCeiling` half
+   * of `shouldFail` (restoring `shouldFail = !isTimeout && nextAttempts
+   * >= this.maxAttempts`) makes this test fail — with `maxAttempts` this
+   * high, the row never reaches `failed` and `captured` stays empty —
+   * confirmed while developing this fix.
+   */
+  it('a timeout streak that outlives timeoutStuckCeilingMs eventually fails and reports to the observer', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    let id = '';
+    await db.transaction(async (tx) => {
+      id = await new OutboxPublisher().publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'ceiling-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    const captured: unknown[] = [];
+    const resolvers: Array<() => void> = [];
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: () =>
+        new Promise<void>((resolve) => {
+          resolvers.push(resolve); // each invocation is a FRESH, eventually-resolved promise
+        }),
+      pollIntervalMs: 60_000,
+      maxAttempts: 1_000, // effectively disabled — only the ceiling can fail this row
+      consumerTimeoutMs: 10,
+      timeoutStuckCeilingMs: 25,
+      observer: {
+        captureBackgroundFailure: (error) => {
+          captured.push(error);
+        },
+      },
+    });
+    activeDispatcher = dispatcher;
+
+    let flippedToFailed = false;
+    for (let i = 0; i < 20 && !flippedToFailed; i += 1) {
+      const result = await dispatcher.tick();
+      flippedToFailed = result.flippedToFailed > 0;
+      // Resolve THIS attempt's call so the orphan clears before the next
+      // tick — a genuinely repeated failure, not one stuck-forever call.
+      resolvers[i]?.();
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    expect(flippedToFailed).toBe(true);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBeInstanceOf(OutboxConsumerTimeoutError);
+
+    const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
+    expect(row?.status).toBe('failed');
+  });
+
+  /**
+   * Also-fix finding (architecture-guardian, 2026-09-29): classifying a
+   * timeout by `err.name === 'TimeoutError'` is fragile — ANY error
+   * happening to carry that name gets the SAME exemption forever,
+   * including a real HTTP timeout from this codebase's own Gmail/BIMI/
+   * billing clients (`gmail-client.service.ts`, `bimi-resolver.ts`,
+   * `paddle.adapter.ts`, `razorpay.adapter.ts`), which already throw a
+   * native `TimeoutError`-named `DOMException` from
+   * `AbortSignal.timeout()`. This proves a same-named-but-foreign error
+   * is treated as an ORDINARY failure — it counts toward `maxAttempts`
+   * and can flip the row to `failed`, exactly like any other real bug,
+   * never silently exempted forever.
+   *
+   * NEGATIVE CONTROL: reverting `isOutboxTimeoutError` to `err
+   * instanceof Error && err.name === 'TimeoutError'` makes this test
+   * fail — the foreign error is misclassified as a timeout
+   * (`consumerTimedOut: 1`, not `0`), which exempts it from
+   * `maxAttempts` — confirmed while developing this fix.
+   */
+  it('a same-named but foreign TimeoutError does not get the timeout exemption (classification is by identity, not by .name)', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    let id = '';
+    await db.transaction(async (tx) => {
+      id = await new OutboxPublisher().publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'foreign-timeout-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    const foreignTimeoutError = new Error('The operation was aborted due to timeout');
+    foreignTimeoutError.name = 'TimeoutError'; // matches AbortSignal.timeout()'s DOMException.name
+
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: async () => {
+        throw foreignTimeoutError;
+      },
+      pollIntervalMs: 60_000,
+      maxAttempts: 2,
+      consumerTimeoutMs: 5_000, // generous — this consumer throws immediately, it never times out
+    });
+    activeDispatcher = dispatcher;
+
+    const first = await dispatcher.tick();
+    expect(first).toMatchObject({ consumerFailed: 1, consumerTimedOut: 0, flippedToFailed: 0 });
+
+    const second = await dispatcher.tick();
+    expect(second).toMatchObject({ consumerFailed: 1, consumerTimedOut: 0, flippedToFailed: 1 });
+
+    const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
+    expect(row?.status).toBe('failed'); // never exempted — a real bug fails normally
   });
 
   it('logs (never throws) when a timed-out consumer call finally resolves', async () => {
@@ -1028,7 +1379,12 @@ describe('OutboxDispatcherWorker', () => {
 
       expect(warnLines).toHaveLength(1);
       expect(warnLines[0]).toContain('"outcome":"rejected"');
-      expect(warnLines[0]).toContain('downstream finally answered: still broken');
+      // errorName only — never the raw message (#807's convention for
+      // this exact file/failure class: a Drizzle query error's message
+      // can carry bound query parameters). The message text must be
+      // ABSENT, not merely uninspected.
+      expect(warnLines[0]).toContain('"errorName":"Error"');
+      expect(warnLines[0]).not.toContain('downstream finally answered');
     } finally {
       console.warn = origWarn;
     }

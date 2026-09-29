@@ -195,6 +195,12 @@ export const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'WorkerError',
   'AuthExpiredError',
   'UnrecoverableError',
+  // OutboxDispatcherWorker's branded timeout marker
+  // (`outbox-dispatcher.worker.ts`) — reaches Sentry only once a row's
+  // OWN timeout streak exceeds `timeoutStuckCeilingMs`, at which point
+  // losing its type here would scrub the one signal that fix exists to
+  // surface back to an empty shell.
+  'OutboxConsumerTimeoutError',
   // NestJS HTTP exceptions the API filter can attribute a 5xx to.
   'BadGatewayException',
   'BadRequestException',

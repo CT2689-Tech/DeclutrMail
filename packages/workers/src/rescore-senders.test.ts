@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { OutboxConsumerTimeoutError } from './outbox-dispatcher.worker.js';
 import { buildRescoreSenders } from './rescore-senders.js';
 import { SCORE_JOB, scoreJobId } from './score.worker.js';
 
@@ -97,6 +98,34 @@ describe('buildRescoreSenders', () => {
         CLOCK,
       );
       const assertion = expect(result).rejects.toThrow(/autopilot sweep trigger exceeded 5000ms/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    });
+
+    it('rejects with the SAME branded timeout the outbox dispatcher recognizes (D13/D245 interop)', async () => {
+      // BLOCKING finding (architecture-guardian, 2026-09-29; also
+      // recorded in docs/log/founder-followups/2026-09-28-waive-or-
+      // block-outbox-queue-in-transaction.md's "Correction 2026-09-29"
+      // and PR #831): this file used to reject with a plain `Error`,
+      // which `OutboxDispatcherWorker`'s orphan guard could not
+      // recognize as a timeout — it counted as an ordinary failure
+      // against `maxAttempts`, so a row could flip permanently `failed`
+      // even after the abandoned publish inside it later succeeded.
+      // Asserting the exact CLASS (not just the message text) is what
+      // actually proves the two modules now agree on what a timeout
+      // looks like.
+      //
+      // NEGATIVE CONTROL: reverting `withPublishTimeout` to reject with
+      // a plain `new Error(...)` (this file's shape before this fix)
+      // makes this assertion fail — confirmed while developing this fix.
+      const addBulk = vi.fn(() => new Promise(() => {})); // never settles
+      const sweepAfter = vi.fn(async () => {});
+      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+        MAILBOX,
+        [KEY_A],
+        CLOCK,
+      );
+      const assertion = expect(result).rejects.toBeInstanceOf(OutboxConsumerTimeoutError);
       await vi.advanceTimersByTimeAsync(5_000);
       await assertion;
     });

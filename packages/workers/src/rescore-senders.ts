@@ -1,5 +1,6 @@
 import type { Queue } from 'bullmq';
 
+import { OutboxConsumerTimeoutError } from './outbox-dispatcher.worker.js';
 import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
 
 /**
@@ -16,7 +17,7 @@ import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
  * commit boundary, which is tracked separately
  * (docs/log/mistakes/2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md,
  * docs/log/founder-followups/2026-09-28-waive-or-block-outbox-queue-in-transaction.md)
- * and is not this file's job. This bounds each of the two calls instead:
+ * and is not this file's job. This MITIGATES (does not close) that gap:
  * a hung Redis now fails one call within `PUBLISH_TIMEOUT_MS` rather than
  * hanging it forever with no failure signal at all. It does NOT bound the
  * transaction as a whole — the dispatcher claims up to 32 rows per tick
@@ -28,13 +29,36 @@ import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
  * ioredis has no cancellation for one already queued — so a very late
  * resolution after the timeout is simply ignored here; BullMQ's jobId
  * dedup makes a subsequent retry's re-publish safe either way.
+ *
+ * Rejects with `OutboxConsumerTimeoutError` (2026-09-29; previously a
+ * plain `Error`), the SAME branded class the dispatcher's own
+ * `consumerTimeoutMs` bound throws. Before this, the two bounds did not
+ * compose: this file's 5s timer firing first produced an unbranded
+ * `Error` that the dispatcher's orphan guard could not recognize as a
+ * timeout, so it counted as an ordinary failure against `maxAttempts` —
+ * a row could flip permanently `failed` even after the abandoned publish
+ * inside it later succeeded (docs/log/founder-followups/
+ * 2026-09-28-waive-or-block-outbox-queue-in-transaction.md's
+ * "Correction 2026-09-29"). Now it is recognized correctly and gets the
+ * SAME `maxAttempts` exemption and `timeoutStuckCeilingMs` eventual
+ * failure the dispatcher's own bound gets.
+ *
+ * This 5s bound is NOT made redundant by the dispatcher's own
+ * (30s-default) `consumerTimeoutMs`: it fires sooner, for this specific
+ * hot path, which is strictly better once the two agree on what a
+ * timeout looks like — so it stays.
  */
 const PUBLISH_TIMEOUT_MS = 5_000;
 
 function withPublishTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
-      () => reject(new Error(`rescoreSenders: ${label} exceeded ${PUBLISH_TIMEOUT_MS}ms`)),
+      () =>
+        reject(
+          new OutboxConsumerTimeoutError(
+            `rescoreSenders: ${label} exceeded ${PUBLISH_TIMEOUT_MS}ms`,
+          ),
+        ),
       PUBLISH_TIMEOUT_MS,
     );
     promise.then(

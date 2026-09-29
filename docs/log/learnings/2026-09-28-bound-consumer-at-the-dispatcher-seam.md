@@ -1,10 +1,11 @@
 ## 2026-09-28 — Bound a hung consumer at the dispatcher seam; "idempotent on redelivery" is not "safe under concurrent self-invocation"
-**Context:** Closing the CLAUDE.md §2.6 gap where a consumer's BullMQ
-publish, awaited inside `OutboxDispatcherWorker`'s open claim
-transaction, can hang forever during a Redis outage (ioredis buffers
-commands rather than rejecting them) — wedging the WHOLE dispatcher,
-not just the affected topic, since ticks coalesce onto one `inFlight`
-promise.
+**Context:** Mitigating (not closing — the network call still runs
+inside the transaction, just bounded now) the CLAUDE.md §2.6 gap where a
+consumer's BullMQ publish, awaited inside `OutboxDispatcherWorker`'s
+open claim transaction, can hang forever during a Redis outage (ioredis
+buffers commands rather than rejecting them) — wedging the WHOLE
+dispatcher, not just the affected topic, since ticks coalesce onto one
+`inFlight` promise.
 
 **Finding 1 — fix the seam, not each call site.** Auditing every `case`
 in `outbox-consumer-router.ts` found five topics with this exposure
@@ -13,8 +14,10 @@ in `outbox-consumer-router.ts` found five topics with this exposure
 `enqueueEmailSend`) against two named in the finding that started this
 work. Wrapping the ONE place every consumer is actually invoked
 (`this.deps.consumer(event)` inside `runOneTick`) with a hard timeout
-closed all five with one change and makes the defect structurally
-impossible for a future consumer to reintroduce.
+bounded all five with one change — the unbounded-hang defect is genuinely
+closed; the §2.6 letter (network call inside an open transaction) is not
+— and makes the fix structurally impossible for a future consumer to
+route around.
 
 **Finding 2 — the mistake I almost shipped.** My first version of this
 fix reasoned: "every consumer's network call is a BullMQ `.add()` keyed

@@ -275,6 +275,22 @@ jobs:
           # degrades to a retry, not data loss. REVERT to 2 CPU / 2Gi /
           # max 3 when real users arrive.
           #
+          # `--max-instances=1` is ALSO a correctness dependency now, not
+          # just cost sizing (2026-09-29, D13): `OutboxDispatcherWorker`'s
+          # orphan guard (`packages/workers/src/outbox-dispatcher.worker.ts`)
+          # is process-local — it stops one instance from re-invoking its
+          # own abandoned consumer call, not two SEPARATE instances from
+          # each thinking they alone own a given orphan. Before the
+          # dispatcher had a per-call `consumerTimeoutMs` bound, a deploy's
+          # brief two-instance overlap window didn't matter here — a
+          # consumer call held its `FOR UPDATE` row lock for its whole
+          # duration, so Postgres itself kept two instances from
+          # double-processing a row. Now a call can be abandoned and its
+          # row released before it settles, so raising this past 1
+          # (e.g. the "max 3" revert above) needs a DB-backed lease
+          # replacing the in-memory orphan guard FIRST — see that file's
+          # class docstring, "Orphan guard" section.
+          #
           # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
           # tuning (2026-06-10 Upstash command-volume audit). DEV-PHASE
           # override 2026-07-15: this single worker process runs 17
