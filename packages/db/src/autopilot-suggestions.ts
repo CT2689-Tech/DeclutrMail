@@ -143,14 +143,20 @@ export function ruleMatchIsPendingSuggestion(): SQL {
 
 /**
  * A suggestion the user can act on: what the pending list shows, what
- * `pendingTotal` counts, and what both approve paths may flip. A Protected
- * sender's suggestion stays `pending` rather than being dismissed, so
- * unprotecting the sender makes it offerable again.
+ * `pendingTotal` (and the digest's `senders7d`) count, and what both
+ * approve paths may flip. A Protected sender's suggestion stays `pending`
+ * rather than being dismissed, so unprotecting the sender makes it
+ * offerable again — same reasoning for an unsubscribe whose sender
+ * already carries the one-way `policy_type='unsubscribe'` projection:
+ * approving it would be a no-op the action worker silently drops
+ * (`skippedAlreadyUnsubscribed`), so the Watch-first queue must not
+ * offer, count or approve it either. Founder decision 2026-09-29 (a):
+ * docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
  *
  * Correlates on an unaliased `rule_match_log` in the enclosing query.
  */
 export function ruleMatchIsOfferableSuggestion(): SQL {
-  return sql`(${ruleMatchIsPendingSuggestion()} and not ${ruleMatchSenderIsProtected()})`;
+  return sql`(${ruleMatchIsPendingSuggestion()} and not ${ruleMatchSenderIsProtected()} and not ${ruleMatchUnsubscribeAlreadyDone()})`;
 }
 
 /**
@@ -228,8 +234,17 @@ export function ruleMatchIsStaleAction(): SQL {
  * the sweep's rule check (Guard 3) for the COUNT only — the sweep still
  * loads a paused rule's matches, because an in-flight claim among them
  * has to finish (D105).
+ *
+ * Exported (2026-09-29) so the approve endpoints can refuse to flip a
+ * suggestion to `approved` while its rule is off or paused — approving
+ * used to succeed silently and just wait as `approved,
+ * intent_applied=false` until the rule resumed, which then ran every
+ * waiting approval — irreversible Unsubscribe requests included — at a
+ * moment the user was never shown a preview. Founder decision
+ * 2026-09-29 (a):
+ * docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
  */
-function ruleMatchRuleCanStart(): SQL {
+export function ruleMatchRuleCanStart(): SQL {
   return sql`exists (
   select 1
   from automation_rules ar
@@ -243,8 +258,13 @@ function ruleMatchRuleCanStart(): SQL {
  * An unsubscribe whose sender already carries the one-way
  * `policy_type='unsubscribe'` projection: the sweep closes it as a no-op
  * (Guard 5) instead of sending anything.
+ *
+ * Exported (2026-09-29) — also excluded from
+ * {@link ruleMatchIsOfferableSuggestion} so an already-unsubscribed
+ * sender's suggestion is never offered, counted or approved, matching
+ * what the action worker already does with one.
  */
-function ruleMatchUnsubscribeAlreadyDone(): SQL {
+export function ruleMatchUnsubscribeAlreadyDone(): SQL {
   return sql`exists (
   select 1
   from automation_rules ar

@@ -32,7 +32,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lte, ne, not, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
@@ -49,8 +49,11 @@ import {
   mailboxAccounts,
   ruleMatchIsOfferableSuggestion,
   ruleMatchIsPendingSuggestion,
+  ruleMatchIsQueuedAction,
   ruleMatchLog,
+  ruleMatchRuleCanStart,
   ruleMatchSenderIsProtected,
+  ruleMatchUnsubscribeAlreadyDone,
   workspaces,
   senderPolicies,
   senders,
@@ -71,6 +74,7 @@ import { AutopilotRuleActivatedPayloadSchema, TOPICS } from '@declutrmail/events
 import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 import type {
+  AutopilotApproveAllRequest,
   AutopilotApproveResult,
   AutopilotRulePreviewResult,
 } from '@declutrmail/shared/contracts';
@@ -391,24 +395,39 @@ export class AutopilotReadService {
       const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
       const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
       const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
-      // Both sender-based numbers read this one set, so they can never
-      // describe different senders.
-      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()})`;
+      // `senders7d` alone reads this set (2026-09-29 — `inboxMessagesNow`
+      // moved to the full pending queue below, so the two no longer share
+      // one set). Excludes the same two no-op states
+      // `ruleMatchIsOfferableSuggestion` does, for the same reason: an
+      // Unsubscribe rule's "Would have requested unsubscribe from N
+      // senders" must not count a sender that is already unsubscribed.
+      // Founder decision 2026-09-29 (a):
+      // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()} and not ${ruleMatchUnsubscribeAlreadyDone()})`;
       const scope = and(
         eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
         eq(ruleMatchLog.modeAtMatch, 'observe'),
         ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
       );
       // Historical resolved matches cannot contribute to any digest. Count
-      // matches without a message join, then join each recent sender once.
-      const recentSenders = this.db
+      // matches without a message join, then join each pending sender once.
+      //
+      // `inboxMessagesNow` reads the FULL pending, offerable queue — the
+      // exact set "Review all" moves — not just the last-7-days slice
+      // `senders7d` counts. Until 2026-09-29 this joined `recentSenders`
+      // (7-day window only), so "M emails could be archived if you
+      // approve them" undercounted for any suggestion older than a week
+      // while `pendingTotal` (and "Review all N") already covered it.
+      // Founder decision 2026-09-29 (a):
+      // docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+      const pendingSenders = this.db
         .selectDistinct({
           ruleId: ruleMatchLog.ruleId,
           senderKey: ruleMatchLog.senderKey,
         })
         .from(ruleMatchLog)
-        .where(and(scope, recentUnprotected))
-        .as('recent_observe_senders');
+        .where(and(scope, ruleMatchIsOfferableSuggestion()))
+        .as('pending_observe_senders');
       const counts = this.db
         .select({
           ruleId: ruleMatchLog.ruleId,
@@ -427,20 +446,20 @@ export class AutopilotReadService {
         .as('observe_counts');
       const inboxCounts = this.db
         .select({
-          ruleId: recentSenders.ruleId,
+          ruleId: pendingSenders.ruleId,
           inboxMessagesNow: sql<number>`count(${mailMessages.id})::int`.as('inbox_messages_now'),
         })
-        .from(recentSenders)
+        .from(pendingSenders)
         .innerJoin(
           mailMessages,
           and(
             eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            eq(mailMessages.senderKey, recentSenders.senderKey),
+            eq(mailMessages.senderKey, pendingSenders.senderKey),
             eq(mailMessages.isOutbound, false),
             sql`'INBOX' = ANY(${mailMessages.labelIds})`,
           ),
         )
-        .groupBy(recentSenders.ruleId)
+        .groupBy(pendingSenders.ruleId)
         .as('observe_inbox_counts');
       // One statement also keeps counts and inbox evidence on one snapshot.
       const rows = await this.db
@@ -1064,6 +1083,30 @@ export class AutopilotReadService {
   ): Promise<AutopilotApproveResult> {
     this.requireActionQueue();
 
+    // Founder decision 2026-09-29 (a): refuse rather than silently no-op
+    // when a still-pending suggestion in this batch belongs to a rule
+    // that is currently off or paused. Approving used to succeed and
+    // just wait as `approved, intent_applied=false` — the NEXT action
+    // sweep then ran it (irreversible Unsubscribe requests included) the
+    // moment the rule resumed, at a point the user was never shown a
+    // preview. Scoped to PENDING rows so a benign replay naming an
+    // already-terminal match under a since-paused rule is not refused.
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    const [blocked] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          inArray(ruleMatchLog.id, matchIds),
+          ruleMatchIsPendingSuggestion(),
+          not(ruleMatchRuleCanStart()),
+        ),
+      );
+    if ((blocked?.n ?? 0) > 0) {
+      throw new BadRequestException('Cannot approve suggestions for a paused or disabled rule.');
+    }
+
     const updated = await this.db
       .update(ruleMatchLog)
       .set({ resolution: 'approved', resolvedAt: sql`now()` })
@@ -1114,10 +1157,12 @@ export class AutopilotReadService {
   }
 
   /**
-   * U14 — approve EVERY pending Observe-mode suggestion for one rule
-   * (D104 "Approve all"). Returns `null` when the rule does not exist
-   * in this mailbox (controller maps to 404). A replay approves 0 rows
-   * and enqueues nothing — terminal rows are simply no longer pending.
+   * U14 — approve every OFFERABLE Observe-mode suggestion for one rule
+   * within `scope` (D104 "Approve all"; see `scope`'s own comment for
+   * the 2026-09-29 founder decision). Returns `null` when the rule does
+   * not exist in this mailbox (controller maps to 404), and refuses
+   * (400) while the rule is off or paused. A replay approves 0 rows and
+   * enqueues nothing — terminal rows are simply no longer pending.
    *
    * NOTE: deliberately does NOT flip the rule to Active — D104's
    * "Approve all and switch to Active mode" is two calls (this +
@@ -1128,17 +1173,46 @@ export class AutopilotReadService {
   async approveAllForRule(
     mailboxAccountId: string,
     ruleId: string,
+    scope?: AutopilotApproveAllRequest,
   ): Promise<AutopilotApproveResult | null> {
     this.requireActionQueue();
 
     const [rule] = await this.db
-      .select({ id: automationRules.id })
+      .select({
+        id: automationRules.id,
+        enabled: automationRules.enabled,
+        mode: automationRules.mode,
+      })
       .from(automationRules)
       .where(
         and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
       )
       .limit(1);
     if (!rule) return null;
+    // Founder decision 2026-09-29 (a) — see `approveMatches`'s comment
+    // for the full reasoning; same refusal, scoped to one rule here.
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    if (!rule.enabled || rule.mode === 'paused') {
+      throw new BadRequestException('Cannot approve suggestions for a paused or disabled rule.');
+    }
+
+    // Founder decision 2026-09-29 (a): "Approve all" approves exactly
+    // the set its preview showed — the exact ids rendered below the
+    // 50-row pending-suggestions cap, or a "matched before" cutoff at
+    // the cap (the FE cannot enumerate every id it never fetched). A
+    // suggestion that arrives after the preview loaded must stay
+    // pending. `scope` is optional here only so tests exercising the
+    // underlying update directly do not need a synthetic one — the
+    // controller always parses one from the request body, so the
+    // unscoped "approve everything offerable now" path is unreachable
+    // from the product surface.
+    // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+    const scopeFilter: SQL | undefined =
+      scope == null
+        ? undefined
+        : 'matchIds' in scope
+          ? inArray(ruleMatchLog.id, scope.matchIds)
+          : lte(ruleMatchLog.matchedAt, new Date(scope.matchedBefore));
 
     const updated = await this.db
       .update(ruleMatchLog)
@@ -1148,13 +1222,15 @@ export class AutopilotReadService {
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           eq(ruleMatchLog.ruleId, ruleId),
           ruleMatchIsOfferableSuggestion(),
+          ...(scopeFilter ? [scopeFilter] : []),
         ),
       )
       .returning({ id: ruleMatchLog.id });
     const approvedCount = updated.length;
 
     // Same accounting as `approveMatches`: rows left `pending` solely
-    // because their sender is now Protected.
+    // because their sender is now Protected — scoped identically so the
+    // count describes exactly what this call's scope left behind.
     const [protectedSkip] = await this.db
       .select({ n: sql<number>`count(*)::int` })
       .from(ruleMatchLog)
@@ -1164,6 +1240,7 @@ export class AutopilotReadService {
           eq(ruleMatchLog.ruleId, ruleId),
           ruleMatchIsPendingSuggestion(),
           ruleMatchSenderIsProtected(),
+          ...(scopeFilter ? [scopeFilter] : []),
         ),
       );
     const skippedProtectedCount = protectedSkip?.n ?? 0;
@@ -1264,6 +1341,17 @@ export class AutopilotReadService {
       ? observedMatches
       : Math.ceil((observedMatches * 7) / observedDays);
 
+    // Approved-but-unapplied matches the action sweep will attempt the
+    // moment this rule becomes runnable — what the Resume / turn-on
+    // preview owes the user so resuming never runs an approval nobody
+    // was shown (founder decision 2026-09-29):
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    const [waiting] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(and(eq(ruleMatchLog.ruleId, ruleId), ruleMatchIsQueuedAction()));
+    const waitingApprovedCount = waiting?.n ?? 0;
+
     // Sample sender identities (D7 allowlist) for the first N matches.
     const sampleMatches = matched.slice(0, PREVIEW_SAMPLE_SIZE);
     const identityBy = new Map<string, { name: string | null; email: string | null }>();
@@ -1312,6 +1400,7 @@ export class AutopilotReadService {
         senderEmail: identityBy.get(m.senderKey)?.email ?? null,
         reason: m.reason,
       })),
+      waitingApprovedCount,
     };
   }
 
