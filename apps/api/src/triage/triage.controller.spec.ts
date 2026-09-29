@@ -122,4 +122,36 @@ describe('TriageController.scoreSender — sender id shape', () => {
     ).rejects.toMatchObject({ status: 400 });
     expect(triage.resolveSenderKey).not.toHaveBeenCalled();
   });
+
+  it('rejects a raw senderKey that is not sha256 hex with 400, before it reaches BullMQ', async () => {
+    // Unchecked, this colon would change `scoreJobId`'s colon count and
+    // surface as bullmq's own 500 ("Custom Id cannot contain :"), not a 400.
+    const triage = { resolveSenderKey: vi.fn(), scoreSender: vi.fn() };
+    const controller = new TriageController(
+      triage as unknown as TriageService,
+      {} as TriageReadService,
+      {} as IconsService,
+    );
+
+    await expect(
+      controller.scoreSender({ id: 'mailbox-1' }, { senderKey: 'a:b', reason: 'user' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(triage.scoreSender).not.toHaveBeenCalled();
+  });
+
+  it('accepts a real sha256 senderKey unchanged', async () => {
+    const KEY = 'a'.repeat(64);
+    const triage = {
+      resolveSenderKey: vi.fn(),
+      scoreSender: vi.fn().mockResolvedValue({ idempotencyKey: 'mailbox-1:' + KEY + ':1' }),
+    };
+    const controller = new TriageController(
+      triage as unknown as TriageService,
+      {} as TriageReadService,
+      {} as IconsService,
+    );
+
+    await controller.scoreSender({ id: 'mailbox-1' }, { senderKey: KEY, reason: 'user' });
+    expect(triage.scoreSender).toHaveBeenCalledWith(expect.objectContaining({ senderKey: KEY }));
+  });
 });

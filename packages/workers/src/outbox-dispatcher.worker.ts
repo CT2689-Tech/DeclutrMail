@@ -79,13 +79,20 @@ interface ConsumerFailure {
  * and what context to pass; it does NOT depend on Sentry directly.
  *
  * Defaults to a no-op so tests and bare-bones bootstraps run without
- * needing Sentry configured. The shape mirrors what later worker tooling
- * (e.g. a future `SentryWorkerObserver` per PR #49) will expose.
+ * needing Sentry configured. The shape matches
+ * `WorkerObserver.captureBackgroundFailure`'s real context type
+ * (`BackgroundFailureContext`) exactly, on purpose: the production
+ * adapter reads only `kind` and `tags` and silently drops anything
+ * else, and it is assignable here regardless (TypeScript checks
+ * interface methods bivariantly), so a context shape that ADMITS more
+ * fields than the adapter reads is a hole a caller can fall into without
+ * a type error. `outbox.dispatch.event_failed` and `tick_failed` did,
+ * twice, before this was narrowed (2026-09-28).
  */
 export interface OutboxObserver {
   captureBackgroundFailure(
     error: unknown,
-    context: { kind: string; worker: string; [key: string]: unknown },
+    context: { kind: string; tags?: Record<string, string | number> },
   ): void;
 }
 
@@ -583,11 +590,11 @@ export class OutboxDispatcherWorker {
     console.error(
       JSON.stringify({ level: 'error', kind: 'outbox.dispatch.event_failed', ...fields }),
     );
+    // `tags`, not top-level: see `OutboxObserver`'s docstring. `event_id`
+    // matches the Sentry tag naming convention (`SENTRY_SERVER_TAG_ALLOWLIST`).
     this.observer.captureBackgroundFailure(error, {
       kind: 'outbox.dispatch.event_failed',
-      worker: this.workerName,
-      topic: event.topic,
-      eventId: event.id,
+      tags: { worker: this.workerName, topic: event.topic, event_id: event.id },
     });
   }
 
@@ -600,6 +607,9 @@ export class OutboxDispatcherWorker {
         message: err instanceof Error ? err.message : String(err),
       }),
     );
+    // Same bug this file's `reportConsumerFailure` had until 2026-09-28:
+    // `worker` belongs under `tags`, not as a sibling of `kind` — the
+    // production adapter reads only those two keys.
     // Hand to the observer (Sentry in prod, no-op by default). Tick
     // failures are background failures by definition — there's no
     // HTTP request to surface the error on. Without this, a tx-level
@@ -607,7 +617,7 @@ export class OutboxDispatcherWorker {
     // logs and miss the alerting path.
     this.observer.captureBackgroundFailure(err, {
       kind: 'outbox.dispatch.tick_failed',
-      worker: this.workerName,
+      tags: { worker: this.workerName },
     });
   }
 }

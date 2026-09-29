@@ -338,12 +338,19 @@ describe('OutboxDispatcherWorker', () => {
       // Attempt 2 flips the row to `failed`: nothing will claim it again.
       await dispatcher.tick();
       expect(error).toHaveBeenCalledWith(expect.stringContaining('outbox.dispatch.event_failed'));
-      expect(captured).toEqual([
+      expect(captured).toHaveLength(1);
+      // `topic`/`event_id` MUST be under `tags` — the production adapter
+      // (`sentry-worker-observer.ts`) reads only `kind` and `tags`, and a
+      // sibling of `kind` reaches it and is silently dropped. This is the
+      // exact shape of the 2026-09-28 regression.
+      expect(captured[0]).not.toHaveProperty('topic');
+      expect(captured[0]).not.toHaveProperty('eventId');
+      expect(captured[0]).toEqual(
         expect.objectContaining({
           kind: 'outbox.dispatch.event_failed',
-          topic: 'triage.verdict_applied',
+          tags: expect.objectContaining({ topic: 'triage.verdict_applied' }),
         }),
-      ]);
+      );
 
       await dispatcher.tick();
       expect(captured).toHaveLength(1);
@@ -584,9 +591,12 @@ describe('OutboxDispatcherWorker', () => {
     await dispatcher.tick();
 
     expect(captured.length).toBeGreaterThanOrEqual(1);
+    // `worker` rides under `tags` — a sibling of `kind` is silently
+    // dropped by the production adapter (`BackgroundFailureContext` has
+    // no such field). See `reportConsumerFailure`'s regression test below.
     expect(captured[0]?.context).toMatchObject({
       kind: 'outbox.dispatch.tick_failed',
-      worker: 'OutboxDispatcherWorker',
+      tags: { worker: 'OutboxDispatcherWorker' },
     });
   });
 

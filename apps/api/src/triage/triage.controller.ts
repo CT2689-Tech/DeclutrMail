@@ -87,6 +87,14 @@ export class TriageController {
     if (!senderKey) {
       throw new BadRequestException('senderKey or senderId is required.');
     }
+    // Same reasoning as the uuid check above, for the raw-senderKey path:
+    // a colon here reaches `scoreJobId`'s BullMQ jobId unescaped, which
+    // is a 500 (bullmq's own `Custom Id cannot contain :`) for what is a
+    // bad request. `resolveSenderKey` above always returns a real
+    // `sender_key`, so this only ever rejects the raw-body path.
+    if (!senderId && !isSenderKey(senderKey)) {
+      throw new BadRequestException('senderKey must be a sha256 hex hash.');
+    }
     // Unknown values fail closed to `user` rather than 400: the reason is
     // telemetry, and a typo in it is no reason to refuse a re-score.
     const reason = body?.reason === 'stale' ? 'stale' : 'user';
@@ -263,4 +271,9 @@ function notFound(message: string): HttpException {
 /** UUID v4 (relaxed — accepts any RFC 4122 hex layout). */
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** `sha256("v1|" + normalized_email)` — matches `senders.sender_key`'s shape. */
+function isSenderKey(value: string): boolean {
+  return /^[0-9a-f]{64}$/i.test(value);
 }

@@ -73,4 +73,18 @@ describe('scoreJobId', () => {
     expect(sweep).toBe(`${MAILBOX}:*:${CLOCK}`);
     for (const id of [single, sweep]) expect(id.split(':')).toHaveLength(3);
   });
+
+  it("refuses a senderKey that would change the id's colon count", () => {
+    // `POST /api/triage/score-sender` validates only non-empty-string,
+    // so an extra colon here is a caller input, not an internal-only value.
+    expect(() =>
+      scoreJobId({ mailboxAccountId: MAILBOX, senderKey: 'a:b', producedAtMs: CLOCK }),
+    ).toThrow(/must not contain ":"/);
+  });
+
+  it('refuses a mailboxAccountId containing a colon', () => {
+    expect(() =>
+      scoreJobId({ mailboxAccountId: 'mb:1', senderKey: KEY_A, producedAtMs: CLOCK }),
+    ).toThrow(/must not contain ":"/);
+  });
 });

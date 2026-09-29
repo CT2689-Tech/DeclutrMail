@@ -40,10 +40,14 @@ import type { DrizzleDb } from '../db/db.module.js';
  * Optional consumer dependencies beyond the db handle, injected by the
  * worker composition root (`apps/api/src/worker.ts` — integration-owned).
  * The router stays the seam; feature wiring (queues, ports) lives with
- * the feature and is passed in here. A dep whose wiring is absent logs
- * loudly + ACKs so the dispatcher never wedges on a deploy-ordering gap.
- * One exception, `rescoreSenders`: the repair its event carries cannot be
- * re-derived later, so a missing one throws instead (`handleNonMailPurged`).
+ * the feature and is passed in here. Most absent wiring logs loudly and
+ * ACKs, so the dispatcher never wedges on a deploy-ordering gap —
+ * `onMailboxSyncReady`, `onMailboxSyncFailed`. Two throw instead, because
+ * their repair cannot be re-derived after the fact: `rescoreSenders`
+ * (`handleNonMailPurged`) and the pre-existing `onMailboxReconnectRequired`.
+ * Neither is enforced by its type — both are still `?:` — so a
+ * composition root that omits one still compiles; it only surfaces once
+ * the dispatcher's retries exhaust and the row flips to `failed`.
  */
 export interface OutboxConsumerDeps {
   /**
@@ -355,11 +359,13 @@ async function enqueueAutopilotApply(
  * purged drafts and chat lines fed (D204). The purge itself only touches
  * the sender index.
  *
- * Follow-ups: `FollowupCheckWorker.flipReplied` marked a thread replied
- * once an inbound message followed the user's send, and a draft saved in
- * the thread used to count as one. Reopen a replied row on those threads
- * when no reply is left — `followupReplyExists`, the same definition
- * `flipReplied` uses, negated over the mail that remains. Only
+ * Follow-ups: `FollowupCheckWorker.flipReplied` marks a thread replied
+ * once an inbound message follows the user's send, and until PR #791
+ * lands a draft saved in the thread still counts as one — this consumer
+ * is dormant until then, since nothing publishes this topic yet. Reopen
+ * a replied row on those threads when no reply is left —
+ * `followupReplyExists`, negated over the mail that remains, which
+ * `flipReplied` adopts in #791 so the two share one definition. Only
  * `flipReplied` sets `replied` (a user can only dismiss), so this undoes
  * no choice of theirs. Idempotent: a reopened row is `awaiting`, which
  * this never matches.
@@ -399,23 +405,40 @@ async function handleNonMailPurged(
             ),
           )
           .returning({ id: followupTracker.id });
+  // Logged before `rescore`, not after both halves: on a retry (`rescore`
+  // threw last attempt), the reopen's WHERE now matches nothing — its
+  // rows are already `awaiting` — so a single combined line gated on full
+  // success would report 0 reopened for a repair that genuinely ran, on
+  // the one attempt that finally completes.
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'outbox.consumer.non_mail_purged_reopened',
+      eventId,
+      mailboxAccountId: payload.mailboxAccountId,
+      followupsReopened: reopened.length,
+    }),
+  );
   if (rescore && payload.recountedSenderKeys.length > 0) {
     await rescore(
       payload.mailboxAccountId,
       payload.recountedSenderKeys,
       Date.parse(payload.purgedAt),
     );
+    // Queued, not completed: a job can dedup onto an existing jobId or
+    // fail its one BullMQ attempt into `dead_letter_jobs` (score
+    // producers set no `attempts`). This line is evidence work was
+    // handed off, not that the re-score ran.
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'outbox.consumer.non_mail_purged_queued_rescore',
+        eventId,
+        mailboxAccountId: payload.mailboxAccountId,
+        sendersQueuedForRescore: payload.recountedSenderKeys.length,
+      }),
+    );
   }
-  console.log(
-    JSON.stringify({
-      level: 'info',
-      kind: 'outbox.consumer.non_mail_purged',
-      eventId,
-      mailboxAccountId: payload.mailboxAccountId,
-      followupsReopened: reopened.length,
-      sendersRescored: payload.recountedSenderKeys.length,
-    }),
-  );
 }
 
 /**

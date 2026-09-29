@@ -646,12 +646,8 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
       // What the repair did is on record, not just in the table.
       const line = log.mock.calls
         .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
-        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged');
-      expect(line).toMatchObject({
-        eventId: 'evt-purged',
-        followupsReopened: 2,
-        sendersRescored: 0,
-      });
+        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged_reopened');
+      expect(line).toMatchObject({ eventId: 'evt-purged', followupsReopened: 2 });
     } finally {
       log.mockRestore();
     }
@@ -757,6 +753,49 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
 
     const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
     expect(row?.status).toBe('replied');
+  });
+
+  it('logs a reopen that happened even on the attempt where rescore then rejects', async () => {
+    // The reopen commits (it is a plain UPDATE, not inside rescore's
+    // promise), then rescore rejects and the whole handler rejects for
+    // the dispatcher to retry. If the reopen's own log line were combined
+    // with rescore's into one line gated on full success, this attempt
+    // would leave NO record that a reopen happened at all.
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId: mailboxId,
+      providerThreadId: 't-draft',
+      recipientEmail: 'friend@example.com',
+      sentAt: at(20),
+      status: 'replied',
+    });
+    const rescoreSenders = vi.fn().mockRejectedValueOnce(new Error('redis down'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(
+        buildOutboxConsumer(db, { rescoreSenders })(
+          purgedEvent({ recountedSenderKeys: [KEY_A], threadIds: ['t-draft'] }),
+        ),
+      ).rejects.toThrow('redis down');
+
+      const reopenLine = log.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged_reopened');
+      expect(reopenLine).toMatchObject({ followupsReopened: 1 });
+      // No queued-rescore line: rescore rejected before it could log one.
+      expect(
+        log.mock.calls.some(
+          ([entry]) =>
+            (JSON.parse(String(entry)) as Record<string, unknown>).kind ===
+            'outbox.consumer.non_mail_purged_queued_rescore',
+        ),
+      ).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('awaiting'); // the reopen genuinely happened
   });
 
   it('rejects a payload whose sender key is not a sender_key hash', async () => {

@@ -2922,8 +2922,13 @@ async function bootstrap(): Promise<void> {
       }),
       // `mailbox.non_mail_purged` — one signal_change score job per
       // sender whose counts the purge changed (the ScoreWorker stays the
-      // only writer of `triage_decisions`), then one Autopilot sweep a
-      // full window later, so it reads the verdicts they wrote.
+      // only writer of `triage_decisions`), then one backstop Autopilot
+      // sweep a full window later. Not a guarantee: every re-score shares
+      // the purge's clock, so their own sweep triggers collapse onto
+      // whichever finishes first (BullMQ jobId dedup), and this backstop
+      // fires on a timer, not on "all re-scores done" — a verdict written
+      // after it starts waits for some other trigger (docs/log/mistakes/
+      // 2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md).
       rescoreSenders: buildRescoreSenders({
         scoreQueue: scoreProducerQueue,
         sweepAfter: buildAutopilotApplyDeltaTrigger(autopilotApplyQueue, {

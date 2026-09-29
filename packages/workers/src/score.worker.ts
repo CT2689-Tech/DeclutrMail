@@ -1838,13 +1838,25 @@ export const SCORE_JOB = 'score';
  * New ids use hyphens (BullMQ throws "Custom Id cannot contain :"). This
  * one predates that rule and is accepted only because bullmq 6 allows
  * exactly two colons (measured in `domain-icon.queue.ts`); neither a
- * mailbox uuid nor a sha256 sender key holds a colon, so the count is
- * fixed here. It is not re-spelled: every live producer and the worker's
- * logs share this format.
+ * mailbox uuid nor a sha256 sender key holds a colon, so the count stays
+ * fixed — enforced below, not merely assumed. It is not re-spelled: every
+ * live producer and the worker's logs share this format.
  */
 export function scoreJobId(
   job: Pick<ScoreJobData, 'mailboxAccountId' | 'senderKey' | 'producedAtMs'>,
 ): string {
+  // `senderKey` is `string`, not a branded sha256 type, so this
+  // function — not its callers' input validation — is what actually
+  // keeps the colon count fixed. `POST /api/triage/score-sender` checks
+  // shape too (`isSenderKey`, `triage.controller.ts`), but this is the
+  // one guard every producer shares, including any future one that
+  // doesn't. A caller-supplied colon would otherwise silently change
+  // which sender's re-score this id names, or make BullMQ reject the
+  // `Queue.add` outright. Fail loudly
+  // instead of building an id whose colon count nobody chose.
+  if (job.mailboxAccountId.includes(':') || job.senderKey?.includes(':')) {
+    throw new Error('scoreJobId: mailboxAccountId/senderKey must not contain ":"');
+  }
   return `${job.mailboxAccountId}:${job.senderKey ?? '*'}:${job.producedAtMs}`;
 }
 
