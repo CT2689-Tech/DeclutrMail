@@ -78,7 +78,20 @@ function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
   const client = createTestQueryClient();
   return render(
     withQuery(
-      <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />,
+      <TriageRow
+        row={row}
+        expanded={expanded}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        // `fixtures.ts`' `fixtureDaysAgo` anchors to LOCAL calendar midnight
+        // (+9am), not UTC. `TriageRow`'s own default is `'UTC'` (the public
+        // simulator's no-QueryClient case), which disagreed with that local
+        // anchor for a few hours a day in any zone behind UTC — e.g. "still
+        // shows 'today'" read "1d" once local evening had already crossed
+        // into the next UTC calendar day (DECLUTRMAIL-WEB-2C fix exposed
+        // this; LOCAL_TZ matches the fixture, not the production default).
+        timeZone={LOCAL_TZ}
+      />,
       client,
     ),
   );
