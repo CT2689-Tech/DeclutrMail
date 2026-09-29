@@ -16,13 +16,20 @@ import {
   workingNotice,
 } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
-import { undoEntriesQueryOptions } from '@/features/undo/query-options';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
+import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { getBatchStatus, isTerminalStatus, type InFlightActionGroup } from '@/lib/api/actions';
-import { getActionFailureCopy, UNDO_DONE_TOAST } from '@/lib/action-error-copy';
+import {
+  getActionFailureCopy,
+  protectedSkippedCopy,
+  UNDO_DONE_TOAST,
+} from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
+
+import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
 
 import { TRIAGE_BOOTSTRAP_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
@@ -31,7 +38,9 @@ import { useTriageStore } from './store';
  * Mark every surface a confirmed undo touches as stale: the tray
  * itself (token now reverted), the triage queue (the reverted sender
  * is no longer "decided", so it returns to the queue), stats, the
- * activity feed, and the senders list (inbox counts moved back).
+ * activity feed, and the senders list (inbox counts moved back). The
+ * pill also calls this when a decision stops, and a Screener decision
+ * leaves its queue only once its job lands, so the Screener is re-read too.
  */
 export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
   // The tray list's refetch is RETURNED: the tray keeps its revert slot
@@ -42,6 +51,7 @@ export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
   void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
+  void qc.invalidateQueries({ queryKey: SCREENER_ALL_KEY });
   return trayRefreshed;
 }
 
@@ -69,7 +79,7 @@ const decisionId = (entry: UndoTrayEntry): string => entry.groupId ?? entry.toke
 function useUndoEntries(mailboxId?: string) {
   return useQuery(
     undoEntriesQueryOptions(mailboxId, async (signal) => {
-      const env = await apiGet<UndoTrayEntry[]>('/api/undo', {
+      const env = await apiGet<UndoWireEntry[]>('/api/undo', {
         signal,
         ...(mailboxId ? { mailboxId } : {}),
       });
@@ -191,6 +201,9 @@ export function ProductUndoTray({
     for (const g of stopped) reported.current.add(g.groupId);
     // Whatever it changed, every list that shows mail or undo is stale now.
     void invalidateAfterUndo(qc);
+    // …and so is the cleanup allowance: a skip as Protected gives a Free
+    // unit back, and a start we could not confirm may have spent one.
+    void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
     for (const group of stopped) {
       void getBatchStatus(group.groupId, mailboxId ? { mailboxId } : undefined)
         .catch(() => null)
@@ -303,7 +316,7 @@ export function ProductUndoTray({
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
-            : getActionFailureCopy('revert-enqueue'),
+            : getActionFailureCopy('revert-enqueue', { error: err }),
           'warn',
         );
         setInFlight(null);
@@ -372,6 +385,13 @@ export function ProductUndoTray({
   // the headline: a line still reading "440 emails · 2 senders" while one
   // of them is on its way back would be a count the row no longer holds.
   const entries = (entriesQuery.data ?? [])
+    // D245 / founder decision D4: a sender the decision skipped rides its
+    // own Undo line — counted by the server, in the same read as the line.
+    .map(({ protectedSkippedCount, ...entry }: UndoWireEntry): UndoTrayEntry =>
+      protectedSkippedCount
+        ? { ...entry, note: protectedSkippedCopy(protectedSkippedCount) }
+        : entry,
+    )
     .filter(
       (entry) => !baseline?.tokens.has(decisionId(entry)) || sessionGroups.has(decisionId(entry)),
     )

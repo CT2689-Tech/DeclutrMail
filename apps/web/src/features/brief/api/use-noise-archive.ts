@@ -27,9 +27,9 @@
  *
  * D245: Protected senders are excluded from bulk mail-changing actions.
  * They are filtered out of the request here, shown as excluded in the UI,
- * and — if protection flips between the read and the confirm — dropped
- * again server-side, which this hook honours by only marking the senders
- * the server actually enqueued.
+ * and — if protection flips between the read and the confirm, or while
+ * the job waits to run — dropped again server-side, which this hook
+ * honours by only marking the senders the server actually acted on.
  *
  * D69: the Brief is a frozen snapshot. A completed archive marks the
  * acted rows Done without recomputing the payload or the counts — the
@@ -48,10 +48,22 @@ import { toast } from '@declutrmail/shared';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
-import { getActionStatus, isTerminalStatus } from '@/lib/api/actions';
+import {
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  protectedSkippedCopy,
+} from '@/lib/action-error-copy';
+import { NO_ACTIONABLE_SENDERS_COPY, skippedAtClickCopy } from '@/lib/bulk-action-copy';
+import {
+  getActionStatus,
+  getBatchStatus,
+  isProtectedSkip,
+  isTerminalStatus,
+  type BatchStatusResult,
+} from '@/lib/api/actions';
 import { apiErrorCode, ApiError } from '@/lib/api/client';
 import type { BriefNoiseSenderWire, BriefSenderGroupWire } from '@/lib/api/brief';
 import {
@@ -65,6 +77,8 @@ import {
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+
+import { briefKeys } from './query-keys';
 
 // NOTE: no `bulk_action_taken` fires from this surface yet. It carries a
 // CLOSED `source` union in
@@ -171,7 +185,8 @@ export type NoiseArchiveOutcome =
       affectedCount: number;
       undo: NoiseUndoState;
     }
-  | { kind: 'reverted'; senderCount: number }
+  /** `senderCount` of the archive's `of` senders are back — all, or some from the pill. */
+  | { kind: 'reverted'; senderCount: number; of: number }
   /**
    * Some siblings archived, some failed. The aggregate cannot say WHICH,
    * so no row is marked Done — a wrong ✓ is worse than an absent one —
@@ -179,8 +194,21 @@ export type NoiseArchiveOutcome =
    * that already moved.
    */
   | { kind: 'partial'; doneCount: number; failedCount: number; total: number }
-  /** Every sibling failed. Nothing moved, so retrying is safe. */
+  /**
+   * Every sibling failed. Not "nothing moved": a job sends its mail in
+   * chunks and keeps going after one lands, so a failed one may have
+   * moved part of it. Activity has what each did.
+   */
   | { kind: 'failed' }
+  /** Refused before anything started. Nothing moved, so retrying is safe. */
+  | { kind: 'refused' }
+  /**
+   * Nothing ran: every sender was refused — Protected at the click or by
+   * the time its job ran (D245), or no longer in this mailbox.
+   * `protectedCount` when every one was named Protected; null when the
+   * server did not say which reason was whose.
+   */
+  | { kind: 'skipped'; protectedCount: number | null }
   /** The status read failed. The outcome is genuinely unknown. */
   | { kind: 'unconfirmed' };
 
@@ -213,6 +241,38 @@ const SCOPE_CONFLICT_CODES = new Set(['SELECT_MAILBOX', 'NO_ACTIVE_MAILBOX', 'MA
 function isScopeConflict(err: unknown): boolean {
   const code = apiErrorCode(err);
   return code !== null && SCOPE_CONFLICT_CODES.has(code);
+}
+
+/**
+ * Split a finished batch's senders into those it acted on and those the
+ * worker skipped because they became Protected while it waited (D245).
+ * A skipped sender gets no Done mark and no count — nothing moved.
+ */
+function splitSkippedAtExecution(
+  handle: { senderKeys: readonly string[]; senderIds: readonly string[] },
+  status: Pick<BatchStatusResult, 'skippedProtectedSenderIds'>,
+): { acted: { keys: string[]; ids: string[] }; skippedKeys: string[] } {
+  const skipped = new Set(status.skippedProtectedSenderIds ?? []);
+  const acted = { keys: [] as string[], ids: [] as string[] };
+  const skippedKeys: string[] = [];
+  handle.senderKeys.forEach((key, i) => {
+    const id = handle.senderIds[i]!;
+    if (skipped.has(id)) skippedKeys.push(key);
+    else {
+      acted.keys.push(key);
+      acted.ids.push(id);
+    }
+  });
+  return { acted, skippedKeys };
+}
+
+/** The undo truth for a finished archive, whichever handle it ran under. */
+interface UndoRead {
+  undoToken: string | null;
+  undoExpiresAt: string | null;
+  /** Everything the archive changed is back. */
+  undoRevertedAt: string | null;
+  revertedSenderIds: readonly string[];
 }
 
 export function useNoiseArchive(targets: readonly NoiseTarget[]) {
@@ -259,9 +319,12 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // The completed archive, held as the one fact the client owns: which
   // handle ran, over which senders, and what the worker moved.
   const [settled, setSettled] = useState<{
-    /** `action_jobs.id` — the batch anchor row, or the single action. */
+    kind: 'single' | 'batch';
+    /** `action_jobs.id` of the single action, or the batch handle. */
     handleId: string;
     senderKeys: string[];
+    /** `senderKeys`' ids, index for index. */
+    senderIds: string[];
     senderCount: number;
     affectedCount: number;
   } | null>(null);
@@ -276,11 +339,34 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // undo cannot leave a stale "Archived ✓" on a row whose mail is back in
   // the inbox, and cannot leave a receipt claiming messages that returned.
   //
-  // `batchId` IS the anchor `action_jobs.id`, and a cascade revert marks
-  // every sibling including the anchor, so one read covers the batch.
+  // A batch is read as a batch: its anchor is only the first sender's job,
+  // which holds no token when that sender was skipped (D245) or had
+  // nothing to move — and the pill can also undo one sender at a time.
   const undoState = useQuery({
     queryKey: [...undoKeys.all, 'brief-noise-archive', settled?.handleId ?? null] as const,
-    queryFn: () => getActionStatus(settled!.handleId),
+    queryFn: async (): Promise<UndoRead> => {
+      const { kind, handleId, senderIds } = settled!;
+      if (kind === 'batch') {
+        const batch = await getBatchStatus(handleId);
+        // An API that predates the batch's own undo fields (the web deploys
+        // first) falls through to the anchor job, the batch handle's id.
+        if (batch.undoExpiresAt !== undefined) {
+          return {
+            undoToken: batch.undoToken,
+            undoExpiresAt: batch.undoExpiresAt,
+            undoRevertedAt: batch.undoRevertedAt ?? null,
+            revertedSenderIds: batch.revertedSenderIds ?? [],
+          };
+        }
+      }
+      const single = await getActionStatus(handleId);
+      return {
+        undoToken: single.undoToken,
+        undoExpiresAt: single.undoExpiresAt,
+        undoRevertedAt: single.undoRevertedAt,
+        revertedSenderIds: single.undoRevertedAt !== null ? senderIds : [],
+      };
+    },
     enabled: settled !== null,
     // A read 4xx here is a designed state, never something to hammer (§8).
     retry: false,
@@ -288,11 +374,21 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   });
 
   const reverted = undoState.data?.undoRevertedAt != null;
+  /** Senders put back one at a time from the pill, while the rest stay archived. */
+  const undoneIds = useMemo(
+    () => new Set(undoState.data?.revertedSenderIds ?? []),
+    [undoState.data],
+  );
 
-  /** D69 "Done ✓" marks — empty the moment the archive is reverted. */
+  /** D69 "Done ✓" marks — gone for every sender whose mail is back. */
   const archivedKeys = useMemo<ReadonlySet<string>>(
-    () => new Set(settled && !reverted ? settled.senderKeys : []),
-    [settled, reverted],
+    () =>
+      new Set(
+        settled && !reverted
+          ? settled.senderKeys.filter((_key, i) => !undoneIds.has(settled.senderIds[i]!))
+          : [],
+      ),
+    [settled, reverted, undoneIds],
   );
 
   /** Terminal branches that produced no undoable archive. */
@@ -301,7 +397,10 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   const outcome = useMemo<NoiseArchiveOutcome | null>(() => {
     if (failureOutcome) return failureOutcome;
     if (!settled) return null;
-    if (reverted) return { kind: 'reverted', senderCount: settled.senderCount };
+    const of = settled.senderCount;
+    if (reverted) return { kind: 'reverted', senderCount: of, of };
+    const undone = settled.senderIds.filter((id) => undoneIds.has(id)).length;
+    if (undone > 0) return { kind: 'reverted', senderCount: undone, of };
     const data = undoState.data;
     const undo: NoiseUndoState = !data
       ? 'checking'
@@ -316,7 +415,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       affectedCount: settled.affectedCount,
       undo,
     };
-  }, [failureOutcome, settled, reverted, undoState.data]);
+  }, [failureOutcome, settled, reverted, undoneIds, undoState.data]);
 
   /** Sender ids frozen at sheet-open so preview and confirm cannot diverge. */
   const [pending, setPending] = useState<{ senderIds: string[]; senderKeys: string[] } | null>(
@@ -332,8 +431,21 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
    * never toast a failure or reach Sentry.
    */
   const [inFlight, setInFlight] = useState<
-    | { kind: 'single'; actionId: string; senderKeys: string[]; mailboxId: string | null }
-    | { kind: 'batch'; batchId: string; senderKeys: string[]; mailboxId: string | null }
+    | {
+        kind: 'single';
+        actionId: string;
+        senderKeys: string[];
+        senderIds: string[];
+        mailboxId: string | null;
+      }
+    | {
+        kind: 'batch';
+        batchId: string;
+        senderKeys: string[];
+        /** `senderKeys`' ids, index for index — the batch status names skips by id. */
+        senderIds: string[];
+        mailboxId: string | null;
+      }
     | null
   >(null);
   /**
@@ -346,6 +458,19 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
    * displaced here.
    */
   const [overdueInFlight, setOverdueInFlight] = useState<typeof inFlight>(null);
+
+  // A mailbox switch: the section now lists another mailbox's senders, so
+  // nothing about the last one's archive may show — its receipt, ✓ marks,
+  // open sheet or in-flight handle. The job itself keeps running there.
+  const resetScope = useCallback(() => {
+    setUnconfirmedKeys(new Set());
+    setSettled(null);
+    setFailureOutcome(null);
+    setPending(null);
+    setInFlight(null);
+    setOverdueInFlight(null);
+  }, []);
+  useMailboxScopeReset(activeMailboxId ?? undefined, resetScope);
 
   // Overdue-parking timer. Cleanup cancels the deadline whenever the
   // handle clears normally, so only a genuinely stuck handle parks.
@@ -371,13 +496,54 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
 
   const deselectAll = useCallback(() => setSelected(new Set()), []);
 
+  /**
+   * Clear the selection after a terminal state whose per-sender outcome we
+   * cannot resolve. Leaving the boxes checked re-arms senders that already
+   * archived, and re-confirming spends another cleanup unit to move mail
+   * that has already moved.
+   */
+  const clearSelection = useCallback((keys: string[]) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const key of keys) next.delete(key);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Senders whose archive may be running although we could not confirm it
+   * (a 5xx enqueue, or a lost status read). Unchecked AND kept from being
+   * checked again: a second archive would run it twice.
+   */
+  const [unconfirmedKeys, setUnconfirmedKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const holdUnconfirmed = useCallback(
+    (keys: string[]) => {
+      clearSelection(keys);
+      setUnconfirmedKeys((prev) => new Set([...prev, ...keys]));
+    },
+    [clearSelection],
+  );
+
+  /**
+   * A sender left out as Protected or gone must say so on its own row —
+   * an exclusion here is always visible. The Brief (D69) carries read-time
+   * protection flags next to its frozen payload, so re-reading it is what
+   * puts "Protected" on the row; the payload itself does not change.
+   */
+  const refreshRows = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: briefKeys.today() });
+  }, [qc]);
+
   const selectedTargets = useMemo(
     () =>
       targets.filter(
         (t) =>
-          selected.has(t.senderKey) && blockedReason(t) === null && !archivedKeys.has(t.senderKey),
+          selected.has(t.senderKey) &&
+          blockedReason(t) === null &&
+          !archivedKeys.has(t.senderKey) &&
+          !unconfirmedKeys.has(t.senderKey),
       ),
-    [targets, selected, archivedKeys],
+    [targets, selected, archivedKeys, unconfirmedKeys],
   );
 
   // ── Mandatory preview (D226) ──────────────────────────────────────
@@ -470,40 +636,61 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   const enqueueComposite = useEnqueueComposite();
   const enqueueBulk = useEnqueueBulkAction();
 
-  const onEnqueueError = useCallback((err: unknown, senderCount: number) => {
-    setPending(null);
-    // 402 is the entitlement cap — the global UpgradeModal already
-    // explains it, so neither Sentry nor a second toast helps.
-    if (err instanceof ApiError && err.status === 402) return;
-    // Read the CODE, never the bare status. `CurrentMailboxGuard` sits in
-    // front of this endpoint and also answers 409 (NO_ACTIVE_MAILBOX /
-    // SELECT_MAILBOX / MAILBOX_NOT_OWNED), as does an idempotency-key
-    // conflict. Branching on 409 alone told a user with no active mailbox
-    // that their SENDER was Protected — an assertion this handler never
-    // read. See the docblock on `apps/web/src/lib/api/client.ts`.
-    if (apiErrorCode(err) === 'PROTECTED_SENDER') {
+  const onEnqueueError = useCallback(
+    (err: unknown, senderKeys: string[]) => {
+      const senderCount = senderKeys.length;
+      setPending(null);
+      // 402 is the entitlement cap — the global UpgradeModal already
+      // explains it, so neither Sentry nor a second toast helps.
+      if (err instanceof ApiError && err.status === 402) return;
+      // Read the CODE, never the bare status. `CurrentMailboxGuard` sits in
+      // front of this endpoint and also answers 409 (NO_ACTIVE_MAILBOX /
+      // SELECT_MAILBOX / MAILBOX_NOT_OWNED), as does an idempotency-key
+      // conflict. Branching on 409 alone told a user with no active mailbox
+      // that their SENDER was Protected — an assertion this handler never
+      // read. See the docblock on `apps/web/src/lib/api/client.ts`.
+      if (apiErrorCode(err) === 'PROTECTED_SENDER') {
+        toast(`Archive: ${protectedSkippedCopy(1)}`, 'warn');
+        setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
+        refreshRows();
+        return;
+      }
+      // Every selected sender was refused at the click — a designed state,
+      // not a defect, and the server does not say which reason was whose.
+      if (apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS') {
+        toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
+        setFailureOutcome({ kind: 'skipped', protectedCount: null });
+        refreshRows();
+        return;
+      }
+      if (isScopeConflict(err)) {
+        // The guard moved the scope out from under the confirm. Designed
+        // state — the app shell owns the recovery (picker / reconnect).
+        toast('Your active mailbox changed, so nothing was archived.', 'warn');
+        return;
+      }
+      // EVERY other failure — including the remaining 409s — is a real
+      // defect signal and keeps its Sentry event.
+      captureFeatureException(err, { surface: 'brief', reason: 'noise_bulk_enqueue' });
+      if (enqueueMayHaveStarted(err)) {
+        // It may be running: the senders must not stay armed for a second
+        // run, and the pill finds a job that did start.
+        holdUnconfirmed(senderKeys);
+        setFailureOutcome({ kind: 'unconfirmed' });
+        void qc.invalidateQueries({ queryKey: undoKeys.all });
+      } else {
+        setFailureOutcome({ kind: 'refused' });
+      }
       toast(
-        'Those senders are Protected now, so nothing was archived. Unprotect them to include them.',
+        getActionFailureCopy('enqueue', {
+          action: `Archive for ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
+          error: err,
+        }),
         'warn',
       );
-      return;
-    }
-    if (isScopeConflict(err)) {
-      // The guard moved the scope out from under the confirm. Designed
-      // state — the app shell owns the recovery (picker / reconnect).
-      toast('Your active mailbox changed, so nothing was archived.', 'warn');
-      return;
-    }
-    // EVERY other failure — including the remaining 409s — is a real
-    // defect signal and keeps its Sentry event.
-    captureFeatureException(err, { surface: 'brief', reason: 'noise_bulk_enqueue' });
-    toast(
-      getActionFailureCopy('enqueue', {
-        action: `Archive for ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
-      }),
-      'warn',
-    );
-  }, []);
+    },
+    [refreshRows, clearSelection, qc],
+  );
 
   const confirm = useCallback(() => {
     if (!pending) return;
@@ -541,10 +728,11 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
               kind: 'single',
               actionId: res.actionId,
               senderKeys,
+              senderIds,
               mailboxId: activeMailboxId,
             });
           },
-          onError: (err) => onEnqueueError(err, 1),
+          onError: (err) => onEnqueueError(err, senderKeys),
         },
       );
       return;
@@ -559,38 +747,29 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
           // Done. `skipped` carries the ones it refused — protection can
           // flip between the read that built this list and this confirm.
           const skipped = new Set(res.skipped.map((s) => s.senderId));
-          const enqueuedKeys = senderKeys.filter((_key, i) => !skipped.has(senderIds[i]!));
+          const enqueued = senderIds.flatMap((id, i) => (skipped.has(id) ? [] : [i]));
           // EVERY skip is surfaced, not just the protected ones. A
           // `not_found` skip — what a deleted sender or a mid-flow
           // mailbox switch produces — used to vanish in silence: the
           // preview counted the sender, the batch dropped it, and nothing
           // on screen said so. The section's contract is that an
-          // exclusion is always visible.
-          const protectedCount = res.skipped.filter((s) => s.reason === 'protected').length;
-          const missingCount = res.skipped.length - protectedCount;
-          const parts: string[] = [];
-          if (protectedCount > 0) {
-            parts.push(`${protectedCount} Protected`);
-          }
-          if (missingCount > 0) {
-            parts.push(`${missingCount} no longer in this mailbox`);
-          }
-          if (parts.length > 0) {
-            toast(
-              `${parts.join(' and ')} — left out of this archive. ${res.senderCount} sender${
-                res.senderCount === 1 ? '' : 's'
-              } went ahead.`,
-              'warn',
-            );
+          // exclusion is always visible — and a refused sender left
+          // checked invited the same refusal again.
+          const leftOut = skippedAtClickCopy('Archive', res.skipped);
+          if (leftOut !== null) {
+            toast(leftOut, 'warn');
+            clearSelection(senderKeys.filter((_key, i) => skipped.has(senderIds[i]!)));
+            refreshRows();
           }
           setInFlight({
             kind: 'batch',
             batchId: res.batchId,
-            senderKeys: enqueuedKeys,
+            senderKeys: enqueued.map((i) => senderKeys[i]!),
+            senderIds: enqueued.map((i) => senderIds[i]!),
             mailboxId: activeMailboxId,
           });
         },
-        onError: (err) => onEnqueueError(err, senderIds.length),
+        onError: (err) => onEnqueueError(err, senderKeys),
       },
     );
   }, [
@@ -601,6 +780,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     enqueueComposite,
     enqueueBulk,
     onEnqueueError,
+    clearSelection,
+    refreshRows,
   ]);
 
   // ── Terminal handling (server confirmation only, D226) ────────────
@@ -633,27 +814,21 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // handle settling late would kill the tracking of a NEWER action the
   // released latch has since accepted.
   const settle = useCallback(
-    (handleId: string, keys: string[], result: { senderCount: number; affectedCount: number }) => {
-      setSettled({ handleId, senderKeys: keys, ...result });
+    (
+      handle: {
+        kind: 'single' | 'batch';
+        handleId: string;
+        senderKeys: string[];
+        senderIds: string[];
+      },
+      result: { senderCount: number; affectedCount: number },
+    ) => {
+      setSettled({ ...handle, ...result });
       setFailureOutcome(null);
       invalidateMovedMail();
     },
     [invalidateMovedMail],
   );
-
-  /**
-   * Clear the selection after a terminal state whose per-sender outcome we
-   * cannot resolve. Leaving the boxes checked re-arms senders that already
-   * archived, and re-confirming spends another cleanup unit to move mail
-   * that has already moved.
-   */
-  const clearSelection = useCallback((keys: string[]) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      for (const key of keys) next.delete(key);
-      return next;
-    });
-  }, []);
 
   /**
    * True when the poll failed only because the mailbox scope moved after
@@ -677,23 +852,39 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(inFlight.senderKeys);
+      holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
       return;
     }
     const data = singleStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    // D245: the sender was Protected by the time the job ran, so nothing
+    // moved. No ✓ and no receipt: the line says it was skipped, and its
+    // row re-reads as Protected.
+    if (isProtectedSkip(data)) {
+      clearSelection(inFlight.senderKeys);
+      setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
+      refreshRows();
+      setInFlight(null);
+      return;
+    }
     if (data.status === 'done') {
-      settle(inFlight.actionId, inFlight.senderKeys, {
-        senderCount: 1,
-        affectedCount: data.affectedCount,
-      });
+      settle(
+        {
+          kind: 'single',
+          handleId: inFlight.actionId,
+          senderKeys: inFlight.senderKeys,
+          senderIds: inFlight.senderIds,
+        },
+        { senderCount: 1, affectedCount: data.affectedCount },
+      );
       setInFlight(null);
       return;
     }
     toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
-    // Nothing moved, so the senders stay checked and a retry is safe.
+    // The job has ended, so the senders stay checked and a retry cannot
+    // overlap it; part of the mail may have moved (see `failed`).
     setFailureOutcome({ kind: 'failed' });
     setInFlight(null);
   }, [
@@ -704,6 +895,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     singleStatus.error,
     settle,
     clearSelection,
+    refreshRows,
   ]);
 
   useEffect(() => {
@@ -718,13 +910,22 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_batch_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(inFlight.senderKeys);
+      holdUnconfirmed(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
       return;
     }
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    // D245: senders found Protected when their job ran were skipped — no
+    // ✓, not counted, unchecked, and their rows re-read as Protected. The
+    // pill says it beside the Undo line; when nothing else ran, the line
+    // here says it too, since this attempt has no receipt of its own.
+    const { acted, skippedKeys } = splitSkippedAtExecution(inFlight, data);
+    if (skippedKeys.length > 0) {
+      clearSelection(skippedKeys);
+      refreshRows();
+    }
     if (data.status === 'failed') {
       toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
@@ -755,10 +956,14 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       invalidateMovedMail();
       return;
     }
-    settle(inFlight.batchId, inFlight.senderKeys, {
-      senderCount: data.done,
-      affectedCount: data.affectedCount,
-    });
+    if (acted.keys.length > 0) {
+      settle(
+        { kind: 'batch', handleId: inFlight.batchId, senderKeys: acted.keys, senderIds: acted.ids },
+        { senderCount: acted.keys.length, affectedCount: data.affectedCount },
+      );
+    } else if (skippedKeys.length > 0) {
+      setFailureOutcome({ kind: 'skipped', protectedCount: skippedKeys.length });
+    }
     setInFlight(null);
   }, [
     inFlight,
@@ -768,6 +973,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     batchStatus.error,
     settle,
     clearSelection,
+    refreshRows,
     invalidateMovedMail,
   ]);
 
@@ -792,7 +998,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(overdueInFlight.senderKeys);
+      holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
       return;
@@ -803,11 +1009,23 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     // describes: both preview caches must re-count before any confirm.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    if (isProtectedSkip(data)) {
+      clearSelection(overdueInFlight.senderKeys);
+      setFailureOutcome({ kind: 'skipped', protectedCount: 1 });
+      refreshRows();
+      setOverdueInFlight(null);
+      return;
+    }
     if (data.status === 'done') {
-      settle(overdueInFlight.actionId, overdueInFlight.senderKeys, {
-        senderCount: 1,
-        affectedCount: data.affectedCount,
-      });
+      settle(
+        {
+          kind: 'single',
+          handleId: overdueInFlight.actionId,
+          senderKeys: overdueInFlight.senderKeys,
+          senderIds: overdueInFlight.senderIds,
+        },
+        { senderCount: 1, affectedCount: data.affectedCount },
+      );
       setOverdueInFlight(null);
       return;
     }
@@ -822,6 +1040,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     overdueSingleStatus.error,
     settle,
     clearSelection,
+    refreshRows,
     qc,
   ]);
 
@@ -837,7 +1056,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         reason: 'noise_archive_batch_status',
       });
       toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
-      clearSelection(overdueInFlight.senderKeys);
+      holdUnconfirmed(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
       return;
@@ -848,6 +1067,11 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     // describes: both preview caches must re-count before any confirm.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    const { acted, skippedKeys } = splitSkippedAtExecution(overdueInFlight, data);
+    if (skippedKeys.length > 0) {
+      clearSelection(skippedKeys);
+      refreshRows();
+    }
     if (data.status === 'failed') {
       toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
@@ -873,10 +1097,19 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       invalidateMovedMail();
       return;
     }
-    settle(overdueInFlight.batchId, overdueInFlight.senderKeys, {
-      senderCount: data.done,
-      affectedCount: data.affectedCount,
-    });
+    if (acted.keys.length > 0) {
+      settle(
+        {
+          kind: 'batch',
+          handleId: overdueInFlight.batchId,
+          senderKeys: acted.keys,
+          senderIds: acted.ids,
+        },
+        { senderCount: acted.keys.length, affectedCount: data.affectedCount },
+      );
+    } else if (skippedKeys.length > 0) {
+      setFailureOutcome({ kind: 'skipped', protectedCount: skippedKeys.length });
+    }
     setOverdueInFlight(null);
   }, [
     overdueInFlight,
@@ -886,6 +1119,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     overdueBatchStatus.error,
     settle,
     clearSelection,
+    refreshRows,
     invalidateMovedMail,
     qc,
   ]);
@@ -896,6 +1130,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     deselectAll,
     selectedTargets,
     archivedKeys,
+    unconfirmedKeys,
     outcome,
     /** Sheet is mounted while a selection is pending confirmation. */
     sheetOpen: pending !== null,

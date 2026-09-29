@@ -15,9 +15,10 @@ const RESULT = {
 
 describe('ActionsController.unsubscribeIntent', () => {
   it.each([
-    [{ senderId: SENDER_ID }, false],
-    [{ senderId: SENDER_ID, includesBacklogAction: true }, true],
-  ] as const)('forwards the parsed backlog flag (%s)', async (body, expected) => {
+    [{ senderId: SENDER_ID }, false, false],
+    [{ senderId: SENDER_ID, includesBacklogAction: true }, true, false],
+    [{ senderId: SENDER_ID, override: true }, false, true],
+  ] as const)('forwards the parsed flags (%s)', async (body, backlog, override) => {
     const recordUnsubscribeIntent = vi.fn().mockResolvedValue(RESULT);
     const controller = new ActionsController({ recordUnsubscribeIntent } as never, {} as never);
 
@@ -28,7 +29,8 @@ describe('ActionsController.unsubscribeIntent', () => {
       mailboxAccountId: MAILBOX_ID,
       senderId: SENDER_ID,
       idempotencyKey: 'idempotency-key-123',
-      includesBacklogAction: expected,
+      includesBacklogAction: backlog,
+      override,
     });
   });
 });

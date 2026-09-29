@@ -3,7 +3,7 @@ import type { ErrorCode } from '@declutrmail/shared/contracts';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, notExists, sql } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -13,9 +13,11 @@ import { ActionsUnsubscribeExecutedPayloadSchema, TOPICS } from '@declutrmail/ev
 import {
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   UNSUB_MANUAL_REQUIRED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { protectedSenderRow } from './label-action.worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 // SSRF primitives moved to `ssrf-guard.ts` when DomainIconWorker
 // (ADR-0034) became the second consumer of the same guard. Re-exported
@@ -119,13 +121,12 @@ export interface UnsubExecutionJobData {
   /** Rule attribution for Autopilot outcomes; null/absent for manual. */
   ruleId?: string | null;
   /**
-   * True ONLY for `actions.service.ts`'s `recordUnsubscribeIntent` — the
-   * single-sender explicit-click path D245 excludes from the Protected
-   * check below (bulk and autopilot never set this). Absent/false is the
-   * safe default: an older-shaped job re-delivered mid-deploy is treated
-   * as needing the check, not as exempt from it.
+   * True only when the user confirmed unsubscribing from a Protected
+   * sender — the single-sender "…anyway" confirm (`override`). Absent/false
+   * is the safe default: the job is re-checked and refused if its sender is
+   * Protected when it runs (D245), so an older-shaped job is never exempt.
    */
-  explicit?: boolean;
+  protectedConfirmed?: boolean;
 }
 
 /** Metric-only result (logged on `worker.succeeded`). */
@@ -255,13 +256,11 @@ export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
 /**
  * `action_jobs.error_code` when the execution-time Protected re-check
- * (below) refuses a since-protected sender. Job-only, like
- * `UNSUB_NOT_ONE_CLICK`/`UNSUB_TARGET_REJECTED` — never a live API
- * response, so it is not part of the `ErrorCode` registry the way
- * `UNSUB_SEND_DISABLED`/`PROTECTED_SENDER` are (those two are ALSO
- * thrown synchronously at enqueue).
+ * (below) refuses a since-protected sender. Re-exported: it lives in
+ * `@declutrmail/shared/contracts` beside its label sibling, because the
+ * API and web read it too.
  */
-export const UNSUB_SENDER_PROTECTED_ERROR_CODE = 'UNSUB_SENDER_PROTECTED';
+export { UNSUB_SENDER_PROTECTED_ERROR_CODE };
 
 /**
  * Whether this process may perform a real one-click unsubscribe POST.
@@ -388,25 +387,24 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     const mailboxAccountId = job.mailboxAccountId;
 
     // Guard, execution-time Protected re-check (QA-protect-20260901-04
-    // follow-up) — mirrors autopilot-action.worker.ts's "guard 4" and
-    // label-action.worker.ts's execution-time re-check for
-    // Archive/Later/Delete. Protection is checked once at enqueue
+    // follow-up) — mirrors autopilot-action.worker.ts's per-match "guard
+    // 4" and label-action.worker.ts's `protectionSubject` for
+    // Archive/Later/Delete. Protection is checked at enqueue
     // (actions.service.ts's bulk path, autopilot-action.worker.ts's
-    // match/apply step) and never again before this point; per-mailbox
+    // match/apply step) and not again before this point; per-mailbox
     // queue depth and ordinary backlog widen that window well past
-    // instant. This is the ONLY re-check standing between a
-    // since-protected sender and an irreversible send —
-    // `recordSenderProtected` below deliberately does NOT use
+    // instant. `recordSenderProtected` below deliberately does NOT use
     // `recordOutcome`/activity/outbox, matching `recordSendDisabled`:
     // nothing was attempted, so nothing may claim an attempt.
     //
-    // Skipped for `payload.explicit` — D245 excludes Protected senders
-    // from BULK and AUTOMATIC actions only, never from an explicit
-    // single-sender click (`packages/shared`'s `canUnsubscribe()` and
-    // `actions.service.ts`'s `recordUnsubscribeIntent` carry no
-    // protection term by design — see `apps/web/src/features/senders/
-    // data.ts`). Only `enqueueBulkUnsubscribe` and the autopilot chain
-    // reach this worker without `explicit: true`.
+    // Skipped for `payload.protectedConfirmed` — the single-sender
+    // "…anyway" confirm on a sender that was Protected at the click, the
+    // same consent `label-action.worker.ts` honors (D245). Every other job
+    // is re-checked, single-sender clicks included: consent covers only
+    // the protection the user saw.
+    //
+    // Checked twice: here, before any work, and again atomically with the
+    // `executing` write just before the POST.
     //
     // `job.status !== 'executing'` is the in-flight carve-out — but
     // ONLY correct here because `status` moves to `'executing'` a few
@@ -414,7 +412,8 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     // retry must distinguish "a POST may already be on the wire" from
     // "nothing was ever sent," and only the position of that write
     // decides which one `job.status` here actually answers).
-    if (job.status !== 'executing' && !payload.explicit) {
+    const recheckProtected = job.status !== 'executing' && payload.protectedConfirmed !== true;
+    if (recheckProtected) {
       const [policy] = await db
         .select({ isProtected: senderPolicies.isProtected })
         .from(senderPolicies)
@@ -530,10 +529,35 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     // resolution — never having reached the network — look identical to
     // one caused by the POST itself timing out, and the guard above would
     // then skip a protection re-check for a job that never sent anything.
-    await db
+    //
+    // When the re-check applies, the same statement refuses if the sender
+    // is Protected now, so a Protect committed during the pre-flight above
+    // stops the send. One committed after this statement is not seen: the
+    // window is as small as the send allows, not zero.
+    const [marked] = await db
       .update(actionJobs)
       .set({ status: 'executing', updatedAt: sql`now()` })
-      .where(eq(actionJobs.id, job.id));
+      .where(
+        and(
+          eq(actionJobs.id, job.id),
+          ...(recheckProtected
+            ? [notExists(protectedSenderRow(db, mailboxAccountId, senderKey))]
+            : []),
+        ),
+      )
+      .returning({ id: actionJobs.id });
+    if (!marked) {
+      // Nothing was marked: name the real reason rather than assume one.
+      const [still] = await db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(eq(actionJobs.id, job.id))
+        .limit(1);
+      if (still && recheckProtected) {
+        return this.recordSenderProtected(job.id, mailboxAccountId, senderKey);
+      }
+      throw new ValidationError(`action_jobs row ${job.id} vanished before its request`);
+    }
 
     let response: UnsubHttpResponse;
     try {
@@ -818,6 +842,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     // Sender/mailbox ids only, never the URL (D7).
     console.warn(
       JSON.stringify({
+        severity: 'WARNING',
         level: 'warn',
         kind: 'unsub.sender_protected',
         actionId,

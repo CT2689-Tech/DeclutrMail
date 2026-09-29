@@ -26,12 +26,14 @@ export function planFocusItems(
   rows: readonly TriageDecisionRow[],
   dismissedDomains: readonly string[],
   allowBatching: boolean,
+  /** Rows whose job may still be running: never batch members. */
+  busy?: ReadonlySet<string>,
 ): FocusItem[] {
   if (!allowBatching) return rows.map((row) => ({ kind: 'row' as const, row }));
-  const verdictBatch = findVerdictBatch(rows, dismissedDomains);
+  const verdictBatch = findVerdictBatch(rows, dismissedDomains, busy);
   return [
     ...(verdictBatch ? [{ kind: 'verdict' as const, ...verdictBatch }] : []),
-    ...planQueueItems(rows, dismissedDomains),
+    ...planQueueItems(rows, dismissedDomains, busy),
   ];
 }
 

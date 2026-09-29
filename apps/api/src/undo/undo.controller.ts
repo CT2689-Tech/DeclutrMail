@@ -89,6 +89,7 @@ export class UndoController {
       memberCount: number;
       affectedCount: number | null;
       mixedKinds: boolean;
+      protectedSkippedCount: number;
       members: Array<{
         token: string;
         actionKind: UndoActionKind;
@@ -109,6 +110,7 @@ export class UndoController {
       memberCount: d.memberCount,
       affectedCount: d.affectedCount,
       mixedKinds: d.mixedKinds,
+      protectedSkippedCount: d.protectedSkippedCount,
       members: d.members,
     }));
     // The tray is single-page by design (see controller header). We
