@@ -13,6 +13,8 @@ import {
   senderPolicies,
   senders,
   triageDecisions,
+  triageNotDecidedRecently,
+  triageQueueOrder,
   workspaces,
   type TriageVerdict,
 } from '@declutrmail/db';
@@ -78,6 +80,13 @@ export interface TriageQueueRow {
   verdict: TriageVerdict;
   confidence: number;
   reasoning: string;
+  /**
+   * Whose sentence `reasoning` is: the deterministic template, or LLM
+   * prose (D24). Explanations are bought on demand (founder decision
+   * 2026-09-25), so the page asks for one — `POST /api/triage/explain` —
+   * only for a row still on the template. Never rendered.
+   */
+  generatedBy: 'llm_haiku' | 'template';
   /**
    * ISO-8601 — when the engine produced this read.
    *
@@ -280,17 +289,6 @@ export interface TriageBootstrapFacts {
   stats: TriageSessionStats;
   todaySummary: TodaySummary;
 }
-
-/**
- * D30 — "not seen by user in last 7 days". A sender the user has
- * DECIDED on (a K/A/U/L/D `activity_log` row whose undo has not been
- * reverted) within this window is excluded from the queue, so a row
- * leaves the queue only once the server has durably confirmed the
- * decision (D226 — no optimistic removal). Shared with
- * `ActionsService.recordKeepIntent`'s replay window so "already
- * decided" means the same thing on both the read and the write side.
- */
-export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
 
 /**
  * Retrieval priority for finite, goal-led queue windows. The normal
@@ -517,16 +515,6 @@ export class TriageReadService {
     if (input.senderKeys?.length === 0) {
       return [];
     }
-    // The CASE ordering encodes the verdict priority. `confidence` is
-    // a numeric text on the wire — cast to numeric so DESC sorts as a
-    // number, not lex.
-    const verdictPriority = sql`
-      CASE ${triageDecisions.verdict}
-        WHEN 'archive'     THEN 0
-        WHEN 'unsubscribe' THEN 1
-        WHEN 'later'       THEN 2
-        WHEN 'keep'        THEN 3
-      END`;
     const ordering = input.ordering ?? 'actionable';
     const goalPriority = queueGoalPriority(ordering);
     // Onboarding applies richer payoff ordering after this read, but the
@@ -537,48 +525,15 @@ export class TriageReadService {
       ordering === 'newsletter-first' || ordering === 'promotions-first'
         ? desc(senders.totalReceived)
         : null;
-    // `senderKey` last, on EVERY path, so the ORDER BY is a total order.
-    // Built as one list rather than a branch per ordering: the daily
-    // (`actionable`) route takes the null-goal path, and when that path was
-    // spelled separately it omitted the tiebreak. Confidence ties are not rare
-    // there — the engine emits a handful of discrete values, so a real mailbox
-    // had 33 decisions tied at 0.87 contending for the last 4 of 12 LIMIT
-    // slots. Without a tiebreak, Postgres may return any of them in any order,
-    // so which senders appear at all was undefined and any write to
-    // `triage_decisions` reshuffled the queue under the reader mid-decision.
+    // The goal-led prefixes, then the daily queue's own order — which
+    // ends in `sender_key` on EVERY path, so the ORDER BY is a total order.
+    // Shared with the score worker (`triageQueueOrder`), which explains the
+    // first queue's senders at ready and must pick the same ones.
     const queueOrder = [
       ...(goalPriority ? [goalPriority] : []),
       ...(payoffPriority ? [payoffPriority] : []),
-      verdictPriority,
-      desc(triageDecisions.confidence),
-      triageDecisions.senderKey,
+      ...triageQueueOrder(),
     ];
-
-    // Exclude senders the user has already decided on within the D30
-    // window — the "decided" record is the K/A/U/L/D `activity_log` row
-    // (written by the label-action worker on `done` for Archive/Later/
-    // Delete, by the intent endpoints for Keep/Unsubscribe). A decision
-    // whose undo has been REVERTED no longer counts: the user changed
-    // their mind, so the sender returns to the queue. Raw SQL (no
-    // column interpolation) because a correlated `sql` template emits
-    // bare column names that mis-bind across the three tables
-    // (LEARNINGS 2026-06 — Drizzle correlated-subquery pitfall).
-    const notDecidedRecently = sql`NOT EXISTS (
-      SELECT 1
-      FROM activity_log al
-      LEFT JOIN undo_journal uj ON uj.token = al.undo_token
-      WHERE al.mailbox_account_id = triage_decisions.mailbox_account_id
-        AND al.sender_key = triage_decisions.sender_key
-        AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
-        AND al.occurred_at >= now() - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
-        /* Reads the reversal from undo_journal, which is PRUNED after the
-           undo window, rather than the durable al.reverted_at. Safe only
-           because undoWindowDays is 30 on every tier, which outlasts this 7-day
-           decided window, so no row in range can have lost its journal
-           row. Shrink one or widen the other and this reads an undone
-           decision as standing. Sibling: lapse-reengagement.worker.ts. */
-        AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
-    )`;
 
     const rows = await this.db
       .select({
@@ -588,6 +543,7 @@ export class TriageReadService {
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
+        generatedBy: triageDecisions.generatedBy,
         producedAt: triageDecisions.producedAt,
         expiresAt: triageDecisions.expiresAt,
         senderName: senders.displayName,
@@ -623,7 +579,7 @@ export class TriageReadService {
       .where(
         and(
           eq(triageDecisions.mailboxAccountId, input.mailboxAccountId),
-          notDecidedRecently,
+          triageNotDecidedRecently(),
           ...(input.senderKeys ? [inArray(triageDecisions.senderKey, [...input.senderKeys])] : []),
           ...(input.requireCleanupCandidate
             ? [
@@ -809,6 +765,7 @@ export class TriageReadService {
           isProtected && r.verdict !== 'keep'
             ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${r.reasoning ?? ''}`.trimEnd()
             : r.reasoning,
+        generatedBy: r.generatedBy,
         scoredAt: r.producedAt.toISOString(),
         // Same rule as `buildRecommendation` on Sender Detail: past the
         // TTL is stale, and `expires_at` is NOT NULL so there is no

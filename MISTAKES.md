@@ -1,5 +1,7 @@
 # Mistakes — DeclutrMail
 
+> **Frozen 2026-09-27:** new entries go in [`docs/log/mistakes/`](docs/log/mistakes/) (one file per entry). Existing entries stay here.
+
 Append-only log of mistakes and the rules added so we never repeat them.
 
 See CLAUDE.md §11. Append when a gate fires, a bug ships and is caught
@@ -4845,7 +4847,7 @@ The declarations came back out.
 **Enforcement update:** `scripts/personal-email-guard.test.mjs` in the CI Lint job fails on any consumer-domain address that is not a listed placeholder (negative-controlled against the original lines; refuses to pass when it sees no files).
 
 ## 2026-09-26 — The vendor watchdog stayed red for a known gap, so three new breaches changed nothing
-**PR:** TBD
+**PR:** #782 (https://github.com/CT2689-Tech/DeclutrMail/pull/782)
 **Caught by:** class sweep after the stuck-mailbox fix (#778)
 **What happened:** `check-vendor-limits.mjs` exits 1 on any BREACH or ERROR. Anthropic returned ERROR (no Admin API key) on every scheduled run from at least 2026-09-21, so the run was red daily. Sentry's BREACH (2026-09-24) and the Google Cloud budget and Upstash BREACHes (2026-09-25) arrived in a run that was already red, and nothing anyone saw changed.
 **Correct approach:** The same shape as the stuck-mailbox fix: a committed list of acknowledged causes (vendor, status, and text the row's detail must contain), each with an expiry at most 30 days out. Listed causes warn, anything else fails, an entry that matched nothing is flagged for deletion, and a missing or malformed list fails closed. The first draft keyed on (vendor, status) alone; review showed one line then muted every cause for that vendor, such as an Upstash volume acknowledgment hiding a suspended database.
@@ -4859,6 +4861,14 @@ The declarations came back out.
 **Correct approach:** CI passes `--config file://packages/db/atlas.hcl`, and the file says why the flag matters. The `concurrent_index` and `incompatible` blocks are gone, with the reason written where they stood, and enforcing CONCURRENTLY is a founder decision (FOUNDER-FOLLOWUPS 2026-09-26). The apply workflow reads `--format '{{ .Status }}'` and requires `OK`. The follow-up is corrected in place.
 **Rule:** Before trusting a lint rule, feed it a statement it must reject and watch it fail in the exact CI invocation, with the same flags and build. A config file the command never loads reads exactly like one that passes, and so does an analyzer the build does not ship.
 **Enforcement update:** `.github/workflows/migration-lint.yml` passes `--config` and uses the same command to lint a self-contained probe (a NOT NULL column with no default). The step fails unless lint rejects the probe with an MF103 error, so a config that stops loading turns it red; this was checked by deleting `--config`. The workflow also now runs when it or `scripts/install-atlas.sh` changes. No hook.
+
+## 2026-09-26 — Explain on demand: four defects the gates and controls caught before merge
+**PR:** branch `claude/determined-ptolemy-771b62` (explain senders on demand, D24)
+**Caught by:** architecture-guardian (BLOCKING), silent-failure-hunter, flow-completeness-auditor, a fresh-context adversarial reviewer, my own negative controls, ESLint
+**What happened:** (1) I gave explain jobs `removeOnComplete/removeOnFail: { age: 3600 }` to get a one-hour dedupe window. BullMQ applies an age limit to the queue's WHOLE finished set (`removeJobsByMaxAge` in `moveToFinished`), so every explain completion would have purged every score job older than an hour. (2) `BaseDeclutrWorker` decided "final" from the policy's `maxAttempts` (5), not the job's: score jobs set no `attempts` (BullMQ runs them once) and unsub-execution sets 2, so their failures logged `worker.retried` and never reached Sentry, `dead_letter_jobs` or `onTerminalFailure` — pre-existing, and my new producer depended on it. (3) My "microsecond `produced_at`" test passed with the guard deleted: PGlite's `now()` lands on whole milliseconds, so the fixture never had microseconds. (4) Rewording a comment INSIDE a `sql\`…\`` template with backticks closed the template — a parse error.
+**Correct approach:** (1) `deduplication: { id: rowVersion, ttl }` (throttle mode — the key outlives the job) plus job-local `removeOnComplete: true`, and a queue of its own. (2) Classify by the job's own budget (`job.opts.attempts`, BullMQ default 0 = one run). (3) Force the microseconds with a SQL literal, then watch the test fail without the guard. (4) No backticks inside a SQL template, comments included.
+**Rule:** A BullMQ `removeOnComplete`/`removeOnFail` with `age` or `count` is a policy on the whole queue, not on the job — use it only on a queue the job owns.
+**Enforcement update:** tests for each, each negative-controlled; none to hooks.
 
 ## 2026-09-26 — Error copy named a cause its code never proved, and a signup followed it out
 **PR:** #784 (https://github.com/CT2689-Tech/DeclutrMail/pull/784)

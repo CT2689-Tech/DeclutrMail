@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
-import { TRIAGE_SESSION_STATS } from './data';
+import { TRIAGE_SESSION_STATS } from './fixtures';
 import { TriageEmptyState } from './empty-state';
 
 describe('TriageEmptyState', () => {

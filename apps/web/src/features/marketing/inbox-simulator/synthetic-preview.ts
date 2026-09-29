@@ -12,7 +12,8 @@
 import type { AutopilotPreviewSampleDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from '@/features/autopilot/types';
 import type { DomainBatch } from '@/features/triage/domain-batch';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
+import { type TriageDecisionRow } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 /**

@@ -9,7 +9,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { TriageDecisionRow } from './data';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { DomainBatchCard } from './domain-batch-card';
 import { findDomainBatches } from './domain-batch';
 

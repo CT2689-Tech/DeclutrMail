@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TRIAGE_QUEUE } from '@/features/triage/data';
+import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { StepFirstTriage } from './step-first-triage';
 
 const onboarding = vi.hoisted(() => ({

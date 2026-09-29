@@ -540,9 +540,10 @@ export interface EventPayloads {
     suggestion_kind: 'preset_rule' | 'sender_policy' | 'preset_change';
     /**
      * How many suggestions this decision covered — 1 for a per-row
-     * dismiss, N for the D104 batch approves (approve-all /
+     * dismiss; for the D104 batch approves, the server's `approvedCount`
+     * (a match skipped as Protected is not counted). Approve-all /
      * approve-selected fire ONE event per mutation, not per row, to
-     * keep cardinality bounded like `rule_fired`).
+     * keep cardinality bounded like `rule_fired`.
      */
     count: number;
   };

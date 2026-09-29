@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import type { QueryClient } from '@tanstack/react-query';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';

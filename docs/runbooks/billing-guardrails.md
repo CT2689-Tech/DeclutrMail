@@ -426,7 +426,7 @@ founder. First moves, always:
    read-only and could itself be stale.
 3. Stop the bleeding with the vendor-specific flip below, THEN
    diagnose. Caps and pauses are reversible; a runaway meter is not.
-4. Afterwards: append the incident to `MISTAKES.md` and check whether
+4. Afterwards: add the incident as a `docs/log/mistakes/` entry and check whether
    the breached threshold or a missing limiter needs a code change.
 
 | Vendor             | Where to look                                                                              | What to flip                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

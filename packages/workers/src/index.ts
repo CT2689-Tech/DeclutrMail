@@ -235,7 +235,6 @@ export {
 export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   autopilotActionJobOptions,
   autopilotActionSweepJobOptions,
   AutopilotActionWorker,
@@ -342,7 +341,13 @@ export {
   followupCheckJobOptions,
   scheduledAtMinute as followupCheckScheduledAtMinute,
 } from './followup-check.queue.js';
-export { SCORE_JOB, SCORE_QUEUE, ScoreWorker } from './score.worker.js';
+export {
+  FIRST_VIEW_QUEUE_ROWS,
+  SCORE_EXPLAIN_QUEUE,
+  SCORE_JOB,
+  SCORE_QUEUE,
+  ScoreWorker,
+} from './score.worker.js';
 export type {
   ScoreJobData,
   ScoreJobResult,

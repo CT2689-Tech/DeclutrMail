@@ -15,7 +15,8 @@
 // Keep is absent: it moves no email and never opens a preview (D40).
 
 import { tokens } from '@declutrmail/shared';
-import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import { InlinePreviewBlock, type InlinePreview } from './inline-preview';
 
 const { color } = tokens;

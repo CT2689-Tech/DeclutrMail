@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { TriageDecisionRow } from './data';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import {
   findDomainBatches,
   findVerdictBatch,

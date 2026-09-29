@@ -10,7 +10,7 @@ import { DecidePreview } from '@/features/screener/decide-preview';
 import { SCREENER_QUEUE } from '@/features/screener/data';
 import { ActionSheet } from './action-sheet';
 import { BatchActionSheet } from './batch-action-sheet';
-import { TRIAGE_QUEUE } from './data';
+import { TRIAGE_QUEUE } from './fixtures';
 import type { DomainBatch } from './domain-batch';
 
 vi.mock('@/features/auth/auth-provider', () => ({

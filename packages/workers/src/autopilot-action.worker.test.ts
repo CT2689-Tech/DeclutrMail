@@ -23,7 +23,7 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { TOPICS } from '@declutrmail/events';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AutopilotActionWorker,
@@ -336,6 +336,67 @@ describe('AutopilotActionWorker', () => {
     const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
     expect(row!.resolution).toBe('approved');
     expect(row!.intentApplied).toBe(false);
+  });
+
+  it('counts the approved matches it cannot load as staleEvidenceExcluded', async () => {
+    // Nothing runs or retires a match whose sender was re-indexed after it
+    // (the test above), so the sweep's result is the one place it shows.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey: resynced } = await seedSender(db, mailboxId, 'resynced@shop.com');
+    await seedApprovedMatch(db, mailboxId, ruleId, resynced);
+    await db
+      .update(senders)
+      .set({ createdAt: new Date(NOW.getTime() + 60_000) })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, resynced)));
+    const { senderKey: current } = await seedSender(db, mailboxId, 'current@shop.com');
+    await seedApprovedMatch(db, mailboxId, ruleId, current);
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.staleEvidenceExcluded).toBe(1);
+    expect(result.matchesConsidered).toBe(1);
+  });
+
+  it('reports staleEvidenceExcluded as 0 when every approved match is loadable', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'current@shop.com');
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.staleEvidenceExcluded).toBe(0);
+  });
+
+  it('reports staleEvidenceExcluded on worker.succeeded — the allowlist drops silently', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'resynced@shop.com');
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    await db
+      .update(senders)
+      .set({ createdAt: new Date(NOW.getTime() + 60_000) })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, senderKey)));
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await worker.run({
+        id: 'job-stale',
+        data: { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        attemptsMade: 0,
+        queueName: 'autopilot-action',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .map((call) => JSON.parse(String(call[0])) as { kind: string; result?: unknown })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ staleEvidenceExcluded: 1 });
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it('still executes a CLAIMED match after a rebuild — an in-flight action is never stranded', async () => {
@@ -1420,6 +1481,37 @@ describe('AutopilotActionWorker', () => {
     expect(result.deferredQuiet).toBe(true);
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
     expect(match!.intentApplied).toBe(false);
+  });
+
+  it('reports a failed quiet-resume reschedule to the error tracker', async () => {
+    // The delayed resume job is the only trigger that runs approved Observe
+    // matches after quiet ends; losing it silently strands them.
+    await db
+      .update(mailboxAccounts)
+      .set({ quietState: { enabled: true, source: 'manual' } })
+      .where(eq(mailboxAccounts.id, mailboxId));
+    const w = buildWorker({
+      onQuietDeferred: async () => {
+        throw new Error('redis down');
+      },
+    });
+    const captured: { kind: string; message: string }[] = [];
+    w.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (error, ctx) =>
+        captured.push({ kind: ctx.kind, message: error.message }),
+      recordBackgroundNotice: () => {},
+    });
+
+    const result = await w.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.deferredQuiet).toBe(true);
+    expect(captured).toEqual([
+      { kind: 'autopilot.action.quiet_reschedule_failed', message: 'redis down' },
+    ]);
   });
 
   it('dismisses matches whose sender became Protected after matching', async () => {
