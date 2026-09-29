@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import '@/features/marketing/product-story/product-story.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -168,7 +169,7 @@ export default function HowItWorksPage() {
             whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
             when those rules may run. Pro adds the Daily Brief, a once-a-day summary of what needs
             your attention, and Follow-ups, a queue for senders you replied to but haven&rsquo;t
-            heard back from. <a href="/pricing">See every plan</a>.
+            heard back from. <Link href="/pricing">See every plan</Link>.
           </p>
         </div>
       </StorySection>
@@ -191,8 +192,8 @@ export default function HowItWorksPage() {
               Revoke Gmail access or disconnect an inbox from the account menu, export your
               DeclutrMail data, or schedule whole-account deletion from Settings. Disconnecting
               keeps historical DeclutrMail records so reconnecting can restore context; Gmail itself
-              is untouched. More on <a href="/methodology">privacy and control</a> and{' '}
-              <a href="/security">security</a>.
+              is untouched. More on <Link href="/methodology">privacy and control</Link> and{' '}
+              <Link href="/security">security</Link>.
             </p>
           </>
         }
