@@ -64,8 +64,26 @@ import {
 } from '@/lib/api/use-action';
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
+import {
+  backlogAfterUnsubFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/bulk-action-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { undoKeys } from '@/features/undo/query-keys';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
@@ -691,8 +709,10 @@ function SendersScreenContent({
     mailboxId: string | undefined;
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
-    /** Requested subject senders — locked against re-dispatch while
-     *  this handle is active or parked overdue (see `senderId` above). */
+    /** Senders the server accepted — locked against re-dispatch while
+     *  this handle is active or parked overdue (see `senderId` above).
+     *  One refused at the click (Protected or gone) has no job: it is
+     *  not here, so its row never reads as running or done. */
     senderIds: string[];
     senderCount: number;
     selectedCount: number;
@@ -728,8 +748,9 @@ function SendersScreenContent({
   const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
     mailboxId: string | undefined;
     batchId: string;
-    /** Requested subject senders — locked against re-dispatch while
-     *  this handle is active or parked overdue. */
+    /** Senders sent a one-click request — locked against re-dispatch
+     *  while this handle is active or parked overdue. Every sender the
+     *  server skipped was sent nothing, so it is not here. */
     senderIds: string[];
     senderCount: number;
     skipped: UnsubBatchReceiptData['skipped'];
@@ -775,6 +796,13 @@ function SendersScreenContent({
     overdueUnsubBatch?.mailboxId,
   );
 
+  // Rows whose job may be running although we could not confirm it. Their
+  // row says "<Verb>: unknown", and they take no new decision until
+  // `useUnconfirmedHolds` releases them; a sender stays listed after its
+  // job lands, so only the in-flight reads can.
+  const holds = useUnconfirmedHolds<RowActivityVerb>(actionMailboxId, null);
+  const { hold: holdRows, reset: resetHolds } = holds;
+
   const resetPendingScope = useCallback(() => {
     setPendingAction(null);
     setSelected(new Set());
@@ -785,7 +813,8 @@ function SendersScreenContent({
     setSubmitting(false);
     setSettled(new Map());
     setPinnedSenders(new Map());
-  }, []);
+    resetHolds();
+  }, [resetHolds]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Senders an in-flight single handle still owns, plus every sender of
@@ -798,11 +827,12 @@ function SendersScreenContent({
   // `sharedLock` (server truth via `listInFlight`) covers what this
   // screen's own local state structurally cannot: a job started on a
   // DIFFERENT surface or tab, or one that outlives this screen's own
-  // unmount/navigation — which is exactly why `overdueAction`/
-  // `overdueBatch`/`overdueUnsubBatch` no longer feed this Set (their
-  // timers, toasts and settle effects are unchanged; only their role as a
-  // re-dispatch guard moves to the shared lock, which — unlike a local
-  // `useState` — actually survives the transitions that used to lose it).
+  // unmount/navigation. It is layered ON TOP of the existing local
+  // overdue/unconfirmed-hold tracking below, not a replacement for it —
+  // whether `sharedLock` alone is a strict superset of what
+  // `overdueAction`/`overdueBatch`/`overdueUnsubBatch`/`holds.held` catch
+  // (e.g. a hold born from an enqueue that 5xx'd before ever reaching the
+  // DB) is unverified, so this unions both rather than dropping either.
   const sharedLock = useSenderInFlightLock(actionMailboxId);
   const lockedSenderIds = useMemo(() => {
     const ids = new Set<string>(sharedLock.senderIds);
@@ -811,8 +841,22 @@ function SendersScreenContent({
     // …and an in-flight bulk UNSUBSCRIBE's: a second dispatch there sends
     // a second real one-click request, which cannot be recalled (D58).
     for (const id of activeUnsubBatch?.senderIds ?? []) ids.add(id);
+    if (overdueAction) ids.add(overdueAction.senderId);
+    for (const id of overdueBatch?.senderIds ?? []) ids.add(id);
+    for (const id of overdueUnsubBatch?.senderIds ?? []) ids.add(id);
+    // …and a row whose job may have started without our knowing.
+    for (const id of holds.held.keys()) ids.add(id);
     return ids;
-  }, [sharedLock.senderIds, activeAction, activeBatch, activeUnsubBatch]);
+  }, [
+    sharedLock.senderIds,
+    activeAction,
+    activeBatch,
+    activeUnsubBatch,
+    overdueAction,
+    overdueBatch,
+    overdueUnsubBatch,
+    holds.held,
+  ]);
 
   // What each row says about its own action (`RowActivityProvider`). Live
   // handles win over a settled result: acting again on a finished row
@@ -843,6 +887,7 @@ function SendersScreenContent({
         for (const id of ids) next.set(id, activity);
         return next;
       });
+      if (activity.phase === 'unconfirmed') holdRows(ids, activity.verb);
       // While a NEW question is loading, the rows on screen still belong
       // to the old one (`keepPreviousData`). Pinning them would carry the
       // old question's rows into the new results. The mark is recorded
@@ -857,16 +902,40 @@ function SendersScreenContent({
         return next;
       });
     },
-    [senders, showingStaleRows],
+    [senders, showingStaleRows, holdRows],
   );
   /**
    * An undo was confirmed: nothing on a row may still say "Deleted". All
    * of it goes, not just the undone senders — the receipt does not carry
    * their ids, and the list refetch that follows every undo is the truth.
+   * Except "unknown": an undo says nothing about a job we could not see,
+   * and that row stays held until `useUnconfirmedHolds` releases it.
    */
   const releaseSettledRows = useCallback(() => {
-    setSettled(new Map());
+    setSettled((prev) => new Map([...prev].filter(([, a]) => a.phase === 'unconfirmed')));
     setPinnedSenders(new Map());
+  }, []);
+  // A released hold takes its "unknown" mark with it, and the row takes a
+  // new decision again.
+  useEffect(() => {
+    setSettled((prev) => {
+      const released = [...prev].filter(
+        ([id, activity]) => activity.phase === 'unconfirmed' && !holds.held.has(id),
+      );
+      if (released.length === 0) return prev;
+      const next = new Map(prev);
+      for (const [id] of released) next.delete(id);
+      return next;
+    });
+  }, [holds.held]);
+  /** Drop what these rows say about an earlier action (see `performAction`). */
+  const unsettleRows = useCallback((ids: readonly string[]) => {
+    setSettled((prev) => {
+      if (!ids.some((id) => prev.has(id))) return prev;
+      const next = new Map(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
   }, []);
 
   // Read through a ref by the terminal effects below: `settleRows`
@@ -896,10 +965,7 @@ function SendersScreenContent({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -910,7 +976,10 @@ function SendersScreenContent({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: activeBatch.verb.toLowerCase() });
       toast(
-        `${activeBatch.verb} for ${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'} is still running — see Activity.`,
+        stillRunningCopy(
+          activeBatch.verb,
+          `${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'}`,
+        ),
         'info',
       );
       setOverdueBatch(activeBatch);
@@ -1177,6 +1246,11 @@ function SendersScreenContent({
           );
           return;
         }
+        // A new action supersedes what these rows said about an earlier
+        // one: a sender it refuses or skips must not keep an old
+        // "Archive failed" as if it were this click's outcome. Sender
+        // Detail clears its mark at dispatch the same way.
+        unsettleRows(senders.map((s) => s.id));
       }
 
       // Instrumentation single-entry — every verb-fire from this screen
@@ -1305,10 +1379,20 @@ function SendersScreenContent({
               // list loaded. Refetch, or the reopened modal shows the same
               // stale row and 409s again — forever.
               if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // The job may be running: the row must not read as untouched
+              // (and re-armed for a second run), and the pill finds a job
+              // that did start through the in-flight read.
+              if (enqueueMayHaveStarted(err)) {
+                settleRowsRef.current([sender.id], { phase: 'unconfirmed', verb: primaryType });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : `Couldn't ${primaryType} ${sender.name}`,
+                  : getActionFailureCopy('enqueue', {
+                      action: actionLabel(verb, sender.name),
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -1356,6 +1440,7 @@ function SendersScreenContent({
               mailboxId: actionMailboxId,
               senderId: sref.id,
               includesBacklogAction: secondary != null,
+              ...(opts?.override === true ? { override: true } : {}),
             },
             {
               onSuccess: (res) => {
@@ -1408,8 +1493,8 @@ function SendersScreenContent({
                           : {}),
                       },
                       // The SAME acknowledgement the preview collected.
-                      // Unsubscribe has no Protected guard, so the intent
-                      // above always lands — one-click sends a real,
+                      // The intent above is never refused at the click, so
+                      // it lands — one-click sends a real,
                       // one-way request (D58). Dropping the override here
                       // 409s the backlog half AFTER that, leaving the user
                       // unsubscribed with their mail untouched: a partial
@@ -1433,8 +1518,19 @@ function SendersScreenContent({
                           surface: 'senders',
                           reason: `enqueue_${secondary.type}_after_unsub`,
                         });
+                        if (enqueueMayHaveStarted(err)) {
+                          settleRowsRef.current([sref.id], {
+                            phase: 'unconfirmed',
+                            verb: secondary.type,
+                          });
+                          void qc.invalidateQueries({ queryKey: undoKeys.all });
+                        }
                         toast(
-                          `Unsubscribe started, but couldn't ${secondary.type} the older email from ${sref.name}`,
+                          backlogAfterUnsubFailureCopy({
+                            verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                            senderName: sref.name,
+                            error: err,
+                          }),
                           'warn',
                         );
                       },
@@ -1454,8 +1550,25 @@ function SendersScreenContent({
                   toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                   return;
                 }
+                // Designed too: one request to this sender is still on its way.
+                if (isUnsubscribeInFlight(err)) {
+                  toast(unsubscribeInFlightCopy(sref.name), 'info');
+                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                  return;
+                }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-                toast(`Couldn't request the unsubscribe from ${sref.name}`, 'warn');
+                // A 5xx cannot prove nothing started: show what the server has.
+                if (enqueueMayHaveStarted(err)) {
+                  void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                }
+                toast(
+                  getActionFailureCopy('enqueue', {
+                    action: `Unsubscribe for ${sref.name}`,
+                    outcome: 'no request was sent',
+                    error: err,
+                  }),
+                  'warn',
+                );
               },
             },
           );
@@ -1501,7 +1614,10 @@ function SendersScreenContent({
               setActiveUnsubBatch({
                 mailboxId: actionMailboxId,
                 batchId: res.batchId,
-                senderIds: senderRefs.map((sref) => sref.id),
+                senderIds: acceptedIds(
+                  senderRefs.map((sref) => sref.id),
+                  res.skipped,
+                ),
                 senderCount: res.senderCount,
                 skipped,
               });
@@ -1541,7 +1657,10 @@ function SendersScreenContent({
                       mailboxId: actionMailboxId,
                       batchId: bres.batchId,
                       verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
-                      senderIds: senderRefs.map((sref) => sref.id),
+                      senderIds: acceptedIds(
+                        senderRefs.map((sref) => sref.id),
+                        bres.skipped,
+                      ),
                       senderCount: bres.senderCount,
                       selectedCount: senderRefs.length,
                       skippedCount: bres.skipped.length,
@@ -1556,8 +1675,18 @@ function SendersScreenContent({
                         reason: `enqueue_bulk_${secondary.type}_after_unsub`,
                       });
                     }
+                    if (enqueueMayHaveStarted(err)) {
+                      settleRowsRef.current(
+                        senderRefs.map((sref) => sref.id),
+                        { phase: 'unconfirmed', verb: secondary.type },
+                      );
+                      void qc.invalidateQueries({ queryKey: undoKeys.all });
+                    }
                     toast(
-                      `Unsubscribes started, but couldn't ${secondary.type} the older email — see Activity`,
+                      backlogAfterUnsubFailureCopy({
+                        verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                        error: err,
+                      }),
                       'warn',
                     );
                   },
@@ -1568,17 +1697,29 @@ function SendersScreenContent({
               closeSubmitted();
               // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
-              // 409 NO_ACTIONABLE_SENDERS is a designed state: the
-              // selection moved between the preview and the confirm.
+              // Sending is off: refused before anything was written, as on
+              // the single-sender path above.
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
+              // A 409 is a designed state, but the status names no cause:
+              // NO_ACTIONABLE_SENDERS (every sender Protected, gone, or
+              // without a one-click channel) shares it with the mailbox
+              // guard. The copy reads the code.
               const conflict = err instanceof ApiError && err.status === 409;
               if (!conflict) {
                 captureFeatureException(err, { surface: 'senders', reason: 'bulk_unsub' });
               }
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
-                conflict
-                  ? 'None of these senders has an unsubscribe we can send — Archive moves their email instead.'
-                  : "Couldn't send the unsubscribe requests — try again.",
+                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
+                  ? 'No unsubscribe requests sent — open each sender for its options.'
+                  : getActionFailureCopy('enqueue', {
+                      action: `Unsubscribe for ${senderRefs.length} senders`,
+                      outcome: 'no request was sent',
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -1691,17 +1832,16 @@ function SendersScreenContent({
               if (res.senderCount > 0) trackActionConfirmed(primaryType);
               // The server accepted the batch — NOW the selection clears.
               setSelected(new Set());
-              if (res.skipped.length > 0) {
-                toast(
-                  `${res.skipped.length} sender${res.skipped.length === 1 ? '' : 's'} skipped (protected, no longer present, or already busy)`,
-                  'warn',
-                );
-              }
+              const leftOut = skippedAtClickCopy(verb, res.skipped);
+              if (leftOut !== null) toast(leftOut, 'warn');
               setActiveBatch({
                 mailboxId: actionMailboxId,
                 batchId: res.batchId,
                 verb,
-                senderIds: senders.map((s) => s.id),
+                senderIds: acceptedIds(
+                  senders.map((s) => s.id),
+                  res.skipped,
+                ),
                 senderCount: res.senderCount,
                 selectedCount: senders.length,
                 skippedCount: res.skipped.length,
@@ -1726,10 +1866,27 @@ function SendersScreenContent({
                   reason: `enqueue_bulk_${primaryType}`,
                 });
               }
+              const noneActionable = apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS';
+              // The rows still read as before the click; re-read them.
+              if (noneActionable) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // Some adds may have landed (a bulk answers 5xx when any one
+              // fails while the rest run): the selection is spent, its rows
+              // must not re-arm, and the pill finds what did start.
+              if (enqueueMayHaveStarted(err)) {
+                setSelected(new Set());
+                settleRowsRef.current(
+                  senders.map((s) => s.id),
+                  { phase: 'unconfirmed', verb: primaryType },
+                );
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
-                apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
-                  ? 'Nothing to do — the selected senders are protected or gone'
-                  : `Couldn't ${primaryType} email from ${n} senders`,
+                noneActionable
+                  ? NO_ACTIONABLE_SENDERS_COPY
+                  : getActionFailureCopy('enqueue', {
+                      action: actionLabel(verb, `${n} senders`),
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -1747,7 +1904,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId],
+    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId, unsettleRows],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -1782,16 +1939,20 @@ function SendersScreenContent({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    settleRowsRef.current(
-      [activeAction.senderId],
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: a sender found Protected when its job ran was skipped. Its
+    // mail is all still there, so its row claims no outcome.
+    if (!isProtectedSkip(data)) {
+      settleRowsRef.current(
+        [activeAction.senderId],
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1829,16 +1990,19 @@ function SendersScreenContent({
     }
     const data = overdueActionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    settleRowsRef.current(
-      [overdueAction.senderId],
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: skipped as Protected — no outcome to claim (see above).
+    if (!isProtectedSkip(data)) {
+      settleRowsRef.current(
+        [overdueAction.senderId],
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count.
     reconcileAction(qc, data, data.actionId);
@@ -1878,19 +2042,7 @@ function SendersScreenContent({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -1914,9 +2066,15 @@ function SendersScreenContent({
     const data = unsubBatchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     const outcomes = data.unsubscribeOutcomes ?? null;
+    // D245: a sender refused as Protected when its request was due was
+    // never sent to — "not sent", beside the ones refused at the click.
+    const refused = data.skippedProtectedSenderIds ?? [];
     setUnsubBatchReceipt({
-      senderCount: activeUnsubBatch.senderCount,
-      skipped: activeUnsubBatch.skipped,
+      senderCount: activeUnsubBatch.senderCount - refused.length,
+      skipped: [
+        ...activeUnsubBatch.skipped,
+        ...refused.map(() => ({ reason: 'protected' as const })),
+      ],
       // An API that predates the field leaves the receipt honestly
       // outcome-less rather than inventing a success/failure split.
       outcomes: outcomes
@@ -1959,9 +2117,13 @@ function SendersScreenContent({
     // confirm surface describes: its preview must re-count.
     reconcileAction(qc, data);
     const outcomes = data.unsubscribeOutcomes ?? null;
+    const refused = data.skippedProtectedSenderIds ?? [];
     setUnsubBatchReceipt({
-      senderCount: overdueUnsubBatch.senderCount,
-      skipped: overdueUnsubBatch.skipped,
+      senderCount: overdueUnsubBatch.senderCount - refused.length,
+      skipped: [
+        ...overdueUnsubBatch.skipped,
+        ...refused.map(() => ({ reason: 'protected' as const })),
+      ],
       outcomes: outcomes
         ? {
             endpointAccepted: outcomes.endpointAccepted,
@@ -2008,8 +2170,10 @@ function SendersScreenContent({
     // same thing about every member; a PARTIAL failure does not say which
     // member failed — so those rows claim no outcome and point at Activity
     // (unmarked, they just looked untouched, and some silently vanished).
+    // D245: found Protected when their job ran — skipped, so unmarked.
+    const skipped = new Set(data.skippedProtectedSenderIds ?? []);
     settleRowsRef.current(
-      activeBatch.senderIds,
+      activeBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
         ? { phase: 'failed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
         : data.failed > 0
@@ -2072,8 +2236,9 @@ function SendersScreenContent({
     // same thing about every member; a PARTIAL failure does not say which
     // member failed — so those rows claim no outcome and point at Activity
     // (unmarked, they just looked untouched, and some silently vanished).
+    const skipped = new Set(data.skippedProtectedSenderIds ?? []);
     settleRowsRef.current(
-      overdueBatch.senderIds,
+      overdueBatch.senderIds.filter((id) => !skipped.has(id)),
       data.status === 'failed'
         ? { phase: 'failed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
         : data.failed > 0
@@ -2944,6 +3109,15 @@ function SenderResultsWarning({
       {rowsReadOnly && (syncFailed || stillSyncing) && ' Rows are read-only while results load.'}
     </div>
   );
+}
+
+/** The senders a bulk enqueue accepted — every one it did not refuse. */
+function acceptedIds(
+  requested: readonly string[],
+  refused: readonly { senderId: string }[],
+): string[] {
+  const out = new Set(refused.map((skip) => skip.senderId));
+  return requested.filter((id) => !out.has(id));
 }
 
 /**

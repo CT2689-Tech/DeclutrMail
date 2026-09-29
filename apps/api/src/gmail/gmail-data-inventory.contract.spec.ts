@@ -15,7 +15,7 @@ import {
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_METADATA_HEADERS,
 } from '@declutrmail/shared/contracts';
-import { scanProgressKey } from '@declutrmail/workers';
+import { INITIAL_SYNC_QUEUE, scanProgressKey } from '@declutrmail/workers';
 import { describe, expect, it } from 'vitest';
 
 /** App-owned row bookkeeping rather than data fetched or derived from Gmail. */
@@ -119,12 +119,20 @@ describe('D245 Gmail data inventory contract', () => {
 describe('D245 Gmail data inventory — Redis keys', () => {
   // A registered pattern that drifted from the key the code writes would
   // describe data nothing stores, and leave the real key unregistered.
+  // The initial-sync job hash and events stream are BullMQ's own key
+  // scheme (`bull:<queue>:<id>` / `bull:<queue>:events`), so they are
+  // tied to the real `INITIAL_SYNC_QUEUE` name rather than hand-typed;
+  // `deletion.worker.test.ts` proves the removal against a real Redis.
   it('registers each Redis key by the exact pattern the code writes', () => {
     const redisRefs = GMAIL_DATA_INVENTORY.flatMap((item) => item.storageRefs).filter((ref) =>
       ref.startsWith('redis:'),
     );
 
-    expect(redisRefs).toEqual([`redis:${scanProgressKey('{mailboxAccountId}')}`]);
+    expect(redisRefs).toEqual([
+      `redis:${scanProgressKey('{mailboxAccountId}')}`,
+      `redis:bull:${INITIAL_SYNC_QUEUE}:{mailboxAccountId}`,
+      `redis:bull:${INITIAL_SYNC_QUEUE}:events`,
+    ]);
   });
 });
 

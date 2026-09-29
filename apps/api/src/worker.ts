@@ -22,7 +22,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
-import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
@@ -197,6 +196,7 @@ import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import { googleOAuthClient } from './gmail/google-oauth-client.js';
 import {
   GMAIL_QUOTA_BURST_WINDOW_MS,
   GMAIL_QUOTA_WINDOW_MS,
@@ -753,7 +753,7 @@ async function bootstrap(): Promise<void> {
         cached: cachedToken !== null,
       }),
     );
-    const oauth = new OAuth2Client(clientId, clientSecret);
+    const oauth = googleOAuthClient({ clientId, clientSecret });
     oauth.setCredentials({ refresh_token: refreshToken });
 
     // Reuse the limiter across attempts so its window state outlives a
@@ -2750,6 +2750,11 @@ async function bootstrap(): Promise<void> {
     // (D245 scan-progress-counts) — a Redis outage here costs only this
     // clear, never the purge.
     scanProgress: createRedisScanProgressStore(scanProgressConnection),
+    // Reuses the initial-sync reconciler's own Queue instance (D245
+    // `processing-and-retry-records`) to remove this mailbox's BullMQ job
+    // and trim the shared events stream — same best-effort reasoning as
+    // scanProgress above.
+    initialSyncQueue: reconcilerQueue,
     observer,
   });
   deletionPurgeWorker.setObserver(observer);

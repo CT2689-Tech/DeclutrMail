@@ -13,7 +13,8 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
+import { RECOVERY_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -1955,6 +1956,239 @@ describe('ActivityReadService', () => {
 
   // ── D57 — rule attribution (U27) ─────────────────────────────────────
 
+  describe('pages through rows that share one microsecond timestamp', () => {
+    // Rows written in one transaction share `now()` to the microsecond; the
+    // cursor carries milliseconds (see the Protected-skip twin below).
+    it('keeps every activity row sharing the page boundary timestamp', async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        ids.push(
+          await seedActivity(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+            source: 'manual',
+            action: 'archive',
+          }),
+        );
+      }
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(activityLog)
+        .set({ occurredAt: sql`${shared}::timestamptz` })
+        .where(inArray(activityLog.id, ids));
+
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 4; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit: 1,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(rows[0]!.id);
+        cursor = { occurredAt: new Date(rows[0]!.occurredAt), id: rows[0]!.id };
+      }
+      expect(seen).toEqual([...ids].sort().reverse());
+    });
+
+    async function pageAll(limit: number): Promise<string[]> {
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 6; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(...rows.map((row) => row.id));
+        const last = rows[rows.length - 1]!;
+        cursor = { occurredAt: new Date(last.occurredAt), id: last.id };
+      }
+      return seen;
+    }
+
+    // An Autopilot claim is an action_jobs row the user never clicked: it
+    // must not read as their own action (architecture-guardian 2026-09-27).
+    it('leaves Autopilot claims out of the actions it lists', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'claim-key',
+        'c@c.com',
+        'Claim',
+      );
+      const claimIds: string[] = [];
+      for (const status of ['queued', 'failed'] as const) {
+        const id = await seedExecutionAttempt(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderId,
+          senderKey: 'claim-key',
+          status,
+          createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        });
+        await db
+          .update(actionJobs)
+          .set({ idempotencyKey: `autopilot-${id}` })
+          .where(eq(actionJobs.id, id));
+        claimIds.push(id);
+      }
+      const { rows, stats } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[0]]));
+      expect(rows.map((row) => row.id)).not.toEqual(expect.arrayContaining([claimIds[1]]));
+      expect(stats.needsAttention).toBe(0);
+    });
+
+    /**
+     * A failed claim plus a retry started from it before claims were hidden.
+     * The retry's own key is an ordinary one, so only the root can tell.
+     */
+    async function seedClaimLineage(at: Date) {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'lineage-claim',
+        'w@c.com',
+        'Lineage Claim',
+      );
+      const claim = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'lineage-claim',
+        status: 'failed',
+        createdAt: at,
+      });
+      await db
+        .update(actionJobs)
+        .set({ idempotencyKey: `autopilot-${claim}`, updatedAt: at })
+        .where(eq(actionJobs.id, claim));
+      const retry = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'lineage-claim',
+        status: 'failed',
+        createdAt: new Date(at.getTime() + 1_000),
+        rootActionId: claim,
+        retryOfActionId: claim,
+        recoveryAttempt: 1,
+      });
+      return { claim, retry };
+    }
+
+    // The weekly "Failed" tile opens the feed, so it must count exactly
+    // what the feed lists — claims out, decided by the lineage's root.
+    it('leaves Autopilot claims out of the weekly failed count', async () => {
+      const at = new Date(NOW_MS - ONE_DAY_MS);
+      await seedClaimLineage(at);
+      const userSender = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'weekly-user',
+        'u@c.com',
+        'Weekly User',
+      );
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId: userSender,
+        senderKey: 'weekly-user',
+        status: 'failed',
+        createdAt: at,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        failed: 1,
+      });
+    });
+
+    it('leaves a claim lineage out of the export, as the feed does', async () => {
+      const { claim, retry } = await seedClaimLineage(new Date(NOW_MS - ONE_DAY_MS));
+
+      const ids: string[] = [];
+      for await (const row of svc.iterateActivity(
+        { mailboxAccountId: mailboxA.mailboxAccountId, window: '30d', source: null, nowMs: NOW_MS },
+        500,
+        { createdAt: new Date(NOW_MS) },
+      )) {
+        ids.push(row.id);
+      }
+      expect(ids).not.toContain(claim);
+      expect(ids).not.toContain(retry);
+    });
+
+    // The in-flight twin (architecture-guardian 2026-09-27): a bulk's
+    // queued jobs share one timestamp too.
+    it('keeps every in-flight action sharing the page boundary timestamp', async () => {
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        const key = `inflight-us-${n}`;
+        const senderId = await seedSender(
+          db,
+          mailboxA.mailboxAccountId,
+          key,
+          `n${n}@q.com`,
+          `Q ${n}`,
+        );
+        ids.push(
+          await seedExecutionAttempt(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            senderId,
+            senderKey: key,
+            status: 'queued',
+            createdAt: new Date(NOW_MS - ONE_DAY_MS),
+          }),
+        );
+      }
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(actionJobs)
+        .set({ createdAt: sql`${shared}::timestamptz`, updatedAt: sql`${shared}::timestamptz` })
+        .where(inArray(actionJobs.id, ids));
+
+      expect(await pageAll(1)).toEqual([...ids].sort().reverse());
+    });
+
+    // Same millisecond, different microseconds, ordered opposite to id: a
+    // source sorting by microsecond cut, at its LIMIT, the row the merge
+    // puts first — and the cursor then passed it by.
+    it('pages rows of one millisecond by id, whatever their microseconds', async () => {
+      const ids: string[] = [];
+      for (const _n of [1, 2, 3]) {
+        ids.push(
+          await seedActivity(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+            source: 'manual',
+            action: 'archive',
+          }),
+        );
+      }
+      const byId = [...ids].sort();
+      const base = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '');
+      for (const [i, micros] of ['900', '500', '100'].entries()) {
+        await db
+          .update(activityLog)
+          .set({ occurredAt: sql`${`${base}${micros}+00`}::timestamptz` })
+          .where(eq(activityLog.id, byId[i]!));
+      }
+
+      expect(await pageAll(1)).toEqual([...byId].reverse());
+    });
+  });
+
   describe('D57 — rule attribution', () => {
     it('joins rule id + name for autopilot rows carrying a rule_id', async () => {
       const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Newsletter graveyard');
@@ -2023,6 +2257,355 @@ describe('ActivityReadService', () => {
   });
 
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
+
+  // D245 — a job skipped because its sender was Protected when it ran
+  // changed nothing, so it has no activity_log row; Activity still owes the
+  // user a lasting line once the pill fades.
+  describe('actions skipped because the sender was Protected (D245)', () => {
+    async function seedSkippedLabelJob(senderKey: string, senderId: string): Promise<string> {
+      const id = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey,
+        verb: 'delete',
+        status: 'done',
+        errorCode: 'LABEL_SENDER_PROTECTED',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      return id;
+    }
+
+    // A bulk writes every member's job in one transaction, so their skips
+    // share one microsecond timestamp. The page cursor carries milliseconds:
+    // `= cursor` never matched such a row and `< cursor` skipped it, so
+    // every row after the page's last one dropped out of the feed.
+    it('pages through skips that share one microsecond timestamp', async () => {
+      const ids: string[] = [];
+      for (const n of [1, 2, 3]) {
+        const key = `skip-us-${n}`;
+        const senderId = await seedSender(
+          db,
+          mailboxA.mailboxAccountId,
+          key,
+          `n${n}@skip.com`,
+          `Skip ${n}`,
+        );
+        ids.push(await seedSkippedLabelJob(key, senderId));
+      }
+      // PGlite's clock lands on whole milliseconds: force the sub-ms part.
+      const shared = new Date(NOW_MS - ONE_DAY_MS).toISOString().replace('Z', '456+00');
+      await db
+        .update(actionJobs)
+        .set({ createdAt: sql`${shared}::timestamptz` })
+        .where(inArray(actionJobs.id, ids));
+
+      const seen: string[] = [];
+      let cursor: { occurredAt: Date; id: string } | null = null;
+      for (let page = 0; page < 4; page++) {
+        const { rows } = await svc.listActivity({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          window: '30d',
+          source: null,
+          cursor,
+          limit: 1,
+          nowMs: NOW_MS,
+        });
+        if (rows.length === 0) break;
+        seen.push(rows[0]!.id);
+        cursor = { occurredAt: new Date(rows[0]!.occurredAt), id: rows[0]!.id };
+      }
+      expect(seen).toEqual([...ids].sort().reverse());
+    });
+
+    it('lists a skipped Delete in the default feed as "skipped — Protected", with no Undo', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-key',
+        'news@skip.com',
+        'Skip News',
+      );
+      const jobId = await seedSkippedLabelJob('skip-key', senderId);
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          id: jobId,
+          source: 'manual',
+          action: 'delete',
+          affectedCount: 0,
+          reviewOutcome: 'protected',
+          executionState: null,
+          undoState: { kind: 'unavailable' },
+          sender: expect.objectContaining({ displayName: 'Skip News' }),
+        }),
+      ]);
+      const failedOnly = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+        outcomes: ['failed'],
+      });
+      expect(failedOnly.rows).toEqual([]);
+    });
+
+    // The line is dated by the click, like the queued line it replaces —
+    // the skip lands a lock-wait later. It also lets the read be bounded
+    // by the (mailbox, status, created_at) index instead of scanning every
+    // finished job the mailbox ever ran.
+    it('dates a skipped action by when you clicked it', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-when',
+        'news@when.com',
+        'When News',
+      );
+      const jobId = await seedSkippedLabelJob('skip-when', senderId);
+      const clickedAt = new Date(NOW_MS - ONE_DAY_MS);
+      await db
+        .update(actionJobs)
+        .set({ updatedAt: new Date(clickedAt.getTime() + 5 * 60 * 1000) })
+        .where(eq(actionJobs.id, jobId));
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ id: jobId, occurredAt: clickedAt.toISOString() }),
+      ]);
+    });
+
+    // Founder decision 2026-09-26: a retry stopped because its sender turned
+    // Protected after its review stays REVIEWABLE — the next review offers
+    // "…anyway". Pinned, so a change to failure routing cannot turn it
+    // into "support required".
+    it('keeps a retry stopped as Protected reviewable', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'stop-key',
+        'news@stop.com',
+        'Stop News',
+      );
+      const rootActionId = await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'stop-key',
+        verb: 'delete',
+        status: 'failed',
+        errorCode: 'TransientError',
+        createdAt: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      await seedExecutionAttempt(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderId,
+        senderKey: 'stop-key',
+        verb: 'delete',
+        status: 'failed',
+        errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+        rootActionId,
+        retryOfActionId: rootActionId,
+        recoveryAttempt: 1,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          executionState: expect.objectContaining({
+            kind: 'failed',
+            errorCode: RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+            resolution: 'review',
+          }),
+        }),
+      ]);
+    });
+
+    // An export reads as of its snapshot: a job skipped after it was taken
+    // is not yet a skip — the execution rows may already have listed it
+    // queued, and one id must never appear twice.
+    it('leaves a skip that landed after the export snapshot out of the export', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'late-skip',
+        'news@late.com',
+        'Late News',
+      );
+      const jobId = await seedSkippedLabelJob('late-skip', senderId);
+      const snapshot = { createdAt: new Date(NOW_MS - ONE_DAY_MS + 60_000) };
+      await db
+        .update(actionJobs)
+        .set({ updatedAt: new Date(NOW_MS - ONE_DAY_MS + 120_000) })
+        .where(eq(actionJobs.id, jobId));
+
+      const ids: string[] = [];
+      for await (const row of svc.iterateActivity(
+        { mailboxAccountId: mailboxA.mailboxAccountId, window: '30d', source: null, nowMs: NOW_MS },
+        500,
+        snapshot,
+      )) {
+        ids.push(row.id);
+      }
+      expect(ids).not.toContain(jobId);
+    });
+
+    it('closes an Unsubscribe intent whose request was refused as Protected', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'unsub-skip',
+        'list@skip.com',
+        'Skip List',
+      );
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey: 'unsub-skip' },
+          status: 'failed',
+          errorCode: 'UNSUB_SENDER_PROTECTED',
+          idempotencyKey: 'unsubexec-skip',
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'unsub-skip',
+        actionJobId: job!.id,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+
+      expect(rows).toEqual([
+        expect.objectContaining({ action: 'unsubscribe', reviewOutcome: 'protected' }),
+      ]);
+    });
+
+    it('counts both kinds of skip as Protected in the weekly review', async () => {
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        'skip-key',
+        'news@skip.com',
+        'Skip News',
+      );
+      await seedSkippedLabelJob('skip-key', senderId);
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId, senderKey: 'skip-key' },
+          status: 'failed',
+          errorCode: 'UNSUB_SENDER_PROTECTED',
+          idempotencyKey: 'unsubexec-skip-weekly',
+          updatedAt: new Date(NOW_MS - ONE_DAY_MS),
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'skip-key',
+        actionJobId: job!.id,
+      });
+
+      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
+        completed: 0,
+        failed: 0,
+        protected: 2,
+      });
+    });
+
+    it("keys the refused-Unsubscribe outcome to the intent row's own job", async () => {
+      // Another mailbox's refused request must not close this intent.
+      const bSender = await seedSender(db, mailboxB.mailboxAccountId, 'b-key', 'x@b.com', 'B');
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: bSender, senderKey: 'b-key' },
+        status: 'failed',
+        errorCode: 'UNSUB_SENDER_PROTECTED',
+        idempotencyKey: 'unsubexec-other-mailbox',
+      });
+      const aSender = await seedSender(db, mailboxA.mailboxAccountId, 'a-key', 'y@a.com', 'A');
+      const [ownJob] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          verb: 'unsubscribe',
+          direction: 'forward',
+          selector: { type: 'sender', senderId: aSender, senderKey: 'a-key' },
+          status: 'queued',
+          idempotencyKey: 'unsubexec-own',
+        })
+        .returning({ id: actionJobs.id });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'unsubscribe',
+        affectedCount: 0,
+        senderKey: 'a-key',
+        actionJobId: ownJob!.id,
+      });
+
+      const { rows } = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+      });
+      expect(rows).toEqual([
+        expect.objectContaining({ action: 'unsubscribe', reviewOutcome: null }),
+      ]);
+    });
+  });
 
   describe('weekly review outcomes (D246)', () => {
     /**

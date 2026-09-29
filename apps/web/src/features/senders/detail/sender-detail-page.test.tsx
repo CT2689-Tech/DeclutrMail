@@ -24,6 +24,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 import { useRevertUndo } from '@/lib/api/use-action';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import {
   addFetchHandlers,
   installFetchStub,
@@ -163,6 +164,7 @@ function installHappyPath(
   message = MESSAGE,
   messageResponse?: (url: URL) => (typeof MESSAGE)[],
   delayed?: { endpoint: string; response: () => Response | Promise<Response> },
+  detail: SenderDetailDto = DETAIL,
 ) {
   installFetchStub([
     ...(delayed
@@ -177,7 +179,7 @@ function installHappyPath(
     {
       method: 'GET',
       path: /^\/api\/senders\/[^/]+$/,
-      respond: () => jsonOk({ data: DETAIL }),
+      respond: () => jsonOk({ data: detail }),
     },
     {
       method: 'GET',
@@ -1541,13 +1543,13 @@ describe('SenderDetailRoute', () => {
         // why and its verbs are inert (founder report 2026-09-20 — nothing
         // on the page showed a job was still running).
         // The pressed verb has BECOME the status; it takes no second press.
-        const archiveAgain = screen.getByRole('button', { name: 'Archive not confirmed' });
+        const archiveAgain = screen.getByRole('button', { name: 'Archive: unknown' });
         expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
           'aria-busy',
           'true',
         );
-        expect(screen.getByText('Archive not confirmed')).toBeInTheDocument();
+        expect(screen.getByText('Archive: unknown')).toBeInTheDocument();
         fireEvent.click(archiveAgain);
         await tick(200);
         expect(screen.queryByRole('dialog')).toBeNull();
@@ -1589,6 +1591,63 @@ describe('SenderDetailRoute', () => {
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('clears a parked action that ends skipped as Protected — it claims no outcome (D245)', async () => {
+      vi.useFakeTimers();
+      try {
+        let skipped = false;
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () =>
+              jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } }),
+          },
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () =>
+              jsonOk({
+                data: {
+                  ...actionStatusBody('act-1', skipped),
+                  affectedCount: 0,
+                  undoToken: null,
+                  undoExpiresAt: null,
+                  errorCode: skipped ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+                },
+              }),
+          },
+        ]);
+        const tick = (ms: number) =>
+          act(async () => {
+            await vi.advanceTimersByTimeAsync(ms);
+          });
+        render(
+          <QueryWrapper client={createTestQueryClient()}>
+            <SenderDetailRoute id="linkedin" />
+          </QueryWrapper>,
+        );
+        await tick(200);
+        fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+        await tick(200);
+        screen.getByText(/rechecked when it runs/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+        await tick(200);
+        await tick(ACTION_OVERDUE_MS);
+        expect(screen.getByText('Archive: unknown')).toBeInTheDocument();
+
+        skipped = true;
+        await tick(2_500);
+        expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).not.toHaveAttribute(
+          'aria-disabled',
+        );
       } finally {
         vi.useRealTimers();
       }
@@ -1785,10 +1844,31 @@ describe('SenderDetailRoute', () => {
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
       });
 
+      // D245: protected while the job waited, the sender was skipped. The
+      // job ends "done, 0 changed", but the mail is all still there.
+      it('claims no outcome for an action skipped because the sender became Protected', async () => {
+        let polled = false;
+        await archiveWith(() => {
+          polled = true;
+          return jsonOk({
+            data: {
+              ...actionStatusBody('act-end', true),
+              affectedCount: 0,
+              undoToken: null,
+              undoExpiresAt: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          });
+        });
+        await waitFor(() => expect(polled).toBe(true));
+        await waitFor(() => expect(pill('working')).toBeNull());
+        expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+      });
+
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
         await archiveWith(() => jsonServerError());
-        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
-        expect(screen.getByRole('button', { name: 'Archive not confirmed' })).toHaveAttribute(
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
+        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -1820,7 +1900,75 @@ describe('SenderDetailRoute', () => {
         expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
-      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+      it('says an unsubscribe already on its way was not sent again, and reports nothing', async () => {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: () =>
+              new Response(JSON.stringify({ error: { code: 'UNSUBSCRIBE_IN_FLIGHT' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              }),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(
+            'An unsubscribe request to LinkedIn is already on its way.',
+            'info',
+          ),
+        );
+        expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
+      });
+
+      it('carries the "…anyway" confirm on a Protected sender\'s unsubscribe (D245)', async () => {
+        installHappyPath(MESSAGE, undefined, undefined, {
+          ...DETAIL,
+          protectionFlags: {
+            isProtected: true,
+            protectionReason: 'user_defined',
+            protectionSetAt: '2026-06-01T00:00:00.000Z',
+          },
+        });
+        const intents: unknown[] = [];
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: async (req) => {
+              intents.push(await req.json());
+              return jsonOk({
+                data: {
+                  senderId: 'linkedin',
+                  recordedAt: '2026-07-12T12:00:00.000Z',
+                  activityLogId: 'activity-a',
+                  method: 'none',
+                  executionActionId: null,
+                  mailtoUrl: null,
+                },
+              });
+            },
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: 'Unsubscribe anyway' });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() => expect(intents).toEqual([expect.objectContaining({ override: true })]));
+      });
+
+      async function unsubscribeThenBacklog(backlog: () => Response) {
         installHappyPath();
         addFetchHandlers([
           detailPreviewHandler(),
@@ -1839,7 +1987,7 @@ describe('SenderDetailRoute', () => {
                 },
               }),
           },
-          { method: 'POST', path: '/api/actions', respond: () => jsonServerError() },
+          { method: 'POST', path: '/api/actions', respond: backlog },
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
@@ -1848,7 +1996,62 @@ describe('SenderDetailRoute', () => {
         const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
         await waitFor(() => expect(confirm).toBeEnabled());
         fireEvent.click(confirm);
+      }
+      /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
+      const apiFailure = (status: number, code: string) => () =>
+        new Response(JSON.stringify({ error: { code, message: code } }), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        });
+
+      async function archiveEnqueueFails(respond: () => Response) {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          { method: 'POST', path: '/api/actions', respond },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+        await screen.findByText(/rechecked when it runs/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      }
+
+      // A 5xx does not prove the job never started: a second click could
+      // run it twice.
+      it('locks the verb when an Archive may have started', async () => {
+        await archiveEnqueueFails(apiFailure(503, 'ENQUEUE_FAILED'));
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
+        expect(screen.getByRole('button', { name: 'Archive: unknown' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      });
+
+      it('leaves the verb armed when an Archive was refused', async () => {
+        await archiveEnqueueFails(apiFailure(400, 'VALIDATION_FAILED'));
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(
+            expect.stringMatching(/^Couldn't start Archive/),
+            'warn',
+          ),
+        );
+        expect(pill('unconfirmed')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).not.toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      });
+
+      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+        await unsubscribeThenBacklog(apiFailure(400, 'VALIDATION_FAILED'));
         await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+      });
+
+      // The queue did not confirm the add: the archive may still run.
+      it('marks the past-email half unconfirmed when its start is unconfirmed', async () => {
+        await unsubscribeThenBacklog(apiFailure(503, 'ENQUEUE_FAILED'));
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive: unknown'));
+        expect(pill('failed')).toBeNull();
       });
 
       it('drops the last mark when a new Unsubscribe starts', async () => {

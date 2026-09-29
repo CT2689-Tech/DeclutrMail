@@ -49,7 +49,7 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -68,6 +68,19 @@ import { relTime } from './data';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
+import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
 import styles from '../sender-workspace.module.css';
@@ -520,7 +533,7 @@ function ReadyState({
   } | null>(null);
   // Page-level action feedback — the same model the senders list rows use
   // (`row-activity`). `settled` is what the toolbar says once the job is
-  // terminal, or "not confirmed" when its status poll was lost.
+  // terminal, or "unknown" when its status poll was lost.
   const [settled, setSettled] = useState<SenderRowActivity | null>(null);
   // The confirmed request is on its way; the confirm holds on
   // "Submitting…" until the server answers (it used to close first).
@@ -612,10 +625,7 @@ function ReadyState({
     if (!activeAction) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -864,10 +874,20 @@ function ReadyState({
               // page loaded. Refetch, or the reopened modal shows the same
               // stale sender and 409s again — forever.
               if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // The job may be running: the verb must not re-arm for a
+              // second run, and the pill finds a job that did start
+              // through the in-flight read.
+              if (enqueueMayHaveStarted(err)) {
+                setSettled({ phase: 'unconfirmed', verb: primaryType });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : `Couldn't ${primaryType} ${sender.name}`,
+                  : getActionFailureCopy('enqueue', {
+                      action: actionLabel(verb, sender.name),
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -903,6 +923,7 @@ function ReadyState({
             mailboxId: actionMailboxId,
             senderId: sender.id,
             includesBacklogAction: secondary != null,
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
@@ -952,8 +973,8 @@ function ReadyState({
                         : {}),
                     },
                     // The SAME acknowledgement the preview collected.
-                    // Unsubscribe has no Protected guard, so the intent
-                    // above always lands — one-click sends a real,
+                    // The intent above is never refused at the click, so
+                    // it lands — one-click sends a real,
                     // one-way request (D58). Dropping the override here
                     // 409s the backlog half AFTER that, leaving the user
                     // unsubscribed with their mail untouched: a partial
@@ -972,13 +993,23 @@ function ReadyState({
                       // 402 FREE_CAP_REACHED — the upgrade prompt
                       // explains why the backlog didn't enqueue.
                       if (err instanceof ApiError && err.status === 402) return;
-                      setSettled({ phase: 'failed', verb: secondary.type });
+                      // The job may still run: its outcome is not known.
+                      const unconfirmed = enqueueMayHaveStarted(err);
+                      setSettled({
+                        phase: unconfirmed ? 'unconfirmed' : 'failed',
+                        verb: secondary.type,
+                      });
+                      if (unconfirmed) void qc.invalidateQueries({ queryKey: undoKeys.all });
                       captureFeatureException(err, {
                         surface: 'senders',
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        `Couldn't ${secondary.type} the older email from ${sender.name}`,
+                        backlogAfterUnsubFailureCopy({
+                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                          senderName: sender.name,
+                          error: err,
+                        }),
                         'warn',
                       );
                     },
@@ -992,8 +1023,25 @@ function ReadyState({
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
+              // Designed too: one request to this sender is still on its way.
+              if (isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(sender.name), 'info');
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                return;
+              }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-              toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
+              // A 5xx cannot prove nothing started: show what the server has.
+              if (enqueueMayHaveStarted(err)) {
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              }
+              toast(
+                getActionFailureCopy('enqueue', {
+                  action: `Unsubscribe for ${sender.name}`,
+                  outcome: 'no request was sent',
+                  error: err,
+                }),
+                'warn',
+              );
             },
           },
         );
@@ -1070,15 +1118,19 @@ function ReadyState({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: the sender was Protected by the time the job ran, so it was
+    // skipped. Its mail is all still there: the page claims no outcome.
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1115,15 +1167,18 @@ function ReadyState({
     // next-opened) confirm surface describes: its preview must re-count
     // before the freed guard lets it dispatch.
     reconcileAction(qc, data, data.actionId);
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: skipped as Protected — no outcome to claim (see above).
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1157,19 +1212,7 @@ function ReadyState({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);

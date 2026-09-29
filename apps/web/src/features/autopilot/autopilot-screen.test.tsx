@@ -1313,6 +1313,63 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     expect(text.match(/(cannot|can’t) be (undone|recalled)/gi)).toHaveLength(1);
   });
 
+  // Founder decision 2026-09-29 (a): the turn-on preview surfaces
+  // approvals waiting from before the rule was paused, so resuming (or
+  // re-enabling) never runs one the user was never shown.
+  // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+  it('names approvals waiting to run when the rule was Active before it was turned off', () => {
+    render(
+      <ActivateRuleModal
+        rule={{ ...AUTO_UNSUBSCRIBE_NOISY, mode: 'paused' }}
+        intent="enable"
+        pendingCount={0}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.pro.undoWindowDays}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+            waitingApprovedCount: 5,
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Waiting to run')).toBeInTheDocument();
+    expect(within(dialog).getByText('5 approvals')).toBeInTheDocument();
+  });
+
+  it('says nothing about waiting approvals when there are none', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        pendingCount={0}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.pro.undoWindowDays}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            ruleId: AUTO_UNSUBSCRIBE_NOISY.id,
+            waitingApprovedCount: 0,
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    expect(screen.queryByText('Waiting to run')).not.toBeInTheDocument();
+  });
+
   // The backlog clause had NO test until 2026-08-24, which is how it
   // came to state the opposite of what the server does. It promised
   // "suggestions already collected stay pending — turning the rule on
@@ -1546,6 +1603,87 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     expect(within(dialog).queryByRole('button', { name: /^approve 50$/i })).toBeNull();
   });
 
+  // Founder decision 2026-09-29 (a): "Approve all" stays within what its
+  // preview showed, never whatever is offerable server-side at confirm
+  // time.
+  // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+  it('Approve all sends the exact shown matchIds when the buffer is not truncated', async () => {
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/approve-all$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({
+            data: { approvedCount: 2, alreadyResolvedCount: 0, executionEnqueued: true },
+          });
+        },
+      },
+    ]);
+
+    renderScreen(ready());
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /review all suggestions from rule review low-engagement senders for archive/i,
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: /approve 2 suggestions/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^approve 2$/i }));
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).toEqual({
+      matchIds: ['00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a2'],
+    });
+  });
+
+  it('Approve all sends a matchedBefore cutoff — not ids — once the buffer is truncated', async () => {
+    const rule = {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      observeDigest: { pendingTotal: 214, senders7d: 200, inboxMessagesNow: 900 },
+    };
+    const base = PENDING_SUGGESTIONS.find((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)!;
+    const suggestions: SuggestionWithRule[] = Array.from({ length: 50 }, (_, i) => ({
+      match: { ...base, id: `00000000-0000-0000-0000-0000000002${String(i).padStart(2, '0')}` },
+      rule,
+    }));
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/approve-all$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({
+            data: { approvedCount: 214, alreadyResolvedCount: 0, executionEnqueued: true },
+          });
+        },
+      },
+    ]);
+    const before = Date.now();
+
+    renderScreen({ kind: 'ready', rules: [rule], suggestions });
+    await userEvent.click(
+      screen.getByRole('button', {
+        name: /review all suggestions from rule review low-engagement senders for archive/i,
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: /approve all ~214 suggestions/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /^approve all ~214$/i }));
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    const body = observed[0] as { matchedBefore?: unknown };
+    // No id list — the FE never fetched every id "~214" promises. A
+    // timestamp cutoff close to "now" instead: not the ids `matches`
+    // happens to hold, and not so far in the future it would sweep up a
+    // suggestion that arrives after this screen loaded.
+    expect(body).not.toHaveProperty('matchIds');
+    expect(typeof body.matchedBefore).toBe('string');
+    const cutoffMs = Date.parse(body.matchedBefore as string);
+    expect(cutoffMs).toBeGreaterThanOrEqual(before);
+    expect(cutoffMs).toBeLessThanOrEqual(Date.now());
+  });
+
   it('Approve selected sends exactly the checked matchIds', async () => {
     const observed: unknown[] = [];
     installFetchStub([
@@ -1676,6 +1814,122 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(orphanState);
     expect(screen.getByRole('button', { name: /skip suggestion/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
+  });
+});
+
+// Founder decision 2026-09-29 (a): approving is blocked while a rule is
+// paused or off, and Resume gets its own D226 preview.
+// docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+describe('AutopilotScreen — approvals blocked on paused/off rules + Resume preview', () => {
+  beforeEach(() => installFetchStub([]));
+  afterEach(() => resetFetchStub());
+
+  it("hides Approve buttons on a paused rule's suggestion group, explaining why", () => {
+    const paused = { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, mode: 'paused' as const };
+    const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.filter(
+      (m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
+    ).map((match) => ({ match, rule: paused }));
+    renderScreen({ kind: 'ready', rules: [paused], suggestions });
+
+    const group = screen.getByRole('region', {
+      name: /pending suggestions from review low-engagement senders for archive/i,
+    });
+    expect(within(group).queryByRole('button', { name: /review all/i })).toBeNull();
+    expect(within(group).queryByRole('button', { name: /review selected/i })).toBeNull();
+    expect(within(group).getByText(/paused.*resume the rule above/i)).toBeInTheDocument();
+  });
+
+  it("hides Approve buttons on a disabled rule's suggestion group, explaining why", () => {
+    const off = { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false };
+    const suggestions: SuggestionWithRule[] = PENDING_SUGGESTIONS.filter(
+      (m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
+    ).map((match) => ({ match, rule: off }));
+    renderScreen({ kind: 'ready', rules: [off], suggestions });
+
+    const group = screen.getByRole('region', {
+      name: /pending suggestions from review low-engagement senders for archive/i,
+    });
+    expect(within(group).queryByRole('button', { name: /review all/i })).toBeNull();
+    expect(within(group).getByText(/off.*resume the rule above/i)).toBeInTheDocument();
+  });
+
+  it('Resume opens a preview naming waiting approvals; PATCHes mode=observe only after confirm', async () => {
+    const paused = { ...NEWSLETTER_GRAVEYARD, mode: 'paused' as const };
+    const patched: Array<{ path: string; body: unknown }> = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({
+            data: { ...RULE_PREVIEW_RESULT, ruleId: paused.id, waitingApprovedCount: 3 },
+          }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req, url) => {
+          patched.push({ path: url.pathname, body: await req.json() });
+          return jsonOk({ data: { ...paused, mode: 'observe' } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [paused], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('button', { name: /resume rule newsletter graveyard/i }),
+    );
+
+    const dialog = await screen.findByRole('dialog', { name: /resume newsletter graveyard/i });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText(/3 approvals from before it paused will run/i),
+      ).toBeInTheDocument(),
+    );
+    // The waiting approvals must not run before the user confirms.
+    expect(patched).toHaveLength(0);
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /^resume$/i }));
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(patched[0]!.path).toBe(`/api/autopilot/rules/${paused.id}`);
+    expect(patched[0]!.body).toEqual({ mode: 'observe' });
+  });
+
+  it('Resume says nothing is waiting when there is nothing approved, but still requires confirmation', async () => {
+    const paused = { ...NEWSLETTER_GRAVEYARD, mode: 'paused' as const };
+    let patchCalls = 0;
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({
+            data: { ...RULE_PREVIEW_RESULT, ruleId: paused.id, waitingApprovedCount: 0 },
+          }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: () => {
+          patchCalls += 1;
+          return jsonOk({ data: { ...paused, mode: 'observe' } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [paused], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('button', { name: /resume rule newsletter graveyard/i }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: /resume newsletter graveyard/i });
+    await waitFor(() =>
+      expect(within(dialog).getByText(/nothing is waiting to run/i)).toBeInTheDocument(),
+    );
+    expect(patchCalls).toBe(0);
+
+    // Still requires the explicit click — no auto-commit on an empty preview.
+    await userEvent.click(within(dialog).getByRole('button', { name: /^resume$/i }));
+    await waitFor(() => expect(patchCalls).toBe(1));
   });
 });
 

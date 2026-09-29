@@ -18,7 +18,11 @@
 
 import { measureRequestOperation } from '../observability/request-performance.js';
 import { Inject, Injectable } from '@nestjs/common';
-import { engagementWindowStart } from '@declutrmail/shared/contracts';
+import {
+  engagementWindowStart,
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
 import {
   and,
   count,
@@ -49,6 +53,7 @@ import {
   actionJobs,
   activityLog,
   automationRules,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   mailMessages,
   productFeedback,
   ruleMatchLog,
@@ -376,6 +381,7 @@ export class ActivityReadService {
   }): Promise<ExecutionAttempt[]> {
     const current = alias(actionJobs, 'activity_export_current');
     const later = alias(actionJobs, 'activity_export_later');
+    const root = alias(actionJobs, 'activity_export_root');
     const outcomeTime = sql<Date>`case
       when ${current.status} = 'failed' then ${current.updatedAt}
       else ${current.createdAt}
@@ -386,6 +392,8 @@ export class ActivityReadService {
       inArray(current.verb, EXECUTION_VERBS),
       inArray(current.status, ['queued', 'executing', 'failed'] as const),
       lte(outcomeTime, timestamptzParam(args.snapshotCreatedAt)),
+      // By the lineage's root, as the feed decides (`executionScope`).
+      notAutopilotClaim(root.idempotencyKey),
       notExists(
         this.db
           .select({ id: later.id })
@@ -410,15 +418,7 @@ export class ActivityReadService {
     }
     if (args.lowerBound) whereParts.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) whereParts.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
-    if (args.cursor) {
-      const cursorTime = timestamptzParam(args.cursor.occurredAt);
-      whereParts.push(
-        or(
-          lt(outcomeTime, cursorTime),
-          and(eq(outcomeTime, cursorTime), lt(current.id, args.cursor.id)),
-        )!,
-      );
-    }
+    if (args.cursor) whereParts.push(afterCursor(outcomeTime, current.id, args.cursor));
     return this.db
       .select({
         id: current.id,
@@ -433,8 +433,9 @@ export class ActivityReadService {
         recoveryAttempt: current.recoveryAttempt,
       })
       .from(current)
+      .innerJoin(root, sql`coalesce(${current.rootActionId}, ${current.id}) = ${root.id}`)
       .where(and(...whereParts))
-      .orderBy(desc(outcomeTime), desc(current.id))
+      .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
       .limit(args.limit);
   }
 
@@ -537,14 +538,7 @@ export class ActivityReadService {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
-    if (cursor) {
-      whereParts.push(
-        or(
-          lt(activityLog.occurredAt, cursor.occurredAt),
-          and(eq(activityLog.occurredAt, cursor.occurredAt), lt(activityLog.id, cursor.id)),
-        )!,
-      );
-    }
+    if (cursor) whereParts.push(afterCursor(activityLog.occurredAt, activityLog.id, cursor));
 
     // ADR-0008 §3 exception: the feed joins the senders-owned `senders`
     // (display name) and the autopilot-owned `automation_rules` (rule name).
@@ -595,7 +589,7 @@ export class ActivityReadService {
         ),
       )
       .where(and(...whereParts))
-      .orderBy(desc(activityLog.occurredAt), desc(activityLog.id))
+      .orderBy(desc(feedTime(activityLog.occurredAt)), desc(activityLog.id))
       .limit(limit + 1);
 
     const projected = rows.map((row): ActivityRowFacts => {
@@ -640,8 +634,11 @@ export class ActivityReadService {
       cursor,
       outcomes,
     });
-    const ruleReviewRows = await this.loadRuleReviewRows(params);
-    return [...projected, ...executionRows, ...ruleReviewRows]
+    const [ruleReviewRows, protectedSkipRows] = await Promise.all([
+      this.loadRuleReviewRows(params),
+      this.loadProtectedSkipRows(params, snapshotCreatedAt),
+    ]);
+    return [...projected, ...executionRows, ...ruleReviewRows, ...protectedSkipRows]
       .sort(compareActivityRowsNewestFirst)
       .slice(0, limit + 1);
   }
@@ -699,14 +696,7 @@ export class ActivityReadService {
       const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
       whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
     }
-    if (cursor) {
-      whereParts.push(
-        or(
-          lt(reviewTime, cursor.occurredAt),
-          and(eq(reviewTime, cursor.occurredAt), lt(ruleMatchLog.id, cursor.id)),
-        )!,
-      );
-    }
+    if (cursor) whereParts.push(afterCursor(reviewTime, ruleMatchLog.id, cursor));
     // ADR-0008 §3 exception: activity reads the autopilot-owned
     // `rule_match_log` (dismissed suggestions only) — a skipped or
     // Protection-blocked suggestion is recorded nowhere else — joined to
@@ -739,7 +729,7 @@ export class ActivityReadService {
         ),
       )
       .where(and(...whereParts))
-      .orderBy(desc(reviewTime), desc(ruleMatchLog.id))
+      .orderBy(desc(feedTime(reviewTime)), desc(ruleMatchLog.id))
       .limit(limit + 1);
     return rows.map((row) => ({
       id: row.id,
@@ -766,6 +756,108 @@ export class ActivityReadService {
   }
 
   /**
+   * Label jobs skipped because their sender was Protected when they ran
+   * (D245). Nothing changed, so there is no `activity_log` row; the job's
+   * own marker is the durable record, shown as the same "skipped — sender
+   * is Protected" line Autopilot's protection dismissals use, with no Undo.
+   * Unlike those, it is the user's own action, so it sits in the default
+   * feed — the lasting trace once the bottom pill has faded.
+   *
+   * Dated by the click (`created_at`), like the queued line it replaces;
+   * the skip lands a lock-wait later. That also keeps the read on the
+   * `(mailbox, status, created_at)` index, bounded by the window or date
+   * range when one is set; `all` walks the mailbox's `done` rows.
+   */
+  private async loadProtectedSkipRows(
+    params: ListActivityParams,
+    snapshotCreatedAt: Date | null = null,
+  ): Promise<ActivityRowFacts[]> {
+    const {
+      mailboxAccountId,
+      window,
+      source,
+      verbs = [],
+      senderQuery = '',
+      dateFrom = null,
+      dateTo = null,
+      outcomes = [],
+      cursor,
+      limit,
+      nowMs,
+    } = params;
+    if (source !== null && source !== 'manual') return [];
+    if (outcomes.length > 0 && !outcomes.includes('protected')) return [];
+    const skipVerbs = verbs.filter((verb): verb is ExecutionVerb =>
+      EXECUTION_VERBS.includes(verb as ExecutionVerb),
+    );
+    if (verbs.length > 0 && skipVerbs.length === 0) return [];
+    const useCustomRange = dateFrom !== null || dateTo !== null;
+    const windowStart = useCustomRange ? null : resolveWindowStart(window, nowMs);
+    // Column reference for every Date bound: postgres.js only accepts Date
+    // params when drizzle maps them through a column's encoder.
+    const clickedAt = actionJobs.createdAt;
+    const whereParts = [
+      eq(actionJobs.mailboxAccountId, mailboxAccountId),
+      eq(actionJobs.direction, 'forward' as const),
+      eq(actionJobs.status, 'done' as const),
+      eq(actionJobs.errorCode, LABEL_SENDER_PROTECTED_ERROR_CODE),
+      inArray(actionJobs.verb, skipVerbs.length > 0 ? skipVerbs : EXECUTION_VERBS),
+    ];
+    if (windowStart) whereParts.push(gte(clickedAt, windowStart));
+    if (dateFrom) whereParts.push(gte(clickedAt, dateFrom));
+    if (dateTo) whereParts.push(lt(clickedAt, dateTo));
+    // An export reads as of its snapshot: a skip that landed after it is
+    // not one yet, and the execution rows may already list the job queued.
+    if (snapshotCreatedAt) whereParts.push(lte(actionJobs.updatedAt, snapshotCreatedAt));
+    if (senderQuery.length > 0) {
+      const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
+      whereParts.push(or(ilike(senders.displayName, pattern), ilike(senders.email, pattern))!);
+    }
+    if (cursor) whereParts.push(afterCursor(clickedAt, actionJobs.id, cursor));
+    const rows = await this.db
+      .select({
+        id: actionJobs.id,
+        occurredAt: clickedAt,
+        verb: actionJobs.verb,
+        senderKey: senders.senderKey,
+        senderDisplayName: senders.displayName,
+        senderEmail: senders.email,
+      })
+      .from(actionJobs)
+      .leftJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, actionJobs.mailboxAccountId),
+          sql`${senders.senderKey} = ${actionJobs.selector}->>'senderKey'`,
+        ),
+      )
+      .where(and(...whereParts))
+      .orderBy(desc(feedTime(clickedAt)), desc(actionJobs.id))
+      .limit(limit + 1);
+    return rows.map((row) => ({
+      id: row.id,
+      occurredAt: row.occurredAt.toISOString(),
+      source: 'manual',
+      action: row.verb as ExecutionVerb,
+      affectedCount: 0,
+      sender:
+        row.senderKey === null || row.senderEmail === null
+          ? null
+          : {
+              senderKey: row.senderKey,
+              displayName: row.senderDisplayName ?? row.senderEmail,
+              email: row.senderEmail,
+              domain: domainOf(row.senderEmail),
+            },
+      rule: null,
+      feedbackRating: null,
+      undoState: { kind: 'unavailable' },
+      executionState: null,
+      reviewOutcome: 'protected',
+    }));
+  }
+
+  /**
    * Exact factual counts for the seven-day in-app review.
    *
    * Honours the sender filter (D246 + the 2026-08-19 founder decision):
@@ -788,6 +880,7 @@ export class ActivityReadService {
     const reviewOutcome = persistedReviewOutcomeExpression();
     const failedCurrent = alias(actionJobs, 'weekly_failed_current');
     const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const failedRoot = alias(actionJobs, 'weekly_failed_root');
     const activityScope = this.senderScopeFilter(mailboxAccountId, senderQuery);
     const ruleScope = this.senderScopeFilter(mailboxAccountId, senderQuery, ruleMatchLog.senderKey);
     const jobScope = this.senderScopeFilter(
@@ -795,12 +888,18 @@ export class ActivityReadService {
       senderQuery,
       sql`${failedCurrent.selector}->>'senderKey'`,
     );
-    const [persisted, dismissed, unresolved] = await Promise.all([
+    const skipScope = this.senderScopeFilter(
+      mailboxAccountId,
+      senderQuery,
+      sql`${actionJobs.selector}->>'senderKey'`,
+    );
+    const [persisted, dismissed, unresolved, skipped] = await Promise.all([
       this.db
         .select({
           completed: sql<number>`count(*) filter (where ${reviewOutcome} = 'completed')::int`,
           failed: sql<number>`count(*) filter (where ${reviewOutcome} = 'failed')::int`,
           recovered: sql<number>`count(*) filter (where ${reviewOutcome} = 'recovered')::int`,
+          protected: sql<number>`count(*) filter (where ${reviewOutcome} = 'protected')::int`,
         })
         .from(activityLog)
         .where(
@@ -832,12 +931,19 @@ export class ActivityReadService {
       this.db
         .select({ n: count(failedCurrent.id) })
         .from(failedCurrent)
+        .innerJoin(
+          failedRoot,
+          sql`coalesce(${failedCurrent.rootActionId}, ${failedCurrent.id}) = ${failedRoot.id}`,
+        )
         .where(
           and(
             eq(failedCurrent.mailboxAccountId, mailboxAccountId),
             eq(failedCurrent.direction, 'forward'),
             inArray(failedCurrent.verb, EXECUTION_VERBS),
             eq(failedCurrent.status, 'failed'),
+            // The tile opens the feed, which leaves claim lineages out by
+            // their root (`executionScope`); count the same way.
+            notAutopilotClaim(failedRoot.idempotencyKey),
             gte(failedCurrent.updatedAt, cutoff),
             lt(failedCurrent.updatedAt, upperBound),
             ...(jobScope ? [jobScope] : []),
@@ -857,6 +963,23 @@ export class ActivityReadService {
             ),
           ),
         ),
+      // Label jobs skipped as Protected when they ran (D245) — no
+      // activity_log row, so they are counted from the job's marker, dated
+      // by the click like their feed line (`loadProtectedSkipRows`).
+      this.db
+        .select({ n: count(actionJobs.id) })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.direction, 'forward'),
+            eq(actionJobs.status, 'done'),
+            eq(actionJobs.errorCode, LABEL_SENDER_PROTECTED_ERROR_CODE),
+            gte(actionJobs.createdAt, cutoff),
+            lt(actionJobs.createdAt, upperBound),
+            ...(skipScope ? [skipScope] : []),
+          ),
+        ),
     ]);
     const persistedCounts = persisted[0];
     const dismissCounts = new Map(dismissed.map((row) => [row.reason, Number(row.n)]));
@@ -869,7 +992,10 @@ export class ActivityReadService {
       skipped: dismissCounts.get('user') ?? 0,
       failed: Number(persistedCounts?.failed ?? 0) + unresolvedFailures,
       recovered: Number(persistedCounts?.recovered ?? 0),
-      protected: dismissCounts.get('protected') ?? 0,
+      protected:
+        (dismissCounts.get('protected') ?? 0) +
+        Number(persistedCounts?.protected ?? 0) +
+        Number(skipped[0]?.n ?? 0),
     };
   }
 
@@ -918,6 +1044,7 @@ export class ActivityReadService {
       ),
       // A malformed/older recovery cannot outrank its own original intent.
       sql`(${current.recoveryAttempt}, ${current.createdAt}, ${current.id}) >= (${root.recoveryAttempt}, ${root.createdAt}, ${root.id})`,
+      notAutopilotClaim(root.idempotencyKey),
     ];
     const senderScope = this.senderScopeFilter(
       args.mailboxAccountId,
@@ -936,10 +1063,7 @@ export class ActivityReadService {
       );
     if (args.lowerBound) scope.push(gte(outcomeTime, timestamptzParam(args.lowerBound)));
     if (args.upperBound) scope.push(lt(outcomeTime, timestamptzParam(args.upperBound)));
-    if (args.cursor)
-      scope.push(
-        sql`(${outcomeTime}, ${current.id}) < (${timestamptzParam(args.cursor.occurredAt)}, ${args.cursor.id})`,
-      );
+    if (args.cursor) scope.push(afterCursor(outcomeTime, current.id, args.cursor));
     return {
       root,
       current,
@@ -982,7 +1106,7 @@ export class ActivityReadService {
         .from(current)
         .innerJoin(root, join)
         .where(where)
-        .orderBy(desc(outcomeTime), desc(current.id))
+        .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
         .limit(params.limit + 1);
       if (!attempts.length) return [];
       return this.hydrateCurrentExecutionLineages(params.mailboxAccountId, attempts);
@@ -1343,6 +1467,13 @@ function persistedReviewOutcomeExpression() {
         and recovery.status = 'done'
         and recovery.undo_token = ${activityLog.undoToken}
     ) then 'recovered'
+    when ${activityLog.action} = 'unsubscribe' and ${activityLog.actionJobId} is not null and exists (
+      select 1 from action_jobs refused
+      where refused.id = ${activityLog.actionJobId}
+        and refused.mailbox_account_id = ${activityLog.mailboxAccountId}
+        and refused.status = 'failed'
+        and refused.error_code = ${UNSUB_SENDER_PROTECTED_ERROR_CODE}
+    ) then 'protected'
     when ${activityLog.action} in (
       'unsubscribe',
       'unsubscribe_action_required',
@@ -1442,6 +1573,20 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
 }
 
 /**
+ * An Autopilot claim is an `action_jobs` row the user never clicked. Its
+ * outcome reaches Activity as the worker's own `autopilot` row; the claim
+ * itself must not read as the user's action (the in-flight list already
+ * leaves claims out the same way).
+ */
+function notAutopilotClaim(idempotencyKey: SQLWrapper): SQL {
+  return and(
+    ...AUTOPILOT_CLAIM_KEY_PREFIXES.map(
+      (prefix) => sql`${idempotencyKey} not like ${`${prefix}%`}`,
+    ),
+  )!;
+}
+
+/**
  * Encode a Date for comparison against a raw `sql` expression. Drizzle
  * only maps JS Dates through a column's encoder; a Date bound next to a
  * raw expression reaches postgres.js untyped and throws at serialization
@@ -1450,6 +1595,35 @@ function resolveWindowStart(window: ActivityWindow, nowMs: number): Date | null 
  */
 function timestamptzParam(value: Date) {
   return sql`${value.toISOString()}::timestamptz`;
+}
+
+/**
+ * The feed's sort time. The page cursor and the merge of the sources
+ * (`compareActivityRowsNewestFirst`) carry milliseconds, while Postgres
+ * keeps microseconds. Each source must order at the same precision, or its
+ * `LIMIT` can cut a row the merge would have placed first and the cursor
+ * then passes it by.
+ */
+function feedTime(time: SQLWrapper): SQL {
+  return sql`date_trunc('milliseconds', ${time})`;
+}
+
+/**
+ * The rows after a page's last row, for a feed ordered by (`feedTime`, id)
+ * desc. Rows written in one transaction share `now()` to the microsecond,
+ * so `time = cursor` never matched one and `time < cursor` skipped it:
+ * every row after the page's last one in that millisecond dropped out.
+ * Rows inside the cursor's millisecond continue by id instead. Compared on
+ * the raw column, so the window's index still bounds the scan.
+ */
+function afterCursor(
+  time: SQLWrapper,
+  id: SQLWrapper,
+  cursor: { readonly occurredAt: Date; readonly id: string },
+): SQL {
+  const start = timestamptzParam(cursor.occurredAt);
+  const end = timestamptzParam(new Date(cursor.occurredAt.getTime() + 1));
+  return or(lt(time, start), and(gte(time, start), lt(time, end), lt(id, cursor.id)))!;
 }
 
 /**

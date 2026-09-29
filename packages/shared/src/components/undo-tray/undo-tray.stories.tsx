@@ -392,6 +392,158 @@ export const PillProblem: Story<typeof UndoTray> = {
     ),
 };
 
+/**
+ * D245 — a bulk where one sender became Protected before its job ran. The
+ * skip rides the decision's own Undo line (founder decision D4), never a
+ * second line above it.
+ */
+export const PillDoneProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999998',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 1400,
+            senderCount: 12,
+            note: '1 Protected sender skipped',
+          },
+        ])}
+      />,
+    ),
+};
+
+/** The same decision in the opened list — the skip stays on its line. */
+export const ListDoneProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        defaultOpen
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999998',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 1400,
+            senderCount: 12,
+            note: '1 Protected sender skipped',
+          },
+        ])}
+      />,
+    ),
+};
+
+/**
+ * Part failed and one sender was skipped: both in the alert's own line,
+ * read aloud. No job split beside the skip — the split counts jobs, the
+ * skip counts senders.
+ */
+export const PillProblemProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-skip',
+              tone: 'attention',
+              label: 'Delete partly failed · 1 Protected sender skipped',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** Everything that ran failed, and one sender was skipped: the line names no one. */
+export const PillFailedProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-failed-skip',
+              tone: 'attention',
+              label: 'Delete failed · 1 Protected sender skipped',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** The rest ran and changed nothing: both facts, as a note rather than an alert. */
+export const PillSkippedNothingElseChanged: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        onViewActivity={() => {}}
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'end-skip-noop',
+              tone: 'info',
+              label: 'Delete: 1 Protected sender skipped · nothing else changed',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
+/** Later names a destination, so the count goes before it. */
+export const PillDoneLater: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999997',
+            actionKind: 'later',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 1400,
+            senderCount: 12,
+          },
+        ])}
+      />,
+    ),
+};
+
+/** …and when nothing else ran, the skip is the line. */
+export const PillProtectedSkipped: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={{
+          ...staticSource([]),
+          notices: [
+            {
+              id: 'skip',
+              tone: 'info',
+              label: 'Delete: 1 Protected sender skipped',
+              who: 'Greenhouse',
+              onDismiss: () => {},
+            },
+          ],
+        }}
+      />,
+    ),
+};
+
 /** Ended with nothing to change — neutral, dismissible. */
 export const PillNothingToDo: Story<typeof UndoTray> = {
   render: () =>

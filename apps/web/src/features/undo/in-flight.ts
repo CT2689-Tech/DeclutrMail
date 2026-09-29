@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { UndoTrayNotice } from '@declutrmail/shared';
 
+import { protectedSkippedCopy } from '@/lib/action-error-copy';
 import {
   getInFlightActions,
   type BatchStatusResult,
@@ -55,7 +56,7 @@ export function workingNotice(group: InFlightActionGroup, confirmed = true): Und
     return {
       id: `run:${group.groupId}`,
       tone: 'info',
-      label: `${VERB[group.verb]} not confirmed`,
+      label: `${VERB[group.verb]}: unknown`,
       who: who(group),
     };
   }
@@ -88,28 +89,66 @@ export function outcomeNotice(
   const id = `end:${group.groupId}`;
   const verb = VERB[group.verb];
   if (status === null) {
-    return { id, tone: 'attention', label: `${verb} not confirmed`, who: who(group) };
+    return { id, tone: 'attention', label: `${verb}: unknown`, who: who(group) };
   }
   // Still running server-side (it only aged out of the list): say nothing.
   if (status.status !== 'done' && status.status !== 'failed') return null;
-  if (status.failed === status.total) {
-    return { id, tone: 'attention', label: `${verb} failed`, who: who(group) };
+  // D245: senders found Protected when their job ran were skipped, exactly
+  // like ones protected at the click. Their jobs are left out of every
+  // count here — so a one-sender skip is 0 of 0, which is not "all failed".
+  const skipped = status.skippedProtectedSenderIds?.length ?? 0;
+  // Beside a failure the skip is part of the line itself — an alert's
+  // detail slot is not read aloud — and the group's lead sender may be the
+  // skipped one, so that line names no one.
+  const withSkip = (label: string): string =>
+    skipped > 0 ? `${label} · ${protectedSkippedCopy(skipped)}` : label;
+  if (status.total > 0 && status.failed === status.total) {
+    return {
+      id,
+      tone: 'attention',
+      label: withSkip(`${verb} failed`),
+      ...(skipped > 0 ? {} : { who: who(group) }),
+    };
   }
   if (status.failed > 0) {
     return {
       id,
       tone: 'attention',
-      label: `${verb}: ${status.failed.toLocaleString('en-US')} of ${status.total.toLocaleString('en-US')} failed`,
+      // The split counts jobs (a composite runs two per sender), so beside
+      // a skip, which counts senders, it would read as a sender count.
+      label:
+        skipped > 0
+          ? withSkip(`${verb} partly failed`)
+          : `${verb}: ${status.failed.toLocaleString('en-US')} of ${status.total.toLocaleString('en-US')} failed`,
     };
   }
   if (status.affectedCount === 0) {
-    return { id, tone: 'info', label: `Nothing to ${verb.toLowerCase()}`, who: who(group) };
+    // Nothing changed, so there is no Undo line to carry a skip: say it
+    // here — never "Nothing to …" about mail that is still there — and,
+    // when the rest ran, that it changed nothing either.
+    return skipped > 0
+      ? {
+          id,
+          tone: 'info',
+          label: `${verb}: ${protectedSkippedCopy(skipped)}${status.total > 0 ? ' · nothing else changed' : ''}`,
+          // The group's lead sender is only the skipped one when all were.
+          ...(skipped === group.senderCount ? { who: who(group) } : {}),
+        }
+      : {
+          id,
+          tone: 'info',
+          label:
+            group.verb === 'later'
+              ? 'Nothing to move to Later'
+              : `Nothing to ${verb.toLowerCase()}`,
+          who: who(group),
+        };
   }
-  // Mail moved between the preview's count and the job: fewer changed than
-  // were counted. The decision's own line has the real number.
-  if (status.affectedCount < status.requestedCount) {
-    return { id, tone: 'info', label: `${verb}: some email not changed`, who: who(group) };
-  }
+  // Mail changed: a skip rides the decision's own Undo line, whose count
+  // comes with the decision itself (`GET /api/undo`). Fewer than the
+  // preview counted means mail had already left the inbox, not that some
+  // was left behind: the decision's own line has the real number, and a
+  // notice here would sit above its Undo.
   return null;
 }
 

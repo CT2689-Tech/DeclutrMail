@@ -40,6 +40,21 @@ export function useOnboardingState(opts: { enabled?: boolean } = {}) {
   });
 }
 
+/**
+ * Where the onboarding gate stands (D109): `gating` while onboarding is
+ * unfinished, `resolving` before the first answer, and `open` once it is
+ * done or the read failed (fail-open). The gate and anything waiting on
+ * it read this one verdict, so nothing acts on a screen the gate is about
+ * to leave. Kept data wins over a failed refetch, as it does for the gate.
+ */
+export function onboardingGateVerdict(state: {
+  data: { onboardedAt: string | null } | undefined;
+  isError: boolean;
+}): 'resolving' | 'gating' | 'open' {
+  if (state.data) return state.data.onboardedAt === null ? 'gating' : 'open';
+  return state.isError ? 'open' : 'resolving';
+}
+
 export interface FirstTriageRead {
   rows: TriageDecisionRow[];
   meta: OnboardingFirstTriageMeta;

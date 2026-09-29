@@ -196,7 +196,15 @@ export const OVERRIDES_KB = {
   // unique to the diff — none leaked into a shared chunk), not a barrel
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
-  '/(app)/senders/[id]/page': 284, // 281.5
+  // Raised 284 -> 288 on 2026-09-29 (D245, PR #805 — re-check Protected at
+  // execution): measured 284.0, up from 281.5. sender-detail-page.tsx
+  // grew for the same-run unsubscribe-outcome copy (`bulk-action-copy.ts`,
+  // `unsubscribe-outcome-copy.ts`, both new, both imported directly here),
+  // and the global `ProductUndoTray` in `app-chrome-layout.tsx` — present
+  // on every authed route — pulled in the widened `in-flight.ts` and the
+  // new `action-job-status`/`error-codes` contract entries. 288 restores
+  // ~4 kB headroom.
+  '/(app)/senders/[id]/page': 288, // 284.0
   // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
   // for billing / screener / admin. The public theme and refreshed shared
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
@@ -205,7 +213,12 @@ export const OVERRIDES_KB = {
   '/(app)/screener/page': 261, // 258.8 — queue + decision controls + editorial shell
   // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
-  '/(app)/brief/page': 260, // 257.5
+  // Raised 260 -> 264 on 2026-09-29 (D245, PR #805): measured 260.0, up
+  // from 257.5. `use-noise-archive.ts` grew directly for the same
+  // Protected re-check/outcome handling (imports `bulk-action-copy.ts`),
+  // plus the same every-route `ProductUndoTray` growth as senders/[id]
+  // above. 264 restores ~4 kB headroom.
+  '/(app)/brief/page': 264, // 260.0
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -224,11 +237,22 @@ export const OVERRIDES_KB = {
   // no longer be dead-code-eliminated from the shared `api/client.ts`
   // chunk. Both deltas land in the same shared cluster; 184 covers both
   // with headroom to spare rather than stacking a second override.
-  '/(app)/settings/page': 254, // 251.9
+  //
+  // Raised 254 -> 256 on 2026-09-29 (D245, PR #805): measured 254.1, up
+  // from 251.9. This route imports none of the PR's files directly — the
+  // growth is the global `ProductUndoTray` (rendered by every authed
+  // route's `app-chrome-layout.tsx`) pulling in the widened
+  // `in-flight.ts`/`action-error-copy.ts` and the new
+  // `action-job-status`/`error-codes` contract entries. 256 restores ~2 kB
+  // headroom, matching this cluster's margin.
+  '/(app)/settings/page': 256, // 254.1
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
-  '/(app)/settings/privacy/page': 256, // 254.3 — data controls + explainer
+  // Raised 256 -> 258 on 2026-09-29 (D245, PR #805): measured 256.1, up
+  // from 254.3, for the same every-route `ProductUndoTray` growth as
+  // /(app)/settings/page above. 258 keeps ~2 kB headroom.
+  '/(app)/settings/privacy/page': 258, // 256.1 — data controls + explainer
   // Lowered from its re-based 266 on 2026-09-27: pinned at 165 against
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.

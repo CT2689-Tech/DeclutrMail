@@ -24,14 +24,16 @@ export interface AutopilotSignalRow {
   signals: PresetSignals;
   decision: { verdict: TriageVerdict; confidence: number } | null;
   /**
-   * Actionability facts for ACTIVE-mode matching (not part of
-   * `PresetSignals` — preset matchers and the dry-run preview answer
-   * "does the rule match", these answer "would acting do anything").
-   * The apply worker skips active-mode inserts for non-actionable
-   * matches; without that gate every delta-triggered sweep (D100)
-   * re-executes the full match set as 0-affected actions — unbounded
-   * `rule_match_log`/`action_jobs`/`activity_log` growth plus an
-   * Activity feed full of "archived 0" entries.
+   * Actionability facts (not part of `PresetSignals` — preset matchers
+   * and the dry-run preview answer "does the rule match", these answer
+   * "would acting do anything"). The apply worker skips inserts for
+   * non-actionable matches in BOTH modes: for Active, without that gate
+   * every delta-triggered sweep (D100) re-executes the full match set as
+   * 0-affected actions — unbounded `rule_match_log`/`action_jobs`/
+   * `activity_log` growth plus an Activity feed full of "archived 0"
+   * entries; for Observe (since 2026-09-29), without it the Watch-first
+   * queue offers suggestions the Active sweep and the turn-on preview
+   * already exclude.
    */
   inboxCount: number;
   isUnsubscribed: boolean;

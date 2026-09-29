@@ -80,6 +80,8 @@ export const subscriptionEvents = pgTable(
     pendingIdx: index('subscription_events_pending_idx')
       .on(table.createdAt)
       .where(sql`${table.processedAt} IS NULL`),
+    /** Mirrors migration 0051 — `arrival_seq` is the total arrival order the staleness guard sorts on. */
+    arrivalSeqUniq: uniqueIndex('subscription_events_arrival_seq_uniq').on(table.arrivalSeq),
   }),
 );
 

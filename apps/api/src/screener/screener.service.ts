@@ -81,8 +81,8 @@ export class ScreenerService {
     /**
      * The user's explicit "act anyway" on a Protected sender (D42/D245).
      * One sender, one deliberate click — the explicit path D245 leaves
-     * open. Defaults to false, so an unacknowledged decision still gets
-     * the 409.
+     * open. Defaults to false, so an unacknowledged Archive/Later/Delete
+     * still gets the 409, and an Unsubscribe is re-checked when it runs.
      */
     override?: boolean;
     idempotencyKey: string;
@@ -129,6 +129,7 @@ export class ScreenerService {
         mailboxAccountId,
         senderId,
         idempotencyKey,
+        override,
       });
       execution = {
         kind: 'unsubscribe',

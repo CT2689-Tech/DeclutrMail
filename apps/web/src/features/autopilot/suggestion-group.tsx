@@ -132,7 +132,7 @@ export function SuggestionGroup({
         </button>
       )}
 
-      {rule != null && (
+      {rule != null && ruleCanApprove(rule) && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Button
             tone="default"
@@ -153,8 +153,22 @@ export function SuggestionGroup({
           </Button>
         </div>
       )}
+      {/* Founder decision 2026-09-29 (a): approving is blocked while the
+          rule is off or paused — resuming would otherwise run every
+          waiting approval with no preview. Resume/turn it on from the
+          rules list above. */}
+      {rule != null && !ruleCanApprove(rule) && (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, textAlign: 'right' }}>
+          {rule.mode === 'paused' ? 'Paused' : 'Off'} — resume the rule above to approve these.
+        </p>
+      )}
     </section>
   );
+}
+
+/** Approving is blocked while the rule is off or paused (founder decision 2026-09-29). */
+function ruleCanApprove(rule: AutopilotRuleDto): boolean {
+  return rule.enabled && rule.mode !== 'paused';
 }
 
 /** "(N days left)" while the rule's observe window is running (D104 header). */

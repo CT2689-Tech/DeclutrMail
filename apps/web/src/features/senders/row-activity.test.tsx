@@ -22,7 +22,7 @@ describe('row activity — what a sender row says about its own action', () => {
     [{ phase: 'done', verb: 'later', affectedCount: null }, 'Moved to Later'],
     [{ phase: 'done', verb: 'delete', affectedCount: 0 }, 'Nothing to change'],
     [{ phase: 'failed', verb: 'delete' }, 'Delete failed'],
-    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive not confirmed'],
+    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive: unknown'],
     [{ phase: 'mixed', verb: 'delete' }, 'Delete: see Activity'],
   ] as Array<[SenderRowActivity, string]>)('%o reads "%s"', (activity, label) => {
     expect(rowActivityLabel(activity)).toBe(label);
@@ -48,7 +48,9 @@ describe('row activity — what a sender row says about its own action', () => {
     [{ phase: 'done', verb: 'delete', affectedCount: 95 }, 'Deleted 95'],
     [{ phase: 'done', verb: 'archive', affectedCount: null }, 'Archived'],
     [{ phase: 'done', verb: 'later', affectedCount: 0 }, 'Nothing to change'],
-    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive not confirmed'],
+    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive: unknown'],
+    // Later names a destination: its count goes first, as on the pill.
+    [{ phase: 'done', verb: 'later', affectedCount: 240 }, 'Moved 240 to Later'],
   ] as Array<[SenderRowActivity, string]>)('button slot: %o reads "%s"', (activity, label) => {
     expect(rowStatusLabel(activity)).toBe(label);
   });

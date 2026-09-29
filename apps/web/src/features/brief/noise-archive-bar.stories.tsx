@@ -108,7 +108,12 @@ export const ArchivedUndoExpired: Story<typeof NoiseArchiveBar> = {
  * told by the tray.
  */
 export const Reverted: Story<typeof NoiseArchiveBar> = {
-  render: () => frame({ selectedCount: 4, outcome: { kind: 'reverted', senderCount: 4 } }),
+  render: () => frame({ selectedCount: 4, outcome: { kind: 'reverted', senderCount: 4, of: 4 } }),
+};
+
+/** One sender of the archive undone on its own from the tray; the rest stay archived. */
+export const PartlyReverted: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 1, outcome: { kind: 'reverted', senderCount: 1, of: 4 } }),
 };
 
 /**
@@ -124,12 +129,31 @@ export const PartialFailure: Story<typeof NoiseArchiveBar> = {
     }),
 };
 
-/** Everything failed. Nothing moved, so the senders stay checked. */
+/** Every job ended failed. One may have moved part of its mail first. */
 export const Failed: Story<typeof NoiseArchiveBar> = {
   render: () => frame({ selectedCount: 4, outcome: { kind: 'failed' } }),
+};
+
+/** Refused before anything started: nothing moved, the senders stay checked. */
+export const Refused: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 4, outcome: { kind: 'refused' } }),
 };
 
 /** The status read failed — the outcome is genuinely unknown, and says so. */
 export const Unconfirmed: Story<typeof NoiseArchiveBar> = {
   render: () => frame({ selectedCount: 0, outcome: { kind: 'unconfirmed' } }),
+};
+
+/**
+ * D245 — every sender was Protected by the time its job ran (or at the
+ * click), so nothing ran. The line says what this attempt did, rather
+ * than leaving an earlier archive's receipt to read as its result.
+ */
+export const SkippedProtected: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 0, outcome: { kind: 'skipped', protectedCount: 2 } }),
+};
+
+/** Every sender refused at the click; the server did not say which reason was whose. */
+export const SkippedUnnamed: Story<typeof NoiseArchiveBar> = {
+  render: () => frame({ selectedCount: 0, outcome: { kind: 'skipped', protectedCount: null } }),
 };
