@@ -14,8 +14,10 @@ import {
   ROUNDUP_DIMENSIONS,
   type ComparisonCell,
   type ComparisonDefinition,
+  type ComparisonSlug,
   type EvidenceState,
 } from './comparison-data';
+import { COMPARE_DIY_GUIDES, COMPARISON_RELATED_GUIDES } from './related-guides';
 
 /**
  * Spelled from `COMPARISONS`, never hand-written. Three places said
@@ -268,6 +270,18 @@ export function ComparisonIndexScreen() {
         </ul>
       </section>
 
+      <section className="dm-compare-section dm-compare-narrow" aria-labelledby="diy-guides-title">
+        <h2 id="diy-guides-title">Prefer to do it in Gmail yourself?</h2>
+        <ul className="dm-compare-list">
+          {COMPARE_DIY_GUIDES.map((guide) => (
+            <li key={guide.href}>
+              <a href={guide.href}>{guide.label}</a>
+              <p>{guide.description}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <MatrixSection />
 
       <div className="dm-compare-narrow">
@@ -415,7 +429,29 @@ export function ToolFacts({ tool }: { tool: ComparisonDefinition }) {
   );
 }
 
+function alternativesPageHref(slug: ComparisonSlug): string | undefined {
+  return ALTERNATIVES_SLUGS.some((candidate) => candidate === slug)
+    ? `/alternatives/${slug}`
+    : undefined;
+}
+
+function RelatedGuides({ slug }: { slug: ComparisonSlug }) {
+  return (
+    <nav className="dm-compare-more dm-compare-narrow" aria-label="Related guides">
+      <h2>Related guides</h2>
+      <ul>
+        {COMPARISON_RELATED_GUIDES[slug].map((guide) => (
+          <li key={guide.href}>
+            <a href={guide.href}>{guide.label}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonDefinition }) {
+  const alternativesHref = alternativesPageHref(comparison.slug);
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={comparisonJsonLd(comparison)} />
@@ -427,6 +463,11 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
         </nav>
         <h1>DeclutrMail vs {comparison.name}</h1>
         <p className="dm-compare-lede">{comparison.verdict}</p>
+        {alternativesHref ? (
+          <p>
+            <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
+          </p>
+        ) : null}
         <p className="dm-compare-verified">
           {comparisonVerifiedLabel(comparison.verifiedIso)}. Official primary sources only.{' '}
           <a href="#sources">Check the sources</a>
@@ -535,6 +576,8 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
 
       <FinalCta competitorName={comparison.name} topic={comparison.slug} />
 
+      <RelatedGuides slug={comparison.slug} />
+
       <nav className="dm-compare-more dm-compare-narrow" aria-label="More comparisons">
         <h2>Compare another approach</h2>
         <ul>
@@ -545,6 +588,11 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
               </li>
             ),
           )}
+          {alternativesHref ? (
+            <li>
+              <a href={alternativesHref}>{`See all ${comparison.name} alternatives`}</a>
+            </li>
+          ) : null}
         </ul>
       </nav>
     </div>

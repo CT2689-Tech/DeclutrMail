@@ -13,13 +13,17 @@ import {
  * — so local dev (and the test suite) run unaffected.
  *
  * Privacy posture (D7, D228):
- *   - Captures EXCEPTIONS ONLY. No performance traces, no profiling,
- *     no replay (server-side replay doesn't exist, but the principle
- *     stands: opt out of anything that could carry user data).
+ *   - Captures exceptions, plus one closed message
+ *     (`llm.provider_rejected`) when the LLM breaker trips. No
+ *     performance traces, no profiling, no replay (server-side replay
+ *     doesn't exist, but the principle stands: opt out of anything
+ *     that could carry user data).
  *   - `beforeSend` runs every event through the shared scrubber, which
  *     strips body / snippet / attachment / non-allowlisted header keys
  *     wherever they appear in the event tree.
- *   - PII auto-collection (`sendDefaultPii`) is OFF.
+ *   - PII auto-collection is off via `dataCollection` (v11 removed
+ *     `sendDefaultPii`; an omitted `dataCollection` collects bodies
+ *     and model prompts).
  *
  * The SDK is loaded via dynamic `import()` so unconfigured envs incur
  * zero startup cost (the @sentry/node bundle is large).
@@ -36,8 +40,9 @@ let initialized = false;
  * imports the NestJS / Drizzle / BullMQ / Anthropic graph at the top
  * of `worker.ts` before any code runs, so Sentry attaching after-the-
  * fact is the structural mismatch. The right long-term fix is to
- * preload `@sentry/node/preload` via `node --import @sentry/node/preload`
- * BEFORE `@swc-node/register`; tracked as a follow-up. Until then,
+ * preload `@sentry/node/import` via `node --import @sentry/node/import`
+ * BEFORE `@swc-node/register` (v11 removed `/preload`); tracked as a
+ * follow-up. Until then,
  * this timeout prevents a single observability dependency from blocking
  * the entire worker indefinitely. Sentry is "best-effort" by design
  * (D159 — privacy preserved is more important than error capture).
@@ -79,8 +84,10 @@ export async function initSentry(): Promise<void> {
       //
       // The 2026-06-08 boot hang this file's timeout guards against was an
       // OTel-init ordering problem, and its documented fix (preload
-      // `@sentry/node/preload` BEFORE `@swc-node/register`) is now live in
+      // `@sentry/node/import` BEFORE `@swc-node/register`) is now live in
       // the Dockerfile CMD, so tracing no longer rides on that mismatch.
+      // Sentry 11 streams spans by default and ignores
+      // `beforeSendTransaction` unless the lifecycle stays static.
       //
       // Rate is env-tunable and deliberately not 1.0: the worker runs cron
       // jobs on 60s/5min ticks, so full sampling is mostly duplicate shapes.
@@ -88,36 +95,53 @@ export async function initSentry(): Promise<void> {
       // incident) irrelevant while still catching a runaway loop, which
       // shows up as shape rather than as any single trace.
       tracesSampleRate: readSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.2),
+      traceLifecycle: 'static',
       // The LOGS channel (D159, 2026-08-18). Notices that are not crashes
       // — `dead_letter.parked`, the CAN-SPAM postal refusal — belong here,
       // not on the errors quota, which is the only Sentry budget that runs
       // out: errors sat at 4,000/5,000 while logs sat at 0 of 5 GB.
       //
-      // This does NOT re-enable auto-instrumentation. Logs use their own
-      // transport; `defaultIntegrations: false` below still stands, which
-      // is what keeps the worker bootstrap from hanging (see the comment
-      // on `integrations`).
-      enableLogs: true,
-      profilesSampleRate: 0,
-      // Never auto-collect IP, user-agent, cookies, request bodies, etc.
-      sendDefaultPii: false,
-      // CRITICAL (2026-06-08 session): `@sentry/node` v10 ships with
-      // OpenTelemetry-based default integrations that monkey-patch
-      // already-loaded modules (Express, http, postgres, ioredis, etc.)
-      // when `Sentry.init` runs. The worker entrypoint imports the full
-      // NestJS / Drizzle / BullMQ / Anthropic graph at the TOP of
-      // `worker.ts` before any code runs, so by the time `initSentry()`
-      // executes those modules are already in `require.cache`. Sentry's
-      // late-monkey-patch hangs the bootstrap — observed as
-      // `initSentry_begin` being the last logged step on Cloud Run
-      // worker revision 00012-13. `defaultIntegrations: false` + an
-      // empty integrations list opts entirely out of auto-
-      // instrumentation; we keep ONLY `captureException`-style manual
-      // capture (which is all we need per D159 — exceptions only, no
-      // performance traces). Without this opt-out, the entire worker
-      // never reaches BullMQ Worker constructors.
+      // v11 removed `enableLogs`. `Sentry.logger.*` still sends, and
+      // `beforeSendLog` below is what scrubs that channel.
+      // `defaultIntegrations: false` still stands, which is what keeps
+      // the worker bootstrap from hanging (see the comment on
+      // `integrations`).
+      // v11 replaced `sendDefaultPii: false`. Omitted fields collect
+      // bodies, headers, and model prompts. This is the v10 baseline.
+      dataCollection: {
+        userInfo: false,
+        cookies: false,
+        httpHeaders: {
+          request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+          response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        },
+        httpBodies: [],
+        urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        genAI: { inputs: false, outputs: false },
+        databaseQueryData: false,
+        graphQL: { document: false, variables: false },
+      },
+      // CRITICAL (2026-06-08 session): `@sentry/node` default
+      // integrations monkey-patch already-loaded modules (Express, http,
+      // postgres, ioredis) when `Sentry.init` runs after the worker's
+      // top-of-file imports. That hung Cloud Run worker revision
+      // 00012-13 at `initSentry_begin`. `defaultIntegrations: false`
+      // keeps that opt-out. The one integration added below is Anthropic
+      // auto-capture, which rides the `/import` diagnostics channels
+      // instead of a late monkey-patch. Manual `captureException` is
+      // unchanged.
       defaultIntegrations: false,
-      integrations: [],
+      // Anthropic auto-capture stays on (spans for model, tokens, latency).
+      // Prompt and response text stay off: `recordInputs` / `recordOutputs`
+      // override `dataCollection.genAI`, and mailbox text must not ride
+      // along. The `/import` hook has to load before the SDK or this
+      // integration never sees the diagnostics channels.
+      integrations: [
+        Sentry.anthropicAIIntegration({
+          recordInputs: false,
+          recordOutputs: false,
+        }),
+      ],
       // Defense-in-depth privacy scrub on every outbound event.
       // `scrubSentryEvent('server')` REBUILDS the event from approved
       // fields (deny-by-default, same machinery as the browser path)

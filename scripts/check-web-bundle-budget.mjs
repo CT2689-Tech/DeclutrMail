@@ -107,15 +107,16 @@ export const DEFAULT_KB = 151;
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 254 because the mid-weight cluster — settings, brief, activity,
- * autopilot, billing, screener — loads 244.3-256.0 kB as served, app
- * chrome included, and shares essentially one chunk graph; /activity,
- * the heaviest route on this default, keeps its headroom (it was 180 on
- * the page-entry measure). A NEW authed screen landing under this is
- * normal; landing over it means it pulled in something the others do
- * not, which is exactly the moment worth a second look.
+ * Set at 262 on 2026-09-28. zod 4.4.3 → 4.6.5 grew the shared zod chunk
+ * every authed route loads by about 7 kB gzip (a bundled
+ * `import { z } from 'zod'` went 17.9 → 25.1 kB). Marketing does not
+ * load that chunk, and its ceilings did not move. /activity and
+ * /autopilot, the heaviest routes still on this default, measured
+ * 260.1 and 260.2. 262 leaves about 2 kB. A NEW authed screen landing
+ * under this is normal; landing over it means it pulled in something
+ * the others do not.
  */
-export const AUTHED_DEFAULT_KB = 254;
+export const AUTHED_DEFAULT_KB = 262;
 
 /**
  * Routes that legitimately carry more, or are pinned tighter, keyed by
@@ -153,7 +154,10 @@ export const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 290, // 289.0 — grid + table + compose strip + saved views + mobile dialect
+  // 2026-09-28: the authed ceilings below moved with the zod chunk
+  // described on AUTHED_DEFAULT_KB. Each number is the served size that
+  // day plus about 2 kB, not a new feature on the route.
+  '/(app)/senders/page': 298, // 296.4 — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -174,7 +178,7 @@ export const OVERRIDES_KB = {
   // `TriageRow`, and importing the block there put it at 175.5 against
   // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
   // the next addition here still has to argue for itself.
-  '/(app)/triage/page': 276, // 273.1 — action sheet, preview + verification detail, undo tray
+  '/(app)/triage/page': 283, // 281.1 — action sheet, preview + verification detail, undo tray
   // 199.9 (was 191.3), measured after the 2026-09-02 sender-detail QA
   // batch (18 findings — mailbox-scope-reset guard, fuller/more accurate
   // KPI + hero copy, the toolbar's primaryVerbReason). Checked this was
@@ -183,16 +187,16 @@ export const OVERRIDES_KB = {
   // unique to the diff — none leaked into a shared chunk), not a barrel
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
-  '/(app)/senders/[id]/page': 282, // 274.1
+  '/(app)/senders/[id]/page': 284, // 281.5
   // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
   // for billing / screener / admin. The public theme and refreshed shared
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
   // while keeping the general 180 kB ratchet and other routes unchanged.
-  '/(app)/billing/page': 257, // 256.0 — checkout + invoices + plan controls + editorial shell
-  '/(app)/screener/page': 251, // 250.7 — queue + decision controls + editorial shell
+  '/(app)/billing/page': 266, // 263.5 — checkout + invoices + plan controls + editorial shell
+  '/(app)/screener/page': 261, // 258.8 — queue + decision controls + editorial shell
   // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
-  '/(app)/brief/page': 254, // 250.0
+  '/(app)/brief/page': 260, // 257.5
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -211,7 +215,7 @@ export const OVERRIDES_KB = {
   // no longer be dead-code-eliminated from the shared `api/client.ts`
   // chunk. Both deltas land in the same shared cluster; 184 covers both
   // with headroom to spare rather than stacking a second override.
-  '/(app)/settings/page': 249, // 244.3
+  '/(app)/settings/page': 254, // 251.9
 
   // Loads /settings' page entry too: it renders TanStack's
   // `HydrationBoundary` from a server component, and Next resolves that
@@ -225,19 +229,19 @@ export const OVERRIDES_KB = {
   // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
   // Rechecked after the shared editorial shell and brand update: 120.4 kB.
   // The support form remains on this route; keep a narrow 0.6 kB margin.
-  '/(app)/settings/help/page': 254, // 252.7
+  '/(app)/settings/help/page': 262, // 260.2
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
-  '/(app)/settings/privacy/page': 247, // 246.7 — data controls + explainer
+  '/(app)/settings/privacy/page': 256, // 254.3 — data controls + explainer
   // Lowered from its re-based 266 on 2026-09-27: pinned at 165 against
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.
-  '/(app)/settings/senders/page': 250, // 245.7
-  '/(app)/quiet/page': 242, // 239.4 — schedule controls + explainer
-  '/(app)/later/page': 246, // 239.1 — return queue + explainer
-  '/(app)/followups/page': 246, // 241.3 — follow-up queue + explainer
-  '/(app)/admin/security/page': 235, // 234.4 — operator log + editorial shell
+  '/(app)/settings/senders/page': 255, // 253.2
+  '/(app)/quiet/page': 249, // 247.0 — schedule controls + explainer
+  '/(app)/later/page': 249, // 246.6 — return queue + explainer
+  '/(app)/followups/page': 251, // 248.9 — follow-up queue + explainer
+  '/(app)/admin/security/page': 244, // 242.0 — operator log + editorial shell
 };
 
 /**

@@ -13,6 +13,7 @@ import {
   COMPARISONS_VERIFIED_FLOOR_ISO,
 } from '@/features/marketing/comparison/comparison-data';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from '@/features/marketing/learn/answer-content';
 import { BLOG_ARTICLES, BLOG_SLUGS } from '@/features/marketing/learn/blog-content';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '@/features/marketing/learn/how-to-content';
@@ -24,7 +25,6 @@ export const MARKETING_PATHS = [
   '/inbox-simulator',
   '/methodology',
   '/pricing',
-  '/sign-in',
   '/beta',
   '/compare',
   ...COMPARISONS.map((comparison) => `/vs/${comparison.slug}` as const),
@@ -81,6 +81,7 @@ const LAST_MODIFIED = new Map<string, string>([
   ['/how-to', oldest(HOW_TO_SLUGS.map((slug) => HOW_TO_ARTICLES[slug].updatedAt))],
   ['/answers', oldest(ANSWER_SLUGS.map((slug) => ANSWER_ARTICLES[slug].updatedAt))],
   ['/blog', oldest(BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug].updatedAt))],
+  ...Object.entries(PAGE_LAST_UPDATED),
 ]);
 
 export default function sitemap(): MetadataRoute.Sitemap {

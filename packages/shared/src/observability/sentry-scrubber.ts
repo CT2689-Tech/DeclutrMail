@@ -130,6 +130,12 @@ const SENTRY_LOG_LEVELS = new Set(['trace', 'debug', 'info', 'warn', 'error', 'f
  */
 const SENTRY_LOG_KINDS = new Set(['dead_letter.parked', 'email.refused_no_postal_address']);
 /**
+ * The only `captureMessage` text the server profile may send. Exact
+ * match, never a prefix: a message is the same leak as `Error.message`.
+ * `llm.provider_rejected` is the breaker's one-per-pause notice.
+ */
+const SENTRY_SERVER_MESSAGES = new Set(['llm.provider_rejected']);
+/**
  * Attributes a log may carry. Same posture and same value gate as
  * `SENTRY_SERVER_TAG_ALLOWLIST` — ids and closed enums only, never prose.
  *
@@ -418,9 +424,17 @@ function scrubSentryException(
   if (type !== undefined) out.type = type;
   if (mechanism !== undefined) out.mechanism = mechanism;
   if (stacktrace !== undefined) out.stacktrace = stacktrace;
+  // `value` is Error.message and is omitted, except the one closed
+  // captureMessage literal. Anything else — including a longer string
+  // that merely contains that literal — stays off the wire.
+  if (
+    profile === 'server' &&
+    typeof value.value === 'string' &&
+    SENTRY_SERVER_MESSAGES.has(value.value)
+  ) {
+    out.value = value.value;
+  }
 
-  // Deliberately omit `value`: Sentry derives it from Error.message, which can
-  // include email content, API responses, URLs, or other user-provided text.
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
@@ -642,6 +656,13 @@ export function scrubSentryEvent(
     if (release !== undefined) out.release = release;
     if (typeof event.environment === 'string' && SAFE_TOKEN.test(event.environment)) {
       out.environment = event.environment;
+    }
+    if (
+      profile === 'server' &&
+      typeof event.message === 'string' &&
+      SENTRY_SERVER_MESSAGES.has(event.message)
+    ) {
+      out.message = event.message;
     }
 
     const exception = scrubSentryExceptions(event.exception, profile);
