@@ -94,6 +94,7 @@ import {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobOptions,
   ScoreWorker,
   OPS_RETENTION_INTERVAL_MS,
   OPS_RETENTION_QUEUE,
@@ -908,7 +909,7 @@ async function bootstrap(): Promise<void> {
       await scoreProducerQueue.add(
         SCORE_JOB,
         { mailboxAccountId, trigger: 'sync_complete', producedAtMs },
-        { jobId: `${mailboxAccountId}:*:${producedAtMs}` },
+        scoreJobOptions(`${mailboxAccountId}:*:${producedAtMs}`),
       );
     },
   });
@@ -970,7 +971,7 @@ async function bootstrap(): Promise<void> {
       await scoreProducerQueue.add(
         SCORE_JOB,
         { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs },
-        { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
+        scoreJobOptions(`${mailboxAccountId}:${senderKey}:${producedAtMs}`),
       );
     },
     // Delta processed → debounced Autopilot apply sweep (D100 "on new
@@ -1796,7 +1797,7 @@ async function bootstrap(): Promise<void> {
       await scoreProducerQueue.add(
         SCORE_JOB,
         { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs: Date.now() },
-        { jobId: rescoreJobId(mailboxAccountId, sweepTick) },
+        scoreJobOptions(rescoreJobId(mailboxAccountId, sweepTick)),
       );
     },
   });

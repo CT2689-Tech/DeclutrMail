@@ -353,6 +353,7 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobOptions,
   ScoreWorker,
 } from './score.worker.js';
 export type {

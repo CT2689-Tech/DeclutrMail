@@ -5,7 +5,7 @@ import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
 import type { ScoreJobData } from '@declutrmail/workers';
-import { SCORE_JOB } from '@declutrmail/workers';
+import { SCORE_JOB, scoreJobOptions } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -191,7 +191,7 @@ export class TriageService {
       trigger: input.reason === 'stale' ? 'stale_refresh' : 'manual_rescore',
       producedAtMs,
     };
-    await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });
+    await this.scoreQueue.add(SCORE_JOB, payload, scoreJobOptions(idempotencyKey));
     return { idempotencyKey };
   }
 

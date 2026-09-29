@@ -1,3 +1,4 @@
+import type { JobsOptions } from 'bullmq';
 import { and, desc, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { ENGAGEMENT_WINDOW_MS } from '@declutrmail/shared/contracts';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -29,6 +30,7 @@ import {
   type ConcurrencyLimiter,
   type ReasoningLlmPort,
 } from './reasoning.js';
+import { backoffJobOptions } from './rate-limit-backoff.js';
 import { RateLimiter } from './rate-limiter.js';
 import { sqlTextArray } from './sql-text-array.js';
 import {
@@ -41,6 +43,7 @@ import {
 } from '@declutrmail/shared/triage-engine';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
+import { WORKER_POLICIES } from './worker-policies.js';
 
 /** Bound Drizzle client over the full schema (matches `WorkerDb` in InitialSync). */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -1873,6 +1876,39 @@ export function isWorthScreening(signals: SenderSignals): boolean {
 /** Queue name + job name for the score worker (matches initial-sync pattern). */
 export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
+
+/**
+ * Job options for a `SCORE_QUEUE` producer — every trigger EXCEPT
+ * `explain` (`sync_complete`, `signal_change`, `manual_rescore`,
+ * `stale_refresh`). Mirrors `actionRecoveryJobOptions`'s shape so the
+ * retry budget lives in one place instead of drifting per call site.
+ *
+ * Before this helper existed, every producer (`apps/api/src/worker.ts`'s
+ * `onSenderIndexBuilt` / `onNewSender` / `onSendersRecategorized`,
+ * `TriageService.scoreSender`) passed only `{ jobId }`. BullMQ defaults
+ * a job with no `attempts` to a single try, so `perMailboxPolicy`'s
+ * intended 5-attempt budget with backoff never applied — a transient
+ * failure (a DB hiccup mid-sweep) dead-lettered on the first attempt
+ * instead of retrying. See the `run()` comment in
+ * `base-declutr-worker.ts` for the related (already-fixed) bookkeeping
+ * half of this gap: this queue's job objects carrying no `attempts` is
+ * exactly the case that comment calls out.
+ *
+ * NOT for `explain` jobs: those ride `SCORE_EXPLAIN_QUEUE` below on a
+ * fail-fast producer connection and are deliberately single-attempt —
+ * best-effort, self-healing asks fired from a page load, not a re-score
+ * (see `TriageService.explainSenders` and `processExplain`).
+ */
+export function scoreJobOptions(jobId: string): JobsOptions {
+  const policy = WORKER_POLICIES.perMailboxPolicy;
+  return {
+    jobId,
+    attempts: policy.maxAttempts,
+    ...backoffJobOptions(policy.backoff),
+    removeOnComplete: { age: 24 * 60 * 60 },
+    removeOnFail: false,
+  };
+}
 
 /**
  * `explain` jobs ride their own queue, consumed by the same `ScoreWorker`.
