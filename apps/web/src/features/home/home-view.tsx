@@ -96,7 +96,7 @@ function HomeBody({
             </span>
             <h2>
               {state.syncing
-                ? 'Reading your inbox'
+                ? 'Reading your Gmail'
                 : state.senders?.length
                   ? 'Your first review is ready'
                   : 'Nothing cleared yet'}

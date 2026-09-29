@@ -905,7 +905,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
             .where(
               and(
                 eq(providerSyncState.mailboxAccountId, mailboxAccountId),
-                sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})`,
+                // Text with an explicit cast, never a JS BigInt in raw `sql`
+                // (CLAUDE.md §2.6) — postgres.js handles one today; PGlite
+                // would hide the day it does not.
+                sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate.toString()}::bigint)`,
               ),
             );
         }

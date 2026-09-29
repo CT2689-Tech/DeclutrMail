@@ -188,7 +188,7 @@ describe('HomeView', () => {
 
   it('empty while the mailbox is still syncing says so', () => {
     render(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
-    expect(screen.getByText('Reading your inbox')).toBeInTheDocument();
+    expect(screen.getByText('Reading your Gmail')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet')).toBeNull();
   });
 
