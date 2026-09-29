@@ -153,6 +153,8 @@ export function buildSyntheticRulePreview(
         basis: 'early_estimate',
       },
       sample,
+      // A never-enabled synthetic rule has never had anything approved.
+      waitingApprovedCount: 0,
     },
   };
 }

@@ -1,44 +1,31 @@
-import {
-  type ArgumentsHost,
-  Catch,
-  type ExceptionFilter,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
+import { Catch, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 
 export type ConnectMailboxStartResult =
-  'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited';
+  'target_invalid' | 'inbox_limit' | 'session_retry' | 'rate_limited' | 'failed';
 
 /**
  * `/connect-mailbox/start` is deliberately a full-page browser navigation.
- * Convert its expected HTTP failures into a closed, privacy-safe app return
- * so an expired target or plan gate never strands someone on API JSON.
+ * Convert every failure into a closed, privacy-safe app return so an
+ * expired target, a plan gate or an outage never strands someone on API
+ * JSON (D108).
  *
- * Non-HTTP runtime failures still reach the global exception filter directly.
- * Unexpected HTTP statuses are explicitly delegated to the same filter so 5xx
- * correlation and Sentry diagnostics are preserved.
+ * Extends `AllExceptionsFilter`, as `IconErrorFilter` does: classification,
+ * the structured error log and the 5xx Sentry capture are unchanged. Only
+ * the bytes on the wire change. Anything without an expected mapping is the
+ * closed `failed` result.
  */
-@Catch(HttpException)
-export class ConnectMailboxStartFilter implements ExceptionFilter<HttpException> {
-  private readonly fallback = new AllExceptionsFilter();
+@Catch()
+export class ConnectMailboxStartFilter extends AllExceptionsFilter {
+  protected override respond(res: Response, status: number): void {
+    if (res.headersSent) return;
 
-  catch(exception: HttpException, host: ArgumentsHost): void {
-    const result = connectMailboxStartResult(exception.getStatus());
-    if (result === null) {
-      this.fallback.catch(exception, host);
-      return;
-    }
-
-    const response = host.switchToHttp().getResponse<Response>();
+    const result = connectMailboxStartResult(status) ?? 'failed';
     const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
 
-    response.redirect(
-      HttpStatus.FOUND,
-      `${webBase}/settings?connect_start_result=${result}#mailboxes`,
-    );
+    res.redirect(HttpStatus.FOUND, `${webBase}/settings?connect_start_result=${result}#mailboxes`);
   }
 }
 

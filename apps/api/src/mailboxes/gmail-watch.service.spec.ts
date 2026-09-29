@@ -14,8 +14,13 @@ import type { TokenCryptoService } from '../auth/token-crypto.service.js';
  * `TokenCryptoService` stub) and the DB (chain stub below).
  */
 
+const { clientOptions } = vi.hoisted(() => ({ clientOptions: [] as unknown[] }));
+
 vi.mock('google-auth-library', () => ({
   OAuth2Client: class {
+    constructor(options: unknown) {
+      clientOptions.push(options);
+    }
     setCredentials(): void {}
     async getAccessToken(): Promise<{ token: string }> {
       return { token: 'access-token' };
@@ -110,6 +115,21 @@ describe('GmailWatchService', () => {
       expect(JSON.parse(init.body)).toMatchObject({ topicName: TOPIC });
       // persistGmailWatchState wrote the merged jsonb.
       expect(updateCalls()).toBe(1);
+    });
+
+    // Both OAuth callback flows await this call before they redirect, so
+    // a token refresh with no ceiling held the callback until Cloud Run's
+    // own timeout answered with a 504.
+    it('refreshes the Gmail token through a client with a timeout', async () => {
+      const { db } = makeDb([[TOKEN_ROW]]);
+      fetchMock.mockResolvedValueOnce(jsonOk({ historyId: '42', expiration: '1765000000000' }));
+      clientOptions.length = 0;
+
+      await new GmailWatchService(db, makeTokenCrypto()).watchMailbox('mb-1');
+
+      expect(clientOptions).toEqual([
+        expect.objectContaining({ clientId: 'cid', transporterOptions: { timeout: 10_000 } }),
+      ]);
     });
 
     it('skips with skipped_disabled when GMAIL_PUBSUB_TOPIC is unset', async () => {

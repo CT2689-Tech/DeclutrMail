@@ -18,4 +18,4 @@ carry an unsubscribe (`sender_policies.policy_type = 'unsubscribe'`).
   preview wording.
 **Verifies by:** For (a), the list, counts and approve all exclude these
 senders. For (b), approving one sends a request and writes an Activity row.
-**Status:** Open
+**Status:** Done 2026-09-29

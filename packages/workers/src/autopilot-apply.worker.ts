@@ -9,6 +9,7 @@ import {
   type AutopilotPresetKey,
   automationRules,
   mailboxAccounts,
+  ruleMatchIsQueuedAction,
   ruleMatchLog,
   type schema,
   senders,
@@ -71,11 +72,24 @@ export interface AutopilotApplyJobResult {
    * `action_jobs` / `activity_log` growth and an Activity feed full of
    * "archived 0" noise. New mail flips the sender back to actionable
    * (INBOX count > 0), so the D100 re-trigger semantics are preserved.
-   * Observe-mode suggestions are NOT gated: the pending-dedup index
-   * already bounds them, and a suggestion is meaningful even when the
-   * inbox is momentarily clear.
    */
   activeSkippedNotActionable: number;
+  /**
+   * Observe-mode suggestions SKIPPED for the same no-op reason as
+   * {@link activeSkippedNotActionable}: an unsubscribe-kind preset whose
+   * sender already carries `policy_type='unsubscribe'`, or an
+   * archive/later-kind preset (the two forced-Observe "review" presets —
+   * `auto_archive_low_engagement`, `auto_screen_new_senders`) whose
+   * sender has zero INBOX messages. Until 2026-09-29 Observe suggestions
+   * were NOT gated on this — "a suggestion is meaningful even when the
+   * inbox is momentarily clear" — but that let the Watch-first queue
+   * offer senders the Active sweep and the turn-on preview already
+   * excluded, and an approved review-only suggestion with no Inbox mail
+   * silently logged "archived 0". Founder decisions 2026-09-29:
+   * docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+   * docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+   */
+  observeSkippedNotActionable: number;
   /**
    * Active-mode matches SKIPPED because an UNAPPLIED approved row for
    * the same (rule, sender) already sits in `rule_match_log`. That row
@@ -206,6 +220,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         observeMatches: 0,
         activeMatches: 0,
         activeSkippedNotActionable: 0,
+        observeSkippedNotActionable: 0,
         activeSkippedAlreadyQueued: 0,
         sendersConsidered: 0,
         durationMs: Date.now() - startedAt,
@@ -233,6 +248,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     let observeMatches = 0;
     let activeMatches = 0;
     let activeSkippedNotActionable = 0;
+    let observeSkippedNotActionable = 0;
     let activeSkippedAlreadyQueued = 0;
     let rulesEvaluated = 0;
     let rulesFailed = 0;
@@ -297,17 +313,22 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           const input: PresetInput = { signals, triageDecision: decision };
           const result = def.match(input, threshold);
           if (!result.matched) continue;
-          // Active-mode actionability gate (see the
-          // `activeSkippedNotActionable` docstring): skip the insert
-          // when executing the verb would be a 0-affected no-op.
-          // Observe-mode suggestions pass through — the pending-dedup
-          // index bounds those.
-          if (modeAtMatch === 'active') {
-            const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
-            if (!actionable) {
-              activeSkippedNotActionable += 1;
-              continue;
-            }
+          // Actionability gate (see the `activeSkippedNotActionable` /
+          // `observeSkippedNotActionable` docstrings): skip the insert
+          // when the configured verb would be a 0-affected no-op —
+          // unsubscribe for a sender already carrying
+          // `policy_type='unsubscribe'`, or archive/later for a sender
+          // with zero INBOX messages. Applied to BOTH modes: Active
+          // already needed this so a re-trigger sweep does not stack
+          // 0-affected actions; Observe needs the identical check so the
+          // Watch-first queue never offers a suggestion the Active sweep
+          // and the turn-on preview would already have excluded (founder
+          // decisions 2026-09-29, see the docstrings for the citations).
+          const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
+          if (!actionable) {
+            if (modeAtMatch === 'active') activeSkippedNotActionable += 1;
+            else observeSkippedNotActionable += 1;
+            continue;
           }
           // Confidence stored on the match row: the engine's current
           // confidence if a decision row exists; otherwise the rule's
@@ -317,17 +338,23 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
 
         // Already-queued dedup (see `activeSkippedAlreadyQueued`): drop
-        // active-mode candidates that already have an unapplied approved
-        // row for this rule. `perMailboxPolicy` serializes apply sweeps
-        // per mailbox, so check-then-insert cannot race another sweep;
-        // the action worker flipping `intent_applied=true` concurrently
-        // only makes the check conservative (skip now, re-arm next
-        // sweep once the sender is actionable again).
+        // active-mode candidates that already have a row the action
+        // sweep will still pick up for this rule —
+        // `ruleMatchIsQueuedAction()` (approved, unapplied, AND evidence
+        // current). `perMailboxPolicy` serializes apply sweeps per
+        // mailbox, so check-then-insert cannot race another sweep; the
+        // action worker flipping `intent_applied=true` concurrently only
+        // makes the check conservative (skip now, re-arm next sweep once
+        // the sender is actionable again).
         //
-        // Approved and unapplied, deliberately NOT `ruleMatchIsQueuedAction()`:
-        // a row whose evidence went stale blocks here too, though the action
-        // sweep never loads it. Letting the rule act on that sender again is
-        // an open founder decision:
+        // Uses `ruleMatchIsQueuedAction()` — INCLUDING its evidence-current
+        // test — rather than bare approved+unapplied. Until 2026-09-29 this
+        // deliberately used the bare predicate so a row whose evidence went
+        // stale (a resync re-created the sender after the row was approved)
+        // still blocked here, even though the action sweep would never load
+        // it: the rule could then never record a fresh match for that
+        // sender again. Founder decision 2026-09-29 (yes — the old action
+        // still never runs):
         // docs/log/founder-followups/2026-09-27-stale-autopilot-action-blocks-its-rule.md
         if (modeAtMatch === 'active' && matchesForRule.length > 0) {
           const queuedRows = await this.deps.db
@@ -336,8 +363,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
             .where(
               and(
                 eq(ruleMatchLog.ruleId, rule.id),
-                eq(ruleMatchLog.resolution, 'approved'),
-                eq(ruleMatchLog.intentApplied, false),
+                ruleMatchIsQueuedAction(),
                 inArray(
                   ruleMatchLog.senderKey,
                   matchesForRule.map((m) => m.senderKey),
@@ -423,6 +449,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
               observeMatches,
               activeMatches,
               activeSkippedNotActionable,
+              observeSkippedNotActionable,
               activeSkippedAlreadyQueued,
               sendersConsidered: eligible.length,
               abortedIndexRebuilt: true,
@@ -528,6 +555,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       observeMatches,
       activeMatches,
       activeSkippedNotActionable,
+      observeSkippedNotActionable,
       activeSkippedAlreadyQueued,
       sendersConsidered: eligible.length,
       durationMs: Date.now() - startedAt,

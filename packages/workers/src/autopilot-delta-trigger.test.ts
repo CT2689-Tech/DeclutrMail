@@ -164,6 +164,15 @@ async function seedKnownSenderMailbox(
     gmailCategory: 'promotions',
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: new Date('2026-06-01T00:00:00Z'),
+    // Backdated like `firstSeenAt` — `created_at` defaults to real
+    // wall-clock on insert, which is AFTER this file's fixed `NOW`
+    // ('2026-06-10'). `ruleMatchIsQueuedAction()` (used by the apply
+    // worker's already-queued dedup since 2026-09-29) requires the
+    // sender's `created_at` to predate a match's `matched_at`
+    // (`ruleMatchEvidenceIsCurrent()`) — an un-backdated row here reads
+    // as evidence gone stale the instant the worker writes a match at
+    // the fixed `NOW`, which no test in this file intends to exercise.
+    createdAt: new Date('2024-01-01T00:00:00Z'),
   });
   await db.insert(triageDecisions).values({
     mailboxAccountId: mailboxId,
