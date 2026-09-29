@@ -1179,7 +1179,13 @@ async function bootstrap(): Promise<void> {
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
     (job) => scoreWorker.run(job),
-    { connection, concurrency: 20, ...userFacingTuning },
+    // `perMailboxWorkerSettings()` pairs with `scoreJobOptions`'s
+    // `backoff: { type: 'custom' }` — omitting it makes BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure, and
+    // the job then sits `active` until the stalled-job reclaim instead
+    // of reaching `failed` (no Sentry capture, no dead-letter row) —
+    // worse than having no retry budget at all (2026-09-29).
+    { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
 
   scoreBullWorker.on('error', (err) => {

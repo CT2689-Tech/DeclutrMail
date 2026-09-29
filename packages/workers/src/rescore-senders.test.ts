@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildRescoreSenders } from './rescore-senders.js';
-import { SCORE_JOB, scoreJobId } from './score.worker.js';
+import { SCORE_JOB, scoreJobId, scoreJobOptions } from './score.worker.js';
 
 const MAILBOX = '00000000-0000-4000-8000-000000000001';
 const KEY_A = 'a'.repeat(64);
@@ -9,7 +9,16 @@ const KEY_B = 'b'.repeat(64);
 const CLOCK = Date.parse('2026-09-26T21:00:00.000Z');
 
 describe('buildRescoreSenders', () => {
-  it('queues one signal_change score job per sender, keyed so a redelivery dedups', async () => {
+  /**
+   * Negative control (CLAUDE.md §8): before this producer passed
+   * `scoreJobOptions(scoreJobId(data))`, `opts` was a bare
+   * `{ jobId: scoreJobId(data) }` — no `attempts`, no `backoff`, so a
+   * transient failure inside the score run dead-lettered on the first
+   * try instead of retrying with `perMailboxPolicy`'s 5-attempt budget
+   * (PR #827, D203/D225). Reverting `rescore-senders.ts` back to
+   * `opts: { jobId: scoreJobId(data) }` fails this assertion.
+   */
+  it('queues one signal_change score job per sender, keyed so a redelivery dedups, with the perMailboxPolicy retry budget', async () => {
     const addBulk = vi.fn(async () => []);
     const sweepAfter = vi.fn(async () => {});
     await buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
@@ -28,9 +37,9 @@ describe('buildRescoreSenders', () => {
           trigger: 'signal_change',
           producedAtMs: CLOCK,
         },
-        opts: {
-          jobId: scoreJobId({ mailboxAccountId: MAILBOX, senderKey, producedAtMs: CLOCK }),
-        },
+        opts: scoreJobOptions(
+          scoreJobId({ mailboxAccountId: MAILBOX, senderKey, producedAtMs: CLOCK }),
+        ),
       })),
     );
   });

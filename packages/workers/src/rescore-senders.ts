@@ -1,6 +1,6 @@
 import type { Queue } from 'bullmq';
 
-import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
+import { SCORE_JOB, scoreJobId, scoreJobOptions, type ScoreJobData } from './score.worker.js';
 
 /**
  * `rescoreSenders` is called from inside the outbox dispatcher's open
@@ -81,7 +81,7 @@ export function buildRescoreSenders(deps: {
             trigger: 'signal_change',
             producedAtMs,
           };
-          return { name: SCORE_JOB, data, opts: { jobId: scoreJobId(data) } };
+          return { name: SCORE_JOB, data, opts: scoreJobOptions(scoreJobId(data)) };
         }),
       ),
       'score queue addBulk',
