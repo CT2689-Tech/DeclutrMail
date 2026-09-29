@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { JsonLd } from '../json-ld';
 import { siteUrl } from '../landing/urls';
 import { ALTERNATIVES_SLUGS, alternativesFor, type AlternativesPage } from './comparison-data';
@@ -45,7 +47,7 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       <JsonLd data={jsonLd} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <a href="/compare">All comparisons</a>
+          <Link href="/compare">All comparisons</Link>
           <span aria-hidden="true">/</span>
           <span>{subject.name} alternatives</span>
         </nav>
@@ -96,12 +98,12 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
                   <dd>{alternative.publicEntryPoint}</dd>
                 </div>
               </dl>
-              <a
+              <Link
                 href={`/vs/${alternative.slug}`}
                 aria-label={`Compare DeclutrMail and ${alternative.name}`}
               >
                 Compare with DeclutrMail
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
@@ -125,8 +127,8 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
           ))}
         </ul>
         <p className="dm-compare-section-lede">
-          <a href={`/vs/${subject.slug}`}>Read the full {subject.name} comparison</a> or{' '}
-          <a href="/compare">see every tool side by side</a>.
+          <Link href={`/vs/${subject.slug}`}>Read the full {subject.name} comparison</Link> or{' '}
+          <Link href="/compare">see every tool side by side</Link>.
         </p>
         <MethodNote />
       </section>

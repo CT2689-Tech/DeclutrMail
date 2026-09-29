@@ -75,6 +75,26 @@
  * equal real weight gets an equal budget: headroom that only existed
  * because a chunk was filed under a layout or another route's entry went.
  * Dated notes below quote the page-entry measure of their day.
+ *
+ * FIXED, NOT JUST RE-BUDGETED (2026-09-28). Seven marketing routes leaked
+ * ~8 kB of the home page's chunks because each rendered `next/link` only
+ * via the shared header/footer, never directly — so their OWN entry had
+ * no correct manifest mapping for it and inherited whichever entry's
+ * mapping won the group merge (the home page's, larger). Converting an
+ * existing internal `<a>` in each route's own server-rendered content to
+ * `next/link`'s `Link` (compare, vs/[competitor] and alternatives/[tool]'s
+ * cross-links; how-it-works, methodology and security's in-copy links;
+ * sign-in's privacy/security links) gives each route its OWN correct
+ * mapping, self-correcting exactly as /faq already did by accident. All
+ * seven now measure within 0.2 kB of the long tail; the override is gone.
+ * The same fix does not reach two SMALLER leaks (1.6 kB, /pricing and
+ * /inbox-simulator): both route through a `'use client'` screen, and a
+ * `next/link` rendered from inside an already-client tree does not get
+ * its own manifest entry the same way. /settings/help's 14 kB leak (a
+ * different client reference, `HydrationBoundary`) is unfixed for the
+ * same reason as those two: no genuine content on the route would use
+ * either client reference directly, and adding one just to change a
+ * manifest entry would be measuring the fix, not making one.
  */
 
 import { spawn } from 'node:child_process';
@@ -112,9 +132,11 @@ export const DEFAULT_KB = 151;
  * `import { z } from 'zod'` went 17.9 → 25.1 kB). Marketing does not
  * load that chunk, and its ceilings did not move. /activity and
  * /autopilot, the heaviest routes still on this default, measured
- * 260.1 and 260.2. 262 leaves about 2 kB. A NEW authed screen landing
- * under this is normal; landing over it means it pulled in something
- * the others do not.
+ * 260.1 and 260.2. `/settings/help` also rides this default at 260.2 —
+ * still carrying the leak the "FIXED, NOT JUST RE-BUDGETED" note above
+ * describes, not a coincidence of matching weight. 262 leaves about
+ * 2 kB. A NEW authed screen landing under this is normal; landing over
+ * it means it pulled in something the others do not.
  */
 export const AUTHED_DEFAULT_KB = 262;
 
@@ -136,20 +158,6 @@ export const OVERRIDES_KB = {
   // that module's consumers). 177 restores real headroom AND records
   // the true number.
   '/(marketing)/inbox-simulator/page': 218, // 201.5 — the only real interactive surface
-
-  // These seven render `next/link` from server components, and Next
-  // resolves that client reference to the chunks of the home page's entry
-  // (1825, 5109 and the home page chunk), so each loads ~8 kB more than
-  // the long tail. Budgeted at the long tail's headroom, rounded up: the
-  // extra 3.4 kB they had on the page-entry measure was chunk 1705, which
-  // it filed under the layout for them and under the page for the tail.
-  '/(marketing)/alternatives/[tool]/page': 160, // 154.9
-  '/(marketing)/compare/page': 160, // 154.9
-  '/(marketing)/how-it-works/page': 160, // 154.8
-  '/(marketing)/methodology/page': 160, // 154.8
-  '/(marketing)/security/page': 160, // 155.1
-  '/(marketing)/sign-in/page': 160, // 154.8
-  '/(marketing)/vs/[competitor]/page': 160, // 154.9
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
@@ -216,20 +224,6 @@ export const OVERRIDES_KB = {
   // chunk. Both deltas land in the same shared cluster; 184 covers both
   // with headroom to spare rather than stacking a second override.
   '/(app)/settings/page': 254, // 251.9
-
-  // Loads /settings' page entry too: it renders TanStack's
-  // `HydrationBoundary` from a server component, and Next resolves that
-  // client reference to /settings' chunks (14.2 kB), so as served it
-  // weighs what the cluster does, not what its page entry suggested.
-  // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
-  // new "Contact support" form (subject/message fields, submit handler,
-  // the postSupportRequest API wrapper, and its own track() call) landed
-  // entirely in this route's own chunk — confirmed no OTHER route's
-  // budget moved in the same CI run, so nothing leaked into a shared
-  // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
-  // Rechecked after the shared editorial shell and brand update: 120.4 kB.
-  // The support form remains on this route; keep a narrow 0.6 kB margin.
-  '/(app)/settings/help/page': 262, // 260.2
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
