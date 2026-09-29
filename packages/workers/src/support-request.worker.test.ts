@@ -83,4 +83,12 @@ describe('SupportRequestWorker', () => {
     }
     expect(deliver).not.toHaveBeenCalled();
   });
+  it('declares the batchPolicy idempotency key as the content-derived provider key (D203/D225)', () => {
+    const worker = new SupportRequestWorker({ deliver: vi.fn() });
+    expect(
+      (
+        worker as unknown as { getIdempotencyKey(p: SupportRequestJobData): string }
+      ).getIdempotencyKey(payload),
+    ).toBe(payload.idempotencyKey);
+  });
 });
