@@ -1316,6 +1316,12 @@ describe('ActionsService', () => {
         override: false,
       });
       expect(res.primaryCount).toBe(preview.counts.all);
+      // This test fires two SEPARATE archive requests for the same sender
+      // to check two different window counts, not to simulate a
+      // duplicate dispatch — settle the first job before the second so
+      // the founder-approved same-sender busy guard (2026-09-28) does not
+      // treat this as the race it exists to catch.
+      await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, res.actionId));
 
       const windowed = await svc.enqueueComposite({
         mailboxAccountId: mailboxId,
@@ -1988,11 +1994,11 @@ describe('ActionsService', () => {
         primary: { type: 'archive' },
         idempotencyKey: key,
       });
-      return res.batchId;
+      return { batchId: res.batchId, sender2Id };
     }
 
     it('is one line per decision, counted across every job of it', async () => {
-      const batchId = await seedBulk();
+      const { batchId, sender2Id } = await seedBulk();
       let live = await svc.listInFlight(mailboxId);
       expect(live).toHaveLength(1);
       expect(live[0]).toMatchObject({
@@ -2007,6 +2013,12 @@ describe('ActionsService', () => {
       });
       expect(live[0]!.leadSenderName).toEqual(expect.any(String));
       expect(new Date(live[0]!.startedAt).toISOString()).toBe(live[0]!.startedAt);
+      // Every distinct sender across the group's jobs, not just a count —
+      // this is the field the cross-surface in-flight lock (2026-09-28)
+      // is built on. Order-independent: array_agg(distinct ...) has no
+      // guaranteed order.
+      expect(new Set(live[0]!.senderIds)).toEqual(new Set([senderId, sender2Id]));
+      expect(new Set(live[0]!.senderKeys)).toEqual(new Set([SENDER_KEY, SENDER_KEY_2]));
 
       // One member finishes: the line stays, and says 1 of 2 — it does not
       // shrink to the jobs still running.
@@ -2068,6 +2080,10 @@ describe('ActionsService', () => {
         senderCount: 2,
         leadSenderName: second!.displayName || second!.email,
       });
+      // Both members' senders, not just the lead's — a failed, oversized
+      // secondary must not steal the array any more than it steals the name.
+      expect(new Set(group!.senderIds)).toEqual(new Set([sender2Id, senderId]));
+      expect(new Set(group!.senderKeys)).toEqual(new Set([SENDER_KEY_2, SENDER_KEY]));
     });
 
     it('counts no senders for a message-selector job, and caps the list at the newest groups', async () => {
@@ -2085,6 +2101,12 @@ describe('ActionsService', () => {
       const live = await svc.listInFlight(mailboxId);
       expect(live).toHaveLength(IN_FLIGHT_GROUPS_MAX);
       expect(live[0]).toMatchObject({ senderCount: 0, leadSenderName: null, total: 1 });
+      // A messages-selector row has no senderId/senderKey to extract — the
+      // "filter (where ... is not null)" in the array_agg must drop it
+      // rather than surface a NULL element (senderIds: [null] would not
+      // even be a valid string[]).
+      expect(live[0]!.senderIds).toEqual([]);
+      expect(live[0]!.senderKeys).toEqual([]);
       // Newest first: the two OLDEST are the ones dropped.
       const started = live.map((g) => Date.parse(g.startedAt));
       expect([...started].sort((a, b) => b - a)).toEqual(started);
@@ -2126,7 +2148,168 @@ describe('ActionsService', () => {
       await db.insert(actionJobs).values({ ...base, idempotencyKey: 'archive-mine-1' });
       const live = await svc.listInFlight(mailboxId);
       expect(live.map((g) => g.verb)).toEqual(['archive']);
-      expect(live[0]).toMatchObject({ total: 1, senderCount: 1 });
+      expect(live[0]).toMatchObject({ total: 1, senderCount: 1, senderIds: [senderId] });
+    });
+  });
+
+  describe('same-sender busy guard (founder-approved 2026-09-28)', () => {
+    beforeEach(async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+    });
+
+    it('refuses a second action for a sender with a live forward job, any verb', async () => {
+      await seedMessage(db, mailboxId, 'busy-1', ['INBOX'], daysAgo(5));
+      await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'busy-first',
+        override: false,
+      });
+      // A DIFFERENT verb than the live job — the founder-approved scope is
+      // any-verb, not same-verb-only: a Delete racing an Archive is the
+      // same risk as two Archives.
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'delete' },
+          idempotencyKey: 'busy-second',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'SENDER_ACTION_IN_PROGRESS' } });
+    });
+
+    it('does not refuse a DIFFERENT sender while the first is busy', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'busy-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'busy-b', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'busy-other-1',
+        override: false,
+      });
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId: sender2Id },
+          primary: { type: 'archive' },
+          idempotencyKey: 'busy-other-2',
+          override: false,
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it('does not refuse once the earlier job for this sender is terminal', async () => {
+      await seedMessage(db, mailboxId, 'busy-term', ['INBOX'], daysAgo(5));
+      const first = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'busy-term-1',
+        override: false,
+      });
+      await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, first.actionId));
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'delete' },
+          idempotencyKey: 'busy-term-2',
+          override: false,
+        }),
+      ).resolves.toBeTruthy();
+    });
+
+    it('a replay of the SAME request (same Idempotency-Key) is never blocked by its own row', async () => {
+      await seedMessage(db, mailboxId, 'busy-replay', ['INBOX'], daysAgo(5));
+      const first = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'busy-replay-1',
+        override: false,
+      });
+      const replay = await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'busy-replay-1',
+        override: false,
+      });
+      expect(replay.actionId).toBe(first.actionId);
+    });
+
+    it('counts an Autopilot-claimed job as busy too, unlike the listInFlight display query', async () => {
+      await seedMessage(db, mailboxId, 'busy-auto', ['INBOX'], daysAgo(5));
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        status: 'queued',
+        idempotencyKey: 'autopilot-busy-1',
+        requestedCount: 1,
+      });
+      // Confirmed excluded from the DISPLAY query (the tray must not
+      // narrate Autopilot's own work as the user's)...
+      expect(await svc.listInFlight(mailboxId)).toEqual([]);
+      // ...but the busy GUARD still sees it: the double-job race is
+      // identical regardless of who fired the first job.
+      await expect(
+        svc.enqueueComposite({
+          mailboxAccountId: mailboxId,
+          selector: { type: 'sender', senderId },
+          primary: { type: 'archive' },
+          idempotencyKey: 'busy-auto-manual',
+          override: false,
+        }),
+      ).rejects.toMatchObject({ response: { code: 'SENDER_ACTION_IN_PROGRESS' } });
+    });
+
+    it('enqueueBulkComposite skips a busy sender (in_progress) and continues with the rest', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'bulk-busy-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'bulk-busy-b', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      await svc.enqueueComposite({
+        mailboxAccountId: mailboxId,
+        selector: { type: 'sender', senderId },
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-busy-pre',
+        override: false,
+      });
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'delete', olderThanDays: null },
+        idempotencyKey: 'bulk-busy-1',
+      });
+      expect(res.senderCount).toBe(1);
+      expect(res.skipped).toEqual([{ senderId, reason: 'in_progress' }]);
+    });
+
+    it('a replay of the SAME bulk request never re-skips its own senders as busy', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'bulk-replay-a', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'bulk-replay-b', ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      const first = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-replay-1',
+      });
+      expect(first.skipped).toEqual([]);
+      // Same Idempotency-Key, same senders, jobs from the first attempt
+      // still queued — a lost-response retry, not a duplicate intent.
+      const replay = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: 'bulk-replay-1',
+      });
+      expect(replay.skipped).toEqual([]);
+      expect(replay.senderCount).toBe(2);
     });
   });
 

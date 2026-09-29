@@ -92,6 +92,8 @@ interface InFlightRow {
   started_at: string;
   verb: InFlightActionGroup['verb'];
   lead_sender_name: string | null;
+  sender_ids: string[];
+  sender_keys: string[];
 }
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -492,6 +494,18 @@ export class ActionsService {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
         await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+        // A genuinely new request (not a retried replay of this exact
+        // action — that case is handled above) must not race a still-live
+        // job for the same sender. The client's Idempotency-Key is
+        // randomly generated per click, so it cannot prevent a second
+        // dispatch on its own (founder-approved guard, 2026-09-28).
+        const busy = await this.liveForwardJobSenderKeys(mailboxAccountId, [senderKey], tx);
+        if (busy.has(senderKey)) {
+          throw new ConflictException({
+            code: 'SENDER_ACTION_IN_PROGRESS',
+            message: 'This sender already has an action running. Wait for it to finish.',
+          });
+        }
       }
 
       const primaryRow = await this.insertJob(
@@ -784,7 +798,7 @@ export class ActionsService {
     );
 
     const skipped: BulkActionEnqueueResult['skipped'] = [];
-    const actionable: Array<{ id: string; senderKey: string }> = [];
+    let actionable: Array<{ id: string; senderKey: string }> = [];
     for (const id of uniqueIds) {
       const row = byId.get(id);
       if (!row) {
@@ -795,14 +809,42 @@ export class ActionsService {
         actionable.push(row);
       }
     }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+
+    // Founder-approved guard, 2026-09-28: a sender already mid-action (any
+    // verb, including Autopilot) is skipped here rather than raced. The
+    // exclusion list is THIS bulk's own prospective per-sender keys, so a
+    // network-retried replay of this exact bulk never sees its own
+    // just-inserted rows as "busy" and wrongly re-skips a sender it
+    // already successfully enqueued.
+    const ownKeys = actionable.flatMap((sender) => [
+      `${primary.type}-${safeKey}-${sender.id}`,
+      ...(secondary ? [`${secondary.type}-${safeKey}-${sender.id}-sec`] : []),
+    ]);
+    const busyKeys = await this.liveForwardJobSenderKeys(
+      mailboxAccountId,
+      actionable.map((r) => r.senderKey),
+      this.db,
+      ownKeys,
+    );
+    if (busyKeys.size > 0) {
+      const stillActionable: typeof actionable = [];
+      for (const sender of actionable) {
+        if (busyKeys.has(sender.senderKey)) {
+          skipped.push({ senderId: sender.id, reason: 'in_progress' });
+        } else {
+          stillActionable.push(sender);
+        }
+      }
+      actionable = stillActionable;
+    }
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
-        message: 'Every selected sender is Protected or no longer exists.',
+        message: 'Every selected sender is Protected, already in progress, or no longer exists.',
       });
     }
-
-    const safeKey = idempotencyKey.replace(/:/g, '-');
 
     // D19/A3 cleanup cap — a bulk of N actionable senders is N units
     // (skipped senders never enqueue, so they don't count). Replay
@@ -993,7 +1035,7 @@ export class ActionsService {
     );
 
     const skipped: BulkActionEnqueueResult['skipped'] = [];
-    const actionable: Array<{ id: string; senderKey: string }> = [];
+    let actionable: Array<{ id: string; senderKey: string }> = [];
     // D252 — mailto senders are skipped for SENDING (D230 keeps that the
     // user's own act) but must still be RECORDED. Without the policy row
     // written below, `recordUnsubscribeManualStatus` 409s
@@ -1031,6 +1073,33 @@ export class ActionsService {
       const reason: BulkSkipReason = capability === 'unknown' ? 'unknown' : 'no_channel';
       skipped.push({ senderId: id, reason });
     }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
+
+    // Founder-approved guard, 2026-09-28 — same reasoning as
+    // `enqueueBulkComposite`: any live forward job (any verb, including
+    // Autopilot) makes a sender busy, and the exclusion list is this
+    // bulk's own prospective keys so a network-retried replay never
+    // re-skips a sender it already successfully enqueued.
+    const ownKeys = actionable.map((sender) => rowKey(sender.id));
+    const busyKeys = await this.liveForwardJobSenderKeys(
+      mailboxAccountId,
+      actionable.map((r) => r.senderKey),
+      this.db,
+      ownKeys,
+    );
+    if (busyKeys.size > 0) {
+      const stillActionable: typeof actionable = [];
+      for (const sender of actionable) {
+        if (busyKeys.has(sender.senderKey)) {
+          skipped.push({ senderId: sender.id, reason: 'in_progress' });
+        } else {
+          stillActionable.push(sender);
+        }
+      }
+      actionable = stillActionable;
+    }
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
@@ -1056,8 +1125,6 @@ export class ActionsService {
       });
     }
 
-    const safeKey = idempotencyKey.replace(/:/g, '-');
-    const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
     const anchorKey = rowKey(actionable[0]!.id);
 
     const persisted = await this.db.transaction(async (tx) => {
@@ -1361,7 +1428,8 @@ export class ActionsService {
           aj.status,
           aj.requested_count,
           aj.created_at,
-          aj.selector->>'senderId' as sender_id
+          aj.selector->>'senderId' as sender_id,
+          aj.selector->>'senderKey' as sender_key
         from live l
         join lateral (
           -- Two indexed probes (pkey; composite_id idx) — an OR across the
@@ -1381,7 +1449,14 @@ export class ActionsService {
           count(*) filter (where status = 'failed')::int as failed,
           count(distinct sender_id)::int as sender_count,
           count(distinct verb)::int as verb_count,
-          min(created_at) as started_at
+          min(created_at) as started_at,
+          -- the "filter (where ... is not null)" below is load-bearing:
+          -- without it, array_agg(distinct ...) includes a literal NULL
+          -- element for any legacy messages-selector row (unlike
+          -- count(distinct ...) above, which already drops NULLs for
+          -- free) -- that would surface as senderIds: [null], not string[].
+          coalesce(array_agg(distinct sender_id) filter (where sender_id is not null), '{}') as sender_ids,
+          coalesce(array_agg(distinct sender_key) filter (where sender_key is not null), '{}') as sender_keys
         from members
         group by group_id
         order by min(created_at) desc, group_id
@@ -1397,6 +1472,7 @@ export class ActionsService {
       )
       select
         g.group_id, g.total, g.done, g.failed, g.sender_count, g.verb_count,
+        g.sender_ids, g.sender_keys,
         to_char(g.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as started_at,
         l.verb,
         coalesce(nullif(s.display_name, ''), s.email::text) as lead_sender_name
@@ -1421,6 +1497,8 @@ export class ActionsService {
       senderCount: row.sender_count,
       leadSenderName: row.lead_sender_name,
       startedAt: row.started_at,
+      senderIds: row.sender_ids,
+      senderKeys: row.sender_keys,
     }));
   }
 
@@ -1448,6 +1526,54 @@ export class ActionsService {
         ),
       );
     return new Set(rows.filter((r) => r.isProtected).map((r) => r.senderKey));
+  }
+
+  /**
+   * The `senderKeys` among `senderKeys` that already have a live forward
+   * job in this mailbox — ANY verb, INCLUDING Autopilot-claimed jobs (the
+   * double-job race this guards against is identical regardless of who
+   * fired the first job; unlike `listInFlight`, which excludes Autopilot
+   * because that query is display-only). No age window: a wedged job is
+   * still live.
+   */
+  private async liveForwardJobSenderKeys(
+    mailboxAccountId: string,
+    senderKeys: string[],
+    executor: EntitlementsExecutor = this.db,
+    /**
+     * Idempotency keys to exclude from "busy" — a bulk enqueue's own
+     * deterministic per-sender keys, so a network-retried replay of THIS
+     * exact request never sees its own just-inserted rows as a reason to
+     * re-skip the sender it already successfully enqueued.
+     */
+    excludeIdempotencyKeys: string[] = [],
+  ): Promise<Set<string>> {
+    if (senderKeys.length === 0) return new Set();
+    const keyList = sql.join(
+      senderKeys.map((key) => sql`${key}`),
+      sql`, `,
+    );
+    const excludeClause =
+      excludeIdempotencyKeys.length > 0
+        ? sql`and idempotency_key not in (${sql.join(
+            excludeIdempotencyKeys.map((key) => sql`${key}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const result = await executor.execute(sql`
+      select distinct selector->>'senderKey' as sender_key
+      from action_jobs
+      where mailbox_account_id = ${mailboxAccountId}
+        and direction = 'forward'
+        and status in ('queued', 'executing')
+        and selector->>'senderKey' in (${keyList})
+        ${excludeClause}
+    `);
+    const rows =
+      ((result as { rows?: Array<{ sender_key: string | null }> }).rows ??
+        (result as unknown as Array<{ sender_key: string | null }>)) ||
+      [];
+    return new Set(rows.map((r) => r.sender_key).filter((key): key is string => key !== null));
   }
 
   /**

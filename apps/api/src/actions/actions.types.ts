@@ -495,13 +495,18 @@ export interface BulkActionEnqueueResult {
 /**
  * Why a selected sender did not enter the batch.
  *
- * The label verbs produce only `protected` / `not_found`. Unsubscribe
- * (D248) adds the three non-executable capability states, kept SEPARATE
- * on purpose: "send it yourself" (`mailto`), "there is nothing to send"
- * (`no_channel`) and "we have not looked yet" (`unknown`) are three
+ * The label verbs produce `protected` / `not_found` / `in_progress`.
+ * Unsubscribe (D248) adds the three non-executable capability states, kept
+ * SEPARATE on purpose: "send it yourself" (`mailto`), "there is nothing to
+ * send" (`no_channel`) and "we have not looked yet" (`unknown`) are three
  * different facts, and only the first is actionable by the user.
+ *
+ * `in_progress` (founder-approved 2026-09-28): the sender already has a
+ * live forward job — any verb, including Autopilot — in this mailbox.
+ * Skipped rather than raced; never a hard batch failure.
  */
-export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
+export type BulkSkipReason =
+  'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown' | 'in_progress';
 
 /**
  * Bulk preview request — `POST /api/actions/preview/bulk` (ADR-0020
@@ -618,6 +623,10 @@ export interface InFlightActionGroup {
   leadSenderName: string | null;
   /** When the oldest job of the group was created (ISO 8601). */
   startedAt: string;
+  /** Every distinct resolved senderId across the group's forward jobs. Empty for a message-selector job (none since 2026-07-27). */
+  senderIds: string[];
+  /** Every distinct resolved senderKey (sha256) across the group's forward jobs. */
+  senderKeys: string[];
 }
 
 /** Terminal one-click request outcomes, counted across a batch (D248). */
