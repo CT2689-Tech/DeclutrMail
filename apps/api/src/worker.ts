@@ -215,6 +215,7 @@ import { billingVerdictDeps } from './billing/billing-verdict.deps.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
+import { captureLlmProviderRejection } from './observability/llm-provider-rejection.js';
 import { initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
@@ -1052,9 +1053,10 @@ async function bootstrap(): Promise<void> {
    *
    * One breaker for both Anthropic adapters (Brief here, reasoning
    * below): they bill the same account, so a credit or key refusal seen
-   * by either pauses both.
+   * by either pauses both. `onTrip` is the one Sentry capture for that
+   * pause; it does not run again until the pause lifts.
    */
-  const anthropicBreaker = new LlmCircuitBreaker();
+  const anthropicBreaker = new LlmCircuitBreaker({ onTrip: captureLlmProviderRejection });
   const briefLlm = buildBriefLlmAdapter(anthropicBreaker);
   const briefSnapshotWorker = new BriefSnapshotWorker(briefLlm ? { db, llm: briefLlm } : { db });
   briefSnapshotWorker.setObserver(observer);
