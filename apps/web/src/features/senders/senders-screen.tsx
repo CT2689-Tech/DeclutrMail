@@ -3,6 +3,7 @@
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import {
@@ -816,18 +817,26 @@ function SendersScreenContent({
   }, [resetHolds]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
-  // Senders an in-flight OR parked single handle still owns, plus every
-  // sender of a parked batch — they may not receive a NEW dispatch
-  // until that handle reaches a terminal state, or a second real Gmail
-  // job would mint under a fresh idempotency key (double cleanup unit,
-  // two undo tokens, double counters). The active single is included so
-  // the same-sender duplicate window is closed from the first second,
-  // not only after the 120s park.
+  // Senders an in-flight single handle still owns, plus every sender of
+  // an in-flight bulk — they may not receive a NEW dispatch until that
+  // handle reaches a terminal state, or a second real Gmail job would
+  // mint under a fresh idempotency key (double cleanup unit, two undo
+  // tokens, double counters). The active single is included so the
+  // same-sender duplicate window is closed from the first second.
+  //
+  // `sharedLock` (server truth via `listInFlight`) covers what this
+  // screen's own local state structurally cannot: a job started on a
+  // DIFFERENT surface or tab, or one that outlives this screen's own
+  // unmount/navigation. It is layered ON TOP of the existing local
+  // overdue/unconfirmed-hold tracking below, not a replacement for it —
+  // whether `sharedLock` alone is a strict superset of what
+  // `overdueAction`/`overdueBatch`/`overdueUnsubBatch`/`holds.held` catch
+  // (e.g. a hold born from an enqueue that 5xx'd before ever reaching the
+  // DB) is unverified, so this unions both rather than dropping either.
+  const sharedLock = useSenderInFlightLock(actionMailboxId);
   const lockedSenderIds = useMemo(() => {
-    const ids = new Set<string>();
+    const ids = new Set<string>(sharedLock.senderIds);
     if (activeAction) ids.add(activeAction.senderId);
-    // An in-flight bulk's members too — they were only locked once the
-    // batch PARKED at 120s, leaving its first two minutes re-dispatchable.
     for (const id of activeBatch?.senderIds ?? []) ids.add(id);
     // …and an in-flight bulk UNSUBSCRIBE's: a second dispatch there sends
     // a second real one-click request, which cannot be recalled (D58).
@@ -839,6 +848,7 @@ function SendersScreenContent({
     for (const id of holds.held.keys()) ids.add(id);
     return ids;
   }, [
+    sharedLock.senderIds,
     activeAction,
     activeBatch,
     activeUnsubBatch,

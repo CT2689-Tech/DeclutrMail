@@ -4,7 +4,7 @@
  * a decision that stops without leaving something to undo says why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -12,7 +12,7 @@ import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { resetTriageStore } from '@/features/triage/store';
 import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 
-import { outcomeNotice, workingNotice } from './in-flight';
+import { outcomeNotice, useSenderInFlightLock, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
 import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
@@ -507,5 +507,79 @@ describe('ProductUndoTray — live line', () => {
       expect(view.client.getQueryData(undoKeys.inFlight('mailbox-b'))).toEqual([]),
     );
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('useSenderInFlightLock — the cross-surface sender lock (2026-09-28)', () => {
+  let active: InFlightActionGroup[];
+
+  beforeEach(() => {
+    active = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: active }),
+      },
+    ]);
+  });
+  afterEach(() => resetFetchStub());
+
+  function mountHook(mailboxId?: string) {
+    const client = createTestQueryClient();
+    const view = renderHook(() => useSenderInFlightLock(mailboxId), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    return { ...view, client, mailboxId };
+  }
+
+  it('unions senderIds/senderKeys across every RUNNING group', async () => {
+    active = [
+      { ...GROUP, groupId: 'g1', senderIds: ['s1', 's2'], senderKeys: ['k1', 'k2'] },
+      {
+        ...GROUP,
+        groupId: 'g2',
+        verb: 'archive',
+        senderIds: ['s2', 's3'],
+        senderKeys: ['k2', 'k3'],
+      },
+    ];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set(['s1', 's2', 's3'])));
+    expect(result.current.senderKeys).toEqual(new Set(['k1', 'k2', 'k3']));
+  });
+
+  it('excludes a group whose jobs have all reached a terminal status (running: false)', async () => {
+    // The pill still lists this group for the settled-grace window so it
+    // can report how the decision ended — but that is exactly the state
+    // this lock must NOT hold a sender busy for, or a completed job would
+    // keep re-arming the "still confirming" refusal on every surface.
+    const settled = [{ ...GROUP, running: false, senderIds: ['s1'], senderKeys: ['k1'] }];
+    active = settled;
+    const { result, client, mailboxId } = mountHook();
+    // Wait for the FETCH to actually land this data, not just the initial
+    // (also-empty) pre-fetch render — otherwise this assertion would pass
+    // trivially before the filter is ever exercised.
+    await waitFor(() => expect(client.getQueryData(undoKeys.inFlight(mailboxId))).toEqual(settled));
+    expect(result.current.senderIds).toEqual(new Set());
+    expect(result.current.senderKeys).toEqual(new Set());
+  });
+
+  it('degrades to empty Sets, not a throw, when the API predates senderIds/senderKeys', async () => {
+    // Deploy-skew case: an API build older than this field addition sends
+    // a group with senderIds/senderKeys entirely absent from the wire.
+    const legacyGroup = { ...GROUP };
+    delete (legacyGroup as { senderIds?: string[] }).senderIds;
+    delete (legacyGroup as { senderKeys?: string[] }).senderKeys;
+    active = [legacyGroup];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set()));
+    expect(result.current.senderKeys).toEqual(new Set());
+  });
+
+  it('is empty while nothing is running', async () => {
+    active = [];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set()));
   });
 });

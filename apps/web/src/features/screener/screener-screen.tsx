@@ -18,6 +18,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
@@ -527,6 +528,12 @@ export function ScreenerScreen({
   // rides the per-row busy render + per-row dispatch guards, while the
   // queue-wide re-entry latch stays on `busyRowId` alone.
   const parkedRowId = overdueAction?.rowId ?? null;
+  // Server truth (via `listInFlight`) for which senders have a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this screen's own unmount/navigation. `busyRowId`/
+  // `parkedRowId` are unchanged; this only adds the cross-surface case
+  // local state structurally cannot see.
+  const sharedLock = useSenderInFlightLock(activeMailbox?.id);
   /** Rows that may not take another decision yet: parked, or unconfirmed. */
   const isHeld = useCallback(
     (rowId: string) => rowId === parkedRowId || holds.held.has(rowId),
@@ -536,7 +543,7 @@ export function ScreenerScreen({
   /** Verb click — opens (or swaps) the mandatory preview (D226). */
   const onVerbClick = useCallback(
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
-      if (row.id === busyRowId || isHeld(row.id)) return;
+      if (row.id === busyRowId || isHeld(row.id) || sharedLock.senderIds.has(row.senderId)) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({
         mailboxId: activeMailbox?.id,
@@ -548,7 +555,7 @@ export function ScreenerScreen({
       });
       setExpandedRowId(row.id);
     },
-    [busyRowId, isHeld, activeMailbox?.id],
+    [busyRowId, isHeld, sharedLock.senderIds, activeMailbox?.id],
   );
 
   /** Preview confirm — the only place the decide mutation fires. */
@@ -560,8 +567,14 @@ export function ScreenerScreen({
       // `parkedRowId` joins the guard for THIS row only (a preview can
       // stay open across the park): the parked row may not re-dispatch,
       // while the queue-wide latch (`busyRowId`) frees at the overdue
-      // release so every other row keeps working.
-      if (busyRowId != null || decide.isPending || isHeld(row.id)) {
+      // release so every other row keeps working. `sharedLock` adds the
+      // cross-surface/cross-tab case on top.
+      if (
+        busyRowId != null ||
+        decide.isPending ||
+        isHeld(row.id) ||
+        sharedLock.senderIds.has(row.senderId)
+      ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
       }
@@ -688,6 +701,7 @@ export function ScreenerScreen({
       previewAllMailCount,
       busyRowId,
       isHeld,
+      sharedLock.senderIds,
       holdUnconfirmed,
       decide,
       qc,
@@ -892,7 +906,9 @@ export function ScreenerScreen({
                 <ScreenerRow
                   row={row}
                   expanded={expandedRowId === row.id}
-                  busy={busyRowId === row.id || isHeld(row.id)}
+                  busy={
+                    busyRowId === row.id || isHeld(row.id) || sharedLock.senderIds.has(row.senderId)
+                  }
                   unknownVerb={holds.held.get(row.id)?.verb ?? null}
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}

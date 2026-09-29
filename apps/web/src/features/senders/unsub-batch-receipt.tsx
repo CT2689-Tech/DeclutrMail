@@ -50,6 +50,7 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
   const noun = (n: number): string => `sender${n === 1 ? '' : 's'}`;
   const protectedCount = count('protected');
   const missingCount = count('not_found');
+  const inProgressCount = count('in_progress');
   return [
     ...capability,
     // The state's own name, first — as the pill and Activity say it.
@@ -57,6 +58,7 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
     ...(missingCount > 0
       ? [`${missingCount} ${noun(missingCount)} no longer in this mailbox`]
       : []),
+    ...(inProgressCount > 0 ? [`${inProgressCount} ${noun(inProgressCount)} already busy`] : []),
   ];
 }
 

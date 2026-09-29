@@ -1345,6 +1345,61 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
   });
 
+  it('refuses to dispatch a sender the SERVER reports busy, with zero local state (2026-09-28)', async () => {
+    // No activeAction/activeBatch/overdue* on this screen at all — the
+    // only thing that knows Sender A is busy is `GET /api/actions/active`,
+    // exactly the case a different surface or tab firing the job would
+    // produce. This is the cross-surface race the shared lock exists to
+    // close; the pre-existing `lockedSenderIds` local state cannot see it.
+    let archivePosted = false;
+    installFetchStub([
+      oneSenderHandler(),
+      compositePreviewHandler(12),
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: 'Sender A',
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [ROW.id],
+                senderKeys: ['sender-a-key'],
+              },
+            ],
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+        },
+      },
+    ]);
+
+    renderScreenWithToasts();
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
+    await screen.findByText(/rechecked when it runs/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await screen.findByText(/still confirming your last action/i);
+    expect(archivePosted).toBe(false);
+  });
+
   it('confirms Delete, keeps the cleared card marked done, then returns it to normal after Undo', async () => {
     let trashed = false;
     let currentMailOnly: string | null = null;

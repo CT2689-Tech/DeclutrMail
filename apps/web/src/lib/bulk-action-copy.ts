@@ -32,18 +32,23 @@ export function backlogAfterUnsubFailureCopy(options: {
 
 /**
  * What an Archive/Later/Delete bulk refused at the click, in the pill's
- * words: "Archive: 1 Protected sender skipped · 1 sender no longer in this
- * mailbox". `null` when it refused nothing. Label bulks refuse for these
- * two reasons only (an Unsubscribe bulk has its own receipt).
+ * words: "Archive: 1 Protected sender skipped · 1 sender already busy · 1
+ * sender no longer in this mailbox". `null` when it refused nothing. Label
+ * bulks refuse for these three reasons only (an Unsubscribe bulk has its
+ * own receipt).
  */
 export function skippedAtClickCopy(
   verb: 'Archive' | 'Later' | 'Delete',
   skipped: readonly { reason: BulkSkipReason }[],
 ): string | null {
   const protectedCount = skipped.filter((s) => s.reason === 'protected').length;
+  const busy = skipped.filter((s) => s.reason === 'in_progress').length;
   const missing = skipped.filter((s) => s.reason === 'not_found').length;
   const parts = [
     ...(protectedCount > 0 ? [protectedSkippedCopy(protectedCount)] : []),
+    ...(busy > 0
+      ? [`${busy.toLocaleString('en-US')} sender${busy === 1 ? '' : 's'} already busy`]
+      : []),
     ...(missing > 0
       ? [
           `${missing.toLocaleString('en-US')} sender${missing === 1 ? '' : 's'} no longer in this mailbox`,

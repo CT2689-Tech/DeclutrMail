@@ -424,6 +424,44 @@ describe('Brief Noise bulk archive (D65)', () => {
     await screen.findByText(/2 messages yesterday · Protected/i);
   });
 
+  it('reads busy when the SERVER reports a Noise sender busy, with zero local inFlight state (2026-09-28)', async () => {
+    // No `inFlight`/`overdueInFlight` here at all — this section has never
+    // dispatched anything itself. Only `GET /api/actions/active` knows
+    // Newsletter Daily's sender is busy, the fact a different surface or a
+    // second tab firing the job would produce. Brief's section-wide `busy`
+    // (unlike the other 4 surfaces' per-row locks) locks the WHOLE CTA.
+    installFetchStub([
+      briefHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: 'Newsletter Daily',
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [ID_NEWS],
+                senderKeys: ['sk-news'],
+              },
+            ],
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await screen.findByRole('checkbox', { name: /include newsletter daily in the archive/i });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled());
+  });
+
   it('opens the preview on the archive click and sends NO mutation (D226 order)', async () => {
     installFetchStub([briefHandler(), bulkPreviewHandler(), enqueueHandler()]);
     renderScreen();

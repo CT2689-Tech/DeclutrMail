@@ -1383,6 +1383,70 @@ describe('TriageScreen — D226 mutation wiring', () => {
     );
     expect(keeps).toHaveLength(0);
   });
+
+  it('refuses a row the SERVER reports busy, with zero local Triage state (2026-09-28)', async () => {
+    // Nothing local (no activeAction, no intentRowId, no overdueBatch) —
+    // this queue has never dispatched anything itself. Only
+    // `GET /api/actions/active` knows GROUPON's sender is busy, the same
+    // fact a different surface (Senders) or a second tab would produce.
+    let actionPosts = 0;
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: GROUPON.senderName,
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [GROUPON.senderId],
+                senderKeys: ['groupon-key'],
+              },
+            ],
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          actionPosts += 1;
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Still confirming your last decision — give it a moment.',
+        'info',
+      ),
+    );
+    expect(actionPosts).toBe(0);
+  });
 });
 
 /**

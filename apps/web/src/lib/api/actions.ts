@@ -656,12 +656,16 @@ export interface BulkActionEnqueueResult {
 
 /**
  * Why a selected sender did not enter the batch. The label verbs
- * produce `protected` / `not_found`; an Unsubscribe batch (D248) adds
- * the three non-executable capability states, reported separately
- * because "send it yourself", "there is nothing to send" and "we have
- * not looked yet" are three different facts.
+ * produce `protected` / `not_found` / `in_progress`; an Unsubscribe batch
+ * (D248) adds the three non-executable capability states, reported
+ * separately because "send it yourself", "there is nothing to send" and
+ * "we have not looked yet" are three different facts.
+ *
+ * `in_progress` (founder-approved 2026-09-28): the sender already has a
+ * live forward job — any verb, including Autopilot — in this mailbox.
  */
-export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
+export type BulkSkipReason =
+  'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown' | 'in_progress';
 
 /**
  * Returned by `GET /api/actions/batch/:id` — aggregate batch state.
@@ -804,6 +808,13 @@ export interface InFlightActionGroup {
   senderCount: number;
   leadSenderName: string | null;
   startedAt: string;
+  /**
+   * Every distinct senderId / senderKey across the group's forward jobs.
+   * Optional: a web bundle newer than the API build it's talking to must
+   * still render (deploy skew) — read as `?? []`, never assume presence.
+   */
+  senderIds?: string[];
+  senderKeys?: string[];
 }
 
 export async function getInFlightActions(

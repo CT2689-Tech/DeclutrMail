@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { UndoTrayNotice } from '@declutrmail/shared';
@@ -184,4 +184,35 @@ export function useInFlightActions(mailboxId?: string) {
     // A guard 4xx is a designed state, never a retry (CLAUDE.md §8).
     retry: false,
   });
+}
+
+/**
+ * Senders/senderKeys with a live forward job RIGHT NOW, across every
+ * surface and tab — server truth, so it survives navigation, sort/filter,
+ * and mailbox switch where a component's own local state does not.
+ *
+ * Additive to, never a replacement for, a surface's own "I just fired
+ * this" local flag: the click → committed-row → next-poll round trip is
+ * real latency this hook cannot close synchronously. What it replaces is
+ * the PERSISTENCE half of the old per-surface state — the part that was
+ * supposed to survive navigation/timeout and didn't.
+ *
+ * Deliberately excludes any group with `running: false`: that state means
+ * every job in the group already reached a terminal status and the group
+ * is listed only for `IN_FLIGHT_SETTLED_GRACE_SECONDS` so a tray can
+ * report how it ended. Including it here would reopen the exact "pill
+ * says done, row still reads busy" bug this hook exists to fix.
+ */
+export function useSenderInFlightLock(mailboxId?: string) {
+  const { data } = useInFlightActions(mailboxId);
+  return useMemo(() => {
+    const senderIds = new Set<string>();
+    const senderKeys = new Set<string>();
+    for (const group of data ?? []) {
+      if (!isRunning(group)) continue;
+      for (const id of group.senderIds ?? []) senderIds.add(id);
+      for (const key of group.senderKeys ?? []) senderKeys.add(key);
+    }
+    return { senderIds, senderKeys };
+  }, [data]);
 }
