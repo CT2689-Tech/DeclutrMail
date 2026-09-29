@@ -230,6 +230,67 @@ function renderScreenWithToasts() {
   );
 }
 
+/**
+ * Stock /api/senders/summary response (#145, real-data counts). Defaults
+ * match a small, single-sender mailbox so tests that don't care about
+ * the summary don't need to override; per-test overrides shape the
+ * aggregates when the summary IS what's under test.
+ */
+function sendersSummaryHandler(
+  overrides: Partial<{
+    totalSenders: number;
+    activeSenders: number;
+    last30dVolume: number;
+    noiseReducible: number;
+    protected: number;
+    needsReview: number;
+    byBucket: {
+      one_time: number;
+      protect: number;
+      people: number;
+      needs_review: number;
+      quiet: number;
+      dormant: number;
+      bulk: number;
+      other: number;
+    };
+    hasCompletedCleanup: boolean;
+    qCapture: { value: string | null };
+  }> = {},
+) {
+  return {
+    method: 'GET' as const,
+    path: '/api/senders/summary',
+    respond: (_req: Request, url: URL) => {
+      if (overrides.qCapture) overrides.qCapture.value = url.searchParams.get('q');
+      return jsonOk({
+        data: {
+          totalSenders: overrides.totalSenders ?? 1,
+          activeSenders: overrides.activeSenders ?? 1,
+          last30dVolume: overrides.last30dVolume ?? 30,
+          noiseReducible: overrides.noiseReducible ?? 0,
+          protected: overrides.protected ?? 0,
+          needsReview: overrides.needsReview ?? 0,
+          byBucket: overrides.byBucket ?? {
+            one_time: 0,
+            protect: 0,
+            people: 0,
+            needs_review: 0,
+            quiet: 0,
+            dormant: 0,
+            bulk: 0,
+            other: 1,
+          },
+          asOf: '2026-06-01T00:00:00.000Z',
+          ...(overrides.hasCompletedCleanup !== undefined
+            ? { hasCompletedCleanup: overrides.hasCompletedCleanup }
+            : {}),
+        },
+      });
+    },
+  };
+}
+
 /** A populated /api/senders page with a single eligible sender (`ROW`). */
 function oneSenderHandler() {
   return {
@@ -2219,6 +2280,45 @@ describe('SendersScreen — edge states', () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe('SendersScreen — first-cleanup nudge', () => {
+  it('nudges a ready mailbox with senders and no completed action_jobs', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: false })]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    const nudge = await screen.findByTestId('first-cleanup-nudge');
+    expect(nudge).toHaveTextContent('Pick one sender');
+    expect(screen.getByRole('link', { name: 'Open a sender' })).toHaveAttribute(
+      'href',
+      '/senders/a',
+    );
+  });
+
+  it('stays off when the mailbox has already completed a cleanup', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: true })]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+  });
+
+  it('stays off when the summary omits the field (rolling-deploy unknown)', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+  });
+
+  it.each(['queued', 'syncing', 'failed'] as const)(
+    'stays off while the mailbox is %s',
+    async (readiness) => {
+      mockAuth.readiness = readiness;
+      installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: false })]);
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+      expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+    },
+  );
 });
 
 /**

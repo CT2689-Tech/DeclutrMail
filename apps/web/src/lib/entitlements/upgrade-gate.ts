@@ -3,7 +3,7 @@
 /**
  * Entitlement-402 surfacing (D19/D77/D81 — U13 billing FE).
  *
- * The BE's entitlement gates return 402 with one of three codes:
+ * The BE's entitlement gates return 402 with one of four codes:
  *
  *   - `FREE_CAP_REACHED`   — a Free workspace spent its monthly
  *     cleanup-action quota (action enqueue paths).
@@ -11,6 +11,9 @@
  *     exceed the tier's inbox limit (connect path).
  *   - `ACTION_TIER_REQUIRED` — the requested Action Registry selector
  *     starts above the workspace tier (for example Free → multi-sender).
+ *   - `PRO_FEATURE_REQUIRED` — the route sits behind `@RequiresCapability`
+ *     (Quiet, Screener, Autopilot, Briefs, Follow-ups) and the workspace
+ *     tier lacks that capability (`CapabilityGuard`, D19/D77).
  *
  * A global TanStack `MutationCache.onError` (see `lib/query-client.ts`)
  * reports either hit into this tiny zustand store; the `<UpgradeModal>`
@@ -24,7 +27,13 @@
 
 import { create } from 'zustand';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  CAPABILITIES,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+  type Capability,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { ApiError } from '@/lib/api/client';
 
@@ -52,11 +61,25 @@ export interface ActionTierDetails {
   verb: string;
 }
 
+/** Scalar context the PRO_FEATURE_REQUIRED 402 attaches to `details`. */
+export interface ProFeatureDetails {
+  /** The D19 capability the gated route requires (e.g. `'quiet'`). */
+  capability: Capability;
+  /** The workspace's current tier. */
+  tier: TierId;
+  /**
+   * The lowest tier that grants `capability` — manifest-derived (never a
+   * literal), so re-tiering a capability updates this automatically.
+   */
+  requiredTier: 'plus' | 'pro';
+}
+
 /** Discriminated hit — which gate fired, with its BE-provided context. */
 export type UpgradeGateHit =
   | { reason: 'free_cap'; details: FreeCapDetails }
   | { reason: 'inbox_limit'; details: InboxLimitDetails }
-  | { reason: 'action_tier'; details: ActionTierDetails };
+  | { reason: 'action_tier'; details: ActionTierDetails }
+  | { reason: 'pro_feature'; details: ProFeatureDetails };
 
 interface UpgradeGateState {
   /** The latest entitlement-gate hit, or null when none / dismissed. */
@@ -92,6 +115,8 @@ const ACTION_TIER_FALLBACK: ActionTierDetails = {
   selector: 'sender-filter',
   verb: 'archive',
 };
+// Arbitrary but real — any Plus-gated capability is a valid fallback subject.
+const PRO_FEATURE_FALLBACK_CAPABILITY: Capability = 'autopilot';
 
 /**
  * Narrow an arbitrary mutation error to an entitlement 402 and extract
@@ -135,6 +160,20 @@ export function upgradeGateHitFrom(error: unknown): UpgradeGateHit | null {
       },
     };
   }
+  if (code === 'PRO_FEATURE_REQUIRED') {
+    const capability = asCapability(d['capability']);
+    return {
+      reason: 'pro_feature',
+      details: {
+        capability,
+        tier: asWorkspaceTier(d['tier']),
+        // Not wire-provided (the 402's `details` carries only `capability` +
+        // `tier`) — derived from the same D19 manifest the guard enforced
+        // against, never a literal.
+        requiredTier: asRequiredTier(minimumTierForCapability(capability)),
+      },
+    };
+  }
   return null;
 }
 
@@ -172,4 +211,10 @@ function asSelector(value: unknown): ActionTierDetails['selector'] {
   return value === 'sender' || value === 'multi-sender' || value === 'sender-filter'
     ? value
     : ACTION_TIER_FALLBACK.selector;
+}
+
+function asCapability(value: unknown): Capability {
+  return typeof value === 'string' && (CAPABILITIES as readonly string[]).includes(value)
+    ? (value as Capability)
+    : PRO_FEATURE_FALLBACK_CAPABILITY;
 }

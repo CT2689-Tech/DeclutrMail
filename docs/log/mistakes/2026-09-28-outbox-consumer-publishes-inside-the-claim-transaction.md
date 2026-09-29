@@ -68,3 +68,14 @@ still out of scope for a small consumer-registration PR. Tracked as:
   for the founder's merge-or-hold decision the gate's own words require.
   Resolved 2026-09-29: waived, confirmed directly with the founder.
   #807 merges with the gate verdict still BLOCKED, on that record.
+
+**Correction 2026-09-29 (after #807 merged):** "more robustly than this
+PR's own local timeout" above is true in general but not yet in
+composition — a gate run on #826 rebased onto post-#807 main found that
+#807's `withPublishTimeout` rejects with a plain `Error`, which #826's
+orphan guard does not recognize as a timeout (it wants a named
+`TimeoutError`), so the two do not currently interoperate: #807's own
+bound firing first can still let #826 count it against the retry budget
+and permanently fail a row whose publish later succeeds. #807's 5s bound
+is not redundant once #826 lands as currently written — see the
+founder-followup entry's own correction, same date.
