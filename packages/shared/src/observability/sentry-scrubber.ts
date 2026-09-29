@@ -196,10 +196,13 @@ export const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'AuthExpiredError',
   'UnrecoverableError',
   // OutboxDispatcherWorker's branded timeout marker
-  // (`outbox-dispatcher.worker.ts`) — reaches Sentry only once a row's
-  // OWN timeout streak exceeds `timeoutStuckCeilingMs`, at which point
-  // losing its type here would scrub the one signal that fix exists to
-  // surface back to an empty shell.
+  // (`outbox-dispatcher.worker.ts`) — reaches Sentry once a row's OWN
+  // timeout streak exceeds `timeoutStuckCeilingMs` (`runOneTick`'s catch
+  // block), OR once an orphaned entry that never settles at all crosses
+  // the same ceiling on its own age (`escalateStuckOrphans`, added
+  // round-3, 2026-09-29 — the streak path alone could never fire for a
+  // call that is never reclaimed). Losing its type here would scrub the
+  // one signal either path exists to surface back to an empty shell.
   'OutboxConsumerTimeoutError',
   // NestJS HTTP exceptions the API filter can attribute a 5xx to.
   'BadGatewayException',

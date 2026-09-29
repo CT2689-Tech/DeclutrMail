@@ -20,12 +20,19 @@ import {
   type OutboxObserver,
 } from './outbox-dispatcher.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
+import { buildRescoreSenders } from './rescore-senders.js';
 import type { BackgroundFailureContext } from './worker-observer.js';
 
 /** Shared schemas for the test publishes (mirror what production callers pass). */
 const VerdictPayload = z.object({ verdict: z.string() }).strict();
 const EmptyPayload = z.object({}).strict();
 const RuleFiredPayload = z.object({ ruleId: z.string() }).strict();
+/** Minimal shape this file's own test needs — the real schema (`MailboxNonMailPurgedPayloadSchema` in `@declutrmail/events`) also carries `purgedAt`/`threadIds`, irrelevant here. */
+const NonMailPurgedPayload = z
+  .object({ mailboxAccountId: z.string(), recountedSenderKeys: z.array(z.string()) })
+  .strict();
+/** Stand-in clock for the `rescoreSenders` composition test — the real router derives this from the payload's own `purgedAt`, not from `event.createdAt`; the exact value doesn't matter here. */
+const CLOCK_MS = Date.parse('2026-09-29T00:00:00.000Z');
 
 /**
  * OutboxDispatcherWorker integration tests (D13).
@@ -1218,6 +1225,92 @@ describe('OutboxDispatcherWorker', () => {
   });
 
   /**
+   * WARNING finding (architecture-guardian, round 3, 2026-09-29): the
+   * ceiling check above only ever runs inside the per-row catch block in
+   * `runOneTick`, which only runs when a row IS reclaimed and times out
+   * AGAIN. But a key stays in `orphanedEvents` — and its row stays
+   * excluded from the claim SQL entirely — for exactly as long as the
+   * original abandoned call has not settled. A call that truly NEVER
+   * settles (a real sustained outage, not one that eventually answers
+   * late) is therefore never reclaimed, never re-times-out, and so never
+   * reaches that check at all: the row would sit `pending` forever with
+   * zero Sentry signal — a guard whose positive case cannot fire is not
+   * a guard (CLAUDE.md §8's "a guard that cannot fail is not a guard").
+   *
+   * This is DIFFERENT from the streak test above, which resolves each
+   * attempt so the row keeps getting reclaimed and re-timing-out (a
+   * genuinely-real streak of SEPARATE timeouts). Here the consumer is
+   * invoked exactly ONCE and its promise is never settled at all —
+   * proving the fix (`escalateStuckOrphans`, run every tick independent
+   * of whether a new timeout occurs) rather than the pre-existing
+   * per-reclaim streak check.
+   *
+   * NEGATIVE CONTROL: removing the `escalateStuckOrphans` call from
+   * `runOneTick` (or gating its check on a reclaim that never happens
+   * for this scenario) makes this test fail — `flippedToFailed` never
+   * becomes true and `captured` stays empty even after many ticks;
+   * confirmed while developing this fix.
+   */
+  it('a call that NEVER settles (not just one that settles slowly) still eventually reaches failed + Sentry', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    let id = '';
+    await db.transaction(async (tx) => {
+      id = await new OutboxPublisher().publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'never-settles-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    const captured: unknown[] = [];
+    let invocations = 0;
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer: () => {
+        invocations += 1;
+        return new Promise<void>(() => {}); // never settles — ever
+      },
+      pollIntervalMs: 60_000,
+      maxAttempts: 1_000, // effectively disabled — only the ceiling can fail this row
+      consumerTimeoutMs: 10,
+      timeoutStuckCeilingMs: 25,
+      observer: {
+        captureBackgroundFailure: (error) => {
+          captured.push(error);
+        },
+      },
+    });
+    activeDispatcher = dispatcher;
+
+    let flippedToFailed = false;
+    for (let i = 0; i < 20 && !flippedToFailed; i += 1) {
+      const result = await dispatcher.tick();
+      flippedToFailed = result.flippedToFailed > 0;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+
+    expect(flippedToFailed).toBe(true);
+    // The row was NEVER reclaimed — it stayed orphan-excluded from every
+    // claim query for its entire life. Proves this is the "never
+    // settles at all" path, not the streak-of-real-timeouts path above.
+    expect(invocations).toBe(1);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toBeInstanceOf(OutboxConsumerTimeoutError);
+
+    const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
+    expect(row?.status).toBe('failed');
+
+    // Escalating must NOT clear the orphan-guard entry — the real call
+    // is still running (uncancellable) even though the row is now
+    // `failed`. A later tick must not report the SAME stuck event again.
+    const again = await dispatcher.tick();
+    expect(again.flippedToFailed).toBe(0);
+    expect(captured).toHaveLength(1);
+  });
+
+  /**
    * Also-fix finding (architecture-guardian, 2026-09-29): classifying a
    * timeout by `err.name === 'TimeoutError'` is fragile — ANY error
    * happening to carry that name gets the SAME exemption forever,
@@ -1421,11 +1514,31 @@ describe('OutboxDispatcherWorker', () => {
       rejectConsumer = reject;
     });
 
+    // Mirrors the REAL production observer wiring for this dispatcher
+    // (`apps/api/src/worker.ts`'s `captureBackgroundFailure` adapter):
+    // `err instanceof Error ? err : new Error(String(err))`. A no-op
+    // observer (what this test used before round 3) can never catch this
+    // class of bug — nothing in a no-op can throw no matter what it's
+    // handed, so a raw, unnormalized rejection value sailing straight
+    // through the dispatcher into the observer would pass this test
+    // either way. The round-2 → round-3 review reproduced the crash live
+    // against this exact adapter shape; this test must exercise the same
+    // shape or it proves nothing (architecture-guardian review, round 3,
+    // 2026-09-29).
+    const observedErrors: unknown[] = [];
+    const productionShapedObserver: OutboxObserver = {
+      captureBackgroundFailure: (err) => {
+        const safe = err instanceof Error ? err : new Error(String(err));
+        observedErrors.push(safe);
+      },
+    };
+
     const dispatcher = new OutboxDispatcherWorker({
       db: db as unknown as PostgresJsDatabase<typeof schema>,
       consumer: () => consumerSettles,
       pollIntervalMs: 60_000,
       consumerTimeoutMs: 20,
+      observer: productionShapedObserver,
     });
     activeDispatcher = dispatcher;
 
@@ -1434,11 +1547,24 @@ describe('OutboxDispatcherWorker', () => {
 
     // A null-prototype object has no `toString`/`valueOf` — `String()`
     // on it throws `TypeError: Cannot convert object to primitive value`.
+    // Before the round-3 fix, this raw value reached
+    // `productionShapedObserver` unnormalized and ITS OWN `String(err)`
+    // call threw — inside the dispatcher's un-awaited `.then()` handler,
+    // with no `unhandledRejection` listener anywhere in this codebase,
+    // which crashes the whole worker process by default. Vitest
+    // attributes an unhandled rejection to the run, turning that crash
+    // into a loud test failure instead of silence.
     const unstringifiable = Object.create(null) as unknown;
     const startedAt = Date.now();
     rejectConsumer(unstringifiable);
     await new Promise((r) => setTimeout(r, 25));
     expect(Date.now() - startedAt).toBeLessThan(2_000);
+
+    // The observer was actually reached, with a real Error — the fix
+    // normalizes the value BEFORE the observer; it does not silence or
+    // skip the observer call.
+    expect(observedErrors).toHaveLength(1);
+    expect(observedErrors[0]).toBeInstanceOf(Error);
 
     // The dispatcher survived (no unhandled rejection killed the
     // process, no hang) and keeps working — the strongest proof
@@ -1462,6 +1588,120 @@ describe('OutboxDispatcherWorker', () => {
     expect(row?.status).toBe('pending');
     expect(row?.attempts).toBe(2);
     expect(row?.lastError).toBe('Error: unstringifiable rejection value');
+  });
+
+  /**
+   * WARNING finding (architecture-guardian, round 3, 2026-09-29):
+   * `rescore-senders.ts` used to wrap its OWN `addBulk`/`sweepAfter`
+   * calls in a local 5s `withPublishTimeout`. That inner bound could
+   * settle (reject) the WHOLE consumer promise `runConsumerWithOrphanGuard`
+   * tracks BEFORE the dispatcher's own `consumerTimeoutMs` fired —
+   * `trackOrphan` then received an ALREADY-SETTLED promise, whose
+   * `.then(clear, clear)` cleared the orphan-guard entry on the very
+   * next microtask, while the real, abandoned `addBulk` call kept
+   * running completely untracked. The very next tick would happily
+   * re-claim and re-invoke `rescoreSenders` for the SAME mailbox while
+   * the first call's publish was still in flight. Neither side's own
+   * unit tests could see this: `rescore-senders.test.ts` only ever
+   * asserted this function's OWN returned promise in isolation; this
+   * file's other orphan-guard tests use a synthetic mock consumer with
+   * no inner timeout of its own to race against the dispatcher's. This
+   * is the missing seam — `rescoreSenders` running AS the dispatcher's
+   * actual consumer, through a real tick.
+   *
+   * The fix removed the inner bound entirely: `consumerTimeoutMs` is now
+   * the ONLY timer in play for this consumer, so there is nothing left
+   * to race early. This proves the composed behavior end-to-end: a hung
+   * `addBulk` call orphans correctly and STAYS orphan-guarded (not
+   * silently reclaimed) until it actually settles.
+   *
+   * NEGATIVE CONTROL: with the old inner 5s `withPublishTimeout` still
+   * in place and this test's `consumerTimeoutMs` raised above 5000ms (so
+   * the inner bound wins the race, matching production's 5s-vs-30s
+   * relationship), the second tick's `claimed`/`skippedOrphaned` flip —
+   * the row is silently reclaimed and `addBulk` is called a second time
+   * while the first call is still outstanding — confirmed live against
+   * the pre-fix code while developing this fix (see the PR body for the
+   * exact numbers; not re-run here at real 5s+ scale on every CI run,
+   * per this suite's own convention against racing two real timers —
+   * see the "genuinely slow (not stuck) consumer" test above).
+   */
+  it('rescoreSenders composed with the real dispatcher: a hung addBulk call is orphan-guarded across ticks, not silently reclaimed', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    const mailboxAccountId = '00000000-0000-4000-8000-00000000f00d';
+    let id = '';
+    await db.transaction(async (tx) => {
+      id = await new OutboxPublisher().publish(tx, {
+        topic: 'mailbox.non_mail_purged',
+        aggregateId: mailboxAccountId,
+        payload: { mailboxAccountId, recountedSenderKeys: ['sender-orphan-1'] },
+        schema: NonMailPurgedPayload,
+      });
+    });
+
+    let releaseAddBulk!: () => void;
+    const addBulkCall = new Promise<unknown[]>((resolve) => {
+      releaseAddBulk = () => resolve([]);
+    });
+    // Never settles until released — simulates a hung Redis call
+    // (`addBulk` always returns this SAME promise reference, so a
+    // second invocation before release also hangs on it).
+    const addBulk = vi.fn(() => addBulkCall);
+    const sweepAfter = vi.fn(async () => {});
+    const rescoreSenders = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter });
+
+    // Mirrors `handleNonMailPurged`'s own extraction
+    // (`outbox-consumer-router.ts`) without pulling in its unrelated
+    // followupTracker repair logic — this test is specifically about
+    // the seam between `rescoreSenders` and the dispatcher's orphan
+    // guard, not the router's other responsibilities. The real router
+    // derives its clock from the payload's own `purgedAt`
+    // (`Date.parse(payload.purgedAt)`), not from `event.createdAt` —
+    // this test's minimal payload schema has no such field and the
+    // exact clock value is irrelevant here, so a fixed constant stands
+    // in for it.
+    const consumer: OutboxConsumer = async (event) => {
+      const payload = event.payload as {
+        mailboxAccountId: string;
+        recountedSenderKeys: string[];
+      };
+      await rescoreSenders(payload.mailboxAccountId, payload.recountedSenderKeys, CLOCK_MS);
+    };
+
+    const dispatcher = new OutboxDispatcherWorker({
+      db: db as unknown as PostgresJsDatabase<typeof schema>,
+      consumer,
+      pollIntervalMs: 60_000,
+      consumerTimeoutMs: 20,
+    });
+    activeDispatcher = dispatcher;
+
+    const first = await dispatcher.tick();
+    expect(first).toMatchObject({ claimed: 1, consumerTimedOut: 1, skippedOrphaned: 1 });
+    expect(addBulk).toHaveBeenCalledTimes(1);
+
+    // The abandoned addBulk call is STILL running (never resolved). A
+    // second tick, run immediately after, must NOT reclaim this row —
+    // this is exactly the property the old inner 5s bound silently
+    // defeated (it settled rescoreSenders' own returned promise long
+    // before this point, so the orphan entry was already gone by now).
+    const second = await dispatcher.tick();
+    expect(second).toMatchObject({ claimed: 0, skippedOrphaned: 1 });
+    expect(addBulk).toHaveBeenCalledTimes(1); // NOT called again — still guarded
+
+    // The "Redis outage" ends — the abandoned call finally settles.
+    releaseAddBulk();
+    await new Promise((r) => setTimeout(r, 25));
+
+    // Now the row is claimable again and completes normally.
+    const third = await dispatcher.tick();
+    expect(third).toMatchObject({ claimed: 1, dispatched: 1, skippedOrphaned: 0 });
+    expect(addBulk).toHaveBeenCalledTimes(2);
+    expect(sweepAfter).toHaveBeenCalledTimes(2); // once from the abandoned call settling, once from the fresh reclaim
+
+    const [row] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, id));
+    expect(row?.status).toBe('dispatched');
   });
 });
 

@@ -1,6 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { OutboxConsumerTimeoutError } from './outbox-dispatcher.worker.js';
 import { buildRescoreSenders } from './rescore-senders.js';
 import { SCORE_JOB, scoreJobId } from './score.worker.js';
 
@@ -64,85 +63,21 @@ describe('buildRescoreSenders', () => {
     expect(sweepAfter).not.toHaveBeenCalled();
   });
 
-  describe('a hung Redis call (CLAUDE.md §2.6)', () => {
-    // This runs inside the outbox dispatcher's open claim transaction
-    // (see the file's own docstring). ioredis's retry-forever connection
-    // never rejects during an outage — it buffers — so an unbounded
-    // `await` here would hold that transaction's row locks indefinitely,
-    // with no failure signal. `addBulk`/`sweepAfter` below never settle,
-    // matching that exact shape, not the mocked "resolves at once" that
-    // does not represent the real client during an outage.
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => vi.useRealTimers());
-
-    it('fails a hung score-queue publish within the bound, instead of hanging', async () => {
-      const addBulk = vi.fn(() => new Promise(() => {})); // never settles
-      const sweepAfter = vi.fn(async () => {});
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      const assertion = expect(result).rejects.toThrow(/score queue addBulk exceeded 5000ms/);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-      expect(sweepAfter).not.toHaveBeenCalled(); // never reached
-    });
-
-    it('fails a hung Autopilot sweep trigger within the bound, instead of hanging', async () => {
-      const addBulk = vi.fn(async () => []);
-      const sweepAfter = vi.fn(() => new Promise<void>(() => {})); // never settles
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      const assertion = expect(result).rejects.toThrow(/autopilot sweep trigger exceeded 5000ms/);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-    });
-
-    it('rejects with the SAME branded timeout the outbox dispatcher recognizes (D13/D245 interop)', async () => {
-      // BLOCKING finding (architecture-guardian, 2026-09-29; also
-      // recorded in docs/log/founder-followups/2026-09-28-waive-or-
-      // block-outbox-queue-in-transaction.md's "Correction 2026-09-29"
-      // and PR #831): this file used to reject with a plain `Error`,
-      // which `OutboxDispatcherWorker`'s orphan guard could not
-      // recognize as a timeout — it counted as an ordinary failure
-      // against `maxAttempts`, so a row could flip permanently `failed`
-      // even after the abandoned publish inside it later succeeded.
-      // Asserting the exact CLASS (not just the message text) is what
-      // actually proves the two modules now agree on what a timeout
-      // looks like.
-      //
-      // NEGATIVE CONTROL: reverting `withPublishTimeout` to reject with
-      // a plain `new Error(...)` (this file's shape before this fix)
-      // makes this assertion fail — confirmed while developing this fix.
-      const addBulk = vi.fn(() => new Promise(() => {})); // never settles
-      const sweepAfter = vi.fn(async () => {});
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      const assertion = expect(result).rejects.toBeInstanceOf(OutboxConsumerTimeoutError);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-    });
-
-    it('a slow-but-real publish under the bound still succeeds', async () => {
-      const addBulk = vi.fn(() => new Promise((resolve) => setTimeout(() => resolve([]), 4_000)));
-      const sweepAfter = vi.fn(async () => {});
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      await vi.advanceTimersByTimeAsync(4_000);
-      await expect(result).resolves.toBeUndefined();
-      expect(sweepAfter).toHaveBeenCalledWith(MAILBOX);
-    });
-  });
+  // A hung Redis call used to be bounded HERE too, by this file's own
+  // local 5s `withPublishTimeout` — removed 2026-09-29 (round-3
+  // architecture-guardian review). That inner bound settled this
+  // function's own returned promise BEFORE the dispatcher's
+  // `consumerTimeoutMs` could, which meant `OutboxDispatcherWorker`'s
+  // orphan guard tracked an already-settled promise and cleared it on
+  // the next microtask — the real, abandoned `addBulk` kept running
+  // completely untracked, and the very next tick could re-invoke this
+  // function for the same mailbox concurrently with it. There is no
+  // local timeout left to unit-test in isolation; the dispatcher's own
+  // `consumerTimeoutMs` is the only bound now, and
+  // `outbox-dispatcher.worker.test.ts`'s "rescoreSenders composed with
+  // the real dispatcher" suite proves THAT composition end-to-end —
+  // isolated unit tests on this file alone cannot see the interaction
+  // that broke, which is exactly how this bug hid for two rounds.
 });
 
 describe('scoreJobId', () => {

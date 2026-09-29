@@ -262,10 +262,20 @@ function normalizePositiveMs(value: number | undefined, fallback: number): numbe
  * distinguish them (architecture-guardian review, 2026-09-29).
  *
  * Exported so a consumer that wants the SAME treatment for its own
- * inner bound (`rescore-senders.ts`'s `withPublishTimeout`) can throw
- * this exact class instead of an unbranded `Error` — that consumer's
- * rejection then reaches `runOneTick`'s catch block indistinguishable
- * from the dispatcher's own timeout, which is the intended contract.
+ * inner bound could throw this exact class instead of an unbranded
+ * `Error` — that consumer's rejection would then reach `runOneTick`'s
+ * catch block indistinguishable from the dispatcher's own timeout,
+ * which is the intended contract. `rescore-senders.ts`'s
+ * `withPublishTimeout` used to be the worked example here; it was
+ * removed (round-3 review, 2026-09-29) once a DIFFERENT problem surfaced
+ * — an inner bound shorter than the dispatcher's own defeats the orphan
+ * guard regardless of which class it throws, by settling the consumer's
+ * promise before `trackOrphan` gets a still-pending one (see that
+ * file's own docstring). This class is still used internally
+ * (`escalateStuckOrphans`, `runOneTick`) and the export remains
+ * available for a future consumer that genuinely needs its own shorter
+ * bound — which would need its own orphan-tracking participation, not
+ * just the branded class, to avoid the same defeat.
  * Added to `SENTRY_SERVER_EXCEPTION_TYPES`
  * (`packages/shared/src/observability/sentry-scrubber.ts`) so a row
  * that eventually reaches `timeoutStuckCeilingMs` and reports to Sentry
@@ -304,6 +314,21 @@ function safeErrorMessage(err: unknown): string {
   } catch {
     return 'unstringifiable rejection value';
   }
+}
+
+/**
+ * Normalize any thrown/rejected value into a real `Error`, safe to hand
+ * to `OutboxObserver.captureBackgroundFailure` unmodified. The
+ * production adapter (`apps/api/src/worker.ts`) branches on
+ * `err instanceof Error` and calls `String(err)` ONLY in the else
+ * branch — passing an already-real `Error` through here guarantees that
+ * branch is never taken, so the adapter's own `String()` call (which
+ * throws on a null-prototype or otherwise unstringifiable value, same
+ * as `safeErrorMessage` above) never runs. Built on `safeErrorMessage`,
+ * which already cannot throw.
+ */
+function toSafeObservedError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(safeErrorMessage(err), { cause: err });
 }
 
 /**
@@ -415,7 +440,21 @@ function logConsumerSettledAfterTimeout(
     }),
   );
   if (outcome === 'rejected') {
-    observer.captureBackgroundFailure(err, {
+    // `err` is the raw rejection reason from an ABANDONED call — it never
+    // passes through `withConsumerTimeout`'s own reject-wrapping, which
+    // only ever runs for the FIRST settle (see the `settled` guard
+    // there). Wrap it the same safe way before it reaches the observer:
+    // the production adapter (`apps/api/src/worker.ts`) does
+    // `err instanceof Error ? err : new Error(String(err))`, and
+    // `String()` on a non-Error, non-stringifiable value (e.g. a
+    // null-prototype object) throws — inside this un-awaited `.then()`
+    // handler, with no `unhandledRejection` listener anywhere in this
+    // codebase, that crashes the whole worker process. Same crash class
+    // `safeErrorMessage` was added to close (round 1); it came back
+    // through this new call site (round-3 architecture-guardian review,
+    // 2026-09-29, reproduced live against the real production adapter
+    // shape).
+    observer.captureBackgroundFailure(toSafeObservedError(err), {
       kind: 'outbox.dispatch.consumer_settled_after_timeout',
       tags: { worker: WORKER_NAME, topic: event.topic, event_id: event.id },
     });
@@ -469,14 +508,30 @@ function logConsumerSettledAfterTimeout(
  *     UPDATE guarded by `decided_at IS NULL`), never a JS-level
  *     read-modify-write, so no interleaving is possible either way.
  *
- * A cross-TOPIC collision on the same aggregateId (e.g. a
- * `mailbox.sync_ready` orphan blocking an unrelated `mailbox.sync_failed`
- * event for the same mailbox) is included in the key on purpose — it
- * costs a harmless extra wait, never a duplicate side effect, and
- * keeping the dispatcher ignorant of each consumer's actual downstream
- * key (private to the router/feature) is what keeps this a dispatcher-
- * level guard rather than one that has to be re-derived by hand for
- * every new topic.
+ * CORRECTION (round-3 review, 2026-09-29): an earlier version of this
+ * paragraph claimed a cross-TOPIC collision on the same aggregateId
+ * (e.g. a `mailbox.sync_ready` orphan blocking an unrelated
+ * `mailbox.sync_failed` event for the same mailbox) was "included in the
+ * key on purpose." That was simply false given the key as written above:
+ * `topic` IS part of the key, so two DIFFERENT topics sharing an
+ * aggregateId never collide here and are NOT serialized against each
+ * other — an orphaned `mailbox.sync_ready` call does not block a
+ * concurrently-dispatched `mailbox.sync_failed` event for the same
+ * mailbox at all. Topics are NOT cross-blocked; do not read this key as
+ * providing that protection.
+ *
+ * The bullets above establish per-topic safety only — that EACH topic's
+ * own downstream operations tolerate THIS guard's granularity for that
+ * topic alone (e.g. `mailbox.sync_ready`'s reasoning about
+ * `syncCompleteEmailJobId` says nothing about `mailbox.sync_failed`, and
+ * vice versa). Two different topics that can target the same
+ * aggregateId and that share a non-atomic downstream key with EACH OTHER
+ * are not protected by anything here — that risk has to be checked by
+ * hand, per topic pair, same as the per-topic checks above. Keeping the
+ * dispatcher ignorant of each consumer's actual downstream key (private
+ * to the router/feature) is what keeps this a dispatcher-level guard
+ * rather than one re-derived from scratch for every new topic — it is
+ * NOT what makes cross-topic interleaving safe; nothing here does that.
  */
 function orphanGuardKey(event: DispatchedEvent): string {
   return JSON.stringify([event.topic, event.aggregateId]);
@@ -494,8 +549,14 @@ export interface DispatcherTickResult {
   /**
    * Of `consumerFailed`, how many were specifically a `consumerTimeoutMs`
    * timeout rather than the consumer itself throwing. These still bump
-   * `attempts` and set `last_error`, but never count toward
-   * `flippedToFailed` — see `runOneTick`'s catch block.
+   * `attempts` and set `last_error`, and do NOT by themselves count
+   * toward `flippedToFailed` (`maxAttempts` never applies to a timeout —
+   * see `runOneTick`'s catch block) — but a timeout's OWN streak, once it
+   * outlives `timeoutStuckCeilingMs`, is exempt from THAT exemption and
+   * DOES flip the row to `failed` (same catch block, plus
+   * `escalateStuckOrphans` for a call that never settles at all). A
+   * timeout is not a permanent shield against `flippedToFailed`, only
+   * against the ORDINARY `maxAttempts` budget.
    */
   consumerTimedOut: number;
   /** Rows whose consumer returned successfully and were marked dispatched. */
@@ -671,10 +732,27 @@ export class OutboxDispatcherWorker {
    * ANY event sharing that (topic, aggregateId) again, even a
    * different event id — see `runConsumerWithOrphanGuard`. Removed
    * automatically once the abandoned call settles (resolve or reject).
+   *
+   * `eventId`/`since`/`escalated` exist for `escalateStuckOrphans`
+   * (round-3 review, 2026-09-29): a key that never clears (the call
+   * truly never settles, not just settles late) also never lets its row
+   * be reclaimed, so the ORIGINAL per-row timeout-streak check in
+   * `runOneTick` — which only runs when a row IS reclaimed and times out
+   * AGAIN — can never fire for it. `since` is this entry's OWN age,
+   * independent of any reclaim; `escalated` guards against reporting the
+   * same permanently-stuck event to the observer on every later tick
+   * once it has crossed `timeoutStuckCeilingMs` once.
    */
   private readonly orphanedEvents = new Map<
     string,
-    { topic: string; aggregateId: string; promise: Promise<void> }
+    {
+      topic: string;
+      aggregateId: string;
+      eventId: string;
+      since: number;
+      escalated: boolean;
+      promise: Promise<void>;
+    }
   >();
   /**
    * event.id → wall-clock start of that ROW's own unbroken streak of
@@ -847,6 +925,9 @@ export class OutboxDispatcherWorker {
     this.orphanedEvents.set(key, {
       topic: event.topic,
       aggregateId: event.aggregateId,
+      eventId: event.id,
+      since: Date.now(),
+      escalated: false,
       promise: consumerPromise,
     });
     const clear = (): void => {
@@ -858,6 +939,80 @@ export class OutboxDispatcherWorker {
       }
     };
     consumerPromise.then(clear, clear);
+  }
+
+  /**
+   * Give every currently-orphaned concurrency unit its OWN age check,
+   * independent of whether a NEW timeout occurs on it this tick.
+   *
+   * `runOneTick`'s per-row `timeoutStreakExceededCeiling` check only
+   * ever runs inside the per-row catch block, which only runs when a row
+   * IS reclaimed and times out AGAIN. But a key stays in
+   * `orphanedEvents` — and its row stays excluded from the claim SQL
+   * entirely — for exactly as long as the original abandoned call has
+   * not settled. A call that truly never settles (a sustained outage,
+   * not one that eventually answers late) is therefore never reclaimed,
+   * never re-times-out, and so never reaches that check at all: the row
+   * would sit `pending` forever with zero Sentry signal — a guard whose
+   * positive case cannot fire is not a guard (CLAUDE.md §8's "a guard
+   * that cannot fail is not a guard"; round-3 architecture-guardian
+   * review, 2026-09-29).
+   *
+   * Called once per tick from `runOneTick`. Escalating does NOT clear
+   * the orphan-guard entry — the underlying call is still running and
+   * uncancellable, so a LATER event sharing this same (topic,
+   * aggregateId) must still wait for it to actually settle, exactly as
+   * before. Only the ONE row this specific event named is marked
+   * `failed` and reported — `escalated` on the entry stops it from
+   * being re-reported on every later tick while the call remains
+   * abandoned.
+   *
+   * Returns the number of rows newly flipped to `failed` this call, for
+   * `runOneTick` to fold into `DispatcherTickResult.flippedToFailed`.
+   */
+  private async escalateStuckOrphans(): Promise<number> {
+    let flipped = 0;
+    const now = Date.now();
+    for (const [key, orphan] of this.orphanedEvents) {
+      if (orphan.escalated || now - orphan.since < this.timeoutStuckCeilingMs) continue;
+      const stuckError = new OutboxConsumerTimeoutError(
+        `Outbox consumer for topic "${orphan.topic}" (event ${orphan.eventId}) never settled within timeoutStuckCeilingMs (${this.timeoutStuckCeilingMs}ms)`,
+      );
+      // `status = 'pending'` guard: nothing else can legitimately be
+      // writing this row's status while its key is orphaned (the claim
+      // SQL excludes it entirely), but the guard keeps this a safe no-op
+      // rather than a clobber if that assumption is ever wrong.
+      const bumped = await this.deps.db
+        .update(outboxEvents)
+        .set({ status: 'failed' as const, lastError: truncateError(stuckError) })
+        .where(and(eq(outboxEvents.id, orphan.eventId), eq(outboxEvents.status, 'pending')))
+        .returning({ id: outboxEvents.id });
+      // Mark escalated only after the write succeeds — if the UPDATE
+      // itself throws (a transient DB error), the next tick must retry
+      // this escalation, not silently treat it as done. A thrown error
+      // here propagates to `runOneTick`'s own try/catch (`logTickError`).
+      const current = this.orphanedEvents.get(key);
+      if (current === orphan) this.orphanedEvents.set(key, { ...orphan, escalated: true });
+      this.timeoutStuckSince.delete(orphan.eventId);
+      if (bumped.length === 0) continue; // already moved off `pending` by something else
+      flipped += 1;
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'outbox.dispatch.event_failed',
+          worker: this.workerName,
+          topic: orphan.topic,
+          eventId: orphan.eventId,
+          errorName: 'OutboxConsumerTimeoutError',
+          timedOut: true,
+        }),
+      );
+      this.observer.captureBackgroundFailure(stuckError, {
+        kind: 'outbox.dispatch.event_failed',
+        tags: { worker: this.workerName, topic: orphan.topic, event_id: orphan.eventId },
+      });
+    }
+    return flipped;
   }
 
   /**
@@ -920,9 +1075,12 @@ export class OutboxDispatcherWorker {
    * `runConsumerWithOrphanGuard`, which bounds it with
    * `consumerTimeoutMs` (a hung network call can no longer hold this
    * transaction open indefinitely) and tracks a timed-out call as an
-   * orphan so no later tick re-invokes the SAME event concurrently with
-   * it. This bounds — it does not remove — the network call from inside
-   * the transaction: a full batch hitting the same outage can still
+   * orphan so no later tick re-invokes ANY event sharing this one's
+   * (topic, aggregateId) concurrency unit — not merely "the same event"
+   * by id; see `orphanGuardKey`'s own docstring for why the coarser key
+   * is required — concurrently with it. This bounds — it does not
+   * remove — the network call from inside the transaction: a full
+   * batch hitting the same outage can still
    * hold it for up to `claimBatchSize * consumerTimeoutMs`. Moving the
    * call fully outside the transaction would need a different
    * claim/commit protocol (this dispatcher relies on holding the `FOR
@@ -1155,6 +1313,17 @@ export class OutboxDispatcherWorker {
       // Tx-level failure (db down, deadlock, etc.) — log and continue;
       // the next tick re-attempts. Never throw out of a tick: callers
       // (`setInterval`, LISTEN handler) don't have a catch path.
+      this.logTickError(err);
+    }
+
+    // Independent of the claim/dispatch loop above: a call that has
+    // NEVER settled keeps its row excluded from every claim, so the
+    // per-row streak check inside that loop can never run for it again.
+    // This is what actually gives `timeoutStuckCeilingMs` an end state
+    // for that case — see `escalateStuckOrphans`'s own docstring.
+    try {
+      result.flippedToFailed += await this.escalateStuckOrphans();
+    } catch (err) {
       this.logTickError(err);
     }
 
