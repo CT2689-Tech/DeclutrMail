@@ -50,10 +50,12 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
   const senders = (n: number): string => `${n} sender${n === 1 ? '' : 's'}`;
   const protectedCount = count('protected');
   const missingCount = count('not_found');
+  const inProgressCount = count('in_progress');
   return [
     ...capability,
     ...(protectedCount > 0 ? [`${senders(protectedCount)} protected`] : []),
     ...(missingCount > 0 ? [`${senders(missingCount)} no longer in your list`] : []),
+    ...(inProgressCount > 0 ? [`${senders(inProgressCount)} already busy`] : []),
   ];
 }
 
