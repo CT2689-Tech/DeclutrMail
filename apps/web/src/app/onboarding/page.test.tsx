@@ -113,6 +113,23 @@ const syncStatus = (ready: boolean): FetchStubHandler => ({
     }),
 });
 
+/** Mid-read, as the API sends it: the running scan's counts ride along. */
+const syncStatusReading: FetchStubHandler = {
+  method: 'GET',
+  path: '/api/v1/sync/status',
+  respond: () =>
+    json({
+      data: {
+        readiness_status: 'syncing',
+        current_stage: 'fetching_metadata',
+        progress_pct: 26,
+        is_ready_for_triage: false,
+        last_synced_at: null,
+        message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
+      },
+    }),
+};
+
 const emptyRules: FetchStubHandler = {
   method: 'GET',
   path: '/api/autopilot/rules',
@@ -294,8 +311,15 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('the first-run gate shows how far the scan has read', async () => {
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   // Asserted at the page: the gate renders the promise correctly on its own,
@@ -416,9 +440,46 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
+  });
+
+  it('the secondary gate claims no scan state before it has read one', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      secondaryMe(),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: async (req, url) => {
+          await held;
+          return syncStatusReading.respond(req, url);
+        },
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Checking the scan…')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    // A slow first read must not strand the user: the way back stays.
+    expect(screen.getByRole('button', { name: 'Go back to a@b.com' })).toBeInTheDocument();
+
+    release();
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
+  });
+
+  it('the secondary gate shows how far the scan has read too', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    installFetchStub([secondaryMe(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   it('the secondary gate passes the ready-email setting through too (D109)', async () => {
@@ -490,7 +551,10 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       installFetchStub([secondaryMe(), syncStatus(false), setPrimaryActive]);
       renderPage();
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Go back to a@b.com' }));
+      // The gate, not the "Checking the scan…" screen it replaces — both
+      // offer the way back, and a click on the one leaving is lost.
+      await screen.findByText('Reading your Gmail…');
+      await userEvent.click(screen.getByRole('button', { name: 'Go back to a@b.com' }));
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
     },
@@ -535,7 +599,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check your inbox scan.");
+      await screen.findByText("We couldn't check the scan.");
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -564,7 +628,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check your inbox scan.");
+    await screen.findByText("We couldn't check the scan.");
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });

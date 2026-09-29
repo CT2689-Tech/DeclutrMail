@@ -63,6 +63,13 @@ export interface ComparisonDefinition {
   readonly verifiedIso: string;
   readonly title: string;
   readonly description: string;
+  /**
+   * Document title when it should differ from `${title} — honest 2026 comparison`.
+   * Does not change the visible page heading or `description`.
+   */
+  readonly metaTitle?: string;
+  /** Meta description when it should differ from the visible `description`. */
+  readonly metaDescription?: string;
   readonly verdict: string;
   readonly indexSummary: string;
   readonly primaryUnit: string;
@@ -714,8 +721,11 @@ const unrollMe: ComparisonDefinition = {
   category: 'Digest and blocking',
   verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Unroll.Me',
+  metaTitle: 'DeclutrMail vs Unroll.Me: how each uses your email data',
   description:
     'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
+  metaDescription:
+    'A source-backed comparison: Unroll.Me is free and uses email data for market research; DeclutrMail never fetches or stores full email contents.',
   verdict:
     'Unroll.Me offers free subscription management and describes a market-research business. Its privacy notice also states additional restrictions for Gmail API data. DeclutrMail offers Free and paid plans, does not fetch full message bodies, and previews manual moves; compare the exact data terms for your connection.',
   indexSummary:
@@ -1010,6 +1020,8 @@ const gmailNative: ComparisonDefinition = {
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
+  metaDescription:
+    "A source-backed comparison of DeclutrMail and Gmail's cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.",
   verdict:
     "Gmail's built-in cleanup is free, already there, and requires no third-party access — start with it. DeclutrMail adds an exact count and sample before manual changes, a per-sender Activity history with undo windows, and one review flow across every sender.",
   indexSummary:
@@ -1159,6 +1171,8 @@ const metaMuse: ComparisonDefinition = {
   title: 'DeclutrMail vs Meta Muse',
   description:
     'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
+  metaDescription:
+    'Source-backed: DeclutrMail, a narrow Gmail cleanup tool that never fetches full message contents, vs Meta Muse, a general AI agent that can read and send mail.',
   verdict:
     'Meta Muse is a general-purpose AI agent that can search your mail and, if you allow it, send on your behalf. DeclutrMail does one narrower job — sender-by-sender Gmail cleanup with a preview and an undo record — without fetching full message bodies or attachments.',
   indexSummary:

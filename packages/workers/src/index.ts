@@ -172,6 +172,13 @@ export {
 } from './gmail-quota-limiter.js';
 export type { GmailQuotaClock, GmailQuotaLimiter, GmailQuotaRedis } from './gmail-quota-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
+export {
+  createRedisScanProgressStore,
+  parseScanProgressRecord,
+  SCAN_PROGRESS_TTL_SECONDS,
+  scanProgressKey,
+} from './scan-progress.js';
+export type { ScanCounts, ScanProgressRecord, ScanProgressStore } from './scan-progress.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
 export {
   IncrementalSyncWorker,
@@ -237,6 +244,7 @@ export {
   AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
 } from './autopilot-delta-trigger.js';
+export { buildRescoreSenders } from './rescore-senders.js';
 export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
@@ -351,6 +359,7 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobId,
   ScoreWorker,
 } from './score.worker.js';
 export type {
@@ -412,7 +421,7 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
-export { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+export { rescoreJobId, SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
 export type {
   SenderIndexSweepJobData,
   SenderIndexSweepResult,

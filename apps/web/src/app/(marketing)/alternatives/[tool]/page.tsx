@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: AlternativesPageProps): Promi
     // not rank its entries, so promising a winner in the title would
     // contradict the badge under it.
     title: `${page.subject.name} alternatives, compared honestly`,
-    description: `Source-backed alternatives to ${page.subject.name} for email cleanup. What each tool is for, when to stay with ${page.subject.name}, and where DeclutrMail fits. No rankings, no affiliate links.`,
+    description: `Source-backed alternatives to ${page.subject.name}: what each tool is for, when to stay with ${page.subject.name}, and where DeclutrMail fits. No rankings, no affiliates.`,
     path: `/alternatives/${page.slug}`,
   });
 }

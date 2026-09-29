@@ -12,6 +12,7 @@ import {
   isResolvableDomain,
   isStale,
   isWebsiteIconFallbackEnabled,
+  type DomainIconJobData,
 } from './domain-icon.worker.js';
 import { domainIconJobOptions } from './domain-icon.queue.js';
 import type { BimiHttpPort } from './bimi-resolver.js';
@@ -600,6 +601,15 @@ describe('DomainIconWorker', () => {
       'source',
       'status',
     ]);
+  });
+
+  it('declares the batchPolicy idempotency key as resolver-version + domain (D203/D225)', () => {
+    const worker = new DomainIconWorker({ db: null as never, bimi: bimiDeps() });
+    expect(
+      (worker as unknown as { getIdempotencyKey(p: DomainIconJobData): string }).getIdempotencyKey({
+        domain: 'Brand.EXAMPLE.',
+      }),
+    ).toBe(`DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-brand.example`);
   });
 });
 

@@ -24,7 +24,20 @@ if (dsn) {
       ? { release: process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE }
       : {}),
     tracesSampleRate: 0,
-    sendDefaultPii: false,
+    traceLifecycle: 'static',
+    dataCollection: {
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      },
+      httpBodies: [],
+      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      graphQL: { document: false, variables: false },
+    },
     integrations: [],
     beforeSend: (event) =>
       scrubTelemetryPayload(event as unknown as Record<string, unknown>) as unknown as typeof event,

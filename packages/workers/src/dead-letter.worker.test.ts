@@ -254,6 +254,7 @@ describe('dead-letter pipeline (D225)', () => {
         'producedAtMs',
         'scheduledAtMinute',
         'senderKey',
+        'senderKeys',
         'startHistoryId',
         'trigger',
         'triggeredAtMs',

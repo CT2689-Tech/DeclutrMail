@@ -14,7 +14,7 @@
 
 - **Privacy (D7, D228):** templates carry counts, dates, the user's own mailbox address, and DeclutrMail URLs — **never** message content, subjects, snippets, or third-party addresses.
 - **Canonical verbs (D227):** any verb in copy is one of Keep · Archive · Unsubscribe · Later · Delete. Never the word "Screen" in user-facing copy.
-- **Trust copy (D2.1):** the badge line is exactly `Full bodies fetched: 0`. Never "Bodies read: 0 forever."
+- **Trust copy (D7, D228; CLAUDE.md §2.1):** the badge line is exactly `We never fetch or store full email contents.` plus the generated storage list from `packages/shared/src/contracts/gmail-data-inventory.ts`. Counter-style claims are banned — never `Full bodies fetched: 0` or `Bodies read: 0 forever`.
 - **Fail-closed:** `EmailService` must never pretend-send. A missing `RESEND_API_KEY` returns `{ok:false, reason:'disabled'}` and dead-letters on attempt 1.
 - **Vitest include glob** is `src/**/*.spec.ts` today (`apps/api/vitest.config.ts`) — `.test.ts` and `.spec.tsx` are NOT collected. Task 2 widens it to include `.spec.tsx`; until that lands, any `.spec.tsx` silently never runs. `packages/workers` uses `*.test.ts` instead — check its own config before naming files there.
 - **ESM import extensions:** intra-package imports use `.js` even when the source is `.ts`/`.tsx` (e.g. `import { x } from './foo.js'` for `foo.tsx`).

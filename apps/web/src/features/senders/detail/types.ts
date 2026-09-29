@@ -31,7 +31,7 @@ export type ProtectionReason =
   | 'user-marked' // user toggled Protect on
   | 'replied' // >=3 messages addressed to them, >=1 received from them
   | 'starred' // user starred a message in the past year
-  | 'gmail-important'; // Gmail marked ≥3 recent messages important, sender in Primary
+  | 'gmail-important'; // Gmail marked ≥3 recent messages important (granted in Primary)
 
 /**
  * Source of a decision-history row (D46).

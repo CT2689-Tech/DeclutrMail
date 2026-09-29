@@ -423,6 +423,12 @@
   padding-block: clamp(72px, 8vw, 104px);
 }
 
+/* A second link band follows Related guides. One section of padding
+   between them; the first band already supplies the top gap. */
+.dm-compare-more + .dm-compare-more {
+  padding-top: 0;
+}
+
 .dm-compare-more h2 {
   font-size: 17px;
 }

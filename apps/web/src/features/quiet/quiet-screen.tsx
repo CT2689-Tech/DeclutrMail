@@ -10,13 +10,13 @@ import {
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/contracts';
+import { EmptyState, ScreenIntro, tokens } from '@declutrmail/shared';
+import type { QuietHoursConfig } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { track } from '@/lib/posthog';
-import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { addBreadcrumb } from '@/lib/sentry';
 import { useQuietHours } from './api/use-quiet-hours';
 import { useUpdateQuietHours } from './api/use-update-quiet-hours';
 import { QuietHoursCard, type QuietHoursCardState } from './quiet-hours-card';
@@ -29,7 +29,9 @@ const { color, font, text } = tokens;
  * V2 scope: per-mailbox quiet-hours WINDOW config (one recurring daily
  * window: start/end local + timezone + enabled). While the window
  * covers now, Autopilot mutations defer (`AutopilotActionWorker`
- * Guard 1); manual actions always run. Out of scope at this unit (the
+ * Guard 2) — suggestions the user approved included, since approving
+ * queues that same sweep; actions the user takes directly always run.
+ * Out of scope at this unit (the
  * rest of D92-D98): the ad-hoc "Quiet until" toggle, the held-messages
  * list (D96), multi-window schedules with day bitmasks, and the D190
  * preview mode — those land with the QuietHold/QuietRelease pipeline.
@@ -59,13 +61,12 @@ export function QuietRoute() {
       <EditorialKicker>Automations / On your schedule</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
       <EditorialDescription>
-        Schedules for all connected inboxes. Autopilot pauses during each inbox’s quiet hours; Gmail
-        delivery and your own actions continue.
+        Autopilot holds its actions during quiet hours. Gmail delivery continues.
       </EditorialDescription>
       <ScreenIntro
         id="quiet"
         title="Quiet hours"
-        body="Autopilot pauses during quiet hours. Your own actions still run."
+        body="During quiet hours, Autopilot also holds suggestions you approve."
       />
       {mailboxes.length === 0 ? (
         <EmptyState
@@ -114,23 +115,32 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
       message: 'quiet: hours saved',
       level: 'info',
     });
-    update.mutate(config, {
-      onSuccess: () => {
-        // Server-confirmed save — never optimistic (taxonomy contract).
-        void track('quiet_hours_updated', {
-          mailbox_id: mailbox.id,
-          enabled: config.enabled,
-          crosses_midnight:
-            parseTimeToMinutes(config.startLocal) > parseTimeToMinutes(config.endLocal),
-        });
-        toast(`Quiet hours saved for ${mailbox.email}.`, 'success');
-      },
-      onError: (err) => {
-        captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
-        toast('Saving failed. Try again.', 'warn');
-      },
-    });
+    update.mutate(config);
   };
+
+  // "Saved" answers the latest save only: the next edit ends it.
+  const endSaved = () => {
+    if (update.isSuccess) update.reset();
+  };
+
+  // A refresh can fail and later recover without a Retry click — a
+  // reconnect refetch, or another screen's mailbox-scope cache reset.
+  // Ending the save the moment the error STARTS, rather than only when
+  // Retry is clicked, covers every recovery path: by the time the card
+  // is ready again, "Saved" no longer answers for an unrelated read.
+  const { reset: resetUpdate } = update;
+  useEffect(() => {
+    if (query.isError) resetUpdate();
+  }, [query.isError, resetUpdate]);
+
+  // Quiet holds nothing while it is off. A failed refresh shows the error
+  // card, which a count from the last good read would contradict. A
+  // disconnected inbox runs nothing until it is reconnected, and its row
+  // in the account menu is disabled.
+  const heldCount =
+    state.kind === 'ready' && state.activeNow && mailbox.status !== 'disconnected'
+      ? (query.data?.heldCount ?? 0)
+      : 0;
 
   return (
     // One raised settings group per mailbox, its address as the group title.
@@ -141,17 +151,16 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
         mailboxStatus={mailbox.status}
         state={state}
         saving={update.isPending}
+        justSaved={update.isSuccess}
+        onEdit={endSaved}
         onSave={onSave}
         onRetry={() => void query.refetch()}
       />
-      {/* A failed refresh shows the error card; a count from the last good read would contradict it. */}
-      {state.kind === 'ready' && query.data && (
+      {heldCount > 0 && (
         <QuietQueueSummary
+          mailboxEmail={mailbox.email}
           activeInbox={active}
-          activeNow={query.data.activeNow}
-          heldCount={query.data.heldCount}
-          endsAt={query.data.endsAt}
-          timezone={query.data.config?.timezone ?? 'UTC'}
+          heldCount={heldCount}
         />
       )}
     </div>
@@ -159,59 +168,20 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
 }
 
 function QuietQueueSummary({
+  mailboxEmail,
   activeInbox,
-  activeNow,
   heldCount,
-  endsAt,
-  timezone,
 }: {
+  mailboxEmail: string;
   activeInbox: boolean;
-  activeNow: boolean;
   heldCount: number;
-  endsAt: string | null;
-  timezone: string;
 }) {
-  const actionLabel = heldCount === 1 ? 'Autopilot action' : 'Autopilot actions';
-  const endLabel = endsAt ? formatQuietEnd(endsAt, timezone) : null;
-
-  // Off with nothing held: the unchecked toggle already says it.
-  if (!activeNow && heldCount === 0) return null;
-
-  let summary = <>No Autopilot actions are held.</>;
-
-  if (!activeNow) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} waiting to run — not held by quiet hours.
-      </>
-    );
-  } else if (activeNow && heldCount === 0 && endLabel) {
-    summary = (
-      <>
-        No Autopilot actions are held. Quiet ends at{' '}
-        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
-      </>
-    );
-  } else if (activeNow && heldCount === 0) {
-    summary = <>No Autopilot actions are held.</>;
-  } else if (activeNow && endLabel) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends at{' '}
-        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
-      </>
-    );
-  } else if (activeNow) {
-    summary = (
-      <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends.
-      </>
-    );
-  }
-
+  // No end time: the End row states it, and a rule's daily cap can keep
+  // some of these past it.
   return (
     <p
       role="status"
+      aria-label={`Quiet status for ${mailboxEmail}`}
       style={{
         fontFamily: font.sans,
         fontSize: text.sm,
@@ -222,7 +192,7 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {summary}{' '}
+      {heldCount} {heldCount === 1 ? 'Autopilot action is' : 'Autopilot actions are'} held.{' '}
       {activeInbox ? (
         <Link href="/autopilot" style={{ color: color.primary }}>
           Review Autopilot rules →
@@ -232,19 +202,4 @@ function QuietQueueSummary({
       )}
     </p>
   );
-}
-
-function formatQuietEnd(value: string, timezone: string): string | null {
-  const end = new Date(value);
-  if (Number.isNaN(end.getTime())) return null;
-
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-    timeZone: timezone,
-  }).format(end);
 }

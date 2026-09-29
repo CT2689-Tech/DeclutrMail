@@ -19,6 +19,7 @@ import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shar
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
@@ -30,7 +31,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-09-22';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/help'];
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
