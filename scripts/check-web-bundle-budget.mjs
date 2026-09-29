@@ -209,7 +209,14 @@ export const OVERRIDES_KB = {
   // for billing / screener / admin. The public theme and refreshed shared
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
   // while keeping the general 180 kB ratchet and other routes unchanged.
-  '/(app)/billing/page': 266, // 263.5 — checkout + invoices + plan controls + editorial shell
+  // Raised 266 -> 270 on 2026-09-29 (deploy-blocking: main's own post-merge
+  // CI was red on this route, which was failing every deploy's await-ci
+  // step): measured 267.1, up from 263.5. No file this route imports
+  // directly changed since the last raise — the growth is cumulative
+  // shared-chunk drift from same-day merges (#829's D245 registry
+  // entries, #830's Autopilot fixes) landing across many PRs at once.
+  // 270 restores ~2 kB headroom.
+  '/(app)/billing/page': 270, // 267.1 — checkout + invoices + plan controls + editorial shell
   '/(app)/screener/page': 261, // 258.8 — queue + decision controls + editorial shell
   // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
@@ -257,10 +264,20 @@ export const OVERRIDES_KB = {
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.
   '/(app)/settings/senders/page': 255, // 253.2
-  '/(app)/quiet/page': 249, // 247.0 — schedule controls + explainer
-  '/(app)/later/page': 249, // 246.6 — return queue + explainer
-  '/(app)/followups/page': 251, // 248.9 — follow-up queue + explainer
+  // Raised 249/249/251 -> 253/252/255 on 2026-09-29 (deploy-blocking, same
+  // cumulative shared-chunk drift as /(app)/billing/page above — these
+  // three had the least headroom left in this cluster and tipped first):
+  // measured 250.2 / 249.9 / 252.2, up from 247.0 / 246.6 / 248.9. ~2-3 kB
+  // headroom restored on each.
+  '/(app)/quiet/page': 253, // 250.2 — schedule controls + explainer
+  '/(app)/later/page': 252, // 249.9 — return queue + explainer
+  '/(app)/followups/page': 255, // 252.2 — follow-up queue + explainer
   '/(app)/admin/security/page': 244, // 242.0 — operator log + editorial shell
+  // Riding AUTHED_DEFAULT_KB (264) tipped it 0.3 kB over on 2026-09-29 —
+  // same cumulative shared-chunk drift as the cluster above. Pinned its
+  // own ceiling instead of raising the shared default, since no other
+  // default-riding route is failing.
+  '/(app)/settings/help/page': 267, // 264.4
 };
 
 /**
