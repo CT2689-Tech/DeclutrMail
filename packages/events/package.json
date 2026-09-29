@@ -12,10 +12,10 @@
     "build": "echo 'no build yet'"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "vite": "^7.3.6",
+    "vite": "^8.3.1",
     "vitest": "^5.0.1"
   }
 }

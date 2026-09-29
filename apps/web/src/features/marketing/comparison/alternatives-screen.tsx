@@ -2,8 +2,9 @@ import Link from 'next/link';
 
 import { JsonLd } from '../json-ld';
 import { siteUrl } from '../landing/urls';
-import type { AlternativesPage } from './comparison-data';
+import { ALTERNATIVES_SLUGS, alternativesFor, type AlternativesPage } from './comparison-data';
 import { FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
+import { COMPARISON_RELATED_GUIDES } from './related-guides';
 
 /**
  * The "X alternatives" page.
@@ -50,10 +51,9 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
           <span aria-hidden="true">/</span>
           <span>{subject.name} alternatives</span>
         </nav>
-        <h1>Looking past {subject.name}?</h1>
+        <h1>{`${subject.name} alternatives for Gmail cleanup`}</h1>
         <p className="dm-compare-lede">
-          If {subject.name} is not the shape you need, here is what else exists, described by the
-          job each one does, not ranked. DeclutrMail comes last, after the others.
+          {`Looking past ${subject.name}? If it is not the shape you need, here is what else exists, described by the job each one does, not ranked. DeclutrMail comes last, after the others.`}
         </p>
         <dl className="dm-compare-facts">
           <div>
@@ -134,6 +134,32 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       </section>
 
       <FinalCta competitorName={subject.name} topic={subject.slug} />
+
+      <nav className="dm-compare-more dm-compare-narrow" aria-label="Related guides">
+        <h2>Related guides</h2>
+        <ul>
+          {COMPARISON_RELATED_GUIDES[subject.slug].map((guide) => (
+            <li key={guide.href}>
+              <a href={guide.href}>{guide.label}</a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <nav className="dm-compare-more dm-compare-narrow" aria-label="Other alternatives pages">
+        <h2>Other alternatives pages</h2>
+        <ul>
+          {ALTERNATIVES_SLUGS.filter((slug) => slug !== page.slug).map((slug) => {
+            const other = alternativesFor(slug);
+            if (!other) return null;
+            return (
+              <li key={slug}>
+                <a href={`/alternatives/${slug}`}>{other.subject.name} alternatives</a>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </div>
   );
 }
