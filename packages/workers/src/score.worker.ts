@@ -580,17 +580,23 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // captured failure and a `dead_letter_jobs` row. Without this catch,
     // a payload missing `mailboxAccountId` threw here as a raw TypeError
     // with no log line, no Sentry event and nothing dead-lettered — that
-    // guard was unreachable (2026-09-28).
+    // guard was unreachable (2026-09-28). `payload` itself, not only its
+    // fields, can be nullish — BullMQ stores an enqueued `data: null`
+    // verbatim and hands it back as `null` — so every access below uses
+    // `?.`, including in this catch: the first version of this fallback
+    // still read `payload.mailboxAccountId` unguarded and threw again,
+    // for a null payload, from inside the catch meant to prevent exactly
+    // that (caught by silent-failure-hunter before merge, 2026-09-28).
     let key: string;
     try {
       key = scoreJobId(payload);
     } catch {
-      key = `${payload.mailboxAccountId ?? '?'}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+      key = `${payload?.mailboxAccountId ?? '?'}:${payload?.senderKey ?? '*'}:${payload?.producedAtMs ?? '?'}`;
     }
     // An explain job's `producedAtMs` is the row version it explains —
     // the same number the re-score that wrote that row carried. Marked, so
     // the two never share an `idempotencyRef` in the logs.
-    return payload.trigger === 'explain' ? `explain:${key}` : key;
+    return payload?.trigger === 'explain' ? `explain:${key}` : key;
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
@@ -1862,7 +1868,7 @@ export function scoreJobId(
   // `senderKey` is `string`, not a branded sha256 type, so this
   // function — not its callers' input validation — is what actually
   // keeps the colon count fixed. `POST /api/triage/score-sender` checks
-  // shape too (`isSenderKey`, `triage.controller.ts`), but this is the
+  // shape too (`asSenderKey`, `triage.controller.ts`), but this is the
   // one guard every producer shares, including any future one that
   // doesn't. A caller-supplied colon would otherwise silently change
   // which sender's re-score this id names, or make BullMQ reject the

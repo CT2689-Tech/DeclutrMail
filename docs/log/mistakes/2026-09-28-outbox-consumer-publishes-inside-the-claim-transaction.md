@@ -39,19 +39,25 @@ make a network call, and CLAUDE.md §2.6 must not be treated as satisfied
 by "this file already does it elsewhere."
 **Enforcement update:** A first gate run rated this WARNING and #807
 documented-and-deferred it; a second run on the same diff re-scored it
-BLOCKING, confirmed it, and named the founder as the only one who may
-waive a §2 rule. Documenting a §2 violation is not the same as fixing it,
-and the gate correctly did not treat it as one.
+BLOCKING, confirmed it by both refuters, and named the founder as the
+only one who may waive a §2 rule; a third run confirmed it again after
+the mitigation below landed. Documenting a §2 violation is not the same
+as fixing it, and the gate correctly did not treat either as one.
 
-#807 now bounds both calls (`packages/workers/src/rescore-senders.ts`,
-`withPublishTimeout`, 5s) so a hung Redis fails within a known time
-instead of holding the claim transaction's row locks and connection
-indefinitely — closing the "indefinitely, with no failure signal" half of
-the harm, using only files #807 already owns. It does not close the
-letter of §2.6: the network call still executes while the transaction is
-open, for the duration of the bound. Moving it out entirely means
-redesigning the dispatcher's claim/commit boundary across every
-registered consumer (~8 topics, including the pre-existing
-`enqueueAutopilotApply`), which is still out of scope for a small
-consumer-registration PR and is tracked as its own task, spawned
-2026-09-28 (`task_10d49b5e`), rather than folded in here.
+#807 now bounds each of the two calls (`packages/workers/src/
+rescore-senders.ts`, `withPublishTimeout`, 5s) so a hung Redis fails one
+call within a known time instead of hanging it forever with no failure
+signal at all — using only files #807 already owns. This is smaller than
+it first sounds: the dispatcher claims up to 32 rows per tick in ONE
+transaction and reports failures only after that transaction resolves,
+so several purge rows in one batch, each hitting the bound, can still
+hold the transaction for several times 5s, and the whole batch's failure
+report waits for that. It also does not close the letter of §2.6 at all
+— the network call still executes while the transaction is open, for
+however long it runs. Moving it out entirely means redesigning the
+dispatcher's claim/commit boundary across every registered consumer
+(~8 topics, including the pre-existing `enqueueAutopilotApply`), which is
+still out of scope for a small consumer-registration PR. Tracked as:
+- its own task, spawned 2026-09-28 (`task_10d49b5e`), for the redesign;
+- `docs/log/founder-followups/2026-09-28-waive-or-block-outbox-queue-in-transaction.md`,
+  for the founder's merge-or-hold decision the gate's own words require.

@@ -14,15 +14,20 @@ import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
  * pooled connection for as long as the outage lasts. Moving these calls
  * outside the transaction needs redesigning the dispatcher's claim/
  * commit boundary, which is tracked separately
- * (docs/log/mistakes/2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md)
- * and is not this file's job. This bounds the two calls instead: a hung
- * Redis now fails within `PUBLISH_TIMEOUT_MS`, which the dispatcher's
- * existing retry/report path (`reportConsumerFailure`) already handles
- * correctly, rather than hanging indefinitely with no failure signal at
- * all. It does not cancel the underlying command — ioredis has no
- * cancellation for one already queued — so a very late resolution after
- * the timeout is simply ignored here; BullMQ's jobId dedup makes a
- * subsequent retry's re-publish safe either way.
+ * (docs/log/mistakes/2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md,
+ * docs/log/founder-followups/2026-09-28-waive-or-block-outbox-queue-in-transaction.md)
+ * and is not this file's job. This bounds each of the two calls instead:
+ * a hung Redis now fails one call within `PUBLISH_TIMEOUT_MS` rather than
+ * hanging it forever with no failure signal at all. It does NOT bound the
+ * transaction as a whole — the dispatcher claims up to 32 rows per tick
+ * in one transaction and reports failures only after that transaction
+ * resolves (`OutboxDispatcherWorker.runOneTick`), so several purge rows
+ * in one batch, each hitting this bound, can still hold the transaction
+ * for several times `PUBLISH_TIMEOUT_MS`, and the whole batch's failure
+ * report waits for that. It does not cancel the underlying command —
+ * ioredis has no cancellation for one already queued — so a very late
+ * resolution after the timeout is simply ignored here; BullMQ's jobId
+ * dedup makes a subsequent retry's re-publish safe either way.
  */
 const PUBLISH_TIMEOUT_MS = 5_000;
 

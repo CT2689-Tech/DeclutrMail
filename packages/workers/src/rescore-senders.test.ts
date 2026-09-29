@@ -127,8 +127,12 @@ describe('scoreJobId', () => {
   });
 
   it("refuses a senderKey that would change the id's colon count", () => {
-    // `POST /api/triage/score-sender` validates only non-empty-string,
-    // so an extra colon here is a caller input, not an internal-only value.
+    // `scoreJobId` is a shared guard across producers whose own input
+    // validation differs: the HTTP controller checks shape with
+    // `asSenderKey`, but the purge's own event schema (SenderKeySchema,
+    // a regex with no colon-safety framing) is what validates the
+    // `senderKey` `buildRescoreSenders` passes through — this direct
+    // call exercises that guard without going through either.
     expect(() =>
       scoreJobId({ mailboxAccountId: MAILBOX, senderKey: 'a:b', producedAtMs: CLOCK }),
     ).toThrow(/must not contain ":"/);
