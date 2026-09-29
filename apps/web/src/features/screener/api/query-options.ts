@@ -1,17 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import type { ScreenerQueueRow } from '../data';
-import { SCREENER_QUEUE_KEY } from './query-keys';
+import { SCREENER_ALL_KEY, SCREENER_QUEUE_KEY } from './query-keys';
 
-export { SCREENER_QUEUE_KEY };
-
-/**
- * Shared parent prefix. TanStack matches by prefix, so invalidating this
- * reaches BOTH the queue and the count — which anything that can change
- * membership (a re-score that graduates a sender) must do, or the badge
- * and the list disagree until the count's next poll.
- */
-export const SCREENER_ALL_KEY = ['screener'] as const;
+export { SCREENER_ALL_KEY, SCREENER_QUEUE_KEY };
 export const SCREENER_COUNT_KEY = ['screener', 'count'] as const;
 export const SCREENER_COUNT_POLL_MS = 60_000;
 

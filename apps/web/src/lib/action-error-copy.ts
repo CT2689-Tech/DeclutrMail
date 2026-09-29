@@ -1,4 +1,4 @@
-import { apiErrorDisplayId } from '@/lib/api/client';
+import { ApiError, apiErrorDisplayId } from '@/lib/api/client';
 
 /**
  * Plain-language failure copy for the asynchronous action pipeline — one
@@ -28,11 +28,21 @@ export interface ActionFailureCopyOptions {
   readonly action?: string;
   /** Some of a batch completed — the sentence leads with the confirmed split. */
   readonly partial?: { readonly done: number; readonly total: number; readonly unit: string };
-  /** Replaces the clause after the dash. Lowercase, no trailing period. */
+  /**
+   * Replaces the clause after the dash. Lowercase, no trailing period.
+   * For an enqueue phase it refines "nothing changed", so it is dropped
+   * when that is unproven.
+   */
   readonly outcome?: string;
+  /**
+   * The enqueue's failure. An enqueue phase says "nothing changed" only
+   * when this proves it (see `enqueueMayHaveStarted`); without it, it
+   * says the start is unconfirmed.
+   */
+  readonly error?: unknown;
 }
 
-const CHECK_ACTIVITY = 'check Activity before retrying';
+export const CHECK_ACTIVITY = 'check Activity before retrying';
 const NOTHING_CHANGED = 'nothing changed';
 
 export function getActionFailureCopy(
@@ -49,22 +59,74 @@ export function getActionFailureCopy(
     return `${lead} — ${options.outcome ?? 'check Activity for the rest'}.`;
   }
 
+  const unconfirmedStart =
+    (phase === 'enqueue' || phase === 'revert-enqueue') && enqueueMayHaveStarted(options.error);
   const [lead, outcome] = ((): [string, string] => {
     switch (phase) {
       case 'preview':
         return ["Couldn't load the preview", NOTHING_CHANGED];
+      // "Can't tell", not "couldn't confirm": right after a Confirm button,
+      // "couldn't confirm" reads as "your click did nothing".
       case 'enqueue':
+        return unconfirmedStart
+          ? [`Can't tell if ${action} started`, CHECK_ACTIVITY]
+          : [`Couldn't start ${action}`, NOTHING_CHANGED];
+      // An undo request is idempotent (the same token answers with the same
+      // reverse job, or "reverted" once it finished), so trying again is
+      // always safe — here and after a lost status read below.
       case 'revert-enqueue':
-        return [`Couldn't start ${action}`, NOTHING_CHANGED];
+        return unconfirmedStart
+          ? ["Can't tell if undo started", 'try again']
+          : ["Couldn't start undo", NOTHING_CHANGED];
       case 'status':
-      case 'revert-status':
         return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
+      case 'revert-status':
+        return ["Couldn't confirm undo", 'try again'];
       case 'terminal':
-      case 'revert-terminal':
         return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
+      // A repeat undo re-queues the same reverse job: safe to try again.
+      case 'revert-terminal':
+        return ['Undo failed', 'try again'];
     }
   })();
-  return `${lead} — ${options.outcome ?? outcome}.`;
+  return `${lead} — ${unconfirmedStart ? outcome : (options.outcome ?? outcome)}.`;
+}
+
+/**
+ * An action named in a sentence: "Archive for Acme". "Later" is the verb's
+ * name, not an English word — "Couldn't start Later for Acme" reads as
+ * "couldn't begin afterwards" — so it says what Later does.
+ */
+export function actionLabel(verb: string, target: string): string {
+  return verb === 'Later' ? `moving email from ${target} to Later` : `${verb} for ${target}`;
+}
+
+/** An action past its overdue deadline: a status, not a failure. */
+export function stillRunningCopy(verb: string, target: string): string {
+  return `${sentenceCase(actionLabel(verb, target))} is still running — see Activity.`;
+}
+
+/**
+ * Whether a failed enqueue may still have started its job, which leaves
+ * "nothing changed" unproven and a blind retry able to run it twice.
+ * Only a refusal (4xx) proves the request never started. A 5xx does not:
+ * `ENQUEUE_FAILED` means the queue did not confirm the add — a timed-out
+ * reply leaves the job running — a bulk answers it when any one add fails
+ * while the rest run, and a failure after that write answers 500. With no
+ * response at all, nothing says either way.
+ */
+export function enqueueMayHaveStarted(error: unknown): boolean {
+  return !(error instanceof ApiError) || error.status >= 500;
+}
+
+/**
+ * D245 — senders an action left alone because they are Protected. One
+ * phrase for every report of a skip that happened: the pill, its undo
+ * line, the Brief's outcome line and the click-time toasts. Previews
+ * forecast a skip in their own tense ("is skipped").
+ */
+export function protectedSkippedCopy(count: number): string {
+  return `${count.toLocaleString('en-US')} Protected sender${count === 1 ? '' : 's'} skipped`;
 }
 
 /**

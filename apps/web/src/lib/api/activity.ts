@@ -254,8 +254,7 @@ export async function revertActivityUndo(token: string, mailboxId?: string): Pro
     options,
   );
   if (data.reverted) return;
-  if (!data.actionId)
-    throw new Error("Couldn't confirm Undo. Refresh Activity to check its status.");
+  if (!data.actionId) throw new Error("Couldn't confirm undo — try again.");
   // Keep the originating mailbox for every poll even if the user switches.
   // Bound the wait: losing status access does not prove the Gmail job failed.
   for (let attempt = 0; attempt < 120; attempt++) {
@@ -263,18 +262,16 @@ export async function revertActivityUndo(token: string, mailboxId?: string): Pro
     try {
       status = await getActionStatus(data.actionId, options);
     } catch {
-      throw new Error("Couldn't confirm Undo. It may still finish. Refresh Activity to check.");
+      throw new Error("Couldn't confirm undo — try again.");
     }
     if (status.status === 'failed') {
-      throw new Error('Undo did not complete. Some emails may have been restored. Try again.');
+      throw new Error('Undo failed — try again.');
     }
     if (status.status === 'done') {
       if (status.undoRevertedAt) return;
-      throw new Error("Couldn't confirm Undo. Refresh Activity to check its status.");
+      throw new Error("Couldn't confirm undo — try again.");
     }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  throw new Error(
-    'Undo is taking longer than expected. It may still finish. Refresh Activity to check.',
-  );
+  throw new Error('Undo is still running.');
 }

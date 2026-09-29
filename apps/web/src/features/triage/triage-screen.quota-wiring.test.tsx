@@ -271,7 +271,11 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     expect(dialog.textContent).toContain('Counting the inbox');
 
     releaseRefetch();
-    await waitFor(() => expect(within(dialog).getByText(/Protected or gone/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText(/Protected or no longer in this mailbox/i),
+      ).toBeInTheDocument(),
+    );
     expect(within(dialog).getByRole('button', { name: /^Archive( [\d,]+)?$/ })).toBeDisabled();
     // The join: the screen must actually hand the sheet its route out.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh triage' }));

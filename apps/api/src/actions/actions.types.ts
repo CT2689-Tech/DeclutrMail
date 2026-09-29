@@ -52,6 +52,12 @@ export const unsubscribeIntentRequestSchema = z
      * one-vs-two-unit Free quota preflight.
      */
     includesBacklogAction: z.boolean().default(false),
+    /**
+     * The user confirmed "Unsubscribe anyway" on a sender shown as
+     * Protected (D245). Honored only when the sender is Protected at the
+     * click; any other job is re-checked when it runs.
+     */
+    override: z.boolean().default(false),
   })
   .strict();
 export type UnsubscribeIntentRequest = z.infer<typeof unsubscribeIntentRequestSchema>;
@@ -219,12 +225,32 @@ export interface ActionRecoveryPreviewResult {
   requiresNewWakeAt: boolean;
   expiresAt: string;
   recoveryActionId: string | null;
+  /**
+   * A sender of this action is Protected right now (D245) — for a legacy
+   * message-list action, any of its senders. The review must say it, and
+   * Confirm echoes it back (`actionRecoveryConfirmRequestSchema
+   * .senderProtected`) as the consent the retry carries; without it the
+   * worker stops the retry (founder decision 2026-09-26).
+   */
+  senderProtected: boolean;
+  /**
+   * Why (`sender_policies.protection_reason`), so the review can say so
+   * (CLAUDE.md §2.6). Null when not Protected, and for a message list,
+   * whose senders are many.
+   */
+  protectionReason: string | null;
 }
 
 export const actionRecoveryConfirmRequestSchema = z
   .object({
     /** Required only when a failed Later schedule is no longer in the future. */
     wakeAt: z.string().datetime({ offset: true }).optional(),
+    /**
+     * The protection state the review showed (D245). Confirm is consent to
+     * act on a Protected sender only when the review said so; if the sender
+     * is Protected now and the review did not show it, the server refuses.
+     */
+    senderProtected: z.boolean().optional(),
   })
   .strict();
 
@@ -573,7 +599,27 @@ export interface BatchStatusResult {
   failed: number;
   requestedCount: number;
   affectedCount: number;
+  /**
+   * `senders.id` of every sender the worker skipped because it became
+   * Protected after the click (D245). Their jobs are left out of every
+   * count above — the same outcome as a sender skipped at the click — so
+   * a surface reads THIS to say "skipped" and to leave those rows
+   * unmarked.
+   */
+  skippedProtectedSenderIds: string[];
   undoToken: string | null;
+  /** When `undoToken`'s window closes; `null` when there is nothing to undo. */
+  undoExpiresAt: string | null;
+  /**
+   * Set once an Undo has put back EVERYTHING this batch changed; `null`
+   * while any of it is still out, or when nothing was changed.
+   */
+  undoRevertedAt: string | null;
+  /**
+   * `senders.id` of each sender whose changes an Undo has put back — the
+   * whole decision, or that one sender from the pill.
+   */
+  revertedSenderIds: string[];
   /**
    * D248 — the three terminal outcomes `UnsubExecutionWorker` records,
    * aggregated over the batch's unsubscribe rows. `null` when the batch
