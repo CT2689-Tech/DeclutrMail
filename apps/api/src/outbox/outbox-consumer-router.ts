@@ -378,7 +378,13 @@ async function enqueueAutopilotApply(
  * without it would drop the repair for good (the rows that described
  * those senders are gone), so the row stays for the dispatcher, which
  * retries it and, if it gives up, logs `outbox.dispatch.event_failed`
- * and reports it to Sentry.
+ * and reports it to Sentry. That retry protects the ENQUEUE only: like
+ * every other score producer, `rescoreSenders` sets no BullMQ `attempts`
+ * (`ScoreWorker` is `perMailboxPolicy`, 5 attempts + backoff, but nothing
+ * here asks for that budget), so once the outbox event is `dispatched`,
+ * a transient failure inside the score run itself dead-letters after one
+ * try, with no retry of the repair. Pre-existing, shared by all four
+ * score producers — not something to fix asymmetrically for this one.
  */
 async function handleNonMailPurged(
   db: DrizzleDb,

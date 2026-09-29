@@ -1898,19 +1898,25 @@ export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
 
 /**
- * A score job's BullMQ `jobId`, and the worker's idempotency key:
- * `${mailboxAccountId}:${scope}:${producedAtMs}`, where `scope` is
- * `senderKey` if set, else `'subset'` for a named `senderKeys` set (a
- * Gmail tab recount), else `'*'` for the all-senders sweep. One
- * definition, so a producer's id cannot drift from the key the worker
- * logs, and a redelivered trigger dedups.
+ * The worker's `getIdempotencyKey` telemetry label, in the same
+ * `${mailboxAccountId}:${scope}:${producedAtMs}` shape most producers'
+ * real BullMQ `jobId` also uses, where `scope` is `senderKey` if set,
+ * else `'subset'` for a named `senderKeys` set (a Gmail tab recount),
+ * else `'*'` for the all-senders sweep.
+ *
+ * NOT every producer's real jobId: the Gmail tab recount producer
+ * (`onSendersRecategorized`, `apps/api/src/worker.ts`) sets its own
+ * `rescoreJobId(mailboxAccountId, sweepTick)`, independent of this
+ * function, so for that trigger the logged label and the real jobId use
+ * the same SHAPE but different values — `producedAtMs` (this label)
+ * versus `sweepTick` (the real id). Every other live producer's real
+ * jobId does match this function's output exactly.
  *
  * New ids use hyphens (BullMQ throws "Custom Id cannot contain :"). This
  * one predates that rule and is accepted only because bullmq 6 allows
  * exactly two colons (measured in `domain-icon.queue.ts`); neither a
  * mailbox uuid nor a sha256 sender key holds a colon, so the count stays
- * fixed — enforced below, not merely assumed. It is not re-spelled: every
- * live producer and the worker's logs share this format.
+ * fixed — enforced below, not merely assumed.
  */
 export function scoreJobId(
   job: Pick<ScoreJobData, 'mailboxAccountId' | 'senderKey' | 'senderKeys' | 'producedAtMs'>,
