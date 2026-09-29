@@ -27,7 +27,7 @@ export default function TriageError({
       reset={reset}
       boundary="triage"
       headline="We couldn't load your triage queue."
-      body="Your mailbox is unchanged. Try again, or review senders."
+      body="Try again, or review senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

@@ -53,7 +53,11 @@ export function RouteErrorScreen({
   boundary: ErrorBoundary;
   /** e.g. "We couldn't load your settings." */
   headline: string;
-  /** One reassuring sentence — what is safe + what to do next. */
+  /**
+   * What to do next, matching `escape`. Never a claim about what the error
+   * left unchanged ("your settings are unchanged"): a boundary cannot see
+   * whether a mutation committed before the render failed.
+   */
   body: string;
   /** Escape-hatch link — a route that is NOT this one. */
   escape: { href: string; label: string };

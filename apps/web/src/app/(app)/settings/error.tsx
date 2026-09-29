@@ -23,7 +23,7 @@ export default function SettingsError({
       reset={reset}
       boundary="settings"
       headline="We couldn't load your settings."
-      body="Try again. If you came from an email link, reopening it also works."
+      body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

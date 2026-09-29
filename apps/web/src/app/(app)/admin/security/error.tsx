@@ -23,7 +23,7 @@ export default function AdminSecurityError({
       reset={reset}
       boundary="admin-security"
       headline="We couldn't load the security audit log."
-      body="Events are still being recorded — only this view failed. Try again in a moment."
+      body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

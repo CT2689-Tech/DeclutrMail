@@ -173,6 +173,42 @@ describe('AccountMenu Gmail reconnect health', () => {
     ).toBeVisible();
   });
 
+  // Both requests can commit on the server before the response is lost,
+  // so an error proves only that nothing confirmed it.
+  it('does not claim a failed disconnect changed nothing', async () => {
+    const { user } = await renderOpenMenu();
+    await user.click(
+      screen.getByRole('button', { name: `Manage connection and data for ${MAILBOX_A.email}` }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` });
+    await user.click(within(dialog).getByRole('button', { name: 'Disconnect and keep data' }));
+    const callbacks = disconnectMutateSpy.mock.calls.at(-1)?.[1];
+    act(() => callbacks?.onError?.(new Error('Network unavailable')));
+
+    const alert = within(dialog).getByRole('alert');
+    expect(alert).toHaveTextContent(`Couldn't confirm ${MAILBOX_A.email} was disconnected.`);
+    expect(alert).not.toHaveTextContent(/nothing was deleted/i);
+  });
+
+  it('does not claim nothing was deleted when a saved-data deletion errors', async () => {
+    const { user } = await renderOpenMenu();
+    await user.click(
+      screen.getByRole('button', { name: `Manage connection and data for ${MAILBOX_A.email}` }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: `Disconnect ${MAILBOX_A.email}?` });
+    const phraseInput = within(dialog).getByRole('textbox');
+    await user.type(phraseInput, phraseInput.getAttribute('placeholder') ?? '');
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Disconnect & delete saved data' }),
+    );
+    const callbacks = deleteIndexedDataMutateSpy.mock.calls.at(-1)?.[1];
+    act(() => callbacks?.onError?.(new Error('Network unavailable')));
+
+    const alert = within(dialog).getByRole('alert');
+    expect(alert).toHaveTextContent(`Couldn't confirm saved-data deletion for ${MAILBOX_A.email}.`);
+    expect(alert).not.toHaveTextContent(/nothing was deleted/i);
+  });
+
   it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {
     me = makeMe([{ ...MAILBOX_A, readiness: 'failed' }, MAILBOX_B]);
     healthById[MAILBOX_A.id] = { lastSyncedAt: null, needsReconnect: true };

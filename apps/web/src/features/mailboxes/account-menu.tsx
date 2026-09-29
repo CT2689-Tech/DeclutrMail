@@ -531,9 +531,12 @@ export function AccountMenu() {
                   'success',
                 );
               },
+              // An error does not prove the disconnect failed: the server
+              // can commit it before the response is lost. It is
+              // idempotent, so another try confirms it either way.
               onError: () => {
                 setDataControlsError(
-                  `Could not disconnect ${managedMailbox.email}. Nothing was deleted; try again.`,
+                  `Couldn't confirm ${managedMailbox.email} was disconnected. Try again.`,
                 );
               },
             });
@@ -551,9 +554,13 @@ export function AccountMenu() {
                     'success',
                   );
                 },
+                // The deletion can be scheduled before the request fails
+                // (the preference clear runs after it), so "nothing was
+                // deleted" was unproven. A retry returns the scheduled
+                // request if there is one.
                 onError: () => {
                   setDataControlsError(
-                    `Could not start deleting saved data for ${managedMailbox.email}. Nothing was deleted; try again.`,
+                    `Couldn't confirm saved-data deletion for ${managedMailbox.email}. Try again.`,
                   );
                 },
               },
