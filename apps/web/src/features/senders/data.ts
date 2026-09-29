@@ -70,8 +70,40 @@ void _assertNoShadow;
 export type Sender = SenderListRow & DerivedSenderFields;
 
 /**
- * Whole CALENDAR days between an ISO date and "now", in the reader's own
- * timezone — clamped to 0.
+ * Calendar Y/M/D of an instant in a named IANA zone.
+ *
+ * `Date#getFullYear/getMonth/getDate` read the *runtime* zone. SSR on
+ * Vercel is UTC; a US browser is not. The same ISO timestamp then
+ * lands on two different calendar days and first-paint labels disagree
+ * ("today" vs "yesterday" / "1d") — React #418. `formatToParts` with
+ * an explicit `timeZone` is the same calendar on both sides.
+ */
+function zonedYmd(ms: number, timeZone: string): { y: number; m: number; d: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }).formatToParts(new Date(ms));
+    const num = (type: Intl.DateTimeFormatPartTypes): number => {
+      const value = parts.find((part) => part.type === type)?.value;
+      return value ? Number(value) : Number.NaN;
+    };
+    return { y: num('year'), m: num('month'), d: num('day') };
+  } catch {
+    // Invalid IANA id — fall back to UTC so a bad stored zone cannot
+    // crash a list render. UTC is also `useUserTimeZone()`'s empty-cache
+    // default, so first paint still matches.
+    if (timeZone !== 'UTC') return zonedYmd(ms, 'UTC');
+    const date = new Date(ms);
+    return { y: date.getUTCFullYear(), m: date.getUTCMonth() + 1, d: date.getUTCDate() };
+  }
+}
+
+/**
+ * Whole CALENDAR days between an ISO date and "now" in `timeZone` —
+ * clamped to 0.
  *
  * Calendar days, not elapsed 24-hour blocks, because `0` renders as the word
  * "today". Elapsed hours made that false for most of every night: mail that
@@ -79,26 +111,27 @@ export type Sender = SenderListRow & DerivedSenderFields;
  * printed "today" for a message from the previous day. Nobody reads "today"
  * as "since this time yesterday".
  *
- * The comparison has to happen HERE and not on the server, because only the
- * browser knows which calendar day the reader is in. A server computing this
- * in UTC would be wrong for every reader west of it after their local
- * midnight, and wrong for everyone east of it before theirs.
+ * The zone MUST be an explicit IANA id (dehydrated `me.user.timezone` /
+ * `useUserTimeZone()`, or `'UTC'` when the cache is empty). Ambient
+ * `Date#getFullYear` made SSR (UTC) and a US browser disagree on the
+ * same instant and hydrated the wrong label (DECLUTRMAIL-WEB-2C).
+ *
+ * Converting each instant's zoned Y/M/D to a UTC day-ordinal is what
+ * makes DST-crossing spans come out whole: the raw millisecond gap
+ * across a clock change is 23 or 25 hours, which truncating division
+ * would round the wrong way.
  */
-export function daysSince(iso: string, now: number): number {
+export function daysSince(iso: string, now: number, timeZone: string): number {
   const then = new Date(iso);
   if (!Number.isFinite(then.getTime())) return 0;
-  // Midnight-to-midnight in local time. Building the dates through the local
-  // Y/M/D constructor is what makes DST-crossing spans come out whole: the
-  // raw millisecond gap across a clock change is 23 or 25 hours, which
-  // truncating division would round the wrong way.
-  const thenMidnight = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
-  const nowDate = new Date(now);
-  const nowMidnight = new Date(
-    nowDate.getFullYear(),
-    nowDate.getMonth(),
-    nowDate.getDate(),
-  ).getTime();
-  return Math.max(0, Math.round((nowMidnight - thenMidnight) / 86_400_000));
+  const thenYmd = zonedYmd(then.getTime(), timeZone);
+  const nowYmd = zonedYmd(now, timeZone);
+  if (![thenYmd.y, thenYmd.m, thenYmd.d, nowYmd.y, nowYmd.m, nowYmd.d].every(Number.isFinite)) {
+    return 0;
+  }
+  const thenDay = Date.UTC(thenYmd.y, thenYmd.m - 1, thenYmd.d);
+  const nowDay = Date.UTC(nowYmd.y, nowYmd.m - 1, nowYmd.d);
+  return Math.max(0, Math.round((nowDay - thenDay) / 86_400_000));
 }
 
 /** Computes whole months between an ISO date and "now" — clamped to 0. */
@@ -112,12 +145,18 @@ export function monthsSince(iso: string, now: number): number {
  * Wire row → `Sender`. The spread carries EVERY wire field verbatim;
  * only the three derived fields are computed. This is the single seam
  * between the senders wire contract and the senders UI.
+ *
+ * `now` and `timeZone` are required: a `Date.now()` default here is
+ * what made first-paint `lastDays` labels diverge between the UTC
+ * server render and a US browser (DECLUTRMAIL-WEB-2C). Callers pass
+ * `useNow()` (null until mount → skip the relative label) or a
+ * dehydrated snapshot clock, plus `useUserTimeZone()`.
  */
-export function enrichSenderRow(row: SenderListRow, now: number = Date.now()): Sender {
+export function enrichSenderRow(row: SenderListRow, now: number, timeZone: string): Sender {
   return {
     ...row,
     name: row.displayName || row.email,
-    lastDays: daysSince(row.lastSeenAt, now),
+    lastDays: daysSince(row.lastSeenAt, now, timeZone),
     firstSeenMo: monthsSince(row.firstSeenAt, now),
   };
 }

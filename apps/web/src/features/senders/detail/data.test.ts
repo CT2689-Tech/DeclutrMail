@@ -9,22 +9,31 @@
 import { describe, expect, it } from 'vitest';
 import { relTimeFromIso } from './data';
 
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
 describe('relTimeFromIso — calendar-day boundary (QA-archive-20260828-03)', () => {
   it('reads "yesterday" for a message from the previous calendar day, even under 24h old', () => {
     // Constructed via local Date components (not fixed UTC offsets) so
     // the "crosses local midnight" relationship holds under any TZ the
-    // test runs in.
+    // test runs in. Pass that same zone into `relTimeFromIso`.
     const then = new Date(2026, 7, 27, 20, 0, 0); // Aug 27, 8:00 PM local
     const now = new Date(2026, 7, 28, 1, 0, 0); // Aug 28, 1:00 AM local — 5h later
 
     // The old `Math.floor((now - then) / 86_400_000)` gave 0 → "today".
     // The shared `daysSince` gives 1, crossing one local midnight.
-    expect(relTimeFromIso(then.toISOString(), now)).toBe('yesterday');
+    expect(relTimeFromIso(then.toISOString(), now, LOCAL_TZ)).toBe('yesterday');
   });
 
   it('still reads "today" for same-calendar-day messages', () => {
     const then = new Date(2026, 7, 28, 9, 0, 0);
     const now = new Date(2026, 7, 28, 14, 0, 0);
-    expect(relTimeFromIso(then.toISOString(), now)).toBe('today');
+    expect(relTimeFromIso(then.toISOString(), now, LOCAL_TZ)).toBe('today');
+  });
+
+  it('UTC and America/Los_Angeles can disagree on the same instant', () => {
+    const now = new Date('2026-07-01T08:00:00.000Z');
+    const then = new Date('2026-07-01T02:00:00.000Z');
+    expect(relTimeFromIso(then.toISOString(), now, 'UTC')).toBe('today');
+    expect(relTimeFromIso(then.toISOString(), now, 'America/Los_Angeles')).toBe('yesterday');
   });
 });
