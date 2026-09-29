@@ -15,9 +15,26 @@ in `outbox-consumer-router.ts` found five topics with this exposure
 work. Wrapping the ONE place every consumer is actually invoked
 (`this.deps.consumer(event)` inside `runOneTick`) with a hard timeout
 bounded all five with one change — the unbounded-hang defect is genuinely
-closed; the §2.6 letter (network call inside an open transaction) is not
-— and makes the fix structurally impossible for a future consumer to
-route around.
+closed; the §2.6 letter (network call inside an open transaction) is not.
+
+**Correction (round-3 review, 2026-09-29):** this entry originally said
+the dispatcher-level bound makes itself "structurally impossible for a
+future consumer to route around." That was wrong, and a concrete
+consumer proved it: `rescore-senders.ts` (PR #807, merged the same day as
+this entry) added its OWN local 5s timeout on top of the dispatcher's
+bound, reasoning that firing sooner was "strictly better." It was not —
+an inner bound that can fire BEFORE the dispatcher's own settles the
+consumer's returned promise early, so `trackOrphan` receives an
+ALREADY-SETTLED promise and clears it on the next microtask while the
+real, abandoned call keeps running completely untracked, silently
+defeating the guard for that consumer specifically (fixed by removing
+the inner bound; see `docs/log/founder-followups/
+2026-09-28-waive-or-block-outbox-queue-in-transaction.md`'s final
+correction). The seam-level fix closes the unbounded-hang defect for
+every CURRENT and future consumer that does nothing unusual with its own
+timing; it does not and cannot stop a consumer from adding its own
+inner timer that races the dispatcher's — that remains a real way to
+route around it, and needs catching in review, not in this mechanism.
 
 **Finding 2 — the mistake I almost shipped.** My first version of this
 fix reasoned: "every consumer's network call is a BullMQ `.add()` keyed
