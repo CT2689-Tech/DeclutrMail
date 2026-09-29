@@ -108,6 +108,7 @@ const SITE_JSON_LD = {
     },
     {
       '@type': 'SoftwareApplication',
+      '@id': `${siteUrl()}/#software`,
       name: 'DeclutrMail',
       url: siteUrl(),
       // ADR-0030: lead with the preview guarantee, keep the sender as the
