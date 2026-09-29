@@ -45,6 +45,15 @@ import { quietKeys } from './query-keys';
 export function useUpdateQuietHours(mailboxId: string) {
   const queryClient = useQueryClient();
   return useMutation({
+    // A background poll (the read's refetchInterval) can already be in
+    // flight when a save starts. If it resolves AFTER this save's own
+    // `setQueryData` below, its stale (pre-save) data would silently win
+    // — the switch flips back, though the server holds the new value.
+    // Cancelling first makes TanStack Query discard that fetch's result
+    // whenever it lands, regardless of whether the stub itself aborts.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: quietKeys.hours(mailboxId) });
+    },
     mutationFn: async (config: QuietHoursConfig) => {
       const env = await putQuietHours(mailboxId, config);
       return env.data;

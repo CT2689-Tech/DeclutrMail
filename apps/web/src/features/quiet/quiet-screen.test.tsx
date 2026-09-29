@@ -185,6 +185,77 @@ describe('QuietRoute', () => {
     expect(toast).not.toHaveBeenCalled();
   });
 
+  it('keeps the saved value when a stale read lands after the save', async () => {
+    // A background poll (the query's refetchInterval) can already be in
+    // flight when Save is clicked. If its stale response lands AFTER the
+    // save's own setQueryData, it must not overwrite the fresh state.
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let resolveStaleGet: (() => void) | undefined;
+    let getCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => {
+          getCalls += 1;
+          if (getCalls === 1) {
+            return jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 });
+          }
+          // The poll's response: stale (pre-save) data, held until the
+          // test resolves it — after the save's own response lands.
+          return new Promise<Response>((resolve) => {
+            resolveStaleGet = () =>
+              resolve(jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }));
+          });
+        },
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
+    );
+    await screen.findByRole('switch', { name: 'Quiet hours' });
+
+    // The poll starts — in flight, not yet resolved.
+    await act(async () => {
+      void client.refetchQueries({ queryKey: ['quiet', 'hours', MAILBOX_A] });
+    });
+    await waitFor(() => expect(getCalls).toBe(2));
+
+    // The save starts and finishes while the poll is still pending.
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00'));
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+
+    // The stale poll resolves last, with the pre-save (enabled: true) data.
+    // `waitFor` is the wrong tool below this point: `enabled: false` is
+    // ALREADY true from the save, before the stale response has landed at
+    // all, so a `waitFor` assertion of it would pass on the very first
+    // poll — proving nothing about the race. This needs the full async
+    // chain (retryer → cache → render) to actually settle first, then a
+    // one-shot check of where it settled.
+    await act(async () => {
+      resolveStaleGet?.();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Still reflects the save, not the stale read that landed after it.
+    expect(client.getQueryData(['quiet', 'hours', MAILBOX_A])).toMatchObject({
+      config: { enabled: false },
+    });
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+  });
+
   it('stops saying Saved once the form is edited again', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     installFetchStub([
