@@ -1,11 +1,18 @@
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { applyAutomaticProtection } from './automatic-protection.js';
-import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { applyAutomaticProtection, logProtectionReleases } from './automatic-protection.js';
+import { BaseDeclutrWorker, telemetryReference } from './base-declutr-worker.js';
+import { deletionPendingSql } from './deletion-pause.js';
+import {
+  expireUnbackedPrimaryKeeps,
+  reconcileSenderCategories,
+  sendersAwaitingRescore,
+} from './gmail-category.js';
 import type { MailboxActionLock } from './label-action.worker.js';
+import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -16,8 +23,47 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
 export const MAILBOX_BATCH_SIZE = 1;
 
 /**
- * Nightly sweep payload. The cron scheduler enqueues one job per tick
- * keyed on `(worker_name, scheduled_at_minute)` per D225. Continuations
+ * Most senders one sweep asks the score worker to re-score for a mailbox.
+ * The set travels as one BullMQ job and, if it dead-letters, one row, so
+ * it is bounded: a sender key is a 64-character hash, ~67 bytes in the
+ * JSON payload, so this is ~134 KB. Senders past the cap (the smallest —
+ * `sendersAwaitingRescore` lists the largest first) stay marked and are
+ * asked for on the next sweep; Autopilot ignores a marked verdict
+ * meanwhile.
+ */
+export const MAX_RESCORE_SET = 2_000;
+
+/**
+ * The BullMQ job id for one sweep tick's re-score request for a mailbox.
+ * Every attempt of that sweep job asks with the same id, so a job that
+ * committed its work and then failed late (a lock wait can take 45 s, the
+ * cron budget is 60 s) cannot queue a second re-score on its retry: the
+ * queue ignores an add whose id it already holds. The next tick asks
+ * again under a new id for any sender still marked.
+ */
+export function rescoreJobId(mailboxAccountId: string, sweepTick: string): string {
+  return `${mailboxAccountId}:subset:${sweepTick}`;
+}
+
+/**
+ * A mailbox where the chain a re-score starts may act.
+ * `triage.score_run_completed` wakes the Autopilot apply sweep, whose
+ * Active presets archive and unsubscribe in Gmail, so the mailbox must be
+ * active and sync-ready, with a working grant and no account or data
+ * deletion in its undo window (D232). Correlates to `mailbox_accounts`
+ * joined to `provider_sync_state`.
+ */
+const rescoreMayActSql = sql<boolean>`(
+  ${mailboxAccounts.status} = 'active'
+  AND ${providerSyncState.readinessStatus} = 'ready'
+  AND (${notNeedingReconnect})
+  AND NOT (${deletionPendingSql})
+)`;
+
+/**
+ * Sweep payload. The composition root enqueues a tick at every worker
+ * boot, then every 24 hours: one job per tick keyed on
+ * `(worker_name, scheduled_at_minute)` per D225. Continuations
  * carry an exclusive cursor so bounded jobs cover every eligible mailbox.
  */
 export interface SenderIndexSweepJobData {
@@ -50,6 +96,20 @@ export interface SenderIndexSweepResult {
   timeseriesCorrected: number;
   /** Sender-months whose messages are all gone, zeroed rather than deleted. */
   timeseriesZeroed: number;
+  /** Senders whose Gmail tab changed on a recount of their labelled mail. */
+  categoriesCorrected: number;
+  /** Primary Keeps (rule 3) the current rule no longer backs, marked for re-score. */
+  primaryKeepsExpired: number;
+  /** Automatic protections withdrawn and not restored under a current reason. */
+  protectionsReleased: number;
+  /**
+   * Senders handed to the score worker because a recount marked their
+   * decision stale — this run's changes plus any earlier request that
+   * never landed (see `sendersAwaitingRescore`).
+   */
+  rescoresRequested: number;
+  /** Senders whose re-score request failed; asked for again on the next sweep. */
+  rescoresNotRequested: number;
   /** Wall-clock duration of the whole pass. */
   durationMs: number;
 }
@@ -110,6 +170,24 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       lock: MailboxActionLock;
       statementTimeoutMs?: number;
       enqueueContinuation?: (payload: SenderIndexSweepJobData) => Promise<void>;
+      /**
+       * Re-score the senders whose Gmail tab a recount changed. Their
+       * verdict and explanation were computed from the old tab — "Kept
+       * because Gmail puts them in your Primary inbox" on a sender with
+       * no Primary mail — and nothing else re-scores a sender on a
+       * timer. Called after the transaction commits and the lock is
+       * released, never inside either (CLAUDE.md §2.6). Required: an
+       * optional hook left unwired would correct every tab and quietly
+       * keep every verdict computed from the old one. `sweepTick` is the
+       * sweep's `scheduledAtMinute`; enqueue under `rescoreJobId`.
+       */
+      onSendersRecategorized: (
+        mailboxAccountId: string,
+        senderKeys: readonly string[],
+        sweepTick: string,
+      ) => Promise<void>;
+      /** Test seam for `MAX_RESCORE_SET`. */
+      rescoreSetLimit?: number;
     },
   ) {
     super();
@@ -126,19 +204,29 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
   ): Promise<SenderIndexSweepResult> {
     const startedAt = Date.now();
 
-    // No `notNeedingReconnect` here, deliberately — unlike every other
-    // periodic sweep, this one spends no Gmail grant. It recomputes
-    // derived state from rows we already hold, so a mailbox awaiting
-    // reconnect is swept exactly as usefully as any other: its
-    // protections must still retire on the clock while the user is away.
+    // The recount and the clock-driven retirements spend no Gmail grant:
+    // they recompute derived state from rows we already hold, so a
+    // mailbox awaiting reconnect is swept exactly as usefully as any
+    // other — its protections must still retire while the user is away.
+    //
+    // Every mailbox whose senders can still be read or exported, except
+    // one mid-scan (`queued`/`syncing`): its rebuild rewrites the same
+    // derived state itself. A disconnected mailbox keeps its data until
+    // it is deleted, and the data export prints its `gmail_category`, so
+    // skipping it would leave a Primary no label backs in the user's
+    // own export.
+    //
+    // The RE-SCORE is narrower: see `requestRescore`.
     const mailboxes = await this.deps.db
       .select({ id: mailboxAccounts.id })
       .from(mailboxAccounts)
       .innerJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
       .where(
         and(
-          eq(mailboxAccounts.status, 'active'),
-          eq(providerSyncState.readinessStatus, 'ready'),
+          or(
+            eq(mailboxAccounts.status, 'disconnected'),
+            inArray(providerSyncState.readinessStatus, ['ready', 'failed']),
+          ),
           payload.afterMailboxId ? gt(mailboxAccounts.id, payload.afterMailboxId) : undefined,
         ),
       )
@@ -153,42 +241,107 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
     let mailboxesFailed = 0;
     let timeseriesCorrected = 0;
     let timeseriesZeroed = 0;
+    let categoriesCorrected = 0;
+    let primaryKeepsExpired = 0;
+    let protectionsReleased = 0;
+    let rescoresRequested = 0;
+    let rescoresNotRequested = 0;
+    const statementTimeout = String(this.deps.statementTimeoutMs ?? 25_000);
 
     for (const { id: mailboxAccountId } of mailboxes) {
       ctx.signal?.throwIfAborted();
-      try {
-        // Same per-mailbox advisory lock the label actions and the
-        // incremental sync take. Neither recompute mutates Gmail and
-        // both are idempotent, so the lock is not required for
-        // correctness — it is here so a sweep and a sync never compute
-        // from interleaved snapshots and write each other's answer.
-        // One mailbox per job bounds contention; timing logs expose slow holds.
-        await this.deps.lock.run(mailboxAccountId, async () => {
+      // Which step threw, for the failure line — the error itself may
+      // carry row data and never leaves this process (D7). `lock` is a
+      // failure to acquire, before any step ran.
+      let step: 'lock' | 'timeseries' | 'categories' | 'protection' = 'lock';
+      // Two holds of the per-mailbox advisory lock that the label actions,
+      // the Autopilot action worker and the incremental sync also take, so
+      // a user's Archive queues behind one of them, not the whole sweep.
+      //
+      // The split sits where no lock waiter can act on what lies between:
+      // the timeseries counters feed no safety state. The recount, its
+      // marks and auto-protection are ONE hold, because protection is
+      // derived from the tab. Committed apart, a Primary the recount had
+      // just established would be visible to an Autopilot action queued on
+      // the lock before the protection it implies, and that action checks
+      // only `is_protected`: it would unsubscribe a sender this sweep was
+      // about to protect.
+      const hold = <T>(
+        name: 'timeseries' | 'categories',
+        body: (tx: Parameters<Parameters<WorkerDb['transaction']>[0]>[0]) => Promise<T>,
+      ): Promise<T> => {
+        step = 'lock';
+        return this.deps.lock.run(mailboxAccountId, async () => {
           ctx.signal?.throwIfAborted();
-          await this.deps.db.transaction(async (tx) => {
+          step = name;
+          return this.deps.db.transaction(async (tx) => {
             // SET LOCAL disappears at transaction end and works through transaction pooling.
             await tx.execute(
-              sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`,
+              sql`select set_config('statement_timeout', ${statementTimeout}, true)`,
             );
             ctx.signal?.throwIfAborted();
-            const reconciled = await reconcileSenderTimeseries(tx, mailboxAccountId);
+            const out = await body(tx);
             ctx.signal?.throwIfAborted();
-            timeseriesCorrected += reconciled.corrected;
-            timeseriesZeroed += reconciled.zeroed;
-            // UNSCOPED on purpose. This call is the entire reason the
-            // per-push path is allowed to be scoped.
-            await applyAutomaticProtection(tx, mailboxAccountId);
-            ctx.signal?.throwIfAborted();
+            return out;
           });
         });
+      };
+      try {
+        const reconciled = await hold('timeseries', (tx) =>
+          reconcileSenderTimeseries(tx, mailboxAccountId),
+        );
+        timeseriesCorrected += reconciled.corrected;
+        timeseriesZeroed += reconciled.zeroed;
+
+        const pass = await hold('categories', async (tx) => {
+          const changed = await reconcileSenderCategories(tx, mailboxAccountId);
+          ctx.signal?.throwIfAborted();
+          const expired = await expireUnbackedPrimaryKeeps(tx, mailboxAccountId);
+          ctx.signal?.throwIfAborted();
+          // Reads the tab this transaction just corrected. UNSCOPED on
+          // purpose: this call is the entire reason the per-push path is
+          // allowed to be scoped.
+          step = 'protection';
+          const protection = await applyAutomaticProtection(tx, mailboxAccountId);
+          ctx.signal?.throwIfAborted();
+          return {
+            changed,
+            expired,
+            released: protection.released,
+            awaiting: await sendersAwaitingRescore(tx, mailboxAccountId),
+          };
+        });
+        categoriesCorrected += pass.changed.length;
+        primaryKeepsExpired += pass.expired;
+        protectionsReleased += pass.released.length;
+        logProtectionReleases(this.workerName, mailboxAccountId, pass.released);
         mailboxesProcessed += 1;
-      } catch {
+
+        if (pass.awaiting.length > 0) {
+          const batch = pass.awaiting.slice(0, this.deps.rescoreSetLimit ?? MAX_RESCORE_SET);
+          const outcome = await this.requestRescore(
+            mailboxAccountId,
+            batch,
+            payload.scheduledAtMinute,
+          );
+          if (outcome === 'requested') rescoresRequested += batch.length;
+          if (outcome === 'failed') rescoresNotRequested += batch.length;
+        }
+      } catch (err) {
         mailboxesFailed += 1;
+        // SQLSTATE only — a closed five-character code ("57014" is a
+        // statement timeout), never the message, which can carry row
+        // data (D7).
+        const code = (err as { code?: unknown } | null)?.code;
         console.error(
           JSON.stringify({
+            severity: 'ERROR',
             level: 'error',
             kind: 'sender_index_sweep.mailbox_failed',
             worker: this.workerName,
+            mailboxRef: telemetryReference(mailboxAccountId),
+            step,
+            ...(typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? { sqlState: code } : {}),
             errorKind: ctx.signal?.aborted ? 'cancelled' : 'reconciliation_failed',
           }),
         );
@@ -216,7 +369,64 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       timeseriesCorrected,
       timeseriesZeroed,
+      categoriesCorrected,
+      primaryKeepsExpired,
+      protectionsReleased,
+      rescoresRequested,
+      rescoresNotRequested,
       durationMs: Date.now() - startedAt,
     };
+  }
+
+  /**
+   * Ask the score worker for the recount's senders, where the chain it
+   * starts may act (`rescoreMayActSql`). Read HERE, after the holds, not
+   * with the batch: a deletion requested while the sweep waited on the
+   * lock must still stop it. An ineligible mailbox keeps its marks, which
+   * the first sweep after it is eligible again asks for.
+   *
+   * Never throws: the correction has already committed, and the senders
+   * stay marked (`sendersAwaitingRescore`), so the next sweep asks again.
+   * Until a new verdict lands, lists and Triage show the old one and a
+   * page open refreshes it; Autopilot does not act on it (a marked
+   * decision reads as "no decision" in `materializeAutopilotSignals`). A
+   * failure is captured, not just printed — `console.error` reaches nobody
+   * (Sentry runs with `integrations: []`) — and counted on the success
+   * line, so "corrected N tabs" cannot read as "and re-scored them".
+   */
+  private async requestRescore(
+    mailboxAccountId: string,
+    senderKeys: readonly string[],
+    sweepTick: string,
+  ): Promise<'requested' | 'ineligible' | 'failed'> {
+    try {
+      const [row] = await this.deps.db
+        .select({ mayAct: rescoreMayActSql })
+        .from(mailboxAccounts)
+        .innerJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
+        .where(eq(mailboxAccounts.id, mailboxAccountId))
+        .limit(1);
+      if (row?.mayAct !== true) return 'ineligible';
+      await this.deps.onSendersRecategorized(mailboxAccountId, senderKeys, sweepTick);
+      return 'requested';
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          severity: 'ERROR',
+          level: 'error',
+          kind: 'sender_index_sweep.rescore_request_failed',
+          worker: this.workerName,
+          mailboxRef: telemetryReference(mailboxAccountId),
+          senders: senderKeys.length,
+        }),
+      );
+      this.observer.captureBackgroundFailure(err instanceof Error ? err : new Error(String(err)), {
+        kind: 'sender_index_sweep.rescore_request_failed',
+        // Server Sentry tags are allowlisted (sentry-scrubber.ts); the
+        // count rides on the log line above.
+        tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+      });
+      return 'failed';
+    }
   }
 }

@@ -211,7 +211,7 @@ export interface SenderListRow {
  *   - `user_defined` — the user toggled Protect on
  *   - `replied` — two-way correspondence: >=3 messages addressed to them and >=1 from them
  *   - `starred` — the user starred a message in the past year
- *   - `gmail_important` — Gmail marked at least three recent messages important and the sender is in Primary
+ *   - `gmail_important` — Gmail marked at least three recent messages important (granted only to a Primary sender)
  *   - `null` — not protected
  */
 export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gmail_important';

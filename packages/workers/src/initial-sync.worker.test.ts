@@ -11,6 +11,7 @@ import {
   schema,
   senders,
   syncRuns,
+  triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -1650,12 +1651,14 @@ describe('InitialSyncWorker', () => {
     it('protects explicit stars and repeated Gmail importance, but not one weak importance signal', async () => {
       const fixture = [
         ...makeLabeledSender(10, [['INBOX', 'STARRED']]),
+        // Primary-labelled: importance only protects inside Primary, and
+        // mail with no tab label is no longer read as Primary (mig 0079).
         ...makeLabeledSender(11, [
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
         ]),
-        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT']]),
+        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']]),
       ];
 
       await new InitialSyncWorker({
@@ -1716,6 +1719,83 @@ describe('InitialSyncWorker', () => {
       expect(reasons.has(deriveSenderKey('sender20@example.com'))).toBe(false);
       expect(reasons.has(deriveSenderKey('sender21@example.com'))).toBe(false);
       expect(reasons.get(deriveSenderKey('sender22@example.com'))).toBe('gmail_important');
+    });
+
+    it('gmail importance does not protect a sender whose mail carries no tab label', async () => {
+      // The importance rule protects Primary senders only, which needs a
+      // Primary label behind it. With no CATEGORY_* label at all, the old
+      // default filed the sender under Primary and the importance rule
+      // protected it on nothing (mig 0079).
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(
+          new FakeGmailClient(
+            makeLabeledSender(23, [
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+            ]),
+          ),
+        ),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const policies = await db
+        .select({ senderKey: schema.senderPolicies.senderKey })
+        .from(schema.senderPolicies);
+      expect(policies.map((p) => p.senderKey)).not.toContain(
+        deriveSenderKey('sender23@example.com'),
+      );
+    });
+
+    it('a rescan that withdraws a protection logs it after the commit, by count only', async () => {
+      const fixture = makeLabeledSender(24, [['INBOX', 'STARRED'], ['INBOX']]);
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+      const senderKey = deriveSenderKey('sender24@example.com');
+      const policyOf = async () =>
+        (
+          await db
+            .select({
+              isProtected: schema.senderPolicies.isProtected,
+              reason: schema.senderPolicies.protectionReason,
+            })
+            .from(schema.senderPolicies)
+            .where(eq(schema.senderPolicies.senderKey, senderKey))
+        )[0];
+      expect(await policyOf()).toEqual({ isProtected: true, reason: 'starred' });
+
+      // The starred message is gone from Gmail; the rescan reconciles it out.
+      await resetToQueued(db, mailboxAccountId);
+      const lines: string[] = [];
+      const spy = vi.spyOn(console, 'log').mockImplementation((l: unknown) => {
+        lines.push(String(l));
+      });
+      try {
+        await new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(fixture.slice(1))),
+        }).processJob({ mailboxAccountId }, CTX);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect((await policyOf())?.isProtected).toBe(false);
+      const released = lines
+        .flatMap((l) => {
+          try {
+            return [JSON.parse(l) as Record<string, unknown>];
+          } catch {
+            return [];
+          }
+        })
+        .find((l) => l.kind === 'automatic_protection.released');
+      expect(released).toMatchObject({
+        worker: 'InitialSyncWorker',
+        released: 1,
+        byReason: { starred: 1 },
+      });
     });
 
     it('sweep withdraws importance-only protection from non-Primary senders (self-heals stale rows)', async () => {
@@ -1817,6 +1897,10 @@ describe('InitialSyncWorker', () => {
       // Re-run the worker. Same fixture, same engagement signal — but
       // the WHERE guard (only `protection_reason IS NULL` rows may be
       // auto-protected) must refuse the re-protect.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1855,6 +1939,10 @@ describe('InitialSyncWorker', () => {
         .where(eq(schema.senderPolicies.senderKey, senderKey));
 
       // Re-run — same fixture, same engagement signal (5 replies ≥ 3).
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1897,6 +1985,10 @@ describe('InitialSyncWorker', () => {
       // Run 2 (no new Gmail messages — same fixture). Worker rebuild
       // re-runs the auto-protect UPSERT; the WHERE guard should refuse
       // to overwrite the now-stronger user_defined reason.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1912,6 +2004,130 @@ describe('InitialSyncWorker', () => {
       // started, not the most recent rerun.
       expect(secondRun?.protectionSetAt?.getTime()).toBe(firstSetAt?.getTime());
     });
+  });
+});
+
+describe('InitialSyncWorker — gmail_category is Gmail’s own tab label, never a default (mig 0079)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  /** One sender, one message per label set. */
+  function senderWith(index: number, labelSets: string[][]): GmailMessageMetadata[] {
+    const base = Date.UTC(2026, 0, 1) + index * 86_400_000;
+    return labelSets.map((labelIds, i) => ({
+      id: `cat-${index}-${i}`,
+      threadId: `cat-thread-${index}-${i}`,
+      labelIds,
+      snippet: '',
+      internalDate: String(base + i * 60_000),
+      from: `Sender ${index} <cat${index}@example.com>`,
+      subject: `Subject ${i}`,
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    }));
+  }
+
+  async function categories(fixture: GmailMessageMetadata[]): Promise<Map<string, string>> {
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(fixture)),
+    }).processJob({ mailboxAccountId }, CTX);
+    const rows = await db
+      .select({ email: senders.email, category: senders.gmailCategory })
+      .from(senders);
+    return new Map(rows.map((r) => [r.email, r.category]));
+  }
+
+  it('stores unknown — not primary — for a sender Gmail never filed under a tab', async () => {
+    // 30,443 of 38,259 inbound messages on one production mailbox carried
+    // no CATEGORY_* label (2026-09-25); each of their senders was stored
+    // as Primary and kept at 95%.
+    const byEmail = await categories(senderWith(1, [['INBOX'], ['INBOX', 'UNREAD'], ['CHAT']]));
+    expect(byEmail.get('cat1@example.com')).toBe('unknown');
+  });
+
+  it('lets labelled mail decide — unlabelled messages no longer vote for Primary', async () => {
+    const byEmail = await categories(
+      senderWith(2, [['INBOX'], ['INBOX'], ['INBOX'], ['INBOX', 'CATEGORY_PROMOTIONS']]),
+    );
+    expect(byEmail.get('cat2@example.com')).toBe('promotions');
+  });
+
+  it('stores unknown on a tie instead of handing it to Primary', async () => {
+    const byEmail = await categories(
+      senderWith(3, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+    );
+    expect(byEmail.get('cat3@example.com')).toBe('unknown');
+  });
+
+  it('keeps Primary when most of the labelled mail is Primary', async () => {
+    const byEmail = await categories(
+      senderWith(4, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_UPDATES'],
+        ['INBOX'],
+      ]),
+    );
+    expect(byEmail.get('cat4@example.com')).toBe('primary');
+  });
+
+  it('a rescan that moves a sender’s tab marks its decision for re-score; an unmoved one keeps its own', async () => {
+    // The rebuild rewrites `gmail_category` like the sweep's recount does,
+    // so it owes the same mark: without it the score that follows the
+    // rescan reuses prose written for the old tab ("…your Primary inbox").
+    await categories([
+      ...senderWith(5, [['INBOX', 'CATEGORY_PERSONAL']]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    const moved = deriveSenderKey('cat5@example.com');
+    const steady = deriveSenderKey('cat6@example.com');
+    const producedAt = new Date(Date.now() - 86_400_000);
+    const expiresAt = new Date(Date.now() + 6 * 86_400_000);
+    for (const senderKey of [moved, steady]) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'keep',
+        confidence: '0.95',
+        reasoning:
+          'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
+        generatedBy: 'template',
+        producedAt,
+        expiresAt,
+      });
+    }
+
+    // New mail since the first scan: most of sender 5's is now Promotions.
+    await resetToQueued(db, mailboxAccountId);
+    const byEmail = await categories([
+      ...senderWith(5, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    expect(byEmail.get('cat5@example.com')).toBe('promotions');
+    expect(byEmail.get('cat6@example.com')).toBe('primary');
+
+    const rows = await db
+      .select({ senderKey: triageDecisions.senderKey, expiresAt: triageDecisions.expiresAt })
+      .from(triageDecisions);
+    const expiry = new Map(rows.map((r) => [r.senderKey, r.expiresAt.getTime()]));
+    // Marked: expired as of `produced_at`, the "awaiting re-score" state.
+    expect(expiry.get(moved)).toBe(producedAt.getTime());
+    expect(expiry.get(steady)).toBe(expiresAt.getTime());
   });
 });
 

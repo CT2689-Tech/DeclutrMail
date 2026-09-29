@@ -85,6 +85,20 @@ describe('renderUserPrompt', () => {
     expect(out).not.toMatch(/engine rule/i);
   });
 
+  /**
+   * `unknown` means no Gmail tab holds most of the sender's mail. A line
+   * reading "Gmail category: unknown" invites the model to comment on
+   * Gmail's labels, and the old value in its place — a defaulted
+   * `primary` — came back as "Gmail files them in Primary" on senders
+   * with no Primary mail (mig 0079). No evidence, no line.
+   */
+  it('says nothing about a Gmail tab when no tab holds most of the sender’s mail', () => {
+    const out = renderUserPrompt({ ...SAMPLE_INPUT, gmailCategory: 'unknown' });
+    expect(out).not.toMatch(/gmail category/i);
+    expect(out).not.toMatch(/unknown/i);
+    expect(out).not.toMatch(/primary/i);
+  });
+
   it('does NOT reference any body / subject / snippet field', () => {
     // The ReasoningInput type at the contract layer already prevents
     // this, but assert the rendered string contains no body markers
