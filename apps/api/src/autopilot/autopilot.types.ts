@@ -32,7 +32,14 @@ export interface AutopilotObserveDigest {
   pendingTotal: number;
   /** Distinct senders matched in the last 7 days (all resolutions), not counting Protected senders. */
   senders7d: number;
-  /** INBOX messages from those senders — what a sweep right now would act on. */
+  /**
+   * INBOX messages from the FULL pending, offerable queue (`pendingTotal`'s
+   * senders) — exactly what approving them right now would move, of any
+   * age. NOT scoped to `senders7d`'s 7-day window (founder decision
+   * 2026-09-29): a pending suggestion older than a week still counts
+   * here, because "Review all" still moves it.
+   * docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+   */
   inboxMessagesNow: number;
 }
 

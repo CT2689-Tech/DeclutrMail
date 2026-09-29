@@ -2158,7 +2158,7 @@ describe('AutopilotReadService', () => {
       });
     }
 
-    it('deduplicates recent sender joins while retaining old pending and excluding resolved history', async () => {
+    it('deduplicates pending-queue joins while counting old pending and excluding resolved history', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const recent = new Date(Date.now() - 86_400_000);
       const old = new Date(Date.now() - 30 * 86_400_000);
@@ -2173,7 +2173,11 @@ describe('AutopilotReadService', () => {
       expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
         pendingTotal: 2,
         senders7d: 1,
-        inboxMessagesNow: 3,
+        // SENDER_1 (still pending) + SENDER_2 (still pending, 30d old —
+        // founder decision 2026-09-29: the pending queue has no age
+        // limit). SENDER_3 contributes nothing: its only row is
+        // dismissed, so it was never in `pendingTotal` either.
+        inboxMessagesNow: 8,
       });
     });
 
@@ -2208,13 +2212,43 @@ describe('AutopilotReadService', () => {
       expect(rule!.observeDigest).toEqual({
         pendingTotal: 3,
         senders7d: 3,
-        inboxMessagesNow: 8, // includes dismissed sender 4; archived + out-of-window excluded
+        // SENDER_1 + SENDER_2 + SENDER_3 (still pending, 10d old — the
+        // pending queue is unbounded by age, founder decision
+        // 2026-09-29). SENDER_4 is excluded: it's dismissed, so
+        // approving moves nothing for it even though it is within the
+        // 7-day window `senders7d` counts.
+        inboxMessagesNow: 9,
       });
 
       // Tenant isolation — B sees only its own row.
       const bRules = await service.listRules(mailboxB);
       const bRule = bRules.find((r) => r.id === ruleB);
       expect(bRule!.observeDigest).toEqual({ pendingTotal: 1, senders7d: 1, inboxMessagesNow: 9 });
+    });
+
+    // Founder decision 2026-09-29 (a): "N senders matched in the last 7
+    // days · M emails could be archived if you approve them" must equal
+    // exactly what "Review all" moves — the full pending queue, not
+    // last week's slice of it. Until this fix `inboxMessagesNow` joined
+    // the SAME 7-day-recent sender set as `senders7d`, so a pending
+    // suggestion older than a week (the queue never refreshes a match's
+    // date) silently dropped out of M while staying in `pendingTotal`
+    // ("Review all N").
+    // docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+    it('counts a pending suggestion matched more than 7 days ago, same as Review all would move', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const twelveDaysAgo = new Date(Date.now() - 12 * 86_400_000);
+      await seedPending(mailboxA, ruleId, SENDER_1, twelveDaysAgo);
+      await seedMessages(mailboxA, SENDER_1, { inbox: 6, archived: 0 });
+
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeDigest).toEqual({
+        pendingTotal: 1,
+        // Outside the 7-day window this number itself counts.
+        senders7d: 0,
+        // But still fully counted here — approving it moves all 6.
+        inboxMessagesNow: 6,
+      });
     });
 
     // Pins what `inboxMessagesNow` actually measures. Until 2026-08-21 it

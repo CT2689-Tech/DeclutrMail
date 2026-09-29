@@ -403,15 +403,24 @@ export class AutopilotReadService {
         ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
       );
       // Historical resolved matches cannot contribute to any digest. Count
-      // matches without a message join, then join each recent sender once.
-      const recentSenders = this.db
+      // matches without a message join, then join each pending sender once.
+      //
+      // `inboxMessagesNow` reads the FULL pending, offerable queue — the
+      // exact set "Review all" moves — not just the last-7-days slice
+      // `senders7d` counts. Until 2026-09-29 this joined `recentSenders`
+      // (7-day window only), so "M emails could be archived if you
+      // approve them" undercounted for any suggestion older than a week
+      // while `pendingTotal` (and "Review all N") already covered it.
+      // Founder decision 2026-09-29 (a):
+      // docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+      const pendingSenders = this.db
         .selectDistinct({
           ruleId: ruleMatchLog.ruleId,
           senderKey: ruleMatchLog.senderKey,
         })
         .from(ruleMatchLog)
-        .where(and(scope, recentUnprotected))
-        .as('recent_observe_senders');
+        .where(and(scope, ruleMatchIsOfferableSuggestion()))
+        .as('pending_observe_senders');
       const counts = this.db
         .select({
           ruleId: ruleMatchLog.ruleId,
@@ -430,20 +439,20 @@ export class AutopilotReadService {
         .as('observe_counts');
       const inboxCounts = this.db
         .select({
-          ruleId: recentSenders.ruleId,
+          ruleId: pendingSenders.ruleId,
           inboxMessagesNow: sql<number>`count(${mailMessages.id})::int`.as('inbox_messages_now'),
         })
-        .from(recentSenders)
+        .from(pendingSenders)
         .innerJoin(
           mailMessages,
           and(
             eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            eq(mailMessages.senderKey, recentSenders.senderKey),
+            eq(mailMessages.senderKey, pendingSenders.senderKey),
             eq(mailMessages.isOutbound, false),
             sql`'INBOX' = ANY(${mailMessages.labelIds})`,
           ),
         )
-        .groupBy(recentSenders.ruleId)
+        .groupBy(pendingSenders.ruleId)
         .as('observe_inbox_counts');
       // One statement also keeps counts and inbox evidence on one snapshot.
       const rows = await this.db
