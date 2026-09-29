@@ -141,3 +141,58 @@ describe('Screener account changes during a decision', () => {
     expect(post).not.toHaveBeenCalled();
   });
 });
+
+describe('Screener refuses a sender the server reports busy (2026-09-28)', () => {
+  it('does not open the preview, with zero local Screener state', async () => {
+    // No busyRowId/decidingRowId/parkedRowId here at all — this queue has
+    // never dispatched anything itself. Only `GET /api/actions/active`
+    // knows this sender is busy, the fact a different surface or a second
+    // tab firing the job would produce. `onVerbClick`'s existing siblings
+    // (busyRowId/parkedRowId) are silent no-ops by the same design, so no
+    // toast is expected here either — just that nothing opens or posts.
+    const post = vi.fn(() => jsonOk({ data: {} }));
+    installFetchStub([
+      { method: 'GET', path: '/api/actions/preview', respond: () => jsonOk({ data: { counts } }) },
+      { method: 'POST', path: '/api/screener/decide', respond: post },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: row.senderName,
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [row.senderId],
+                senderKeys: ['row-key'],
+              },
+            ],
+          }),
+      },
+    ]);
+    harness();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: new RegExp(`${row.senderName} — expand`) }),
+      ).toBeInTheDocument(),
+    );
+    // Give the shared-lock query a tick to land before pressing the
+    // shortcut — otherwise this would only prove the pre-fetch state.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`${row.senderName} — expand`) }));
+    fireEvent.keyDown(window, { key: 'a' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText(/Inbox now.*rechecked/i)).toBeNull();
+    expect(post).not.toHaveBeenCalled();
+  });
+});
