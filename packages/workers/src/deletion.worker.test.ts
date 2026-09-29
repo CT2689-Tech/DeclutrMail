@@ -33,8 +33,9 @@ import {
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { describe, expect, it } from 'vitest';
-import type { Queue } from 'bullmq';
+import { Redis } from 'ioredis';
+import { afterAll, describe, expect, it } from 'vitest';
+import { Queue, Worker, type Job } from 'bullmq';
 
 import {
   AccountDeletionPurgeWorker,
@@ -43,6 +44,7 @@ import {
 import { isSyncPausedForDeletion } from './deletion-pause.js';
 import type { EmailSendJobData } from './email-send.worker.js';
 import type { GmailLifecycleAccess, GmailLifecycleClient } from './ports.js';
+import { INITIAL_SYNC_JOB, type InitialSyncJobData } from './queue.js';
 import type { ScanProgressStore } from './scan-progress.js';
 import { TransientError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
@@ -72,6 +74,43 @@ async function freshDb(): Promise<Db> {
 }
 
 const ctx = {} as WorkerContext;
+
+/**
+ * Real-Redis harness for the initial-sync BullMQ job + events stream
+ * (docs/log/founder-followups/2026-09-26-redis-sync-count-retention.md,
+ * D245 `processing-and-retry-records`) — mirrors scan-progress.test.ts
+ * and gmail-quota-limiter.test.ts.
+ *
+ * Connected at MODULE scope, not in `beforeAll`: `it.runIf(cond)` is
+ * decided at collection, before any hook runs, so a `live` flag set in
+ * `beforeAll` would still read `false` when vitest decides what to
+ * skip — a suite that verifies nothing and reports it in green. Top-level
+ * await resolves before collection, so the flag is correct when read.
+ */
+const REDIS_URL = process.env['TEST_REDIS_URL'] ?? 'redis://127.0.0.1:6379';
+const { redis, live, reason: redisReason } = await connectRedis();
+
+async function connectRedis(): Promise<{ redis: Redis | null; live: boolean; reason: string }> {
+  try {
+    const client = new Redis(REDIS_URL, {
+      maxRetriesPerRequest: 0,
+      enableOfflineQueue: false,
+      lazyConnect: true,
+      connectTimeout: 1500,
+    });
+    await client.connect();
+    await client.ping();
+    return { redis: client, live: true, reason: 'reachable' };
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    console.warn(`deletion.worker.test: Redis at ${REDIS_URL} unreachable (${why})`);
+    return { redis: null, live: false, reason: why };
+  }
+}
+
+afterAll(async () => {
+  await redis?.quit().catch(() => undefined);
+});
 
 function fakeLifecycle(opts?: { failStopFor?: string[]; failRevokeFor?: string[] }): {
   access: GmailLifecycleAccess;
@@ -934,6 +973,131 @@ describe('mailbox indexed-data purge', () => {
       .where(eq(mailboxDataDeletionRequests.id, request!.id));
     expect(completed!.status).toBe('completed');
   });
+});
+
+describe('mailbox indexed-data purge — initial-sync Redis artifacts (D245)', () => {
+  // ALWAYS runs: the tests below are `runIf(live)`, so on their own they
+  // can only pass or skip. CI sets TEST_REDIS_URL, so there an
+  // unreachable Redis must fail, by name (2026-08-29 "a guard that
+  // cannot fail is not a guard").
+  it('reaches Redis whenever TEST_REDIS_URL is set', () => {
+    if (process.env['TEST_REDIS_URL']) expect(redisReason).toBe('reachable');
+  });
+
+  /**
+   * Runs one initial-sync job to a real finish (completed or failed)
+   * against a uniquely-named queue on the shared Redis, proves — as a
+   * NEGATIVE CONTROL — that the job and a matching events-stream entry
+   * genuinely exist first, then purges the mailbox and asserts both are
+   * gone. Without this control the "gone after" assertions would pass
+   * just as well against a queue name nothing ever wrote to.
+   */
+  async function expectPurgeClearsInitialSyncArtifacts(
+    tag: string,
+    processor: (job: Job<InitialSyncJobData>) => Promise<unknown>,
+    isMatchingFinishEvent: (fields: string[]) => boolean,
+  ): Promise<void> {
+    const db = await freshDb();
+    const target = await seedMailboxGraph(db, tag);
+    const queueName = `test-initial-sync-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const eventsKey = `bull:${queueName}:events`;
+    const queue = new Queue<InitialSyncJobData>(queueName, { connection: redis!.duplicate() });
+    const worker = new Worker<InitialSyncJobData>(queueName, processor, {
+      connection: redis!.duplicate(),
+    });
+    try {
+      await worker.waitUntilReady();
+      const settled = new Promise<void>((resolve) => {
+        worker.once('completed', () => resolve());
+        worker.once('failed', () => resolve());
+      });
+      await queue.add(
+        INITIAL_SYNC_JOB,
+        { mailboxAccountId: target.mailboxId },
+        // Real production id (`initialSyncJobOptions`); `attempts: 1` and
+        // no backoff just keep the fixture fast — `removeOnFail: false`
+        // is the setting actually under test.
+        { jobId: target.mailboxId, attempts: 1, removeOnFail: false },
+      );
+      await settled;
+
+      // Negative control (before any deletion): the job's hash and a
+      // matching finish event are really there.
+      expect(await queue.getJob(target.mailboxId)).toBeDefined();
+      const before = await redis!.xrange(eventsKey, '-', '+');
+      const matchesTarget = (fields: string[]): boolean =>
+        fields[fields.indexOf('jobId') + 1] === target.mailboxId;
+      expect(
+        before.some(([, fields]) => matchesTarget(fields) && isMatchingFinishEvent(fields)),
+      ).toBe(true);
+
+      const [request] = await db
+        .insert(mailboxDataDeletionRequests)
+        .values({ mailboxAccountId: target.mailboxId })
+        .returning({ id: mailboxDataDeletionRequests.id });
+      const purgeWorker = new AccountDeletionPurgeWorker({
+        db: db as never,
+        gmailLifecycle: fakeLifecycle().access,
+        topicName: TOPIC,
+        emailQueue: fakeEmailQueue().queue,
+        renderReceiptEmail: async () => ({ subject: 's', text: 't' }),
+        initialSyncQueue: queue,
+      });
+
+      const result = await purgeWorker.processJob(
+        { scheduledAtMinute: `2026-09-29T${Date.now()}` },
+        ctx,
+      );
+
+      expect(result).toMatchObject({ purged: 1, failed: 0 });
+      const [completed] = await db
+        .select()
+        .from(mailboxDataDeletionRequests)
+        .where(eq(mailboxDataDeletionRequests.id, request!.id));
+      expect(completed?.status).toBe('completed');
+
+      // redis-cli EXISTS bull:initial-sync:<mailboxId> → 0
+      expect(await queue.getJob(target.mailboxId)).toBeUndefined();
+      // redis-cli XRANGE bull:initial-sync:events - + → no entry for that job id
+      const after = await redis!.xrange(eventsKey, '-', '+');
+      expect(after.some(([, fields]) => matchesTarget(fields))).toBe(false);
+    } finally {
+      // Force-close: a graceful `worker.close()` hangs indefinitely here
+      // (confirmed against this Redis/BullMQ version) since nothing else
+      // ever queues on this one-off name to unblock its poll.
+      await worker.close(true);
+      await queue.close();
+      const keys = await redis!.keys(`bull:${queueName}:*`);
+      if (keys.length > 0) await redis!.del(...keys);
+    }
+  }
+
+  it.runIf(live)(
+    "removes a completed mailbox's initial-sync job and its events-stream entry",
+    async () => {
+      await expectPurgeClearsInitialSyncArtifacts(
+        'isq-completed',
+        async () => ({ messagesSynced: 42, unreadable: 0 }),
+        (fields) => fields[fields.indexOf('event') + 1] === 'completed',
+      );
+    },
+  );
+
+  it.runIf(live)(
+    // The sharper case (docs/log/founder-followups/2026-09-26-redis-sync-
+    // count-retention.md): `removeOnFail: false` kept this indefinitely
+    // before this fix, and the reason text itself carries counts.
+    "removes a failed mailbox's initial-sync job and its events-stream entry, failedReason and all",
+    async () => {
+      await expectPurgeClearsInitialSyncArtifacts(
+        'isq-failed',
+        async () => {
+          throw new Error('Gmail refused metadata for 3 of 10 messages');
+        },
+        (fields) => fields[fields.indexOf('event') + 1] === 'failed',
+      );
+    },
+  );
 });
 
 describe('isSyncPausedForDeletion (D232 sync pause predicate)', () => {

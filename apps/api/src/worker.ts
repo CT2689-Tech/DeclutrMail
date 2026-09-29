@@ -2750,6 +2750,11 @@ async function bootstrap(): Promise<void> {
     // (D245 scan-progress-counts) — a Redis outage here costs only this
     // clear, never the purge.
     scanProgress: createRedisScanProgressStore(scanProgressConnection),
+    // Reuses the initial-sync reconciler's own Queue instance (D245
+    // `processing-and-retry-records`) to remove this mailbox's BullMQ job
+    // and trim the shared events stream — same best-effort reasoning as
+    // scanProgress above.
+    initialSyncQueue: reconcilerQueue,
     observer,
   });
   deletionPurgeWorker.setObserver(observer);
