@@ -53,6 +53,7 @@ import {
   ruleMatchLog,
   ruleMatchRuleCanStart,
   ruleMatchSenderIsProtected,
+  ruleMatchUnsubscribeAlreadyDone,
   workspaces,
   senderPolicies,
   senders,
@@ -394,9 +395,15 @@ export class AutopilotReadService {
       const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
       const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
       const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
-      // Both sender-based numbers read this one set, so they can never
-      // describe different senders.
-      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()})`;
+      // `senders7d` alone reads this set (2026-09-29 — `inboxMessagesNow`
+      // moved to the full pending queue below, so the two no longer share
+      // one set). Excludes the same two no-op states
+      // `ruleMatchIsOfferableSuggestion` does, for the same reason: an
+      // Unsubscribe rule's "Would have requested unsubscribe from N
+      // senders" must not count a sender that is already unsubscribed.
+      // Founder decision 2026-09-29 (a):
+      // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()} and not ${ruleMatchUnsubscribeAlreadyDone()})`;
       const scope = and(
         eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
         eq(ruleMatchLog.modeAtMatch, 'observe'),

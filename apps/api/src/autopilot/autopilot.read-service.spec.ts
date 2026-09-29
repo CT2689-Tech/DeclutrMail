@@ -1547,6 +1547,61 @@ describe('AutopilotReadService', () => {
       expect(approved!.skippedProtectedCount).toBe(1);
     });
 
+    // Founder decision 2026-09-29 (a): an already-unsubscribed sender's
+    // suggestion is excluded from the list, the count and approve-all —
+    // the same layer Protected sits at, for the same reason: approving
+    // it would be a no-op the action worker silently drops
+    // (`skippedAlreadyUnsubscribed`).
+    // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+    it('counts, lists and approves the same set when a sender is already unsubscribed', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
+      const doneKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: doneKey,
+        policyType: 'unsubscribe',
+      });
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: doneKey,
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'already-unsubscribed',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'b'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'still-subscribed',
+        },
+      ]);
+
+      // Read the count and the list BEFORE approving — approve changes both.
+      const rule = (await svc.listRules(mailboxA)).find((r) => r.id === ruleId);
+      const listed = (await svc.listPendingSuggestions(mailboxA)).filter(
+        (m) => m.ruleId === ruleId,
+      );
+      const approved = await svc.approveAllForRule(mailboxA, ruleId);
+
+      expect(listed.map((m) => m.reason)).toEqual(['still-subscribed']);
+      expect(rule!.observeDigest?.pendingTotal).toBe(listed.length);
+      // "Would have requested unsubscribe from N senders" reads senders7d.
+      expect(rule!.observeDigest?.senders7d).toBe(1);
+      expect(approved!.approvedCount).toBe(listed.length);
+
+      // Stays pending — this is exclusion from the offer, not a dismissal.
+      const [doneRow] = await db
+        .select({ resolution: ruleMatchLog.resolution })
+        .from(ruleMatchLog)
+        .where(and(eq(ruleMatchLog.ruleId, ruleId), eq(ruleMatchLog.senderKey, doneKey)));
+      expect(doneRow!.resolution).toBe('pending');
+    });
+
     it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
       const { svc, add } = withQueue();
       const { matchId } = await seedPendingMatch(mailboxA);
