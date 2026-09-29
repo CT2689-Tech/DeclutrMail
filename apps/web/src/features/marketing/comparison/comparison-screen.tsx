@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { demoForTopic } from '../learn/journey-links';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -206,20 +208,20 @@ export function ComparisonIndexScreen() {
               DeclutrMail lets you review a sender, preview the current match and planned Gmail
               change, then check the outcome in Activity.
             </p>
-            <a href="/inbox-simulator?workspace=senders">
+            <Link href="/inbox-simulator?workspace=senders">
               Try a sender review <span aria-hidden="true">→</span>
-            </a>
+            </Link>
           </div>
           <div className="dm-compare-fit-options">
             {QUICK_FITS.map((fit) => (
-              <a key={fit.href} href={fit.href} aria-label={`${fit.action}: ${fit.tool}`}>
+              <Link key={fit.href} href={fit.href} aria-label={`${fit.action}: ${fit.tool}`}>
                 <span className="dm-compare-fit-kicker">{fit.job}</span>
                 <strong>{fit.tool}</strong>
                 <span className="dm-compare-fit-description">{fit.description}</span>
                 <span className="dm-compare-fit-action">
                   {fit.action} <span aria-hidden="true">→</span>
                 </span>
-              </a>
+              </Link>
             ))}
           </div>
         </div>
@@ -233,12 +235,12 @@ export function ComparisonIndexScreen() {
           {COMPARISONS.map((comparison) => (
             <li key={comparison.slug}>
               <span className="dm-compare-list-category">{comparison.category}</span>
-              <a
+              <Link
                 href={`/vs/${comparison.slug}`}
                 aria-label={`Compare DeclutrMail and ${comparison.name}`}
               >
                 DeclutrMail vs {comparison.name} <span aria-hidden="true">→</span>
-              </a>
+              </Link>
               <p>{comparison.indexSummary}</p>
             </li>
           ))}
@@ -260,9 +262,9 @@ export function ComparisonIndexScreen() {
             if (!subject) return null;
             return (
               <li key={slug}>
-                <a href={`/alternatives/${slug}`} aria-label={`Alternatives to ${subject.name}`}>
+                <Link href={`/alternatives/${slug}`} aria-label={`Alternatives to ${subject.name}`}>
                   Alternatives to {subject.name}
-                </a>
+                </Link>
                 <p>What to use instead of {subject.name}, and when to stay.</p>
               </li>
             );
@@ -338,7 +340,7 @@ function MatrixSection() {
                 <th scope="col">DeclutrMail</th>
                 {COMPARISONS.map((comparison) => (
                   <th scope="col" key={comparison.slug}>
-                    <a href={`/vs/${comparison.slug}`}>{comparison.name}</a>
+                    <Link href={`/vs/${comparison.slug}`}>{comparison.name}</Link>
                   </th>
                 ))}
               </tr>
@@ -457,7 +459,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
       <JsonLd data={comparisonJsonLd(comparison)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <a href="/compare">All comparisons</a>
+          <Link href="/compare">All comparisons</Link>
           <span aria-hidden="true">/</span>
           <span>{comparison.name}</span>
         </nav>
@@ -562,11 +564,11 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
             </li>
           ))}
           <li>
-            <a href="/pricing">DeclutrMail pricing and tiers</a>
+            <Link href="/pricing">DeclutrMail pricing and tiers</Link>
             <p>Current public plan prices, inbox limits, capabilities, and undo windows.</p>
           </li>
           <li>
-            <a href="/privacy">DeclutrMail privacy policy</a>
+            <Link href="/privacy">DeclutrMail privacy policy</Link>
             <p>Current data categories, Gmail access, retention, and account-deletion details.</p>
           </li>
         </ol>
@@ -584,7 +586,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
           {COMPARISONS.filter((candidate) => candidate.slug !== comparison.slug).map(
             (candidate) => (
               <li key={candidate.slug}>
-                <a href={`/vs/${candidate.slug}`}>DeclutrMail vs {candidate.name}</a>
+                <Link href={`/vs/${candidate.slug}`}>DeclutrMail vs {candidate.name}</Link>
               </li>
             ),
           )}

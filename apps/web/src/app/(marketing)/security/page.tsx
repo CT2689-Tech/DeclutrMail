@@ -17,6 +17,7 @@
 // 21 Apr 2027 as the operative deadline.
 
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import {
   CASA_VERIFICATION_APPROVED_MONTH,
   CASA_VERIFICATION_APPROVED_ON,
@@ -159,7 +160,7 @@ export default function SecurityPage() {
           window. Undo windows run {MIN_UNDO_WINDOW_DAYS} days on every plan, so a recent action
           commonly puts deletion up to {MAX_UNDO_WINDOW_DAYS} days out; you can waive both with a
           typed confirmation to delete immediately. Details are in the{' '}
-          <a href="/privacy">Privacy Policy</a>.
+          <Link href="/privacy">Privacy Policy</Link>.
         </p>
       </DocSection>
 

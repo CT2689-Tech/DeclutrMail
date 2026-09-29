@@ -21,7 +21,7 @@ import {
   MailboxSyncReadyPayloadSchema,
   TOPICS,
 } from '@declutrmail/events';
-import { and, eq, gt, inArray, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { boundedMap } from './bounded-map.js';
@@ -39,6 +39,7 @@ import { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from '.
 import { TransientError, ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 import type { InitialSyncJobData } from './queue.js';
+import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -102,6 +103,11 @@ export interface InitialSyncDeps {
    * gap. The integration PR passes `outbox: new OutboxPublisher()`.
    */
   outbox?: OutboxPublisher;
+  /**
+   * Where the read's counts go for the sync gate's "N of M emails" line.
+   * Absent, the line never shows; the scan is unaffected either way.
+   */
+  scanProgress?: ScanProgressStore;
 }
 
 /**
@@ -403,6 +409,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     // `worker.started` and `worker.succeeded` made "is it hung or just
     // slow?" unanswerable. Each emit costs ~1 line; benign.
     initialSyncLog('stage_begin', mailboxAccountId, { stage: 'fetching_metadata' });
+    // Clear a retried attempt's counts BEFORE the row drops back to 5%:
+    // the status route reads the row, then the counts, so this attempt's
+    // bar is never paired with the last attempt's numbers.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_start');
     await this.upsertSyncState(mailboxAccountId, 'fetching_metadata', 5, 'syncing');
     initialSyncLog('getClient_begin', mailboxAccountId);
     const client = await this.deps.gmailAccess.getClient(mailboxAccountId);
@@ -425,7 +435,18 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       messagesSynced,
       gmailApiCalls: fetchCalls,
       unreadable,
-    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal);
+    } = await this.fetchAndStoreMetadata(mailboxAccountId, client, ctx.signal, async (counts) => {
+      await this.updateProgress(
+        mailboxAccountId,
+        counts.processed,
+        counts.total,
+        snapshotHistoryId,
+      );
+      // An empty mailbox has nothing to count against.
+      if (counts.total > 0) {
+        await this.reportScanProgress(mailboxAccountId, ctx.attempt, counts, 'count');
+      }
+    });
     initialSyncLog('fetchAndStoreMetadata_done', mailboxAccountId, {
       messagesSynced,
       gmailApiCalls: fetchCalls,
@@ -436,6 +457,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     ctx.signal?.throwIfAborted();
     // Stage 2 — building_sender_index (aggregates from mail_messages).
     await this.upsertSyncState(mailboxAccountId, 'building_sender_index', 80, 'syncing');
+    // The read is over; its counts describe nothing the gate shows now.
+    await this.reportScanProgress(mailboxAccountId, ctx.attempt, null, 'clear_end');
     const sendersIndexed = await this.buildSenderIndex(mailboxAccountId, client, ctx.signal);
     lap('building_sender_index');
 
@@ -682,7 +705,8 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
   private async fetchAndStoreMetadata(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    onProgress: (counts: ScanCounts) => Promise<void>,
   ): Promise<{ messagesSynced: number; gmailApiCalls: number; unreadable: number }> {
     let gmailApiCalls = 0;
 
@@ -812,6 +836,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         return meta;
       });
       gmailApiCalls += chunk.length;
+      // Every id fetched counts as read — stored, or skipped as unreadable,
+      // deleted since the list, or unkeyable.
+      processed += chunk.length;
       chunk = [];
 
       for (const meta of metas) {
@@ -829,12 +856,10 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
         if (!row.facts.isOutbound && !pendingSenders.has(row.senderKey)) {
           pendingSenders.set(row.senderKey, this.toIdentityRow(mailboxAccountId, row));
         }
-        processed += 1;
       }
 
       if (pendingMessages.length >= UPSERT_BATCH) {
         await flush();
-        await this.updateProgress(mailboxAccountId, processed, total);
         initialSyncLog('fetch_flush', mailboxAccountId, {
           processed,
           total,
@@ -843,6 +868,9 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
     };
 
+    // The total is known from here on — say so before the first batch,
+    // counting what an earlier attempt already saved as read.
+    await onProgress({ processed, total });
     initialSyncLog('fetch_loop_begin', mailboxAccountId, {
       total,
       toFetch: total - skipSet.size,
@@ -854,6 +882,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       chunk.push(id);
       if (chunk.length === UPSERT_BATCH) {
         await processChunk();
+        // A count per 500 read, saved or not: a stretch the scan skips
+        // (unreadable, deleted) must not freeze the bar and the line — or
+        // outlive the counts' key. The last, partial chunk goes uncounted;
+        // the stage moves on within one chunk's time.
+        await onProgress({ processed, total });
       }
     }
     await processChunk();
@@ -1504,17 +1537,79 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     return 'primary';
   }
 
-  /** Advance `progress_pct` across the fetching_metadata stage (5 → 75). */
+  /**
+   * Advance `progress_pct` across the fetching_metadata stage (5 → 75).
+   *
+   * A sign-in or connect while this read runs resets the row to `queued`
+   * but starts no attempt: this job is already active
+   * (`ensureInitialSyncJob`). So the read takes the row back at its next
+   * count; otherwise the gate would sit on "Waiting to start." at 0% for
+   * the rest of the read. Should anything have cleared the cursor, this
+   * read's snapshot fills it (`COALESCE` — never over a set one; the
+   * snapshot is older, so replaying from it is safe). A ready or failed row
+   * is not this write's to change — though the read's later stage writes
+   * (`upsertSyncState`, `markReady`) still are unconditional.
+   */
   private async updateProgress(
     mailboxAccountId: string,
     processed: number,
     total: number,
+    snapshotHistoryId: string,
   ): Promise<void> {
     const pct = total === 0 ? 75 : 5 + Math.round((70 * processed) / total);
     await this.deps.db
       .update(providerSyncState)
-      .set({ progressPct: Math.min(pct, 75), updatedAt: sql`now()` })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      .set({
+        progressPct: Math.min(pct, 75),
+        currentStage: 'fetching_metadata',
+        readinessStatus: 'syncing',
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${snapshotHistoryId}::bigint)`,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          or(
+            eq(providerSyncState.currentStage, 'fetching_metadata'),
+            eq(providerSyncState.readinessStatus, 'queued'),
+          ),
+        ),
+      );
+  }
+
+  /**
+   * Put the read's counts where the status route reads them; `null` clears
+   * them (an attempt starting, the read ending). Display-only, on a
+   * fail-fast store: a failed write is logged and the scan carries on — a
+   * missing "N of M emails" line is the only cost. A failed `clear_start`
+   * can leave the previous attempt's counts beside this attempt's bar
+   * until its first count lands, which is why `phase` is logged.
+   */
+  private async reportScanProgress(
+    mailboxAccountId: string,
+    attempt: number,
+    counts: ScanCounts | null,
+    phase: 'clear_start' | 'count' | 'clear_end',
+  ): Promise<void> {
+    const store = this.deps.scanProgress;
+    if (!store) {
+      return;
+    }
+    try {
+      await store.write(mailboxAccountId, counts);
+    } catch (err) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sync.scan_progress_write_failed',
+          worker: this.workerName,
+          mailboxAccountId,
+          attempt,
+          phase,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
   }
 
   /** Persist the first pre-fetch cursor and reuse it across BullMQ retries. */
@@ -1522,13 +1617,17 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     mailboxAccountId: string,
     candidateHistoryId: string,
   ): Promise<string> {
-    const candidate = BigInt(candidateHistoryId);
+    // BigInt() still rejects a malformed id; the SQL gets it as text with an
+    // explicit cast — a JS BigInt in a raw `sql` template is what CLAUDE.md
+    // §2.6 bans (PGlite passes it, postgres.js need not).
+    const candidate = BigInt(candidateHistoryId).toString();
     const [row] = await this.deps.db
       .update(providerSyncState)
       .set({
-        // First attempt wins. A BullMQ retry resumes persisted messages,
+        // First attempt wins. A BullMQ retry — or a re-queue, which keeps
+        // the cursor (SyncService.markQueued) — resumes persisted messages,
         // so it must also resume from the original pre-fetch snapshot.
-        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate})`,
+        lastHistoryId: sql`COALESCE(${providerSyncState.lastHistoryId}, ${candidate}::bigint)`,
         updatedAt: sql`now()`,
       })
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))

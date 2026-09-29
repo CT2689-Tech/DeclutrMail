@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import {
   ACTION_PREVIEW_CLAIM,
   Logo,
@@ -78,8 +80,8 @@ export function AuthEntry({
             </ul>
             <p className="dm-auth-entry-storage-note">
               Account, preference, action, service-provider, and billing records are described in
-              the <a href="/privacy#what-we-store">privacy policy</a>. See{' '}
-              <a href="/security">how access is protected</a>.
+              the <Link href="/privacy#what-we-store">privacy policy</Link>. See{' '}
+              <Link href="/security">how access is protected</Link>.
             </p>
           </div>
         </details>
