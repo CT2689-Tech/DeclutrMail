@@ -3,6 +3,7 @@
 import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
@@ -887,6 +888,16 @@ export function TriageScreen({
     addSessionMessagesMoved,
   ]);
 
+  // Server truth (via `listInFlight`) for which senders have a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this screen's own unmount/navigation. Additive to the local
+  // handles below, which stay exactly as they were: Triage's queue can
+  // remove a decided row before a job goes terminal, so a rowId that has
+  // already left `state.rows` is not something `sharedLock` (keyed on
+  // senderId) needs to reach — the local `overdueAction`/`overdueBatch`
+  // membership below is what still protects a row that is somehow still
+  // visible.
+  const sharedLock = useSenderInFlightLock(actionMailboxId);
   // Rows with an outstanding job — confirming, intent-settling, OR
   // parked overdue — render busy and refuse re-dispatch. A set, not a
   // single id: parking exists precisely so the NEXT action can start
@@ -900,8 +911,13 @@ export function TriageScreen({
     if (overdueAction) ids.add(overdueAction.rowId);
     if (intentRowId != null) ids.add(intentRowId);
     for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
+    if (state.kind === 'ready' && sharedLock.senderIds.size > 0) {
+      for (const row of state.rows) {
+        if (sharedLock.senderIds.has(row.senderId)) ids.add(row.id);
+      }
+    }
     return ids;
-  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
+  }, [activeAction, overdueAction, intentRowId, overdueBatch, state, sharedLock.senderIds]);
 
   /**
    * Run the mutation for `verb` against `row` after the preview has
