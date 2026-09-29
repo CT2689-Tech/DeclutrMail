@@ -69,7 +69,13 @@ export type IdempotencyKey = string & { readonly __brand: 'IdempotencyKey' };
  * ──────────────────────────────────────────────────────────────────── */
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const HEX64_REGEX = /^[0-9a-f]{64}$/i;
+// No `/i`: unlike a UUID (case-insensitive by spec), a stored
+// `sender_key` is always lowercase (`deriveSenderKey`'s `digest('hex')`
+// never uppercases). Accepting uppercase here let a well-shaped-but-wrong
+// key pass validation and enqueue work that could never match a stored
+// row (2026-09-28) — one of four independent copies of this shape that
+// disagreed on case; this is the one behind the exported boundary parser.
+const HEX64_REGEX = /^[0-9a-f]{64}$/;
 
 function assertUuid(value: string, brand: string): void {
   if (!UUID_REGEX.test(value)) {

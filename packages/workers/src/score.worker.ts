@@ -571,8 +571,22 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
-    // The same key every producer uses as the BullMQ jobId.
-    const key = scoreJobId(payload);
+    // `BaseDeclutrWorker.run()` calls this via `?.()` BEFORE its own try
+    // block — purely to log a telemetry reference on `worker.started` —
+    // so it must never throw. `scoreJobId` throws by design for callers
+    // that can fail loudly (rescoreSenders, the HTTP controller); a
+    // malformed queued payload here instead needs to reach `processJob`'s
+    // own `ValidationError` guard below, which is what gives it a
+    // captured failure and a `dead_letter_jobs` row. Without this catch,
+    // a payload missing `mailboxAccountId` threw here as a raw TypeError
+    // with no log line, no Sentry event and nothing dead-lettered — that
+    // guard was unreachable (2026-09-28).
+    let key: string;
+    try {
+      key = scoreJobId(payload);
+    } catch {
+      key = `${payload.mailboxAccountId ?? '?'}:${payload.senderKey ?? '*'}:${payload.producedAtMs}`;
+    }
     // An explain job's `producedAtMs` is the row version it explains —
     // the same number the re-score that wrote that row carried. Marked, so
     // the two never share an `idempotencyRef` in the logs.

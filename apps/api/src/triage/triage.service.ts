@@ -160,10 +160,12 @@ export class TriageService {
    * `triage_decisions` directly. The worker owns the upsert.
    *
    * Returns the `idempotencyKey` the worker will use so callers can
-   * trace the job. Stable across the duplicate-add window: two POSTs
-   * with the same `producedAtMs` (clock tied to the request, not
-   * `Date.now()`) get the same BullMQ `jobId` and the second is a
-   * no-op — the id is `scoreJobId`, the worker's own idempotency key.
+   * trace the job — `scoreJobId`, the worker's own idempotency key. Two
+   * calls with the same `producedAtMs` would share a `jobId` and dedup,
+   * but its only caller (`POST /api/triage/score-sender`) never supplies
+   * one, so in practice every request gets a fresh `Date.now()` and no
+   * request-level dedup happens; `producedAtMs` exists for a future
+   * caller that wants it, and for tests.
    */
   async scoreSender(input: {
     mailboxAccountId: string;

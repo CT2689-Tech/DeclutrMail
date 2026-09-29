@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildRescoreSenders } from './rescore-senders.js';
 import { SCORE_JOB, scoreJobId } from './score.worker.js';
@@ -61,6 +61,58 @@ describe('buildRescoreSenders', () => {
 
     expect(addBulk).not.toHaveBeenCalled();
     expect(sweepAfter).not.toHaveBeenCalled();
+  });
+
+  describe('a hung Redis call (CLAUDE.md §2.6)', () => {
+    // This runs inside the outbox dispatcher's open claim transaction
+    // (see the file's own docstring). ioredis's retry-forever connection
+    // never rejects during an outage — it buffers — so an unbounded
+    // `await` here would hold that transaction's row locks indefinitely,
+    // with no failure signal. `addBulk`/`sweepAfter` below never settle,
+    // matching that exact shape, not the mocked "resolves at once" that
+    // does not represent the real client during an outage.
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it('fails a hung score-queue publish within the bound, instead of hanging', async () => {
+      const addBulk = vi.fn(() => new Promise(() => {})); // never settles
+      const sweepAfter = vi.fn(async () => {});
+      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+        MAILBOX,
+        [KEY_A],
+        CLOCK,
+      );
+      const assertion = expect(result).rejects.toThrow(/score queue addBulk exceeded 5000ms/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+      expect(sweepAfter).not.toHaveBeenCalled(); // never reached
+    });
+
+    it('fails a hung Autopilot sweep trigger within the bound, instead of hanging', async () => {
+      const addBulk = vi.fn(async () => []);
+      const sweepAfter = vi.fn(() => new Promise<void>(() => {})); // never settles
+      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+        MAILBOX,
+        [KEY_A],
+        CLOCK,
+      );
+      const assertion = expect(result).rejects.toThrow(/autopilot sweep trigger exceeded 5000ms/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+    });
+
+    it('a slow-but-real publish under the bound still succeeds', async () => {
+      const addBulk = vi.fn(() => new Promise((resolve) => setTimeout(() => resolve([]), 4_000)));
+      const sweepAfter = vi.fn(async () => {});
+      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+        MAILBOX,
+        [KEY_A],
+        CLOCK,
+      );
+      await vi.advanceTimersByTimeAsync(4_000);
+      await expect(result).resolves.toBeUndefined();
+      expect(sweepAfter).toHaveBeenCalledWith(MAILBOX);
+    });
   });
 });
 

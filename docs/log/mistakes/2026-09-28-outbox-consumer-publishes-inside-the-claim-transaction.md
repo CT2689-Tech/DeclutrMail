@@ -1,6 +1,8 @@
 ## 2026-09-28 — A new outbox consumer publishes to BullMQ inside the dispatcher's open claim transaction
 **PR:** #807 (https://github.com/CT2689-Tech/DeclutrMail/pull/807)
-**Caught by:** architecture-guardian (WARNING), silent-failure-hunter (WARNING + INFO)
+**Caught by:** architecture-guardian (WARNING, then escalated to BLOCKING
++ CONFIRMED by both refuters on the next gate run), silent-failure-hunter
+(WARNING + INFO on both runs)
 **What happened:** `handleNonMailPurged`'s `rescoreSenders` calls
 `scoreQueue.addBulk` and, through the delta trigger, `applyQueue.add`,
 both awaited inside the dispatcher's `FOR UPDATE SKIP LOCKED` claim
@@ -35,10 +37,21 @@ same PR by splitting the log instead of relying on one transaction).
 **Rule:** A consumer registered on `outbox-consumer-router.ts` must not
 make a network call, and CLAUDE.md §2.6 must not be treated as satisfied
 by "this file already does it elsewhere."
-**Enforcement update:** None in #807 — fixing it means redesigning the
-dispatcher's transaction/commit boundary across every registered
-consumer (~8 topics), which is a separate, larger piece of work, not a
-fix that belongs inside a small consumer-registration PR. Flagged to the
-orchestrator for a `defect-class-sweeper` pass over
-`outbox-consumer-router.ts` before the count of consumers with this
-shape grows further.
+**Enforcement update:** A first gate run rated this WARNING and #807
+documented-and-deferred it; a second run on the same diff re-scored it
+BLOCKING, confirmed it, and named the founder as the only one who may
+waive a §2 rule. Documenting a §2 violation is not the same as fixing it,
+and the gate correctly did not treat it as one.
+
+#807 now bounds both calls (`packages/workers/src/rescore-senders.ts`,
+`withPublishTimeout`, 5s) so a hung Redis fails within a known time
+instead of holding the claim transaction's row locks and connection
+indefinitely — closing the "indefinitely, with no failure signal" half of
+the harm, using only files #807 already owns. It does not close the
+letter of §2.6: the network call still executes while the transaction is
+open, for the duration of the bound. Moving it out entirely means
+redesigning the dispatcher's claim/commit boundary across every
+registered consumer (~8 topics, including the pre-existing
+`enqueueAutopilotApply`), which is still out of scope for a small
+consumer-registration PR and is tracked as its own task, spawned
+2026-09-28 (`task_10d49b5e`), rather than folded in here.

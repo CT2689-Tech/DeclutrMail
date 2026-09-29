@@ -3,6 +3,49 @@ import type { Queue } from 'bullmq';
 import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
 
 /**
+ * `rescoreSenders` is called from inside the outbox dispatcher's open
+ * claim transaction (`handleNonMailPurged`, per-row savepoint) — a
+ * pre-existing pattern this file extends rather than introduces (the
+ * sibling `enqueueAutopilotApply` consumer does the same). CLAUDE.md
+ * §2.6 bans a queue publish inside an open transaction because the
+ * queues' Redis connection (`maxRetriesPerRequest: null`, default
+ * offline queue) BUFFERS commands during an outage instead of rejecting
+ * them, so an unbounded await would hold the transaction's row locks and
+ * pooled connection for as long as the outage lasts. Moving these calls
+ * outside the transaction needs redesigning the dispatcher's claim/
+ * commit boundary, which is tracked separately
+ * (docs/log/mistakes/2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md)
+ * and is not this file's job. This bounds the two calls instead: a hung
+ * Redis now fails within `PUBLISH_TIMEOUT_MS`, which the dispatcher's
+ * existing retry/report path (`reportConsumerFailure`) already handles
+ * correctly, rather than hanging indefinitely with no failure signal at
+ * all. It does not cancel the underlying command — ioredis has no
+ * cancellation for one already queued — so a very late resolution after
+ * the timeout is simply ignored here; BullMQ's jobId dedup makes a
+ * subsequent retry's re-publish safe either way.
+ */
+const PUBLISH_TIMEOUT_MS = 5_000;
+
+function withPublishTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`rescoreSenders: ${label} exceeded ${PUBLISH_TIMEOUT_MS}ms`)),
+      PUBLISH_TIMEOUT_MS,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * Re-score a set of senders whose counts changed outside a score run —
  * today, the ones a `mailbox.non_mail_purged` event names.
  *
@@ -24,17 +67,20 @@ export function buildRescoreSenders(deps: {
 ) => Promise<void> {
   return async (mailboxAccountId, senderKeys, producedAtMs) => {
     if (senderKeys.length === 0) return;
-    await deps.scoreQueue.addBulk(
-      senderKeys.map((senderKey) => {
-        const data: ScoreJobData = {
-          mailboxAccountId,
-          senderKey,
-          trigger: 'signal_change',
-          producedAtMs,
-        };
-        return { name: SCORE_JOB, data, opts: { jobId: scoreJobId(data) } };
-      }),
+    await withPublishTimeout(
+      deps.scoreQueue.addBulk(
+        senderKeys.map((senderKey) => {
+          const data: ScoreJobData = {
+            mailboxAccountId,
+            senderKey,
+            trigger: 'signal_change',
+            producedAtMs,
+          };
+          return { name: SCORE_JOB, data, opts: { jobId: scoreJobId(data) } };
+        }),
+      ),
+      'score queue addBulk',
     );
-    await deps.sweepAfter(mailboxAccountId);
+    await withPublishTimeout(deps.sweepAfter(mailboxAccountId), 'autopilot sweep trigger');
   };
 }

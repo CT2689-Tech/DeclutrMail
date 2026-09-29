@@ -4,6 +4,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { outboxEvents } from '@declutrmail/db';
 import type { OutboxEvent, schema } from '@declutrmail/db';
 
+import type { BackgroundFailureContext } from './worker-observer.js';
+
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -79,21 +81,17 @@ interface ConsumerFailure {
  * and what context to pass; it does NOT depend on Sentry directly.
  *
  * Defaults to a no-op so tests and bare-bones bootstraps run without
- * needing Sentry configured. The shape matches
- * `WorkerObserver.captureBackgroundFailure`'s real context type
- * (`BackgroundFailureContext`) exactly, on purpose: the production
- * adapter reads only `kind` and `tags` and silently drops anything
- * else, and it is assignable here regardless (TypeScript checks
- * interface methods bivariantly), so a context shape that ADMITS more
- * fields than the adapter reads is a hole a caller can fall into without
- * a type error. `outbox.dispatch.event_failed` and `tick_failed` did,
- * twice, before this was narrowed (2026-09-28).
+ * needing Sentry configured. The context type is
+ * `BackgroundFailureContext` itself, not a copy — the production adapter
+ * reads only its `kind` and `tags`, and TypeScript checks interface
+ * methods bivariantly, so a context shape that merely LOOKED like this
+ * one but admitted extra fields would still satisfy it while the adapter
+ * silently dropped them. `outbox.dispatch.event_failed` and
+ * `tick_failed` did, twice, before this referenced the real type instead
+ * of restating its shape (2026-09-28).
  */
 export interface OutboxObserver {
-  captureBackgroundFailure(
-    error: unknown,
-    context: { kind: string; tags?: Record<string, string | number> },
-  ): void;
+  captureBackgroundFailure(error: unknown, context: BackgroundFailureContext): void;
 }
 
 /** Configuration knobs for the dispatcher. */

@@ -19,6 +19,7 @@ import {
   type OutboxObserver,
 } from './outbox-dispatcher.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
+import type { BackgroundFailureContext } from './worker-observer.js';
 
 /** Shared schemas for the test publishes (mirror what production callers pass). */
 const VerdictPayload = z.object({ verdict: z.string() }).strict();
@@ -315,7 +316,7 @@ describe('OutboxDispatcherWorker', () => {
         schema: EmptyPayload,
       });
     });
-    const captured: Array<{ kind: string; [key: string]: unknown }> = [];
+    const captured: BackgroundFailureContext[] = [];
     const dispatcher = makeDispatcher(
       db,
       async () => {
@@ -570,7 +571,7 @@ describe('OutboxDispatcherWorker', () => {
     const { db, pg } = await freshDb();
     activePg = pg;
 
-    const captured: Array<{ error: unknown; context: Record<string, unknown> }> = [];
+    const captured: Array<{ error: unknown; context: BackgroundFailureContext }> = [];
     const observer: OutboxObserver = {
       captureBackgroundFailure: (error, context) => {
         captured.push({ error, context });

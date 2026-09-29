@@ -313,6 +313,51 @@ describe('ScoreWorker — idempotency + upsert', () => {
     expect(key).toBe(`${mailboxAccountId}:${senderKey}:5000`);
   });
 
+  it("a job missing mailboxAccountId reaches processJob's own guard, not a raw crash", async () => {
+    // `getIdempotencyKey` runs via `run()`'s `?.()` BEFORE its try block
+    // (base-declutr-worker.ts), purely to log a telemetry reference —
+    // so it must never throw. Before this test existed, a colon/shape
+    // guard inside `scoreJobId` threw a TypeError here for exactly this
+    // payload, which reached BullMQ raw: no worker.started, no
+    // worker.failed, no captureFailure, no dead-letter row — the
+    // ValidationError guard below became unreachable (2026-09-28).
+    const db = await freshDb();
+    const captured: unknown[] = [];
+    const deadLettered: unknown[] = [];
+    const worker = new ScoreWorker({ db });
+    worker.setObserver({
+      captureFailure: (error) => void captured.push(error),
+      captureBackgroundFailure: () => {},
+      recordBackgroundNotice: () => {},
+    });
+    worker.setDeadLetterRecorder({ record: async (entry) => void deadLettered.push(entry) });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      // ValidationError is non-retryable, so `run()` does its capture +
+      // dead-letter work, THEN re-throws as `UnrecoverableError` — the
+      // designed signal telling BullMQ to stop retrying. That rethrow,
+      // not a bypass of the capture path, is what's under test here.
+      await expect(
+        worker.run({
+          id: 'job-missing-mailbox',
+          // No mailboxAccountId — the malformed-payload case.
+          data: { trigger: 'manual_rescore', producedAtMs: 1 } as never,
+          attemptsMade: 0,
+          queueName: 'score',
+        } as never),
+      ).rejects.toThrow('score job is missing mailboxAccountId');
+      const kinds = logSpy.mock.calls.map(
+        (call) => (JSON.parse(String(call[0])) as { kind: string }).kind,
+      );
+      expect(kinds).toContain('worker.started');
+      expect(kinds).toContain('worker.failed');
+      expect(captured).toHaveLength(1);
+      expect(deadLettered).toHaveLength(1);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it('out-of-order older finisher does NOT overwrite a newer row (D25 monotonic upsert)', async () => {
     // Regression for the PR #118 review: BullMQ jobId dedup is exact-
     // string match, so two score triggers for the same (mailbox,
