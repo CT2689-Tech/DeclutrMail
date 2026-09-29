@@ -307,6 +307,44 @@ describe('QuietRoute', () => {
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
 
+  it('does not re-toast a PRO_FEATURE_REQUIRED 402 — the global UpgradeModal is the surface', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'PRO_FEATURE_REQUIRED',
+                details: { capability: 'quiet', tier: 'free' },
+              },
+            }),
+            { status: 402, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+
+    // The mutation settling (isPending flips back false, restoring the
+    // button's resting label) is the deterministic signal here — there is
+    // no success toast to wait on for this path, by design.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save quiet hours' })).toBeInTheDocument(),
+    );
+    expect(toast).not.toHaveBeenCalled();
+    expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
   it('still warns and reports a save that fails after the page is gone', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
     let failPut: (() => void) | undefined;
