@@ -56,6 +56,7 @@ import { DecisionTimeline, type TimelineItem } from '../uplift-d';
 import { unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import {
   isUnsubSendDisabled,
@@ -316,15 +317,24 @@ export function SenderDetailRoute({
   const timeseriesReady = !!timeseries.data && freshSinceReset(sendersKeys.timeseries(id), 'data');
   const historyReady = !!history.data && freshSinceReset(sendersKeys.history(id), 'data');
 
+  const now = useNow();
+  const timeZone = useUserTimeZone();
   const adapted = useMemo(() => {
     if (!detail.data || !cachedDataIsTrustworthy) {
       return null;
     }
+    // `useNow()` is null until mount. Pairing lastSeenDays with
+    // `useUserTimeZone()` is what keeps SSR (UTC runtime) and a US
+    // browser on the same calendar day; `Date.now()` here is only the
+    // pre-mount fallback and matches the rare midnight-crossing case
+    // already accepted for /later (DECLUTRMAIL-WEB-2C).
     return adaptSenderDetail({
       detail: detail.data.data,
       messages: messagesReady ? messages.data!.pages.flatMap((p) => p.data) : [],
       timeseries: timeseriesReady ? timeseries.data!.data : [],
       history: historyReady ? history.data!.pages.flatMap((p) => p.data) : [],
+      now: now ?? Date.now(),
+      timeZone,
     });
   }, [
     detail.data,
@@ -335,6 +345,8 @@ export function SenderDetailRoute({
     messagesReady,
     timeseriesReady,
     historyReady,
+    now,
+    timeZone,
   ]);
 
   // QA-sender-detail-20260903-01: checking ONLY `detail.error` here raced
@@ -490,6 +502,7 @@ function ReadyState({
   // "today" on one and "yesterday" on the other for the identical
   // instant (Codex review, QA-archive-20260828-03).
   const now = useNow();
+  const timeZone = useUserTimeZone();
   // Protect/Keep are real mutations: the chip flips
   // optimistically (standard non-destructive mutation UX, not the D226
   // lifecycle), `useSetSenderPolicy` persists the set-state patch +
@@ -1310,8 +1323,10 @@ function ReadyState({
     // row is marked: saying nothing beats promoting an undone row, and
     // an older standing decision is not on screen to point at.
     const currentIndex = history.findIndex((row) => row.undoneAt == null);
-    return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
-  }, [history, now]);
+    return history.map((row, i) =>
+      historyRowToTimelineItem(row, i === currentIndex, now, timeZone),
+    );
+  }, [history, now, timeZone]);
 
   // The list and inspector are simultaneous views of the same sender.
   // In the split workspace, inherit its activity map and action lifecycle;
@@ -1782,8 +1797,9 @@ function historyRowToTimelineItem(
   row: DecisionHistoryRow,
   isCurrent: boolean,
   now: number | null,
+  timeZone: string,
 ): TimelineItem {
-  const when = now === null ? '' : formatRelative(row.at, now);
+  const when = now === null ? '' : formatRelative(row.at, now, timeZone);
   return {
     id: row.id,
     when,
@@ -1818,8 +1834,8 @@ function historyRowToTimelineItem(
 // read here: this page has no `ssr:false` boundary, so a clock read
 // during render can put the server and the client on opposite sides of
 // a calendar-day cutoff and hydrate a different label than it rendered.
-function formatRelative(iso: string, now: number): string {
-  const days = daysSince(iso, now);
+function formatRelative(iso: string, now: number, timeZone: string): string {
+  const days = daysSince(iso, now, timeZone);
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days}d ago`;

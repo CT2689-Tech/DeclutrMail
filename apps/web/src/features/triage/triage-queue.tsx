@@ -2,6 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import {
@@ -124,6 +125,7 @@ export function TriageQueue({
   /** Held rows whose outcome is unknown, by the verb that may have started. */
   unknownVerbs?: ReadonlyMap<string, string>;
 }) {
+  const timeZone = useUserTimeZone();
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
@@ -190,6 +192,7 @@ export function TriageQueue({
               onToggleExpand={() => toggleExpandedRow(row.id)}
               onAction={(verb) => onAction(verb, row)}
               inlinePreview={inlinePreview}
+              timeZone={timeZone}
               inlinePreviewAccountContext={
                 inlinePreview == null ? undefined : <MailboxActionContext />
               }
