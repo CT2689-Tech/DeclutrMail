@@ -18,8 +18,8 @@ import { unsubscribeHeadersFor, unsubscribeUrl } from './unsubscribe-headers.js'
 /**
  * D6 / D162 — `mailbox.sync_ready` → transactional email trigger.
  *
- * Consumed by the outbox consumer router (worker process). For each
- * sync_ready event it enqueues:
+ * Consumed by the outbox consumer router (worker process). For a
+ * mailbox's FIRST completed scan (`payload.firstReady`) it enqueues:
  *
  *   1. The sync-complete email, immediately. Idempotent on the OUTBOX
  *      EVENT id — a redelivered event cannot double-send.
@@ -55,6 +55,24 @@ export type SyncReadyEmailHandler = (
 export function buildSyncReadyEmailHandler(deps: SyncReadyEmailTriggerDeps): SyncReadyEmailHandler {
   const appUrl = deps.appUrl.replace(/\/$/, '');
   return async function handleSyncReadyEmail(payload, eventId) {
+    // Once per mailbox. A re-scan of a mailbox that already finished one
+    // — a reconnect, a failed-scan retry, a cursor-too-old recovery —
+    // fires this event again; each used to send another "Your inbox is
+    // ready" about an inbox the user already had, the kind of repeat
+    // notice recipients mark as spam. Absent flag = an event published
+    // before it existed: keep old behaviour.
+    if (payload.firstReady === false) {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          kind: 'email.sync_ready.skipped_rescan',
+          mailboxAccountId: payload.mailboxAccountId,
+          eventId,
+        }),
+      );
+      return;
+    }
+
     const [mailbox] = await deps.db
       .select({
         userId: mailboxAccounts.userId,

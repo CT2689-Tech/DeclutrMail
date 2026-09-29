@@ -42,14 +42,14 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
       tokens.color.primary,
     ],
   ] as const)('highlights %s from observed facts', (label, row, background) => {
-    const html = renderToStaticMarkup(<ActionToolbar sender={row} onAction={() => {}} />);
+    const html = renderToStaticMarkup(<ActionToolbar sender={row} onAction={() => {}} shortcuts />);
     expect(actionButtonTag(html, label)).toContain(`background:${background}`);
   });
 
   it('emits the selected action without any recommendation input', () => {
     const onAction = vi.fn();
     const row = sender();
-    render(<ActionToolbar sender={row} onAction={onAction} />);
+    render(<ActionToolbar sender={row} onAction={onAction} shortcuts />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
     expect(onAction).toHaveBeenCalledWith({ verb: 'Archive', senders: [row] });
@@ -60,7 +60,7 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     // told every user it lived on Sender Detail. Nothing pinned a
     // verb count on any surface, which is why the gap survived every gate
     // — this assertion is that missing tripwire.
-    render(<ActionToolbar sender={sender()} onAction={() => {}} />);
+    render(<ActionToolbar sender={sender()} onAction={() => {}} shortcuts />);
     for (const [verb, key] of [
       ['Keep', 'K'],
       ['Archive', 'A'],
@@ -75,7 +75,7 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
   it('emits Delete, and keeps it live on a standing-protected sender', () => {
     const onAction = vi.fn();
     const row = sender();
-    const { unmount } = render(<ActionToolbar sender={row} onAction={onAction} />);
+    const { unmount } = render(<ActionToolbar sender={row} onAction={onAction} shortcuts />);
     fireEvent.click(screen.getByRole('button', { name: 'Delete (D)' }));
     expect(onAction).toHaveBeenCalledWith({ verb: 'Delete', senders: [row] });
     unmount();
@@ -94,7 +94,7 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
       },
     });
     const onProtectedAction = vi.fn();
-    render(<ActionToolbar sender={protectedRow} onAction={onProtectedAction} />);
+    render(<ActionToolbar sender={protectedRow} onAction={onProtectedAction} shortcuts />);
     const deleteButton = screen.getByRole('button', { name: 'Delete (D)' });
     expect(deleteButton).toBeEnabled();
     fireEvent.click(deleteButton);
@@ -102,19 +102,63 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
   });
 });
 
-describe('ActionToolbar — pre-selection hint (QA-archive-20260828-05)', () => {
-  it('renders the exact, verb-neutral hint text with no appended qualifier', () => {
-    // Exact node-boundary match, not a loose substring: catches both a
-    // reversion to the old "Preview before anything changes" text (which
-    // is false for Keep — Keep dispatches immediately, no preview, D40)
-    // and a differently-misleading variant appended after the same
-    // opening words (e.g. "...preview first — nothing changes until you
-    // preview" would still contain the substring but fail this exact
-    // `>text</span>` boundary check). No middot-eyebrow check here — this
-    // component has no D226 preview eyebrow to collide with; that check
-    // lives on the sibling Triage toolbar, which renders both at once.
-    const html = renderToStaticMarkup(<ActionToolbar sender={sender()} onAction={() => {}} />);
-    expect(html).toContain('>Nothing moves until you confirm</span>');
-    expect(html).not.toContain('Preview before anything changes');
+describe('ActionToolbar — one filled verb, four quiet ones', () => {
+  it('fills only the fact-derived primary', () => {
+    const html = renderToStaticMarkup(
+      <ActionToolbar sender={sender()} onAction={() => {}} shortcuts />,
+    );
+    // Keep is the primary for this sender; every other verb is a quiet
+    // fill capsule (the key hints inside are not buttons).
+    const buttons = html.match(/<button[^>]*>/g) ?? [];
+    expect(buttons).toHaveLength(5);
+    expect(buttons.filter((b) => b.includes(`background:${tokens.color.fill}`))).toHaveLength(4);
+    expect(buttons.filter((b) => b.includes(`background:${tokens.color.primary}`))).toHaveLength(1);
+    expect(html).not.toContain('Nothing moves until you confirm');
+  });
+});
+
+describe('ActionToolbar — K/A/U/L/D keys', () => {
+  it('routes a key through the same onAction a click uses', () => {
+    const onAction = vi.fn();
+    const row = sender();
+    render(<ActionToolbar sender={row} onAction={onAction} shortcuts />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(onAction).toHaveBeenCalledWith({ verb: 'Archive', senders: [row] });
+  });
+
+  it('ignores a key for a verb the sender cannot take, a modified key, and typing', () => {
+    const onAction = vi.fn();
+    // `unsubscribeMethod: 'none'` — Unsubscribe is disabled for this sender.
+    render(
+      <>
+        <input aria-label="search" />
+        <ActionToolbar sender={sender()} onAction={onAction} shortcuts />
+      </>,
+    );
+    fireEvent.keyDown(window, { key: 'u' });
+    fireEvent.keyDown(window, { key: 'a', metaKey: true });
+    fireEvent.keyDown(screen.getByLabelText('search'), { key: 'a' });
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('stays inert while a modal is open, so a key never acts behind the preview', () => {
+    const onAction = vi.fn();
+    render(
+      <>
+        <div role="dialog" aria-modal="true" />
+        <ActionToolbar sender={sender()} onAction={onAction} shortcuts />
+      </>,
+    );
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it('binds nothing and advertises no key when shortcuts are off (the side pane)', () => {
+    const onAction = vi.fn();
+    render(<ActionToolbar sender={sender()} onAction={onAction} />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(onAction).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeInTheDocument();
+    expect(screen.queryByText('A')).not.toBeInTheDocument();
   });
 });

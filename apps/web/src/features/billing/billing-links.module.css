@@ -1,0 +1,17 @@
+.link,
+.link:visited {
+  color: var(--dm-primary);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.link:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 4px;
+  border-radius: 2px;
+}

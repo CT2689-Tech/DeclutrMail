@@ -8,7 +8,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPatch } from '@/lib/api/client';
-import { resetMailboxScopedCache } from './reset-mailbox-cache';
+import { MAILBOX_SWITCH_STORAGE_KEY, resetMailboxScopedCache } from './reset-mailbox-cache';
 
 export function useSetActiveMailbox() {
   const qc = useQueryClient();
@@ -19,6 +19,16 @@ export function useSetActiveMailbox() {
     },
     // Active mailbox shifted — drop the previous mailbox's feature data
     // so the screen reloads against the new one (see resetMailboxScopedCache).
-    onSuccess: () => resetMailboxScopedCache(qc),
+    onSuccess: (result) => {
+      // `users.preferences.activeMailboxId` is global, while each browser tab
+      // has its own query cache. A storage event tells the other tabs to
+      // discard rows/previews resolved under the previous preference.
+      try {
+        window.localStorage.setItem(MAILBOX_SWITCH_STORAGE_KEY, result.activeMailboxId);
+      } catch {
+        // Private-mode storage failures cannot prevent this tab's switch.
+      }
+      return resetMailboxScopedCache(qc);
+    },
   });
 }

@@ -8,7 +8,7 @@
 // Mirrors the local-shim pattern used by sibling stories so the file
 // typechecks before the PR-3 Storybook seed merges (D210).
 
-import type { ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { tokens } from '@declutrmail/shared';
@@ -17,6 +17,7 @@ import type { BillingSubscription } from '@declutrmail/shared/contracts';
 import { AuthProvider } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
 
+import { pendingCheckoutKey, type PendingCheckout } from './pending-checkout';
 import { billingKeys } from './api/query-keys';
 import { BillingScreen, PaymentProcessingNotice } from './billing-screen';
 
@@ -501,4 +502,167 @@ export const BillingDisabled: Story<typeof BillingScreen> = {
       )) as typeof globalThis.fetch;
     return frame(makeClient(meFixture('free', 5), null));
   },
+};
+
+/** Review fixtures: synthetic data only; theme is scoped to this canvas. */
+export const ProNarrowDark: Story<typeof BillingScreen> = {
+  render: () => (
+    <div data-theme="dark" style={{ width: 390, maxWidth: '100%', color: tokens.color.fg }}>
+      {frame(makeClient(meFixture('pro', null), PRO_SUB))}
+    </div>
+  ),
+};
+export const EndedNarrowLight: Story<typeof BillingScreen> = {
+  render: () => (
+    <div data-theme="light" style={{ width: 390, maxWidth: '100%', color: tokens.color.fg }}>
+      {frame(
+        makeClient(meFixture('free', 50), {
+          ...PRO_SUB,
+          tier: 'free',
+          subscription: { ...PRO_SUB.subscription!, status: 'canceled' },
+        }),
+      )}
+    </div>
+  ),
+};
+export const PastDueDesktopDark: Story<typeof BillingScreen> = {
+  render: () => (
+    <div data-theme="dark" style={{ width: 1100, maxWidth: '100%', color: tokens.color.fg }}>
+      {frame(
+        makeClient(meFixture('pro', null), {
+          ...PRO_SUB,
+          subscription: { ...PRO_SUB.subscription!, status: 'past_due' },
+        }),
+      )}
+    </div>
+  ),
+};
+
+/** Network-isolated preview: all requests stay inside this synthetic fixture. */
+function UpgradeQuoteFixture() {
+  const [ready, setReady] = useState(false);
+  const [client] = useState(() =>
+    makeClient(meFixture('plus', null), {
+      ...PRO_SUB,
+      tier: 'plus',
+      subscription: { ...PRO_SUB.subscription!, tier: 'plus' },
+    }),
+  );
+  useEffect(() => {
+    const original = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const req = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(req.url, window.location.origin).pathname;
+      const data =
+        path === '/api/auth/me'
+          ? meFixture('plus', null)
+          : path === '/api/billing/subscription'
+            ? { ...PRO_SUB, tier: 'plus', subscription: { ...PRO_SUB.subscription!, tier: 'plus' } }
+            : path === '/api/billing/change-plan/preview'
+              ? {
+                  kind: 'immediate',
+                  result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
+                  nextBilledAt: '2027-09-22T00:00:00.000Z',
+                }
+              : path === '/api/billing/invoices'
+                ? { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 }
+                : null;
+      return new Response(
+        JSON.stringify(
+          data
+            ? { data }
+            : {
+                error: {
+                  code: 'BILLING_DISABLED',
+                  message: 'Synthetic review: payment actions are disabled.',
+                },
+              },
+        ),
+        {
+          status: data ? 200 : 503,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    setReady(true);
+    return () => {
+      globalThis.fetch = original;
+    };
+  }, []);
+  return ready ? (
+    frame(client, { initialIntent: { plan: 'pro', cycle: 'annual' } })
+  ) : (
+    <p>Preparing synthetic billing preview…</p>
+  );
+}
+
+export const UpgradeQuoteReview: Story<typeof BillingScreen> = {
+  render: () => <UpgradeQuoteFixture />,
+};
+
+/** Full-page late checkout state, isolated from real accounts and all network calls. */
+function UnconfirmedBillingFixture() {
+  const [ready, setReady] = useState(false);
+  const [fixture] = useState(() => {
+    const me = meFixture('free', 50);
+    me.user.workspaceId = 'storybook-billing-unconfirmed';
+    return { me, client: makeClient(me, FREE_BODY) };
+  });
+  useEffect(() => {
+    const originalFetch = globalThis.fetch;
+    const key = pendingCheckoutKey(fixture.me.user.workspaceId);
+    const originalPending = window.localStorage.getItem(key);
+    const pending: PendingCheckout = {
+      workspaceId: fixture.me.user.workspaceId,
+      kind: 'checkout_intent',
+      fromTier: 'free',
+      fromCycle: null,
+      toTier: 'pro',
+      toCycle: 'annual',
+      at: Date.now() - 16 * 60_000,
+      attemptId: 'storybook-unconfirmed-attempt',
+    };
+    window.localStorage.setItem(key, JSON.stringify(pending));
+    globalThis.fetch = async (input, init) => {
+      const req = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(req.url, window.location.origin).pathname;
+      const data =
+        path === '/api/auth/me'
+          ? fixture.me
+          : path === '/api/billing/subscription'
+            ? FREE_BODY
+            : path === '/api/billing/reconcile'
+              ? { outcome: 'provider_unavailable' }
+              : path === '/api/billing/invoices'
+                ? { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 }
+                : null;
+      return new Response(
+        JSON.stringify(
+          data
+            ? { data }
+            : {
+                error: {
+                  code: 'BILLING_DISABLED',
+                  message: 'Synthetic review: payment actions are disabled.',
+                },
+              },
+        ),
+        {
+          status: data ? 200 : 503,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    setReady(true);
+    return () => {
+      globalThis.fetch = originalFetch;
+      if (originalPending === null) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, originalPending);
+    };
+  }, [fixture]);
+  return ready ? frame(fixture.client) : <p>Preparing synthetic unconfirmed checkout…</p>;
+}
+
+export const PaymentUnconfirmedFullPage: Story<typeof BillingScreen> = {
+  render: () => <UnconfirmedBillingFixture />,
 };

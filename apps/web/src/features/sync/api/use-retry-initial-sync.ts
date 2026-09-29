@@ -96,7 +96,7 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // tick. "Started" claims an in-flight worker this response never
       // confirmed.
       if (data.outcome === 'requeued') {
-        toast('Scan queued — this can take a few minutes.', 'success');
+        toast('Scan queued.', 'success');
       } else if (data.outcome === 'already_running') {
         toast("Still scanning — we'll keep going.", 'success');
       }

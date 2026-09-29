@@ -35,7 +35,7 @@ export interface UseSendersOptions {
   /**
    * Tri-state standing-protected filter (D38). `true` = only protected;
    * `false` = exclude protected; omit = no constraint. Backs the
-   * Settings → Standing Policies surface + the compose-strip toggle.
+   * Settings → Standing Policies surface + the Filter panel toggle.
    */
   isProtected?: TriStateFilter | undefined;
   /**

@@ -148,9 +148,10 @@ export function useSyncNow(source: Source, mailboxId?: string) {
       if (data.outcome === 'enqueued') {
         toast('Checking Gmail for new emails…', 'info');
       } else {
-        // noop — the worker is already mid-flight. The user's click
-        // landed but did not add a duplicate job.
-        toast('Sync already in progress — new emails will appear shortly.', 'info');
+        // noop — a sync job is already waiting or running; the click did
+        // not add a duplicate. Nothing measures when it lands or whether
+        // it brings new mail, so the toast promises neither.
+        toast('Sync already in progress.', 'info');
       }
     },
     onError: (err) => {

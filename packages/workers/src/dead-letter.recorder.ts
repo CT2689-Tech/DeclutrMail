@@ -70,6 +70,7 @@ export const DEAD_LETTER_PAYLOAD_ALLOWED_KEYS = [
   'producedAtMs',
   'scheduledAtMinute',
   'senderKey',
+  'senderKeys',
   'startHistoryId',
   'trigger',
   'triggeredAtMs',

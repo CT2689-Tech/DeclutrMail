@@ -45,10 +45,11 @@ import { mailboxAccounts } from './mailbox-accounts';
  * key is `(mailbox_account_id, sender_key, produced_at)` so a re-score
  * triggered within the same millisecond cannot double-insert.
  *
- * `expires_at` is the re-score TTL (D25) — a cron sweep re-computes any
- * row past `expires_at` (the "weekly safety-net" of D25). Trigger-based
- * re-scores (sync-complete, signal-change events) overwrite the row
- * regardless of TTL.
+ * `expires_at` is the re-score TTL (D25): a read past it is stale.
+ * Nothing sweeps expired rows — the founder chose lazy refresh on
+ * attention (`stale_refresh`, 2026-08-19) over D25's weekly sweep.
+ * Trigger-based re-scores (`sync_complete`, `signal_change`,
+ * `stale_refresh`, `manual_rescore`) overwrite the row regardless of TTL.
  *
  * `(mailbox_account_id, sender_key)` is unique — one current verdict per
  * sender per mailbox. The worker upserts; the engine never keeps a verdict
@@ -105,8 +106,9 @@ export const triageDecisions = pgTable(
       .notNull()
       .default(sql`now()`),
     /**
-     * Re-score TTL (D25). The weekly safety-net cron re-computes any row
-     * past `expires_at`; trigger-based events overwrite regardless.
+     * Re-score TTL (D25). A read past it is stale and is refreshed on
+     * attention (`stale_refresh`); no cron re-computes expired rows.
+     * Trigger-based events overwrite regardless.
      */
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
@@ -123,12 +125,10 @@ export const triageDecisions = pgTable(
       table.senderKey,
     ),
     /**
-     * The cron re-score sweep (D25 weekly safety-net) scans
-     * `WHERE expires_at < now()` across mailboxes — composite covers the
-     * predicate without scanning the table. `expires_at` is the LEADING
-     * column so the cron sweep can range-scan once and then filter to a
-     * mailbox; per-mailbox lookups also use the index via mailbox-id
-     * equality on the trailing column.
+     * Built for D25's weekly `WHERE expires_at < now()` sweep across
+     * mailboxes, which was never produced (lazy `stale_refresh` instead,
+     * 2026-08-19). `expires_at` leads so that sweep could have
+     * range-scanned it; no query filters on it today.
      */
     expiresAtIdx: index('triage_decisions_expires_at_idx').on(
       table.expiresAt,

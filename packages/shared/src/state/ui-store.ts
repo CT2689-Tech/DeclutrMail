@@ -9,43 +9,60 @@
 //
 // This file is the scaffold the D200 decision points at: it
 // demonstrates the shape (typed state + actions, default-export-free
-// named hook) for future cross-feature stores, and it owns two flags
-// that already span surfaces — the global command-palette open state
-// and the sidebar collapse state (the sidebar lives in
-// packages/shared/src/shell/sidebar.tsx and is rendered on every
-// authenticated route).
+// named hook) for future cross-feature stores, and it owns two pieces
+// of state that already span surfaces — the global command-palette open
+// state, and the current screen's help (registered by `ScreenIntro`,
+// read by the shell's `?` button).
 //
-// Persistence note: persisting the sidebar collapse to localStorage is
-// a future improvement once the persist middleware is wired. The
-// existing `useLocalState` hook already handles a single boolean if a
-// component wants survival today; keeping persistence opt-in avoids
-// hydration warnings until we've validated the SSR story.
+// Nothing here persists. State that must survive a reload — the
+// sidebar's icon-rail choice — uses `useLocalState` at its one call
+// site (shell/app-shell.tsx) instead.
 
 'use client';
 
+import type { ReactNode } from 'react';
 import { create } from 'zustand';
+
+/**
+ * What the top bar's `?` button shows for the screen on display. A
+ * screen registers it by rendering `<ScreenIntro>`; nothing registered
+ * means the button hides. Browser-only and route-scoped, so it lives
+ * here rather than in any feature store.
+ */
+export interface ScreenHelp {
+  id: string;
+  title: string;
+  body: ReactNode;
+  tip?: ReactNode;
+  learnMore?: { href: string; label: string };
+}
 
 export interface UiState {
   /** True while the kbd-launchable command palette is mounted-open. */
   commandPaletteOpen: boolean;
-  /** True iff the sidebar is collapsed to its narrow rail. */
-  sidebarCollapsed: boolean;
+  /** Help for the current screen; `null` when the screen registered none. */
+  screenHelp: ScreenHelp | null;
 }
 
 export interface UiActions {
   openCommandPalette: () => void;
   closeCommandPalette: () => void;
   toggleCommandPalette: () => void;
-  setSidebarCollapsed: (collapsed: boolean) => void;
-  toggleSidebar: () => void;
+  setScreenHelp: (help: ScreenHelp) => void;
+  /**
+   * Clears only if `id` still owns the slot. On a route change the next
+   * screen can register before the previous one's cleanup runs; an
+   * unconditional clear would wipe the newcomer's help.
+   */
+  clearScreenHelp: (id: string) => void;
 }
 
 export const useUiStore = create<UiState & UiActions>((set) => ({
   commandPaletteOpen: false,
-  sidebarCollapsed: false,
+  screenHelp: null,
   openCommandPalette: () => set({ commandPaletteOpen: true }),
   closeCommandPalette: () => set({ commandPaletteOpen: false }),
   toggleCommandPalette: () => set((s) => ({ commandPaletteOpen: !s.commandPaletteOpen })),
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+  setScreenHelp: (help) => set({ screenHelp: help }),
+  clearScreenHelp: (id) => set((s) => (s.screenHelp?.id === id ? { screenHelp: null } : {})),
 }));

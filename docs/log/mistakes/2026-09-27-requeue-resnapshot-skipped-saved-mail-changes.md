@@ -1,0 +1,7 @@
+## 2026-09-27 — A re-queue mid-scan re-snapshotted Gmail history past mail an earlier attempt had saved
+**PR:** TBD (feat/d109-sync-gate-progress-count)
+**Caught by:** independent adversarial review of the mid-scan take-back
+**What happened:** `SyncService.markQueued` (a sign-in during a scan or a retry's backoff, which force-replaces the waiting job) and `retryFailedInitialSync` both cleared `last_history_id`, so the next attempt captured a newer snapshot while resuming — skipping — the mail earlier attempts had saved. Read and archive changes made in Gmail to that mail between the two snapshots never reached incremental sync. The take-back's own comment warned of exactly this, and a test pinned the clearing as intended.
+**Correct approach:** An initial scan keeps its first attempt's snapshot across every later attempt; incremental replays from it (idempotent). Only a READY mailbox's applied cursor is cleared on re-queue, and cursor-too-old recovery still clears a dead one.
+**Rule:** A resumable job that skips saved work must resume from the snapshot the saved work was taken against — never take a new base while keeping the old rows.
+**Enforcement update:** `sync.service.mark-queued.spec.ts` / `mark-connected.spec.ts` (a scanning or failed row keeps its cursor, a ready row clears it, the retry keeps it) and a worker test that the first snapshot survives a re-queue, each red against a negative control.

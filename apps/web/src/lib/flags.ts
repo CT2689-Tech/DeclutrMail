@@ -17,7 +17,6 @@ import { resolveAllFlags, type FeatureFlag } from '@declutrmail/shared';
 export const WEB_FLAG_ENV: Record<string, string | undefined> = {
   DM_FLAG_BRAND_LOGOS: process.env.NEXT_PUBLIC_DM_FLAG_BRAND_LOGOS,
   DM_FLAG_DARK_MODE: process.env.NEXT_PUBLIC_DM_FLAG_DARK_MODE,
-  DM_FLAG_SENDER_PEEK: process.env.NEXT_PUBLIC_DM_FLAG_SENDER_PEEK,
   DM_FLAG_INFINITE_SCROLL: process.env.NEXT_PUBLIC_DM_FLAG_INFINITE_SCROLL,
   DM_FLAG_GMAIL_DEEPLINK_SEARCH_FALLBACK:
     process.env.NEXT_PUBLIC_DM_FLAG_GMAIL_DEEPLINK_SEARCH_FALLBACK,

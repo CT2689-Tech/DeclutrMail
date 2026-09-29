@@ -18,14 +18,15 @@ describe('<ErrorState />', () => {
     expect(html).toContain('Try again');
   });
 
-  it('uses alert semantics and a solid amber treatment, never the empty-state dash', () => {
+  it('uses alert semantics and an amber mark, and is never boxed', () => {
     const html = renderToStaticMarkup(
       <ErrorState title="Could not load" description="Please retry." onRetry={vi.fn()} />,
     );
 
     expect(html).toContain('role="alert"');
-    expect(html).toContain('border:1px solid var(--dm-amber)');
-    expect(html).not.toContain('border:1px dashed');
+    expect(html).toContain('data-dm-error-mark');
+    expect(html).toContain('background:var(--dm-amber-bg)');
+    expect(html).not.toContain('border:1px');
   });
 
   it('keeps the recovery action at least 44px tall for touch input', () => {

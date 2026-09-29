@@ -36,8 +36,10 @@ posts — argues from what Gmail structurally does not offer:
    changes, every time. Gemini's cleanup acts on a chat command with no scope preview.
 2. **A per-sender record and an undo window.** Activity holds what happened; label
    changes are reversible for the plan's window.
-3. **A stated, falsifiable data boundary.** `Full bodies fetched: 0` plus a storage list
-   generated from the code that does the fetching.
+3. **A stated, falsifiable data boundary.** `We never fetch or store full email contents.`
+   plus a storage list generated from the code that does the fetching. (This ADR
+   originally quoted `Full bodies fetched: 0` here — that phrase is banned by CLAUDE.md
+   §2.1/D228; the boundary claim stands, only the wording was superseded.)
 
 Sender-level action remains in the copy as _how_ it works. It is never the lead claim.
 
@@ -102,8 +104,10 @@ Gmail (D194, D72).
   at the top, which overrides the sections written before D251 expanded).
 - Packaging rationale and the tier table live in
   `docs/execution/packaging-2026-08-02.md`.
-- `check-microcopy.sh` enforces only the `Bodies read: 0` ban and the D227 verb rule. The
-  constraints in this ADR are **not** hook-enforced; a false reversibility or privacy
+- `check-microcopy.sh` enforces the privacy-badge ban (`Bodies read: 0` and `Full bodies fetched: 0`,
+  both banned per D228) and the D227 verb rule, but only under
+  `apps/web/**`, `*.stories.tsx`, and `packages/shared/**` — it does not scan `docs/`.
+  The constraints in this ADR are **not** hook-enforced; a false reversibility or privacy
   claim in marketing copy passes CI silently today. Treat the truth-scan in the copy
   spec's review brief as the compensating control.
 

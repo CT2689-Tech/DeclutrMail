@@ -73,6 +73,7 @@ import { InboxSimulatorScreen } from './inbox-simulator-screen';
 
 beforeEach(() => {
   localStorage.clear();
+  window.history.pushState({}, '', '/inbox-simulator?workspace=triage&tour=1');
   for (const spy of Object.values(spies)) spy.mockClear();
 });
 
@@ -110,6 +111,7 @@ describe('inbox simulator — production parity', () => {
     // Seed a completed batch decision so the guide opens on step 2, which is
     // a single-sender row. Reaching it by clicking would couple this guard to
     // the arc's copy; seeding keeps it about the component boundary.
+    window.history.pushState({}, '', '/inbox-simulator?workspace=triage');
     localStorage.setItem(
       'dm.inbox-simulator.state.v4',
       JSON.stringify({

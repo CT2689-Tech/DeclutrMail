@@ -2,6 +2,7 @@ import { ConflictException, InternalServerErrorException, NotFoundException } fr
 import { SyncStatusSchema, type SyncStatus } from '@declutrmail/shared/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
+import type { InitialSyncProgressReader } from './initial-sync-progress.reader.js';
 import { SyncController } from './sync.controller.js';
 import type { ManualIncrementalSyncResult, SyncService } from './sync.service.js';
 
@@ -24,6 +25,7 @@ const MAILBOX = { id: 'mailbox-uuid-1' } as const;
 function makeController(opts: {
   getStatus?: SyncService['getStatus'];
   enqueueManualIncrementalSync?: SyncService['enqueueManualIncrementalSync'];
+  readProgress?: InitialSyncProgressReader['read'];
 }): SyncController {
   const service = {
     getStatus: opts.getStatus ?? (() => Promise.resolve(null)),
@@ -32,7 +34,10 @@ function makeController(opts: {
       ((): Promise<ManualIncrementalSyncResult> =>
         Promise.resolve({ kind: 'enqueued', cursorHistoryId: '1500' })),
   } as unknown as SyncService;
-  return new SyncController(service);
+  const progress = {
+    read: opts.readProgress ?? (() => Promise.resolve(null)),
+  } as unknown as InitialSyncProgressReader;
+  return new SyncController(service, progress);
 }
 
 const VALID_STATUS: SyncStatus = {
@@ -49,7 +54,7 @@ describe('SyncController.getStatus', () => {
 
     const result = await controller.getStatus(MAILBOX);
 
-    expect(result).toEqual({ data: VALID_STATUS });
+    expect(result).toEqual({ data: { ...VALID_STATUS, message_progress: null } });
     // The inner `data` must round-trip through the schema — this is
     // the contract guarantee the controller makes to the client.
     expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
@@ -81,6 +86,15 @@ describe('SyncController.getStatus', () => {
     await expect(controller.getStatus(MAILBOX)).rejects.toBeInstanceOf(
       InternalServerErrorException,
     );
+    // The 5xx log names the field; the client body stays generic.
+    await expect(controller.getStatus(MAILBOX)).rejects.toThrow('progress_pct:too_big');
+  });
+
+  it('names an unexpected key in the 5xx log — shape drift has no field path', async () => {
+    const getStatus = vi.fn().mockResolvedValue({ ...VALID_STATUS, stray: 1 });
+    const controller = makeController({ getStatus });
+
+    await expect(controller.getStatus(MAILBOX)).rejects.toThrow(':unrecognized_keys[stray]');
   });
 
   it('passes through updated_at so the gate can detect a stuck heartbeat', async () => {
@@ -91,7 +105,7 @@ describe('SyncController.getStatus', () => {
     const getStatus = vi.fn().mockResolvedValue(withHeartbeat);
     const controller = makeController({ getStatus });
     const result = await controller.getStatus(MAILBOX);
-    expect(result).toEqual({ data: withHeartbeat });
+    expect(result).toEqual({ data: { ...withHeartbeat, message_progress: null } });
   });
 
   it('passes through the error_code when present (failed readiness)', async () => {
@@ -106,7 +120,38 @@ describe('SyncController.getStatus', () => {
     const controller = makeController({ getStatus });
 
     const result = await controller.getStatus(MAILBOX);
-    expect(result).toEqual({ data: failed });
+    expect(result).toEqual({ data: { ...failed, message_progress: null } });
+  });
+
+  it("adds the running scan's counts, read for the state it is describing", async () => {
+    const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
+    const readProgress = vi
+      .fn<InitialSyncProgressReader['read']>()
+      .mockResolvedValue({ processed: 12_400, total: 40_898, age_ms: 2_500 });
+    const controller = makeController({ getStatus, readProgress });
+
+    const result = await controller.getStatus(MAILBOX);
+
+    expect(result.data.message_progress).toEqual({
+      processed: 12_400,
+      total: 40_898,
+      age_ms: 2_500,
+    });
+    expect(readProgress).toHaveBeenCalledWith('mailbox-uuid-1', VALID_STATUS);
+    expect(SyncStatusSchema.safeParse(result.data).success).toBe(true);
+  });
+
+  it('leaves the counts out when this read failed, so the gate can tell it from "none"', async () => {
+    const getStatus = vi.fn().mockResolvedValue(VALID_STATUS);
+    const readProgress = vi.fn<InitialSyncProgressReader['read']>().mockResolvedValue(undefined);
+    const controller = makeController({ getStatus, readProgress });
+
+    const wire = JSON.parse(JSON.stringify(await controller.getStatus(MAILBOX))) as {
+      data: Record<string, unknown>;
+    };
+
+    expect(wire.data).not.toHaveProperty('message_progress');
+    expect(wire.data).toEqual(VALID_STATUS);
   });
 });
 

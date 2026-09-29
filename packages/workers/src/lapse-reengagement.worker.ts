@@ -6,6 +6,7 @@ import {
   mailboxAccounts,
   type schema,
   senderPolicies,
+  TRIAGE_DECIDED_WINDOW_DAYS,
   triageDecisions,
   users,
 } from '@declutrmail/db';
@@ -90,9 +91,8 @@ export const CANDIDATE_BATCH_SIZE = 500;
  * template emits BARE column names that mis-bind across the three
  * tables (LEARNINGS 2026-06 — Drizzle correlated-subquery pitfall).
  *
- * `TRIAGE_DECIDED_WINDOW_DAYS` is duplicated here as a literal because
- * `packages/workers` cannot import from `apps/api`. Its source of truth
- * is the read service; the two must move together.
+ * `TRIAGE_DECIDED_WINDOW_DAYS` comes from `@declutrmail/db`, where the
+ * Triage queue's own exclusion (`triageNotDecidedRecently`) reads it too.
  *
  * TAKES `now` RATHER THAN CALLING SQL `now()`. Every other instant in
  * this job derives from the injected clock (`deps.now`, resolved once
@@ -109,7 +109,6 @@ export const CANDIDATE_BATCH_SIZE = 500;
  * window and a "queue is empty" case started queueing mail. Any test
  * that pins `deps.now` was silently only half-pinned.
  */
-const TRIAGE_DECIDED_WINDOW_DAYS = 7;
 const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
   SELECT 1
   FROM activity_log al
@@ -118,9 +117,10 @@ const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
     AND al.sender_key = triage_decisions.sender_key
     AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
     AND al.occurred_at >= ${now.toISOString()}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
-    /* Same journal-based reversal read as triage.read-service.ts's decided
-       exclusion, safe for the same reason: 30-day undo windows outlast
-       this 7-day window, so the journal row cannot have been pruned yet. */
+    /* Same journal-based reversal read as the Triage queue's decided
+       exclusion (triageNotDecidedRecently in @declutrmail/db), safe for
+       the same reason: 30-day undo windows outlast this 7-day window, so
+       the journal row cannot have been pruned yet. */
     AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
 )`;
 

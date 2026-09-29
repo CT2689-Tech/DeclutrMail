@@ -5,6 +5,7 @@ import { request, type FullConfig } from '@playwright/test';
 
 import { dbConnect } from './helpers/db';
 import { E2E_ENV } from './helpers/env';
+import { assertIsolatedEnvironment } from './helpers/isolation';
 import { applyBillingSeed } from './helpers/seed-billing';
 
 /**
@@ -28,6 +29,7 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
   // without one — so its script opts out of the seed + dev-login that
   // every stack-backed project requires.
   if (process.env.E2E_SKIP_STACK_SETUP === '1') return;
+  assertIsolatedEnvironment(process.env);
 
   // Gmail-free billing seed (D183) — BEFORE any login: the dev-login
   // never creates users, so the synthetic billing user must already

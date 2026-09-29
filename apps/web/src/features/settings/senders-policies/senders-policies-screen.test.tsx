@@ -51,6 +51,80 @@ describe('SendersPoliciesScreen', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('disables prior-result actions and pagination while a new search resolves', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          url.searchParams.has('q')
+            ? new Promise<Response>(() => {})
+            : jsonOk({
+                data: [BASE_ROW],
+                meta: {
+                  pagination: { nextCursor: 'next', hasMore: true, limit: 50 },
+                  query: { totalMatching: 513, globalMaxTotal: 900 },
+                },
+              }),
+      },
+    ]);
+    renderScreen();
+    const action = await screen.findByRole('button', { name: 'Unprotect Sender A' });
+    expect(action).toBeEnabled();
+    const more = screen.getByRole('button', { name: 'Show more protected senders' });
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('searchbox'), 'remote');
+    await user.click(screen.getByRole('button', { name: /^Search$/ }));
+    await waitFor(() => expect(action).toBeDisabled());
+    expect(more.isConnected && more.matches(':enabled')).toBe(false);
+    expect(screen.getByText('Updating…')).toBeInTheDocument();
+    expect(screen.queryByText('513 senders')).not.toBeInTheDocument();
+  });
+
+  it('searches the complete protected collection on the server and clears back to all results', async () => {
+    const requests: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          requests.push(url.search);
+          const searched = url.searchParams.get('q') === 'remote';
+          return jsonOk({
+            data: [
+              {
+                ...BASE_ROW,
+                id: searched ? 'remote' : 'a',
+                displayName: searched ? 'Remote result' : 'Sender A',
+              },
+            ],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: searched ? 1 : 513, globalMaxTotal: 900 },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('513 senders')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('searchbox'), 'remote');
+    await user.click(screen.getByRole('button', { name: /^Search$/ }));
+    expect(await screen.findByText('Remote result')).toBeInTheDocument();
+    expect(
+      requests.some((query) => query.includes('q=remote') && query.includes('protected=true')),
+    ).toBe(true);
+    expect(screen.getByText('1 sender')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(await screen.findByText('Sender A')).toBeInTheDocument();
+    expect(screen.getByText('513 senders')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /all filters/i })).toHaveAttribute(
+      'href',
+      '/senders?activity=all&protected=true',
+    );
+  });
+
   it('shows the loading skeleton while the senders query is in-flight', () => {
     installFetchStub([
       {
@@ -484,23 +558,6 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     expect(screen.getByText(/shielding 145 unread/)).toBeInTheDocument();
   });
 
-  it('claims an ordering only when it actually ordered by one', async () => {
-    // `unreadInboxCount` is optional on the wire. Against an API that
-    // omits it every row sorts equal and the list falls back to name
-    // order — while the header would still have claimed "most shielded
-    // unread mail first", describing something that never happened.
-    stubProtectedPage([
-      { ...BASE_ROW, id: 'a', displayName: 'Zeta' },
-      { ...BASE_ROW, id: 'b', displayName: 'Alpha' },
-    ]);
-    renderScreen();
-
-    await screen.findByText('Alpha');
-    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
-    // The rest of the header still stands — it is a fact about the list.
-    expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
-  });
-
   it('states the skip guard once, with its single-sender exception beside it', async () => {
     // The intro and the list header used to say the same sentence twice.
     // The header owns it (it is a fact about the list); the intro keeps
@@ -512,36 +569,6 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     const guard = screen.getAllByText(/bulk and automatic actions skip/i);
     expect(guard).toHaveLength(1);
     expect(guard[0]).toHaveTextContent(/one sender yourself still applies/i);
-  });
-
-  it('makes no ordering claim when every row shields zero', async () => {
-    // Present-and-zero is not the same as ordered-by. If nothing is
-    // shielded, the sort fell through to the tiebreakers and "most
-    // shielded unread mail first" describes nothing that happened —
-    // the same rule the onboarding review already applies.
-    stubProtectedPage([
-      { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 0 },
-      { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 0 },
-    ]);
-    renderScreen();
-
-    await screen.findByText('Alpha');
-    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
-  });
-
-  it('makes no ordering claim when only SOME rows carry the measure', async () => {
-    // Partial data cannot produce the claimed ordering: the rows
-    // missing the field are not "shielding zero", they are unmeasured,
-    // and ranking them as zero buries a possibly-costly protection at
-    // the bottom while the header asserts the opposite.
-    stubProtectedPage([
-      { ...BASE_ROW, id: 'a', displayName: 'Measured', unreadInboxCount: 40 },
-      { ...BASE_ROW, id: 'b', displayName: 'Unmeasured' },
-    ]);
-    renderScreen();
-
-    await screen.findByText('Measured');
-    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
   });
 
   it('sorts an unmeasured row after a known zero, never as if it were zero', async () => {
@@ -582,9 +609,10 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     expect(screen.getAllByText(/0 in last 90d/)).toHaveLength(1);
   });
 
-  it('claims the ordering when the data supports it', async () => {
-    // Two-sided: suppressing the claim when unknown must not suppress
-    // it when true.
+  it('makes no ordering claim — the sentence is gone, the sort is not', async () => {
+    // The sort only ranks what is LOADED and only when every row carries
+    // the measure; rather than qualify a sentence about it, the page
+    // says nothing. The ordering itself is asserted above.
     stubProtectedPage([
       { ...BASE_ROW, id: 'a', displayName: 'Zeta', unreadInboxCount: 9 },
       { ...BASE_ROW, id: 'b', displayName: 'Alpha', unreadInboxCount: 1 },
@@ -592,7 +620,7 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Zeta');
-    expect(screen.getByText(/most shielded unread email first/i)).toBeInTheDocument();
+    expect(screen.queryByText(/most shielded/i)).toBeNull();
   });
 
   it('never prints a fabricated "shielding 0" when nothing is shielded', async () => {

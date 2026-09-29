@@ -21,7 +21,9 @@ import type { BrowserSentryRuntime } from './sentry';
 let initialized = false;
 
 const SAFE_BROWSER_INTEGRATIONS = new Set([
-  'InboundFilters',
+  // v11 renamed InboundFilters → EventFilters. The old name is no
+  // longer registered, so leaving it here would drop the filter.
+  'EventFilters',
   'FunctionToString',
   'GlobalHandlers',
   'LinkedErrors',
@@ -159,22 +161,18 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
       // every span description (full request URLs live there) and
       // key-allowlists span data.
       tracesSampleRate: readSampleRate(process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 0.2),
+      // Static keeps `beforeSendTransaction` alive. Stream mode (the v11
+      // default) never calls it, so span descriptions would leave unscrubbed.
       traceLifecycle: 'static',
-      streamGenAiSpans: false,
       replaysSessionSampleRate: 0,
       replaysOnErrorSampleRate: 0,
-      profilesSampleRate: 0,
-      profileSessionSampleRate: 0,
-      enableLogs: false,
-      enableMetrics: false,
       sendClientReports: false,
-      sendDefaultPii: false,
       dataCollection: {
         userInfo: false,
         cookies: false,
         httpHeaders: { request: false, response: false },
         httpBodies: [],
-        queryParams: false,
+        urlQueryParams: false,
         genAI: { inputs: false, outputs: false },
         stackFrameVariables: false,
         frameContextLines: 0,

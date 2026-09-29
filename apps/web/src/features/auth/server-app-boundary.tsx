@@ -2,7 +2,6 @@ import 'server-only';
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { hasCapability } from '@declutrmail/shared/entitlements';
 import type {
   AccountDeletionStatus,
   LaterReturnRecoverySummary,
@@ -14,11 +13,8 @@ import type { UndoTrayEntry } from '@declutrmail/shared';
 import { accountDeletionQueryOptions } from '@/features/account-deletion/api/query-options';
 import { onboardingStateQueryOptions } from '@/features/onboarding/api/query-options';
 import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
-import { screenerCountQueryOptions } from '@/features/screener/api/query-options';
 import { laterRecoveryQueryOptions } from '@/features/snoozed/api/query-options';
-import { sendersSummaryQueryOptions } from '@/features/senders/api/query-options';
 import { undoEntriesQueryOptions } from '@/features/undo/query-options';
-import type { SenderSummaryDto } from '@/lib/api/senders';
 import { serverGet, serverGetEnvelope } from '@/lib/api/server';
 import { makeServerQueryClient, settleServerQueries } from '@/lib/server-query-client';
 import { ME_QUERY_KEY } from './api/me-contract';
@@ -81,32 +77,11 @@ export async function ServerAppBoundary({
             serverGet<UndoTrayEntry[]>('/api/undo', cookieHeader, signal, mailboxOptions),
           ),
         ),
-        queryClient.fetchQuery(
-          sendersSummaryQueryOptions({}, (_params, signal) =>
-            serverGetEnvelope<SenderSummaryDto>(
-              '/api/senders/summary',
-              cookieHeader,
-              signal,
-              mailboxOptions,
-            ),
-          ),
-        ),
       );
 
-      if (hasCapability(me.tier, 'screener')) {
-        queries.push(
-          queryClient.fetchQuery(
-            screenerCountQueryOptions((signal) =>
-              serverGet<{ pending: number }>(
-                '/api/screener/count',
-                cookieHeader,
-                signal,
-                mailboxOptions,
-              ),
-            ),
-          ),
-        );
-      }
+      // Counts are optional navigation decoration. Their existing client
+      // observers own these reads after hydration, so a slow badge cannot
+      // delay the app and there is no competing late hydration/refetch.
     }
 
     await settleServerQueries('app-shell', queries, queryClient);

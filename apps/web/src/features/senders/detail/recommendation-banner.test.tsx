@@ -19,10 +19,11 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
   it('keeps the suggestion collapsed and omits confidence from user-facing copy', () => {
     render(<RecommendationBanner recommendation={SUGGESTION} />);
 
-    const summary = screen.getByText('Optional suggestion · Archive');
-    expect(summary.closest('details')).not.toHaveAttribute('open');
+    const details = screen.getByRole('group', { name: 'Optional suggestion: Archive' });
+    expect(details).not.toHaveAttribute('open');
+    expect(details.querySelector('summary')).toHaveTextContent(/Suggestion · Archive/);
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Details used')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Details used', hidden: true })).toBeInTheDocument();
     expect(screen.getByText('12 messages received in the last 30 days')).toBeInTheDocument();
   });
 
@@ -41,9 +42,8 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
    * QA-sender-detail-20260902-12: "Suggested action" labelled the
    * reasoning paragraph, which explains the suggestion — not an action.
    */
-  it('labels the reasoning paragraph "Why", not "Suggested action"', () => {
+  it('never labels the reasoning paragraph "Suggested action"', () => {
     render(<RecommendationBanner recommendation={SUGGESTION} />);
-    expect(screen.getByText('Why')).toBeInTheDocument();
     expect(screen.queryByText('Suggested action')).not.toBeInTheDocument();
   });
 
@@ -79,7 +79,9 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
         recommendation={{ ...SUGGESTION, scoredAt: '2026-05-20T10:00:00.000Z' }}
       />,
     );
-    const summary = screen.getByText(/Optional suggestion · Archive/);
+    const summary = screen
+      .getByRole('group', { name: 'Optional suggestion: Archive' })
+      .querySelector('summary')!;
     // QA-sender-detail-20260902-08: "scored" was the scoring engine's own
     // vocabulary; the shared `scoredAgeLabel` now says "Last checked".
     expect(summary).toHaveTextContent(
@@ -94,9 +96,9 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
     expect(screen.queryByText(/scored/i)).not.toBeInTheDocument();
   });
 
-  it('drops the "Details used" heading when there are no details to list', () => {
+  it('drops the "Details used" list when there are no details to list', () => {
     render(<RecommendationBanner recommendation={{ ...SUGGESTION, signals: [] }} />);
-    expect(screen.queryByText('Details used')).not.toBeInTheDocument();
+    expect(screen.queryByRole('list', { hidden: true })).not.toBeInTheDocument();
     expect(screen.getByText(SUGGESTION.reasoning)).toBeInTheDocument();
   });
 });

@@ -24,6 +24,8 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 
+import type { BillingProviderId } from '@declutrmail/shared/contracts';
+
 export type BillingInterval = 'monthly' | 'annual';
 
 /** Manifest order IS display order (free → enterprise, per D19). */
@@ -173,12 +175,12 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  * manifest.
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
-  free: 'Review and act on senders yourself.',
-  plus: 'Remove the monthly limit and let rules keep it clean.',
+  free: 'Review and clean up senders in one Gmail inbox.',
+  plus: 'Clear a larger backlog and set rules for future mail.',
   // QA-billing-20260901-10: "every account" overclaimed against the
   // manifest's actual inboxLimit (5) — the /pricing Pro card already
   // prints "5 connected inboxes" directly beneath this same sentence.
-  pro: 'Get the Daily Brief and Follow-ups, across your connected inboxes.',
+  pro: 'Stay on top of your Gmail inboxes with Brief and Follow-ups.',
   team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };
@@ -338,4 +340,37 @@ export function compareRows(): readonly CompareRow[] {
   ];
 
   return [...capabilityRows, ...quotaRows, ...selectorRows];
+}
+
+/**
+ * Whole months of the monthly price the annual cycle saves ("2 months
+ * free"), derived from the manifest — never a hardcoded claim. Null
+ * when a cycle is missing, the tier is free, or the saving isn't an
+ * exact whole number of months (an approximate claim would be a lie).
+ */
+export function annualMonthsFree(
+  tier: TierId,
+  provider: BillingProviderId = 'paddle',
+): number | null {
+  const { monthly, annual } = TIER_MANIFEST[tier].prices;
+  if (!monthly || !annual) return null;
+  const currency = currencyForPricePoint(monthly, provider);
+  if (currencyForPricePoint(annual, provider) !== currency) return null;
+  const monthlyAmount = currency === 'INR' ? monthly.inrPaise : monthly.usdCents;
+  const annualAmount = currency === 'INR' ? annual.inrPaise : annual.usdCents;
+  if (monthlyAmount <= 0) return null;
+  const saved = monthlyAmount * 12 - annualAmount;
+  return saved > 0 && saved % monthlyAmount === 0 ? saved / monthlyAmount : null;
+}
+
+/**
+ * The annual saving shared by EVERY purchasable paid tier, or null when
+ * the tiers disagree — a single toggle badge must not promise a saving
+ * some plan doesn't deliver.
+ */
+export function sharedAnnualMonthsFree(provider: BillingProviderId = 'paddle'): number | null {
+  const values = (['plus', 'pro'] as const).map((id) => annualMonthsFree(id, provider));
+  const [first] = values;
+  if (first == null || values.some((v) => v !== first)) return null;
+  return first;
 }

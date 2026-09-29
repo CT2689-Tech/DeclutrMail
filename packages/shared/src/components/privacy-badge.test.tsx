@@ -15,7 +15,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { PrivacyBadge } from './privacy-badge';
 import { GMAIL_MESSAGE_DATA_INVENTORY } from '../contracts/gmail-data-inventory';
 import {
-  GMAIL_PREVIEW_FIELD_LABEL,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_ITEMS,
@@ -43,9 +42,6 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
   });
 
   it('uses plain language for the Gmail preview snippet field (D7)', () => {
-    expect(GMAIL_PREVIEW_FIELD_LABEL).toBe('Gmail preview snippet');
-    // The framing must also appear inside the storage list entry —
-    // the label and the bullet text share the same vocabulary.
     expect(PRIVACY_STORAGE_ITEMS.some((item) => item.includes('Gmail preview snippet'))).toBe(true);
   });
 

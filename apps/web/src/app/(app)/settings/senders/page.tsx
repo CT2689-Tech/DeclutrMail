@@ -18,7 +18,6 @@ export default async function SettingsSendersPage() {
       cookieHeader={cookieHeader}
       enabled={me?.activeMailboxId != null}
       query={PROTECTED_SENDERS_QUERY}
-      includeSummary={false}
       includeSettings={false}
     >
       <SendersPoliciesScreen />

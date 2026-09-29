@@ -121,7 +121,7 @@ export interface GmailHistoryPage {
  */
 export interface GmailMetadataClient {
   /** Page through every message id in the mailbox. */
-  listMessageIds(pageToken?: string): Promise<GmailMessageListPage>;
+  listMessageIds(pageToken?: string, signal?: AbortSignal): Promise<GmailMessageListPage>;
   /**
    * Fetch one message's metadata — `format=metadata` only (D7). Resolves
    * `null` when the message no longer exists (deleted between list+get),
@@ -129,7 +129,7 @@ export interface GmailMetadataClient {
    * FAILED_PRECONDITION) — a property of that one message, never a reason
    * to fail the whole sync.
    */
-  getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null>;
+  getMessageMetadata(messageId: string, signal?: AbortSignal): Promise<GmailMessageMetadata | null>;
   /**
    * How many messages this client skipped as unreadable. Optional so test
    * doubles need not implement it; a sync reports it so a partial index is
@@ -141,7 +141,7 @@ export interface GmailMetadataClient {
    * Implementations must request a minimal/field-limited resource: no
    * snippet, headers, body, or attachment metadata.
    */
-  getMessageLabelIds?(messageId: string): Promise<string[] | null>;
+  getMessageLabelIds?(messageId: string, signal?: AbortSignal): Promise<string[] | null>;
   /**
    * Resolve an existing user-label name without creating it. Recovery
    * previews use this read-only lookup so reviewing a failed Later action
@@ -164,7 +164,7 @@ export interface GmailMetadataClient {
    * that point. Capturing BEFORE the fetch starts means any change
    * during the fetch is replayed by the first incremental run.
    */
-  getProfile(): Promise<{ historyId: string }>;
+  getProfile(signal?: AbortSignal): Promise<{ historyId: string }>;
   /**
    * Page through `users.history.list` starting at the given historyId.
    * Returns normalised `GmailHistoryRecord`s plus the mailbox's
@@ -173,7 +173,11 @@ export interface GmailMetadataClient {
    * fall back to a full re-sync) so the caller decides the recovery
    * path rather than throwing through the port.
    */
-  listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null>;
+  listHistory(
+    startHistoryId: string,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<GmailHistoryPage | null>;
 }
 
 /**

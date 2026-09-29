@@ -4,14 +4,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
+import { HOW_TO_ARTICLES } from '../learn/how-to-content';
 import {
   ALTERNATIVES_SLUGS,
   COMPARISONS,
   COMPARISONS_VERIFIED_FLOOR_ISO,
+  alternativesFor,
   comparisonBySlug,
   comparisonVerifiedLabel,
 } from './comparison-data';
+import { AlternativesScreen } from './alternatives-screen';
 import { ComparisonDetailScreen, ComparisonIndexScreen } from './comparison-screen';
+import { COMPARE_DIY_GUIDES, COMPARISON_RELATED_GUIDES } from './related-guides';
 
 describe('ComparisonIndexScreen', () => {
   beforeEach(() => track.mockClear());
@@ -23,10 +27,10 @@ describe('ComparisonIndexScreen', () => {
       screen.getByText(comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO), { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByText(/No affiliate rankings/i)).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Scrollable comparison summary' })).toHaveAttribute(
-      'tabindex',
-      '0',
-    );
+    fireEvent.click(screen.getByText('Open the full comparison matrix'));
+    expect(
+      screen.getByRole('region', { name: 'Scrollable side-by-side comparison matrix' }),
+    ).toHaveAttribute('tabindex', '0');
     for (const comparison of COMPARISONS) {
       expect(
         screen.getByRole('link', { name: `Compare DeclutrMail and ${comparison.name}` }),
@@ -34,11 +38,22 @@ describe('ComparisonIndexScreen', () => {
     }
   });
 
-  it('labels unknown public pricing instead of showing an invented amount', () => {
+  it('keeps every direct comparison in the index', () => {
+    const { container } = render(<ComparisonIndexScreen />);
+    for (const comparison of COMPARISONS) {
+      expect(screen.getByText(comparison.indexSummary)).toBeInTheDocument();
+    }
+    expect(container.querySelector('article')).toBeNull();
+  });
+
+  it('links the five native Gmail guides after the tool lists', () => {
     render(<ComparisonIndexScreen />);
     expect(
-      screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
-    ).toBeGreaterThan(0);
+      screen.getByRole('heading', { level: 2, name: 'Prefer to do it in Gmail yourself?' }),
+    ).toBeInTheDocument();
+    for (const guide of COMPARE_DIY_GUIDES) {
+      expect(screen.getByRole('link', { name: guide.label })).toHaveAttribute('href', guide.href);
+    }
   });
 
   it('links every /alternatives page from the compare index', () => {
@@ -55,7 +70,7 @@ describe('ComparisonIndexScreen', () => {
   it('tracks both lower-funnel choices in the final comparison CTA', () => {
     render(<ComparisonIndexScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /Connect Gmail/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Start free/i }));
     fireEvent.click(screen.getByRole('link', { name: 'See every tier' }));
 
     expect(track).toHaveBeenNthCalledWith(1, 'landing_cta_clicked', {
@@ -118,11 +133,75 @@ describe('ComparisonDetailScreen', () => {
     ).toBeGreaterThan(0);
   });
 
+  it('labels unknown public pricing instead of showing an invented amount', () => {
+    render(<ComparisonDetailScreen comparison={comparisonBySlug('trimbox')!} />);
+    expect(
+      screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('keeps the sources anchor the hero links to', () => {
+    const { container } = render(<ComparisonDetailScreen comparison={COMPARISONS[0]} />);
+    expect(container.querySelector('a[href="#sources"]')).not.toBeNull();
+    expect(container.querySelector('#sources')).not.toBeNull();
+  });
+
+  it('links /vs/sanebox to its alternatives page and a related guide', () => {
+    render(<ComparisonDetailScreen comparison={comparisonBySlug('sanebox')!} />);
+    const alternatives = screen.getAllByRole('link', { name: 'See all SaneBox alternatives' });
+    expect(alternatives.length).toBeGreaterThanOrEqual(2);
+    for (const link of alternatives) {
+      expect(link).toHaveAttribute('href', '/alternatives/sanebox');
+    }
+    expect(
+      screen.getByRole('link', {
+        name: HOW_TO_ARTICLES['auto-archive-future-emails-in-gmail'].title,
+      }),
+    ).toHaveAttribute('href', '/how-to/auto-archive-future-emails-in-gmail');
+  });
+
+  it('does not link /vs/gmail to an alternatives page', () => {
+    render(<ComparisonDetailScreen comparison={comparisonBySlug('gmail')!} />);
+    expect(screen.queryByRole('link', { name: /alternatives/i })).not.toBeInTheDocument();
+  });
+
   it('renders a visible unknown state and does not disguise it as unsupported', () => {
     const comparison = comparisonBySlug('trimbox')!;
     render(<ComparisonDetailScreen comparison={comparison} />);
 
     expect(screen.getAllByText('Not publicly stated').length).toBeGreaterThan(0);
     expect(screen.queryByText(/Trimbox does not offer automation/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('AlternativesScreen cross-links', () => {
+  it('uses the Gmail-cleanup H1 as one text node and keeps the question in the lede', () => {
+    const page = alternativesFor('trimbox')!;
+    render(<AlternativesScreen page={page} />);
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.childNodes).toHaveLength(1);
+    expect(heading).toHaveTextContent('Trimbox alternatives for Gmail cleanup');
+    expect(document.querySelector('.dm-compare-lede')).toHaveTextContent(/^Looking past Trimbox\?/);
+    expect(screen.getByRole('link', { name: 'Read the full Trimbox comparison' })).toHaveAttribute(
+      'href',
+      '/vs/trimbox',
+    );
+  });
+
+  it('links /alternatives/sanebox to the other four alternatives pages and its guides', () => {
+    const page = alternativesFor('sanebox')!;
+    render(<AlternativesScreen page={page} />);
+    for (const slug of ALTERNATIVES_SLUGS) {
+      if (slug === 'sanebox') continue;
+      const name = comparisonBySlug(slug)!.name;
+      expect(screen.getByRole('link', { name: `${name} alternatives` })).toHaveAttribute(
+        'href',
+        `/alternatives/${slug}`,
+      );
+    }
+    expect(screen.queryByRole('link', { name: 'SaneBox alternatives' })).not.toBeInTheDocument();
+    for (const guide of COMPARISON_RELATED_GUIDES.sanebox) {
+      expect(screen.getByRole('link', { name: guide.label })).toHaveAttribute('href', guide.href);
+    }
   });
 });

@@ -185,6 +185,25 @@ describe('FollowupCheckWorker', () => {
     expect(row!.status).toBe('awaiting');
   });
 
+  it('does not create a follow-up for mail sent to the connected account itself', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db, 'owner@example.com');
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-self',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['OWNER@EXAMPLE.COM'],
+    });
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+    expect(result.awaitingUpserted).toBe(0);
+    expect(await db.select({ id: followupTracker.id }).from(followupTracker)).toHaveLength(0);
+  });
+
   it('bulk recipient (>5) thread is excluded per D86', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

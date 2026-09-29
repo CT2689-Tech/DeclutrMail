@@ -20,9 +20,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 
-import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, type TriageDecisionRow } from './data';
+import { type TriageDecisionRow } from './data';
+import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './fixtures';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 
 let posted: Array<Record<string, unknown>>;
 
@@ -42,6 +44,10 @@ function renderScreen(rows: TriageDecisionRow[], journey: 'daily' | 'first_relie
     </QueryWrapper>,
   );
 }
+
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
 
 beforeEach(() => {
   resetTriageStore();

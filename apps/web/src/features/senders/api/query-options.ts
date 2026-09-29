@@ -41,6 +41,7 @@ export function sendersListQueryFromScreen(
     domain: scope.compose.domain ?? undefined,
     isProtected: scope.compose.protectedFlag,
     unsubIgnored: scope.compose.unsubIgnored || undefined,
+    hasInboxMail: scope.compose.hasInboxMail || undefined,
   };
 }
 
@@ -57,6 +58,7 @@ export const DEFAULT_SENDERS_QUERY: SendersQueryOptions = sendersListQueryFromSc
     windowDays: null,
     domain: null,
     unsubIgnored: false,
+    hasInboxMail: false,
   },
 });
 
@@ -114,9 +116,10 @@ export function senderMessagesQueryOptions(
     cursor: string | undefined,
     signal: AbortSignal,
   ) => Promise<PaginatedEnvelope<MailMessageRow>>,
+  scope: 'all_mail' | 'inbox' | 'archived' = 'all_mail',
 ) {
   return infiniteQueryOptions({
-    queryKey: sendersKeys.messages(id),
+    queryKey: sendersKeys.messages(id, scope),
     queryFn: ({ pageParam, signal }) => reader(pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.meta.pagination.nextCursor ?? undefined,
@@ -130,6 +133,9 @@ export function senderTimeseriesQueryOptions(
 ) {
   return queryOptions({
     queryKey: sendersKeys.timeseries(id),
+    // Received-volume history tolerates a five-minute revisit cache. Explicit
+    // action/sync/mailbox invalidation still bypasses this freshness window.
+    staleTime: 5 * 60_000,
     queryFn: ({ signal }) => reader(signal),
     retry: retryUnless4xx,
   });

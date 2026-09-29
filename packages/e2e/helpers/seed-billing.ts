@@ -93,6 +93,13 @@ export async function resetBillingVolatileState(sql: postgres.Sql): Promise<void
  */
 export async function applyBillingSeed(sql: postgres.Sql): Promise<void> {
   const s = BILLING_SEED;
+  const unsafe = await sql<{ count: string }[]>`
+    SELECT count(*)::text AS count FROM mailbox_accounts
+    WHERE provider_account_id NOT LIKE '%@synthetic.test'
+  `;
+  if (Number(unsafe[0]?.count) !== 0) {
+    throw new Error('Fixture database contains non-synthetic mailboxes; refusing to seed.');
+  }
 
   await sql`
     INSERT INTO workspaces (id, name, tier)

@@ -35,9 +35,9 @@
 //
 // OBSERVABILITY (D159). Every applied effect emits a structured
 // `billing_event` log line with the taxonomy's payload fields
-// (docs/observability/event-taxonomy.md → `billing_event`). PostHog
-// server-side capture is not wired in apps/api yet — the log line is
-// the greppable source until it is.
+// (docs/observability/event-taxonomy.md → `billing_event`). Server-side
+// PostHog is banned (consent lives in the browser); this log line is
+// the greppable grant signal, not a PostHog capture.
 //
 // PRIVACY (D7/D228). The raw provider body is NEVER persisted — it
 // carries customer PII (email, name, address, phone, card metadata).

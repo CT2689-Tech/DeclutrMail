@@ -42,6 +42,7 @@ function messageRow(overrides: Partial<MailMessageRow> = {}): MailMessageRow {
     snippet: 'Charges totaled $42.18 across 3 transactions.',
     internalDate: '2026-06-20T10:00:00.000Z',
     isUnread: true,
+    location: 'inbox',
     sizeBytes: 8742,
     ...overrides,
   };
@@ -202,6 +203,7 @@ describe('adaptMailMessageRow — recent-message projection', () => {
       sizeBytes: 8742,
       hasAttachment: false,
       unread: true,
+      location: 'inbox',
     });
   });
 

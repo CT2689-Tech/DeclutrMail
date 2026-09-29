@@ -58,21 +58,15 @@ describe('heavy Sentry browser runtime', () => {
         dsn: 'https://stub@sentry.io/123',
         tracesSampleRate: 0.2,
         traceLifecycle: 'static',
-        streamGenAiSpans: false,
         replaysSessionSampleRate: 0,
         replaysOnErrorSampleRate: 0,
-        profilesSampleRate: 0,
-        profileSessionSampleRate: 0,
-        enableLogs: false,
-        enableMetrics: false,
         sendClientReports: false,
-        sendDefaultPii: false,
         dataCollection: {
           userInfo: false,
           cookies: false,
           httpHeaders: { request: false, response: false },
           httpBodies: [],
-          queryParams: false,
+          urlQueryParams: false,
           genAI: { inputs: false, outputs: false },
           stackFrameVariables: false,
           frameContextLines: 0,
@@ -88,7 +82,7 @@ describe('heavy Sentry browser runtime', () => {
 
     const options = sdk.init.mock.calls[0]?.[0];
     const defaults = [
-      'InboundFilters',
+      'EventFilters',
       'FunctionToString',
       'ConversationId',
       'BrowserApiErrors',
@@ -106,7 +100,7 @@ describe('heavy Sentry browser runtime', () => {
     expect(
       options?.integrations?.(defaults).map((integration: { name: string }) => integration.name),
     ).toEqual([
-      'InboundFilters',
+      'EventFilters',
       'FunctionToString',
       'GlobalHandlers',
       'LinkedErrors',

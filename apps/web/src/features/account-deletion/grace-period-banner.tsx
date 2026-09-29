@@ -6,7 +6,7 @@ import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
 import { formatDate } from './delete-account-modal';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D216 step 3 — the grace-period banner: "During grace period → red
@@ -54,7 +54,7 @@ export function GracePeriodBanner() {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: color.danger }}>
+        <span style={{ fontSize: text.md, fontWeight: 600, color: color.danger }}>
           {executing
             ? 'Account deletion is in progress.'
             : immediate
@@ -62,13 +62,13 @@ export function GracePeriodBanner() {
               : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
         </span>
         {!executing && request.basis === 'undo-window' && (
-          <span style={{ fontSize: 11.5, color: color.fgSoft }}>
+          <span style={{ fontSize: text.sm, color: color.fgSoft }}>
             This date is later than the usual 7 days so your open undo windows keep working until
             they expire.
           </span>
         )}
         {cancelError != null && (
-          <span role="alert" style={{ fontSize: 11.5, color: color.danger }}>
+          <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
             {cancelError}
           </span>
         )}

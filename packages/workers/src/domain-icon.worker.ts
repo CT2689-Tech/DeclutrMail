@@ -112,6 +112,11 @@ export class DomainIconWorker extends BaseDeclutrWorker<DomainIconJobData, Domai
     super();
   }
 
+  /** Mirrors `domainIconJobOptions`' BullMQ jobId so a retry's log line correlates with the enqueue. */
+  protected override getIdempotencyKey(payload: DomainIconJobData): string {
+    return `DomainIconWorker-v${DOMAIN_ICON_RESOLVER_VERSION}-${organizationalDomain(payload.domain)}`;
+  }
+
   async processJob(payload: DomainIconJobData, _ctx: WorkerContext): Promise<DomainIconResult> {
     const startedAt = Date.now();
     const now = this.deps.now?.() ?? new Date();

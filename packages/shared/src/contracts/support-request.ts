@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * In-app "Contact support" form (Settings → Help & glossary). One
  * free-text message emailed to support@declutrmail.com — no ticket
- * persistence, no attachment.
+ * database ticket persistence, no attachment. Pending delivery is queued.
  */
 export const SupportRequestSchema = z
   .object({
@@ -15,5 +15,7 @@ export const SupportRequestSchema = z
 export type SupportRequestPayload = z.infer<typeof SupportRequestSchema>;
 
 export interface SupportRequestResult {
+  /** Durable enqueue acknowledged; not a delivery receipt. */
+  status: 'accepted';
   submittedAt: string;
 }

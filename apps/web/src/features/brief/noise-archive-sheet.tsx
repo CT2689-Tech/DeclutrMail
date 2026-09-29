@@ -1,21 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Button, Eyebrow, Kbd, NumericDisplay, tokens } from '@declutrmail/shared';
-import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
+import { useEffect, type ReactNode } from 'react';
+import { Button, PreviewSheet, SheetFactList, tokens } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
-import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 
 import type { NoiseArchivePreview, NoiseTarget } from './api/use-noise-archive';
 
-const { color, font } = tokens;
+const { color, radius, space } = tokens;
 
 /**
  * The D226-mandatory preview for the Brief's Noise bulk archive (D65).
  *
- * Same chrome and keyboard contract as the Triage batch sheet (Escape
- * cancels, ⌘⏎ confirms) over the same aggregated preview endpoints.
+ * The shared `PreviewSheet`, in the Triage sheet's grammar: the live
+ * count in the title, the scope in the subtitle, the undo in the note,
+ * the per-sender breakdown behind "Details". Escape cancels, ⌘⏎
+ * confirms, over the same aggregated preview endpoints.
  * Confirm stays disabled until a REAL server count has landed — a
  * cached or in-flight number never arms this button.
  *
@@ -23,7 +24,7 @@ const { color, font } = tokens;
  * Noise heading above it counts YESTERDAY's mail (the frozen D69
  * snapshot); the archive reaches everything from these senders that is
  * in the inbox now. Those two numbers routinely differ, so the sheet
- * says which one is about to move, in the largest type on screen.
+ * says which one is about to move, in the title.
  */
 export function NoiseArchiveSheet({
   open,
@@ -56,132 +57,120 @@ export function NoiseArchiveSheet({
   // A scope 409 is not a failed read to retry — retrying 409s forever.
   const scopeConflict = preview === 'scope-conflict';
 
+  const auth = useOptionalAuth();
+  const accountEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
+
+  // ⌘⏎ confirms, same as the Triage sheets. Escape belongs to the sheet.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel, onConfirm, confirmDisabled]);
-
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  }, [open, onConfirm, confirmDisabled]);
 
   if (!open) return null;
 
   const n = targets.length;
   const total = ready ? preview.totalMessages : null;
+  // One sender reads by name, several by count — the Triage grammar.
+  const from = n === 1 ? targets[0]!.senderName : `${n.toLocaleString('en-US')} senders`;
+  const protectedCount = ready ? preview.protectedSenderIds.size : 0;
+
+  const title = nothingToActOn
+    ? n === 1
+      ? `Nothing in your inbox from ${from}`
+      : 'Nothing in your inbox from these senders'
+    : total !== null
+      ? `Archive ${total.toLocaleString('en-US')} email${total === 1 ? '' : 's'} from ${from}?`
+      : `Archive email from ${from}?`;
+
+  // Why confirm is unavailable, and the way out where one exists. A zero
+  // count needs no line: the title already says nothing is there.
+  const status: ReactNode =
+    preview === 'loading' ? (
+      'Counting the inbox…'
+    ) : scopeConflict ? (
+      'Your active mailbox changed while this was open, so these counts no longer apply. Close this and pick a mailbox to start again. Nothing was archived.'
+    ) : preview === 'unavailable' ? (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        Couldn&rsquo;t load the preview. Nothing can move until it loads.
+        <Button tone="default" size="sm" onClick={onRetryPreview}>
+          Retry preview
+        </Button>
+      </span>
+    ) : null;
 
   return (
-    <>
-      <div
-        onClick={onCancel}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-brief-noise-sheet-title"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(540px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
-      >
-        <div style={{ padding: '20px 24px 12px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone="primary">Preview · before anything changes</Eyebrow>
-          <h2
-            id="dm-brief-noise-sheet-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
-          >
-            Archive email from {n} sender{n === 1 ? '' : 's'}
-          </h2>
-          {/* Zero matches: the footer states why confirm is disabled; a lead
-              describing the move is noise about an action that cannot run. */}
-          {!nothingToActOn && (
-            <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}>
-              This archives everything from these senders that is in your inbox now — not only
-              yesterday&rsquo;s mail. Nothing is deleted.
-            </p>
-          )}
-        </div>
-
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <MailboxActionContext mailboxEmail={mailboxEmail} />
-
-          {/* The live count. All three states render (D211), and only the
-              ready state can arm the confirm below. */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: 8,
-              flexWrap: 'wrap',
-              padding: '12px 14px',
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 9,
-            }}
-          >
-            {preview === 'loading' ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>Counting the inbox…</span>
-            ) : scopeConflict ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Your active mailbox changed while this was open, so these counts no longer apply.
-                Close this and pick a mailbox to start again. Nothing was archived.
+    <PreviewSheet
+      onClose={onCancel}
+      testId="brief-noise-archive-sheet"
+      icon={<ArchiveGlyph />}
+      title={title}
+      subtitle={
+        nothingToActOn ? undefined : (
+          <>
+            This archives everything from {n === 1 ? 'this sender' : 'these senders'} that is in
+            your inbox now — not only yesterday&rsquo;s mail. Nothing is deleted.
+          </>
+        )
+      }
+      note={
+        confirmDisabled && !ready ? undefined : (
+          <>
+            {!confirmDisabled && (
+              <span>
+                {UNIFORM_UNDO_WINDOW_DAYS === null
+                  ? "One undo reverses the whole batch during your plan's Activity window."
+                  : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
               </span>
-            ) : preview === 'unavailable' ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Couldn&rsquo;t load the preview. Nothing can move until it loads.
-              </span>
-            ) : (
+            )}
+            {/* The server can report a sender Protected that was not
+                Protected when the Brief was read — said once, here. */}
+            {protectedCount > 0 && (
               <>
-                <NumericDisplay variant="stat" value={total!.toLocaleString('en-US')} />
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  email{total === 1 ? '' : 's'} in Inbox now.
-                  {nothingToActOn ? '' : ' Rechecked when it runs.'}
+                {' '}
+                <span>
+                  {protectedCount} sender{protectedCount === 1 ? '' : 's'} became Protected since
+                  this Brief was written and {protectedCount === 1 ? 'is' : 'are'} excluded from the
+                  total.
                 </span>
               </>
             )}
-          </div>
-
-          {/* Per-sender breakdown — the live figure beside the sender the
-              user checked, so the total above is verifiable row by row. */}
+          </>
+        )
+      }
+      primary={{
+        label: total !== null && total > 0 ? `Archive ${total.toLocaleString('en-US')}` : 'Archive',
+        onClick: onConfirm,
+        tone: 'primary',
+        disabled: confirmDisabled,
+      }}
+      status={status ?? undefined}
+      details={
+        <>
+          {/* Per-sender breakdown — FIRST, the live figure beside the
+              sender the user checked, so the total is verifiable row by
+              row. No per-row separators: the gap is the rhythm. */}
           <div
             role="list"
             aria-label="Current per-sender matches"
-            style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space[2],
+              paddingTop: space[3],
+            }}
           >
             {targets.map((target) => {
               const live =
                 ready && target.senderId ? preview.countBySenderId.get(target.senderId) : undefined;
-              // The server can report a sender Protected that was not
-              // Protected when the Brief was read. Its mail is excluded
-              // from the headline, so labelling the row is what keeps the
-              // visible rows summing to the total above them.
+              // A sender that turned Protected is excluded from the total,
+              // so labelling the row keeps the rows summing to it.
               const skipped =
                 ready && target.senderId ? preview.protectedSenderIds.has(target.senderId) : false;
               return (
@@ -192,15 +181,12 @@ export function NoiseArchiveSheet({
                     display: 'flex',
                     alignItems: 'baseline',
                     justifyContent: 'space-between',
-                    gap: 12,
-                    fontSize: 12,
-                    color: color.fgSoft,
-                    padding: '4px 2px',
-                    borderBottom: `1px solid ${color.lineSoft}`,
+                    gap: space[3],
                   }}
                 >
                   <span
                     style={{
+                      fontWeight: 500,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -210,86 +196,76 @@ export function NoiseArchiveSheet({
                     {target.senderName}
                   </span>
                   {skipped ? (
-                    <span style={{ fontFamily: font.mono, flexShrink: 0 }}>
-                      protected — skipped
-                    </span>
+                    <span style={{ flexShrink: 0, color: color.fgMuted }}>Protected — skipped</span>
                   ) : (
-                    // `NumericDisplay` already renders an em-dash for an
-                    // absent value and carries the tabular figures.
-                    <NumericDisplay
-                      variant="data"
-                      tone="muted"
-                      value={live === undefined ? undefined : live.toLocaleString('en-US')}
-                      style={{ flexShrink: 0 }}
-                    />
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontWeight: 600,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {live === undefined ? '—' : live.toLocaleString('en-US')}
+                    </span>
                   )}
                 </div>
               );
             })}
-            {ready && preview.protectedSenderIds.size > 0 && (
-              <span style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 2 }}>
-                {preview.protectedSenderIds.size} sender
-                {preview.protectedSenderIds.size === 1 ? '' : 's'} became Protected since this Brief
-                was written and {preview.protectedSenderIds.size === 1 ? 'is' : 'are'} excluded from
-                the total above.
-              </span>
-            )}
           </div>
-        </div>
+          <SheetFactList
+            facts={[
+              ...(ready && !nothingToActOn
+                ? [{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]
+                : []),
+              ...(accountEmail
+                ? [
+                    {
+                      label: 'Gmail account',
+                      value: (
+                        <span role="note" aria-label={`Gmail account: ${accountEmail}`}>
+                          {accountEmail}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        </>
+      }
+    />
+  );
+}
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            {confirmDisabled
-              ? scopeConflict
-                ? 'mailbox changed — close this and start again.'
-                : preview === 'unavailable'
-                  ? 'Preview unavailable — retry before confirming.'
-                  : nothingToActOn
-                    ? 'Nothing from these senders is in your inbox.'
-                    : 'Confirm unlocks once the count loads.'
-              : UNIFORM_UNDO_WINDOW_DAYS === null
-                ? "One undo reverses the whole batch during your plan's Activity window."
-                : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
-          </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {preview === 'unavailable' && (
-              <Button tone="default" onClick={onRetryPreview}>
-                Retry preview
-              </Button>
-            )}
-            <Button tone="default" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button
-              tone="primary"
-              disabled={confirmDisabled}
-              onClick={onConfirm}
-              iconRight={
-                <Kbd
-                  style={{
-                    background: color.lineInverse,
-                    border: 'none',
-                    color: color.fgInverse,
-                  }}
-                >
-                  ⌘⏎
-                </Kbd>
-              }
-            >
-              Archive
-            </Button>
-          </div>
-        </div>
-      </div>
-    </>
+function ArchiveGlyph() {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 64,
+        height: 64,
+        borderRadius: radius.pill,
+        background: color.primarySoft,
+        color: color.primary,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <svg
+        width="26"
+        height="26"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="5" rx="1.5" />
+        <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9" />
+        <path d="M10 13h4" />
+      </svg>
+    </span>
   );
 }

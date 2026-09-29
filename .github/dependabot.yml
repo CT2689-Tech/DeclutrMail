@@ -1,9 +1,13 @@
 # Dependabot configuration (D178).
 #
-# Weekly batched updates across three ecosystems. Groups minor + patch
-# bumps into one PR per ecosystem per week so the founder sees ONE
-# review queue, not thirty. Majors stay split (one PR per major) so the
-# breaking-change review is explicit.
+# Each ecosystem opens one grouped version-update PR covering every
+# dependency, majors included. A previous split (production vs
+# development, majors left ungrouped) produced six PRs on one Monday.
+# Ignore rules below still keep coordinated majors (Nest, Next, Drizzle,
+# @types/node) out of that PR.
+#
+# `applies-to` is exclusive, so security updates cannot share the version
+# group. They stay in their own group rather than opening one PR each.
 #
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
@@ -30,7 +34,7 @@ updates:
       day: monday
       time: '06:00'
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 8
     versioning-strategy: increase-if-necessary
     commit-message:
       # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
@@ -38,16 +42,18 @@ updates:
       prefix: chore
       include: scope
     groups:
-      # One PR per week for everything minor/patch — keeps reviewer
-      # load to a single grouped diff.
-      minor-and-patch:
-        applies-to: version-updates
+      all:
+        patterns:
+          - '*'
         update-types:
+          - major
           - minor
           - patch
       # Security updates always grouped, regardless of bump kind.
       security:
         applies-to: security-updates
+        patterns:
+          - '*'
         update-types:
           - patch
           - minor
@@ -91,9 +97,11 @@ updates:
       prefix: chore
       include: scope
     groups:
-      actions-minor-and-patch:
-        applies-to: version-updates
+      all:
+        patterns:
+          - '*'
         update-types:
+          - major
           - minor
           - patch
 
@@ -109,3 +117,11 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    groups:
+      all:
+        patterns:
+          - '*'
+        update-types:
+          - major
+          - minor
+          - patch

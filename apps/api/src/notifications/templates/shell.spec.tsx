@@ -76,6 +76,18 @@ describe('shell', () => {
     expect(html).toContain(PRIVACY_BADGE_HEADLINE);
   });
 
+  it('points at no list it does not render', async () => {
+    // The badge lead ("…the Gmail details listed below") introduces the
+    // storage list, which an email never renders — it sat in every
+    // footer pointing at nothing.
+    const html = await renderShell(
+      <Shell preview="p" footer="f">
+        <p>b</p>
+      </Shell>,
+    );
+    expect(html).not.toMatch(/listed below/i);
+  });
+
   it('carries the masthead wordmark and rule', async () => {
     const html = await renderShell(
       <Shell preview="p" footer="f">

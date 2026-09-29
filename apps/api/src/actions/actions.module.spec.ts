@@ -22,22 +22,30 @@ import { ActionsService } from './actions.service.js';
  */
 describe('ActionsService DI shape', () => {
   it('every constructor param is either @Inject()-tagged OR @Optional()', () => {
-    // Nest stores per-param optional flags as `[{ index: <n> }, ...]`
-    // on the class itself. Combined with the `self:paramtypes`
-    // metadata (`@Inject(TOKEN)` overrides), every ctor index must
-    // appear in ONE of the two sets — else Nest tries to resolve by
-    // class identity and crashes at boot.
+    // Nest's `@Optional()` stores constructor indexes as a number array
+    // (`optional:paramtypes`). `@Inject()` stores `{ index, param }` on
+    // `self:paramtypes`. Every ctor index must appear in one of those
+    // sets — else Nest tries to resolve by class identity and crashes
+    // at boot. Vite 8 emits `design:paramtypes`, so this loop actually
+    // sees the parameters; an empty list would pass without checking.
     const paramTypes: unknown[] =
       (Reflect.getMetadata('design:paramtypes', ActionsService) as unknown[]) ?? [];
-    const optionalDeps: Array<{ index: number }> =
+    const optionalDeps: Array<number | { index: number }> =
       (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, ActionsService) as
-        Array<{ index: number }> | undefined) ?? [];
+        Array<number | { index: number }> | undefined) ?? [];
     const explicitInjects: Array<{ index: number }> =
       (Reflect.getMetadata('self:paramtypes', ActionsService) as
         Array<{ index: number }> | undefined) ?? [];
 
-    const optionalSet = new Set(optionalDeps.map((d) => d.index));
+    const optionalSet = new Set(
+      optionalDeps.map((dep) => (typeof dep === 'number' ? dep : dep.index)),
+    );
     const injectSet = new Set(explicitInjects.map((d) => d.index));
+
+    expect(
+      paramTypes.length,
+      'design:paramtypes was empty, so this check never looked at the constructor',
+    ).toBeGreaterThan(0);
 
     for (let i = 0; i < paramTypes.length; i++) {
       const isInjected = injectSet.has(i);

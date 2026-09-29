@@ -13,10 +13,37 @@ describe('sync-complete', () => {
   it('renders subject, text and html', async () => {
     const email = await syncCompleteEmail(input);
     expect(email.subject).toBe('Your inbox is ready');
-    expect(email.text).toContain('24,310 messages');
+    expect(email.text).toContain('24,310 emails');
     expect(email.text).toContain('you@gmail.com');
-    expect(email.html).toContain('24,310 messages');
+    expect(email.text).toContain('https://app.declutrmail.com/triage');
+    expect(email.text).toContain('Still in setup?');
+    expect(email.text).toContain('because you connected this mailbox');
+    expect(email.html).toContain('24,310 emails');
     expect(email.html).toContain('https://app.declutrmail.com/triage');
+  });
+
+  it('names the count one way — "emails" in the text, html and preview', async () => {
+    const email = await syncCompleteEmail(input);
+    // Tags stripped, so the hero numeral and the noun in the NEXT element
+    // read as one phrase, the way a reader sees them. Matching raw html
+    // only ever saw the hidden preview — the visible noun sits after a
+    // `</p><p>` and was invisible to it. Stripping also drops the
+    // `x-apple-disable-message-reformatting` attribute.
+    const visibleHtml = (email.html ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    for (const part of [email.text.replace(/\s+/g, ' '), visibleHtml]) {
+      const nouns = [...part.matchAll(/24,310 (\w+)/g)].map((m) => m[1]);
+      expect(nouns.length).toBeGreaterThan(0);
+      expect(new Set(nouns)).toEqual(new Set(['emails']));
+    }
+    // Both the preview AND the visible body were checked, not just one.
+    expect([...visibleHtml.matchAll(/24,310 emails/g)].length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('promises no time or outcome it cannot measure', async () => {
+    const email = await syncCompleteEmail(input);
+    for (const part of [email.text, email.html]) {
+      expect(part).not.toMatch(/usually|minutes?\b|bulk of/i);
+    }
   });
 
   it('carries no message content (D7)', async () => {
@@ -57,10 +84,5 @@ describe('sync-complete', () => {
     expect(email.html).toContain('Unsubscribe');
     expect(email.text).toContain(`Unsubscribe: ${input.unsubscribeUrl}`);
     expect(email.text).toContain('Email preferences: https://app.declutrmail.com/settings');
-  });
-
-  it('matches the snapshot', async () => {
-    const email = await syncCompleteEmail(input);
-    expect(email.text).toMatchSnapshot();
   });
 });

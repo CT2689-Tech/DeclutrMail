@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
-import { createRedisConnection, SCORE_QUEUE } from '@declutrmail/workers';
+import {
+  createRedisConnection,
+  createRedisProducerConnection,
+  SCORE_EXPLAIN_QUEUE,
+  SCORE_QUEUE,
+} from '@declutrmail/workers';
 import type { ScoreJobData } from '@declutrmail/workers';
 
 import { IconsModule } from '../icons/icons.module.js';
@@ -10,7 +15,7 @@ import { EntitlementsModule } from '../common/entitlements/entitlements.module.j
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { TriageController } from './triage.controller.js';
 import { TriageReadService } from './triage.read-service.js';
-import { SCORE_QUEUE_TOKEN, TriageService } from './triage.service.js';
+import { SCORE_EXPLAIN_QUEUE_TOKEN, SCORE_QUEUE_TOKEN, TriageService } from './triage.service.js';
 
 /**
  * TriageModule (D201, D204) — owns the read facade for the decision
@@ -45,6 +50,25 @@ import { SCORE_QUEUE_TOKEN, TriageService } from './triage.service.js';
         }
         return new Queue<ScoreJobData>(SCORE_QUEUE, {
           connection: createRedisConnection(url),
+        });
+      },
+    },
+    {
+      // `explain` jobs have their own queue (see `SCORE_EXPLAIN_QUEUE`), on
+      // a REQUEST-PATH connection. Explanations are asked for by page
+      // loads, not by a person pressing a control, and they are
+      // best-effort and self-healing — the next view asks again, and the
+      // template on screen is already true. So a Redis outage must reject
+      // the ask at once instead of buffering it in an offline queue that
+      // replays in a burst on recovery (see `createRedisProducerConnection`).
+      provide: SCORE_EXPLAIN_QUEUE_TOKEN,
+      useFactory: (): Queue<ScoreJobData> | null => {
+        const url = process.env.REDIS_URL;
+        if (!url) {
+          return null;
+        }
+        return new Queue<ScoreJobData>(SCORE_EXPLAIN_QUEUE, {
+          connection: createRedisProducerConnection(url),
         });
       },
     },

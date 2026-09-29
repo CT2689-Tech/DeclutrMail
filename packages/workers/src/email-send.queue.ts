@@ -1,6 +1,8 @@
 import type { JobsOptions, Queue } from 'bullmq';
+import { hasPostalAddress } from '@declutrmail/shared/copy';
 
 import { WORKER_POLICIES } from './worker-policies.js';
+import { COMMERCIAL_KINDS } from './email-send.worker.js';
 import type { EmailSendJobData, EmailSendResult } from './email-send.worker.js';
 
 /**
@@ -33,9 +35,12 @@ export const SYNC_REMINDER_DELAY_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * Sync-complete send — keyed on the OUTBOX EVENT id, not the mailbox:
- * the logical event is "this sync_ready event happened". A redelivered
- * event dedups; a genuinely new sync_ready for the same mailbox (e.g.
- * reconnect → fresh initial sync) sends again, which is correct.
+ * the logical event is "this sync_ready event happened", so a
+ * redelivered event dedups. Whether a NEW sync_ready for the same
+ * mailbox sends at all is decided upstream: only its first ready does
+ * (`firstReady`, see the sync-ready trigger). A reconnect, a
+ * failed-scan retry and a cursor-too-old recovery are re-scans of an
+ * inbox the user already has, and send nothing.
  */
 export function syncCompleteEmailJobId(eventId: string): string {
   return `email__sync-complete__${eventId}`;
@@ -167,6 +172,13 @@ export async function enqueueEmailSend(
   data: EmailSendJobData,
   delayMs = 0,
 ): Promise<'added' | 'noop'> {
+  // Commercial mail is disabled at launch while no business postal
+  // address is configured. Do not schedule a job that can only be skipped;
+  // the consumer repeats this check for any already-queued work.
+  if (COMMERCIAL_KINDS.has(data.kind) && !hasPostalAddress()) {
+    return 'noop';
+  }
+
   const existing = await queue.getJob(data.idempotencyKey);
   if (existing) {
     const state = await existing.getState();

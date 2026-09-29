@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createRedisConnection,
   createRedisProducerConnection,
-  ensureIncrementalSyncJob,
   ensureInitialSyncJob,
   workerTuningOptions,
 } from './queue.js';
@@ -243,62 +242,9 @@ describe('workerTuningOptions', () => {
   });
 });
 
-/**
- * `ensureIncrementalSyncJob` terminal-residue tests (2026-07-07
- * integrated smoke). A completed ack is retained 24h and a failed job
- * forever; both satisfy `getJob`, so without the state check a quiet
- * mailbox turned "Sync now" into a silent no-op (watch timeout), and a
- * dead-lettered incremental bricked the cursor permanently — every
- * webhook/drift/manual enqueue dropped against the failed ack.
- */
-describe('ensureIncrementalSyncJob', () => {
-  const DATA = { mailboxAccountId: 'mailbox', startHistoryId: '42', endHistoryId: '42' };
-  const JOB_ID = 'mailbox__42';
-
-  it('adds a job when none exists', async () => {
-    const q = new FakeQueue();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const outcome = await ensureIncrementalSyncJob(q as any, DATA);
-    expect(outcome).toBe('added');
-    expect(q.addCalls).toBe(1);
-  });
-
-  it.each(['completed', 'failed', 'unknown'] as const)(
-    "replaces terminal residue '%s' — a retained ack must not swallow a re-sync",
-    async (state) => {
-      const q = new FakeQueue();
-      q.setJob(state, JOB_ID);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const outcome = await ensureIncrementalSyncJob(q as any, DATA);
-      expect(outcome).toBe('added');
-      expect(q.removeCalls).toBe(1);
-      expect(q.addCalls).toBe(1);
-    },
-  );
-
-  it.each(['waiting', 'active', 'delayed'] as const)(
-    "no-ops for live state '%s' (webhook redelivery dedup preserved)",
-    async (state) => {
-      const q = new FakeQueue();
-      q.setJob(state, JOB_ID);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const outcome = await ensureIncrementalSyncJob(q as any, DATA);
-      expect(outcome).toBe('noop');
-      expect(q.addCalls).toBe(0);
-      expect(q.removeCalls).toBe(0);
-    },
-  );
-
-  it('lost race: remove() rejects (job locked mid-flight) → noop, no double-add', async () => {
-    const q = new FakeQueue();
-    q.setJob('completed', JOB_ID);
-    q.removeRejects = true;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const outcome = await ensureIncrementalSyncJob(q as any, DATA);
-    expect(outcome).toBe('noop');
-    expect(q.addCalls).toBe(0);
-  });
-});
+// `ensureIncrementalSyncJob` is tested against real BullMQ + Redis in
+// `incremental-sync.queue.test.ts`: its coalescing lives in BullMQ's Lua,
+// which this file's fake queue could only restate.
 
 describe('redis connection factories', () => {
   // A worker must not drop a job because Redis blinked, so its

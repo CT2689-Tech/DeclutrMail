@@ -16,7 +16,7 @@ describe('ServerAppBoundary', () => {
     vi.restoreAllMocks();
   });
 
-  it('hydrates auth and every eligible shell read in one outer owner', async () => {
+  it('hydrates safety-critical shell reads without waiting for optional navigation counts', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const url = String(input);
@@ -66,8 +66,6 @@ describe('ServerAppBoundary', () => {
       'http://localhost:4000/api/v1/sync/status',
       'http://localhost:4000/api/snoozed/recovery',
       'http://localhost:4000/api/undo',
-      'http://localhost:4000/api/senders/summary',
-      'http://localhost:4000/api/screener/count',
     ]);
     for (const call of fetchSpy.mock.calls.slice(3)) {
       const headers = (call[1] as RequestInit).headers as Record<string, string>;

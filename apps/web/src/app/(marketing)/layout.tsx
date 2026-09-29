@@ -9,13 +9,13 @@
 // batch): one JSON-LD graph with the Organization, the WebSite entity
 // anchor, and the SoftwareApplication (offers derived from the D19 tier
 // manifest — re-pricing there flows through here with no edit).
-// Page-specific structured data (the landing FAQPage) lives with the
-// page content.
+// Page-specific structured data (e.g. the /faq and /help FAQPage) lives
+// with the page content.
 //
 // Server component on purpose: the shell itself cannot accidentally
 // reach for `useAuth()`. Four narrow client islands remain explicit:
 // route-family analytics, cookieless page-view counts, the
-// layout-preserving mobile disclosure, and cookie consent.
+// mobile navigation and theme controls, and cookie consent.
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
@@ -108,6 +108,7 @@ const SITE_JSON_LD = {
     },
     {
       '@type': 'SoftwareApplication',
+      '@id': `${siteUrl()}/#software`,
       name: 'DeclutrMail',
       url: siteUrl(),
       // ADR-0030: lead with the preview guarantee, keep the sender as the

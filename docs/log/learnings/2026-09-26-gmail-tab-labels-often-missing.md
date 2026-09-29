@@ -1,0 +1,5 @@
+## 2026-09-26 — Gmail's tab labels are missing on a large share of real mail
+**Context:** Tracing why most of one production mailbox's senders were kept as "Primary".
+**Finding:** In the dev database (read-only, 2026-09-26), 1,712 of 99,593 inbound messages on the founder's mailbox carry no `CATEGORY_*` label. Overlapping counts: 1,501 are from before 2014 (Gmail tabs launched in 2013), 784 are Google Talk chat logs (label `CHAT`), 129 are in Trash, 5 are drafts. A message never carried two `CATEGORY_*` labels in that data. On the production mailbox in the founder's trace the unlabelled share was 80% (30,443 of 38,259). Its cause was not verified — production SQL was blocked in this session — so do not assume "old mail" explains it.
+**Rule (provisional):** Treat Gmail's tab label as present-or-absent evidence per message, never as a total classification of a mailbox. Any feature keyed on a tab needs a stated behaviour for "no label".
+**Distillation trigger:** promote to CLAUDE.md §2.4 if another Gmail-label-derived feature ships with an implicit default for the absent case.

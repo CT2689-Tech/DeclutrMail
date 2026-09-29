@@ -14,7 +14,7 @@ import { track } from '@/lib/posthog';
 
 const { color, font } = tokens;
 
-type InlineFeedbackProps =
+type InlineFeedbackProps = (
   | {
       surface: 'activity';
       referenceId: string;
@@ -29,7 +29,8 @@ type InlineFeedbackProps =
       surface: 'followups';
       referenceId: string;
       initialRating: 'useful' | 'not_followup' | null;
-    };
+    }
+) & { onSaved?: ((rating: ProductFeedbackRating) => void) | undefined };
 
 const CONFIG = {
   activity: {
@@ -69,6 +70,7 @@ export function InlineFeedback(props: InlineFeedbackProps) {
     onSuccess: (result, request) => {
       setSelected(result.rating);
       setSavedNow(true);
+      props.onSaved?.(result.rating);
       if (request.surface === 'activity') {
         void track('product_feedback_submitted', {
           surface: 'activity',

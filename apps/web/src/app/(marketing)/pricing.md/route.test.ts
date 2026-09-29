@@ -20,6 +20,7 @@ import {
   pricingTiers,
 } from '@/features/marketing/pricing/pricing-model';
 import { GET } from './route';
+import { siteUrl } from '@/features/marketing/landing/urls';
 
 const TIERS = pricingTiers();
 const PURCHASABLE = TIERS.filter((tier) => tier.purchasable);
@@ -35,6 +36,20 @@ async function body(): Promise<string> {
 }
 
 describe('/pricing.md — machine-readable pricing', () => {
+  it('keeps the machine-readable alternate crawlable but not separately indexed', () => {
+    const response = GET();
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex, follow');
+    expect(response.headers.get('Link')).toBe(`<${siteUrl()}/pricing>; rel="canonical"`);
+  });
+
+  it('separates catalog prices from provider-confirmed charges and conditional currencies', async () => {
+    const markdown = await body();
+    expect(markdown).toContain('published base plan prices');
+    expect(markdown).toContain('not a confirmed renewal charge');
+    expect(markdown).toMatch(/INR prices appear only for price points\s+provisioned/);
+    expect(markdown).not.toMatch(/amounts checkout charges|India visitor is quoted and charged/);
+  });
+
   it('names every purchasable tier and its manifest amounts in both charged currencies', async () => {
     const markdown = await body();
 

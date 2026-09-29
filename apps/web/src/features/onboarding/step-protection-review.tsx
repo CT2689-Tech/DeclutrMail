@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, ErrorState, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, ErrorState, tokens } from '@declutrmail/shared';
 import type { OnboardingProtectionSplit } from '@declutrmail/shared/contracts';
 
 import {
@@ -16,8 +16,9 @@ import type { TriageScreenState, TriageSessionStats } from '@/features/triage/da
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
+import { OnboardingPhase } from './onboarding-phase';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Step 5 for the `protect_important` goal — a review of the protection
@@ -139,7 +140,7 @@ export function StepProtectionReview({
   if (firstTriage.isLoading || !firstTriage.data) {
     return (
       <PanelShell corner={corner}>
-        <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
+        <p role="status" style={{ color: color.fgMuted, fontSize: text.md }}>
           Checking what we protected…
         </p>
       </PanelShell>
@@ -157,28 +158,38 @@ export function StepProtectionReview({
     const done = donePanel(split, meta.pinned);
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · Review protection</Eyebrow>
         <h1
           style={{
-            fontFamily: font.display,
-            fontSize: 30,
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            margin: '6px 0 4px',
+            fontFamily: font.sans,
+            fontSize: text['3xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.12,
+            color: color.fg,
+            margin: '0 0 12px',
           }}
         >
           {done.headline}
         </h1>
-        <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 500 }}>
+        <p
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '0 auto 28px',
+            maxWidth: 500,
+          }}
+        >
           {done.body}
         </p>
         <Button
           tone="primary"
+          size="xl"
           onClick={() => finish(meta.pinned === 0 ? 'empty' : 'completed')}
           disabled={completing}
-          style={{ minWidth: 220 }}
+          style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Continue to Senders →'}
+          {completing ? 'Finishing…' : 'Continue to Senders'}
         </Button>
         {/* Any verb used during the review is still reversible (D35/D58). */}
         <TriageUndoTray />
@@ -216,21 +227,21 @@ export function StepProtectionReview({
         }}
       >
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-          <Eyebrow>Step 5 of 5 · Review protection</Eyebrow>
+          <OnboardingPhase phase="review" />
           <h1
             style={{
-              fontFamily: font.display,
-              // Scales down on narrow widths so the reassurance still
-              // reads as one sentence rather than a stack of words.
-              fontSize: 'clamp(18px, 4.4vw, 22px)',
-              fontWeight: 600,
-              letterSpacing: '-0.018em',
-              margin: '6px 0 4px',
+              fontFamily: font.sans,
+              fontSize: text['2xl'],
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
+              lineHeight: 1.2,
+              margin: '0 0 4px',
             }}
           >
             {reviewHeadline(split)}
           </h1>
-          <p style={{ margin: 0, fontSize: 13, color: color.fgMuted, maxWidth: 620 }}>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted, maxWidth: 620 }}>
             {reviewBody(
               split,
               rows.length,
@@ -488,7 +499,10 @@ function PanelShell({ corner, children }: { corner?: ReactNode; children: ReactN
       }}
     >
       {corner && <div style={{ position: 'absolute', top: 20, right: 24 }}>{corner}</div>}
-      <div style={{ width: '100%', maxWidth: 560 }}>{children}</div>
+      <div style={{ width: '100%', maxWidth: 560 }}>
+        <OnboardingPhase phase="review" />
+        {children}
+      </div>
     </main>
   );
 }

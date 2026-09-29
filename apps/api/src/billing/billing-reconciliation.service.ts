@@ -801,9 +801,9 @@ export class BillingReconciliationService {
         // customer is billed normally, holds Free, and every self-serve
         // exit is shut (plan change and pause refuse on the pinned flag,
         // un-cancel answers CANCELLATION_NOT_REVOCABLE, checkout answers
-        // SUBSCRIPTION_EXISTS). Doing it here rather than from
-        // `adjustment.updated` is deliberate: this read is authoritative
-        // and needs no provider-side event subscription to work.
+        // SUBSCRIPTION_EXISTS). The signed `adjustment.updated` webhook
+        // now handles the common case promptly; this read remains the
+        // authoritative fallback when delivery or subscription fails.
         //
         // The MATCH is load-bearing. An earlier revision took a bare
         // "something was refuted" and inferred the verdict from our own

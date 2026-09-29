@@ -1,3 +1,4 @@
+import { editorialColumnStyle } from '@/features/editorial/page';
 import { ContactSupportForm } from '@/features/help/contact-support-form';
 import { ProductGlossary } from '@/features/help/product-glossary';
 
@@ -9,7 +10,15 @@ export default function SettingsHelpPage() {
   return (
     <>
       <ProductGlossary />
-      <div style={{ width: '100%', maxWidth: 860, margin: '0 auto', padding: '0 24px 40px' }}>
+      <div
+        id="contact-support"
+        className="dm-settings-page"
+        style={{
+          ...editorialColumnStyle,
+          paddingTop: 0,
+          scrollMarginTop: 24,
+        }}
+      >
         <ContactSupportForm />
       </div>
     </>

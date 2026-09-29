@@ -14,13 +14,19 @@ import { senderMessagesQueryOptions } from './query-options';
 export interface UseSenderMessagesOptions {
   /** Page size — default 10 per D46. */
   limit?: number | undefined;
+  scope?: 'all_mail' | 'inbox' | 'archived' | undefined;
+  /** Subscribe to cached pages without starting a second default-scope fetch. */
+  enabled?: boolean | undefined;
 }
 
 export function useSenderMessages(id: string, options: UseSenderMessagesOptions = {}) {
   return useInfiniteQuery({
-    ...senderMessagesQueryOptions(id, (cursor, signal) =>
-      fetchSenderMessages(id, { limit: options.limit, cursor }, signal),
+    ...senderMessagesQueryOptions(
+      id,
+      (cursor, signal) =>
+        fetchSenderMessages(id, { limit: options.limit, cursor, scope: options.scope }, signal),
+      options.scope,
     ),
-    enabled: id.length > 0,
+    enabled: id.length > 0 && options.enabled !== false,
   });
 }

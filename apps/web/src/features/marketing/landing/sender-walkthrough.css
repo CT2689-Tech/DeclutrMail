@@ -1,0 +1,113 @@
+.dm-walkthrough {
+  min-width: 0;
+  margin: 0;
+  padding: 22px;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+}
+.dm-walkthrough legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dm-walkthrough .dm-walkthrough-note {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dm-fg-muted);
+}
+.dm-walkthrough-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin-block: 16px;
+}
+.dm-walkthrough-steps label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 5px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dm-walkthrough-steps input {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--dm-primary);
+}
+.dm-walkthrough-steps label:has(input:checked) {
+  background: var(--dm-fill);
+  color: var(--dm-primary);
+}
+.dm-walkthrough-steps label:has(input:focus-visible) {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 2px;
+}
+.dm-walkthrough-panel {
+  border-block: 1px solid var(--dm-line);
+  padding-block: 16px;
+  min-height: 290px;
+}
+.dm-walkthrough-panel h3 {
+  margin: 8px 0;
+  font-family: var(--dm-font-display);
+  font-weight: 400;
+  font-size: clamp(23px, 2.3vw, 29px);
+}
+.dm-walkthrough-panel p {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.dm-walkthrough-panel .dm-walkthrough-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dm-fg-muted);
+}
+.dm-walkthrough-panel dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-block: 20px;
+}
+.dm-walkthrough-panel dt {
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+}
+.dm-walkthrough-panel dd {
+  margin: 6px 0 0;
+  font-size: 19px;
+  font-variant-numeric: tabular-nums;
+}
+.dm-walkthrough-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--dm-primary);
+  font-size: 13px;
+}
+/* With older CSS engines, all four examples remain readable in order. */
+@supports selector(:has(*)) {
+  .dm-walkthrough-panel {
+    display: none;
+  }
+  .dm-walkthrough:has(input[value='1']:checked) [data-step='1'],
+  .dm-walkthrough:has(input[value='2']:checked) [data-step='2'],
+  .dm-walkthrough:has(input[value='3']:checked) [data-step='3'],
+  .dm-walkthrough:has(input[value='4']:checked) [data-step='4'] {
+    display: block;
+  }
+}
+@media (max-width: 480px) {
+  .dm-walkthrough {
+    padding: 16px;
+  }
+  .dm-walkthrough-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

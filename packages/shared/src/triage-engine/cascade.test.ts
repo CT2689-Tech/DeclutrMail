@@ -107,6 +107,50 @@ describe('runCascade — Phase A (protection / engagement)', () => {
     expect(result.ruleId).toBe('gmail_primary');
   });
 
+  it.each(['one_click', 'mailto'] as const)(
+    'Primary with an unsubscribe channel (%s) is judged on volume and engagement, not kept by the tab',
+    (unsubscribeChannel) => {
+      // Founder decision 2026-09-26: a List-Unsubscribe header marks mail
+      // sent through a list or mailing system, and it outranks the tab.
+      const result = runCascade({
+        ...baseSignals(),
+        gmailCategory: 'primary',
+        unsubscribeChannel,
+        monthlyVolume: 40,
+        readRate90d: 0.02,
+      });
+      expect(result.ruleId).not.toBe('gmail_primary');
+      expect(result.verdict).toBe('unsubscribe');
+    },
+  );
+
+  it('Primary with an unsubscribe channel is still kept when the user reads it', () => {
+    // Falling through rule 3 lands on the engagement rules, not on a cleanup.
+    const result = runCascade({
+      ...baseSignals(),
+      gmailCategory: 'primary',
+      unsubscribeChannel: 'one_click',
+      readRate90d: 0.8,
+    });
+    expect(result.verdict).toBe('keep');
+    expect(result.ruleId).toBe('high_read_rate');
+  });
+
+  it('no Gmail tab label → never the Primary Keep; the sender reaches the volume rules', () => {
+    // A one-click, high-volume, unread stream with no tab label on its
+    // mail. The old sync default stored it as Primary and this rule kept
+    // it at 95% "because Gmail puts them in your Primary inbox" (mig 0079).
+    const result = runCascade({
+      ...baseSignals(),
+      gmailCategory: 'unknown',
+      unsubscribeChannel: 'one_click',
+      monthlyVolume: 40,
+      readRate90d: 0.02,
+    });
+    expect(result.ruleId).not.toBe('gmail_primary');
+    expect(result.verdict).toBe('unsubscribe');
+  });
+
   it('starred in last year → keep at 0.92 (when not Primary)', () => {
     const result = runCascade({
       ...baseSignals(),

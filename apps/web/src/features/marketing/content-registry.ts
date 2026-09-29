@@ -38,7 +38,7 @@ export const MARKETING_CONTENT_SOURCES = {
   'learn/changelog-content': { label: 'changelog', content: CHANGELOG_ENTRIES },
   'learn/faq-content': { label: 'faq', content: FAQ_ENTRIES },
   'learn/how-to-content': { label: 'how-to', content: HOW_TO_ARTICLES },
-  // Hub eyebrows, titles, descriptions and meta chips, rendered on
+  // Hub titles, leads, descriptions and meta lines, rendered on
   // /how-to and /answers. Found unscanned by any of the three truth-gates
   // on 2026-08-27, by the registry guard's first run — public prose that
   // had never been checked for the Screener, engagement or tier claims.

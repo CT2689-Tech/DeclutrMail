@@ -24,6 +24,10 @@ interface FakeBehavior {
   unlockReturns?: boolean;
   /** Throw on the pg_advisory_unlock statement. */
   unlockError?: Error;
+  /** `reserve()` rejects: no lock-pool connection to be had. */
+  reserveError?: Error;
+  /** Throw on the set_config('lock_timeout') statement. */
+  setConfigError?: Error;
 }
 
 function makeFakePool(behavior: FakeBehavior) {
@@ -34,6 +38,8 @@ function makeFakePool(behavior: FakeBehavior) {
     const text = strings.join('?');
     statements.push(text);
     boundValues.push(values);
+    if (text.includes("set_config('lock_timeout'") && behavior.setConfigError)
+      return Promise.reject(behavior.setConfigError);
     if (text.includes('pg_advisory_lock(')) {
       if (behavior.acquireError) return Promise.reject(behavior.acquireError);
       return Promise.resolve([]);
@@ -47,9 +53,11 @@ function makeFakePool(behavior: FakeBehavior) {
   (reserved as unknown as { release: typeof release }).release = release;
   const pool = {
     reserve: () =>
-      behavior.reserveDelayMs === undefined
-        ? Promise.resolve(reserved)
-        : new Promise((resolve) => setTimeout(() => resolve(reserved), behavior.reserveDelayMs)),
+      behavior.reserveError
+        ? Promise.reject(behavior.reserveError)
+        : behavior.reserveDelayMs === undefined
+          ? Promise.resolve(reserved)
+          : new Promise((resolve) => setTimeout(() => resolve(reserved), behavior.reserveDelayMs)),
   } as unknown as Sql;
   return { pool, statements, boundValues, release };
 }
@@ -67,6 +75,12 @@ describe('createMailboxActionLock', () => {
   function loggedKinds(): string[] {
     return errorSpy.mock.calls.map(
       (c: unknown[]) => (JSON.parse(String(c[0])) as { kind: string }).kind,
+    );
+  }
+
+  function loggedStages(): string[] {
+    return errorSpy.mock.calls.map(
+      (c: unknown[]) => (JSON.parse(String(c[0])) as { stage?: string }).stage ?? '(none)',
     );
   }
 
@@ -118,6 +132,36 @@ describe('createMailboxActionLock', () => {
     // The blind case: no unlock statement, no unlock_failed false alarm.
     expect(statements.some((s) => s.includes('pg_advisory_unlock('))).toBe(false);
     expect(loggedKinds()).toEqual(['mailbox_lock.acquire_failed']);
+    expect(loggedStages()).toEqual(['advisory_lock']);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  // Before 2026-09-27 these two failures happened outside the only catch
+  // that logged, so the only lock line was the info-level timing line,
+  // which the lock alert does not page on.
+  it('a lock-pool checkout that fails logs acquire_failed and rethrows', async () => {
+    const refused = new Error('CONNECT_TIMEOUT');
+    const { pool, statements } = makeFakePool({ reserveError: refused });
+    const lock = createMailboxActionLock(pool);
+    const fn = vi.fn();
+    await expect(lock.run('mailbox-1', fn)).rejects.toThrow('CONNECT_TIMEOUT');
+    expect(fn).not.toHaveBeenCalled();
+    expect(statements).toEqual([]);
+    expect(loggedKinds()).toEqual(['mailbox_lock.acquire_failed']);
+    expect(loggedStages()).toEqual(['reserve']);
+  });
+
+  it('a lock_timeout that cannot be set logs acquire_failed, never unlocks, and releases', async () => {
+    const { pool, statements, release } = makeFakePool({
+      setConfigError: new Error('connection terminated'),
+    });
+    const lock = createMailboxActionLock(pool);
+    const fn = vi.fn();
+    await expect(lock.run('mailbox-1', fn)).rejects.toThrow('connection terminated');
+    expect(fn).not.toHaveBeenCalled();
+    expect(statements.some((s) => s.includes('pg_advisory_unlock('))).toBe(false);
+    expect(loggedKinds()).toEqual(['mailbox_lock.acquire_failed']);
+    expect(loggedStages()).toEqual(['set_lock_timeout']);
     expect(release).toHaveBeenCalledOnce();
   });
 
