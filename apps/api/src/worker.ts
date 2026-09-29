@@ -415,10 +415,11 @@ async function bootstrap(): Promise<void> {
   // imports). Cloud Run worker rev 12 + 13 hung at `initSentry_begin`;
   // rev 14 + 15 hung at `createSentryWorkerObserver_begin` even with
   // `defaultIntegrations: false`. The correct long-term fix is to
-  // preload Sentry via `node --import @sentry/node/preload …` BEFORE
-  // `@swc-node/register` so OTel auto-instrumentation patches modules
-  // at load time, not after. Tracked in FOUNDER-FOLLOWUPS as the
-  // "Sentry preload on worker" item.
+  // preload Sentry via `node --import @sentry/node/import …` BEFORE
+  // `@swc-node/register` so the v11 diagnostics-channel hook (including
+  // Anthropic auto-capture) patches modules at load time, not after.
+  // `/preload` was removed in Sentry 11. Tracked in FOUNDER-FOLLOWUPS
+  // as the "Sentry preload on worker" item.
   //
   // Until then this gate keeps the worker boot reliable: set
   // `WORKER_SENTRY_ENABLED=true` to opt in once the preload flag is
