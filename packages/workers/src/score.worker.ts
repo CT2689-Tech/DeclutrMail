@@ -588,15 +588,38 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   protected override getIdempotencyKey(payload: ScoreJobData): string {
-    // `${mailbox_id}:${sender_key}:${produced_at}` per the task spec.
-    // `'*'` for the all-senders sync_complete sweep so its key is stable;
-    // `'subset'` for a named set, so it never collides with either.
-    const scope = payload.senderKey ?? (payload.senderKeys ? 'subset' : '*');
-    const key = `${payload.mailboxAccountId}:${scope}:${payload.producedAtMs}`;
+    // `BaseDeclutrWorker.run()` calls this via `?.()` BEFORE its own try
+    // block — purely to log a telemetry reference on `worker.started` —
+    // so it must never throw. `scoreJobId` throws by design for callers
+    // that can fail loudly (rescoreSenders, the HTTP controller); a
+    // malformed queued payload here instead needs to reach `processJob`'s
+    // own `ValidationError` guard below, which is what gives it a
+    // captured failure and a `dead_letter_jobs` row. Without this catch,
+    // a payload missing `mailboxAccountId` threw here as a raw TypeError
+    // with no log line, no Sentry event and nothing dead-lettered — that
+    // guard was unreachable (2026-09-28). `payload` itself, not only its
+    // fields, can be nullish — BullMQ stores an enqueued `data: null`
+    // verbatim and hands it back as `null` — so every access below uses
+    // `?.`, including in this catch: the first version of this fallback
+    // still read `payload.mailboxAccountId` unguarded and threw again,
+    // for a null payload, from inside the catch meant to prevent exactly
+    // that (caught by silent-failure-hunter before merge, 2026-09-28).
+    //
+    // This is a telemetry label only (`worker.started`'s `idempotencyRef`),
+    // not the real BullMQ jobId: the `senderKeys` (Gmail tab recount)
+    // producer sets its own `rescoreJobId(mailboxAccountId, sweepTick)` at
+    // the composition root, independent of this label.
+    let key: string;
+    try {
+      key = scoreJobId(payload);
+    } catch {
+      const scope = payload?.senderKey ?? (payload?.senderKeys ? 'subset' : '*');
+      key = `${payload?.mailboxAccountId ?? '?'}:${scope}:${payload?.producedAtMs ?? '?'}`;
+    }
     // An explain job's `producedAtMs` is the row version it explains —
     // the same number the re-score that wrote that row carried. Marked, so
     // the two never share an `idempotencyRef` in the logs.
-    return payload.trigger === 'explain' ? `explain:${key}` : key;
+    return payload?.trigger === 'explain' ? `explain:${key}` : key;
   }
 
   override async processJob(payload: ScoreJobData, _ctx: WorkerContext): Promise<ScoreJobResult> {
@@ -1873,6 +1896,48 @@ export function isWorthScreening(signals: SenderSignals): boolean {
 /** Queue name + job name for the score worker (matches initial-sync pattern). */
 export const SCORE_QUEUE = 'score';
 export const SCORE_JOB = 'score';
+
+/**
+ * The worker's `getIdempotencyKey` telemetry label, in the same
+ * `${mailboxAccountId}:${scope}:${producedAtMs}` shape most producers'
+ * real BullMQ `jobId` also uses, where `scope` is `senderKey` if set,
+ * else `'subset'` for a named `senderKeys` set (a Gmail tab recount),
+ * else `'*'` for the all-senders sweep.
+ *
+ * NOT every producer's real jobId: the Gmail tab recount producer
+ * (`onSendersRecategorized`, `apps/api/src/worker.ts`) sets its own
+ * `rescoreJobId(mailboxAccountId, sweepTick)`, independent of this
+ * function, so for that trigger the logged label and the real jobId use
+ * the same SHAPE but different values — `producedAtMs` (this label)
+ * versus `sweepTick` (the real id). Every other live producer's real
+ * jobId does match this function's output exactly.
+ *
+ * New ids use hyphens (BullMQ throws "Custom Id cannot contain :"). This
+ * one predates that rule and is accepted only because bullmq 6 allows
+ * exactly two colons (measured in `domain-icon.queue.ts`); neither a
+ * mailbox uuid nor a sha256 sender key holds a colon, so the count stays
+ * fixed — enforced below, not merely assumed.
+ */
+export function scoreJobId(
+  job: Pick<ScoreJobData, 'mailboxAccountId' | 'senderKey' | 'senderKeys' | 'producedAtMs'>,
+): string {
+  // `senderKey` is `string`, not a branded sha256 type, so this
+  // function — not its callers' input validation — is what actually
+  // keeps the colon count fixed. `POST /api/triage/score-sender` checks
+  // shape too (`asSenderKey`, `triage.controller.ts`), but this is the
+  // one guard every producer shares, including any future one that
+  // doesn't. A caller-supplied colon would otherwise silently change
+  // which sender's re-score this id names, or make BullMQ reject the
+  // `Queue.add` outright. Fail loudly
+  // instead of building an id whose colon count nobody chose.
+  // `senderKeys` collapses to the literal `'subset'` below, so it needs
+  // no colon check of its own — none of its entries reach the id.
+  if (job.mailboxAccountId.includes(':') || job.senderKey?.includes(':')) {
+    throw new Error('scoreJobId: mailboxAccountId/senderKey must not contain ":"');
+  }
+  const scope = job.senderKey ?? (job.senderKeys ? 'subset' : '*');
+  return `${job.mailboxAccountId}:${scope}:${job.producedAtMs}`;
+}
 
 /**
  * `explain` jobs ride their own queue, consumed by the same `ScoreWorker`.

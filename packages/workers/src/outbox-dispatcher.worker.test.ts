@@ -5,7 +5,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import { eq } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { outboxEvents, schema } from '@declutrmail/db';
@@ -19,6 +19,7 @@ import {
   type OutboxObserver,
 } from './outbox-dispatcher.worker.js';
 import { OutboxPublisher } from './outbox-publisher.js';
+import type { BackgroundFailureContext } from './worker-observer.js';
 
 /** Shared schemas for the test publishes (mirror what production callers pass). */
 const VerdictPayload = z.object({ verdict: z.string() }).strict();
@@ -72,7 +73,12 @@ async function freshDb(): Promise<{ db: Db; pg: PGlite }> {
 function makeDispatcher(
   db: Db,
   consumer: OutboxConsumer,
-  opts: { pg?: PGlite; pollIntervalMs?: number; maxAttempts?: number } = {},
+  opts: {
+    pg?: PGlite;
+    pollIntervalMs?: number;
+    maxAttempts?: number;
+    observer?: OutboxObserver;
+  } = {},
 ): OutboxDispatcherWorker {
   return new OutboxDispatcherWorker({
     // PGlite client is structurally compatible with PostgresJsDatabase for
@@ -81,6 +87,7 @@ function makeDispatcher(
     consumer,
     pollIntervalMs: opts.pollIntervalMs ?? 60_000, // off by default in unit tests
     maxAttempts: opts.maxAttempts ?? 5,
+    ...(opts.observer ? { observer: opts.observer } : {}),
     ...(opts.pg
       ? {
           listen: async (handler) => {
@@ -298,6 +305,62 @@ describe('OutboxDispatcherWorker', () => {
     expect(third.claimed).toBe(0);
   });
 
+  it('logs every consumer failure, and hands the row it gives up on to the observer once', async () => {
+    const { db, pg } = await freshDb();
+    activePg = pg;
+    await db.transaction(async (tx) => {
+      await new OutboxPublisher().publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'op-report',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+    const captured: BackgroundFailureContext[] = [];
+    const dispatcher = makeDispatcher(
+      db,
+      async () => {
+        throw new Error('always broken');
+      },
+      {
+        maxAttempts: 2,
+        observer: { captureBackgroundFailure: (_error, context) => void captured.push(context) },
+      },
+    );
+    activeDispatcher = dispatcher;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Attempt 1: retried later, so logged but not captured.
+      await dispatcher.tick();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('outbox.dispatch.consumer_failed'));
+      expect(captured).toEqual([]);
+
+      // Attempt 2 flips the row to `failed`: nothing will claim it again.
+      await dispatcher.tick();
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('outbox.dispatch.event_failed'));
+      expect(captured).toHaveLength(1);
+      // `topic`/`event_id` MUST be under `tags` — the production adapter
+      // (`sentry-worker-observer.ts`) reads only `kind` and `tags`, and a
+      // sibling of `kind` reaches it and is silently dropped. This is the
+      // exact shape of the 2026-09-28 regression.
+      expect(captured[0]).not.toHaveProperty('topic');
+      expect(captured[0]).not.toHaveProperty('eventId');
+      expect(captured[0]).toEqual(
+        expect.objectContaining({
+          kind: 'outbox.dispatch.event_failed',
+          tags: expect.objectContaining({ topic: 'triage.verdict_applied' }),
+        }),
+      );
+
+      await dispatcher.tick();
+      expect(captured).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  });
+
   it('isolates a panicking consumer: other rows in the same batch still dispatch', async () => {
     const { db, pg } = await freshDb();
     activePg = pg;
@@ -508,7 +571,7 @@ describe('OutboxDispatcherWorker', () => {
     const { db, pg } = await freshDb();
     activePg = pg;
 
-    const captured: Array<{ error: unknown; context: Record<string, unknown> }> = [];
+    const captured: Array<{ error: unknown; context: BackgroundFailureContext }> = [];
     const observer: OutboxObserver = {
       captureBackgroundFailure: (error, context) => {
         captured.push({ error, context });
@@ -529,9 +592,12 @@ describe('OutboxDispatcherWorker', () => {
     await dispatcher.tick();
 
     expect(captured.length).toBeGreaterThanOrEqual(1);
+    // `worker` rides under `tags` — a sibling of `kind` is silently
+    // dropped by the production adapter (`BackgroundFailureContext` has
+    // no such field). See `reportConsumerFailure`'s regression test below.
     expect(captured[0]?.context).toMatchObject({
       kind: 'outbox.dispatch.tick_failed',
-      worker: 'OutboxDispatcherWorker',
+      tags: { worker: 'OutboxDispatcherWorker' },
     });
   });
 

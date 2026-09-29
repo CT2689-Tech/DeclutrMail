@@ -37,6 +37,13 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   'job_id',
   'mailbox_account_id',
   'kind',
+  // Outbox dispatcher's `event_failed`/`consumer_failed` tags (D13).
+  // `topic` is a closed set from `TOPICS`; `event_id` is the
+  // `outbox_events.id` uuid. Without these, a permanently lost outbox
+  // event reached Sentry as a bare `kind` with no way to tell which
+  // event was dropped (2026-09-28).
+  'topic',
+  'event_id',
   // Upstream provider reason (Gmail `error.errors[0].reason`). A closed
   // vendor enum — `SAFE_SERVER_TAG` still rejects anything with a space or
   // an '@', so no prose can ride in on it. Added 2026-08-06: with
