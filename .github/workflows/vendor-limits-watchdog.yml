@@ -7,12 +7,14 @@
 # `cron:` line, per that account's notification settings — same alert
 # channel as the sync-stuck watchdog.
 #
-# Red means something NEW. A failing vendor row listed in
-# scripts/known-vendor-issues.tsv (vendor + status, until a date) prints
-# as a warning and does not fail the run; a missing or malformed list
-# does. Before that list, Anthropic's standing ERROR held this red every
-# day from at least 2026-09-21, and the Sentry and Google Cloud budget
-# breaches of 2026-09-24/25 changed nothing anyone saw.
+# Red means something NEW. A failing vendor row prints as a warning and
+# does not fail the run only when scripts/known-vendor-issues.tsv lists
+# each of its failing causes (vendor, status, the cause's text, a ceiling
+# on its value or - when it has none, until a date); a missing or
+# malformed list fails the run. Before that list, Anthropic's standing
+# ERROR held this red every day from at least 2026-09-21, and the Sentry
+# and Google Cloud budget breaches of 2026-09-24/25 changed nothing
+# anyone saw.
 #
 # Secrets resolve to empty strings when absent, which the script maps
 # to UNCONFIGURED (skipped, listed in the run summary). The watchdog is
@@ -73,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
 
@@ -142,7 +144,7 @@ jobs:
 
       - name: Retain daily snapshot even when a vendor fails
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: infra-snapshot-${{ github.run_id }}
           path: ${{ runner.temp }}/infra-snapshot.json
@@ -157,7 +159,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Validate encrypted triage contracts
@@ -170,7 +172,7 @@ jobs:
           SENTRY_TRIAGE_OUTPUT: ${{ runner.temp }}/sentry-triage.encrypted.json
         run: node scripts/sentry-private-triage.mjs
       - name: Retain encrypted report only
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sentry-triage-encrypted-${{ github.run_id }}
           path: ${{ runner.temp }}/sentry-triage.encrypted.json
@@ -187,7 +189,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
       - name: Verify existing snapshot provenance
@@ -195,8 +197,12 @@ jobs:
           SNAPSHOT_RUN_ID: ${{ inputs.snapshot_run_id }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/validate-finance-snapshot-source.mjs
+      # The collect job still archives this snapshot as a zip. v8 extracts
+      # zip artifacts into `path`, so the file lands at
+      # finance-snapshot/infra-snapshot.json. The artifact name matches
+      # the collect job: infra-snapshot-<run id>.
       - name: Download existing operational snapshot only
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: infra-snapshot-${{ inputs.snapshot_run_id }}
           run-id: ${{ inputs.snapshot_run_id }}

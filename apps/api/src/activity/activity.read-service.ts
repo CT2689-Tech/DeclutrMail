@@ -466,6 +466,8 @@ export class ActivityReadService {
         roots.flatMap((root) => (root.selector.type === 'sender' ? [root.selector.senderKey] : [])),
       ),
     ];
+    // ADR-0008 §3 exception: activity reads the senders-owned `senders`
+    // for display names (read-only).
     const senderRows =
       senderKeys.length === 0
         ? []
@@ -544,6 +546,8 @@ export class ActivityReadService {
       );
     }
 
+    // ADR-0008 §3 exception: the feed joins the senders-owned `senders`
+    // (display name) and the autopilot-owned `automation_rules` (rule name).
     const rows = await this.db
       .select({
         id: activityLog.id,
@@ -703,6 +707,10 @@ export class ActivityReadService {
         )!,
       );
     }
+    // ADR-0008 §3 exception: activity reads the autopilot-owned
+    // `rule_match_log` (dismissed suggestions only) — a skipped or
+    // Protection-blocked suggestion is recorded nowhere else — joined to
+    // `automation_rules` (rule name, verb) and `senders` (display name).
     const rows = await this.db
       .select({
         id: ruleMatchLog.id,
@@ -803,6 +811,9 @@ export class ActivityReadService {
             ...(activityScope ? [activityScope] : []),
           ),
         ),
+      // ADR-0008 §3 exception: activity reads the autopilot-owned
+      // `rule_match_log` (dismissed suggestions only), counted beside
+      // `activity_log` and `action_jobs` under the same sender filter.
       this.db
         .select({ reason: ruleMatchLog.dismissReason, n: count(ruleMatchLog.id) })
         .from(ruleMatchLog)
@@ -1010,6 +1021,8 @@ export class ActivityReadService {
     senderKeyColumn: SQLWrapper = activityLog.senderKey,
   ): SQL | null {
     if (senderQuery.length === 0) return null;
+    // ADR-0008 §3 exception: the sender search reads the senders-owned
+    // `senders` (display name, email) to resolve matching keys.
     const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
     return inArray(
       senderKeyColumn,

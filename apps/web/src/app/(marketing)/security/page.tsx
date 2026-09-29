@@ -17,6 +17,7 @@
 // 21 Apr 2027 as the operative deadline.
 
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import {
   CASA_VERIFICATION_APPROVED_MONTH,
   CASA_VERIFICATION_APPROVED_ON,
@@ -31,6 +32,7 @@ import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/
 import '@/features/marketing/product-story/product-story.css';
 import { DocPage, DocSection } from '@/features/marketing/product-story';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
+import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 export const metadata: Metadata = marketingPageMetadata({
@@ -39,7 +41,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/security',
 });
 
-const LAST_UPDATED = '2026-08-07';
+const LAST_UPDATED = PAGE_LAST_UPDATED['/security'];
 
 const TOC = [
   { id: 'the-boundary', label: 'What we store' },
@@ -158,7 +160,7 @@ export default function SecurityPage() {
           window. Undo windows run {MIN_UNDO_WINDOW_DAYS} days on every plan, so a recent action
           commonly puts deletion up to {MAX_UNDO_WINDOW_DAYS} days out; you can waive both with a
           typed confirmation to delete immediately. Details are in the{' '}
-          <a href="/privacy">Privacy Policy</a>.
+          <Link href="/privacy">Privacy Policy</Link>.
         </p>
       </DocSection>
 

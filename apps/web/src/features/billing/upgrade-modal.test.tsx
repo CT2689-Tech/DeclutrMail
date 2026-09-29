@@ -189,6 +189,37 @@ describe('UpgradeModal', () => {
     );
   });
 
+  it('pro_feature (Plus-gated): names the plan and offers the Plus path', () => {
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByText('This feature is part of Plus')).toBeInTheDocument();
+    expect(screen.getByText('Plus unlocks this feature.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=plus&cycle=monthly',
+    );
+  });
+
+  it('pro_feature (Pro-gated): names the plan and offers the Pro path', () => {
+    mockTier = 'plus';
+    useUpgradeGateStore.getState().report({
+      reason: 'pro_feature',
+      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
+    });
+    render(<UpgradeModal />);
+
+    expect(screen.getByText('This feature is part of Pro')).toBeInTheDocument();
+    expect(screen.getByText('Pro unlocks this feature.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+      'href',
+      '/billing?plan=pro&cycle=monthly',
+    );
+  });
+
   it('inbox_limit on Plus: upgrade nudge toward Pro', () => {
     mockTier = 'plus';
     useUpgradeGateStore

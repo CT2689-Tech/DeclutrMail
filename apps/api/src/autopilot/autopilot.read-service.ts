@@ -37,6 +37,7 @@ import type { SQL } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESET_KEYS,
   activityLog,
   type AutopilotPresetKey,
@@ -46,7 +47,10 @@ import {
   automationRules,
   mailMessages,
   mailboxAccounts,
+  ruleMatchIsOfferableSuggestion,
+  ruleMatchIsPendingSuggestion,
   ruleMatchLog,
+  ruleMatchSenderIsProtected,
   workspaces,
   senderPolicies,
   senders,
@@ -56,7 +60,6 @@ import {
 import {
   addCoalescedJob,
   AUTOPILOT_ACTION_JOB,
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESETS,
   autopilotActionSweepJobOptions,
   materializeAutopilotSignals,
@@ -99,73 +102,16 @@ const OBSERVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Preview sample size — D103's "10-row sample list". */
 const PREVIEW_SAMPLE_SIZE = 10;
 
-/**
- * A pending suggestion is offerable only while the sender row it was
- * computed FROM is still the one in the index.
- *
- * A match is a claim about a sender's volume, read rate and recency.
- * The initial-sync rebuild tears `senders` down and re-inserts it
- * (`initial-sync.worker.ts` — delete + reinsert IS the reconciliation),
- * so after any resync every surviving match describes mail this mailbox
- * no longer holds. On the founder's dev mailbox, ten days after a
- * reconnect: 6,244 pending matches, of which **32** pointed at sender
- * keys that existed nowhere and **5,978** at rows the rebuild had
- * re-created — only 234 were genuinely current. Existence alone is
- * therefore the wrong test; it catches 0.5% of the bad rows and lets a
- * stale suggestion RESURRECT the instant its sender is re-inserted.
- *
- * `created_at <= matched_at` is the exact test: the sweep reads senders
- * and then writes the match, so a legitimate pair always satisfies it,
- * and incremental sync upserts (`onConflictDoUpdate`) never move
- * `created_at`. Only a full rebuild — the one event that invalidates
- * the evidence — makes it false.
- *
- * `initial-sync.worker.ts` now deletes pending matches inside the same
- * rebuild transaction, so this predicate is the guard for mailboxes
- * that were already rebuilt before that shipped.
- *
- * Written with `sql.raw` on purpose: an interpolated Drizzle column
- * emits a BARE name, which inside this subquery would bind to `s` and
- * degenerate into `s.x = s.x` (see LEARNINGS — correlated-subquery
- * pitfall). The outer table must be named explicitly.
- */
-const SENDER_INDEXED_AT_MATCH_TIME: SQL = sql`exists (
-  select 1
-  from senders s
-  where s.mailbox_account_id = ${sql.raw('rule_match_log.mailbox_account_id')}
-    and s.sender_key = ${sql.raw('rule_match_log.sender_key')}
-    and s.created_at <= ${sql.raw('rule_match_log.matched_at')}
-)`;
-
-/**
- * A pending match is Protected when the sender it names carries
- * `sender_policies.is_protected = true` RIGHT NOW — protection can be
- * set any time after the match was logged. The execution-time guard in
- * `autopilot-action.worker.ts` re-checks this and dismisses an already-
- * approved match with `dismissReason:'protected'`, so both the pending
- * list and the approve endpoints must apply the same check — otherwise
- * the list offers, and approve counts, suggestions the worker will
- * silently refuse to execute.
- */
-const SENDER_IS_PROTECTED: SQL = sql`exists (
-  select 1
-  from sender_policies sp
-  where sp.mailbox_account_id = ${sql.raw('rule_match_log.mailbox_account_id')}
-    and sp.sender_key = ${sql.raw('rule_match_log.sender_key')}
-    and sp.is_protected = true
-)`;
-
 /** D246 repeated-decision evidence and dismissal windows. */
 const PATTERN_EVIDENCE_WINDOW_DAYS = 30;
 const PATTERN_EVIDENCE_MIN_SENDERS = 3;
 const PATTERN_PRESET_KEYS = ['auto_archive_low_engagement', 'auto_unsubscribe_noisy'] as const;
 
 /**
- * `'<prefix>' || rule_match_log.id::text` for each exported worker
- * claim-key prefix — the correlated forms the D251 demotion matches
- * `action_jobs.idempotency_key` against. Built from
- * `AUTOPILOT_CLAIM_KEY_PREFIXES` so the SQL cannot drift from
- * `claimKey` in the action worker.
+ * `'<prefix>' || rule_match_log.id::text` for each claim-key prefix — the
+ * correlated forms the D251 demotion matches `action_jobs.idempotency_key`
+ * against. Built from `AUTOPILOT_CLAIM_KEY_PREFIXES` (`@declutrmail/db`)
+ * so the SQL cannot drift from `claimKey` in the action worker.
  */
 function claimKeySqlForms(): SQL {
   return sql.join(
@@ -258,6 +204,11 @@ export class AutopilotReadService {
           eq(triageDecisions.mailboxAccountId, activityLog.mailboxAccountId),
           eq(triageDecisions.senderKey, activityLog.senderKey),
           sql`${triageDecisions.verdict}::text = ${automationRules.actionKind}::text`,
+          // Not a verdict the Gmail tab recount marked stale (expired AS
+          // OF its own production) — the apply sweep reads those as "no
+          // decision" (`materializeAutopilotSignals`), so evidence for a
+          // suggested rule must not count them either.
+          sql`${triageDecisions.expiresAt} <> ${triageDecisions.producedAt}`,
           // A NULL stored threshold means "use the preset default" at
           // runtime. Keep pattern evidence aligned with the apply worker's
           // effective threshold so resetting a rule cannot accidentally
@@ -406,11 +357,16 @@ export class AutopilotReadService {
    * D10/D101 — per-rule Observe-mode digest, one grouped query for the
    * mailbox. For every rule with Observe-mode match history:
    *
-   *   - `pendingTotal` — all pending Observe rows (uncapped; the
-   *     honest gate for the day-7 prompt, unlike the 50-row page).
-   *   - `senders7d`    — distinct senders matched in the last 7 days.
-   *   - `inboxMessagesNow` — INBOX messages those senders hold RIGHT NOW
-   *     (LEFT JOIN mail_messages, same resolution the action sweep
+   *   - `pendingTotal` — every offerable suggestion, uncapped: the SAME
+   *     predicate as the pending list and both approve paths
+   *     (`ruleMatchIsOfferableSuggestion`), so "Approve all ~N" and the
+   *     day-7 prompt never count a suggestion approve would skip.
+   *   - `senders7d`    — distinct senders matched in the last 7 days,
+   *     excluding senders Protected now: no sweep or approve acts on
+   *     them (D245), and the unsubscribe copy renders this number as
+   *     "would have requested unsubscribe from N senders".
+   *   - `inboxMessagesNow` — INBOX messages those same senders hold RIGHT
+   *     NOW (LEFT JOIN mail_messages, same resolution the action sweep
    *     uses). NOT windowed, deliberately: `recent` bounds
    *     `rule_match_log.matched_at`, and the join carries no
    *     `internal_date` predicate, so a sender who matched once
@@ -435,6 +391,9 @@ export class AutopilotReadService {
       const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
       const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
       const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
+      // Both sender-based numbers read this one set, so they can never
+      // describe different senders.
+      const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()})`;
       const scope = and(
         eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
         eq(ruleMatchLog.modeAtMatch, 'observe'),
@@ -448,17 +407,17 @@ export class AutopilotReadService {
           senderKey: ruleMatchLog.senderKey,
         })
         .from(ruleMatchLog)
-        .where(and(scope, recent))
+        .where(and(scope, recentUnprotected))
         .as('recent_observe_senders');
       const counts = this.db
         .select({
           ruleId: ruleMatchLog.ruleId,
           pendingTotal:
-            sql<number>`count(*) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`.as(
+            sql<number>`count(*) filter (where ${ruleMatchIsOfferableSuggestion()})::int`.as(
               'pending_total',
             ),
           senders7d:
-            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`.as(
+            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recentUnprotected})::int`.as(
               'senders_7d',
             ),
         })
@@ -749,8 +708,8 @@ export class AutopilotReadService {
    * (the `abandonStaleClaim` pattern) — excluding those rows left them
    * `approved, intent_applied=false` forever, primed to execute on a
    * re-upgrade (arch-gate finding, 2026-08-04). Claim keys build from
-   * the worker's exported `AUTOPILOT_CLAIM_KEY_PREFIXES`, so the two
-   * sides cannot drift. A sweep already in flight during the downgrade
+   * `AUTOPILOT_CLAIM_KEY_PREFIXES` (`@declutrmail/db`), so the two sides
+   * cannot drift. A sweep already in flight during the downgrade
    * can still claim a just-dismissed row; its completion only flips
    * `intent_applied`/`intent_token`, so the row stays consistent and
    * the applied action keeps its undo path.
@@ -951,13 +910,7 @@ export class AutopilotReadService {
         ),
       )
       .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.modeAtMatch, 'observe'),
-          eq(ruleMatchLog.resolution, 'pending'),
-          SENDER_INDEXED_AT_MATCH_TIME,
-          sql`not ${SENDER_IS_PROTECTED}`,
-        ),
+        and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsOfferableSuggestion()),
       )
       .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
       .limit(PAGE_SIZE);
@@ -1118,10 +1071,7 @@ export class AutopilotReadService {
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           inArray(ruleMatchLog.id, matchIds),
-          eq(ruleMatchLog.modeAtMatch, 'observe'),
-          eq(ruleMatchLog.resolution, 'pending'),
-          SENDER_INDEXED_AT_MATCH_TIME,
-          sql`not ${SENDER_IS_PROTECTED}`,
+          ruleMatchIsOfferableSuggestion(),
         ),
       )
       .returning({ id: ruleMatchLog.id });
@@ -1137,9 +1087,8 @@ export class AutopilotReadService {
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           inArray(ruleMatchLog.id, matchIds),
-          eq(ruleMatchLog.resolution, 'pending'),
-          SENDER_INDEXED_AT_MATCH_TIME,
-          SENDER_IS_PROTECTED,
+          ruleMatchIsPendingSuggestion(),
+          ruleMatchSenderIsProtected(),
         ),
       );
     const skippedProtectedCount = protectedSkip?.n ?? 0;
@@ -1198,10 +1147,7 @@ export class AutopilotReadService {
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           eq(ruleMatchLog.ruleId, ruleId),
-          eq(ruleMatchLog.modeAtMatch, 'observe'),
-          eq(ruleMatchLog.resolution, 'pending'),
-          SENDER_INDEXED_AT_MATCH_TIME,
-          sql`not ${SENDER_IS_PROTECTED}`,
+          ruleMatchIsOfferableSuggestion(),
         ),
       )
       .returning({ id: ruleMatchLog.id });
@@ -1216,9 +1162,8 @@ export class AutopilotReadService {
         and(
           eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
           eq(ruleMatchLog.ruleId, ruleId),
-          eq(ruleMatchLog.resolution, 'pending'),
-          SENDER_INDEXED_AT_MATCH_TIME,
-          SENDER_IS_PROTECTED,
+          ruleMatchIsPendingSuggestion(),
+          ruleMatchSenderIsProtected(),
         ),
       );
     const skippedProtectedCount = protectedSkip?.n ?? 0;

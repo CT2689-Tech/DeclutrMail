@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 
 import {
   ACTION_SAFETY_SUMMARY,
@@ -1154,7 +1155,7 @@ export function InboxSimulatorScreen() {
           >
             Start free
           </TrackedCta>
-          <a href="/methodology">See privacy and control details</a>
+          <Link href="/methodology">See privacy and control details</Link>
         </div>
         <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
@@ -1163,7 +1164,7 @@ export function InboxSimulatorScreen() {
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
             paid plans are unlimited.
           </span>{' '}
-          <a href="/pricing">Compare plans</a>
+          <Link href="/pricing">Compare plans</Link>
         </aside>
       </section>
 

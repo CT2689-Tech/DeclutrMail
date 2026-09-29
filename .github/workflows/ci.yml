@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
           echo "✓ No negation patterns in the path filters."
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         # Skipped in the queue; the outputs above hard-code `true` there.
         if: github.event_name != 'merge_group'
@@ -178,6 +178,10 @@ jobs:
               - *infra
               - 'apps/web/**'
               - 'packages/shared/**'
+              # build-web runs these; editing only one (a budget raise) must
+              # still run the job that executes it, not wait for the queue.
+              - 'scripts/check-web-bundle-budget.mjs'
+              - 'scripts/check-prerendered-routes.mjs'
             units:
               - *infra
               - 'packages/shared/**'
@@ -199,7 +203,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -226,7 +230,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -249,15 +253,20 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        # Full history: the guard-hook step diffs against the PR, queue or
+        # push base, which a depth-1 checkout does not contain. The runner
+        # fails closed on a base it cannot read rather than checking nothing.
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
@@ -272,8 +281,28 @@ jobs:
         run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs
       - name: No personal email addresses in tracked files (D7)
         run: node --test scripts/personal-email-guard.test.mjs
+      # The .claude/hooks guards only ran on edits made through Claude Code,
+      # and signalled violations with an exit code the agent never sees, so
+      # CLAUDE.md's "Enforced by … hook" held for nothing (2026-09-27). This
+      # feeds every changed file to every registered guard. It fails on a
+      # violation, and fails closed on an unreadable base, an empty diff, or
+      # a guard that is missing, crashes or misses its positive control.
+      # Pre-existing findings live in scripts/guard-hooks-allowlist.json.
+      - name: Guard-hook runner contracts
+        run: node --test scripts/run-guard-hooks.test.mjs
+      - name: Tier 1 guard hooks (D7, D222, D227)
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            node scripts/run-guard-hooks.mjs --all
+          else
+            node scripts/run-guard-hooks.mjs --base "$BASE_SHA"
+          fi
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
+      - name: Bundle budget contracts (served-HTML measure, fails closed)
+        run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
       # fails when a committed file disagrees. Nothing else covers these:
       # a stale favicon or app icon passes typecheck, the suite and every
@@ -289,7 +318,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -323,7 +352,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -385,7 +414,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -410,7 +439,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -426,7 +455,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -442,7 +471,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -456,7 +485,9 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: '1'
       # D160's other unbuilt check. See the script header for what the
-      # numbers mean and why they are a ratchet rather than a target.
+      # numbers mean and why they are a ratchet rather than a target. It
+      # serves this build with `next start` on a free port and fetches
+      # every route itself, so it needs no other server.
       - name: Enforce the public bundle budget
         run: node scripts/check-web-bundle-budget.mjs
       # One per-request read in a shared node silently un-statics the
@@ -471,7 +502,7 @@ jobs:
           NEXT_TELEMETRY_DISABLED: '1'
       - name: Upload Lighthouse reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-reports
           path: apps/web/.lighthouseci/
@@ -492,7 +523,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -647,7 +678,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -794,7 +825,7 @@ jobs:
           node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
       - name: Upload accessibility diagnostics
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: accessibility-diagnostics
           if-no-files-found: ignore

@@ -75,8 +75,9 @@ export {
   SyncStatusSchema,
   SyncReadinessSchema,
   SyncStageSchema,
+  SyncMessageProgressSchema,
 } from './sync-status';
-export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
+export type { SyncStatus, SyncReadiness, SyncStage, SyncMessageProgress } from './sync-status';
 
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {

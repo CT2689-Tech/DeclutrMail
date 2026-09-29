@@ -323,6 +323,12 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         // the action worker flipping `intent_applied=true` concurrently
         // only makes the check conservative (skip now, re-arm next
         // sweep once the sender is actionable again).
+        //
+        // Approved and unapplied, deliberately NOT `ruleMatchIsQueuedAction()`:
+        // a row whose evidence went stale blocks here too, though the action
+        // sweep never loads it. Letting the rule act on that sender again is
+        // an open founder decision:
+        // docs/log/founder-followups/2026-09-27-stale-autopilot-action-blocks-its-rule.md
         if (modeAtMatch === 'active' && matchesForRule.length > 0) {
           const queuedRows = await this.deps.db
             .select({ senderKey: ruleMatchLog.senderKey })

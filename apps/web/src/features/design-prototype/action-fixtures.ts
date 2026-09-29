@@ -83,6 +83,7 @@ export function toActionSender(sender: SampleSender): Sender {
       unsubStatus: null,
     },
     SAMPLE_NOW,
+    'UTC',
   );
 }
 

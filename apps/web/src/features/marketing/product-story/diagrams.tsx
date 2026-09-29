@@ -316,12 +316,16 @@ export function RecommendationCascadeFigure() {
       'A sender you protect is excluded. Writing to a sender, starring their email, or Gmail marking it important can also protect a sender automatically.',
     ],
     [
+      'Reasons to Keep',
+      'A sender you recently wrote to, or whose recent mail is mostly marked read, is kept. So is a Primary sender with no unsubscribe link.',
+    ],
+    [
       'Enough information?',
       'Very new or low-volume senders become Later instead of forcing a suggestion.',
     ],
     [
       'Compare Archive and Unsubscribe',
-      'DeclutrMail uses facts such as volume, read rate, previous archives, and whether the sender offers unsubscribe.',
+      'DeclutrMail uses facts such as volume, marked-read rate, previous archives, and whether the sender offers unsubscribe.',
     ],
     [
       'Show why',
@@ -341,8 +345,8 @@ export function RecommendationCascadeFigure() {
         ))}
       </ol>
       <p className="dm-story-note">
-        DeclutrMail does not predict email categories. When a Gmail category is present, it is
-        Gmail&rsquo;s own label and only one of the facts DeclutrMail considers.
+        DeclutrMail does not predict email categories. A sender counts as Primary only when Gmail
+        itself filed most of its categorized mail there.
       </p>
     </figure>
   );

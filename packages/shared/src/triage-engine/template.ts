@@ -31,12 +31,14 @@ const RULE_PHRASE = {
     "Protected because you've written to this sender at least three times and heard back.",
   protect_starred: "Protected because you've starred a message from this sender this year.",
   protect_gmail_important:
-    'Protected because Gmail marked at least three messages from this Primary-inbox sender important this year.',
+    'Protected because Gmail marked at least three of their messages important this year.',
   wrote_to_at_least_once: "Kept because you've written to them.",
-  gmail_primary: 'Kept because Gmail puts them in your Primary inbox.',
+  gmail_primary:
+    'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
   starred_recently: "Kept because you've starred a message from them this year.",
-  high_read_rate: 'Kept because you open more than half of their messages.',
-  long_relationship_engaged: 'Kept because of a long, engaged relationship.',
+  high_read_rate: 'Kept because at least half their mail from the last 90 days is marked read.',
+  long_relationship_engaged:
+    "Kept because they've emailed you for 5+ years and 30%+ of the last 90 days is marked read.",
   insufficient_signal: 'Recommended: Later — not enough signal yet.',
   score_archive: 'Recommended: Archive.',
   score_unsubscribe: 'Recommended: Unsubscribe.',

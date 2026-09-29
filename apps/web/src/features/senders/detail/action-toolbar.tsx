@@ -51,15 +51,13 @@ function primaryVerbReason(sender: Sender, highlight: Verdict): string | null {
     // genuinely under six calendar months. State the actual threshold.
     return 'Highlighted because they haven’t emailed you in more than 180 days.';
   }
-  // Codex adversarial review: `deriveDefaultPrimary`'s fallback branch
-  // (not protected, no one-click unsubscribe, `lastSeenDays <= 180`)
-  // lands on `keep` with no distinguishing signal to name — this used to
-  // return `null`, leaving a highlighted button with no explanation.
-  // "No strong signal yet" is the accurate description of that branch:
-  // there genuinely isn't a fact driving the pick, only the absence of
-  // the other three.
+  // `deriveDefaultPrimary`'s fallback branch (not protected, no one-click
+  // unsubscribe, `lastSeenDays <= 180`) lands on `keep`. This used to
+  // return `null` (no explanation), then "no strong signal to Archive or
+  // Unsubscribe", which contradicted an Unsubscribe or Archive suggestion
+  // shown right under it. The reason states only what this rule checked.
   if (highlight === 'keep') {
-    return 'Highlighted because there’s no strong signal to Archive or Unsubscribe yet.';
+    return 'Highlighted because they’ve emailed you in the last 180 days and offer no one-click unsubscribe.';
   }
   return null;
 }

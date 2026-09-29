@@ -43,12 +43,48 @@ import { mailMessages } from './schema/mail-messages';
 export type SenderActionReach = 'inbox_only' | 'all_mail';
 
 /**
- * Labels `all_mail` must never touch. TRASH/SPAM are already on their
- * way out or never wanted; DRAFT/CHAT are not "mail from this sender"
- * in any user's mental model. Kept as one array so the predicate and
- * its tests share the exact list.
+ * Gmail labels that mark an item as NOT MAIL: an unsent draft, or a
+ * saved chat line. Gmail lists both beside real mail, but a draft was
+ * never sent and a chat line was never an email, so neither is mail
+ * from a sender nor mail the user wrote to one.
  */
-export const ALL_MAIL_EXCLUDED_LABELS = ['TRASH', 'SPAM', 'DRAFT', 'CHAT'] as const;
+export const NON_MAIL_LABELS = ['DRAFT', 'CHAT'] as const;
+
+/** `ARRAY['DRAFT','CHAT']::text[]` — static system label ids, safe as raw SQL. */
+function nonMailLabelsArray(): SQL {
+  return sql.raw(`ARRAY[${NON_MAIL_LABELS.map((l) => `'${l}'`).join(',')}]::text[]`);
+}
+
+/**
+ * THE meaning of "replied" for Follow-ups: the tracked thread holds an
+ * inbound message, other than a draft or chat line, after the user's
+ * send. The `mailbox.non_mail_purged` consumer reopens with its negation,
+ * and `FollowupCheckWorker.flipReplied` marks rows replied with it once
+ * PR #791 lands.
+ *
+ * Correlated to the enclosing statement's `followup_tracker` row — its
+ * mailbox, thread and send time — so use it only in a query over that
+ * table, unaliased. Nothing outside the row is taken on trust: a
+ * caller-supplied mailbox could disagree with the row's own.
+ */
+export function followupReplyExists(): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM mail_messages m
+    WHERE m.mailbox_account_id = followup_tracker.mailbox_account_id
+      AND m.provider_thread_id = followup_tracker.provider_thread_id
+      AND m.is_outbound = false
+      AND m.internal_date > followup_tracker.sent_at
+      AND NOT (m.label_ids && ${nonMailLabelsArray()})
+  )`;
+}
+
+/**
+ * Labels `all_mail` must never touch. TRASH/SPAM are already on their
+ * way out or never wanted; drafts and chat lines (`NON_MAIL_LABELS`) are
+ * not "mail from this sender" in any user's mental model. Kept as one
+ * array so the predicate and its tests share the exact list.
+ */
+export const ALL_MAIL_EXCLUDED_LABELS = ['TRASH', 'SPAM', ...NON_MAIL_LABELS] as const;
 
 export interface SenderInboxActionScope {
   mailboxAccountId: string;

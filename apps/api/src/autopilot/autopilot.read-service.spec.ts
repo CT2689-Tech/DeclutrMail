@@ -68,7 +68,7 @@ async function seedMailbox(db: Db, email: string): Promise<string> {
  *
  * The apply worker only ever writes a `rule_match_log` row for a sender
  * it read out of the senders index, and the read service now enforces
- * that ordering (`SENDER_INDEXED_AT_MATCH_TIME`) so a suggestion cannot
+ * that ordering (`ruleMatchIsPendingSuggestion`) so a suggestion cannot
  * outlive — or be resurrected by — a resync that rebuilt the index.
  * Fixtures that insert a bare match must therefore index the sender
  * too, and index it BEFORE the match: `createdAt` is backdated so every
@@ -209,8 +209,11 @@ describe('AutopilotReadService', () => {
         protected?: boolean;
         reverted?: boolean;
         pruned?: boolean;
+        /** Marked stale by the Gmail tab recount: expired AS OF production. */
+        marked?: boolean;
       } = {},
     ) {
+      const producedAt = new Date(Date.now() - 86_400_000);
       await db.insert(triageDecisions).values({
         mailboxAccountId,
         senderKey,
@@ -218,7 +221,8 @@ describe('AutopilotReadService', () => {
         confidence: options.confidence ?? '0.95',
         reasoning: 'Archive pattern evidence',
         generatedBy: 'template',
-        expiresAt: new Date(Date.now() + 86_400_000),
+        producedAt,
+        expiresAt: options.marked ? producedAt : new Date(Date.now() + 86_400_000),
       });
       if (options.protected) {
         await db.insert(senderPolicies).values({
@@ -277,6 +281,19 @@ describe('AutopilotReadService', () => {
         dailyActionCap: 100,
       });
       expect(Object.keys(suggestion!)).not.toContain('senderKey');
+    });
+
+    it('does not count a verdict the Gmail tab recount marked stale', async () => {
+      // A marked verdict was computed from a guessed tab. The apply sweep
+      // reads it as "no decision", so it cannot be evidence that the rule
+      // would have acted.
+      await seedArchiveDecision(mailboxA, 'eligible-1');
+      await seedArchiveDecision(mailboxA, 'eligible-2');
+      await seedArchiveDecision(mailboxA, 'marked', { marked: true });
+      expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
+
+      await seedArchiveDecision(mailboxA, 'eligible-3');
+      expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({ evidenceCount: 3 });
     });
 
     it('keeps reverted evidence excluded after undo-journal pruning clears its token', async () => {
@@ -1472,6 +1489,53 @@ describe('AutopilotReadService', () => {
       expect(rows.find((r) => r.id === okMatch!.id)?.resolution).toBe('approved');
     });
 
+    // "Approve all ~N" and the day-7 prompt read `pendingTotal`; the user
+    // reviews the list; approve-all flips rows. All three must be ONE set.
+    // #715 excluded Protected senders from the list and both approve
+    // UPDATEs but not from the count, so the preview promised a
+    // suggestion the approve then skipped.
+    it('counts, lists and approves the same set when a sender is Protected', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const protectedKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: protectedKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: protectedKey,
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'protected-after-match',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'b'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'unprotected',
+        },
+      ]);
+
+      // Read the count and the list BEFORE approving — approve changes both.
+      const rule = (await svc.listRules(mailboxA)).find((r) => r.id === ruleId);
+      const listed = (await svc.listPendingSuggestions(mailboxA)).filter(
+        (m) => m.ruleId === ruleId,
+      );
+      const approved = await svc.approveAllForRule(mailboxA, ruleId);
+
+      expect(listed.map((m) => m.reason)).toEqual(['unprotected']);
+      expect(rule!.observeDigest?.pendingTotal).toBe(listed.length);
+      expect(approved!.approvedCount).toBe(listed.length);
+      expect(approved!.skippedProtectedCount).toBe(1);
+    });
+
     it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
       const { svc, add } = withQueue();
       const { matchId } = await seedPendingMatch(mailboxA);
@@ -1952,6 +2016,31 @@ describe('AutopilotReadService', () => {
         // now would act on) — it is simply not a 7-day figure, and the
         // copy no longer claims it is.
         inboxMessagesNow: 4,
+      });
+    });
+
+    // No sweep or approve touches a Protected sender (D245), yet the digest
+    // counted it: "Would archive N emails now" included its inbox, and the
+    // unsubscribe copy ("would have requested unsubscribe from N senders")
+    // included the sender itself.
+    it('leaves a Protected sender out of senders7d and inboxMessagesNow', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const recent = new Date(Date.now() - 86_400_000);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: SENDER_1,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await seedPending(mailboxA, ruleId, SENDER_1, recent);
+      await seedPending(mailboxA, ruleId, SENDER_2, recent);
+      await seedMessages(mailboxA, SENDER_1, { inbox: 5, archived: 0 });
+      await seedMessages(mailboxA, SENDER_2, { inbox: 3, archived: 0 });
+
+      expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
+        pendingTotal: 1,
+        senders7d: 1,
+        inboxMessagesNow: 3,
       });
     });
 

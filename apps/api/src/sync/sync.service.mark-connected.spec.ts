@@ -148,12 +148,29 @@ describe('SyncService.markConnected', () => {
     ['a ready row with no cursor to catch up from', { lastHistoryId: null }, true],
   ] as const)('gives %s a full scan', async (_case, overrides, wasActive) => {
     if (overrides !== null) await seed(overrides as Partial<typeof providerSyncState.$inferInsert>);
+    const before = await readState();
 
     await expect(connect({ wasActive })).resolves.toBe('queued');
 
     const row = await readState();
     expect(row?.readinessStatus).toBe('queued');
-    expect(row?.lastHistoryId).toBeNull();
+    // A ready mailbox's re-scan takes a new base; a scan still in progress
+    // (or failed) keeps its first attempt's snapshot (markQueued).
+    expect(row?.lastHistoryId).toBe(
+      before?.readinessStatus === 'ready' ? null : (before?.lastHistoryId ?? null),
+    );
+  });
+
+  it("keeps a running scan's snapshot through a sign-in", async () => {
+    await seed({
+      readinessStatus: 'syncing',
+      currentStage: 'fetching_metadata',
+      lastSyncedAt: null,
+    });
+
+    await connect({ wasActive: true });
+
+    expect((await readState())?.lastHistoryId).toBe(CURSOR);
   });
 
   it('a reconnect scan clears the revoked-grant evidence the fresh token supersedes', async () => {
