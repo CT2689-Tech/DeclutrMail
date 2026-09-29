@@ -166,7 +166,13 @@ export const OVERRIDES_KB = {
   // zod-chunk raise (see AUTHED_DEFAULT_KB) with zone-explicit `daysSince`
   // (DECLUTRMAIL-WEB-2C) on the same route: measured 298.0 together. 300
   // leaves ~2 kB, same shape as the prior raise.
-  '/(app)/senders/page': 300, // 298.0 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 300 -> 304 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // just over 300 (0 kB headroom left), same root cause as /triage and
+  // /screener above — #805's local `holds`/`overdue*` tracking kept
+  // alongside #825's `sharedLock` rather than dropping either. 304
+  // restores ~4 kB headroom.
+  '/(app)/senders/page': 304, // 300.0+ — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -187,7 +193,15 @@ export const OVERRIDES_KB = {
   // `TriageRow`, and importing the block there put it at 175.5 against
   // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
   // the next addition here still has to argue for itself.
-  '/(app)/triage/page': 283, // 281.1 — action sheet, preview + verification detail, undo tray
+  // Raised 283 -> 288 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // 283.7, up from 281.1. PR #825's own addition here is small (a
+  // `useSenderInFlightLock` call plus a couple of Set lookups); the rest
+  // is #805's local `useUnconfirmedHolds` tracking that this PR's merge
+  // kept ALONGSIDE it rather than dropping either guard (unverified
+  // whether one alone would suffice). 288 restores ~4 kB headroom, same
+  // margin as the sibling raises above.
+  '/(app)/triage/page': 288, // 283.7 — action sheet, preview + verification detail, undo tray
   // 199.9 (was 191.3), measured after the 2026-09-02 sender-detail QA
   // batch (18 findings — mailbox-scope-reset guard, fuller/more accurate
   // KPI + hero copy, the toolbar's primaryVerbReason). Checked this was
@@ -217,7 +231,12 @@ export const OVERRIDES_KB = {
   // entries, #830's Autopilot fixes) landing across many PRs at once.
   // 270 restores ~2 kB headroom.
   '/(app)/billing/page': 270, // 267.1 — checkout + invoices + plan controls + editorial shell
-  '/(app)/screener/page': 261, // 258.8 — queue + decision controls + editorial shell
+  // Raised 261 -> 266 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // 261.7, up from 258.8. Same shape as /triage above — both guards
+  // (`sharedLock` and `holds`/`isHeld`) kept, not just one. 266 restores
+  // ~4 kB headroom.
+  '/(app)/screener/page': 266, // 261.7 — queue + decision controls + editorial shell
   // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
   // Raised 260 -> 264 on 2026-09-29 (D245, PR #805): measured 260.0, up
