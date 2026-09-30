@@ -71,8 +71,12 @@ describe('recordUnsubscribeIntent', () => {
     [{}, { senderId: 'sender-1' }],
     [{ includesBacklogAction: false }, { senderId: 'sender-1', includesBacklogAction: false }],
     [{ includesBacklogAction: true }, { senderId: 'sender-1', includesBacklogAction: true }],
+    // Only a true override travels, so an API that predates the key still
+    // takes every click but the Protected "…anyway" one (D245).
+    [{ override: true }, { senderId: 'sender-1', override: true }],
+    [{ override: false }, { senderId: 'sender-1' }],
   ] as const)(
-    'forwards the optional backlog preflight flag (%s)',
+    'forwards the optional backlog preflight and override flags (%s)',
     async (options, expectedBody) => {
       let observedBody: unknown = null;
       installFetchStub([

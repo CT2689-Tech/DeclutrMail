@@ -431,6 +431,16 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
+  // D108: a reconnect that comes back without Gmail lands here again, so
+  // the line cannot promise that reconnecting restores access.
+  it('tells an expired grant what reconnecting needs, without promising it', () => {
+    const html = renderToStaticMarkup(
+      withClient(<SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} />),
+    );
+    expect(html).toContain('Reconnect Gmail and allow access');
+    expect(html).not.toContain('restores it');
+  });
+
   it('offers "Reconnect Gmail" for AuthExpiredError too', () => {
     render(
       withClient(

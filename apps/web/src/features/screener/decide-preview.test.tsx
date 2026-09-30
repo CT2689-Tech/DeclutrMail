@@ -23,13 +23,31 @@ describe('DecidePreview — live-preview confirm gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: new RegExp(`Confirm ${verb}`, 'i') });
+      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       expect(onConfirm).not.toHaveBeenCalled();
       expect(screen.getByText(/Couldn.t load the preview/i)).toBeInTheDocument();
     },
   );
+
+  // The verb and the count, as on the Senders and Triage confirms.
+  it('names the verb and the live count on the confirm', () => {
+    render(
+      <DecidePreview
+        verb="archive"
+        row={row}
+        inboxCount={1400}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    // The accessible name contains the visible label, so "click Archive
+    // 1,400" finds it (WCAG 2.5.3).
+    const confirm = screen.getByRole('button', { name: /^Archive 1,400 for/ });
+    expect(confirm).toHaveTextContent('Archive 1,400');
+  });
 
   it('blocks click confirmation while a required preview is still loading', () => {
     const onConfirm = vi.fn();
@@ -44,7 +62,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
       />,
     );
 
-    const confirm = screen.getByRole('button', { name: /Confirm Archive/i });
+    const confirm = screen.getByRole('button', { name: /^Archive/i });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
@@ -66,7 +84,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: new RegExp(`Confirm ${verb}`, 'i') });
+      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
       expect(confirm).toBeEnabled();
       fireEvent.click(confirm);
       expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -87,7 +105,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
       />,
     );
 
-    const confirm = screen.getByRole('button', { name: /Confirm Archive/i });
+    const confirm = screen.getByRole('button', { name: /^Archive/i });
     expect(confirm).toBeEnabled();
     // One bold line: the count and where it goes. Its scope sits in Details.
     expect(
@@ -328,7 +346,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: /Confirm Delete/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Delete/i })).toBeDisabled();
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
       target: { value: 'all' },
     });

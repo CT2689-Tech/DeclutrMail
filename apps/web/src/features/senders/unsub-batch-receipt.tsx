@@ -47,13 +47,18 @@ function skippedLines(skipped: UnsubBatchReceiptData['skipped']): string[] {
     none: count('no_channel'),
     unknown: count('unknown'),
   });
-  const senders = (n: number): string => `${n} sender${n === 1 ? '' : 's'}`;
+  const noun = (n: number): string => `sender${n === 1 ? '' : 's'}`;
   const protectedCount = count('protected');
   const missingCount = count('not_found');
+  const inProgressCount = count('in_progress');
   return [
     ...capability,
-    ...(protectedCount > 0 ? [`${senders(protectedCount)} protected`] : []),
-    ...(missingCount > 0 ? [`${senders(missingCount)} no longer in your list`] : []),
+    // The state's own name, first — as the pill and Activity say it.
+    ...(protectedCount > 0 ? [`${protectedCount} Protected ${noun(protectedCount)}`] : []),
+    ...(missingCount > 0
+      ? [`${missingCount} ${noun(missingCount)} no longer in this mailbox`]
+      : []),
+    ...(inProgressCount > 0 ? [`${inProgressCount} ${noun(inProgressCount)} already busy`] : []),
   ];
 }
 
@@ -82,7 +87,9 @@ export function UnsubBatchReceipt({
   // the batch finished but this API build sends no outcome breakdown, so
   // the receipt points at Activity rather than inventing a split.
   const inFlight = receipt.outcomes === null && receipt.pending > 0;
-  const unreported = receipt.outcomes === null && receipt.pending === 0;
+  // Every sender was refused before its request went out (D245).
+  const noneSent = !inFlight && receipt.senderCount === 0;
+  const unreported = !noneSent && receipt.outcomes === null && receipt.pending === 0;
   const outcomeLines = receipt.outcomes ? unsubscribeOutcomeBreakdown(receipt.outcomes) : [];
   // Everything the batch could not send, named per reason the server gave.
   const excluded = skippedLines(receipt.skipped);
@@ -103,7 +110,7 @@ export function UnsubBatchReceipt({
     receipt.outcomes.unconfirmed > 0;
   const tone: 'failed' | 'neutral' | 'positive' = allFailed
     ? 'failed'
-    : allUnconfirmed || inFlight || unreported
+    : allUnconfirmed || inFlight || unreported || noneSent
       ? 'neutral'
       : 'positive';
   const frame = {
@@ -150,31 +157,40 @@ export function UnsubBatchReceipt({
 
       <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.45 }}>
         <strong style={{ fontWeight: 600 }}>
-          {inFlight ? 'Sending unsubscribe requests' : 'Unsubscribe requests sent'}
-        </strong>{' '}
-        <span style={{ color: color.fgSoft }}>
-          ·{' '}
-          {receipt.senderCount === 1
-            ? '1 sender'
-            : `${receipt.senderCount.toLocaleString('en-US')} senders`}
-        </span>
-        <span
-          style={{
-            display: 'block',
-            marginTop: 3,
-            fontSize: text.xs,
-            color: color.fgMuted,
-          }}
-        >
           {inFlight
-            ? `${receipt.pending} still going out`
-            : unreported
-              ? 'See Activity for each result.'
-              : [
-                  ...outcomeLines,
-                  ...(receipt.pending > 0 ? [`${receipt.pending} still going out`] : []),
-                ].join(' · ')}
-        </span>
+            ? 'Sending unsubscribe requests'
+            : noneSent
+              ? 'No unsubscribe requests sent'
+              : 'Unsubscribe requests sent'}
+        </strong>
+        {!noneSent && (
+          <>
+            {' '}
+            <span style={{ color: color.fgSoft }}>
+              ·{' '}
+              {receipt.senderCount === 1
+                ? '1 sender'
+                : `${receipt.senderCount.toLocaleString('en-US')} senders`}
+            </span>
+            <span
+              style={{
+                display: 'block',
+                marginTop: 3,
+                fontSize: text.xs,
+                color: color.fgMuted,
+              }}
+            >
+              {inFlight
+                ? `${receipt.pending} still going out`
+                : unreported
+                  ? 'See Activity for each result.'
+                  : [
+                      ...outcomeLines,
+                      ...(receipt.pending > 0 ? [`${receipt.pending} still going out`] : []),
+                    ].join(' · ')}
+            </span>
+          </>
+        )}
         {excluded.length > 0 && (
           <span
             style={{
@@ -187,7 +203,7 @@ export function UnsubBatchReceipt({
             Not sent: {excluded.join(' · ')}
           </span>
         )}
-        {!inFlight && !unreported && (
+        {!inFlight && !unreported && !noneSent && (
           <span style={{ display: 'block', color: color.fgMuted, fontSize: text.xs, marginTop: 3 }}>
             {UNSUBSCRIBE_ACCEPTED_CAVEAT}
           </span>

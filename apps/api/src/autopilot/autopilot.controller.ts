@@ -33,6 +33,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  AutopilotApproveAllRequestSchema,
   AutopilotApproveMatchesRequestSchema,
   type AutopilotApproveResult,
   type AutopilotRulePreviewResult,
@@ -288,20 +289,35 @@ export class AutopilotController {
 
   /**
    * POST /api/autopilot/rules/:id/approve-all — U14/D104 "Approve all".
-   * Approves every pending Observe-mode suggestion for the rule +
-   * enqueues the action sweep. Does NOT change the rule's mode — the
-   * D104 "and switch to Active" variant is this + `PATCH mode=active`.
+   * Approves every OFFERABLE Observe-mode suggestion for the rule that
+   * falls within the request body's scope + enqueues the action sweep.
+   * Does NOT change the rule's mode — the D104 "and switch to Active"
+   * variant is this + `PATCH mode=active`.
+   *
+   * Body is REQUIRED (founder decision 2026-09-29 (a)): the preview the
+   * user saw is exactly what gets approved, never whatever is offerable
+   * server-side at click time — either the exact ids the preview
+   * rendered, or a "matched before" cutoff when the pending buffer was
+   * at its cap and the FE could not enumerate every id.
+   * docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
    */
   @Post('rules/:id/approve-all')
   @RateLimit('triage-load')
   async approveAllForRule(
     @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
+    @Body() body: unknown,
   ): Promise<Envelope<AutopilotApproveResult>> {
     if (!isUuid(id)) {
       throw new BadRequestException('Rule id must be a UUID.');
     }
-    const result = await this.reads.approveAllForRule(mailbox.id, id);
+    const parsed = AutopilotApproveAllRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException(
+        'Body must be { matchIds: uuid[] } (1-50) or { matchedBefore: ISO datetime }.',
+      );
+    }
+    const result = await this.reads.approveAllForRule(mailbox.id, id, parsed.data);
     if (!result) {
       throw notFound('Rule not found.');
     }

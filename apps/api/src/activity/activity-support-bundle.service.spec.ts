@@ -184,7 +184,7 @@ describe('ActivitySupportBundleService', () => {
     const csv = files['activity.csv']!;
     const [, skippedLine, protectedLine] = csv.trim().split('\n');
     expect(skippedLine).toContain('Dismissed by you');
-    expect(protectedLine).toContain('Skipped — sender is Protected');
+    expect(protectedLine).toContain('Skipped — sender was Protected');
     // A dismissal that never touched mail must not read as an executed action.
     expect(csv).not.toContain('Completed');
     expect(csv).not.toContain('Moved to Later');

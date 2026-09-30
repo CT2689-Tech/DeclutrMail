@@ -104,7 +104,9 @@ export {
   ruleMatchIsQueuedAction,
   ruleMatchIsStaleAction,
   ruleMatchLabelClaimKey,
+  ruleMatchRuleCanStart,
   ruleMatchSenderIsProtected,
+  ruleMatchUnsubscribeAlreadyDone,
 } from './autopilot-suggestions';
 export { deriveSenderId } from './sender-id';
 export {

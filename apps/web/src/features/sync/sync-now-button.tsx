@@ -4,12 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Tooltip, toast, tokens } from '@declutrmail/shared';
+import { AUTH_RECOVERY_ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import {
-  AUTH_RECOVERY_ERROR_CODES,
-  syncStatusNeedsReconnect,
-} from '@/features/mailboxes/mailbox-health';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { SYNC_STATUS_KEY, useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useRetryInitialSync } from './api/use-retry-initial-sync';
 import { useSyncNow } from './api/use-sync-now';

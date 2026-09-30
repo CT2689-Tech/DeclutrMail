@@ -7,7 +7,9 @@
  * both times. Catches:
  *   - Rollback files that don't actually revert (missing DROPs, wrong order)
  *   - Forward migrations that aren't re-applyable after rollback
- *   - Index / constraint mismatches between schema and migration SQL
+ *
+ * It compares table and enum names only. Drift between the Drizzle
+ * schema and what the migrations build is schema-migration-parity.test.ts.
  *
  * Runs in CI on every PR touching packages/db/**.
  */

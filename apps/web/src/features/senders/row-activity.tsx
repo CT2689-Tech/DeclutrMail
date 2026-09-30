@@ -59,9 +59,11 @@ export function rowActivityLabel(activity: SenderRowActivity): string {
     case 'mixed':
       return `${verbLabel}: see Activity`;
     case 'unconfirmed':
-      // True of BOTH ways a row gets here: the job ran past the overdue
-      // deadline, or its status poll was lost. Neither knows it finished.
-      return `${verbLabel} not confirmed`;
+      // True of every way a row gets here: the job ran past the overdue
+      // deadline, its status poll was lost, or its start could not be
+      // confirmed. None knows how it ended — not "not confirmed", which
+      // right after a Confirm click reads as "your click did nothing".
+      return `${verbLabel}: unknown`;
     case 'done': {
       if (activity.affectedCount === 0) return 'Nothing to change';
       // Short form: the pill shares a ≤320px name cell. The full result
@@ -115,7 +117,7 @@ export function useGroupActivitySummary(
   const parts = [
     ...(done > 0 ? [`${done} done`] : []),
     ...(failed > 0 ? [`${failed} failed`] : []),
-    ...(unconfirmed > 0 ? [`${unconfirmed} not confirmed`] : []),
+    ...(unconfirmed > 0 ? [`${unconfirmed} unknown`] : []),
     ...(mixed > 0 ? [`${mixed} in Activity`] : []),
   ];
   return parts.length === 0 ? null : { busy: unconfirmed > 0, label: parts.join(' · ') };
@@ -131,9 +133,10 @@ export function rowStatusLabel(activity: SenderRowActivity): string {
   if (activity.phase !== 'done') return rowActivityLabel(activity);
   if (activity.affectedCount === 0) return 'Nothing to change';
   const result = DONE[activity.verb];
-  return activity.affectedCount === null
-    ? result
-    : `${result} ${activity.affectedCount.toLocaleString('en-US')}`;
+  if (activity.affectedCount === null) return result;
+  const n = activity.affectedCount.toLocaleString('en-US');
+  // Later names a destination, so its count goes before it, as on the pill.
+  return activity.verb === 'later' ? `Moved ${n} to Later` : `${result} ${n}`;
 }
 
 /** Text colour for the button-slot status. Body-strength, never faded. */

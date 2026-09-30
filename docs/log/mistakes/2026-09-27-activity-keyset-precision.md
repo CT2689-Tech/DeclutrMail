@@ -1,0 +1,8 @@
+## 2026-09-27 — Activity pages compared a millisecond cursor with microsecond rows
+
+**PR:** #805 (https://github.com/CT2689-Tech/DeclutrMail/pull/805)
+**Caught by:** schema-migration-reviewer (the new Protected-skip source), then architecture-guardian (a fifth keyset the first fix missed, and the sort order)
+**What happened:** Activity's page cursor carries an ISO millisecond timestamp, while Postgres keeps microseconds and rows written in one transaction share `now()`. Every source's keyset was `time < cursor OR (time = cursor AND id < cursorId)`: `=` never matched such a row and `<` skipped it, so every row after a page's last one in that millisecond dropped out of the feed and the support export. A bulk writes all its jobs in one transaction, so the new skip source hit it on every batch with more than one skip. The first fix covered four of five keysets, and each source still sorted by microsecond before its LIMIT while the merge sorted by millisecond, so rows of one millisecond whose microsecond order differed from their id order could be cut.
+**Correct approach:** Continue inside the cursor's millisecond by id (`time >= ms AND time < ms+1 AND id < cursorId`), comparing the raw column so the index still bounds the scan, and order every source by `date_trunc('milliseconds', time), id` so the SQL LIMIT, the JS merge and the cursor agree.
+**Rule:** A keyset is only correct when the cursor, every source's ORDER BY and the merge comparator use the same precision — grep every keyset and ORDER BY in the reader, not the one you touched.
+**Enforcement update:** four tests (shared microsecond on the skip, activity_log and in-flight sources; one millisecond with microsecond order opposite to id order), each negative-controlled.

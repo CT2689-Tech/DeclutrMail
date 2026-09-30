@@ -136,6 +136,27 @@ export const RowsSayWhatIsHappening: Story = {
   ),
 };
 
+/**
+ * Rows whose outcome is not known yet — a 5xx start, a lost status read or
+ * a job past its deadline — stay locked and say so; a bulk that partly
+ * failed points at Activity; a Later reads like the pill.
+ */
+export const RowsWhoseOutcomeIsUnknown: Story = {
+  render: () => (
+    <Harness
+      activity={
+        new Map([
+          ['s1', { phase: 'unconfirmed', verb: 'archive' }],
+          ['s2', { phase: 'mixed', verb: 'delete' }],
+          ['s3', { phase: 'done', verb: 'later', affectedCount: 240 }],
+          ['g0', { phase: 'unconfirmed', verb: 'archive' }],
+          ['g1', { phase: 'mixed', verb: 'archive' }],
+        ])
+      }
+    />
+  ),
+};
+
 export const Phone: Story = {
   render: () => (
     <Harness compact activity={new Map([['s1', { phase: 'working', verb: 'archive' }]])} />
