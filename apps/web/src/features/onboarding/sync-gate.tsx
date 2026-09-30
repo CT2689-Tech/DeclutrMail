@@ -129,12 +129,12 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
     case 'invalid_grant':
       return {
         title: 'Reconnect Gmail to keep going',
-        body: 'Your Google connection expired or was revoked. Reconnect to finish setup — nothing was deleted on our side.',
+        body: 'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
       };
     case 'reconnect_required':
       return {
         title: 'Reconnect Gmail to keep going',
-        body: 'Google stopped accepting our access partway through. Reconnect Gmail and allow access on Google’s screen — nothing was deleted on our side.',
+        body: 'Google stopped accepting our access. Reconnect Gmail and allow access on Google’s screen.',
       };
     case 'rate_limit':
       return recovery.partlyReady

@@ -226,7 +226,7 @@ describe('SyncGate render', () => {
       );
 
     expect(html('ProviderPermissionError')).toContain('fuller permission grant');
-    expect(html('InvalidGrantError')).toContain('expired or was revoked');
+    expect(html('InvalidGrantError')).toContain('allow Gmail access');
     expect(html('AuthExpiredError')).toContain('stopped accepting our access');
     expect(html('RateLimitError', 0)).toContain('paused your sync');
     expect(html('GmailQuotaError', 32)).toContain('partly ready');
@@ -519,7 +519,7 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     expect(
       screen.getByRole('heading', { name: 'Reconnect Gmail to keep going' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/expired or was revoked/i)).toHaveAttribute(
+    expect(screen.getByText(/allow Gmail access/i)).toHaveAttribute(
       'data-reason-code',
       'invalid_grant',
     );

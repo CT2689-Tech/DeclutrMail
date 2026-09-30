@@ -35,6 +35,7 @@
  */
 
 import { z } from 'zod';
+import { INITIAL_SYNC_RECONNECT_ERROR_CODES } from './initial-sync-recovery';
 
 /** Coarse readiness state — drives the strict sync gate (D6). */
 export const SyncReadinessSchema = z.enum(['queued', 'syncing', 'ready', 'failed']);
@@ -134,7 +135,8 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 /**
  * First-scan failures whose only real recovery is reconnecting Gmail: a
  * revoked grant (`InvalidGrantError`) or one Gmail stopped accepting
- * partway through (`AuthExpiredError`). Names match
+ * partway through (`AuthExpiredError`), or insufficient permissions
+ * (`ProviderPermissionError`). Names match
  * `packages/workers/src/worker-errors.ts`. Read today by the web app's
  * surfaces that offer Reconnect instead of a retry: the onboarding sync
  * gate, the top-bar Sync now button, and mailbox health on Settings and
@@ -146,7 +148,6 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
  * again" against the same dead token; the Settings row and the account
  * menu had the same gap (D108). They all read this set now.
  */
-export const AUTH_RECOVERY_ERROR_CODES: ReadonlySet<string> = new Set([
-  'InvalidGrantError',
-  'AuthExpiredError',
-]);
+export const AUTH_RECOVERY_ERROR_CODES: ReadonlySet<string> = new Set(
+  INITIAL_SYNC_RECONNECT_ERROR_CODES,
+);

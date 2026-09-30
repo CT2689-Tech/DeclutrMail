@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { AUTH_RECOVERY_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
 
-import { syncStatusNeedsReconnect, AUTH_RECOVERY_ERROR_CODES } from './mailbox-health';
+import { syncStatusNeedsReconnect } from './mailbox-health';
 
 function statusOf(overrides: Partial<SyncStatus> = {}): SyncStatus {
   return {

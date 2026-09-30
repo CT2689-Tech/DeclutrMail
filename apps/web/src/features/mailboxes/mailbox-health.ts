@@ -1,24 +1,13 @@
-import { INITIAL_SYNC_RECONNECT_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
+import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 /** Worker classification for a revoked/expired Gmail OAuth grant. */
 export const INVALID_GRANT_CODE = 'InvalidGrantError';
 
-/** Worker classification for an expired-but-not-revoked Gmail OAuth grant. */
-export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
-
-/**
- * Error codes whose only real recovery is reconnecting Gmail, for
- * surfaces reading an INITIAL-sync `error_code` directly rather than
- * `syncStatusNeedsReconnect` below (which stays `InvalidGrantError`-only
- * to match the backend's `me.needsReconnect`/`getNeedsReconnectByMailbox`
- * sweep contract — widening THAT is a separate, worker-policy-adjacent
- * change, deliberately not made here).
- *
- * Sourced from `INITIAL_SYNC_RECONNECT_ERROR_CODES` so the onboarding
- * gate and `SyncNowButton`'s failed-indicator cannot drift on which
- * names mean Reconnect vs Retry.
- */
-export const AUTH_RECOVERY_ERROR_CODES = new Set<string>(INITIAL_SYNC_RECONNECT_ERROR_CODES);
+// Surfaces reading an INITIAL-sync `error_code` directly use
+// `AUTH_RECOVERY_ERROR_CODES` from `@declutrmail/shared/contracts`.
+// `syncStatusNeedsReconnect` below stays `InvalidGrantError`-only to match
+// the backend's `me.needsReconnect` / `getNeedsReconnectByMailbox` sweep
+// contract; widening that is a separate, worker-policy-adjacent change.
 
 /**
  * True only while the scoped mailbox's Gmail grant currently needs
