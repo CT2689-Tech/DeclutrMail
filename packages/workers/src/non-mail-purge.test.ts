@@ -361,6 +361,52 @@ describe('purgeNonMailMessages', () => {
     expect(event).toMatchObject({ mailboxAccountId: mb, recountedSenderKeys: [friendKey] });
   });
 
+  it('hands outbound chat recipients to the current consumer in bounded re-score events', async () => {
+    const { mb } = await seedMailbox(db, OWNER);
+    const recipients = Array.from(
+      { length: NON_MAIL_PURGE_BATCH + 1 },
+      (_, i) => `r${i}@example.com`,
+    );
+    await db.insert(senders).values(
+      recipients.map((email) => ({
+        mailboxAccountId: mb,
+        senderKey: deriveSenderKey(email),
+        email,
+        domain: 'example.com',
+        gmailCategory: 'unknown' as const,
+        firstSeenAt: day(1),
+        lastSeenAt: day(1),
+        wroteToCount: 1,
+      })),
+    );
+    await seedMessage(db, mb, {
+      id: 'chat-sent',
+      from: OWNER,
+      labelIds: ['CHAT', 'SENT'],
+      at: day(4),
+      recipients: [...recipients, 'absent@example.com'],
+    });
+
+    expect(await purgeNonMailMessages(db, mb, NON_MAIL_PURGE_BATCH, outbox)).toEqual({
+      messagesDeleted: 1,
+      sendersDeleted: 0,
+      sendersRecounted: 0,
+    });
+    const events = await purgedEvents(db);
+    expect(events).toHaveLength(2);
+    const keys = events.flatMap((event) => event.recountedSenderKeys as string[]);
+    expect(keys.sort()).toEqual(recipients.map(deriveSenderKey).sort());
+    expect(
+      events.every(
+        (event) => (event.recountedSenderKeys as string[]).length <= NON_MAIL_PURGE_BATCH,
+      ),
+    ).toBe(true);
+    expect(events[0]?.purgedAt).toBe(events[1]?.purgedAt);
+    expect(events.every((event) => (event.threadIds as string[]).length === 0)).toBe(true);
+    const rows = await db.select({ wroteTo: senders.wroteToCount }).from(senders);
+    expect(rows.every((row) => row.wroteTo === 0)).toBe(true);
+  });
+
   it('touches no follow-up itself — it names the threads for the follow-ups owner', async () => {
     const { workspaceId, mb } = await seedMailbox(db, OWNER);
     await seedMessage(db, mb, {

@@ -2,12 +2,17 @@ import {
   mailMessages,
   nonMailRowWhere,
   protectionReason,
+  ruleMatchLabelClaimKey,
   ruleMatchLog,
   senderPolicies,
   senders,
   senderTimeseries,
 } from '@declutrmail/db';
-import { MailboxNonMailPurgedPayloadSchema, TOPICS } from '@declutrmail/events';
+import {
+  MAILBOX_NON_MAIL_PURGED_LIST_MAX,
+  MailboxNonMailPurgedPayloadSchema,
+  TOPICS,
+} from '@declutrmail/events';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { OutboxPublisher, OutboxTx } from './outbox-publisher.js';
@@ -22,7 +27,7 @@ import { recomputeWroteToCount } from './wrote-to-count.js';
  * transaction, how long a caller holds the mailbox lock: a user action
  * waits for one batch at most. Callers loop until a call deletes fewer.
  */
-export const NON_MAIL_PURGE_BATCH = 1_000;
+export const NON_MAIL_PURGE_BATCH = MAILBOX_NON_MAIL_PURGED_LIST_MAX;
 
 /**
  * Protection reasons a sweep sets — every one but `user_defined`, the
@@ -202,7 +207,7 @@ export async function purgeNonMailMessages(
         sql`not exists (
             select 1
             from action_jobs aj
-            where aj.idempotency_key = 'autopilot-' || ${sql.raw('rule_match_log.id')}::text
+            where aj.idempotency_key = ${ruleMatchLabelClaimKey()}
           )`,
       ),
     );
@@ -226,15 +231,36 @@ export async function purgeNonMailMessages(
 
   await recomputeWroteToCount(tx, mailboxAccountId, recipientKeys);
 
-  if (recountedKeys.length > 0 || threadIds.length > 0) {
+  // The current consumer also re-scores recipients whose wrote-to count
+  // changed. One deleted SENT chat can name more senders than the event
+  // list bound, so hand off the surviving senders in bounded events.
+  const recipients =
+    recipientKeys.length === 0
+      ? []
+      : await tx
+          .select({ senderKey: senders.senderKey })
+          .from(senders)
+          .where(
+            and(
+              eq(senders.mailboxAccountId, mailboxAccountId),
+              sql`${senders.senderKey} = ANY(${sqlTextArray(recipientKeys)})`,
+            ),
+          );
+  const rescoreKeys = [...new Set([...recountedKeys, ...recipients.map((row) => row.senderKey)])];
+  const purgedAt = new Date().toISOString();
+  for (
+    let offset = 0;
+    offset < Math.max(rescoreKeys.length, threadIds.length);
+    offset += MAILBOX_NON_MAIL_PURGED_LIST_MAX
+  ) {
     await outbox.publish(tx, {
       topic: TOPICS.MAILBOX_NON_MAIL_PURGED,
       aggregateId: mailboxAccountId,
       payload: {
         mailboxAccountId,
-        purgedAt: new Date().toISOString(),
-        recountedSenderKeys: recountedKeys,
-        threadIds,
+        purgedAt,
+        recountedSenderKeys: rescoreKeys.slice(offset, offset + MAILBOX_NON_MAIL_PURGED_LIST_MAX),
+        threadIds: offset === 0 ? threadIds : [],
       },
       schema: MailboxNonMailPurgedPayloadSchema,
     });
