@@ -1993,7 +1993,7 @@ export function scoreJobOptions(jobId: string): JobsOptions {
  * this shape in the test cannot catch a future accidental removal of
  * `...perMailboxWorkerSettings()` from the real registration, which is
  * exactly what happened to the first version of that test (architecture-
- * guardian, PR #827 round 3).
+ * guardian, PR #827's round-3 follow-up, PR #835).
  */
 export function scoreBullWorkerOptions(connection: Redis): WorkerOptions {
   return {

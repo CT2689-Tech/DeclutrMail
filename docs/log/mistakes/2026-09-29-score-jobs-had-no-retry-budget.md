@@ -43,13 +43,14 @@ absence is itself the defect to fix before adding a second producer —
 mirroring the pattern is not a substitute for reusing it.
 **Enforcement update:** Added `scoreJobOptions()` in
 `packages/workers/src/score.worker.ts` as the single source for the
-`score` queue's job options; all 7 non-`explain` producers now call it
-(PR #827): the 5 in-app producers, including `buildRescoreSenders`
+`score` queue's job options; all 7 non-`explain` producers now call it:
+the 5 in-app producers via PR #827, including `buildRescoreSenders`
 (`rescore-senders.ts:84`, which PR #807 added after this PR's first draft
 and which picked up the same fix on rebase), plus 2 backlog/dev-tooling
-scripts found still passing a bare `{ jobId }` in this PR's third review
-round — `scripts/rescore-leaked-copy.ts` (a one-off production backlog
-script) and `apps/api/scripts/dev-autopilot-harness.ts`'s `enqueue-score`
+scripts found still passing a bare `{ jobId }` in a third review round
+that landed as PR #835 (after #827 had already merged) —
+`scripts/rescore-leaked-copy.ts` (a one-off production backlog script)
+and `apps/api/scripts/dev-autopilot-harness.ts`'s `enqueue-score`
 (dev-only) — both switched to `scoreJobOptions()` since nothing made
 routing them through it unsafe. The producer side alone was not sufficient:
 `scoreBullWorker`'s registration (`apps/api/src/worker.ts`) did not
