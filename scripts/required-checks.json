@@ -1,0 +1,8 @@
+{
+  "CI required": "ci.yml",
+  "CodeQL security scan": "codeql.yml",
+  "Branch follows CLAUDE.md §6 convention": "branch-name.yml",
+  "PR title follows Conventional Commits": "branch-name.yml",
+  "PR body references D-decisions or is bootstrap-exempt": "branch-name.yml",
+  "Gate scope report": "subagent-gate.yml"
+}

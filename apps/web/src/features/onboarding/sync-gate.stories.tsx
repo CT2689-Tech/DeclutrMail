@@ -18,6 +18,8 @@
 //   • Ready                — scan done, shown until the route navigates away
 //   • Failed               — terminal error with a known error_code
 //   • FailedPermanent      — the longest failed copy; names the support address
+//   • FailedAuthExpired / FailedInvalidGrant — Gmail stopped accepting our
+//                            access; the button reconnects instead of retrying
 //   • FailedReconnect      — Google stopped accepting access: "Reconnect Gmail" leads
 //   • FailedInvalidGrant / FailedInsufficientScopes — Reconnect only
 //   • FailedQuota / FailedQuotaPartlyReady — rate_limit Try again /
@@ -328,6 +330,22 @@ export const Stuck: Story<typeof SyncGate> = {
     mailboxId: 'mb-1',
     nowMs: STUCK_NOW,
   },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Failed because Google stopped accepting our access partway through the
+ * scan. Retrying would hit the same dead token, so the only action is
+ * "Reconnect Gmail" (QA-sync-20260831-07).
+ */
+export const FailedAuthExpired: Story<typeof SyncGate> = {
+  args: { status: { ...FAILED, error_code: 'AuthExpiredError' }, mailboxId: 'mbx_story' },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Failed on a revoked grant — same reconnect-only action, its own line. */
+export const FailedInvalidGrant: Story<typeof SyncGate> = {
+  args: { status: { ...FAILED, error_code: 'InvalidGrantError' }, mailboxId: 'mbx_story' },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 

@@ -11,7 +11,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { EXPLAIN_BATCH_MAX } from '@declutrmail/shared/contracts';
-import { FIRST_VIEW_QUEUE_ROWS } from '@declutrmail/workers';
+import { FIRST_VIEW_QUEUE_ROWS, scoreJobOptions } from '@declutrmail/workers';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -244,6 +244,28 @@ describe('TriageService.scoreSender — trigger provenance (D25)', () => {
       producedAtMs: 1_000,
     });
     expect(added[1]?.payload).toMatchObject({ trigger: 'manual_rescore' });
+  });
+
+  /**
+   * Negative control (CLAUDE.md §8): before `scoreSender` passed
+   * `scoreJobOptions(idempotencyKey)`, its third `.add()` argument was a
+   * bare `{ jobId: idempotencyKey }` — no `attempts`, no `backoff`. BullMQ
+   * defaults a job with no `attempts` to a single try, so a transient
+   * ScoreWorker failure (a DB hiccup mid-run) dead-lettered a manual/stale
+   * re-score after one attempt instead of retrying with
+   * `perMailboxPolicy`'s 5-attempt backoff budget. Reverting the
+   * `triage.service.ts` change back to `{ jobId: idempotencyKey }` fails
+   * this assertion.
+   */
+  it('grants the perMailboxPolicy retry budget instead of a single try', async () => {
+    const { idempotencyKey } = await service.scoreSender({
+      mailboxAccountId: mailboxA,
+      senderKey: 'key-1',
+      reason: 'user',
+      producedAtMs: 1_000,
+    });
+    expect(added[0]?.opts).toEqual(scoreJobOptions(idempotencyKey));
+    expect(added[0]?.opts).toMatchObject({ attempts: 5, removeOnFail: false });
   });
 
   it('resolves a sender id only inside its own mailbox', async () => {

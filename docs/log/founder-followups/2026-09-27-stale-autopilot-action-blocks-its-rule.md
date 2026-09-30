@@ -22,4 +22,4 @@ old action still never runs. A yes lets the check read `ruleMatchIsQueuedAction(
 `@declutrmail/db`.
 **Verifies by:** A yes ships with a test: a stale approved row plus an Active rule leads to a
 fresh match being recorded. A no stays as the comment at the check.
-**Status:** Open
+**Status:** Done 2026-09-29

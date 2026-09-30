@@ -22,7 +22,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
-import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
 import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
@@ -32,13 +31,16 @@ import {
   ActionRecoveryWorker,
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
+  autopilotApplyWorkerOptions,
   BILLING_VERDICT_INTERVAL_MS,
   BILLING_VERDICT_QUEUE,
   BillingVerdictWorker,
   BRIEF_SNAPSHOT_INTERVAL_MS,
   BRIEF_SNAPSHOT_QUEUE,
   BriefSnapshotWorker,
+  AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
+  buildRescoreSenders,
   createAutopilotExecutionChain,
   createRedisConnection,
   createRedisProducerConnection,
@@ -94,6 +96,9 @@ import {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreBullWorkerOptions,
+  scoreJobId,
+  scoreJobOptions,
   ScoreWorker,
   OPS_RETENTION_INTERVAL_MS,
   OPS_RETENTION_QUEUE,
@@ -194,6 +199,7 @@ import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
+import { googleOAuthClient } from './gmail/google-oauth-client.js';
 import {
   GMAIL_QUOTA_BURST_WINDOW_MS,
   GMAIL_QUOTA_WINDOW_MS,
@@ -750,7 +756,7 @@ async function bootstrap(): Promise<void> {
         cached: cachedToken !== null,
       }),
     );
-    const oauth = new OAuth2Client(clientId, clientSecret);
+    const oauth = googleOAuthClient({ clientId, clientSecret });
     oauth.setCredentials({ refresh_token: refreshToken });
 
     // Reuse the limiter across attempts so its window state outlives a
@@ -904,12 +910,12 @@ async function bootstrap(): Promise<void> {
     // `sync.sync_ready_publish_skipped` on every ready flip.
     outbox: new OutboxPublisher(),
     onSenderIndexBuilt: async (mailboxAccountId) => {
-      const producedAtMs = Date.now();
-      await scoreProducerQueue.add(
-        SCORE_JOB,
-        { mailboxAccountId, trigger: 'sync_complete', producedAtMs },
-        { jobId: `${mailboxAccountId}:*:${producedAtMs}` },
-      );
+      const data: ScoreJobData = {
+        mailboxAccountId,
+        trigger: 'sync_complete',
+        producedAtMs: Date.now(),
+      };
+      await scoreProducerQueue.add(SCORE_JOB, data, scoreJobOptions(scoreJobId(data)));
     },
   });
   // D159: install the Sentry seam on every BaseDeclutrWorker BEFORE the
@@ -966,12 +972,13 @@ async function bootstrap(): Promise<void> {
     // produces the trigger. jobId matches ScoreWorker's idempotency
     // key shape so a BullMQ redelivery of the same trigger dedups.
     onNewSender: async (mailboxAccountId, senderKey) => {
-      const producedAtMs = Date.now();
-      await scoreProducerQueue.add(
-        SCORE_JOB,
-        { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs },
-        { jobId: `${mailboxAccountId}:${senderKey}:${producedAtMs}` },
-      );
+      const data: ScoreJobData = {
+        mailboxAccountId,
+        senderKey,
+        trigger: 'signal_change',
+        producedAtMs: Date.now(),
+      };
+      await scoreProducerQueue.add(SCORE_JOB, data, scoreJobOptions(scoreJobId(data)));
     },
     // Delta processed → debounced Autopilot apply sweep (D100 "on new
     // message arrival"; 2026-07-07 P0 — known-sender mail never
@@ -1174,7 +1181,16 @@ async function bootstrap(): Promise<void> {
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
     (job) => scoreWorker.run(job),
-    { connection, concurrency: 20, ...userFacingTuning },
+    // `scoreBullWorkerOptions()` (`score.worker.ts`) is the SAME function
+    // `score-bull-worker-registration.test.ts` imports and calls, so a
+    // future accidental removal of its `...perMailboxWorkerSettings()`
+    // spread — which pairs with `scoreJobOptions`'s
+    // `backoff: { type: 'custom' }`, and whose absence makes BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure instead
+    // of reaching `failed` (no Sentry capture, no dead-letter row) — fails
+    // that test for real instead of a hand-copied duplicate going stale
+    // (2026-09-29).
+    scoreBullWorkerOptions(connection),
   );
 
   scoreBullWorker.on('error', (err) => {
@@ -1796,7 +1812,7 @@ async function bootstrap(): Promise<void> {
       await scoreProducerQueue.add(
         SCORE_JOB,
         { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs: Date.now() },
-        { jobId: rescoreJobId(mailboxAccountId, sweepTick) },
+        scoreJobOptions(rescoreJobId(mailboxAccountId, sweepTick)),
       );
     },
   });
@@ -2347,8 +2363,14 @@ async function bootstrap(): Promise<void> {
     AUTOPILOT_APPLY_QUEUE,
     (job) => autopilotApplyWorker.run(job),
     // Matcher sweeps are DB-only (no Gmail, no lock); modest parallelism
-    // across mailboxes is plenty — sweeps are event-paced, not throughput.
-    { connection, concurrency: 5, ...userFacingTuning },
+    // across mailboxes is plenty — sweeps are event-paced, not throughput
+    // (concurrency: 5, inside `autopilotApplyWorkerOptions`). That helper's
+    // `...perMailboxWorkerSettings()` pairs with `autopilotApplyJobOptions`'s
+    // `backoff: { type: 'custom' }` — omitting it made BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure instead
+    // of retrying (2026-09-29; the same gap PR #827 fixed for
+    // `scoreBullWorker`).
+    autopilotApplyWorkerOptions(connection),
   );
   autopilotApplyBullWorker.on('error', (err) => {
     console.error(
@@ -2746,6 +2768,11 @@ async function bootstrap(): Promise<void> {
     // (D245 scan-progress-counts) — a Redis outage here costs only this
     // clear, never the purge.
     scanProgress: createRedisScanProgressStore(scanProgressConnection),
+    // Reuses the initial-sync reconciler's own Queue instance (D245
+    // `processing-and-retry-records`) to remove this mailbox's BullMQ job
+    // and trim the shared events stream — same best-effort reasoning as
+    // scanProgress above.
+    initialSyncQueue: reconcilerQueue,
     observer,
   });
   deletionPurgeWorker.setObserver(observer);
@@ -2967,6 +2994,21 @@ async function bootstrap(): Promise<void> {
         db,
         emailQueue: emailSendQueue,
         appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+      }),
+      // `mailbox.non_mail_purged` — one signal_change score job per
+      // sender whose counts the purge changed (the ScoreWorker stays the
+      // only writer of `triage_decisions`), then one backstop Autopilot
+      // sweep a full window later. Not a guarantee: every re-score shares
+      // the purge's clock, so their own sweep triggers collapse onto
+      // whichever finishes first (BullMQ jobId dedup), and this backstop
+      // fires on a timer, not on "all re-scores done" — a verdict written
+      // after it starts waits for some other trigger (docs/log/mistakes/
+      // 2026-09-28-outbox-consumer-publishes-inside-the-claim-transaction.md).
+      rescoreSenders: buildRescoreSenders({
+        scoreQueue: scoreProducerQueue,
+        sweepAfter: buildAutopilotApplyDeltaTrigger(autopilotApplyQueue, {
+          settleMs: AUTOPILOT_APPLY_DELTA_WINDOW_MS,
+        }),
       }),
     }),
     observer: {

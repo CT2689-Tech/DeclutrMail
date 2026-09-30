@@ -5,7 +5,7 @@ import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
 import type { ScoreJobData } from '@declutrmail/workers';
-import { SCORE_JOB } from '@declutrmail/workers';
+import { SCORE_JOB, scoreJobId, scoreJobOptions } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -160,11 +160,12 @@ export class TriageService {
    * `triage_decisions` directly. The worker owns the upsert.
    *
    * Returns the `idempotencyKey` the worker will use so callers can
-   * trace the job. Stable across the duplicate-add window: two POSTs
-   * with the same `producedAtMs` (clock tied to the request, not
-   * `Date.now()`) get the same BullMQ `jobId` and the second is a
-   * no-op — matches the worker's
-   * `${mailbox_id}:${sender_key}:${produced_at}` idempotency contract.
+   * trace the job — `scoreJobId`, the worker's own idempotency key. Two
+   * calls with the same `producedAtMs` would share a `jobId` and dedup,
+   * but its only caller (`POST /api/triage/score-sender`) never supplies
+   * one, so in practice every request gets a fresh `Date.now()` and no
+   * request-level dedup happens; `producedAtMs` exists for a future
+   * caller that wants it, and for tests.
    */
   async scoreSender(input: {
     mailboxAccountId: string;
@@ -183,15 +184,14 @@ export class TriageService {
         'REDIS_URL is not set — score-trigger queue unavailable. Set REDIS_URL or run with `docker compose up -d redis`.',
       );
     }
-    const producedAtMs = input.producedAtMs ?? Date.now();
-    const idempotencyKey = `${input.mailboxAccountId}:${input.senderKey}:${producedAtMs}`;
     const payload: ScoreJobData = {
       mailboxAccountId: input.mailboxAccountId,
       senderKey: input.senderKey,
       trigger: input.reason === 'stale' ? 'stale_refresh' : 'manual_rescore',
-      producedAtMs,
+      producedAtMs: input.producedAtMs ?? Date.now(),
     };
-    await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });
+    const idempotencyKey = scoreJobId(payload);
+    await this.scoreQueue.add(SCORE_JOB, payload, scoreJobOptions(idempotencyKey));
     return { idempotencyKey };
   }
 

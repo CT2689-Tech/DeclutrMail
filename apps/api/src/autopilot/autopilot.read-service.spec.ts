@@ -1349,6 +1349,17 @@ describe('AutopilotReadService', () => {
     beforeEach(async () => {
       await indexSenders(db, mailboxA, FIXTURE_SENDER_KEYS);
       await indexSenders(db, mailboxB, FIXTURE_SENDER_KEYS);
+      // Founder decision 2026-09-29 (a) added a guard: approving refuses
+      // while the owning rule is off or paused (its own describe block
+      // below). This block is about approve MECHANICS — protection,
+      // idempotency, cross-tenant isolation, stale-evidence exclusion —
+      // so every preset here runs, matching the only state real pending
+      // suggestions exist under in production (the apply worker only
+      // ever matches enabled, non-paused rules).
+      await db
+        .update(automationRules)
+        .set({ enabled: true, mode: 'observe' })
+        .where(inArray(automationRules.mailboxAccountId, [mailboxA, mailboxB]));
     });
 
     function withQueue(): { svc: AutopilotReadService; add: ReturnType<typeof vi.fn> } {
@@ -1536,6 +1547,61 @@ describe('AutopilotReadService', () => {
       expect(approved!.skippedProtectedCount).toBe(1);
     });
 
+    // Founder decision 2026-09-29 (a): an already-unsubscribed sender's
+    // suggestion is excluded from the list, the count and approve-all —
+    // the same layer Protected sits at, for the same reason: approving
+    // it would be a no-op the action worker silently drops
+    // (`skippedAlreadyUnsubscribed`).
+    // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+    it('counts, lists and approves the same set when a sender is already unsubscribed', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
+      const doneKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: doneKey,
+        policyType: 'unsubscribe',
+      });
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: doneKey,
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'already-unsubscribed',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'b'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'still-subscribed',
+        },
+      ]);
+
+      // Read the count and the list BEFORE approving — approve changes both.
+      const rule = (await svc.listRules(mailboxA)).find((r) => r.id === ruleId);
+      const listed = (await svc.listPendingSuggestions(mailboxA)).filter(
+        (m) => m.ruleId === ruleId,
+      );
+      const approved = await svc.approveAllForRule(mailboxA, ruleId);
+
+      expect(listed.map((m) => m.reason)).toEqual(['still-subscribed']);
+      expect(rule!.observeDigest?.pendingTotal).toBe(listed.length);
+      // "Would have requested unsubscribe from N senders" reads senders7d.
+      expect(rule!.observeDigest?.senders7d).toBe(1);
+      expect(approved!.approvedCount).toBe(listed.length);
+
+      // Stays pending — this is exclusion from the offer, not a dismissal.
+      const [doneRow] = await db
+        .select({ resolution: ruleMatchLog.resolution })
+        .from(ruleMatchLog)
+        .where(and(eq(ruleMatchLog.ruleId, ruleId), eq(ruleMatchLog.senderKey, doneKey)));
+      expect(doneRow!.resolution).toBe('pending');
+    });
+
     it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
       const { svc, add } = withQueue();
       const { matchId } = await seedPendingMatch(mailboxA);
@@ -1662,6 +1728,171 @@ describe('AutopilotReadService', () => {
         .where(inArray(ruleMatchLog.id, [protectedMatch!.id, okMatch!.id]));
       expect(rows.find((r) => r.id === protectedMatch!.id)?.resolution).toBe('pending');
       expect(rows.find((r) => r.id === okMatch!.id)?.resolution).toBe('approved');
+    });
+
+    // Founder decision 2026-09-29 (a):
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    describe('refuses while the rule is off or paused', () => {
+      it('approveMatches refuses a still-pending suggestion under a paused rule', async () => {
+        const { svc, add } = withQueue();
+        const { ruleId, matchId } = await seedPendingMatch(mailboxA, 'auto_archive_low_engagement');
+        await db
+          .update(automationRules)
+          .set({ mode: 'paused' })
+          .where(eq(automationRules.id, ruleId));
+
+        await expect(svc.approveMatches(mailboxA, [matchId])).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(add).not.toHaveBeenCalled();
+        const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+        expect(row!.resolution).toBe('pending');
+      });
+
+      it('approveMatches refuses a still-pending suggestion under a disabled rule', async () => {
+        const { svc, add } = withQueue();
+        const { ruleId, matchId } = await seedPendingMatch(mailboxA, 'auto_archive_low_engagement');
+        await db
+          .update(automationRules)
+          .set({ enabled: false })
+          .where(eq(automationRules.id, ruleId));
+
+        await expect(svc.approveMatches(mailboxA, [matchId])).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(add).not.toHaveBeenCalled();
+        const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+        expect(row!.resolution).toBe('pending');
+      });
+
+      it('approveAllForRule refuses for a paused rule', async () => {
+        const { svc, add } = withQueue();
+        const { ruleId } = await seedPendingMatch(mailboxA, 'auto_archive_low_engagement');
+        await db
+          .update(automationRules)
+          .set({ mode: 'paused' })
+          .where(eq(automationRules.id, ruleId));
+
+        await expect(svc.approveAllForRule(mailboxA, ruleId)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(add).not.toHaveBeenCalled();
+      });
+
+      it('approveAllForRule refuses for a disabled rule', async () => {
+        const { svc, add } = withQueue();
+        const { ruleId } = await seedPendingMatch(mailboxA, 'auto_archive_low_engagement');
+        await db
+          .update(automationRules)
+          .set({ enabled: false })
+          .where(eq(automationRules.id, ruleId));
+
+        await expect(svc.approveAllForRule(mailboxA, ruleId)).rejects.toBeInstanceOf(
+          BadRequestException,
+        );
+        expect(add).not.toHaveBeenCalled();
+      });
+
+      it('an already-resolved match under a since-paused rule does not block a replay', async () => {
+        // A benign idempotent replay must not 400 just because the rule
+        // was paused after the match was already approved.
+        const { svc } = withQueue();
+        const { ruleId, matchId } = await seedPendingMatch(mailboxA, 'auto_archive_low_engagement');
+        await svc.approveMatches(mailboxA, [matchId]);
+        await db
+          .update(automationRules)
+          .set({ mode: 'paused' })
+          .where(eq(automationRules.id, ruleId));
+
+        const replay = await svc.approveMatches(mailboxA, [matchId]);
+        expect(replay.approvedCount).toBe(0);
+        expect(replay.alreadyResolvedCount).toBe(1);
+      });
+    });
+
+    // Founder decision 2026-09-29 (a):
+    // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+    describe('approveAllForRule stays within its scope', () => {
+      it('a matchIds scope approves only the named ids, even when more are offerable', async () => {
+        const { svc } = withQueue();
+        const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+        const [shown, alsoOfferableButNotShown] = await db
+          .insert(ruleMatchLog)
+          .values([
+            {
+              ruleId,
+              mailboxAccountId: mailboxA,
+              senderKey: 'd'.repeat(64),
+              modeAtMatch: 'observe',
+              confidence: '0.92',
+              reason: 'shown-in-preview',
+            },
+            {
+              ruleId,
+              mailboxAccountId: mailboxA,
+              senderKey: 'e'.repeat(64),
+              modeAtMatch: 'observe',
+              confidence: '0.92',
+              reason: 'not-shown',
+            },
+          ])
+          .returning({ id: ruleMatchLog.id });
+
+        const result = await svc.approveAllForRule(mailboxA, ruleId, {
+          matchIds: [shown!.id],
+        });
+        expect(result!.approvedCount).toBe(1);
+
+        const rows = await db
+          .select({ id: ruleMatchLog.id, resolution: ruleMatchLog.resolution })
+          .from(ruleMatchLog)
+          .where(inArray(ruleMatchLog.id, [shown!.id, alsoOfferableButNotShown!.id]));
+        expect(rows.find((r) => r.id === shown!.id)?.resolution).toBe('approved');
+        expect(rows.find((r) => r.id === alsoOfferableButNotShown!.id)?.resolution).toBe('pending');
+      });
+
+      it('a matchedBefore scope excludes a suggestion that arrived after the preview loaded', async () => {
+        const { svc } = withQueue();
+        const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+        const previewLoadedAt = new Date('2026-01-01T00:00:00.000Z');
+        const [before, after] = await db
+          .insert(ruleMatchLog)
+          .values([
+            {
+              ruleId,
+              mailboxAccountId: mailboxA,
+              senderKey: 'd'.repeat(64),
+              modeAtMatch: 'observe',
+              confidence: '0.92',
+              reason: 'existed-when-previewed',
+              matchedAt: new Date(previewLoadedAt.getTime() - 60_000),
+            },
+            {
+              ruleId,
+              mailboxAccountId: mailboxA,
+              senderKey: 'e'.repeat(64),
+              modeAtMatch: 'observe',
+              confidence: '0.92',
+              reason: 'arrived-after-preview-loaded',
+              matchedAt: new Date(previewLoadedAt.getTime() + 60_000),
+            },
+          ])
+          .returning({ id: ruleMatchLog.id });
+
+        const result = await svc.approveAllForRule(mailboxA, ruleId, {
+          matchedBefore: previewLoadedAt.toISOString(),
+        });
+        expect(result!.approvedCount).toBe(1);
+
+        const rows = await db
+          .select({ id: ruleMatchLog.id, resolution: ruleMatchLog.resolution })
+          .from(ruleMatchLog)
+          .where(inArray(ruleMatchLog.id, [before!.id, after!.id]));
+        expect(rows.find((r) => r.id === before!.id)?.resolution).toBe('approved');
+        // The suggestion that "arrived after the screen loaded" — the
+        // exact race the founder decision closes — stays pending.
+        expect(rows.find((r) => r.id === after!.id)?.resolution).toBe('pending');
+      });
     });
   });
 
@@ -1832,6 +2063,54 @@ describe('AutopilotReadService', () => {
         .returning({ id: automationRules.id });
       expect(await service.previewRule(mailboxA, custom!.id)).toBeNull();
     });
+
+    // Founder decision 2026-09-29 (a):
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    describe('waitingApprovedCount', () => {
+      it('counts approved, unapplied matches whose evidence is current', async () => {
+        const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+        await indexSenders(db, mailboxA, ['7'.repeat(64)]);
+        await db.insert(ruleMatchLog).values({
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: '7'.repeat(64),
+          modeAtMatch: 'active',
+          resolution: 'approved',
+          confidence: '0.92',
+          reason: 'waiting-to-run',
+        });
+
+        const result = await service.previewRule(mailboxA, ruleId);
+        expect(result!.waitingApprovedCount).toBe(1);
+      });
+
+      it('excludes an approved match whose evidence went stale (sender re-indexed after it matched)', async () => {
+        const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+        const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000);
+        await db.insert(ruleMatchLog).values({
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: '8'.repeat(64),
+          modeAtMatch: 'active',
+          resolution: 'approved',
+          confidence: '0.92',
+          reason: 'stale-by-resync',
+          matchedAt: tenDaysAgo,
+        });
+        // Sender re-created (resync) AFTER the match — evidence is stale,
+        // and the action sweep will never load this row either.
+        await indexSenders(db, mailboxA, ['8'.repeat(64)], new Date());
+
+        const result = await service.previewRule(mailboxA, ruleId);
+        expect(result!.waitingApprovedCount).toBe(0);
+      });
+
+      it('is zero for a rule with no approved-unapplied matches', async () => {
+        const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+        const result = await service.previewRule(mailboxA, ruleId);
+        expect(result!.waitingApprovedCount).toBe(0);
+      });
+    });
   });
 
   describe('observe-window projection (U14 — D10/D104)', () => {
@@ -1934,7 +2213,7 @@ describe('AutopilotReadService', () => {
       });
     }
 
-    it('deduplicates recent sender joins while retaining old pending and excluding resolved history', async () => {
+    it('deduplicates pending-queue joins while counting old pending and excluding resolved history', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const recent = new Date(Date.now() - 86_400_000);
       const old = new Date(Date.now() - 30 * 86_400_000);
@@ -1949,7 +2228,11 @@ describe('AutopilotReadService', () => {
       expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
         pendingTotal: 2,
         senders7d: 1,
-        inboxMessagesNow: 3,
+        // SENDER_1 (still pending) + SENDER_2 (still pending, 30d old —
+        // founder decision 2026-09-29: the pending queue has no age
+        // limit). SENDER_3 contributes nothing: its only row is
+        // dismissed, so it was never in `pendingTotal` either.
+        inboxMessagesNow: 8,
       });
     });
 
@@ -1984,13 +2267,43 @@ describe('AutopilotReadService', () => {
       expect(rule!.observeDigest).toEqual({
         pendingTotal: 3,
         senders7d: 3,
-        inboxMessagesNow: 8, // includes dismissed sender 4; archived + out-of-window excluded
+        // SENDER_1 + SENDER_2 + SENDER_3 (still pending, 10d old — the
+        // pending queue is unbounded by age, founder decision
+        // 2026-09-29). SENDER_4 is excluded: it's dismissed, so
+        // approving moves nothing for it even though it is within the
+        // 7-day window `senders7d` counts.
+        inboxMessagesNow: 9,
       });
 
       // Tenant isolation — B sees only its own row.
       const bRules = await service.listRules(mailboxB);
       const bRule = bRules.find((r) => r.id === ruleB);
       expect(bRule!.observeDigest).toEqual({ pendingTotal: 1, senders7d: 1, inboxMessagesNow: 9 });
+    });
+
+    // Founder decision 2026-09-29 (a): "N senders matched in the last 7
+    // days · M emails could be archived if you approve them" must equal
+    // exactly what "Review all" moves — the full pending queue, not
+    // last week's slice of it. Until this fix `inboxMessagesNow` joined
+    // the SAME 7-day-recent sender set as `senders7d`, so a pending
+    // suggestion older than a week (the queue never refreshes a match's
+    // date) silently dropped out of M while staying in `pendingTotal`
+    // ("Review all N").
+    // docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+    it('counts a pending suggestion matched more than 7 days ago, same as Review all would move', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const twelveDaysAgo = new Date(Date.now() - 12 * 86_400_000);
+      await seedPending(mailboxA, ruleId, SENDER_1, twelveDaysAgo);
+      await seedMessages(mailboxA, SENDER_1, { inbox: 6, archived: 0 });
+
+      const rule = await service.getRule(mailboxA, ruleId);
+      expect(rule!.observeDigest).toEqual({
+        pendingTotal: 1,
+        // Outside the 7-day window this number itself counts.
+        senders7d: 0,
+        // But still fully counted here — approving it moves all 6.
+        inboxMessagesNow: 6,
+      });
     });
 
     // Pins what `inboxMessagesNow` actually measures. Until 2026-08-21 it

@@ -38,6 +38,11 @@ import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
 import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
+import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
+import {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
 // decisions never success-toast), so failure tests must assert the
@@ -499,6 +504,59 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'today-summary'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
+  });
+
+  // D245: a sender protected while its action waited is skipped. The job
+  // ends "done, nothing changed", but the sender stays in the queue, so
+  // it is not a decision — and the pill, not a toast, says what happened.
+  it('does not count an action skipped because the sender became Protected', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 47,
+              affectedCount: 0,
+              undoToken: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+    const { container } = renderScreen(client);
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    // The queue still refreshes: the sender's row now reads Protected.
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+    );
+    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
   it('Delete is available in Triage and dispatches through the existing previewed Trash pipeline', async () => {
@@ -1028,7 +1086,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
-  it('poll error (worker/API down mid-action): warn toast, latch releases, no invalidation', async () => {
+  it('poll error (worker/API down mid-action): warn toast, the screen frees, the row stays held', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1056,7 +1114,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
-    const { container } = renderScreen(client);
+    renderScreen(client);
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
@@ -1071,7 +1129,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // The outcome is unconfirmed, so the toast must send the user to
     // Activity rather than invite a blind retry.
     expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
-    await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+    // The latch releases, so every OTHER row takes decisions again — but
+    // this one's job may still be running: a second Archive would run it
+    // twice, so the row stays held (flow-completeness 2026-09-27).
+    const rowOf = (name: string) => screen.getAllByText(name)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(rowOf(GROUPON.senderName)).toHaveAttribute('aria-busy', 'true'));
+    expect(rowOf(LINKEDIN.senderName)).toHaveAttribute('aria-busy', 'false');
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
     expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
@@ -1105,7 +1168,14 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
   });
 
-  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
+  /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
+  function apiFailure(status: number, code: string): Response {
+    return new Response(JSON.stringify({ error: { code, message: code } }), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  function unsubThenBacklog(backlog: () => Response) {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1119,13 +1189,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
             },
           }),
       },
-      {
-        // The backlog-archive enqueue fails AFTER the intent succeeded.
-        method: 'POST',
-        path: '/api/actions',
-        respond: () => jsonServerError('boom'),
-      },
+      { method: 'POST', path: '/api/actions', respond: backlog },
     ]);
+  }
+
+  it('Unsubscribe partial failure: intent recorded (queue invalidated) but backlog archive warns', async () => {
+    // The backlog-archive enqueue fails AFTER the intent succeeded.
+    unsubThenBacklog(() => apiFailure(400, 'VALIDATION_FAILED'));
 
     const client = createTestQueryClient();
     const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
@@ -1138,10 +1208,10 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await confirmOpenSheet('Unsubscribe');
 
     // The partial-failure copy is explicit: the unsubscribe DID queue,
-    // only the backlog archive did not (recoverable from Senders).
+    // only the backlog archive did not.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived.*Senders/),
+        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived — Archive it/),
         'warn',
       ),
     );
@@ -1151,6 +1221,94 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     // No archive latch lingers (the enqueue never returned an actionId).
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+  });
+
+  // The queue did not confirm the backlog's add: it may still run, so it
+  // is not "wasn't archived".
+  it('Unsubscribe then an unconfirmed backlog start: sends the user to Activity', async () => {
+    unsubThenBacklog(() => apiFailure(503, 'ENQUEUE_FAILED'));
+    renderScreen(createTestQueryClient());
+
+    expandRow(LINKEDIN.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
+    fireEvent.click(screen.getByRole('checkbox', { name: /Also archive the/i }));
+    await confirmOpenSheet('Unsubscribe');
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Unsubscribe request recorded, but can't tell if Archive started for older email from ${LINKEDIN.senderName} — check Activity before retrying.`,
+        'warn',
+      ),
+    );
+  });
+
+  // A 5xx does not prove the job never started: the row must not re-arm
+  // for a second run (flow-completeness audit 2026-09-27).
+  it('holds a row whose Archive may have started', async () => {
+    let posts = 0;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          posts += 1;
+          return apiFailure(503, 'ENQUEUE_FAILED');
+        },
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(posts).toBe(1));
+    const row = () => screen.getAllByText(GROUPON.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+
+    fireEvent.keyDown(window, { key: 'a' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(posts).toBe(1);
+  });
+
+  // Held says what it knows — the outcome is unknown — as Senders and the
+  // pill do; "Applying your decision" would claim a job we cannot see.
+  it('says a held row’s outcome is unknown, and frees it once the queue drops it', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => apiFailure(503, 'ENQUEUE_FAILED'),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = renderScreen(client);
+    const row = () => screen.getAllByText(GROUPON.senderName)[0]!.closest('[aria-busy]');
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+    expect(within(row() as HTMLElement).getByText('Archive: unknown')).toBeInTheDocument();
+    expect(screen.queryByText(`Applying your decision for ${GROUPON.senderName}`)).toBeNull();
+
+    // Its job landed: the next queue read no longer lists it…
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen state={{ kind: 'ready', rows: [LINKEDIN], stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+    // …and an Undo puts it back, with nothing running for it.
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'false'));
+    expect(screen.queryByText('Archive: unknown')).toBeNull();
   });
 
   it('re-entry guard: a 2nd decision while one confirms is deferred with an info toast', async () => {
@@ -1224,6 +1382,70 @@ describe('TriageScreen — D226 mutation wiring', () => {
       ),
     );
     expect(keeps).toHaveLength(0);
+  });
+
+  it('refuses a row the SERVER reports busy, with zero local Triage state (2026-09-28)', async () => {
+    // Nothing local (no activeAction, no intentRowId, no overdueBatch) —
+    // this queue has never dispatched anything itself. Only
+    // `GET /api/actions/active` knows GROUPON's sender is busy, the same
+    // fact a different surface (Senders) or a second tab would produce.
+    let actionPosts = 0;
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: GROUPON.senderName,
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [GROUPON.senderId],
+                senderKeys: ['groupon-key'],
+              },
+            ],
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          actionPosts += 1;
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              compositeId: ACTION_ID,
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 47,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Still confirming your last decision — give it a moment.',
+        'info',
+      ),
+    );
+    expect(actionPosts).toBe(0);
   });
 });
 
@@ -1345,6 +1567,79 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
         'warn',
       ),
     );
+  });
+
+  it('one_click → refused as Protected when it was due: "not sent", never "failed" (D245)', async () => {
+    addFetchHandlers([
+      intentHandler({ method: 'one_click', executionActionId: EXEC_ID, mailtoUrl: null }),
+      execStatusHandler('failed', UNSUB_SENDER_PROTECTED_ERROR_CODE),
+    ]);
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `Unsubscribe from ${LINKEDIN.senderName} not sent — sender was Protected.`,
+        'info',
+      ),
+    );
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/failed/), expect.anything());
+  });
+
+  function intentRefusal(status: number, code: string) {
+    return {
+      method: 'POST' as const,
+      path: '/api/actions/unsubscribe-intent',
+      respond: () =>
+        new Response(JSON.stringify({ error: { code, message: code } }), {
+          status,
+          headers: { 'content-type': 'application/json' },
+        }),
+    };
+  }
+
+  it('a request already on its way: says so, and reports nothing', async () => {
+    addFetchHandlers([intentRefusal(409, 'UNSUBSCRIBE_IN_FLIGHT')]);
+    renderScreen(createTestQueryClient());
+
+    await confirmUnsubWithoutBacklog();
+
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        `An unsubscribe request to ${LINKEDIN.senderName} is already on its way.`,
+        'info',
+      ),
+    );
+    expect(h.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // A 5xx cannot prove nothing started: a second click would send a second
+  // one-way request (flow gate 2026-09-27).
+  it('holds the row when the request may have started, so a second click sends nothing', async () => {
+    let posts = 0;
+    const refusal = intentRefusal(503, 'SERVICE_UNAVAILABLE');
+    addFetchHandlers([
+      {
+        ...refusal,
+        respond: () => {
+          posts += 1;
+          return refusal.respond();
+        },
+      },
+    ]);
+    renderScreen(createTestQueryClient());
+
+    await confirmUnsubWithoutBacklog();
+    const row = () => screen.getAllByText(LINKEDIN.senderName)[0]!.closest('[aria-busy]');
+    await waitFor(() => expect(row()).toHaveAttribute('aria-busy', 'true'));
+    expect(within(row() as HTMLElement).getByText('Unsubscribe: unknown')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'u' });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(posts).toBe(1);
   });
 
   it('one_click → 3xx redirect: ambiguous copy ("may have worked"), never a claimed success', async () => {
@@ -1689,6 +1984,49 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
     // Two-sided: a flag only ever observed set is not a verified flag.
     expect(await archiveAndCaptureBody(GROUPON)).not.toMatchObject({ override: true });
   });
+
+  /**
+   * The unsubscribe intent needs the same acknowledgement: without it the
+   * send is re-checked when it runs and refused as Protected (D245).
+   */
+  async function unsubscribeAndCaptureBody(row: (typeof TRIAGE_QUEUE)[number]) {
+    const intents: unknown[] = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/unsubscribe-intent',
+        respond: async (req) => {
+          intents.push(await req.json());
+          return jsonOk({
+            data: {
+              senderId: row.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '77777777-7777-4777-8777-777777777777',
+              method: 'none',
+              executionActionId: null,
+              mailtoUrl: null,
+            },
+          });
+        },
+      },
+    ]);
+
+    renderWith([row]);
+    expandRow(row.senderName);
+    fireEvent.keyDown(window, { key: 'u' });
+    await confirmOpenSheet('Unsubscribe', false);
+    await waitFor(() => expect(intents).toHaveLength(1));
+    return intents[0];
+  }
+
+  it('sends override:true when unsubscribing a PROTECTED row (D245)', async () => {
+    const protectedLinkedin = { ...LINKEDIN, protectionReason: 'manual' as const };
+    expect(await unsubscribeAndCaptureBody(protectedLinkedin)).toMatchObject({ override: true });
+  });
+
+  it('does NOT send override when unsubscribing an unprotected row', async () => {
+    expect(await unsubscribeAndCaptureBody(LINKEDIN)).not.toHaveProperty('override');
+  });
 });
 
 /**
@@ -1937,6 +2275,64 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     }
   });
 
+  it('a parked action that ends skipped as Protected is not counted as decided (D245)', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let actionState: 'executing' | 'done' = 'executing';
+      addFetchHandlers([
+        enqueueOkHandler,
+        {
+          method: 'GET',
+          path: `/api/actions/${ACTION_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                status: actionState,
+                requestedCount: 47,
+                affectedCount: 0,
+                undoToken: null,
+                errorCode: actionState === 'done' ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+              },
+            }),
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+      const { container } = renderScreen(client);
+
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      await confirmOpenSheet('Archive');
+      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).not.toBeNull());
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
+          'info',
+        ),
+      );
+
+      invalidateSpy.mockClear();
+      h.toast.mockClear();
+      actionState = 'done';
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_POLL_MS * 2);
+      });
+      await waitFor(() =>
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
+      );
+      await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
+      expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+      expect(h.toast).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a sheet opened on a batch member before the batch parks cannot dispatch onto the parked member', async () => {
     // The bypass shape: batch members are NOT busy while the batch is
     // merely confirming (batchAction), so a sheet can open on one. When
@@ -2079,5 +2475,448 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /** The Archive-verdict trio behind "Archive all 3 recommended senders". */
+  let batchClient: QueryClient;
+  function domainBatch(enqueue: () => Response, status?: () => Response) {
+    const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+    const buckets = {
+      all: 90,
+      olderThan30d: 60,
+      olderThan90d: 30,
+      olderThan180d: 9,
+      olderThan365d: 3,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: archiveTrio.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts: buckets,
+                protected: false,
+              })),
+              totals: buckets,
+              protectedCount: 0,
+            },
+          }),
+      },
+      { method: 'POST', path: '/api/actions', respond: enqueue },
+      ...(status
+        ? [{ method: 'GET' as const, path: /^\/api\/actions\/batch\//, respond: status }]
+        : []),
+    ]);
+    batchClient = createTestQueryClient();
+    render(
+      <QueryWrapper client={batchClient}>
+        <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+    return archiveTrio;
+  }
+
+  async function confirmDomainBatch() {
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+    const sheet = await screen.findByRole('dialog');
+    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+  }
+
+  // D245: a member refused at the click (Protected between the preview and
+  // the confirm) has no job. Only a toast can say so — the pill never saw
+  // it — and its row must not read busy while the rest runs.
+  it('names a batch member refused at the click, and never holds its row busy', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '99999999-9999-4999-8999-999999999999';
+      let refusedId = '';
+      const trio = domainBatch(
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 60,
+              wakeAt: null,
+              skipped: [{ senderId: refusedId, reason: 'protected' }],
+            },
+          }),
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'executing',
+              total: 2,
+              done: 0,
+              failed: 0,
+              requestedCount: 60,
+              affectedCount: 0,
+              undoToken: null,
+              unsubscribeOutcomes: null,
+            },
+          }),
+      );
+      refusedId = trio[0]!.senderId;
+      await confirmDomainBatch();
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith('Archive: 1 Protected sender skipped', 'warn'),
+      );
+
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is still running — see Activity.',
+          'info',
+        ),
+      );
+      const rowOf = (name: string) =>
+        screen
+          .getByRole('button', { name: `${name} — expand triage detail` })
+          .closest('[aria-busy]');
+      expect(rowOf(trio[0]!.senderName)).toHaveAttribute('aria-busy', 'false');
+      expect(rowOf(trio[1]!.senderName)).toHaveAttribute('aria-busy', 'true');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says nothing changed when every batch member was refused, without a crash report', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'NO_ACTIONABLE_SENDERS' } }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const invalidate = vi.spyOn(batchClient, 'invalidateQueries');
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        'Nothing changed — those senders are Protected or no longer in this mailbox.',
+        'warn',
+      ),
+    );
+    expect(h.captureFeatureException).not.toHaveBeenCalled();
+    // The rows still read as before the click: the queue is re-read.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+  });
+
+  // The mailbox guard answers 409 too: a designed state, not a defect.
+  it('reports no crash for a mailbox conflict on the batch', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'SELECT_MAILBOX' } }), {
+          status: 409,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Couldn't start Archive for the .* batch — nothing changed\.$/),
+        'warn',
+      ),
+    );
+    expect(h.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // Some members may have started: the queue drops the rows their jobs
+  // took, and the pill finds the jobs.
+  it('re-reads the queue when a batch may have started', async () => {
+    domainBatch(
+      () =>
+        new Response(JSON.stringify({ error: { code: 'ENQUEUE_FAILED', message: 'x' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    const invalidate = vi.spyOn(batchClient, 'invalidateQueries');
+    await confirmDomainBatch();
+    await waitFor(() =>
+      expect(h.toast).toHaveBeenCalledWith(
+        expect.stringMatching(/^Can't tell if Archive for the .* batch started/),
+        'warn',
+      ),
+    );
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+    // Its members may be running: they must not re-arm for a second run.
+    await waitFor(() =>
+      expect(document.querySelectorAll('[aria-busy="true"]').length).toBeGreaterThanOrEqual(3),
+    );
+  });
+
+  // The parked twin (ACTION_OVERDUE_MS): the late terminal read counts
+  // only what the server says ran.
+  it('does not count a member skipped while a PARKED batch waited as decided', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const BATCH_ID = '77777777-7777-4777-8777-777777777777';
+      let finished = false;
+      let skippedId = '';
+      const trio = domainBatch(
+        () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 90,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+        () =>
+          jsonOk({
+            data: finished
+              ? {
+                  batchId: BATCH_ID,
+                  status: 'done',
+                  total: 2,
+                  done: 2,
+                  failed: 0,
+                  requestedCount: 60,
+                  affectedCount: 60,
+                  undoToken: null,
+                  unsubscribeOutcomes: null,
+                  skippedProtectedSenderIds: [skippedId],
+                }
+              : {
+                  batchId: BATCH_ID,
+                  status: 'executing',
+                  total: 3,
+                  done: 0,
+                  failed: 0,
+                  requestedCount: 90,
+                  affectedCount: 0,
+                  undoToken: null,
+                  unsubscribeOutcomes: null,
+                },
+          }),
+      );
+      skippedId = trio[0]!.senderId;
+      const decidedBefore = useTriageStore.getState().sessionDecidedCount;
+      await confirmDomainBatch();
+      // The batch handle is live once its card reads busy.
+      await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).not.toBeNull());
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_OVERDUE_MS);
+      });
+      await waitFor(() =>
+        expect(h.toast).toHaveBeenCalledWith(
+          'Archive for the Archive-recommended batch is still running — see Activity.',
+          'info',
+        ),
+      );
+
+      finished = true;
+      await act(async () => {
+        vi.advanceTimersByTime(ACTION_POLL_MS * 2);
+      });
+      await waitFor(() =>
+        expect(useTriageStore.getState().sessionDecidedCount).toBe(decidedBefore + 2),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // D245: a sender protected while the batch waited is skipped exactly
+  // like one protected at the click — it stays in the queue, so it is
+  // not counted as decided.
+  it('does not count a batch member skipped as Protected as decided', async () => {
+    const BATCH_ID = '88888888-8888-4888-8888-888888888888';
+    const archiveTrio = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive').slice(0, 3);
+    expect(archiveTrio).toHaveLength(3);
+    const buckets = {
+      all: 90,
+      olderThan30d: 60,
+      olderThan90d: 30,
+      olderThan180d: 9,
+      olderThan365d: 3,
+    };
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: archiveTrio.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts: buckets,
+                protected: false,
+              })),
+              totals: buckets,
+              protectedCount: 0,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'queued',
+              senderCount: 3,
+              requestedTotal: 90,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/batch/${BATCH_ID}`,
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: BATCH_ID,
+              status: 'done',
+              // The skipped member is left out of every count.
+              total: 2,
+              done: 2,
+              failed: 0,
+              requestedCount: 60,
+              affectedCount: 60,
+              undoToken: null,
+              unsubscribeOutcomes: null,
+              skippedProtectedSenderIds: [archiveTrio[0]!.senderId],
+            },
+          }),
+      },
+    ]);
+
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: archiveTrio, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
+    const batchSheet = await screen.findByRole('dialog');
+    const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    await waitFor(() => expect(batchConfirm).not.toBeDisabled());
+    fireEvent.click(batchConfirm);
+
+    await waitFor(() => expect(useTriageStore.getState().sessionMessagesMoved).toBe(60));
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(2);
+  });
+});
+
+/**
+ * A row held after a 5xx (its job may be running) must never ride a batch:
+ * "Archive all" would enqueue it a second time (flow gate 2026-09-27).
+ */
+describe('TriageScreen — a held row stays out of every batch', () => {
+  beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    resetTriageStore();
+    h.toast.mockClear();
+    h.captureFeatureException.mockClear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: PREVIEW_BODY }),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+    ]);
+  });
+  afterEach(() => resetFetchStub());
+
+  it('leaves a held row out of the verdict batch, so Archive all never sends it twice', async () => {
+    const archiveRows = TRIAGE_QUEUE.filter((r) => r.verdict === 'archive');
+    const held = archiveRows[0]!;
+    const buckets = {
+      all: 30,
+      olderThan30d: 20,
+      olderThan90d: 10,
+      olderThan180d: 3,
+      olderThan365d: 1,
+    };
+    const bulkBodies: Array<{ senderIds: string[] }> = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: async (req) => {
+          const { senderIds } = (await req.json()) as { senderIds: string[] };
+          return jsonOk({
+            data: {
+              senders: archiveRows
+                .filter((r) => senderIds.includes(r.senderId))
+                .map((r) => ({
+                  senderId: r.senderId,
+                  name: r.senderName,
+                  counts: buckets,
+                  protected: false,
+                })),
+              totals: buckets,
+              protectedCount: 0,
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          const { selector } = (await req.json()) as {
+            selector: { type: string; senderIds?: string[] };
+          };
+          // The single Archive answers 5xx: it may have started.
+          if (selector.type !== 'senders') return jsonServerError('boom');
+          const senderIds = selector.senderIds ?? [];
+          bulkBodies.push({ senderIds });
+          return jsonOk({
+            data: {
+              batchId: '99999999-9999-4999-8999-999999999999',
+              status: 'queued',
+              senderCount: senderIds.length,
+              requestedTotal: 90,
+              wakeAt: null,
+              skipped: [],
+            },
+          });
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageScreen state={{ kind: 'ready', rows: archiveRows, stats: TRIAGE_SESSION_STATS }} />
+      </QueryWrapper>,
+    );
+
+    expandRow(held.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() =>
+      expect(screen.getAllByText(held.senderName)[0]!.closest('[aria-busy]')).toHaveAttribute(
+        'aria-busy',
+        'true',
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Archive all \d+ recommended senders/ }));
+    const sheet = await screen.findByRole('dialog');
+    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    await waitFor(() => expect(confirm).not.toBeDisabled());
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(bulkBodies).toHaveLength(1));
+    expect(bulkBodies[0]!.senderIds).not.toContain(held.senderId);
+    expect(bulkBodies[0]!.senderIds).toHaveLength(archiveRows.length - 1);
   });
 });

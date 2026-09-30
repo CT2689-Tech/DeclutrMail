@@ -70,7 +70,7 @@
 
 import { Queue } from 'bullmq';
 import postgres from 'postgres';
-import { SCORE_JOB, type ScoreJobData } from '@declutrmail/workers';
+import { SCORE_JOB, scoreJobOptions, type ScoreJobData } from '@declutrmail/workers';
 
 interface Affected {
   mailbox_account_id: string;
@@ -188,7 +188,14 @@ async function main(): Promise<void> {
           trigger: 'manual_rescore',
           producedAtMs,
         },
-        { jobId },
+        // `scoreJobOptions()`, not a bare `{ jobId }`: this enqueues onto
+        // the SAME production `score` queue every in-app producer does,
+        // consumed by the SAME `scoreBullWorker` — which already
+        // registers the custom backoff strategy `scoreJobOptions()` sets
+        // — so this backlog run gets the same `perMailboxPolicy` retry
+        // budget instead of dead-lettering on the first transient failure
+        // (2026-09-29).
+        scoreJobOptions(jobId),
       );
       added += 1;
     }

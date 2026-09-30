@@ -15,4 +15,4 @@ the preview must describe what the change does).
   you confirm" to the preview.
 **Verifies by:** A test that a suggestion added between the preview and the
 confirm click stays pending.
-**Status:** Open
+**Status:** Done 2026-09-29

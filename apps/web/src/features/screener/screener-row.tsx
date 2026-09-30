@@ -43,6 +43,7 @@ export function ScreenerRow({
   row,
   expanded,
   busy = false,
+  unknownVerb = null,
   pendingVerb = null,
   previewInboxCount = 'loading',
   previewInboxTotal = null,
@@ -62,6 +63,12 @@ export function ScreenerRow({
   expanded: boolean;
   /** True while this row's decision is confirming server-side. */
   busy?: boolean;
+  /**
+   * The verb whose outcome is unknown — its start could not be confirmed
+   * (a 5xx, or a lost status read). The row stays busy and says so, as
+   * Senders and the pill do, instead of claiming it is still applying.
+   */
+  unknownVerb?: string | null;
   /** Verb awaiting confirmation in this row's preview (D226). */
   pendingVerb?: ScreenerDecideVerb | null;
   previewInboxCount?: DecidePreviewCount;
@@ -427,10 +434,24 @@ export function ScreenerRow({
       )}
 
       {/* SR announcement while the decision confirms server-side. */}
-      {busy && (
-        <span role="status" style={{ position: 'absolute', left: -9999 }}>
-          Applying your decision for {row.senderName}
-        </span>
+      {unknownVerb != null ? (
+        <p
+          role="status"
+          style={{
+            margin: '0 0 12px',
+            paddingLeft: isPhone ? 54 : 56,
+            fontSize: text.xs,
+            color: color.fgMuted,
+          }}
+        >
+          {unknownVerb}: unknown
+        </p>
+      ) : (
+        busy && (
+          <span role="status" style={{ position: 'absolute', left: -9999 }}>
+            Applying your decision for {row.senderName}
+          </span>
+        )
       )}
     </div>
   );

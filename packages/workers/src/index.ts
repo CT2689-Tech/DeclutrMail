@@ -73,15 +73,20 @@ export type {
   GmailWatchResult,
 } from './ports.js';
 export type {
+  BatchModifyOptions,
   GmailMutationAccess,
   GmailMutationClient,
   LabelChange,
 } from './gmail-mutation-client.js';
+export { GMAIL_BATCH_MODIFY_MAX_IDS } from './gmail-mutation-client.js';
 export {
+  ENQUEUE_FAILED_ERROR_CODE,
   LABEL_ACTION_JOB,
   LABEL_ACTION_QUEUE,
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
   MAILBOX_ACTION_LOCK_NS,
   LabelActionWorker,
+  RECOVERY_SENDER_PROTECTED_ERROR_CODE,
   labelActionJobOptions,
   labelChangeForVerb,
   PASSTHROUGH_MAILBOX_LOCK,
@@ -226,6 +231,8 @@ export { seedAutopilotPresets } from './autopilot-preset-seeder.js';
 export {
   AUTOPILOT_APPLY_JOB,
   AUTOPILOT_APPLY_QUEUE,
+  autopilotApplyJobOptions,
+  autopilotApplyWorkerOptions,
   AutopilotApplyWorker,
 } from './autopilot-apply.worker.js';
 export type {
@@ -239,6 +246,7 @@ export {
   AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
 } from './autopilot-delta-trigger.js';
+export { buildRescoreSenders } from './rescore-senders.js';
 export {
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_ACTION_QUEUE,
@@ -353,6 +361,9 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreBullWorkerOptions,
+  scoreJobId,
+  scoreJobOptions,
   ScoreWorker,
 } from './score.worker.js';
 export type {

@@ -182,6 +182,102 @@ export const BulkDelete: Story<typeof ConfirmActionModal> = {
   } satisfies Args,
 };
 
+const protectedMacys = makeSender({
+  ...macys,
+  protectionFlags: {
+    isProtected: true,
+    protectionReason: 'user_defined',
+    protectionSetAt: '2026-06-01T00:00:00.000Z',
+  },
+});
+
+/** D245 — one Protected sender, explicitly: the reason, and "Delete anyway" carries the consent. */
+export const ProtectedWithReason: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Delete', senders: [protectedMacys] },
+    compositePreview: { ...preview, protected: true },
+  } satisfies Args,
+};
+
+/** Protected with no reason on the wire: the state alone. */
+export const ProtectedNoReason: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: {
+      verb: 'Archive',
+      senders: [
+        makeSender({
+          ...macys,
+          protectionFlags: { isProtected: true, protectionReason: null, protectionSetAt: null },
+        }),
+      ],
+    },
+    compositePreview: { ...preview, protected: true },
+  } satisfies Args,
+};
+
+/** Every selected sender went Protected or away since the click: say so, offer the refresh. */
+export const NothingLeftToAct: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Archive', senders: bulkSenders.slice(0, 2) },
+    onRefreshSenders: noop,
+    bulkPreview: {
+      loading: false,
+      error: false,
+      data: {
+        senders: bulkSenders.slice(0, 2).map((s) => ({
+          senderId: s.id,
+          name: s.name,
+          counts: buckets,
+          protected: true,
+        })),
+        totals: buckets,
+        protectedCount: 2,
+      },
+    },
+  } satisfies Args,
+};
+
+/** The sender is gone from this mailbox: one line, and the refresh is the way out. */
+export const SenderGone: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Archive', senders: [macys] },
+    compositePreviewError: true,
+    previewSenderGone: true,
+    onRefreshSenders: noop,
+  } satisfies Args,
+};
+
+/** A bulk Unsubscribe with no one-click sender: what is true, and what still works. */
+export const UnsubscribeNothingToSend: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: {
+      verb: 'Unsubscribe',
+      senders: bulkSenders
+        .slice(0, 2)
+        .map((s) => makeSender({ ...s, unsubscribeMethod: 'mailto' })),
+    },
+    bulkPreview: {
+      loading: false,
+      error: false,
+      data: {
+        senders: bulkSenders.slice(0, 2).map((s) => ({
+          senderId: s.id,
+          name: s.name,
+          counts: buckets,
+          protected: false,
+        })),
+        totals: buckets,
+        protectedCount: 0,
+      },
+    },
+  } satisfies Args,
+};
+
 /** The request is on its way — "Submitting…", Cancel stays live. */
 export const Submitting: Story<typeof ConfirmActionModal> = {
   args: {

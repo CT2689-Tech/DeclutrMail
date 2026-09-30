@@ -36,6 +36,7 @@ const LOGO = 72;
 export function TriageFocusCard({
   row,
   busy = false,
+  unknownVerb = null,
   whyOpen,
   onToggleWhy,
   onAction,
@@ -46,6 +47,12 @@ export function TriageFocusCard({
   row: TriageDecisionRow;
   /** True while this sender's decision is confirming server-side (D226 — no optimistic removal). */
   busy?: boolean;
+  /**
+   * The verb whose outcome is unknown — its start could not be confirmed
+   * (a 5xx, or a lost status read). The row stays busy and says so, as
+   * Senders and the pill do, instead of claiming it is still applying.
+   */
+  unknownVerb?: string | null;
   /**
    * The "Why?" disclosure. Controlled, and wired by the caller to the
    * store's `expandedRowId`: opening it is the user pointing at this
@@ -288,10 +295,19 @@ export function TriageFocusCard({
       </div>
 
       {/* SR announcement while the decision confirms server-side. */}
-      {busy && (
-        <span role="status" style={{ position: 'absolute', left: -9999 }}>
-          Applying your decision for {row.senderName}
-        </span>
+      {unknownVerb != null ? (
+        <p
+          role="status"
+          style={{ margin: `${space[2]}px 0 0`, fontSize: text.xs, color: color.fgMuted }}
+        >
+          {unknownVerb}: unknown
+        </p>
+      ) : (
+        busy && (
+          <span role="status" style={{ position: 'absolute', left: -9999 }}>
+            Applying your decision for {row.senderName}
+          </span>
+        )
       )}
     </section>
   );

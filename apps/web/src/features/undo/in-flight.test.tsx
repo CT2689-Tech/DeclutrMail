@@ -4,7 +4,7 @@
  * a decision that stops without leaving something to undo says why.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -12,8 +12,10 @@ import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { resetTriageStore } from '@/features/triage/store';
 import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 
-import { outcomeNotice, workingNotice } from './in-flight';
+import { outcomeNotice, useSenderInFlightLock, workingNotice } from './in-flight';
 import { undoKeys } from './query-keys';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
+import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
@@ -36,6 +38,9 @@ const GROUP: InFlightActionGroup = {
   leadSenderName: 'Yankee Candle',
   startedAt: '2026-09-20T10:00:00.000Z',
 };
+
+/** `n` distinct sender ids, as the batch status lists skipped senders. */
+const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `sender-${i}`);
 
 const status = (over: Partial<BatchStatusResult>): BatchStatusResult => ({
   batchId: GROUP.groupId,
@@ -83,10 +88,148 @@ describe('what the pill says once a decision stops', () => {
     ],
     [status({ done: 11, failed: 2 }), 'attention', 'Delete: 2 of 13 failed'],
     [status({ affectedCount: 0 }), 'info', 'Nothing to delete'],
-    [status({ affectedCount: 1400 }), 'info', 'Delete: some email not changed'],
-    [null, 'attention', 'Delete not confirmed'],
+    [null, 'attention', 'Delete: unknown'],
+    // D245: a sender protected after the click is skipped, like one
+    // protected before it — never "nothing to delete", never a failure.
+    // Skipped senders are left out of every count the batch reports.
+    [
+      status({
+        total: 0,
+        done: 0,
+        requestedCount: 0,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(13),
+      }),
+      'info',
+      'Delete: 13 Protected senders skipped',
+    ],
+    // The rest ran and changed nothing: both facts, not just the skip.
+    [
+      status({
+        total: 12,
+        done: 12,
+        requestedCount: 9,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(1),
+      }),
+      'info',
+      'Delete: 1 Protected sender skipped · nothing else changed',
+    ],
+    // Beside a failure the skip is part of the line itself — an alert's
+    // detail slot is not read aloud. The split counts jobs (a composite
+    // runs two per sender), so beside a count of senders it names none.
+    [
+      status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) }),
+      'attention',
+      'Delete partly failed · 1 Protected sender skipped',
+    ],
+    [
+      status({
+        status: 'failed',
+        total: 12,
+        done: 0,
+        failed: 12,
+        affectedCount: 0,
+        skippedProtectedSenderIds: ids(1),
+      }),
+      'attention',
+      'Delete failed · 1 Protected sender skipped',
+    ],
   ] as const)('%#: %s → %s', (result, tone, label) => {
     expect(outcomeNotice(GROUP, result)).toMatchObject({ tone, label });
+  });
+
+  // "Later" is the verb's name, not an English verb: "Nothing to later".
+  it('says nothing moved to Later in words, not "nothing to later"', () => {
+    expect(outcomeNotice({ ...GROUP, verb: 'later' }, status({ affectedCount: 0 }))).toMatchObject({
+      tone: 'info',
+      label: 'Nothing to move to Later',
+    });
+  });
+
+  // Fewer moved than the preview counted means mail had already left the
+  // inbox, not that some was left behind; the decision's own line has the
+  // real number, and a notice here would sit above its Undo for 10s.
+  it('says nothing when fewer moved than were counted', () => {
+    expect(outcomeNotice(GROUP, status({ affectedCount: 1400 }))).toBeNull();
+  });
+
+  // A one-sender job that was skipped has no job left to count: 0 of 0 is
+  // not "every one failed".
+  it('says a one-sender skip was skipped, never that it failed', () => {
+    const one = { ...GROUP, total: 1, done: 1, failed: 0, senderCount: 1 };
+    expect(
+      outcomeNotice(
+        one,
+        status({
+          total: 0,
+          done: 0,
+          requestedCount: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(1),
+        }),
+      ),
+    ).toMatchObject({
+      tone: 'info',
+      label: 'Delete: 1 Protected sender skipped',
+      who: 'Yankee Candle',
+    });
+  });
+
+  it('names who only when every sender was skipped as Protected', () => {
+    expect(
+      outcomeNotice(
+        GROUP,
+        status({
+          total: 0,
+          done: 0,
+          requestedCount: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(13),
+        }),
+      )?.who,
+    ).toBe('Yankee Candle + 12 others');
+    expect(
+      outcomeNotice(
+        GROUP,
+        status({
+          total: 12,
+          done: 12,
+          requestedCount: 9,
+          affectedCount: 0,
+          skippedProtectedSenderIds: ids(1),
+        }),
+      )?.who,
+    ).toBeUndefined();
+  });
+
+  // Founder decision D4: when the rest of the decision changed mail, the
+  // skip rides that decision's own Undo line (from `GET /api/undo`), so
+  // there is no second line here.
+  it('adds no line of its own when the rest of the decision changed mail', () => {
+    const rest = status({
+      total: 12,
+      done: 12,
+      requestedCount: 1400,
+      affectedCount: 1400,
+      skippedProtectedSenderIds: ids(1),
+    });
+    expect(outcomeNotice(GROUP, rest)).toBeNull();
+  });
+
+  it('names no one on a failure line that also carries a skip', () => {
+    const partly = status({ total: 12, done: 10, failed: 2, skippedProtectedSenderIds: ids(1) });
+    expect(outcomeNotice(GROUP, partly)?.who).toBeUndefined();
+    const failed = status({
+      status: 'failed',
+      total: 12,
+      done: 0,
+      failed: 12,
+      affectedCount: 0,
+      skippedProtectedSenderIds: ids(1),
+    });
+    expect(outcomeNotice(GROUP, failed)?.who).toBeUndefined();
+    expect(outcomeNotice(GROUP, failed)?.detail).toBeUndefined();
   });
 
   it('claims no ending for a job that only aged out of the list', () => {
@@ -183,6 +326,29 @@ describe('ProductUndoTray — live line', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  // A run-time skip gives a Free cleanup unit back, and a start we could
+  // not confirm may have spent one; `me` is otherwise read again only on
+  // an enqueue that succeeded (flow-completeness audit 2026-09-27).
+  it('re-reads the cleanup allowance when a decision stops', async () => {
+    const { reread, client } = mount();
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    active = [];
+    await reread();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ME_QUERY_KEY }));
+  });
+
+  // A Screener decision leaves its queue only once its job lands, so a row
+  // held after a lost read is released by this re-read (flow gate 2026-09-27).
+  it('re-reads the Screener queue and count when a decision stops', async () => {
+    const { reread, client } = mount();
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    active = [];
+    await reread();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: SCREENER_ALL_KEY }));
+  });
+
   it('says so when part of it failed, until dismissed', async () => {
     batch = status({ done: 11, failed: 2 });
     const { reread } = mount();
@@ -206,7 +372,7 @@ describe('ProductUndoTray — live line', () => {
     );
     // Not ended — and not spinning as if it were live either: the line says
     // it is the last thing we knew. (It used to freeze on "Deleting…".)
-    await waitFor(() => expect(pillText()).toMatch(/Delete not confirmed/));
+    await waitFor(() => expect(pillText()).toMatch(/Delete: unknown/));
     expect(pillText()).not.toMatch(/Deleting…/);
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -260,6 +426,73 @@ describe('ProductUndoTray — live line', () => {
     expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
   });
 
+  // The count comes with the decision itself (`GET /api/undo`), in the
+  // same read as the line: it never grows a moment after it renders, and
+  // survives a mailbox round trip. The batch status here names no skip.
+  it('folds a Protected skip into the decision’s own Undo line (D4)', async () => {
+    resetFetchStub();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: GROUP.groupId,
+                token: '11111111-1111-4111-8111-111111111111',
+                actionKind: 'delete',
+                createdAt: '2026-09-20T10:00:05.000Z',
+                expiresAt: '2026-09-25T10:00:05.000Z',
+                senderCount: 12,
+                affectedCount: 1400,
+                protectedSkippedCount: 1,
+              },
+            ],
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: [{ ...GROUP, running: false, done: 13, failed: 0 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: status({ total: 12, done: 12, requestedCount: 1400, affectedCount: 1400 }),
+          }),
+      },
+    ]);
+    mount();
+    const pill = await screen.findByRole('region', { name: 'Recent actions' });
+    await waitFor(() =>
+      expect(pill).toHaveTextContent(
+        'Deleted 1,400 emails · 12 senders · 1 Protected sender skipped',
+      ),
+    );
+    expect(screen.getByRole('button', { name: /^Undo Delete/ })).toHaveTextContent('Undo all');
+    expect(pillText()).not.toMatch(/Delete: 1 Protected/);
+  });
+
+  it('says a one-sender job skipped as Protected was skipped, never that it failed', async () => {
+    active = [{ ...GROUP, running: false, total: 1, done: 1, failed: 0, senderCount: 1 }];
+    batch = status({
+      total: 0,
+      done: 0,
+      requestedCount: 0,
+      affectedCount: 0,
+      skippedProtectedSenderIds: ids(1),
+    });
+    mount();
+    const pill = await screen.findByRole('region', { name: 'Recent actions' });
+    await waitFor(() =>
+      expect(pill).toHaveTextContent('Delete: 1 Protected sender skipped · Yankee Candle'),
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('never reads another mailbox’s empty list as "everything stopped"', async () => {
     batch = status({ status: 'failed', done: 0, failed: 13 });
     const view = mount('mailbox-a');
@@ -274,5 +507,79 @@ describe('ProductUndoTray — live line', () => {
       expect(view.client.getQueryData(undoKeys.inFlight('mailbox-b'))).toEqual([]),
     );
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+});
+
+describe('useSenderInFlightLock — the cross-surface sender lock (2026-09-28)', () => {
+  let active: InFlightActionGroup[];
+
+  beforeEach(() => {
+    active = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: active }),
+      },
+    ]);
+  });
+  afterEach(() => resetFetchStub());
+
+  function mountHook(mailboxId?: string) {
+    const client = createTestQueryClient();
+    const view = renderHook(() => useSenderInFlightLock(mailboxId), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    return { ...view, client, mailboxId };
+  }
+
+  it('unions senderIds/senderKeys across every RUNNING group', async () => {
+    active = [
+      { ...GROUP, groupId: 'g1', senderIds: ['s1', 's2'], senderKeys: ['k1', 'k2'] },
+      {
+        ...GROUP,
+        groupId: 'g2',
+        verb: 'archive',
+        senderIds: ['s2', 's3'],
+        senderKeys: ['k2', 'k3'],
+      },
+    ];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set(['s1', 's2', 's3'])));
+    expect(result.current.senderKeys).toEqual(new Set(['k1', 'k2', 'k3']));
+  });
+
+  it('excludes a group whose jobs have all reached a terminal status (running: false)', async () => {
+    // The pill still lists this group for the settled-grace window so it
+    // can report how the decision ended — but that is exactly the state
+    // this lock must NOT hold a sender busy for, or a completed job would
+    // keep re-arming the "still confirming" refusal on every surface.
+    const settled = [{ ...GROUP, running: false, senderIds: ['s1'], senderKeys: ['k1'] }];
+    active = settled;
+    const { result, client, mailboxId } = mountHook();
+    // Wait for the FETCH to actually land this data, not just the initial
+    // (also-empty) pre-fetch render — otherwise this assertion would pass
+    // trivially before the filter is ever exercised.
+    await waitFor(() => expect(client.getQueryData(undoKeys.inFlight(mailboxId))).toEqual(settled));
+    expect(result.current.senderIds).toEqual(new Set());
+    expect(result.current.senderKeys).toEqual(new Set());
+  });
+
+  it('degrades to empty Sets, not a throw, when the API predates senderIds/senderKeys', async () => {
+    // Deploy-skew case: an API build older than this field addition sends
+    // a group with senderIds/senderKeys entirely absent from the wire.
+    const legacyGroup = { ...GROUP };
+    delete (legacyGroup as { senderIds?: string[] }).senderIds;
+    delete (legacyGroup as { senderKeys?: string[] }).senderKeys;
+    active = [legacyGroup];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set()));
+    expect(result.current.senderKeys).toEqual(new Set());
+  });
+
+  it('is empty while nothing is running', async () => {
+    active = [];
+    const { result } = mountHook();
+    await waitFor(() => expect(result.current.senderIds).toEqual(new Set()));
   });
 });

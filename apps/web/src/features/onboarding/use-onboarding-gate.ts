@@ -3,7 +3,9 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { useOnboardingState } from './api/use-onboarding';
+import { onboardingPathKeepingOAuthResult } from '@/features/mailboxes/oauth-result';
+
+import { onboardingGateVerdict, useOnboardingState } from './api/use-onboarding';
 
 /**
  * Returning-user strict gate (D6, D109, D113).
@@ -37,18 +39,16 @@ import { useOnboardingState } from './api/use-onboarding';
  */
 export function useOnboardingGate(): { gating: boolean; resolving: boolean } {
   const router = useRouter();
-  const state = useOnboardingState();
-
-  const shouldGate = state.data !== undefined && state.data.onboardedAt === null;
-  // In flight: no data yet and not errored. On error → false (fail-open;
-  // never hold the app forever on a failed read).
-  const resolving = state.data === undefined && !state.isError;
+  const verdict = onboardingGateVerdict(useOnboardingState());
+  const shouldGate = verdict === 'gating';
 
   useEffect(() => {
     if (shouldGate) {
-      router.replace('/onboarding');
+      // Keep a closed OAuth result (a reconnect that came back without
+      // Gmail, say) so /onboarding can still say what happened (D108).
+      router.replace(onboardingPathKeepingOAuthResult(window.location.search));
     }
   }, [shouldGate, router]);
 
-  return { gating: shouldGate, resolving };
+  return { gating: shouldGate, resolving: verdict === 'resolving' };
 }

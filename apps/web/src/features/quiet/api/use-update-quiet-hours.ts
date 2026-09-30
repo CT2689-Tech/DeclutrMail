@@ -18,16 +18,14 @@
  * call sites, tracked as its own follow-up PR).
  *
  * A 402 (`PRO_FEATURE_REQUIRED` — this route is `@RequiresCapability
- * ('quiet')`, reachable on an entitlement downgrade mid-session) is
- * NOT special-cased: `upgradeGateHitFrom` (lib/entitlements/upgrade-
- * gate.ts) only recognizes `FREE_CAP_REACHED` / `INBOX_LIMIT_REACHED`
- * / `ACTION_TIER_REQUIRED`, so the global MutationCache handler does
- * nothing for `PRO_FEATURE_REQUIRED` today — no capability-gated
- * mutation in the app gets an upgrade-modal route for it. Silently
- * dropping the toast here (matching the pattern other 402 codes use)
- * would leave this one failure mode with no signal at all, worse than
- * today. Flagged as a founder follow-up, not fixed here — it's a
- * one-line entitlements-service question, not a Quiet one.
+ * ('quiet')`, reachable on an entitlement downgrade mid-session) is NOT
+ * re-toasted here: `upgradeGateHitFrom` (lib/entitlements/upgrade-gate.ts)
+ * now recognizes `PRO_FEATURE_REQUIRED` alongside the other three
+ * entitlement codes, so the global MutationCache handler already routes it
+ * to the UpgradeModal before this hook's own `onError` below runs. Bailing
+ * out on any 402 here matches every other capability/quota-gated
+ * mutation's `onError` in the app (e.g. `use-noise-archive.ts`) — the
+ * modal is the surface, so neither Sentry nor a second toast helps.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,6 +35,7 @@ import {
   type QuietHoursConfig,
   type QuietHoursState,
 } from '@declutrmail/shared/contracts';
+import { ApiError } from '@/lib/api/client';
 import { putQuietHours } from '@/lib/api/quiet-hours';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
@@ -69,6 +68,10 @@ export function useUpdateQuietHours(mailboxId: string) {
       });
     },
     onError: (err) => {
+      // 402 is the entitlement gate (PRO_FEATURE_REQUIRED for this route) —
+      // the global UpgradeModal already explains it, so neither Sentry nor
+      // a second toast helps.
+      if (err instanceof ApiError && err.status === 402) return;
       captureFeatureException(err, { surface: 'quiet', reason: 'save_hours_failed' });
       toast("Couldn't save quiet hours. Try again.", 'warn');
     },

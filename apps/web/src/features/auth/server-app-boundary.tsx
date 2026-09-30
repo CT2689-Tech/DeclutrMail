@@ -8,13 +8,12 @@ import type {
   OnboardingState,
   SyncStatus,
 } from '@declutrmail/shared/contracts';
-import type { UndoTrayEntry } from '@declutrmail/shared';
 
 import { accountDeletionQueryOptions } from '@/features/account-deletion/api/query-options';
 import { onboardingStateQueryOptions } from '@/features/onboarding/api/query-options';
 import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
 import { laterRecoveryQueryOptions } from '@/features/snoozed/api/query-options';
-import { undoEntriesQueryOptions } from '@/features/undo/query-options';
+import { undoEntriesQueryOptions, type UndoWireEntry } from '@/features/undo/query-options';
 import { serverGet, serverGetEnvelope } from '@/lib/api/server';
 import { makeServerQueryClient, settleServerQueries } from '@/lib/server-query-client';
 import { ME_QUERY_KEY } from './api/me-contract';
@@ -74,7 +73,7 @@ export async function ServerAppBoundary({
         ),
         queryClient.fetchQuery(
           undoEntriesQueryOptions(mailboxId, (signal) =>
-            serverGet<UndoTrayEntry[]>('/api/undo', cookieHeader, signal, mailboxOptions),
+            serverGet<UndoWireEntry[]>('/api/undo', cookieHeader, signal, mailboxOptions),
           ),
         ),
       );

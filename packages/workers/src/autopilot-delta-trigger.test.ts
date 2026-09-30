@@ -1,3 +1,4 @@
+import type { JobsOptions } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import {
   automationRules,
@@ -14,7 +15,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AUTOPILOT_APPLY_JOB } from './autopilot-apply.worker.js';
+import { AUTOPILOT_APPLY_JOB, autopilotApplyJobOptions } from './autopilot-apply.worker.js';
 import {
   AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
@@ -164,6 +165,15 @@ async function seedKnownSenderMailbox(
     gmailCategory: 'promotions',
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: new Date('2026-06-01T00:00:00Z'),
+    // Backdated like `firstSeenAt` — `created_at` defaults to real
+    // wall-clock on insert, which is AFTER this file's fixed `NOW`
+    // ('2026-06-10'). `ruleMatchIsQueuedAction()` (used by the apply
+    // worker's already-queued dedup since 2026-09-29) requires the
+    // sender's `created_at` to predate a match's `matched_at`
+    // (`ruleMatchEvidenceIsCurrent()`) — an un-backdated row here reads
+    // as evidence gone stale the instant the worker writes a match at
+    // the fixed `NOW`, which no test in this file intends to exercise.
+    createdAt: new Date('2024-01-01T00:00:00Z'),
   });
   await db.insert(triageDecisions).values({
     mailboxAccountId: mailboxId,
@@ -267,16 +277,19 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     const [jobName, jobData, opts] = applyAdd.mock.calls[0] as [
       string,
       { mailboxAccountId: string; triggeredAtMs: number },
-      { jobId: string; delay: number },
+      JobsOptions,
     ];
     const windowEndMs =
       (Math.floor(NOW.getTime() / AUTOPILOT_APPLY_DELTA_WINDOW_MS) + 1) *
       AUTOPILOT_APPLY_DELTA_WINDOW_MS;
     expect(jobName).toBe(AUTOPILOT_APPLY_JOB);
     expect(jobData).toEqual({ mailboxAccountId: mailboxId, triggeredAtMs: windowEndMs });
-    expect(opts.jobId).toBe(`${mailboxId}-delta-${windowEndMs}`);
+    // perMailboxPolicy retry budget (2026-09-29) — negative control:
+    // reverting the trigger back to a bare `{ jobId, delay }` fails this.
+    expect(opts).toEqual(
+      autopilotApplyJobOptions(`${mailboxId}-delta-${windowEndMs}`, windowEndMs - NOW.getTime()),
+    );
     expect(opts.jobId).not.toContain(':');
-    expect(opts.delay).toBe(windowEndMs - NOW.getTime());
 
     // Deliver the delayed job (as BullMQ would at window end): the
     // Active-mode rule matches the known sender and chains one action
@@ -355,6 +368,34 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     const jobIds = add.mock.calls.map((c) => (c[2] as { jobId: string }).jobId);
     expect(jobIds[0]).toBe(jobIds[1]); // BullMQ dedups the burst on jobId
     expect(jobIds[2]).not.toBe(jobIds[0]);
+  });
+
+  it('settleMs lands the sweep on the first window end at least that far off', async () => {
+    const add = vi.fn().mockResolvedValue(undefined);
+    // One second before a window closes: without settleMs the sweep would
+    // run a second later, before work queued alongside it had run.
+    const nowMs =
+      (Math.floor(NOW.getTime() / AUTOPILOT_APPLY_DELTA_WINDOW_MS) + 1) *
+        AUTOPILOT_APPLY_DELTA_WINDOW_MS -
+      1_000;
+    const trigger = buildAutopilotApplyDeltaTrigger({ add } as never, {
+      now: () => new Date(nowMs),
+      settleMs: AUTOPILOT_APPLY_DELTA_WINDOW_MS,
+    });
+
+    await trigger('mbx-1');
+
+    const [, jobData, opts] = add.mock.calls[0] as [string, { triggeredAtMs: number }, JobsOptions];
+    expect(opts.delay).toBeGreaterThanOrEqual(AUTOPILOT_APPLY_DELTA_WINDOW_MS);
+    expect(opts.delay).toBeLessThan(2 * AUTOPILOT_APPLY_DELTA_WINDOW_MS);
+    expect(jobData.triggeredAtMs % AUTOPILOT_APPLY_DELTA_WINDOW_MS).toBe(0);
+    expect(jobData.triggeredAtMs - nowMs).toBe(opts.delay);
+    expect(opts.jobId).toBe(`mbx-1-delta-${jobData.triggeredAtMs}`);
+    // perMailboxPolicy retry budget (2026-09-29) — this call site too.
+    expect(opts.attempts).toBe(5);
+    expect(opts.backoff).toEqual({ type: 'custom' });
+    expect(opts.removeOnComplete).toEqual({ age: 86_400 });
+    expect(opts.removeOnFail).toBe(false);
   });
 
   it('steady state — a completed unsubscribe is NOT re-matched; removing the policy re-arms it', async () => {

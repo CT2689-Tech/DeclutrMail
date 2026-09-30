@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { SessionPrincipal } from '../auth/sessions.service.js';
@@ -61,5 +62,57 @@ describe('AutopilotController PATCH mode gate', () => {
     await controller.patchRule(mailbox, principal, RULE_ID, { mode: 'observe' });
     expect(tierForWorkspace).not.toHaveBeenCalled();
     expect(patchRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { mode: 'observe' });
+  });
+});
+
+// Founder decision 2026-09-29 (a) — "Approve all" stays within what its
+// preview showed, so the body is now REQUIRED: no "approve everything
+// offerable now" fallback.
+// docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+describe('AutopilotController approve-all body validation', () => {
+  function makeApproveAllController() {
+    const approveAllForRule = vi.fn().mockResolvedValue({
+      approvedCount: 1,
+      alreadyResolvedCount: 0,
+      skippedProtectedCount: 0,
+      executionEnqueued: true,
+    });
+    return {
+      controller: new AutopilotController(
+        { approveAllForRule } as unknown as AutopilotReadService,
+        {} as unknown as EntitlementsService,
+      ),
+      approveAllForRule,
+    };
+  }
+
+  it('rejects a missing body before calling the service', async () => {
+    const { controller, approveAllForRule } = makeApproveAllController();
+    await expect(controller.approveAllForRule(mailbox, RULE_ID, undefined)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(approveAllForRule).not.toHaveBeenCalled();
+  });
+
+  it('rejects a body matching neither scope variant', async () => {
+    const { controller, approveAllForRule } = makeApproveAllController();
+    await expect(
+      controller.approveAllForRule(mailbox, RULE_ID, { nonsense: true }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(approveAllForRule).not.toHaveBeenCalled();
+  });
+
+  it('accepts a matchIds body and passes it through unchanged', async () => {
+    const { controller, approveAllForRule } = makeApproveAllController();
+    const matchId = '11111111-1111-4111-8111-111111111111';
+    await controller.approveAllForRule(mailbox, RULE_ID, { matchIds: [matchId] });
+    expect(approveAllForRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { matchIds: [matchId] });
+  });
+
+  it('accepts a matchedBefore body and passes it through unchanged', async () => {
+    const { controller, approveAllForRule } = makeApproveAllController();
+    const cutoff = '2026-01-01T00:00:00.000Z';
+    await controller.approveAllForRule(mailbox, RULE_ID, { matchedBefore: cutoff });
+    expect(approveAllForRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { matchedBefore: cutoff });
   });
 });
