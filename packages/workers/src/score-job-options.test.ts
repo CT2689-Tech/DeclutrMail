@@ -5,14 +5,18 @@ import { WORKER_POLICIES } from './worker-policies.js';
 
 /**
  * `scoreJobOptions` is the single place every non-`explain` `SCORE_QUEUE`
- * producer gets its retry budget from — `apps/api/src/worker.ts`'s
- * `onSenderIndexBuilt` / `onNewSender` / `onSendersRecategorized`,
- * `TriageService.scoreSender`, and `buildRescoreSenders` (5 producers
- * total). Before this helper existed each producer passed only
- * `{ jobId }`. BullMQ defaults a job with no `attempts` to a single try,
- * so `perMailboxPolicy`'s 5-attempt budget with backoff never actually
- * applied to a score job — a transient failure dead-lettered on the
- * first attempt instead of retrying.
+ * producer gets its retry budget from — the 5 in-app producers
+ * (`apps/api/src/worker.ts`'s `onSenderIndexBuilt` / `onNewSender` /
+ * `onSendersRecategorized`, `TriageService.scoreSender`, and
+ * `buildRescoreSenders`), plus the 2 backlog/dev-tooling scripts that also
+ * enqueue onto this queue (`scripts/rescore-leaked-copy.ts`,
+ * `apps/api/scripts/dev-autopilot-harness.ts`'s `enqueue-score`) — 7
+ * producers total, all of them now (the 2 scripts as of PR #827's round-3
+ * follow-up, PR #835). Before this helper existed each producer passed
+ * only `{ jobId }`. BullMQ defaults a job with no `attempts` to a single
+ * try, so `perMailboxPolicy`'s 5-attempt budget with backoff never
+ * actually applied to a score job — a transient failure dead-lettered on
+ * the first attempt instead of retrying.
  *
  * Per CLAUDE.md §8 "a green test is not evidence": these assert the
  * OPTION VALUES, not merely that the function returns an object, so they

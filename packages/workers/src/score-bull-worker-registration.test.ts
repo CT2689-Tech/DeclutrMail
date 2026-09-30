@@ -7,8 +7,12 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import { createRedisConnection, workerTuningOptions } from './queue.js';
-import { perMailboxWorkerSettings } from './rate-limit-backoff.js';
-import { scoreJobId, scoreJobOptions, type ScoreJobData } from './score.worker.js';
+import {
+  scoreBullWorkerOptions,
+  scoreJobId,
+  scoreJobOptions,
+  type ScoreJobData,
+} from './score.worker.js';
 import type { WorkerContext } from './worker-context.js';
 import { TransientError } from './worker-errors.js';
 import type { WorkerFailureContext, WorkerObserver } from './worker-observer.js';
@@ -24,10 +28,24 @@ const REDIS_URL = process.env['TEST_REDIS_URL'] ?? 'redis://127.0.0.1:6379';
  * fix (`score-job-options.test.ts`, `rescore-senders.test.ts`) checks the
  * PRODUCER's options against a mock or a plain object — never a real
  * BullMQ `Worker` that could actually hit the missing-registration crash.
- * This file drives the real seam instead: a `Worker` built with the exact
- * same options shape as `scoreBullWorker`
- * (`{ concurrency, ...workerTuningOptions('user-facing'), ...perMailboxWorkerSettings() }`)
- * consuming a job built with the real `scoreJobOptions(scoreJobId(data))`.
+ * This file drives the real seam instead: a `Worker` built with
+ * `scoreBullWorkerOptions()` (`score.worker.ts`) — the SAME exported
+ * function `apps/api/src/worker.ts` calls for its real registration, not a
+ * hand-copied duplicate of its shape — consuming a job built with the real
+ * `scoreJobOptions(scoreJobId(data))`.
+ *
+ * Round 1 of this file built its own `realScoreWorkerOptions()` literal
+ * (`{ concurrency, ...workerTuningOptions('user-facing'),
+ * ...perMailboxWorkerSettings() }`) instead of importing the real
+ * registration's options. architecture-guardian's round-2 review proved
+ * that duplicate couldn't catch a regression: deleting
+ * `...perMailboxWorkerSettings()` from the real `worker.ts:1188` call site
+ * left every test in this file still green, because the test never read
+ * anything `worker.ts` actually built. `realScoreWorkerOptions()` below now
+ * just calls `scoreBullWorkerOptions(connection!)` — the same function
+ * `worker.ts` calls — so removing that spread from the shared function's
+ * one real call site fails this file's tests for real (verified with the
+ * same negative control: reverted, red; restored, green).
  *
  * Without the registration, BullMQ throws `Unknown backoff strategy
  * custom.` when it tries to schedule the SECOND attempt — after the
@@ -122,14 +140,14 @@ function scoreJobData(): ScoreJobData {
   };
 }
 
-/** Matches `scoreBullWorker`'s exact registration shape in `apps/api/src/worker.ts`. */
+/**
+ * Calls the SAME `scoreBullWorkerOptions()` `apps/api/src/worker.ts`
+ * imports for `scoreBullWorker`'s actual registration — not a duplicate
+ * of its shape. See the file-header comment for why that distinction is
+ * the whole point of this file.
+ */
 function realScoreWorkerOptions() {
-  return {
-    connection: connection!,
-    concurrency: 20,
-    ...workerTuningOptions('user-facing'),
-    ...perMailboxWorkerSettings(),
-  };
+  return scoreBullWorkerOptions(connection!);
 }
 
 describe('scoreBullWorker registration (real Redis + real BullMQ, PR #827 BLOCKING-1)', () => {

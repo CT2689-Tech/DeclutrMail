@@ -359,6 +359,7 @@ export {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreBullWorkerOptions,
   scoreJobId,
   scoreJobOptions,
   ScoreWorker,
