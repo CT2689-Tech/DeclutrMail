@@ -121,6 +121,8 @@ jobs:
               - '.nvmrc'
               - 'packages/config/**'
               - '.github/workflows/ci.yml'
+              - 'scripts/check-ci-required*'
+              - 'scripts/required-checks.json'
             # UI-only shared paths must not boot the API/worker PGlite
             # suites — a Button.tsx tweak was paying the full API run.
             #
@@ -301,6 +303,8 @@ jobs:
           fi
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
+      - name: CI and release coordination contracts
+        run: node --test scripts/check-ci-required.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -618,6 +622,34 @@ jobs:
             echo "::error::test shard(s) did not succeed:$bad"
             exit 1
           fi
+
+  required:
+    name: CI required
+    if: ${{ always() }}
+    needs:
+      [
+        changes,
+        typecheck,
+        lint,
+        format,
+        impl-log,
+        test-api,
+        test-workers,
+        test-db,
+        test-web,
+        test-units,
+        build-web,
+        accessibility,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require all selected release checks
+        env:
+          CI_NEEDS: ${{ toJSON(needs) }}
+          CI_EVENT: ${{ github.event_name }}
+        run: node scripts/check-ci-required.mjs
 
   accessibility:
     name: Authenticated accessibility smoke

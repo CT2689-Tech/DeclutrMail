@@ -1,5 +1,15 @@
 # DeclutrMail agent conventions
 
+## Parallel sessions and integration
+
+Before starting a branch or preparing a PR, read
+[the shared parallel-development runbook](docs/runbooks/parallel-development.md).
+Use an isolated worktree, declare dependencies and shared-file ownership, and
+hand related changes to one integration owner. Queue ready independent PRs
+together; do not repeatedly update branches merely because main advanced.
+Keep ready, queued, merged, deployed, and production-verified states distinct.
+Follow explicit user limits on sessions, delegation, merging, and deployment.
+
 ## Paddle Billing
 
 - This repository uses Paddle Billing API v2 through the existing server-side
