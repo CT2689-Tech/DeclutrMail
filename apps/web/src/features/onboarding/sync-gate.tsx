@@ -134,7 +134,7 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
     case 'reconnect_required':
       return {
         title: 'Reconnect Gmail to keep going',
-        body: 'Google stopped accepting our access partway through. Reconnect and allow access on Google’s screen — nothing was deleted on our side.',
+        body: 'Google stopped accepting our access partway through. Reconnect Gmail and allow access on Google’s screen — nothing was deleted on our side.',
       };
     case 'rate_limit':
       return recovery.partlyReady

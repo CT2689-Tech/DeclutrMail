@@ -334,22 +334,6 @@ export const Stuck: Story<typeof SyncGate> = {
 };
 
 /**
- * Failed because Google stopped accepting our access partway through the
- * scan. Retrying would hit the same dead token, so the only action is
- * "Reconnect Gmail" (QA-sync-20260831-07).
- */
-export const FailedAuthExpired: Story<typeof SyncGate> = {
-  args: { status: { ...FAILED, error_code: 'AuthExpiredError' }, mailboxId: 'mbx_story' },
-  render: (args: GateArgs) => frame(<SyncGate {...args} />),
-};
-
-/** Failed on a revoked grant — same reconnect-only action, its own line. */
-export const FailedInvalidGrant: Story<typeof SyncGate> = {
-  args: { status: { ...FAILED, error_code: 'InvalidGrantError' }, mailboxId: 'mbx_story' },
-  render: (args: GateArgs) => frame(<SyncGate {...args} />),
-};
-
-/**
  * Syncing (secondary connect, D116) — same gate, plus the escape hatch:
  * "Go back to <primary>" switches the active
  * mailbox back and leaves. Only renders when another active mailbox
