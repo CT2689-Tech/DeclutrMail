@@ -82,6 +82,24 @@ export type DispatchedEvent = Pick<
  *     cancel it; the dispatcher tracks it and will not invoke ANY
  *     event sharing this one's (topic, aggregateId) again until that
  *     abandoned call actually finishes — see `orphanGuardKey`.
+ *   - The real rule the bullet above depends on: the promise THIS
+ *     FUNCTION RETURNS must never settle while any I/O it started is
+ *     still in flight. No internal timeout, and no race against a
+ *     local timer of ANY length, anywhere inside a consumer — the
+ *     orphan guard tracks this exact promise reference and has no
+ *     visibility into the real work underneath it. A consumer-side
+ *     timer that settles this promise early defeats the guard whether
+ *     it is shorter OR longer than `consumerTimeoutMs`: shorter, and
+ *     `trackOrphan` receives an already-settled promise and clears it
+ *     the very next microtask; longer, and the SAME clear-on-settle
+ *     handler fires the moment the inner timer eventually fires anyway
+ *     — the real call keeps running untracked either way. Verified live
+ *     both ways: a 5s inner timer against production's 30s default
+ *     (round-3 architecture-guardian review, 2026-09-29 — the shipped
+ *     instance, `rescore-senders.ts`'s former `withPublishTimeout`; see
+ *     that file's own docstring) and a 40ms inner timer against a 20ms
+ *     test bound (round-4 architecture-guardian review, 2026-09-29 —
+ *     longer, not shorter, and still broken).
  */
 export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
 
@@ -261,21 +279,16 @@ function normalizePositiveMs(value: number | undefined, fallback: number): numbe
  * reserves for its own bound, forever, since nothing would ever
  * distinguish them (architecture-guardian review, 2026-09-29).
  *
- * Exported so a consumer that wants the SAME treatment for its own
- * inner bound could throw this exact class instead of an unbranded
- * `Error` — that consumer's rejection would then reach `runOneTick`'s
- * catch block indistinguishable from the dispatcher's own timeout,
- * which is the intended contract. `rescore-senders.ts`'s
- * `withPublishTimeout` used to be the worked example here; it was
- * removed (round-3 review, 2026-09-29) once a DIFFERENT problem surfaced
- * — an inner bound shorter than the dispatcher's own defeats the orphan
- * guard regardless of which class it throws, by settling the consumer's
- * promise before `trackOrphan` gets a still-pending one (see that
- * file's own docstring). This class is still used internally
- * (`escalateStuckOrphans`, `runOneTick`) and the export remains
- * available for a future consumer that genuinely needs its own shorter
- * bound — which would need its own orphan-tracking participation, not
- * just the branded class, to avoid the same defeat.
+ * Internal only — used by this file alone (`escalateStuckOrphans`,
+ * `runOneTick`) and no longer re-exported from `index.ts` (round-4
+ * architecture-guardian review, 2026-09-29). It used to be exported so
+ * a consumer wanting the SAME treatment for its own inner bound could
+ * throw this exact class instead of an unbranded `Error` — that advice
+ * was itself the bug this round closed: see `OutboxConsumer`'s own
+ * docstring above for why NO consumer-side timeout is safe, of any
+ * length, regardless of which class it throws. `rescore-senders.ts`'s
+ * `withPublishTimeout` was the worked example for the old advice; it is
+ * gone (round-3 review, 2026-09-29 — see that file's own docstring).
  * Added to `SENTRY_SERVER_EXCEPTION_TYPES`
  * (`packages/shared/src/observability/sentry-scrubber.ts`) so a row
  * that eventually reaches `timeoutStuckCeilingMs` and reports to Sentry
@@ -420,6 +433,18 @@ function withConsumerTimeout(
  * a mere timeout, the dispatcher has already moved on, and nothing else
  * will ever report this specific failure — a warn-only console line is
  * easy to miss for a signal this is the only record of.
+ *
+ * The whole body runs inside a try/catch (round-4 architecture-guardian
+ * review, 2026-09-29): this function is called from an unawaited
+ * `.then()` handler in `withConsumerTimeout`, with no `.catch` on that
+ * chain and no `unhandledRejection` listener anywhere in this codebase,
+ * so ANY escaping throw here — not just from `observer
+ * .captureBackgroundFailure`, which is a port this file does not
+ * control the implementation of — would crash the whole worker
+ * process. Today it happens not to throw only because the production
+ * adapter (`apps/api/src/worker.ts`) only calls `String()` on a
+ * non-Error and the Sentry observer doesn't throw on a real `Error`;
+ * neither is a guarantee this file can rely on going forward.
  */
 function logConsumerSettledAfterTimeout(
   event: DispatchedEvent,
@@ -427,37 +452,54 @@ function logConsumerSettledAfterTimeout(
   observer: OutboxObserver,
   err?: unknown,
 ): void {
-  console.warn(
-    JSON.stringify({
-      level: 'warn',
-      kind: 'outbox.dispatch.consumer_settled_after_timeout',
-      outcome,
-      topic: event.topic,
-      eventId: event.id,
-      ...(outcome === 'rejected'
-        ? { errorName: err instanceof Error ? err.name : typeof err }
-        : {}),
-    }),
-  );
-  if (outcome === 'rejected') {
-    // `err` is the raw rejection reason from an ABANDONED call — it never
-    // passes through `withConsumerTimeout`'s own reject-wrapping, which
-    // only ever runs for the FIRST settle (see the `settled` guard
-    // there). Wrap it the same safe way before it reaches the observer:
-    // the production adapter (`apps/api/src/worker.ts`) does
-    // `err instanceof Error ? err : new Error(String(err))`, and
-    // `String()` on a non-Error, non-stringifiable value (e.g. a
-    // null-prototype object) throws — inside this un-awaited `.then()`
-    // handler, with no `unhandledRejection` listener anywhere in this
-    // codebase, that crashes the whole worker process. Same crash class
-    // `safeErrorMessage` was added to close (round 1); it came back
-    // through this new call site (round-3 architecture-guardian review,
-    // 2026-09-29, reproduced live against the real production adapter
-    // shape).
-    observer.captureBackgroundFailure(toSafeObservedError(err), {
-      kind: 'outbox.dispatch.consumer_settled_after_timeout',
-      tags: { worker: WORKER_NAME, topic: event.topic, event_id: event.id },
-    });
+  try {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'outbox.dispatch.consumer_settled_after_timeout',
+        outcome,
+        topic: event.topic,
+        eventId: event.id,
+        ...(outcome === 'rejected'
+          ? { errorName: err instanceof Error ? err.name : typeof err }
+          : {}),
+      }),
+    );
+    if (outcome === 'rejected') {
+      // `err` is the raw rejection reason from an ABANDONED call — it never
+      // passes through `withConsumerTimeout`'s own reject-wrapping, which
+      // only ever runs for the FIRST settle (see the `settled` guard
+      // there). Wrap it the same safe way before it reaches the observer:
+      // the production adapter (`apps/api/src/worker.ts`) does
+      // `err instanceof Error ? err : new Error(String(err))`, and
+      // `String()` on a non-Error, non-stringifiable value (e.g. a
+      // null-prototype object) throws — inside this un-awaited `.then()`
+      // handler, with no `unhandledRejection` listener anywhere in this
+      // codebase, that crashes the whole worker process. Same crash class
+      // `safeErrorMessage` was added to close (round 1); it came back
+      // through this new call site (round-3 architecture-guardian review,
+      // 2026-09-29, reproduced live against the real production adapter
+      // shape).
+      observer.captureBackgroundFailure(toSafeObservedError(err), {
+        kind: 'outbox.dispatch.consumer_settled_after_timeout',
+        tags: { worker: WORKER_NAME, topic: event.topic, event_id: event.id },
+      });
+    }
+  } catch (loggingErr) {
+    // Log-and-swallow, never rethrow: see this function's own docstring
+    // for why an escaping throw here is an unhandled rejection that
+    // takes down the whole process. `safeErrorMessage` is already
+    // guaranteed not to throw, so this fallback cannot recurse into the
+    // same failure.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'outbox.dispatch.late_settle_handler_failed',
+        topic: event.topic,
+        eventId: event.id,
+        message: safeErrorMessage(loggingErr),
+      }),
+    );
   }
 }
 

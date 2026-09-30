@@ -34,8 +34,16 @@ import { SCORE_JOB, scoreJobId, type ScoreJobData } from './score.worker.js';
  * guardian review, 2026-09-29; verified live). Removing the inner bound
  * removes the race entirely: `consumerTimeoutMs` is now the ONLY timer
  * in play for this consumer, so there is nothing left for it to race
- * against. Do not re-add a local timeout shorter than the dispatcher's
- * own bound here — see `docs/log/founder-followups/
+ * against. Do not re-add a local timeout of ANY length here — shorter
+ * than the dispatcher's own bound settles this function's promise
+ * before `trackOrphan` ever sees it (the round-3 bug above); LONGER,
+ * and the same clear-on-settle handler fires the moment that inner
+ * timer eventually fires anyway, un-tracking a call that is still
+ * running either way (round-4 architecture-guardian review, 2026-09-29,
+ * live-probed with a 40ms inner timer against a 20ms dispatcher bound —
+ * still broken, despite being longer, not shorter). See
+ * `OutboxConsumer`'s own docstring in `outbox-dispatcher.worker.ts` for
+ * the general rule; see `docs/log/founder-followups/
  * 2026-09-28-waive-or-block-outbox-queue-in-transaction.md`'s
  * "Correction 2026-09-29 (round 3)" for the full history of why this
  * looked safe twice before it wasn't.

@@ -363,11 +363,7 @@ export type {
   ScoreTrigger,
   ScoreWorkerDeps,
 } from './score.worker.js';
-export {
-  OUTBOX_NOTIFY_CHANNEL,
-  OutboxConsumerTimeoutError,
-  OutboxDispatcherWorker,
-} from './outbox-dispatcher.worker.js';
+export { OUTBOX_NOTIFY_CHANNEL, OutboxDispatcherWorker } from './outbox-dispatcher.worker.js';
 export type {
   DispatchedEvent,
   DispatcherTickResult,

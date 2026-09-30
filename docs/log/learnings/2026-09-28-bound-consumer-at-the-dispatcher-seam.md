@@ -23,12 +23,19 @@ future consumer to route around." That was wrong, and a concrete
 consumer proved it: `rescore-senders.ts` (PR #807, merged the same day as
 this entry) added its OWN local 5s timeout on top of the dispatcher's
 bound, reasoning that firing sooner was "strictly better." It was not —
-an inner bound that can fire BEFORE the dispatcher's own settles the
-consumer's returned promise early, so `trackOrphan` receives an
-ALREADY-SETTLED promise and clears it on the next microtask while the
-real, abandoned call keeps running completely untracked, silently
-defeating the guard for that consumer specifically (fixed by removing
-the inner bound; see `docs/log/founder-followups/
+any inner bound settles the consumer's OWN returned promise
+independently of whether the real I/O it started (the `addBulk` call)
+has actually finished, regardless of whether that bound fires before or
+after the dispatcher's own. Firing FIRST, `trackOrphan` receives an
+ALREADY-SETTLED promise and clears it on the next microtask; firing
+LATER, the same clear-on-settle handler fires once the inner bound
+eventually goes off too, un-guarding a call that is still running
+either way (round-4 architecture-guardian review, 2026-09-29,
+live-probed with a 40ms inner timer against a 20ms dispatcher bound —
+longer, not shorter, and still broken). Either way the real, abandoned
+call keeps running completely untracked, silently defeating the guard
+for that consumer specifically (fixed by removing the inner bound; see
+`docs/log/founder-followups/
 2026-09-28-waive-or-block-outbox-queue-in-transaction.md`'s final
 correction). The seam-level fix closes the unbounded-hang defect for
 every CURRENT and future consumer that does nothing unusual with its own

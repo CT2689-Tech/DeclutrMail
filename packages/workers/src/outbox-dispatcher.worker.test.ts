@@ -1308,6 +1308,49 @@ describe('OutboxDispatcherWorker', () => {
     const again = await dispatcher.tick();
     expect(again.flippedToFailed).toBe(0);
     expect(captured).toHaveLength(1);
+
+    // WARNING finding (architecture-guardian, round 4, 2026-09-29): the
+    // two assertions above do NOT actually prove the entry survived —
+    // they are trivially true once this row is `failed`, since the
+    // claim SQL's `status = 'pending'` filter excludes a `failed` row
+    // regardless of whether its orphan-guard entry still exists.
+    // Deleting the "keep the entry, just mark it escalated" behavior in
+    // `escalateStuckOrphans` (clearing `orphanedEvents` on escalation
+    // instead of `set(key, { ...orphan, escalated: true })`) left every
+    // test in this suite green, including both lines above — proving
+    // this file had no coverage for the actual invariant.
+    //
+    // The real invariant: the guard must keep blocking a DIFFERENT event
+    // that shares this one's (topic, aggregateId) concurrency unit,
+    // because the real, abandoned call is still running. First, the
+    // gauge must still show one guarded unit —
+    expect(again.skippedOrphaned).toBe(1);
+
+    // — then a second, distinct event for the SAME concurrency unit
+    // must still be refused a run while the first call remains
+    // unsettled, which is the exact duplicate-side-effect race this
+    // guard exists to prevent.
+    let secondId = '';
+    await db.transaction(async (tx) => {
+      secondId = await new OutboxPublisher().publish(tx, {
+        topic: 'triage.verdict_applied',
+        aggregateId: 'never-settles-1',
+        payload: {},
+        schema: EmptyPayload,
+      });
+    });
+
+    const third = await dispatcher.tick();
+    expect(third.claimed).toBe(0); // excluded by the claim SQL's orphan exclusion
+    expect(invocations).toBe(1); // consumer never invoked for the second event either
+
+    const [secondRow] = await db.select().from(outboxEvents).where(eq(outboxEvents.id, secondId));
+    expect(secondRow?.status).toBe('pending'); // untouched — still guarded
+
+    // NEGATIVE CONTROL: making `escalateStuckOrphans` clear the entry
+    // (`this.orphanedEvents.delete(key)`) instead of marking it
+    // escalated makes `again.skippedOrphaned` above go to 0 and this
+    // test fail — confirmed live while developing this fix.
   });
 
   /**
