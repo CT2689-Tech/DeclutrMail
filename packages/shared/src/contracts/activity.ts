@@ -68,6 +68,10 @@ const ActivityStatsSchema = z.object({
   /** Distinct senders per decision; unsubscribe requests do not prove delivery. */
   senderCounts: z
     .object({
+      // Optional during API/web deploy skew; absent means unknown.
+      archived: z.number().int().nonnegative().optional(),
+      deleted: z.number().int().nonnegative().optional(),
+      later: z.number().int().nonnegative().optional(),
       unsubscribed: z.number().int().nonnegative(),
       kept: z.number().int().nonnegative(),
     })

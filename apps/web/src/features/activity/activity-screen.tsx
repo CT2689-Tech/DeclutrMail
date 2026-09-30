@@ -979,6 +979,9 @@ function SummaryRow({
             const isActive = verbs.includes(verb);
             const metric = summaryMetric(stats, key);
             const allTimeMetric = allTimeStats ? summaryMetric(allTimeStats, key) : null;
+            const senders = metric.unit === 'emails' ? stats.senderCounts?.[key] : undefined;
+            const allTimeSenders =
+              allTimeMetric?.unit === 'emails' ? allTimeStats?.senderCounts?.[key] : undefined;
             return (
               <button
                 key={key}
@@ -1037,6 +1040,10 @@ function SummaryRow({
                     {metric.count === 1 ? metric.unit.slice(0, -1) : metric.unit}
                   </span>
                 </span>
+                <span style={{ fontSize: text.sm, color: color.fgSoft, minHeight: 20 }}>
+                  {senders !== undefined &&
+                    `from ${formatCount(senders)} ${senders === 1 ? 'sender' : 'senders'}`}
+                </span>
                 <span style={{ fontSize: text.xs, color: color.fgSoft }}>{periodLabel}</span>
                 {showAllTime && allTimeMetric && (
                   <span
@@ -1054,6 +1061,12 @@ function SummaryRow({
                     {allTimeMetric.count === 1
                       ? allTimeMetric.unit.slice(0, -1)
                       : allTimeMetric.unit}
+                    {allTimeSenders !== undefined && (
+                      <span style={{ display: 'block' }}>
+                        from {formatCount(allTimeSenders)}{' '}
+                        {allTimeSenders === 1 ? 'sender' : 'senders'}
+                      </span>
+                    )}
                   </span>
                 )}
               </button>

@@ -1059,7 +1059,7 @@ describe('ActivityReadService', () => {
         kept: 1,
         later: 1,
         emailCounts: { archived: 3, deleted: 0, later: 1 },
-        senderCounts: { unsubscribed: 0, kept: 0 },
+        senderCounts: { archived: 0, deleted: 0, later: 0, unsubscribed: 0, kept: 0 },
         followupsDismissed: 1,
         needsAttention: 0,
         // The seeded deflecting rows carry no sender_key → zero
@@ -1142,6 +1142,14 @@ describe('ActivityReadService', () => {
       };
       const allSenders = await svc.listActivity(params);
       expect(allSenders.stats.emailCounts).toEqual({ archived: 950, deleted: 234, later: 48 });
+      expect(allSenders.stats.senderCounts).toEqual({
+        archived: 2,
+        deleted: 1,
+        later: 1,
+        kept: 1,
+        unsubscribed: 1,
+      });
+      expect(allSenders.allTimeStats.senderCounts).toEqual(allSenders.stats.senderCounts);
       expect(allSenders.allTimeStats.emailCounts).toEqual({
         archived: 955,
         deleted: 234,
@@ -1150,7 +1158,14 @@ describe('ActivityReadService', () => {
       const scoped = await svc.listActivity({ ...params, senderQuery: 'Wanted' });
       expect(scoped.stats.emailCounts).toEqual({ archived: 150, deleted: 234, later: 48 });
       expect(scoped.allTimeStats.emailCounts).toEqual({ archived: 155, deleted: 234, later: 48 });
-      expect(scoped.stats.senderCounts).toEqual({ kept: 1, unsubscribed: 1 });
+      expect(scoped.stats.senderCounts).toEqual({
+        archived: 1,
+        deleted: 1,
+        later: 1,
+        kept: 1,
+        unsubscribed: 1,
+      });
+      expect(scoped.allTimeStats.senderCounts).toEqual(scoped.stats.senderCounts);
       expect(scoped.stats).toMatchObject({ kept: 2, unsubscribed: 2 });
       const custom = await svc.listActivity({
         ...params,
@@ -1159,10 +1174,18 @@ describe('ActivityReadService', () => {
         dateTo: new Date(NOW_MS - 2 * ONE_DAY_MS),
       });
       expect(custom.stats.emailCounts).toEqual({ archived: 5, deleted: 0, later: 0 });
-      expect(custom.stats.senderCounts).toEqual({ kept: 0, unsubscribed: 0 });
+      expect(custom.stats.senderCounts).toEqual({
+        archived: 1,
+        deleted: 0,
+        later: 0,
+        kept: 0,
+        unsubscribed: 0,
+      });
     });
 
-    it('removes email impact from both window and lifetime totals only after Undo completes', async () => {
+    it('removes email and sender impact from window and lifetime totals only after Undo completes', async () => {
+      const key = 'impact-undo';
+      await seedSender(db, mailboxA.mailboxAccountId, key, 'undo@example.com', 'Undo');
       const ids = [];
       for (const [action, affectedCount] of [
         ['archive', 150],
@@ -1172,6 +1195,7 @@ describe('ActivityReadService', () => {
         ids.push(
           await seedActivity(db, {
             mailboxAccountId: mailboxA.mailboxAccountId,
+            senderKey: key,
             occurredAt: new Date(NOW_MS - ONE_DAY_MS),
             source: 'manual',
             action,
@@ -1189,6 +1213,7 @@ describe('ActivityReadService', () => {
       };
       const before = await svc.listActivity(params);
       expect(before.stats.emailCounts).toEqual({ archived: 150, deleted: 234, later: 48 });
+      expect(before.stats.senderCounts).toMatchObject({ archived: 1, deleted: 1, later: 1 });
       await db
         .update(activityLog)
         .set({ revertedAt: new Date(NOW_MS) })
@@ -1196,6 +1221,8 @@ describe('ActivityReadService', () => {
       const after = await svc.listActivity(params);
       expect(after.stats.emailCounts).toEqual({ archived: 0, deleted: 0, later: 0 });
       expect(after.allTimeStats.emailCounts).toEqual(after.stats.emailCounts);
+      expect(after.stats.senderCounts).toMatchObject({ archived: 0, deleted: 0, later: 0 });
+      expect(after.allTimeStats.senderCounts).toEqual(after.stats.senderCounts);
       expect(after.stats).toMatchObject({ archived: 0, deleted: 0, later: 0 });
     });
 

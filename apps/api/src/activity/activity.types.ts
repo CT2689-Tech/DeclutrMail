@@ -181,8 +181,14 @@ export interface ActivityStats {
   deleted: number;
   /** Confirmed message moves, excluding activity whose Undo completed. */
   emailCounts: { archived: number; deleted: number; later: number };
-  /** Distinct senders kept or with an unsubscribe request in this scope. */
-  senderCounts: { unsubscribed: number; kept: number };
+  /** Distinct senders per action in this scope, excluding completed Undo. */
+  senderCounts: {
+    archived: number;
+    deleted: number;
+    later: number;
+    unsubscribed: number;
+    kept: number;
+  };
   followupsDismissed: number;
   /**
    * D59 "needing attention" — truthful unsubscribe terminal outcomes

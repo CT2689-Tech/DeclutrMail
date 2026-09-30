@@ -1175,7 +1175,7 @@ describe('ActivityScreen — populated', () => {
       deleted: 1,
       later: 2,
       emailCounts: { archived: 8420, deleted: 1, later: 96 },
-      senderCounts: { unsubscribed: 2, kept: 1 },
+      senderCounts: { archived: 48, deleted: 1, later: 2, unsubscribed: 2, kept: 1 },
     };
     installFetchStub([
       {
@@ -1190,6 +1190,7 @@ describe('ActivityScreen — populated', () => {
               allTimeStats: {
                 ...stats,
                 emailCounts: { archived: 41850, deleted: 234, later: 731 },
+                senderCounts: { archived: 240, deleted: 3, later: 19, unsubscribed: 2, kept: 1 },
               },
             },
           }),
@@ -1200,6 +1201,8 @@ describe('ActivityScreen — populated', () => {
     const archived = within(summary).getByRole('button', { name: /Archived/ });
     expect(within(archived).getByText('8,420')).toBeInTheDocument();
     expect(within(archived).getByText('emails')).toBeInTheDocument();
+    expect(within(archived).getByText('from 48 senders')).toBeInTheDocument();
+    expect(within(archived).getByText('from 240 senders')).toBeInTheDocument();
     expect(within(archived).queryByText('60 actions')).toBeNull();
     expect(within(archived).getByText('In the last 30 days')).toBeInTheDocument();
     const details = summary.querySelector('details')!;
@@ -1211,11 +1214,14 @@ describe('ActivityScreen — populated', () => {
     expect(within(archived).getByText('Since you started: 41,850 emails')).toBeInTheDocument();
     const deleted = within(summary).getByRole('button', { name: /Moved to Trash/ });
     expect(within(deleted).getByText('email')).toBeInTheDocument();
+    expect(within(deleted).getByText('from 1 sender')).toBeInTheDocument();
+    expect(within(deleted).getByText('from 3 senders')).toBeInTheDocument();
     expect(within(deleted).queryByText('1 action')).toBeNull();
     expect(within(deleted).getByText('Since you started: 234 emails')).toBeInTheDocument();
     const later = within(summary).getByRole('button', { name: /Later/ });
     expect(within(later).getByText('96')).toBeInTheDocument();
     expect(within(later).getByText('emails')).toBeInTheDocument();
+    expect(within(later).getByText('from 2 senders')).toBeInTheDocument();
     const unsubscribes = within(summary).getByRole('button', { name: /Unsubscribe requests/ });
     expect(within(unsubscribes).getByText('2')).toBeInTheDocument();
     expect(within(unsubscribes).getByText('senders')).toBeInTheDocument();
@@ -1225,6 +1231,27 @@ describe('ActivityScreen — populated', () => {
     expect(within(kept).queryByText('3 actions')).toBeNull();
     await userEvent.click(deleted);
     expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=delete');
+  });
+
+  it('omits unknown sender totals when an older API supplies only email totals', async () => {
+    const stats = {
+      ...STATS_BASE,
+      emailCounts: { archived: 8420, deleted: 234, later: 96 },
+      senderCounts: { unsubscribed: 2, kept: 1 },
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({})], meta: { ...META_BASE, stats, allTimeStats: stats } }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('8,420')).toBeInTheDocument();
+    expect(within(archived).queryByText(/from .* senders?/)).toBeNull();
   });
 
   it('labels an older API count as actions when email totals are unavailable', async () => {

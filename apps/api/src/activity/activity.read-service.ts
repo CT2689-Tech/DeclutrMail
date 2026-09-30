@@ -1271,6 +1271,9 @@ export class ActivityReadService {
           later: emailsByVerb.get('later') ?? 0,
         },
         senderCounts: {
+          archived: sendersByVerb.get('archive') ?? 0,
+          deleted: sendersByVerb.get('delete') ?? 0,
+          later: sendersByVerb.get('later') ?? 0,
           unsubscribed: sendersByVerb.get('unsubscribe') ?? 0,
           kept: sendersByVerb.get('keep') ?? 0,
         },
