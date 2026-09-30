@@ -276,6 +276,25 @@ export const FailedInvalidGrant: Story<typeof SyncGate> = {
 };
 
 /**
+ * Failed, grant refused since — the 2026-09-04 mailbox's live row: the scan
+ * failed as `TransientError`, then a background call recorded
+ * `InvalidGrantError`. The gate offers Reconnect, never a retry.
+ */
+export const FailedNeedsReconnect: Story<typeof SyncGate> = {
+  args: {
+    status: {
+      ...FAILED,
+      error_code: 'TransientError',
+      last_synced_at: null,
+      last_sync_error_at: '2026-09-05T23:50:49.872Z',
+      last_sync_error_code: 'InvalidGrantError',
+    },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
  * Syncing (secondary connect, D116) — same gate, plus the escape hatch:
  * "Go back to <primary>" switches the active
  * mailbox back and leaves. Only renders when another active mailbox

@@ -24,7 +24,7 @@ export default function AutopilotError({
       reset={reset}
       boundary="autopilot"
       headline="We couldn't load your rules."
-      body="Your rules and suggestions are unchanged. Try again, or continue in Triage."
+      body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

@@ -96,6 +96,9 @@ describe('InvoiceHistory', () => {
     apiGet.mockRejectedValue(new Error('boom'));
     wrap(<InvoiceHistory />);
     expect(await screen.findByText(/couldn't load your invoices/i)).toBeInTheDocument();
+    // A provider failure is a 200 with `unavailableProviders`, so this
+    // state is always OUR failure — never "the provider didn't answer".
+    expect(screen.queryByText(/provider didn.t answer/i)).toBeNull();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 
@@ -104,7 +107,11 @@ describe('InvoiceHistory', () => {
       data: { invoices: [], unavailableProviders: ['paddle'], truncated: false, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/couldn’t reach your payment provider/i)).toBeInTheDocument();
+    // A provider that answered with an error was reached — the copy
+    // claims only that invoices did not come back.
+    expect(await screen.findByText(/didn’t return your invoices/i)).toBeInTheDocument();
+    // The partial state carries its own way out.
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 

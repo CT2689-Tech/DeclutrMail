@@ -3,10 +3,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@declutrmail/shared';
 
-import { apiPost } from '@/lib/api/client';
+import { ApiError, apiPost } from '@/lib/api/client';
 import { addBreadcrumb } from '@/lib/sentry';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { SYNC_STATUS_KEY } from '@/features/onboarding/api/use-sync-status';
+import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 
 /**
  * Wire response of `POST /api/v1/sync/initial/retry`.
@@ -111,10 +112,24 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
         message: `initial-sync-retry failed: ${err instanceof Error ? err.message : String(err)}`,
         level: 'error',
       });
-      toast(
-        "Couldn't start the scan. Wait a minute and try again — nothing in Gmail changed.",
-        'danger',
-      );
+      toast(retryErrorMessage(err), 'danger');
     },
   });
+}
+
+/**
+ * One sentence per cause the error proves. Waiting fixes only the route's
+ * own 3-per-minute limit; a 409 means this inbox is no longer one this
+ * session can act on (disconnected in another tab or device), which no
+ * wait fixes — and the 409 already resets the app's mailbox state, so the
+ * screen moves on without a reload.
+ */
+function retryErrorMessage(err: unknown): string {
+  if (isMailboxScopeConflict(err)) {
+    return 'This inbox is no longer connected to your account.';
+  }
+  if (err instanceof ApiError && err.status === 429) {
+    return "Couldn't start the scan — try again in a minute.";
+  }
+  return "Couldn't start the scan — try again.";
 }

@@ -93,6 +93,25 @@ describe('SyncService.getNeedsReconnectByMailbox', () => {
     expect((await svc.getNeedsReconnectByMailbox(['a'])).get('a')).toBe(true);
   });
 
+  it('flags an initial scan that ended on AuthExpiredError, like the web rule', async () => {
+    // One rule on every surface: the onboarding gate and the header already
+    // reconnect for it, and Settings/Home/Triage/Senders read this flag.
+    const { svc } = service([
+      row({ mailboxAccountId: 'a', readiness: 'failed', errorCode: 'AuthExpiredError' }),
+      row({
+        mailboxAccountId: 'b',
+        readiness: 'ready',
+        lastIncrementalErrorCode: 'AuthExpiredError',
+        lastIncrementalErrorAt: LATER,
+        lastSyncedAt: T0,
+      }),
+    ]);
+    const flags = await svc.getNeedsReconnectByMailbox(['a', 'b']);
+    expect(flags.get('a')).toBe(true);
+    // The incremental field stays InvalidGrant-only, as the workers' gate is.
+    expect(flags.get('b')).toBe(false);
+  });
+
   it('flags a revoked grant NEWER than the last success', async () => {
     const { svc } = service([
       row({

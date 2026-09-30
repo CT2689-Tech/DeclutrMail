@@ -24,7 +24,7 @@ export default function SenderDetailError({
       reset={reset}
       boundary="senders-detail"
       headline="We couldn't load this sender."
-      body="Your mailbox and decisions are untouched. Try again, or head back to Senders."
+      body="Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

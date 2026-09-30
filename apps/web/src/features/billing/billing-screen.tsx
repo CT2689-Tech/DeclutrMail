@@ -37,7 +37,11 @@ import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/p
 import { ApiError, apiDelete } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
-import { apiErrorCode, useBillingSubscription } from './api/use-billing-subscription';
+import {
+  apiErrorCode,
+  apiErrorDetail,
+  useBillingSubscription,
+} from './api/use-billing-subscription';
 import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useCancelSubscription } from './api/use-cancel-subscription';
@@ -1133,7 +1137,9 @@ export function PaymentProcessingNotice({
           ) : providerCheck === 'payment_in_progress' ? (
             'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
           ) : providerCheck === 'provider_unavailable' ? (
-            'We couldn’t reach the payment provider to check automatically.'
+            // Also every rejection of OUR check request — a 429, a 5xx, a
+            // network drop — so it names no failure to reach the provider.
+            'We couldn’t check with the payment provider automatically.'
           ) : providerCheck === 'unresolved' ? (
             <>
               We found payment activity that needs a manual look — email{' '}
@@ -1142,6 +1148,11 @@ export function PaymentProcessingNotice({
               </a>
               .
             </>
+          ) : providerCheck !== 'granted' && providerCheck !== 'already_recorded' ? (
+            // The outcome is cast from the wire, not parsed: a value this
+            // build does not know (a web deploy behind its API) used to
+            // fall through to "Found your payment".
+            'We couldn’t confirm this with the payment provider yet.'
           ) : isChangeWait ? (
             // granted / already_recorded on a change wait — provider
             // truth is projected; the poll clears this via the flip.
@@ -1660,11 +1671,27 @@ function ScheduledPlanChangeNotice({
  */
 function scheduledChangeErrorMessage(error: unknown): string {
   const code = apiErrorCode(error);
+  // A DEFINITIVE provider refusal resets the marker to `scheduled`; any
+  // other provider error leaves the outcome unknown (billing.service.ts).
+  if (code === 'BILLING_PROVIDER_ERROR') {
+    return apiErrorDetail(error, 'providerOutcome') === 'definitive'
+      ? 'The payment provider declined this — your plan change is still scheduled. Try again, or email support@declutrmail.com.'
+      : UNCONFIRMED_KEEP_MESSAGE;
+  }
+  // The registry's "try again after the renewal" is the scheduling path's
+  // remedy. Here the scheduled change applies AT renewal, and this control
+  // is gone afterwards.
+  if (code === 'PLAN_CHANGE_TOO_LATE') {
+    return 'It’s too close to renewal to keep your current plan — the scheduled change applies at renewal.';
+  }
   if (code !== null && isErrorCode(code)) {
     return ERROR_CODES[code].message;
   }
-  return 'The payment provider didn’t confirm the cancellation — it may or may not have registered. This page reflects the confirmed state; retry, or email support@declutrmail.com if it repeats.';
+  return UNCONFIRMED_KEEP_MESSAGE;
 }
+
+const UNCONFIRMED_KEEP_MESSAGE =
+  'The payment provider didn’t confirm the cancellation — it may or may not have registered. This page reflects the confirmed state; retry, or email support@declutrmail.com if it repeats.';
 
 /**
  * A NON-BACKING subscription record's designed state (A6): a real,

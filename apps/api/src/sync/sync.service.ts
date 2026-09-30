@@ -9,8 +9,13 @@ import {
   type IncrementalSyncJobData,
 } from '@declutrmail/workers';
 import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
+
 import type { InitialSyncJobData } from '@declutrmail/workers';
-import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  type SyncReadiness,
+  type SyncStatus,
+} from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -488,7 +493,13 @@ export class SyncService {
           r.mailboxAccountId,
           {
             readiness: r.readiness,
-            needsReconnect: incrementalAuthError || r.errorCode === INVALID_GRANT_ERROR,
+            // Same rule as the web's `syncStatusNeedsReconnect`: an initial
+            // scan that ended on a refused grant OR a fresh token Gmail still
+            // rejected sends the user to reconnect on every surface. Display
+            // only — no sweep reads this map.
+            needsReconnect:
+              incrementalAuthError ||
+              (r.errorCode !== null && AUTH_RECOVERY_ERROR_CODES.has(r.errorCode)),
           },
         ];
       }),

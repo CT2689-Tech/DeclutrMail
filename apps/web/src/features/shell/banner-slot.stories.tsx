@@ -71,7 +71,7 @@ export const Several: Story = {
       <DemoBanner>Account deletion is in progress.</DemoBanner>
       <DemoBanner>New email isn&apos;t syncing — the last attempt failed.</DemoBanner>
       <Quiet />
-      <DemoBanner>Gmail access expired for a second mailbox.</DemoBanner>
+      <DemoBanner>Google isn't granting access to a second mailbox.</DemoBanner>
     </BannerSlot>
   ),
 };

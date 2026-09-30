@@ -56,10 +56,17 @@ describe('GlobalError boundary — D167', () => {
         reset={() => undefined}
       />,
     );
-    expect(screen.getByText(/declutrmail is reloading/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'We couldn’t load DeclutrMail.',
+    );
+    // Nothing reloads on its own and nothing saves the page: the copy
+    // promises neither.
+    expect(document.body.textContent ?? '').not.toMatch(
+      /is reloading|pick up where you left off|untouched/i,
+    );
   });
 
-  it('wires Reload to the `reset` prop', () => {
+  it('wires Try again to the `reset` prop', () => {
     const reset = vi.fn();
     render(
       <GlobalError
@@ -67,7 +74,7 @@ describe('GlobalError boundary — D167', () => {
         reset={reset}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: /reload/i }));
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
     expect(reset).toHaveBeenCalledTimes(1);
   });
 

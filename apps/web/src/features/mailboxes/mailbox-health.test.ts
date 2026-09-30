@@ -54,6 +54,33 @@ describe('syncStatusNeedsReconnect', () => {
     ).toBe(true);
   });
 
+  it('detects an initial-sync AuthExpiredError — one rule with the gate and the header', () => {
+    // The gate and the header's failed indicator reconnect for it; Settings,
+    // Home, Triage and Senders read this predicate (or its server twin), so
+    // they must too, or one screen shows two remedies.
+    expect(
+      syncStatusNeedsReconnect(
+        statusOf({
+          readiness_status: 'failed',
+          current_stage: 'failed',
+          is_ready_for_triage: false,
+          error_code: 'AuthExpiredError',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps the incremental check InvalidGrant-only, as the workers gate is', () => {
+    expect(
+      syncStatusNeedsReconnect(
+        statusOf({
+          last_sync_error_at: '2026-07-12T10:05:00.000Z',
+          last_sync_error_code: 'AuthExpiredError',
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it('does not classify retryable sync errors as reconnect-required', () => {
     expect(
       syncStatusNeedsReconnect(

@@ -17,6 +17,13 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 
 <!-- 2-3 sentences. The "why" is more useful than the "what". -->
 
+## Integration handoff
+
+- Owner:
+- Shared files / dependencies (or none):
+- Ready commit:
+- Remaining risks (or none):
+
 ## Verification
 
 <!-- Tick at least one verification source per D# closed. -->
@@ -47,7 +54,7 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 - [ ] `pnpm lint` passes
 - [ ] Affected unit + integration tests pass
 - [ ] Affected E2E tests pass (or N/A)
-- [ ] `IMPLEMENTATION-LOG.md` will auto-update on merge (cited D's listed above)
+- [ ] `IMPLEMENTATION-LOG.md` is current for the cited decisions (or N/A)
 - [ ] No unresolved [BLOCKING] comments from gate agents
 - [ ] No new TODOs unless linked to a D-decision or GitHub issue
 - [ ] No new secrets in code (`gitleaks`-clean)
@@ -65,12 +72,12 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 - [ ] Destructive Gmail action without preview/undo
 
 <!--
-Gates (auto-populated by GitHub Actions; do not edit manually)
+Review evidence (record actual reviews; the scope workflow does not run reviewers)
 -->
 
 ## Gates
 
-<!-- GH Action `subagent-gate.yml` writes results here. -->
+<!-- Record applicable review results; mark non-applicable reviews N/A. -->
 - privacy-auditor: ⏳
 - architecture-guardian: ⏳
 - schema-migration-reviewer: ⏳

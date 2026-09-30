@@ -68,6 +68,7 @@ on:
       - 'tsconfig.base.json'
       - '.dockerignore'
       - '.github/workflows/deploy-cloud-run.yml'
+      - 'scripts/select-deployment.mjs'
       - 'scripts/deploy-api-safely*'
   workflow_dispatch:
     # Allow manual re-deploys (e.g. after a Secret Manager rotation
@@ -131,28 +132,46 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      deploy: ${{ steps.wait.outputs.deploy }}
     permissions:
       contents: read
       # `gh run list` reads the CI run for this commit.
       actions: read
     steps:
-      - name: Require the CI run for this commit to be green
-        if: github.event_name != 'workflow_dispatch'
+      - uses: actions/checkout@v7
+      - name: Require green CI and skip superseded automatic releases
+        id: wait
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           deadline=$(( SECONDS + 40 * 60 ))
           while (( SECONDS < deadline )); do
-            info=$(gh run list --repo "$REPO" --workflow CI --commit "$SHA" \
+            # Do not spend another build/deploy on an intermediate commit when
+            # a newer runtime release has already passed its own full CI.
+            # API errors fail closed; active deployments are never cancelled.
+            superseded=$(node scripts/select-deployment.mjs)
+            if [ "$superseded" = true ]; then
+              echo "A newer automatic main release passed CI; skipping this intermediate deployment."
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            info=$(gh run list --repo "$REPO" --workflow CI --commit "$SHA" --event push --branch main \
                      --limit 1 --json status,conclusion \
                      --jq '.[0] | "\(.status)|\(.conclusion // "")"' 2>/dev/null || true)
             status=${info%%|*}
             conclusion=${info#*|}
             if [ "$status" = completed ]; then
               if [ "$conclusion" = success ]; then
+                echo "deploy=true" >> "$GITHUB_OUTPUT"
                 echo "CI is green for $SHA — proceeding with the deploy."
                 exit 0
               fi
@@ -171,6 +190,7 @@ jobs:
 
   build-and-deploy:
     needs: await-ci
+    if: needs.await-ci.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:

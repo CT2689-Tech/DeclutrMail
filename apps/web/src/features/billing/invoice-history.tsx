@@ -104,7 +104,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
           title="We couldn't load your invoices"
-          description="Your payment provider didn't answer. Your plan and your billing are unaffected — this page only reads them."
+          description="Your plan and your billing are unaffected — this page only reads them."
           onRetry={() => invoices.refetch()}
         />
       </section>
@@ -191,10 +191,21 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // gate network 2026-08-16 CONFIRMED), and the genuine
         // never-billed state (D212 EmptyState primitive).
         partial ? (
-          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-            We couldn&rsquo;t reach your payment provider, so we can&rsquo;t show your invoices
-            right now.
-          </p>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
+          >
+            <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+              Your payment provider didn&rsquo;t return your invoices.
+            </p>
+            <Button
+              tone="default"
+              size="sm"
+              disabled={invoices.isFetching}
+              onClick={() => void invoices.refetch()}
+            >
+              Try again
+            </Button>
+          </div>
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             Your invoices exist, but we couldn&rsquo;t display them. Email{' '}

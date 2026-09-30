@@ -29,6 +29,7 @@ import type {
 } from '@declutrmail/events';
 import {
   AUTOPILOT_APPLY_JOB,
+  autopilotApplyJobOptions,
   seedAutopilotPresets,
   type AutopilotApplyJobData,
   type DispatchedEvent,
@@ -332,6 +333,9 @@ async function handleUnsubscribeExecuted(
  * worker's idempotency key with `-` instead of `:` — BullMQ reserves
  * `:` as its Redis key separator and REJECTS custom ids containing it
  * (caught live in the U14 smoke: `Error: Custom Id cannot contain :`).
+ * `autopilotApplyJobOptions` grants `perMailboxPolicy`'s 5-attempt
+ * budget with backoff, same as the incremental-sync delta trigger (the
+ * apply queue's other producer).
  */
 async function enqueueAutopilotApply(
   deps: OutboxConsumerDeps,
@@ -347,11 +351,11 @@ async function enqueueAutopilotApply(
     );
     return;
   }
-  await deps.autopilotApplyQueue.add(AUTOPILOT_APPLY_JOB, job, {
-    jobId: `${job.mailboxAccountId}-${job.triggeredAtMs}`,
-    removeOnComplete: { age: 86_400 },
-    removeOnFail: false,
-  });
+  await deps.autopilotApplyQueue.add(
+    AUTOPILOT_APPLY_JOB,
+    job,
+    autopilotApplyJobOptions(`${job.mailboxAccountId}-${job.triggeredAtMs}`),
+  );
 }
 
 /**

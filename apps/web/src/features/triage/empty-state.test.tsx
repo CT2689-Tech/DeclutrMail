@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { TRIAGE_SESSION_STATS } from './fixtures';
 import { TriageEmptyState } from './empty-state';
 
@@ -35,6 +36,47 @@ describe('TriageEmptyState', () => {
       '/settings#mailboxes',
     );
   });
+
+  it('sends a mailbox that needs reconnecting to Reconnect, not to a retry Settings does not offer', () => {
+    // Settings shows "Needs reconnect" + Reconnect for these, never a
+    // retry button — "Retry the scan in Settings" was a step the user
+    // could not find there.
+    render(
+      <TriageEmptyState
+        stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
+        syncFailed={true}
+        syncNeedsReconnect={true}
+      />,
+    );
+    expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/Scan again/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the retry step for a failed scan whose grant is fine', () => {
+    render(
+      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} syncFailed={true} />,
+    );
+    expect(screen.getByText(/Scan again in Settings/)).toBeInTheDocument();
+    // No "untouched" reassurance: during a failed re-scan the user may
+    // have acted from Senders, so it is not a fact this state can see.
+    expect(screen.queryByText(/untouched/i)).not.toBeInTheDocument();
+  });
+
+  it.each([true, false])(
+    'says exactly what failedScanSettingsStep says (needsReconnect=%s)',
+    (needsReconnect) => {
+      // The sentences are inline here for the bundle budget; this pins
+      // them to the one helper Home, Senders and the scan toast use.
+      render(
+        <TriageEmptyState
+          stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
+          syncFailed={true}
+          syncNeedsReconnect={needsReconnect}
+        />,
+      );
+      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+    },
+  );
 
   it('does not render the sync-failed copy once the user has decided something today', () => {
     // `decidedToday > 0` is the D33 celebration state, unconditional on

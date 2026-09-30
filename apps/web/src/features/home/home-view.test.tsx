@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
 import { HomeView } from './home-view';
 
@@ -195,7 +196,7 @@ describe('HomeView', () => {
   });
 
   it('sync-failed: says the scan failed and links to Gmail accounts — never "Nothing cleared yet"', () => {
-    render(<HomeView state={{ kind: 'sync-failed' }} />);
+    render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
     expect(screen.getByText('Gmail scan failed')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet')).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
@@ -203,6 +204,30 @@ describe('HomeView', () => {
     expect(links).toHaveLength(1);
     expect(links[0]).toHaveAttribute('href', '/settings#mailboxes');
   });
+
+  it('sync-failed: blames the connection only when the grant is what failed', () => {
+    // A scan also stops on Gmail throttling or a Google error; Settings
+    // offers a retry for those, and "review the connection" sent those
+    // users looking for a problem that was not there.
+    const { unmount } = render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
+    expect(screen.queryByText(/connection/i)).toBeNull();
+    expect(screen.getByText(/Scan again in Settings/)).toBeInTheDocument();
+    unmount();
+
+    render(<HomeView state={{ kind: 'sync-failed', needsReconnect: true }} />);
+    expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
+    expect(screen.queryByText(/Scan again/)).toBeNull();
+  });
+
+  it.each([false, true])(
+    'sync-failed: says exactly what failedScanSettingsStep says (needsReconnect=%s)',
+    (needsReconnect) => {
+      // Inline in the view for the bundle budget; pinned to the helper the
+      // toast and Triage use so the surfaces cannot drift apart.
+      render(<HomeView state={{ kind: 'sync-failed', needsReconnect }} />);
+      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+    },
+  );
 
   it('loading: a labelled skeleton and no link', () => {
     render(<HomeView state={{ kind: 'loading' }} />);
