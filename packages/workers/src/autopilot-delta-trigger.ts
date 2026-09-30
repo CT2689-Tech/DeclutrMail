@@ -51,8 +51,11 @@ export const AUTOPILOT_APPLY_DELTA_WINDOW_MS = 5 * 60_000;
  * producer.
  *
  * The composition root wires the returned fn into
- * `IncrementalSyncDeps.onDeltaProcessed`; tests pass a fake queue +
- * clock.
+ * `IncrementalSyncDeps.onDeltaProcessed` AND (a second instance, with
+ * `settleMs`) `buildRescoreSenders`'s `sweepAfter` — the non-mail-purge
+ * repair's own trigger back into this same debounced sweep, so a purge
+ * that recounts senders also re-runs Autopilot against the fresh counts.
+ * Tests pass a fake queue + clock.
  */
 export function buildAutopilotApplyDeltaTrigger(
   applyQueue: Pick<Queue<AutopilotApplyJobData>, 'add'>,

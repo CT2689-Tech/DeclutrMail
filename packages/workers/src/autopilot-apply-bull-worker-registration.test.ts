@@ -157,6 +157,14 @@ describe('autopilotApplyBullWorker registration (real Redis + real BullMQ)', () 
           worker.on('failed', (job, err) => {
             if (job && job.attemptsMade >= 5) reject(err);
           });
+          // If the backoff STRATEGY isn't registered, BullMQ throws
+          // `Unknown backoff strategy custom.` as a Worker-level 'error'
+          // while trying to schedule the retry — never a 'failed'/'completed'
+          // event for this job at all. Without this listener the promise
+          // just times out (a real failure mode observed in review: the
+          // test still fails, but by timeout, 15s later, with the real
+          // cause buried in stderr instead of the rejection).
+          worker.on('error', reject);
         });
         const data = applyJobData();
         await queue.add('apply', data, autopilotApplyJobOptions(`retry-${data.mailboxAccountId}`));
@@ -228,13 +236,17 @@ describe('autopilotApplyBullWorker registration (real Redis + real BullMQ)', () 
         autopilotApplyWorkerOptions(connection!),
       );
       try {
-        const exhausted = new Promise<number>((resolve) => {
+        const exhausted = new Promise<number>((resolve, reject) => {
           // BullMQ emits 'failed' after EVERY attempt, retryable or not —
           // only the attempt where attemptsMade reaches the policy's
           // maxAttempts (5) is the terminal one.
           worker.on('failed', (job) => {
             if (job && job.attemptsMade >= 5) resolve(job.attemptsMade);
           });
+          // See the "fails once, retries, completes" case above for why
+          // this listener matters: without it, a missing backoff-strategy
+          // registration times out (60s here) instead of failing by name.
+          worker.on('error', reject);
         });
         const data = applyJobData();
         await queue.add(

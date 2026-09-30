@@ -346,11 +346,18 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         // active-mode candidates that already have a row the action
         // sweep will still pick up for this rule —
         // `ruleMatchIsQueuedAction()` (approved, unapplied, AND evidence
-        // current). `perMailboxPolicy` serializes apply sweeps per
-        // mailbox, so check-then-insert cannot race another sweep; the
-        // action worker flipping `intent_applied=true` concurrently only
-        // makes the check conservative (skip now, re-arm next sweep once
-        // the sender is actionable again).
+        // current). NOT race-free (architecture-guardian, 2026-09-29,
+        // reviewing PR #837): this check-then-insert runs outside the
+        // fingerprint-guarded transaction below, and — per the
+        // concurrency comment on `senderIndexStamp` above —
+        // `autopilotApplyBullWorker` runs at `concurrency: 5` with no
+        // per-mailbox grouping, so two independently-triggered sweeps
+        // for the SAME mailbox can both pass this check before either
+        // inserts. The action worker flipping `intent_applied=true`
+        // concurrently only makes the check conservative (skip now,
+        // re-arm next sweep); the two-sweeps-race is a separate,
+        // pre-existing gap, tracked as its own follow-up rather than
+        // fixed inline here.
         //
         // Uses `ruleMatchIsQueuedAction()` — INCLUDING its evidence-current
         // test — rather than bare approved+unapplied. Until 2026-09-29 this
