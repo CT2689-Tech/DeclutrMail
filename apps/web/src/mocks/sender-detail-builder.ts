@@ -35,6 +35,7 @@ const GMAIL_CATEGORY: Record<SenderGroup, string> = {
   social: 'Gmail: Social',
   updates: 'Gmail: Updates',
   forums: 'Gmail: Forums',
+  unknown: 'Gmail: no single tab',
 };
 
 /** Recent-subject seeds per group — same pool the prototype used. */
@@ -74,6 +75,8 @@ const SUBJECT_POOL: Record<SenderGroup, string[]> = {
     'Someone mentioned you',
     'Digest #34',
   ],
+  // No tab holds most of the sender's mail — often old mail and chats.
+  unknown: ['Re: old thread', 'Chat with you'],
 };
 
 const SNIPPETS: Record<SenderGroup, string[]> = {
@@ -102,6 +105,7 @@ const SNIPPETS: Record<SenderGroup, string[]> = {
     'Two new replies on a thread you started, and one mention by another member you should see.',
     'This week: 12 new posts, 4 high-traffic threads, and the monthly community digest.',
   ],
+  unknown: ['Picking this back up from our last conversation.'],
 };
 
 /**
@@ -321,7 +325,7 @@ export function buildSenderDetail(
   // The one model every senders surface consumes — built through the
   // same fixture → wire row → enrich seam live data flows through.
   const row = fixtureToSenderListRow(fixture);
-  const sender = enrichSenderRow(row);
+  const sender = enrichSenderRow(row, Date.parse('2026-07-01T00:00:00.000Z'), 'UTC');
 
   return {
     sender,

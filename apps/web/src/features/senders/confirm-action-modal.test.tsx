@@ -524,9 +524,10 @@ describe('ConfirmActionModal — Protected sender acknowledgement (D245/D42)', (
       />,
     );
 
-    // D245: the exact reason, not just the state.
-    expect(screen.getByText(/This action applies anyway/)).toHaveTextContent(
-      /Protected — you marked it Protected/,
+    // D245: the exact reason, not just the state — said once. The
+    // "Delete anyway" button carries the consent, so the line does not.
+    expect(screen.getByText(/you marked it Protected/)).toHaveTextContent(
+      /^Protected — you marked it Protected\.$/,
     );
     const confirm = screen.getByRole('button', { name: /Delete anyway/i });
     fireEvent.click(confirm);
@@ -2406,7 +2407,43 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Every selected sender is now Protected or gone/i)).toBeInTheDocument();
+    // The mailto sender is neither Protected nor gone: say what is true of
+    // the selection, not that every sender dropped out.
+    expect(screen.getByText(/No sendable unsubscribe for these senders/)).toBeInTheDocument();
+    expect(screen.queryByText(/Every selected sender is now Protected/)).toBeNull();
+  });
+
+  it('offers a refresh when every sender of an Archive dropped out', () => {
+    const a = makeSender({ id: 'sender-a1', displayName: 'Alpha' });
+    const b = makeSender({ id: 'sender-b1', displayName: 'Beta' });
+    const onRefreshSenders = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Archive', senders: [a, b] }}
+        onCancel={() => {}}
+        onConfirm={vi.fn()}
+        onRefreshSenders={onRefreshSenders}
+        bulkPreview={{
+          data: {
+            senders: [a, b].map((x) => ({
+              senderId: x.id,
+              name: x.name,
+              counts: buckets,
+              protected: true,
+            })),
+            totals: buckets,
+            protectedCount: 2,
+          },
+          loading: false,
+          error: false,
+        }}
+      />,
+    );
+    expect(
+      screen.getByText('Every selected sender is now Protected or no longer in this mailbox.'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
+    expect(onRefreshSenders).toHaveBeenCalledTimes(1);
   });
 });
 

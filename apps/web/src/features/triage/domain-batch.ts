@@ -17,6 +17,8 @@ import type { TriageDecisionRow } from './data';
 /** Minimum consecutive same-domain rows to offer a batch card. */
 export const MIN_BATCH_RUN = 3;
 
+const NO_BUSY: ReadonlySet<string> = new Set();
+
 /**
  * Second-level public suffixes we split under — enough for the sender
  * domains a mailbox realistically carries. Not a full Public Suffix
@@ -100,10 +102,14 @@ export function isBatchEligible(row: TriageDecisionRow): boolean {
  * rows leave fewer than {@link MIN_BATCH_RUN} actionable senders falls
  * back to per-row flow instead of offering a card whose count and
  * confirm path could not deliver.
+ *
+ * `busy` rows are never members: a row whose job may still be running
+ * would be enqueued a second time. They stay in the run as single rows.
  */
 export function findDomainBatches(
   rows: readonly TriageDecisionRow[],
   dismissedDomains: readonly string[] = [],
+  busy: ReadonlySet<string> = NO_BUSY,
 ): DomainBatch[] {
   const dismissed = new Set(dismissedDomains);
   const batches: DomainBatch[] = [];
@@ -115,7 +121,7 @@ export function findDomainBatches(
       j += 1;
     }
     const run = rows.slice(i, j);
-    const eligibleRows = run.filter(isBatchEligible);
+    const eligibleRows = run.filter((r) => isBatchEligible(r) && !busy.has(r.id));
     if (eligibleRows.length >= MIN_BATCH_RUN && !dismissed.has(domain)) {
       batches.push({ domain, startIndex: i, rows: run, eligibleRows });
     }
@@ -152,12 +158,16 @@ export const VERDICT_BATCH_LABELS: Record<'archive' | 'later', string> = {
 export function findVerdictBatch(
   rows: readonly TriageDecisionRow[],
   dismissedDomains: readonly string[] = [],
+  /** As in {@link findDomainBatches}: never members. */
+  busy: ReadonlySet<string> = NO_BUSY,
 ): { batch: DomainBatch; verdict: 'archive' | 'later' } | null {
   const dismissed = new Set(dismissedDomains);
   for (const verdict of ['archive'] as const) {
     const label = VERDICT_BATCH_LABELS[verdict];
     if (dismissed.has(label)) continue;
-    const members = rows.filter((r) => r.verdict === verdict && isBatchEligible(r));
+    const members = rows.filter(
+      (r) => r.verdict === verdict && isBatchEligible(r) && !busy.has(r.id),
+    );
     if (members.length >= MIN_BATCH_RUN) {
       // Filtered up front, so the full set IS the eligible set.
       return {
@@ -180,8 +190,9 @@ export type QueueItem =
 export function planQueueItems(
   rows: readonly TriageDecisionRow[],
   dismissedDomains: readonly string[] = [],
+  busy: ReadonlySet<string> = NO_BUSY,
 ): QueueItem[] {
-  const batches = findDomainBatches(rows, dismissedDomains);
+  const batches = findDomainBatches(rows, dismissedDomains, busy);
   const byStart = new Map(batches.map((b) => [b.startIndex, b]));
   const items: QueueItem[] = [];
   let i = 0;

@@ -2,30 +2,21 @@
 
 import { useEffect, useRef } from 'react';
 import { toast } from '@declutrmail/shared';
-import { ERROR_CODES } from '@declutrmail/shared/contracts';
+
+import {
+  onboardingGateVerdict,
+  useOnboardingState,
+} from '@/features/onboarding/api/use-onboarding';
+import { replaceUrl } from '@/lib/replace-url';
+
+import { CONNECT_ERROR_COPY, connectErrorCode } from './oauth-result';
 
 /**
- * Human copy for each `connect_error` code the BE can redirect with, on
- * the plain "Connect a Gmail account" path (`google-oauth.controller.ts`'s
- * `/api/auth/google/start` → `/triage?connect_error=<code>` redirect).
- *
- * QA-onboarding-20260828-05: `reconnect_account_mismatch` /
- * `reconnect_target_invalid` were dead entries — no code path on THIS
- * redirect can ever emit them (they described the Reconnect flow, which
- * exits through `/settings?reconnect_result=…` instead and never reaches
- * `connect_error` at all). `MAILBOX_DATA_DELETION_IN_PROGRESS` is a real,
- * reachable code that had no entry, degrading to the generic fallback.
- */
-const CONNECT_ERROR_COPY: Record<string, string> = {
-  MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
-  MAILBOX_DATA_DELETION_IN_PROGRESS: ERROR_CODES.MAILBOX_DATA_DELETION_IN_PROGRESS.message,
-  connect_failed: 'Could not connect that Gmail account. Try again.',
-};
-
-/**
- * Reads `?connected` / `?connect_error` from the URL once on mount, fires
- * the matching toast, then clears the param via `history.replaceState` so
- * a manual refresh doesn't replay it.
+ * Reads `?connect_error` from the URL once on mount, fires the matching
+ * toast, then clears the param so a manual refresh doesn't replay it.
+ * Only closed codes reach the toast. A `?connected=<email>` success toast
+ * used to show whatever text the URL carried; nothing sends that param (a
+ * successful connect lands on `/onboarding?mailbox=`), so it is gone.
  *
  * Mounted at the app-chrome level (`app-chrome-layout.tsx`), not on a
  * specific page: a connect failure leaves `activeMailboxId` null, so the
@@ -41,35 +32,23 @@ const CONNECT_ERROR_COPY: Record<string, string> = {
  */
 export function useConnectResultToast(): void {
   const fired = useRef(false);
+  // Someone who has not finished onboarding is about to be sent to
+  // /onboarding, and the gate carries this result there to show (D108).
+  // Using it up here first would lose it. A failed read counts as done, so
+  // the result still shows somewhere.
+  const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
   useEffect(() => {
-    if (fired.current || typeof window === 'undefined') return;
+    if (fired.current || typeof window === 'undefined' || !onboarded) return;
     fired.current = true;
 
     const params = new URLSearchParams(window.location.search);
-    const connected = params.get('connected');
     const connectError = params.get('connect_error');
-    if (!connected && !connectError) return;
+    if (!connectError) return;
 
-    if (connected) {
-      toast(`Connected ${connected}.`, 'success');
-    } else if (connectError) {
-      toast(CONNECT_ERROR_COPY[connectError] ?? 'Could not connect that account.', 'danger');
-    }
+    toast(CONNECT_ERROR_COPY[connectErrorCode(connectError)]!, 'danger');
 
-    // Strip the one-shot params without a navigation. Preserves the
-    // existing history state (Codex adversarial review, round 2, matching
-    // `settings-screen.tsx`'s own `reconnect_result` scrub) — this hook
-    // now mounts above the whole branch ladder, not one page, so an
-    // overwritten `null` state would reach every `(app)` route.
-    params.delete('connected');
-    params.delete('connect_error');
-    const qs = params.toString();
-    window.history.replaceState(
-      window.history.state,
-      '',
-      window.location.pathname + (qs ? `?${qs}` : ''),
-    );
-  }, []);
+    // Strip the one-shot param without a navigation, through Next's router
+    // so a later refresh cannot write it back (see replaceUrl).
+    replaceUrl((url) => url.searchParams.delete('connect_error'));
+  }, [onboarded]);
 }
-
-export { CONNECT_ERROR_COPY };

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 
 import {
   ACTION_SAFETY_SUMMARY,
@@ -35,6 +36,7 @@ import { ActivateRuleModal } from '@/features/autopilot/activate-rule-modal';
 import { permissionEntryUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
+import { replaceUrl } from '@/lib/replace-url';
 import {
   buildSyntheticBulkPreview,
   buildSyntheticRulePreview,
@@ -844,27 +846,27 @@ export function InboxSimulatorScreen() {
         ? (firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null)
         : null,
     );
-    const url = new URL(window.location.href);
-    url.searchParams.delete('step');
-    if (nextMode === 'guided') url.searchParams.set('tour', '1');
-    else url.searchParams.delete('tour');
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl((url) => {
+      url.searchParams.delete('step');
+      if (nextMode === 'guided') url.searchParams.set('tour', '1');
+      else url.searchParams.delete('tour');
+    });
   };
 
   const changeWorkspace = (next: 'triage' | 'senders') => {
     setWorkspace(next);
     if (next === 'triage') changeMode('explore');
-    const url = new URL(window.location.href);
-    if (next === 'senders') {
-      url.searchParams.set('workspace', 'senders');
-      url.searchParams.delete('step');
-      url.searchParams.delete('tour');
-    } else {
-      url.searchParams.set('workspace', 'triage');
-      url.searchParams.delete('step');
-      url.searchParams.delete('tour');
-    }
-    window.history.replaceState(window.history.state, '', url);
+    replaceUrl((url) => {
+      if (next === 'senders') {
+        url.searchParams.set('workspace', 'senders');
+        url.searchParams.delete('step');
+        url.searchParams.delete('tour');
+      } else {
+        url.searchParams.set('workspace', 'triage');
+        url.searchParams.delete('step');
+        url.searchParams.delete('tour');
+      }
+    });
   };
 
   const pendingInboxCount = pending ? syntheticInboxCount(pending.row) : 0;
@@ -1153,7 +1155,7 @@ export function InboxSimulatorScreen() {
           >
             Start free
           </TrackedCta>
-          <a href="/methodology">See privacy and control details</a>
+          <Link href="/methodology">See privacy and control details</Link>
         </div>
         <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
@@ -1162,7 +1164,7 @@ export function InboxSimulatorScreen() {
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
             paid plans are unlimited.
           </span>{' '}
-          <a href="/pricing">Compare plans</a>
+          <Link href="/pricing">Compare plans</Link>
         </aside>
       </section>
 

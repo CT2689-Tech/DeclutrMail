@@ -53,8 +53,10 @@ export function TriageRow({
   row,
   expanded,
   busy = false,
+  unknownVerb = null,
   offerUnprotect = false,
   unprotectSlot,
+  timeZone = 'UTC',
   onToggleExpand,
   onAction,
   inlinePreview,
@@ -68,6 +70,12 @@ export function TriageRow({
    * the K/A/U/L/D shortcuts release until the server confirms.
    */
   busy?: boolean;
+  /**
+   * The verb whose outcome is unknown — its start could not be confirmed
+   * (a 5xx, or a lost status read). The row stays busy and says so, as
+   * Senders and the pill do, instead of claiming it is still applying.
+   */
+  unknownVerb?: string | null;
   /**
    * Ignored. The hero row used to print the engine's reasoning at rest;
    * reasoning now lives behind an interaction everywhere. Still accepted
@@ -97,6 +105,12 @@ export function TriageRow({
    * edge from the public route-specific chunk.
    */
   unprotectSlot?: ReactNode;
+  /**
+   * IANA zone for expanded last-seen labels. Omitted on the public
+   * simulator (UTC default). Authenticated triage passes
+   * `useUserTimeZone()` so this module never imports auth/query hooks.
+   */
+  timeZone?: string;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -315,7 +329,7 @@ export function TriageRow({
             layout={isNarrow ? 'bar' : 'row'}
             align="start"
           />
-          <TriageRowExpanded row={row} />
+          <TriageRowExpanded row={row} timeZone={timeZone} />
         </div>
       )}
 
@@ -341,10 +355,24 @@ export function TriageRow({
       )}
       {drag?.wouldResolve != null && <SwipeOverlay verb={drag.wouldResolve} />}
       {/* SR announcement while the decision confirms server-side. */}
-      {busy && (
-        <span role="status" style={{ position: 'absolute', left: -9999 }}>
-          Applying your decision for {row.senderName}
-        </span>
+      {unknownVerb != null ? (
+        <p
+          role="status"
+          style={{
+            margin: '0 0 10px',
+            paddingLeft: LOGO + 14,
+            fontSize: text.xs,
+            color: color.fgMuted,
+          }}
+        >
+          {unknownVerb}: unknown
+        </p>
+      ) : (
+        busy && (
+          <span role="status" style={{ position: 'absolute', left: -9999 }}>
+            Applying your decision for {row.senderName}
+          </span>
+        )
       )}
     </div>
   );

@@ -96,7 +96,7 @@ function HomeBody({
             </span>
             <h2>
               {state.syncing
-                ? 'Reading your inbox'
+                ? 'Reading your Gmail'
                 : state.senders?.length
                   ? 'Your first review is ready'
                   : 'Nothing cleared yet'}
@@ -309,7 +309,7 @@ function WorkspaceOverview({
           <WorkflowLink
             href="/quiet"
             title="Quiet Hours"
-            detail="Choose when the inbox can wait"
+            detail="Choose when Autopilot holds its actions"
             locked={access('quiet')}
           />
           <WorkflowLink

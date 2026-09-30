@@ -22,7 +22,10 @@ import type {
   UnsubscribeLifecycleStatus,
   UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
-import { UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE } from '@declutrmail/shared/contracts';
+import {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
+} from '@declutrmail/shared/contracts';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { ActionStatusSnapshot } from '@declutrmail/shared/actions';
 
@@ -37,6 +40,15 @@ export type { ActionReach };
 /** A status is terminal once the worker has finished (success or failure). */
 export function isTerminalStatus(status: ActionJobStatus): boolean {
   return status === 'done' || status === 'failed';
+}
+
+/**
+ * D245 — the sender was Protected by the time the job ran, so it changed
+ * nothing. It ends `done`, but it is a skip: no surface may treat it as
+ * a decision made or mail moved. The bottom pill says it was skipped.
+ */
+export function isProtectedSkip(status: Pick<ActionStatusResult, 'status' | 'errorCode'>): boolean {
+  return status.status === 'done' && status.errorCode === LABEL_SENDER_PROTECTED_ERROR_CODE;
 }
 
 /** Returned by `POST /api/actions/archive` — the action handle to poll. */
@@ -77,6 +89,17 @@ export interface ActionRecoveryPreviewResult {
   requiresNewWakeAt: boolean;
   expiresAt: string;
   recoveryActionId: string | null;
+  /**
+   * The sender — for a legacy message list, any of its senders — is
+   * Protected right now (D245). The review says so and its confirm carries
+   * the consent. Optional on the wire: web and API deploy separately.
+   */
+  senderProtected?: boolean;
+  /**
+   * Why, in `sender_policies.protection_reason` spelling; null for a
+   * message list, which has no single sender. Optional for the same skew.
+   */
+  protectionReason?: string | null;
 }
 
 export interface ActionRecoveryEnqueueResult {
@@ -117,11 +140,15 @@ export async function getActionRecoveryPreview(
  */
 export async function confirmActionRecovery(
   previewId: string,
-  input: { idempotencyKey: string; wakeAt?: string },
+  input: { idempotencyKey: string; wakeAt?: string; senderProtected?: boolean },
 ): Promise<ActionRecoveryEnqueueResult> {
   const env = await apiPost<ActionRecoveryEnqueueResult>(
     `/api/actions/recovery-previews/${encodeURIComponent(previewId)}/retry`,
-    input.wakeAt ? { wakeAt: input.wakeAt } : {},
+    {
+      ...(input.wakeAt ? { wakeAt: input.wakeAt } : {}),
+      // D245: the reader saw "<sender> is Protected" and confirmed anyway.
+      ...(input.senderProtected ? { senderProtected: true } : {}),
+    },
     { headers: { 'Idempotency-Key': input.idempotencyKey } },
   );
   return env.data;
@@ -454,6 +481,8 @@ export async function recordUnsubscribeIntent(
   options: ActionRequestOptions & {
     idempotencyKey?: string;
     includesBacklogAction?: boolean;
+    /** "Unsubscribe anyway" confirmed on a Protected sender (D245). */
+    override?: boolean;
   } = {},
 ): Promise<UnsubscribeIntentResult> {
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey();
@@ -466,6 +495,9 @@ export async function recordUnsubscribeIntent(
       ...(options.includesBacklogAction !== undefined
         ? { includesBacklogAction: options.includesBacklogAction }
         : {}),
+      // Only a true override travels, so an API that predates the key
+      // still takes every click but the Protected "…anyway" one.
+      ...(options.override === true ? { override: true } : {}),
     },
     {
       headers: { 'Idempotency-Key': idempotencyKey },
@@ -624,12 +656,16 @@ export interface BulkActionEnqueueResult {
 
 /**
  * Why a selected sender did not enter the batch. The label verbs
- * produce `protected` / `not_found`; an Unsubscribe batch (D248) adds
- * the three non-executable capability states, reported separately
- * because "send it yourself", "there is nothing to send" and "we have
- * not looked yet" are three different facts.
+ * produce `protected` / `not_found` / `in_progress`; an Unsubscribe batch
+ * (D248) adds the three non-executable capability states, reported
+ * separately because "send it yourself", "there is nothing to send" and
+ * "we have not looked yet" are three different facts.
+ *
+ * `in_progress` (founder-approved 2026-09-28): the sender already has a
+ * live forward job — any verb, including Autopilot — in this mailbox.
  */
-export type BulkSkipReason = 'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown';
+export type BulkSkipReason =
+  'protected' | 'not_found' | 'mailto' | 'no_channel' | 'unknown' | 'in_progress';
 
 /**
  * Returned by `GET /api/actions/batch/:id` — aggregate batch state.
@@ -646,7 +682,24 @@ export interface BatchStatusResult {
   failed: number;
   requestedCount: number;
   affectedCount: number;
+  /**
+   * Senders skipped because they became Protected after the click (D245).
+   * Their jobs are left out of every count above, so read THIS to say
+   * "skipped" and to leave their rows unmarked. Optional on the wire: web
+   * and API deploy separately, so absent means none reported.
+   */
+  skippedProtectedSenderIds?: string[];
   undoToken: string | null;
+  /**
+   * The batch's own undo state — not its first sender's, whose job holds
+   * no token when that sender was skipped or had nothing to move. All
+   * three are optional on the wire (separate deploys): absent = unknown.
+   */
+  undoExpiresAt?: string | null;
+  /** Set once an Undo put back everything the batch changed. */
+  undoRevertedAt?: string | null;
+  /** Senders whose changes an Undo put back — all, or one from the pill. */
+  revertedSenderIds?: string[];
   /**
    * D248 — the terminal outcomes the unsubscribe worker records,
    * counted across the batch. `null` for a label batch. Read THIS for
@@ -761,6 +814,13 @@ export interface InFlightActionGroup {
   senderCount: number;
   leadSenderName: string | null;
   startedAt: string;
+  /**
+   * Every distinct senderId / senderKey across the group's forward jobs.
+   * Optional: a web bundle newer than the API build it's talking to must
+   * still render (deploy skew) — read as `?? []`, never assume presence.
+   */
+  senderIds?: string[];
+  senderKeys?: string[];
 }
 
 export async function getInFlightActions(

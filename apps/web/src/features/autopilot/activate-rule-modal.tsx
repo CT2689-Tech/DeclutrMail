@@ -310,6 +310,13 @@ function activationFacts(
       label: 'Daily cap',
       value: `${plural(result.dailyActionCap, 'action')}, the rest wait for the next check`,
     },
+    // Approved earlier (while this rule was Active), never run because
+    // the rule was off or paused — the first sweep after this commit
+    // runs them. Founder decision 2026-09-29 (a):
+    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+    ...(result.waitingApprovedCount > 0
+      ? [{ label: 'Waiting to run', value: `${plural(result.waitingApprovedCount, 'approval')}` }]
+      : []),
   ];
 }
 

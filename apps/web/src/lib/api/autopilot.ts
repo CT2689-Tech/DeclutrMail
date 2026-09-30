@@ -16,6 +16,7 @@
  */
 
 import type {
+  AutopilotApproveAllRequest,
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
@@ -31,6 +32,7 @@ import { apiGet, apiPatch, apiPost } from './client';
  * so feature code imports every Autopilot wire type from one place.
  */
 export type AutopilotApproveResultDto = AutopilotApproveResult;
+export type AutopilotApproveAllScopeDto = AutopilotApproveAllRequest;
 export type AutopilotRulePreviewResultDto = AutopilotRulePreviewResult;
 export type AutopilotPreviewSampleDto = AutopilotPreviewSample;
 
@@ -281,14 +283,23 @@ export function postApproveMatches(
 
 /**
  * POST /api/autopilot/rules/:id/approve-all — D104 "Approve all".
- * Approves every pending suggestion for the rule. Does NOT change the
- * rule's mode (the "and switch to Active" variant is this + a PATCH).
+ * Approves every offerable suggestion for the rule within `scope`. Does
+ * NOT change the rule's mode (the "and switch to Active" variant is
+ * this + a PATCH).
+ *
+ * `scope` is REQUIRED (founder decision 2026-09-29 (a)): the server
+ * approves exactly the set the preview showed, never whatever is
+ * offerable at click time — `{ matchIds }` below the 50-row pending
+ * cap, or `{ matchedBefore }` at the cap.
+ * docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
  */
 export function postApproveAllForRule(
   ruleId: string,
+  scope: AutopilotApproveAllScopeDto,
 ): Promise<Envelope<AutopilotApproveResult, unknown>> {
   return apiPost<AutopilotApproveResult>(
     `/api/autopilot/rules/${encodeURIComponent(ruleId)}/approve-all`,
+    scope,
   );
 }
 

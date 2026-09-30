@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   actionJobs,
   actionRecoveryPreviews,
+  mailMessages,
   mailboxAccounts,
   schema,
   senderPolicies,
@@ -131,6 +132,16 @@ async function makeReady(
   return preview!;
 }
 
+async function protect(db: Db, mailbox: Awaited<ReturnType<typeof seedMailbox>>): Promise<void> {
+  await db.insert(senderPolicies).values({
+    mailboxAccountId: mailbox.mailboxId,
+    senderKey: mailbox.senderKey,
+    isProtected: true,
+    protectionReason: 'starred',
+    protectionSetAt: new Date(),
+  });
+}
+
 function errorCode(error: unknown): unknown {
   if (!error || typeof error !== 'object' || !('getResponse' in error)) return null;
   const response = (error as { getResponse(): unknown }).getResponse();
@@ -173,6 +184,159 @@ describe('ActionRecoveryService', () => {
     expect(await db.select().from(actionRecoveryPreviews)).toHaveLength(1);
   });
 
+  it('the review says whether the sender is Protected NOW — its Confirm is the consent (D245)', async () => {
+    const action = await seedFailedAction(db, mailbox, { key: 'original-protected' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: action.id,
+    });
+    expect(preview).toMatchObject({ senderProtected: false, protectionReason: null });
+
+    // Protected after the action failed: the next read of the review
+    // must say so, not a value frozen when the review opened — and why
+    // (CLAUDE.md §2.6: the exact reason wherever protection is shown).
+    await protect(db, mailbox);
+    await expect(service.getPreview(mailbox.mailboxId, preview.previewId)).resolves.toMatchObject({
+      senderProtected: true,
+      protectionReason: 'starred',
+    });
+  });
+
+  it('a legacy message-list review says whether ANY of its senders is Protected', async () => {
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailbox.mailboxId,
+      providerMessageId: 'gmail-1',
+      providerThreadId: 't-gmail-1',
+      senderKey: mailbox.senderKey,
+      internalDate: new Date('2026-07-01T00:00:00Z'),
+      isUnread: false,
+      labelIds: ['INBOX'],
+    });
+    const [action] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'messages' },
+        resolvedMessageIds: ['gmail-1'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'original-message-list',
+      })
+      .returning();
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: action!.id,
+    });
+    expect(preview.senderProtected).toBe(false);
+
+    await protect(db, mailbox);
+    await expect(service.getPreview(mailbox.mailboxId, preview.previewId)).resolves.toMatchObject({
+      senderProtected: true,
+    });
+  });
+
+  it('Confirm refuses once the sender became Protected after the review said otherwise', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-stale-review' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+    await protect(db, mailbox);
+
+    const stale = await service
+      .confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-stale',
+        wakeAt: null,
+        senderProtected: false,
+      })
+      .catch((error: unknown) => error);
+    expect(errorCode(stale)).toBe('RECOVERY_SENDER_PROTECTED');
+    expect(actionQueue.calls).toHaveLength(0);
+
+    // Reviewed again, the review now names the protection — that Confirm
+    // is the consent, and the retry carries it to the worker's re-check.
+    await expect(
+      service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-informed',
+        wakeAt: null,
+        senderProtected: true,
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+    expect(actionQueue.calls).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ protectedConfirmed: true }) }),
+    ]);
+  });
+
+  // Consent is to what the review said: an acknowledgement sent for a
+  // sender that is not Protected carries nothing, so the worker still
+  // re-checks it (founder decision 2026-09-26).
+  it('carries no consent when the sender is not Protected, acknowledgement or not', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-unprotected-ack' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+
+    await service.confirmPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      previewId: preview.previewId,
+      idempotencyKey: 'confirm-unprotected-ack',
+      wakeAt: null,
+      senderProtected: true,
+    });
+
+    expect(actionQueue.calls).toHaveLength(1);
+    expect(actionQueue.calls[0]!.data).not.toHaveProperty('protectedConfirmed');
+  });
+
+  // An already-applied review still re-applies its whole verified set (the
+  // Gmail no-ops are what let the record be written), and anything moved
+  // back since would change — so a Protected sender needs the review to
+  // say so here too. Without it, the retry would be stopped at execution
+  // and the same review offered again, forever.
+  it('an already-applied review on a Protected sender needs the acknowledgement too', async () => {
+    const original = await seedFailedAction(db, mailbox, { key: 'original-applied-protected' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId, { outcome: 'already_applied', remaining: [] });
+    await protect(db, mailbox);
+
+    const refused = await service
+      .confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-applied-protected',
+        wakeAt: null,
+        senderProtected: false,
+      })
+      .catch((error: unknown) => error);
+    expect(errorCode(refused)).toBe('RECOVERY_SENDER_PROTECTED');
+
+    await expect(
+      service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-applied-protected-informed',
+        wakeAt: null,
+        senderProtected: true,
+      }),
+    ).resolves.toMatchObject({ replayed: false });
+    expect(actionQueue.calls).toEqual([
+      expect.objectContaining({ data: expect.objectContaining({ protectedConfirmed: true }) }),
+    ]);
+  });
+
   it('confirmation creates one linked immutable attempt and HTTP replay returns it', async () => {
     const original = await seedFailedAction(db, mailbox, { key: 'original-confirm' });
     const preview = await service.createPreview({
@@ -213,6 +377,48 @@ describe('ActionRecoveryService', () => {
       .from(actionRecoveryPreviews)
       .where(eq(actionRecoveryPreviews.id, preview.previewId));
     expect(storedPreview).toMatchObject({ status: 'consumed', recoveryActionId: first.actionId });
+  });
+
+  // A retry stays in its decision: the batch status, the pill and "Undo all"
+  // read a batch as its anchor plus every row pointing at it. The anchor
+  // points at nothing, so a retry of the anchor used to leave the batch,
+  // which kept reporting the failure the retry replaced.
+  it('a retry stays in its batch, including a retry of the batch anchor', async () => {
+    const anchor = await seedFailedAction(db, mailbox, { key: 'batch-anchor' });
+    const [member] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: mailbox.senderId, senderKey: mailbox.senderKey },
+        resolvedMessageIds: ['gmail-3'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'batch-member',
+        compositeId: anchor.id,
+      })
+      .returning();
+
+    for (const [action, key] of [
+      [anchor, 'retry-anchor'],
+      [member!, 'retry-member'],
+    ] as const) {
+      const preview = await service.createPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        actionId: action.id,
+      });
+      await makeReady(db, preview.previewId);
+      const retry = await service.confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: key,
+        wakeAt: null,
+      });
+      const [child] = await db.select().from(actionJobs).where(eq(actionJobs.id, retry.actionId));
+      expect(child!.compositeId).toBe(anchor.id);
+    }
   });
 
   it('already-applied Gmail state is still reconciled to repair Activity and Undo', async () => {
@@ -406,6 +612,34 @@ describe('ActionRecoveryService', () => {
     expect(errorCode(error)).toBe('IDEMPOTENCY_KEY_CONFLICT');
   });
 
+  it('binds a recovery key to the "…anyway" consent it was confirmed with', async () => {
+    // A replay re-enqueues with ITS consent when the stored retry is still
+    // queued, so a replay that changed the consent is a different request.
+    const original = await seedFailedAction(db, mailbox, { key: 'original-consent-fingerprint' });
+    const preview = await service.createPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      actionId: original.id,
+    });
+    await makeReady(db, preview.previewId);
+    await service.confirmPreview({
+      mailboxAccountId: mailbox.mailboxId,
+      previewId: preview.previewId,
+      idempotencyKey: 'confirm-consent-fingerprint',
+      wakeAt: null,
+      senderProtected: true,
+    });
+
+    const error = await service
+      .confirmPreview({
+        mailboxAccountId: mailbox.mailboxId,
+        previewId: preview.previewId,
+        idempotencyKey: 'confirm-consent-fingerprint',
+        wakeAt: null,
+      })
+      .catch((caught: unknown) => caught);
+    expect(errorCode(error)).toBe('IDEMPOTENCY_KEY_CONFLICT');
+  });
+
   it('never offers generic recovery for unsubscribe execution', async () => {
     const action = await seedFailedAction(db, mailbox, {
       key: 'original-unsubscribe',
@@ -417,6 +651,40 @@ describe('ActionRecoveryService', () => {
       .catch((caught: unknown) => caught);
 
     expect(errorCode(error)).toBe('ACTION_NOT_RECOVERABLE');
+    expect(recoveryQueue.calls).toHaveLength(0);
+  });
+
+  it('never reviews an Autopilot claim, or a retry started from one', async () => {
+    // Activity lists neither, so no review may start from them: a claim's
+    // selection re-resolves the sender's current inbox, which would turn
+    // a retired claim into a new Archive nobody asked for.
+    const bareClaim = await seedFailedAction(db, mailbox, { key: 'autopilot-match-1' });
+    const claim = await seedFailedAction(db, mailbox, { key: 'autopilot-match-2' });
+    const [retry] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailbox.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: claim.selector,
+        resolvedMessageIds: ['gmail-1'],
+        requestedCount: 1,
+        status: 'failed',
+        errorCode: 'TransientError',
+        idempotencyKey: 'recovery-from-claim-1',
+        rootActionId: claim.id,
+        retryOfActionId: claim.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: new Date(),
+      })
+      .returning();
+
+    for (const actionId of [bareClaim.id, retry!.id]) {
+      const error = await service
+        .createPreview({ mailboxAccountId: mailbox.mailboxId, actionId })
+        .catch((caught: unknown) => caught);
+      expect(errorCode(error)).toBe('ACTION_NOT_RECOVERABLE');
+    }
     expect(recoveryQueue.calls).toHaveLength(0);
   });
 });

@@ -42,6 +42,13 @@ describe('branded id parsers', () => {
     expect(() => asSenderKey('g'.repeat(64))).toThrow(/invalid sha256 hex/);
   });
 
+  it('asSenderKey rejects uppercase — a stored sender_key is always lowercase', () => {
+    // Unlike a UUID (case-insensitive by spec), `deriveSenderKey`'s
+    // `digest('hex')` never uppercases. A well-shaped-but-uppercase key
+    // once passed here and enqueued work that could never match a row.
+    expect(() => asSenderKey(VALID_SHA.toUpperCase())).toThrow(/invalid sha256 hex/);
+  });
+
   it('asIdempotencyKey enforces length window', () => {
     expect(() => asIdempotencyKey('short')).toThrow(/8..256/);
     expect(() => asIdempotencyKey('x'.repeat(257))).toThrow(/8..256/);

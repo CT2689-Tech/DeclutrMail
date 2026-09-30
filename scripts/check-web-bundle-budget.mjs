@@ -75,6 +75,26 @@
  * equal real weight gets an equal budget: headroom that only existed
  * because a chunk was filed under a layout or another route's entry went.
  * Dated notes below quote the page-entry measure of their day.
+ *
+ * FIXED, NOT JUST RE-BUDGETED (2026-09-28). Seven marketing routes leaked
+ * ~8 kB of the home page's chunks because each rendered `next/link` only
+ * via the shared header/footer, never directly — so their OWN entry had
+ * no correct manifest mapping for it and inherited whichever entry's
+ * mapping won the group merge (the home page's, larger). Converting an
+ * existing internal `<a>` in each route's own server-rendered content to
+ * `next/link`'s `Link` (compare, vs/[competitor] and alternatives/[tool]'s
+ * cross-links; how-it-works, methodology and security's in-copy links;
+ * sign-in's privacy/security links) gives each route its OWN correct
+ * mapping, self-correcting exactly as /faq already did by accident. All
+ * seven now measure within 0.2 kB of the long tail; the override is gone.
+ * The same fix does not reach two SMALLER leaks (1.6 kB, /pricing and
+ * /inbox-simulator): both route through a `'use client'` screen, and a
+ * `next/link` rendered from inside an already-client tree does not get
+ * its own manifest entry the same way. /settings/help's 14 kB leak (a
+ * different client reference, `HydrationBoundary`) is unfixed for the
+ * same reason as those two: no genuine content on the route would use
+ * either client reference directly, and adding one just to change a
+ * manifest entry would be measuring the fix, not making one.
  */
 
 import { spawn } from 'node:child_process';
@@ -107,15 +127,18 @@ export const DEFAULT_KB = 151;
 /**
  * Budget for an authed `(app)` route without an override.
  *
- * Set at 254 because the mid-weight cluster — settings, brief, activity,
- * autopilot, billing, screener — loads 244.3-256.0 kB as served, app
- * chrome included, and shares essentially one chunk graph; /activity,
- * the heaviest route on this default, keeps its headroom (it was 180 on
- * the page-entry measure). A NEW authed screen landing under this is
- * normal; landing over it means it pulled in something the others do
- * not, which is exactly the moment worth a second look.
+ * Set at 264, combining two same-day increases that both landed in the
+ * shared chunk graph this default's cluster pulls from: zod 4.4.3 → 4.6.5
+ * grew the shared zod chunk every authed route loads by about 7 kB gzip,
+ * and zone-explicit `daysSince` (DECLUTRMAIL-WEB-2C) added
+ * `Intl.DateTimeFormat` calendar math to the shared senders/data chunk.
+ * Measured together (PR #764 merge, 2026-09-28): /activity, the heaviest
+ * route on this default, is 261.4 kB (/autopilot and /settings/help follow
+ * at 260.4-260.5). 264 leaves about 2.6 kB. A NEW authed screen landing
+ * under this is normal; landing over it means it pulled in something the
+ * others do not, which is exactly the moment worth a second look.
  */
-export const AUTHED_DEFAULT_KB = 254;
+export const AUTHED_DEFAULT_KB = 264;
 
 /**
  * Routes that legitimately carry more, or are pinned tighter, keyed by
@@ -136,24 +159,20 @@ export const OVERRIDES_KB = {
   // the true number.
   '/(marketing)/inbox-simulator/page': 218, // 201.5 — the only real interactive surface
 
-  // These seven render `next/link` from server components, and Next
-  // resolves that client reference to the chunks of the home page's entry
-  // (1825, 5109 and the home page chunk), so each loads ~8 kB more than
-  // the long tail. Budgeted at the long tail's headroom, rounded up: the
-  // extra 3.4 kB they had on the page-entry measure was chunk 1705, which
-  // it filed under the layout for them and under the page for the tail.
-  '/(marketing)/alternatives/[tool]/page': 160, // 154.9
-  '/(marketing)/compare/page': 160, // 154.9
-  '/(marketing)/how-it-works/page': 160, // 154.8
-  '/(marketing)/methodology/page': 160, // 154.8
-  '/(marketing)/security/page': 160, // 155.1
-  '/(marketing)/sign-in/page': 160, // 154.8
-  '/(marketing)/vs/[competitor]/page': 160, // 154.9
-
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 290, // 289.0 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 292 -> 300 on 2026-09-28 (PR #764 merge), combining the
+  // zod-chunk raise (see AUTHED_DEFAULT_KB) with zone-explicit `daysSince`
+  // (DECLUTRMAIL-WEB-2C) on the same route: measured 298.0 together. 300
+  // leaves ~2 kB, same shape as the prior raise.
+  // Raised 300 -> 304 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // just over 300 (0 kB headroom left), same root cause as /triage and
+  // /screener above — #805's local `holds`/`overdue*` tracking kept
+  // alongside #825's `sharedLock` rather than dropping either. 304
+  // restores ~4 kB headroom.
+  '/(app)/senders/page': 304, // 300.0+ — grid + table + compose strip + saved views + mobile dialect
   // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
   // on main. The phone dialect (ADR-0018) added a third row-rendering
   // path — swipe/long-press gestures on `SenderListRow`, the
@@ -174,7 +193,15 @@ export const OVERRIDES_KB = {
   // `TriageRow`, and importing the block there put it at 175.5 against
   // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
   // the next addition here still has to argue for itself.
-  '/(app)/triage/page': 276, // 273.1 — action sheet, preview + verification detail, undo tray
+  // Raised 283 -> 288 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // 283.7, up from 281.1. PR #825's own addition here is small (a
+  // `useSenderInFlightLock` call plus a couple of Set lookups); the rest
+  // is #805's local `useUnconfirmedHolds` tracking that this PR's merge
+  // kept ALONGSIDE it rather than dropping either guard (unverified
+  // whether one alone would suffice). 288 restores ~4 kB headroom, same
+  // margin as the sibling raises above.
+  '/(app)/triage/page': 288, // 283.7 — action sheet, preview + verification detail, undo tray
   // 199.9 (was 191.3), measured after the 2026-09-02 sender-detail QA
   // batch (18 findings — mailbox-scope-reset guard, fuller/more accurate
   // KPI + hero copy, the toolbar's primaryVerbReason). Checked this was
@@ -183,16 +210,41 @@ export const OVERRIDES_KB = {
   // unique to the diff — none leaked into a shared chunk), not a barrel
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
-  '/(app)/senders/[id]/page': 282, // 274.1
+  // Raised 284 -> 288 on 2026-09-29 (D245, PR #805 — re-check Protected at
+  // execution): measured 284.0, up from 281.5. sender-detail-page.tsx
+  // grew for the same-run unsubscribe-outcome copy (`bulk-action-copy.ts`,
+  // `unsubscribe-outcome-copy.ts`, both new, both imported directly here),
+  // and the global `ProductUndoTray` in `app-chrome-layout.tsx` — present
+  // on every authed route — pulled in the widened `in-flight.ts` and the
+  // new `action-job-status`/`error-codes` contract entries. 288 restores
+  // ~4 kB headroom.
+  '/(app)/senders/[id]/page': 288, // 284.0
   // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
   // for billing / screener / admin. The public theme and refreshed shared
   // tokens also reach billing's shell. Allow its measured 0.2 kB increase
   // while keeping the general 180 kB ratchet and other routes unchanged.
-  '/(app)/billing/page': 257, // 256.0 — checkout + invoices + plan controls + editorial shell
-  '/(app)/screener/page': 251, // 250.7 — queue + decision controls + editorial shell
+  // Raised 266 -> 270 on 2026-09-29 (deploy-blocking: main's own post-merge
+  // CI was red on this route, which was failing every deploy's await-ci
+  // step): measured 267.1, up from 263.5. No file this route imports
+  // directly changed since the last raise — the growth is cumulative
+  // shared-chunk drift from same-day merges (#829's D245 registry
+  // entries, #830's Autopilot fixes) landing across many PRs at once.
+  // 270 restores ~2 kB headroom.
+  '/(app)/billing/page': 270, // 267.1 — checkout + invoices + plan controls + editorial shell
+  // Raised 261 -> 266 on 2026-09-29 (PR #825's cross-surface sender
+  // busy-guard, merged with #805's D245 Protected re-check): measured
+  // 261.7, up from 258.8. Same shape as /triage above — both guards
+  // (`sharedLock` and `holds`/`isHeld`) kept, not just one. 266 restores
+  // ~4 kB headroom.
+  '/(app)/screener/page': 266, // 261.7 — queue + decision controls + editorial shell
   // 2026-09-24: the scannable Brief and optional generated-note view measure 180.2 kB.
   // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
-  '/(app)/brief/page': 254, // 250.0
+  // Raised 260 -> 264 on 2026-09-29 (D245, PR #805): measured 260.0, up
+  // from 257.5. `use-noise-archive.ts` grew directly for the same
+  // Protected re-check/outcome handling (imports `bulk-action-copy.ts`),
+  // plus the same every-route `ProductUndoTray` growth as senders/[id]
+  // above. 264 restores ~4 kB headroom.
+  '/(app)/brief/page': 264, // 260.0
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -211,33 +263,40 @@ export const OVERRIDES_KB = {
   // no longer be dead-code-eliminated from the shared `api/client.ts`
   // chunk. Both deltas land in the same shared cluster; 184 covers both
   // with headroom to spare rather than stacking a second override.
-  '/(app)/settings/page': 249, // 244.3
-
-  // Loads /settings' page entry too: it renders TanStack's
-  // `HydrationBoundary` from a server component, and Next resolves that
-  // client reference to /settings' chunks (14.2 kB), so as served it
-  // weighs what the cluster does, not what its page entry suggested.
-  // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
-  // new "Contact support" form (subject/message fields, submit handler,
-  // the postSupportRequest API wrapper, and its own track() call) landed
-  // entirely in this route's own chunk — confirmed no OTHER route's
-  // budget moved in the same CI run, so nothing leaked into a shared
-  // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
-  // Rechecked after the shared editorial shell and brand update: 120.4 kB.
-  // The support form remains on this route; keep a narrow 0.6 kB margin.
-  '/(app)/settings/help/page': 254, // 252.7
+  //
+  // Raised 254 -> 256 on 2026-09-29 (D245, PR #805): measured 254.1, up
+  // from 251.9. This route imports none of the PR's files directly — the
+  // growth is the global `ProductUndoTray` (rendered by every authed
+  // route's `app-chrome-layout.tsx`) pulling in the widened
+  // `in-flight.ts`/`action-error-copy.ts` and the new
+  // `action-job-status`/`error-codes` contract entries. 256 restores ~2 kB
+  // headroom, matching this cluster's margin.
+  '/(app)/settings/page': 256, // 254.1
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
-  '/(app)/settings/privacy/page': 247, // 246.7 — data controls + explainer
+  // Raised 256 -> 258 on 2026-09-29 (D245, PR #805): measured 256.1, up
+  // from 254.3, for the same every-route `ProductUndoTray` growth as
+  // /(app)/settings/page above. 258 keeps ~2 kB headroom.
+  '/(app)/settings/privacy/page': 258, // 256.1 — data controls + explainer
   // Lowered from its re-based 266 on 2026-09-27: pinned at 165 against
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.
-  '/(app)/settings/senders/page': 250, // 245.7
-  '/(app)/quiet/page': 242, // 239.4 — schedule controls + explainer
-  '/(app)/later/page': 246, // 239.1 — return queue + explainer
-  '/(app)/followups/page': 246, // 241.3 — follow-up queue + explainer
-  '/(app)/admin/security/page': 235, // 234.4 — operator log + editorial shell
+  '/(app)/settings/senders/page': 255, // 253.2
+  // Raised 249/249/251 -> 253/252/255 on 2026-09-29 (deploy-blocking, same
+  // cumulative shared-chunk drift as /(app)/billing/page above — these
+  // three had the least headroom left in this cluster and tipped first):
+  // measured 250.2 / 249.9 / 252.2, up from 247.0 / 246.6 / 248.9. ~2-3 kB
+  // headroom restored on each.
+  '/(app)/quiet/page': 253, // 250.2 — schedule controls + explainer
+  '/(app)/later/page': 252, // 249.9 — return queue + explainer
+  '/(app)/followups/page': 255, // 252.2 — follow-up queue + explainer
+  '/(app)/admin/security/page': 244, // 242.0 — operator log + editorial shell
+  // Riding AUTHED_DEFAULT_KB (264) tipped it 0.3 kB over on 2026-09-29 —
+  // same cumulative shared-chunk drift as the cluster above. Pinned its
+  // own ceiling instead of raising the shared default, since no other
+  // default-riding route is failing.
+  '/(app)/settings/help/page': 267, // 264.4
 };
 
 /**

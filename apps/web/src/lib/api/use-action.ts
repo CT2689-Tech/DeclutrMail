@@ -322,12 +322,19 @@ export function useRecordUnsubscribeIntent() {
   return useMutation<
     UnsubscribeIntentResult,
     Error,
-    { senderId: string; includesBacklogAction?: boolean; mailboxId?: string | undefined }
+    {
+      senderId: string;
+      includesBacklogAction?: boolean;
+      /** "Unsubscribe anyway" confirmed on a Protected sender (D245). */
+      override?: boolean;
+      mailboxId?: string | undefined;
+    }
   >({
-    mutationFn: ({ mailboxId, senderId, includesBacklogAction }) =>
+    mutationFn: ({ mailboxId, senderId, includesBacklogAction, override }) =>
       recordUnsubscribeIntent(senderId, {
         mailboxId,
         ...(includesBacklogAction !== undefined ? { includesBacklogAction } : {}),
+        ...(override === true ? { override: true } : {}),
       }),
   });
 }

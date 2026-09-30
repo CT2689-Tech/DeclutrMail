@@ -4,6 +4,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { outboxEvents } from '@declutrmail/db';
 import type { OutboxEvent, schema } from '@declutrmail/db';
 
+import type { BackgroundFailureContext } from './worker-observer.js';
+
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -51,7 +53,10 @@ export type DispatchedEvent = Pick<
  * Contract:
  *   - Throw on failure — the dispatcher catches and records the error.
  *     The row stays `pending` (unless `attempts` exceeds `maxAttempts`)
- *     for the next tick to retry.
+ *     for the next tick to retry. Every failure logs
+ *     `outbox.dispatch.consumer_failed`; the attempt that flips the row
+ *     to `failed` logs `outbox.dispatch.event_failed` and goes to the
+ *     observer (Sentry).
  *   - The consumer MUST be idempotent on `event.id`: at-least-once
  *     delivery is the dispatcher's guarantee, and consumer-side dedup
  *     (e.g. BullMQ `jobId: event.id`) is the at-most-once correction.
@@ -60,6 +65,15 @@ export type DispatchedEvent = Pick<
  */
 export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
 
+/** A consumer throw whose attempt bookkeeping this tick committed. */
+interface ConsumerFailure {
+  event: DispatchedEvent;
+  error: unknown;
+  attempts: number;
+  /** This attempt flipped the row to `failed`. */
+  failed: boolean;
+}
+
 /**
  * Optional background-failure capture port (D159). Implemented in the
  * composition root by wiring to `@sentry/node`'s `captureException`. The
@@ -67,14 +81,17 @@ export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
  * and what context to pass; it does NOT depend on Sentry directly.
  *
  * Defaults to a no-op so tests and bare-bones bootstraps run without
- * needing Sentry configured. The shape mirrors what later worker tooling
- * (e.g. a future `SentryWorkerObserver` per PR #49) will expose.
+ * needing Sentry configured. The context type is
+ * `BackgroundFailureContext` itself, not a copy — the production adapter
+ * reads only its `kind` and `tags`, and TypeScript checks interface
+ * methods bivariantly, so a context shape that merely LOOKED like this
+ * one but admitted extra fields would still satisfy it while the adapter
+ * silently dropped them. `outbox.dispatch.event_failed` and
+ * `tick_failed` did, twice, before this referenced the real type instead
+ * of restating its shape (2026-09-28).
  */
 export interface OutboxObserver {
-  captureBackgroundFailure(
-    error: unknown,
-    context: { kind: string; worker: string; [key: string]: unknown },
-  ): void;
+  captureBackgroundFailure(error: unknown, context: BackgroundFailureContext): void;
 }
 
 /** Configuration knobs for the dispatcher. */
@@ -404,6 +421,10 @@ export class OutboxDispatcherWorker {
       consumerFailed: 0,
       flippedToFailed: 0,
     };
+    // Consumer failures this tick recorded, reported only once the claim
+    // transaction has committed them — never a log or Sentry call inside
+    // it, and nothing reported for bookkeeping that rolled back.
+    const failures: ConsumerFailure[] = [];
 
     try {
       await this.deps.db.transaction(async (tx) => {
@@ -496,7 +517,7 @@ export class OutboxDispatcherWorker {
             // column on `outbox_events`; the attempts counter doubles
             // as the optimistic-concurrency token, which is enough
             // because attempts only ever increases.
-            await tx
+            const bumped = await tx
               .update(outboxEvents)
               .set({
                 attempts: nextAttempts,
@@ -509,13 +530,20 @@ export class OutboxDispatcherWorker {
                   eq(outboxEvents.status, 'pending'),
                   eq(outboxEvents.attempts, event.attempts),
                 ),
-              );
+              )
+              .returning({ id: outboxEvents.id });
             if (shouldFail) {
               result.flippedToFailed += 1;
+            }
+            // A parallel tick that bumped the row first owns this attempt,
+            // and reports it.
+            if (bumped.length > 0) {
+              failures.push({ event, error: err, attempts: nextAttempts, failed: shouldFail });
             }
           }
         }
       });
+      for (const failure of failures) this.reportConsumerFailure(failure);
     } catch (err) {
       // Tx-level failure (db down, deadlock, etc.) — log and continue;
       // the next tick re-attempts. Never throw out of a tick: callers
@@ -536,6 +564,38 @@ export class OutboxDispatcherWorker {
     return result;
   }
 
+  /**
+   * One consumer throw, after its bookkeeping committed. Every attempt
+   * logs at warn; the attempt that flips the row to `failed` logs at
+   * error and goes to the observer, because that row is never claimed
+   * again — its work is lost unless someone replays it. The error's name
+   * only: a query error's message can carry its parameters.
+   */
+  private reportConsumerFailure({ event, error, attempts, failed }: ConsumerFailure): void {
+    const fields = {
+      worker: this.workerName,
+      topic: event.topic,
+      eventId: event.id,
+      attempts,
+      errorName: error instanceof Error ? error.name : typeof error,
+    };
+    if (!failed) {
+      console.warn(
+        JSON.stringify({ level: 'warn', kind: 'outbox.dispatch.consumer_failed', ...fields }),
+      );
+      return;
+    }
+    console.error(
+      JSON.stringify({ level: 'error', kind: 'outbox.dispatch.event_failed', ...fields }),
+    );
+    // `tags`, not top-level: see `OutboxObserver`'s docstring. `event_id`
+    // matches the Sentry tag naming convention (`SENTRY_SERVER_TAG_ALLOWLIST`).
+    this.observer.captureBackgroundFailure(error, {
+      kind: 'outbox.dispatch.event_failed',
+      tags: { worker: this.workerName, topic: event.topic, event_id: event.id },
+    });
+  }
+
   private logTickError(err: unknown): void {
     console.error(
       JSON.stringify({
@@ -545,6 +605,9 @@ export class OutboxDispatcherWorker {
         message: err instanceof Error ? err.message : String(err),
       }),
     );
+    // Same bug this file's `reportConsumerFailure` had until 2026-09-28:
+    // `worker` belongs under `tags`, not as a sibling of `kind` — the
+    // production adapter reads only those two keys.
     // Hand to the observer (Sentry in prod, no-op by default). Tick
     // failures are background failures by definition — there's no
     // HTTP request to surface the error on. Without this, a tx-level
@@ -552,7 +615,7 @@ export class OutboxDispatcherWorker {
     // logs and miss the alerting path.
     this.observer.captureBackgroundFailure(err, {
       kind: 'outbox.dispatch.tick_failed',
-      worker: this.workerName,
+      tags: { worker: this.workerName },
     });
   }
 }

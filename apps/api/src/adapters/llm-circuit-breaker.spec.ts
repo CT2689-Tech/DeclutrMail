@@ -1,7 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 
-import { LLM_PROVIDER_REJECTED_KIND, LlmCircuitBreaker } from './llm-circuit-breaker.js';
+import {
+  LLM_PROVIDER_REJECTED_KIND,
+  LlmCircuitBreaker,
+  type ProviderRejection,
+} from './llm-circuit-breaker.js';
 
 /**
  * LlmCircuitBreaker — what stops the worker making calls the provider has
@@ -101,9 +105,16 @@ afterEach(() => {
   errorSpy.mockRestore();
 });
 
-function makeBreaker(): { breaker: LlmCircuitBreaker; advance: (ms: number) => void } {
+function makeBreaker(onTrip?: (rejection: ProviderRejection) => void): {
+  breaker: LlmCircuitBreaker;
+  advance: (ms: number) => void;
+} {
   let now = Date.parse('2026-09-24T08:15:00Z');
-  const breaker = new LlmCircuitBreaker({ cooldownMs: COOLDOWN_MS, now: () => now });
+  const breaker = new LlmCircuitBreaker({
+    cooldownMs: COOLDOWN_MS,
+    now: () => now,
+    ...(onTrip ? { onTrip } : {}),
+  });
   return {
     breaker,
     advance: (ms) => {
@@ -277,5 +288,43 @@ describe('LlmCircuitBreaker — the log line the alert counts', () => {
     );
     expect(rejection?.reason).toBe('other');
     expect(breaker.isBlocked()).toBe(false);
+  });
+});
+
+describe('LlmCircuitBreaker — onTrip fires once per pause', () => {
+  it('50 concurrent credit-balance rejections produce exactly one capture', async () => {
+    const onTrip = vi.fn();
+    const { breaker } = makeBreaker(onTrip);
+    await Promise.all(
+      Array.from({ length: 50 }, () =>
+        Promise.resolve().then(() => breaker.recordFailure(CREDIT_BALANCE, SOURCE)),
+      ),
+    );
+    expect(onTrip).toHaveBeenCalledTimes(1);
+    expect(onTrip.mock.calls[0]?.[0]).toMatchObject({ reason: 'credit_balance', status: 400 });
+    expect(breaker.isBlocked()).toBe(true);
+  });
+
+  it('one more rejection after the cooldown expires produces exactly one more capture', () => {
+    const onTrip = vi.fn();
+    const { breaker, advance } = makeBreaker(onTrip);
+    breaker.recordFailure(CREDIT_BALANCE, SOURCE);
+    breaker.recordFailure(CREDIT_BALANCE, SOURCE);
+    expect(onTrip).toHaveBeenCalledTimes(1);
+
+    advance(COOLDOWN_MS);
+    expect(breaker.isBlocked()).toBe(false);
+    breaker.recordFailure(CREDIT_BALANCE, SOURCE);
+    expect(onTrip).toHaveBeenCalledTimes(2);
+    expect(onTrip.mock.calls[1]?.[0]).toMatchObject({ reason: 'credit_balance', status: 400 });
+  });
+
+  it('a plain 429 with no error code produces no capture', () => {
+    const onTrip = vi.fn();
+    const { breaker } = makeBreaker(onTrip);
+    expect(breaker.recordFailure(RATE_LIMITED, SOURCE)).toBeNull();
+    expect(onTrip).not.toHaveBeenCalled();
+    expect(breaker.isBlocked()).toBe(false);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });

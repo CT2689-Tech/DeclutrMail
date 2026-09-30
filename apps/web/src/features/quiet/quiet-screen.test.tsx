@@ -10,12 +10,24 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { onlineManager } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { toast } from '@declutrmail/shared';
 import userEvent from '@testing-library/user-event';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import type { Me } from '@/features/auth/api/use-me';
+import { captureFeatureException } from '@/lib/sentry';
 import { QuietRoute } from './quiet-screen';
+
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, toast: vi.fn() };
+});
+
+vi.mock('@/lib/sentry', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, captureFeatureException: vi.fn() };
+});
 
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
 const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
@@ -51,6 +63,12 @@ const CONFIG = {
   timezone: 'Asia/Kolkata',
 };
 
+/**
+ * An API deployed before the web still sends the retired `endsAt`. The
+ * status line must not repeat the End row from it.
+ */
+const OLD_API_ENDS_AT = '2026-07-15T05:00:00.000Z';
+
 function jsonEnvelope(data: unknown): Response {
   return new Response(JSON.stringify({ data }), {
     status: 200,
@@ -66,12 +84,18 @@ function renderRoute() {
   );
 }
 
+const quietPath = (id: string) => `/api/mailboxes/${id}/quiet-hours`;
+const saveStatus = (email: string) =>
+  screen.getByRole('status', { name: `Save status for ${email}` });
+
 describe('QuietRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
   });
   afterEach(() => {
     resetFetchStub();
+    vi.mocked(toast).mockClear();
+    vi.mocked(captureFeatureException).mockClear();
   });
 
   it('links only the active inbox to its Autopilot rules', async () => {
@@ -79,9 +103,8 @@ describe('QuietRoute', () => {
     installFetchStub(
       [MAILBOX_A, MAILBOX_B].map((id) => ({
         method: 'GET' as const,
-        path: `/api/mailboxes/${id}/quiet-hours`,
-        respond: () =>
-          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2, endsAt: null }),
+        path: quietPath(id),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2 }),
       })),
     );
     renderRoute();
@@ -104,14 +127,13 @@ describe('QuietRoute', () => {
     installFetchStub([
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () =>
-          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0, endsAt: null }),
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0 }),
       },
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_B}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0, endsAt: null }),
+        path: quietPath(MAILBOX_B),
+        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0 }),
       },
     ]);
 
@@ -131,22 +153,25 @@ describe('QuietRoute', () => {
     installFetchStub([
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () =>
-          jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0, endsAt: null }),
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
       },
       {
         method: 'PUT',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        path: quietPath(MAILBOX_A),
         respond: async (req) => {
           putBody = await req.json();
-          return jsonEnvelope({ config: putBody, activeNow: true, heldCount: 0, endsAt: null });
+          return jsonEnvelope({ config: putBody, activeNow: true, heldCount: 0 });
         },
       },
     ]);
 
     renderRoute();
     const checkbox = await screen.findByRole('switch', { name: 'Quiet hours' });
+    // In place and silent before the save: a region inserted together
+    // with its text, or one that already says it, announces nothing.
+    const region = saveStatus('a@b.com');
+    expect(region.textContent).toBe('');
     await userEvent.click(checkbox); // enabled: true → false (dirty)
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
@@ -154,6 +179,204 @@ describe('QuietRoute', () => {
     expect(putBody).toEqual({ ...CONFIG, enabled: false });
     // Server said activeNow: true → the pill renders from the response.
     await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    // The SAME node says it, although the form remounted — not a toast.
+    expect(saveStatus('a@b.com')).toBe(region);
+    expect(region).toHaveTextContent('Saved');
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it('keeps the saved value when a stale read lands after the save', async () => {
+    // A background poll (the query's refetchInterval) can already be in
+    // flight when Save is clicked. If its stale response lands AFTER the
+    // save's own setQueryData, it must not overwrite the fresh state.
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let resolveStaleGet: (() => void) | undefined;
+    let getCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => {
+          getCalls += 1;
+          if (getCalls === 1) {
+            return jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 });
+          }
+          // The poll's response: stale (pre-save) data, held until the
+          // test resolves it — after the save's own response lands.
+          return new Promise<Response>((resolve) => {
+            resolveStaleGet = () =>
+              resolve(jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }));
+          });
+        },
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
+    );
+    await screen.findByRole('switch', { name: 'Quiet hours' });
+
+    // The poll starts — in flight, not yet resolved.
+    await act(async () => {
+      void client.refetchQueries({ queryKey: ['quiet', 'hours', MAILBOX_A] });
+    });
+    await waitFor(() => expect(getCalls).toBe(2));
+
+    // The save starts and finishes while the poll is still pending.
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00'));
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+
+    // The stale poll resolves last, with the pre-save (enabled: true) data.
+    // `waitFor` is the wrong tool below this point: `enabled: false` is
+    // ALREADY true from the save, before the stale response has landed at
+    // all, so a `waitFor` assertion of it would pass on the very first
+    // poll — proving nothing about the race. This needs the full async
+    // chain (retryer → cache → render) to actually settle first, then a
+    // one-shot check of where it settled.
+    await act(async () => {
+      resolveStaleGet?.();
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    // Still reflects the save, not the stale read that landed after it.
+    expect(client.getQueryData(['quiet', 'hours', MAILBOX_A])).toMatchObject({
+      config: { enabled: false },
+    });
+    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+  });
+
+  it('stops saying Saved once the form is edited again', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
+      },
+    ]);
+
+    renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
+
+    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+
+    expect(saveStatus('a@b.com').textContent).toBe('');
+  });
+
+  it('warns and reports a failed save, and never says Saved', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      { method: 'PUT', path: quietPath(MAILBOX_A), respond: () => jsonServerError() },
+    ]);
+
+    renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+    );
+    expect(captureFeatureException).toHaveBeenCalledWith(expect.anything(), {
+      surface: 'quiet',
+      reason: 'save_hours_failed',
+    });
+    expect(saveStatus('a@b.com').textContent).toBe('');
+  });
+
+  it('does not re-toast a PRO_FEATURE_REQUIRED 402 — the global UpgradeModal is the surface', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'PRO_FEATURE_REQUIRED',
+                details: { capability: 'quiet', tier: 'free' },
+              },
+            }),
+            { status: 402, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+
+    renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+
+    // The mutation settling (isPending flips back false, restoring the
+    // button's resting label) is the deterministic signal here — there is
+    // no success toast to wait on for this path, by design.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Save quiet hours' })).toBeInTheDocument(),
+    );
+    expect(toast).not.toHaveBeenCalled();
+    expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  it('still warns and reports a save that fails after the page is gone', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let failPut: (() => void) | undefined;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          new Promise<Response>((resolve) => {
+            failPut = () => resolve(jsonServerError());
+          }),
+      },
+    ]);
+
+    const { unmount } = renderRoute();
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(failPut).toBeDefined());
+
+    // The user navigates away while the PUT is still in flight.
+    unmount();
+    failPut?.();
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(expect.stringContaining('quiet hours'), 'warn'),
+    );
+    expect(captureFeatureException).toHaveBeenCalledTimes(1);
   });
 
   it('says Saved once a never-configured mailbox saves', async () => {
@@ -161,14 +384,14 @@ describe('QuietRoute', () => {
     installFetchStub([
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0, endsAt: null }),
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: null, activeNow: false, heldCount: 0 }),
       },
       {
         method: 'PUT',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        path: quietPath(MAILBOX_A),
         respond: async (req) =>
-          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0, endsAt: null }),
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
       },
     ]);
 
@@ -177,7 +400,10 @@ describe('QuietRoute', () => {
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
-    expect(await screen.findByText('Saved')).toBeInTheDocument();
+    // The visible label, not its screen-reader twin in the save status.
+    expect(
+      await screen.findByText('Saved', { ignore: '[role="status"], script, style' }),
+    ).toBeInTheDocument();
   });
 
   it('keeps loading, not an unconfigured form, while the read waits offline', async () => {
@@ -200,14 +426,14 @@ describe('QuietRoute', () => {
     installFetchStub([
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        path: quietPath(MAILBOX_A),
         respond: () =>
           failing
             ? new Response(JSON.stringify({ error: { code: 'INTERNAL', message: 'boom' } }), {
                 status: 500,
                 headers: { 'Content-Type': 'application/json' },
               })
-            : jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 2, endsAt: null }),
+            : jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2 }),
       },
     ]);
     const client = createTestQueryClient();
@@ -227,75 +453,208 @@ describe('QuietRoute', () => {
     expect(screen.queryByText(/Autopilot actions/)).not.toBeInTheDocument();
   });
 
-  it('shows held actions and the scheduled quiet end', async () => {
+  it('never says Saved beside a failed refresh, or after its retry', async () => {
     me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
-    const endsAt = '2026-07-15T05:00:00.000Z';
+    let failing = false;
     installFetchStub([
       {
         method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2, endsAt }),
-      },
-    ]);
-
-    renderRoute();
-
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('2 Autopilot actions are held until quiet ends at');
-    expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
-  });
-
-  it('explains an indefinite quiet hold without inventing a release time', async () => {
-    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
-    installFetchStub([
-      {
-        method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
+        path: quietPath(MAILBOX_A),
         respond: () =>
-          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 1, endsAt: null }),
+          failing
+            ? jsonServerError()
+            : jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
       },
-    ]);
-
-    renderRoute();
-
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('1 Autopilot action is held until quiet ends.');
-    expect(summary.querySelector('time')).toBeNull();
-  });
-
-  it('shows the active zero-held state', async () => {
-    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
-    const endsAt = '2026-07-15T05:00:00.000Z';
-    installFetchStub([
       {
-        method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 0, endsAt }),
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
       },
     ]);
-
-    renderRoute();
-
-    const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('No Autopilot actions are held. Quiet ends at');
-    expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
-  });
-
-  it('does not attribute pending actions to quiet when quiet is off', async () => {
-    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
-    installFetchStub([
-      {
-        method: 'GET',
-        path: `/api/mailboxes/${MAILBOX_A}/quiet-hours`,
-        respond: () =>
-          jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 2, endsAt: null }),
-      },
-    ]);
-
-    renderRoute();
-
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      '2 Autopilot actions waiting to run — not held by quiet hours',
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
     );
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
+
+    failing = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(saveStatus('a@b.com').textContent).toBe('');
+
+    failing = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
+    expect(saveStatus('a@b.com').textContent).toBe('');
+  });
+
+  it('never says Saved after recovering WITHOUT the Retry button', async () => {
+    // A reconnect refetch, or another screen's mailbox-scope cache reset,
+    // can bring the card back to ready with nobody clicking Retry.
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    let failing = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          failing
+            ? jsonServerError()
+            : jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 0 }),
+      },
+      {
+        method: 'PUT',
+        path: quietPath(MAILBOX_A),
+        respond: async (req) =>
+          jsonEnvelope({ config: await req.json(), activeNow: false, heldCount: 0 }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <QuietRoute />
+      </QueryWrapper>,
+    );
+    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
+
+    failing = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+    // Recovers on its own — no Retry click.
+    failing = false;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+
+    expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
+    expect(saveStatus('a@b.com').textContent).toBe('');
+  });
+
+  it('counts held actions while quiet is on, and not when it ends', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          jsonEnvelope({
+            config: CONFIG,
+            activeNow: true,
+            heldCount: 2,
+            endsAt: OLD_API_ENDS_AT,
+          }),
+      },
+    ]);
+
+    renderRoute();
+
+    const summary = await screen.findByRole('status', { name: 'Quiet status for a@b.com' });
+    expect(summary).toHaveTextContent(/\b2\b/);
+    expect(summary).toHaveTextContent(/held/);
+    // The End row already says when quiet ends; a rule's daily cap can
+    // keep some actions past it, so no line promises a release time.
+    expect(summary.querySelector('time')).toBeNull();
+    expect(summary).not.toHaveTextContent(/ends|until/);
+  });
+
+  it('counts a single held action', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 1 }),
+      },
+    ]);
+
+    renderRoute();
+
+    const summary = await screen.findByRole('status', { name: 'Quiet status for a@b.com' });
+    expect(summary).toHaveTextContent(/\b1\b/);
+    expect(summary).toHaveTextContent(/held/);
+  });
+
+  it('shows no quiet status while nothing is held', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () =>
+          jsonEnvelope({
+            config: CONFIG,
+            activeNow: true,
+            heldCount: 0,
+            endsAt: OLD_API_ENDS_AT,
+          }),
+      },
+    ]);
+
+    renderRoute();
+
+    await waitFor(() => expect(screen.getByText('Quiet now')).toBeInTheDocument());
+    expect(
+      screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Autopilot action|Quiet ends/)).not.toBeInTheDocument();
+  });
+
+  it('shows no quiet status while quiet is off', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com')]);
+    installFetchStub([
+      {
+        method: 'GET',
+        path: quietPath(MAILBOX_A),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: false, heldCount: 2 }),
+      },
+    ]);
+
+    renderRoute();
+
+    expect(await screen.findByLabelText('Quiet window start')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Quiet status for a@b.com' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Autopilot action/)).not.toBeInTheDocument();
+  });
+
+  it('shows no quiet status on a disconnected inbox', async () => {
+    // Its row is disabled in the account menu, and nothing runs for it
+    // until it is reconnected — an instruction there could not be followed.
+    me = makeMe([
+      mailbox(MAILBOX_A, 'a@b.com'),
+      { ...mailbox(MAILBOX_B, 'b@b.com'), status: 'disconnected' },
+    ]);
+    installFetchStub(
+      [MAILBOX_A, MAILBOX_B].map((id) => ({
+        method: 'GET' as const,
+        path: quietPath(id),
+        respond: () => jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2 }),
+      })),
+    );
+
+    renderRoute();
+
+    expect(
+      await screen.findByRole('status', { name: 'Quiet status for a@b.com' }),
+    ).toBeInTheDocument();
+    const disconnected = screen.getByRole('region', { name: 'Quiet hours for b@b.com' });
+    expect(within(disconnected).getByText('Disconnected')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Quiet status for b@b.com' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Choose this inbox in the account menu/)).not.toBeInTheDocument();
   });
 });

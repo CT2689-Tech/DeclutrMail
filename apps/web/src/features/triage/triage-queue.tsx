@@ -2,6 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import {
@@ -57,6 +58,7 @@ export function inlinePreviewFor(
 
 /** Stable empty default for `busyRowIds` — a fresh `new Set()` per render would defeat memoized rows. */
 const NO_BUSY_ROWS: ReadonlySet<string> = new Set();
+const NO_UNKNOWN_VERBS: ReadonlyMap<string, string> = new Map();
 
 /**
  * The triage queue list (D29, D36).
@@ -91,6 +93,7 @@ export function TriageQueue({
   onBatchVerb,
   batchBusyDomain = null,
   leading,
+  unknownVerbs = NO_UNKNOWN_VERBS,
 }: {
   rows: readonly TriageDecisionRow[];
   /** Dispatched when a row's toolbar fires K/A/U/L/D. */
@@ -119,7 +122,10 @@ export function TriageQueue({
   batchBusyDomain?: string | null;
   /** Rendered as the list's first item — the same-verdict batch offer. */
   leading?: ReactNode;
+  /** Held rows whose outcome is unknown, by the verb that may have started. */
+  unknownVerbs?: ReadonlyMap<string, string>;
 }) {
+  const timeZone = useUserTimeZone();
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
@@ -127,7 +133,7 @@ export function TriageQueue({
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
 
   const items = allowBatching
-    ? planQueueItems(rows, dismissedBatchDomains)
+    ? planQueueItems(rows, dismissedBatchDomains, busyRowIds)
     : rows.map((row) => ({ kind: 'row' as const, row }));
   return (
     <div
@@ -167,6 +173,7 @@ export function TriageQueue({
               row={row}
               expanded={expanded}
               busy={busyRowIds.has(row.id)}
+              unknownVerb={unknownVerbs.get(row.id) ?? null}
               offerUnprotect={offerUnprotect}
               // Constructed here (not inside TriageRow) so the row
               // component never imports UnprotectButton — and with it
@@ -185,6 +192,7 @@ export function TriageQueue({
               onToggleExpand={() => toggleExpandedRow(row.id)}
               onAction={(verb) => onAction(verb, row)}
               inlinePreview={inlinePreview}
+              timeZone={timeZone}
               inlinePreviewAccountContext={
                 inlinePreview == null ? undefined : <MailboxActionContext />
               }

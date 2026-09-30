@@ -70,8 +70,14 @@ export type { ErrorCode, ErrorCodeSpec } from './error-codes';
 export { ERROR_CODES, isErrorCode } from './error-codes';
 
 // D224 sync status transport — Zod schema + types for /api/v1/sync/status.
-export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
-export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
+export {
+  AUTH_RECOVERY_ERROR_CODES,
+  SyncStatusSchema,
+  SyncReadinessSchema,
+  SyncStageSchema,
+  SyncMessageProgressSchema,
+} from './sync-status';
+export type { SyncStatus, SyncReadiness, SyncStage, SyncMessageProgress } from './sync-status';
 
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {
@@ -135,6 +141,11 @@ export type { UndoActionKind } from './undo-action-kind';
 // D226 action job lifecycle — mirrored from `action_job_status` pg_enum.
 // Contract-tested in apps/api/src/actions/actions.types.ts.
 export type { ActionJobStatus } from './action-job-status';
+export {
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
+  RECOVERY_SENDER_PROTECTED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
+} from './action-job-status';
 export { ACTION_REACHES } from './action-reach';
 export type { ActionReach } from './action-reach';
 
@@ -167,6 +178,7 @@ export type { TriageVerdict, ProtectionReason } from './triage-enums';
 // U14 — Autopilot approve + dry-run preview contracts (D99/D101/D104).
 export {
   AUTOPILOT_PENDING_PAGE_SIZE,
+  AutopilotApproveAllRequestSchema,
   AutopilotApproveMatchesRequestSchema,
   AutopilotApproveResultSchema,
   AutopilotPreviewSampleSchema,
@@ -174,6 +186,7 @@ export {
   AutopilotWeeklyVolumeSchema,
 } from './autopilot';
 export type {
+  AutopilotApproveAllRequest,
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
@@ -312,6 +325,11 @@ export type { DataExportFormat } from './data-export';
 // Private-beta invite gate (buildout F7) — API ↔ web redirect contract
 // for denied signups. See ./beta-gate.ts for the env + flow contract.
 export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from './beta-gate';
+
+// D108 — closed results the Google OAuth routes put on /sign-in and
+// Settings. See ./oauth-return.ts for the return destinations.
+export { GMAIL_ACCESS_MISSING_RESULT, parseSignInResult, SIGN_IN_RESULTS } from './oauth-return';
+export type { SignInResult } from './oauth-return';
 
 // U27 — Activity feed rule attribution (D57): `rule` ref on
 // `GET /api/activity` rows, resolved from `activity_log.rule_id`.

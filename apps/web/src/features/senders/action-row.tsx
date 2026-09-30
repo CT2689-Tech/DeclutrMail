@@ -43,7 +43,7 @@ const { color } = tokens;
  * (mailto stays manual at launch per D230, so it never auto-recommends)
  * AND the sender passes `canUnsubscribe` — the same capability gate the
  * ⋯ popover reads, so the primary can never offer a verb the popover
- * disables on the same row (e.g. a one-click sender in group 'primary').
+ * disables on the same row.
  *
  * Registry rule order guarantees protected → Keep wins over unsub-ready
  * (`deriveDefaultPrimary` checks `protected` first — D42/D43).
@@ -55,18 +55,15 @@ const { color } = tokens;
 export function derivePrimaryVerbId(sender: Sender): VerbId {
   return deriveDefaultPrimary({
     protected: isStandingProtected(sender),
-    // RECOMMENDATION, not availability — the two are deliberately
-    // different. `canUnsubscribe` asks "is there a channel to use?"; this
-    // asks "should we put it forward?". A Gmail `primary`-category sender
-    // with a live one-click header is offerable but not recommendable:
-    // primary-category mail is where real correspondence lands, so
-    // leading with Unsubscribe there is the wrong default. That category
-    // term used to live inside `canUnsubscribe`, where it silently greyed
-    // the button out with no reason text and no server counterpart.
-    unsubReady:
-      sender.unsubscribeMethod === 'one_click' &&
-      sender.gmailCategory !== 'primary' &&
-      canUnsubscribe(sender),
+    // RECOMMENDATION, not availability — `canUnsubscribe` asks "is there
+    // a channel to use?"; this asks "should we put it forward?". There is
+    // no Gmail-tab exemption: a one-click header marks mail sent through
+    // a list or mailing system, and that outranks the Primary tab — the
+    // engine's own rule since the founder decision of 2026-09-26 (Primary
+    // keeps a sender only when it offers no unsubscribe link). A Primary
+    // exemption here could never apply to a sender the engine keeps for
+    // being Primary, and would contradict it for every other one.
+    unsubReady: sender.unsubscribeMethod === 'one_click' && canUnsubscribe(sender),
     lastSeenDays: sender.lastDays,
   });
 }

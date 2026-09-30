@@ -83,6 +83,8 @@ import {
   type FilterFieldsProps,
   type GroupMode,
 } from './activity-filter-fields';
+// Type-only: erased at build, so the dialog stays out of first load.
+import type { RecoveryConfirmation } from './action-recovery-dialog';
 
 // Click-only dialogs: loaded on first open so their code stays out of the
 // /activity first-load bundle (180 kB budget).
@@ -2370,7 +2372,7 @@ function RecoveryCell({
     resetConfirmation();
   };
 
-  const confirm = async (wakeAt?: string) => {
+  const confirm = async ({ wakeAt, senderProtected }: RecoveryConfirmation) => {
     if (!preview || preview.status !== 'ready' || confirmationLockedRef.current) return;
     confirmationLockedRef.current = true;
     const identity = confirmationRef.current;
@@ -2389,6 +2391,8 @@ function RecoveryCell({
         previewId: preview.previewId,
         idempotencyKey,
         ...(wakeAt ? { wakeAt } : {}),
+        // Only a review that showed the Protected line sends its consent.
+        ...(senderProtected ? { senderProtected: true } : {}),
       });
       setOpen(false);
       setPreviewId(null);
@@ -2458,7 +2462,7 @@ function RecoveryCell({
               confirmError={confirmRecovery.error}
               isConfirming={confirmRecovery.isPending || confirmationLockedRef.current}
               onRetryVerification={() => void retryVerification()}
-              onConfirm={(wakeAt) => void confirm(wakeAt)}
+              onConfirm={(confirmation) => void confirm(confirmation)}
               onReconnect={() => startMailboxConnect(mailboxId ?? undefined)}
               onClose={close}
             />,
@@ -2531,6 +2535,20 @@ function OpenInGmailLink({
 }
 
 /**
+ * What a row says when its Undo failed, in the pill's words. Never the
+ * transport line: it carries the undo token and names no next step.
+ * `revertActivityUndo`'s own errors are written for the reader.
+ */
+function undoFailureCopy(error: Error | null): string {
+  // A row that failed inside a bulk Undo carries no error of its own.
+  if (error === null) return 'Undo failed — try again.';
+  if (!(error instanceof ApiError)) return error.message;
+  return error.status === 410
+    ? 'Undo window has expired'
+    : getActionFailureCopy('revert-enqueue', { error });
+}
+
+/**
  * D58 + B7/B13 — wired undo affordance.
  *
  * On click: POST /api/undo/:token via `useRevertActivity`. On success
@@ -2577,11 +2595,6 @@ function UndoCell({
           aria-busy={isPendingHere}
           onClick={() => revert.mutate(undo.token)}
           disabled={isPendingHere}
-          title={
-            failed
-              ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
-              : 'Revert this action.'
-          }
           onMouseEnter={(e) => {
             if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
           }}
@@ -2609,7 +2622,7 @@ function UndoCell({
         </button>
         {failed && (
           <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>
-            {revert.error?.message ?? 'Could not confirm Undo. Try again.'}
+            {undoFailureCopy(revert.error)}
           </span>
         )}
       </span>

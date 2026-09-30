@@ -311,9 +311,10 @@ count, samples, and the precise Gmail changes — and lands in a ledger with
 an undo window for Archive, Later, and Delete. (A delivered unsubscribe
 can't be recalled, so the product says that too.)
 
-It never fetches message bodies. The trust badge reads "Full bodies
-fetched: 0", and the list of Gmail fields it does store is published —
-generated from the code that does the fetching, not written by marketing.
+It never fetches message bodies. The trust badge reads "We never fetch or
+store full email contents," and the list of Gmail fields it does store is
+published — generated from the code that does the fetching, not written by
+marketing.
 
 Today it's live: https://declutrmail.com
 
@@ -401,8 +402,8 @@ server is never allowed to fetch a message body. not policy, architecture.
 
 the gmail adapter can only request an allowlisted set of fields — from,
 subject, to, cc, list-unsubscribe headers, labels, dates, and the short
-snippet gmail already shows in the inbox list. the privacy page shows "full
-bodies fetched: 0" plus the list of stored fields, and that list is
+snippet gmail already shows in the inbox list. the privacy page shows "we
+never fetch or store full email contents" plus the list of stored fields, and that list is
 generated from the same typed registry the fetching code reads. adding a
 field means updating the registry, which changes the public list, or
 contract tests fail. i wanted a privacy claim someone could actually

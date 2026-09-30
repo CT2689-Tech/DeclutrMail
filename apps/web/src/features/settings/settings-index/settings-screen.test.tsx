@@ -153,6 +153,21 @@ function happyHandlers() {
       respond: () => jsonOk({ data: SETTINGS_PAYLOAD }),
     },
     {
+      // An onboarded user: the OAuth result is shown here, not carried on.
+      method: 'GET' as const,
+      path: '/api/onboarding/state',
+      respond: () =>
+        jsonOk({
+          data: {
+            onboardedAt: '2026-01-02T00:00:00.000Z',
+            skipped: false,
+            goal: null,
+            presetPicks: null,
+            presets: [],
+          },
+        }),
+    },
+    {
       method: 'GET' as const,
       path: '/api/v1/sync/status',
       respond: () => jsonOk({ data: readySyncStatus() }),
@@ -243,6 +258,48 @@ describe('SettingsScreen', () => {
     // Humanized last-synced stamps resolve from the per-mailbox
     // sync-status reads (one per active mailbox).
     await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+  });
+
+  it('offers Reconnect, not a doomed retry, when the first scan failed on an expired grant', async () => {
+    me = {
+      ...me,
+      mailboxes: me.mailboxes.map((m) =>
+        m.id === MAILBOX_B ? { ...m, readiness: 'failed' as const } : m,
+      ),
+    };
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/v1/sync/status'),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: (req) =>
+          jsonOk({
+            data:
+              req.headers.get('X-Active-Mailbox-Id') === MAILBOX_B
+                ? {
+                    readiness_status: 'failed',
+                    current_stage: 'failed',
+                    progress_pct: 0,
+                    is_ready_for_triage: false,
+                    error_code: 'AuthExpiredError',
+                    last_synced_at: null,
+                  }
+                : readySyncStatus(),
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const row = await waitFor(() => {
+      const item = screen.getByText('chintan.a.thakkar.crypt@gmail.com').closest('li');
+      expect(within(item as HTMLElement).getByText('Needs reconnect')).toBeInTheDocument();
+      return item as HTMLElement;
+    });
+    expect(within(row).queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
+    await userEvent.click(
+      within(row).getByRole('button', { name: 'Reconnect chintan.a.thakkar.crypt@gmail.com' }),
+    );
+    expect(startMailboxConnectSpy).toHaveBeenCalledWith(MAILBOX_B);
   });
 
   it('renders "Needs reconnect" + the Reconnect affordance on an invalid grant', async () => {
@@ -833,34 +890,39 @@ describe('SettingsScreen', () => {
   it.each([
     {
       result: 'success',
-      message: 'Gmail reconnected. Sync status is shown below.',
+      message: 'Gmail reconnected.',
       tone: 'success',
       liveRole: 'status',
     },
     {
       result: 'account_mismatch',
-      message:
-        'That was a different Google account. Retry Reconnect next to the mailbox you meant.',
+      message: 'That was a different Google account. Reconnect with the account you meant.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'target_invalid',
-      message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
+      message: 'That mailbox changed while you were on Google’s screen. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'cancelled',
-      message: 'Gmail reconnect was cancelled. Nothing changed.',
+      message: 'Gmail reconnect was cancelled.',
       tone: 'info',
       liveRole: 'status',
     },
     {
       result: 'failed',
-      message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+      message: 'Could not reconnect Gmail. Try again.',
       tone: 'danger',
       liveRole: 'alert',
+    },
+    {
+      result: 'gmail_access_missing',
+      message: 'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+      tone: 'warn',
+      liveRole: 'status',
     },
   ] as const)(
     'shows the controlled $result reconnect result exactly once',
@@ -888,15 +950,13 @@ describe('SettingsScreen', () => {
   it.each([
     {
       result: 'target_invalid',
-      message:
-        'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+      message: 'Could not start that reconnect. Try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'inbox_limit',
-      message:
-        'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
+      message: 'Your plan’s Gmail limit is in use, so nothing was connected.',
       tone: 'warn',
       liveRole: 'status',
     },
@@ -911,6 +971,18 @@ describe('SettingsScreen', () => {
       message: 'Too many Gmail connection attempts. Wait a moment, then try again.',
       tone: 'warn',
       liveRole: 'status',
+    },
+    {
+      result: 'gmail_access_missing',
+      message: 'DeclutrMail needs Gmail access. Try again and allow it on Google’s screen.',
+      tone: 'warn',
+      liveRole: 'status',
+    },
+    {
+      result: 'failed',
+      message: 'Could not connect Gmail. Try again.',
+      tone: 'danger',
+      liveRole: 'alert',
     },
   ] as const)(
     'shows and scrubs the controlled $result OAuth-start result',
@@ -927,6 +999,44 @@ describe('SettingsScreen', () => {
       expect(toast).toHaveBeenCalledTimes(1);
     },
   );
+
+  // D108: someone who has not finished onboarding reaches Settings only to
+  // be sent to /onboarding. The gate carries the result there; using it up
+  // here first would lose it.
+  it('still shows an OAuth result when the onboarding state cannot be read', async () => {
+    // Fail-open: an unreadable onboarding state must not swallow the result.
+    installFetchStub(happyHandlers().filter((h) => h.path !== '/api/onboarding/state'));
+    setSettingsLocation('reconnect_result=gmail_access_missing', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+        'warn',
+      ),
+    );
+  });
+
+  it('leaves an OAuth result for the onboarding gate while onboarding is incomplete', async () => {
+    const onboardingState = vi.fn(() =>
+      jsonOk({
+        data: { onboardedAt: null, skipped: false, goal: null, presetPicks: null, presets: [] },
+      }),
+    );
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/onboarding/state'),
+      { method: 'GET', path: '/api/onboarding/state', respond: onboardingState },
+    ]);
+    setSettingsLocation('reconnect_result=gmail_access_missing', `#mailbox-${MAILBOX_A}`);
+    renderScreen();
+
+    await waitFor(() => expect(onboardingState).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+    expect(toast).not.toHaveBeenCalled();
+    expect(new URLSearchParams(window.location.search).get('reconnect_result')).toBe(
+      'gmail_access_missing',
+    );
+  });
 
   it('pre-mounts empty polite and assertive regions, then populates only the result region', async () => {
     const client = createTestQueryClient();
@@ -949,9 +1059,7 @@ describe('SettingsScreen', () => {
     );
 
     await waitFor(() =>
-      expect(alertRegion).toHaveTextContent(
-        'Could not reconnect Gmail. Try again from this mailbox list.',
-      ),
+      expect(alertRegion).toHaveTextContent('Could not reconnect Gmail. Try again.'),
     );
     expect(statusRegion).toBeEmptyDOMElement();
   });
@@ -979,9 +1087,7 @@ describe('SettingsScreen', () => {
 
     expect(screen.getByText('Loading plan…')).toBeInTheDocument();
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
-    expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent(
-      'Gmail reconnected. Sync status is shown below.',
-    );
+    expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent('Gmail reconnected.');
     expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
     expect(document.activeElement).toBe(document.getElementById(`mailbox-${MAILBOX_A}`));
     expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');

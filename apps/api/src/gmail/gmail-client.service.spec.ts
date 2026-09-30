@@ -220,6 +220,68 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       expect(fetchMock).not.toHaveBeenCalled();
       expect(acquireSpy).not.toHaveBeenCalled();
     });
+
+    // The label workers mark a job "Gmail may have changed" in this hook, so
+    // it must run after everything that can fail without sending (quota
+    // wait, token refresh) and before the first request leaves.
+    it('runs beforeFirstRequest once — after the quota wait and the token, before the first send', async () => {
+      const order: string[] = [];
+      acquireSpy.mockImplementation(async () => {
+        order.push('acquire');
+      });
+      vi.mocked(oauth.getAccessToken).mockImplementation(async () => {
+        order.push('token');
+        return { token: ACCESS_TOKEN, res: null };
+      });
+      fetchMock.mockImplementation(async () => {
+        order.push('fetch');
+        return jsonOk({});
+      });
+      const client = new GmailClientService(oauth, limiter, TQC);
+      const ids = Array.from({ length: 1500 }, (_, i) => `m${i}`);
+
+      await client.batchModify(
+        ids,
+        { removeLabelIds: ['INBOX'] },
+        {
+          beforeFirstRequest: async () => {
+            order.push('hook');
+          },
+        },
+      );
+
+      expect(order).toEqual(['acquire', 'token', 'hook', 'fetch', 'acquire', 'token', 'fetch']);
+    });
+
+    it('never runs beforeFirstRequest when the token refresh fails — nothing was sent', async () => {
+      vi.mocked(oauth.getAccessToken).mockRejectedValue(new Error('socket hang up'));
+      const hook = vi.fn();
+      const client = new GmailClientService(oauth, limiter, TQC);
+
+      await expect(
+        client.batchModify(['m1'], { addLabelIds: ['X'] }, { beforeFirstRequest: hook }),
+      ).rejects.toBeInstanceOf(TransientError);
+      expect(hook).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('sends nothing when beforeFirstRequest refuses', async () => {
+      const refusal = new Error('sender is Protected');
+      const client = new GmailClientService(oauth, limiter, TQC);
+
+      await expect(
+        client.batchModify(
+          ['m1'],
+          { addLabelIds: ['X'] },
+          {
+            beforeFirstRequest: async () => {
+              throw refusal;
+            },
+          },
+        ),
+      ).rejects.toBe(refusal);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   // Only `messages.get` (the two get* calls) is priced differently: 5 units

@@ -30,6 +30,7 @@
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { toast as sharedToast } from '@declutrmail/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -48,6 +49,7 @@ const {
   undoTrayPropsSpy,
   pathnameRef,
   searchParamsRef,
+  toastSpy,
 } = vi.hoisted(() => ({
   pushSpy: vi.fn(),
   prefetchSpy: vi.fn(),
@@ -59,6 +61,9 @@ const {
   // mailbox-scoped route so every pre-existing test is unaffected.
   pathnameRef: { current: '/senders' },
   searchParamsRef: { current: '' },
+  // Records every toast while still showing it, so a test can assert that
+  // one never fired even when no toast host is mounted.
+  toastSpy: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -71,6 +76,16 @@ vi.mock('next/navigation', () => ({
   usePathname: () => pathnameRef.current,
   useSearchParams: () => new URLSearchParams(searchParamsRef.current),
 }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<{ toast: typeof sharedToast }>();
+  return {
+    ...actual,
+    toast: (...args: Parameters<typeof sharedToast>) => {
+      toastSpy(...args);
+      actual.toast(...args);
+    },
+  };
+});
 vi.mock('@/features/triage/triage-undo-tray', () => ({
   ProductUndoTray: (props: { enableShortcut?: boolean; mailboxId?: string }) => {
     undoTrayPropsSpy(props);
@@ -411,6 +426,38 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
     await vi.waitFor(() => expect(summarySpy).toHaveBeenCalledOnce());
     expect(summarySpy.mock.calls[0]![1].toString()).not.toContain('q=');
+  });
+
+  // D108: someone who has not finished onboarding can come back from Google
+  // to a Settings or Triage URL. The gate sends them to /onboarding, and the
+  // one-line result must travel with them, not be used up first.
+  it.each([
+    [
+      '/settings?reconnect_result=gmail_access_missing',
+      '/onboarding?reconnect_result=gmail_access_missing',
+    ],
+    ['/settings?connect_start_result=failed', '/onboarding?connect_start_result=failed'],
+    ['/triage?connect_error=connect_failed', '/onboarding?connect_error=connect_failed'],
+    // An unlisted code still says the connect failed, as it does in the app.
+    ['/triage?connect_error=something-new', '/onboarding?connect_error=connect_failed'],
+    ['/settings?reconnect_result=not-a-result', '/onboarding'],
+  ])('carries the OAuth result from %s through the onboarding gate', async (from, to) => {
+    const setURL = (u: string) =>
+      (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+    setURL(`http://localhost${from}`);
+    installFetchStub(authedHandlers({ onboardedAt: null }));
+
+    try {
+      renderLayout();
+
+      await vi.waitFor(() => expect(replaceSpy).toHaveBeenCalledWith(to));
+      // The chrome's own connect toast leaves it for /onboarding to show.
+      // Asserted on the toast call: the gated chrome renders no toast host,
+      // so an on-screen check here could never fail.
+      expect(toastSpy).not.toHaveBeenCalled();
+    } finally {
+      setURL('http://localhost/senders');
+    }
   });
 
   it('replaces the route with /onboarding when onboarding is incomplete (strict gate)', async () => {
@@ -954,13 +1001,90 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
         await screen.findByText('Could not connect that Gmail account. Try again.'),
       ).toBeInTheDocument();
       // One-shot: the param is stripped so a refresh doesn't replay it.
-      expect(window.location.search).toBe('');
+      await vi.waitFor(() => expect(window.location.search).toBe(''));
     } finally {
       (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
         'http://localhost/senders',
       );
     }
   });
+
+  it('still shows a connect error when the onboarding state cannot be read (fail-open)', async () => {
+    const setURL = (u: string) =>
+      (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+    setURL('http://localhost/triage?connect_error=connect_failed');
+    installFetchStub(
+      authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }).filter(
+        (h) => h.path !== '/api/onboarding/state',
+      ),
+    );
+
+    try {
+      renderLayout();
+
+      expect(
+        await screen.findByText('Could not connect that Gmail account. Try again.'),
+      ).toBeInTheDocument();
+      await vi.waitFor(() => expect(window.location.search).toBe(''));
+    } finally {
+      setURL('http://localhost/senders');
+    }
+  });
+
+  // Nothing sends `?connected=`; a toast that printed it would let any link
+  // put its own words in a green success toast inside the app.
+  it('never turns ?connected= text into a success toast', async () => {
+    const setURL = (u: string) =>
+      (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+    setURL(
+      'http://localhost/senders?connected=Your%20account%20is%20verified&connect_error=connect_failed',
+    );
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+
+    try {
+      renderLayout();
+
+      // The app body renders before the hook's onboarding wait is over, so
+      // wait for the closed code it does handle: then it has run.
+      await vi.waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith(
+          'Could not connect that Gmail account. Try again.',
+          'danger',
+        ),
+      );
+      expect(toastSpy).toHaveBeenCalledOnce();
+    } finally {
+      setURL('http://localhost/senders');
+    }
+  });
+
+  // An unlisted code, including one that names an Object.prototype key,
+  // reads as a plain connect failure and never reaches the toast raw.
+  it.each(['something-new', 'toString'])(
+    'shows the plain connect-failed line for the unlisted code %s',
+    async (code) => {
+      const setURL = (u: string) =>
+        (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
+          u,
+        );
+      setURL(`http://localhost/triage?connect_error=${code}`);
+      installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+
+      try {
+        renderLayout();
+
+        await vi.waitFor(() =>
+          expect(toastSpy).toHaveBeenCalledWith(
+            'Could not connect that Gmail account. Try again.',
+            'danger',
+          ),
+        );
+        expect(toastSpy).toHaveBeenCalledOnce();
+      } finally {
+        setURL('http://localhost/senders');
+      }
+    },
+  );
 
   it('an ONBOARDING-INCOMPLETE user with no active mailbox goes to /onboarding, NOT the reconnect gate', async () => {
     installFetchStub([

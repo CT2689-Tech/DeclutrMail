@@ -1,5 +1,8 @@
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
-import type { LearnArticle } from './types';
+
+import { comparisonBySlug } from '../comparison/comparison-data';
+import { ANSWER_ARTICLES, type AnswerSlug } from './answer-content';
+import type { LearnArticle, RelatedLink } from './types';
 
 export const HOW_TO_SLUGS = [
   'clean-gmail-by-sender',
@@ -12,7 +15,7 @@ export const HOW_TO_SLUGS = [
 
 export type HowToSlug = (typeof HOW_TO_SLUGS)[number];
 
-export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
+const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
   'clean-gmail-by-sender': {
     slug: 'clean-gmail-by-sender',
     path: '/how-to/clean-gmail-by-sender',
@@ -151,23 +154,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         description: 'Official Archive, All Mail, multi-select, and Trash behavior.',
       },
     ],
-    related: [
-      {
-        href: '/answers/sender-level-vs-message-level-cleanup',
-        label: 'Sender review vs email-by-email review',
-        description: 'When each model is the better tool.',
-      },
-      {
-        href: '/how-to/bulk-delete-emails-from-one-sender',
-        label: 'Delete one sender safely',
-        description: 'Check which email will move to Gmail Trash.',
-      },
-      {
-        href: '/pricing',
-        label: 'Compare plans',
-        description: 'Current inbox, bulk-action, and undo limits.',
-      },
-    ],
   },
 
   'bulk-delete-emails-from-one-sender': {
@@ -282,23 +268,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         href: 'https://support.google.com/mail/answer/7401?hl=en',
         label: 'Google: Delete messages in Gmail',
         description: 'Official search, Trash, recovery, and permanent-deletion behavior.',
-      },
-    ],
-    related: [
-      {
-        href: '/answers/how-undo-works-for-gmail-cleanup',
-        label: 'How undo actually works',
-        description: 'Each action has a different recovery path.',
-      },
-      {
-        href: '/how-to/unsubscribe-from-emails-gmail',
-        label: 'Request an unsubscribe',
-        description: 'Use unsubscribe when deletion is not enough.',
-      },
-      {
-        href: '/faq',
-        label: 'Product FAQ',
-        description: 'Short answers about privacy, actions, and plans.',
       },
     ],
   },
@@ -464,23 +433,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         description: 'Official Trash behavior, the roughly 30-day window, and permanent deletion.',
       },
     ],
-    related: [
-      {
-        href: '/how-to/bulk-delete-emails-from-one-sender',
-        label: 'Delete one sender safely',
-        description: 'Check which email will move to Gmail Trash.',
-      },
-      {
-        href: '/how-to/clean-gmail-by-sender',
-        label: 'Clean by sender',
-        description: 'Turn recurring senders into a short review queue.',
-      },
-      {
-        href: '/answers/how-undo-works-for-gmail-cleanup',
-        label: 'Undo boundaries',
-        description: 'What Trash recovery does and does not cover.',
-      },
-    ],
   },
 
   'auto-archive-future-emails-in-gmail': {
@@ -607,23 +559,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         description: 'Official filter creation, testing, editing, and deletion steps.',
       },
     ],
-    related: [
-      {
-        href: '/answers/how-undo-works-for-gmail-cleanup',
-        label: 'Automation and undo',
-        description: 'What can be reversed after a rule acts.',
-      },
-      {
-        href: '/answers/best-way-to-clean-gmail-2026',
-        label: 'Choose a cleanup method',
-        description: 'Filters, searches, and sender-first review compared.',
-      },
-      {
-        href: '/pricing',
-        label: 'Autopilot plan details',
-        description: 'See the current plan capabilities.',
-      },
-    ],
   },
 
   'stop-promotional-emails-gmail': {
@@ -741,23 +676,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         href: 'https://support.google.com/mail/answer/8151?hl=en',
         label: 'Google: Block an email address',
         description: 'Official distinction between blocking, Spam, and unsubscribe.',
-      },
-    ],
-    related: [
-      {
-        href: '/how-to/unsubscribe-from-emails-gmail',
-        label: 'Unsubscribe step by step',
-        description: 'One-click, mailto, and manual boundaries.',
-      },
-      {
-        href: '/how-to/clean-gmail-by-sender',
-        label: 'Clean by sender',
-        description: 'Turn recurring senders into a review queue.',
-      },
-      {
-        href: '/answers/is-it-safe-to-connect-gmail-app',
-        label: 'Connection safety',
-        description: 'Questions to ask before granting Gmail access.',
       },
     ],
   },
@@ -887,22 +805,100 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         description: 'Official subscription management behavior by sender and rollout note.',
       },
     ],
-    related: [
-      {
-        href: '/how-to/stop-promotional-emails-gmail',
-        label: 'Promotions, spam, or filter?',
-        description: 'Choose the right future-delivery control.',
-      },
-      {
-        href: '/answers/how-undo-works-for-gmail-cleanup',
-        label: 'Undo boundaries',
-        description: 'Why recovery differs by action.',
-      },
-      {
-        href: '/faq',
-        label: 'DeclutrMail FAQ',
-        description: 'Privacy and product answers in one place.',
-      },
-    ],
   },
+};
+
+const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
+  'clean-gmail-by-sender': [
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/unsubscribe-from-emails-gmail',
+    '/vs/gmail',
+    '/compare',
+    '/answers/sender-level-vs-message-level-cleanup',
+  ],
+  'bulk-delete-emails-from-one-sender': [
+    '/how-to/clean-gmail-by-sender',
+    '/how-to/gmail-storage-full',
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/unsubscribe-from-emails-gmail',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'gmail-storage-full': [
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/clean-gmail-by-sender',
+    '/how-to/stop-promotional-emails-gmail',
+    '/vs/clean-email',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'auto-archive-future-emails-in-gmail': [
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/stop-promotional-emails-gmail',
+    '/how-to/clean-gmail-by-sender',
+    '/vs/gmail-filters',
+    '/vs/sanebox',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'stop-promotional-emails-gmail': [
+    '/how-to/unsubscribe-from-emails-gmail',
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/clean-gmail-by-sender',
+    '/vs/unroll-me',
+    '/vs/leave-me-alone',
+    '/answers/is-it-safe-to-connect-gmail-app',
+  ],
+  'unsubscribe-from-emails-gmail': [
+    '/how-to/stop-promotional-emails-gmail',
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/vs/unroll-me',
+    '/vs/trimbox',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+};
+
+const COMPARE_RELATED_LINK: RelatedLink = {
+  href: '/compare',
+  label: 'Gmail cleanup tools compared side by side — DeclutrMail',
+  description:
+    'DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown.',
+};
+
+function relatedLinkFor(href: string): RelatedLink {
+  const howTo = HOW_TO_SLUGS.map((slug) => HOW_TO_BODIES[slug]).find(
+    (article) => article.path === href,
+  );
+  if (howTo) return { href, label: howTo.title, description: howTo.description };
+  const answerSlug = (Object.keys(ANSWER_ARTICLES) as AnswerSlug[]).find(
+    (slug) => ANSWER_ARTICLES[slug].path === href,
+  );
+  if (answerSlug) {
+    const answer = ANSWER_ARTICLES[answerSlug];
+    return { href, label: answer.title, description: answer.description };
+  }
+  if (href.startsWith('/vs/')) {
+    const comparison = comparisonBySlug(href.slice('/vs/'.length));
+    if (comparison) {
+      return { href, label: comparison.title, description: comparison.description };
+    }
+  }
+  if (href === COMPARE_RELATED_LINK.href) return COMPARE_RELATED_LINK;
+  throw new Error(`No page for how-to related href ${href}`);
+}
+
+function withRelated(slug: HowToSlug): LearnArticle {
+  return {
+    ...HOW_TO_BODIES[slug],
+    related: HOW_TO_RELATED_HREFS[slug].map(relatedLinkFor),
+  };
+}
+
+export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
+  'clean-gmail-by-sender': withRelated('clean-gmail-by-sender'),
+  'bulk-delete-emails-from-one-sender': withRelated('bulk-delete-emails-from-one-sender'),
+  'gmail-storage-full': withRelated('gmail-storage-full'),
+  'auto-archive-future-emails-in-gmail': withRelated('auto-archive-future-emails-in-gmail'),
+  'stop-promotional-emails-gmail': withRelated('stop-promotional-emails-gmail'),
+  'unsubscribe-from-emails-gmail': withRelated('unsubscribe-from-emails-gmail'),
 };

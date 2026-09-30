@@ -52,6 +52,7 @@ export function TriageFocusStack({
   previewQuotaRemaining,
   onBatchVerb,
   batchBusyDomain,
+  unknownVerbs,
 }: {
   item: FocusItem;
   /** False when this is the only item — there is nowhere to skip to. */
@@ -64,6 +65,8 @@ export function TriageFocusStack({
   previewQuotaRemaining: number | null | undefined;
   onBatchVerb: (verb: BatchVerb, batch: DomainBatch) => void;
   batchBusyDomain: string | null;
+  /** Held rows whose outcome is unknown, by the verb that may have started. */
+  unknownVerbs: ReadonlyMap<string, string>;
 }) {
   const isNarrow = useIsAtMost('xs');
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
@@ -94,6 +97,7 @@ export function TriageFocusStack({
       <TriageFocusCard
         row={row}
         busy={busyRowIds.has(row.id)}
+        unknownVerb={unknownVerbs.get(row.id) ?? null}
         whyOpen={expandedRowId === row.id}
         onToggleWhy={() => toggleExpandedRow(row.id)}
         onAction={(verb) => onAction(verb, row)}

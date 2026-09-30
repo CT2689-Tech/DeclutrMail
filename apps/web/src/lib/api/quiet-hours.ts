@@ -2,7 +2,7 @@
  * Quiet-hours API — typed fetchers for the per-mailbox quiet-hours
  * endpoints (U18 — D92, D95).
  *
- *   GET /api/mailboxes/:id/quiet-hours → QuietHoursState { config, activeNow, heldCount, endsAt }
+ *   GET /api/mailboxes/:id/quiet-hours → QuietHoursState { config, activeNow, heldCount }
  *   PUT /api/mailboxes/:id/quiet-hours → same shape, after the save
  *
  * `config` is `null` until the mailbox has ever been configured.

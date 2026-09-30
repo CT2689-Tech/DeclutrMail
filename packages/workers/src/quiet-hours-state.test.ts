@@ -240,4 +240,40 @@ describe('msUntilQuietEnds', () => {
     };
     expect(msUntilQuietEnds(both, NOW)).toBe(6.5 * 60 * 60_000);
   });
+
+  // The resume delay `AutopilotActionWorker` schedules on — a wall-clock
+  // span alone lands an hour off when the clocks change inside it.
+  describe('across a DST change (America/New_York, 22:00 → 07:00)', () => {
+    const nyWindow = {
+      quiet_hours: {
+        enabled: true,
+        start_local: '22:00',
+        end_local: '07:00',
+        timezone: 'America/New_York',
+        updated_at: NOW.toISOString(),
+      },
+    };
+    const resumeAt = (at: Date) => new Date(at.getTime() + msUntilQuietEnds(nyWindow, at)!);
+
+    it('spring-forward: 23:00 EST on Mar 7 resumes at 07:00 EDT on Mar 8', () => {
+      expect(resumeAt(new Date('2026-03-08T04:00:00Z')).toISOString()).toBe(
+        '2026-03-08T11:00:00.000Z',
+      );
+    });
+
+    it('fall-back: 23:00 EDT on Oct 31 resumes at 07:00 EST on Nov 1', () => {
+      expect(resumeAt(new Date('2026-11-01T03:00:00Z')).toISOString()).toBe(
+        '2026-11-01T12:00:00.000Z',
+      );
+    });
+
+    it('a zone without DST is unaffected (Asia/Kolkata, same span every night)', () => {
+      expect(msUntilQuietEnds(storedWindow, new Date('2026-03-08T18:00:00Z'))).toBe(
+        6.5 * 60 * 60_000,
+      );
+      expect(msUntilQuietEnds(storedWindow, new Date('2026-11-01T18:00:00Z'))).toBe(
+        6.5 * 60 * 60_000,
+      );
+    });
+  });
 });

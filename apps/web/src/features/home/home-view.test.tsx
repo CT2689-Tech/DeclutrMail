@@ -17,7 +17,9 @@ describe('HomeView', () => {
       action,
     };
     const { rerender } = render(<HomeView state={ready} tier="plus" />);
-    expect(screen.getByRole('link', { name: /Autopilot/ })).toHaveAttribute('href', '/autopilot');
+    // Anchored: the Quiet tile's own detail text now says "...Autopilot
+    // holds its actions", so an unanchored /Autopilot/ matches both tiles.
+    expect(screen.getByRole('link', { name: /^Autopilot/ })).toHaveAttribute('href', '/autopilot');
     expect(screen.getByRole('link', { name: /Daily Brief Included with Pro/ })).toHaveAttribute(
       'href',
       '/brief',
@@ -189,7 +191,7 @@ describe('HomeView', () => {
 
   it('empty while the mailbox is still syncing says so', () => {
     render(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
-    expect(screen.getByText('Reading your inbox')).toBeInTheDocument();
+    expect(screen.getByText('Reading your Gmail')).toBeInTheDocument();
     expect(screen.queryByText('Nothing cleared yet')).toBeNull();
   });
 

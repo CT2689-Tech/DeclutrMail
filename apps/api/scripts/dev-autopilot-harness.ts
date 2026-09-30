@@ -36,7 +36,6 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { Queue, Worker } from 'bullmq';
-import { OAuth2Client } from 'google-auth-library';
 
 import { mailboxAccounts, schema } from '@declutrmail/db';
 import {
@@ -44,6 +43,7 @@ import {
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
   autopilotActionJobOptions,
+  autopilotApplyWorkerOptions,
   createAutopilotExecutionChain,
   createRedisConnection,
   InvalidGrantError,
@@ -52,9 +52,11 @@ import {
   OutboxDispatcherWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxPublisher,
+  perMailboxWorkerSettings,
   RateLimiter,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobOptions,
   ScoreWorker,
   UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
@@ -74,6 +76,7 @@ import type {
 import { createKmsProvider } from '../src/adapters/gcp-kms/kms-provider.factory.js';
 import { toSessionPoolUrl } from '../src/db/session-pool-url.js';
 import { TokenCryptoService } from '../src/auth/token-crypto.service.js';
+import { googleOAuthClient } from '../src/gmail/google-oauth-client.js';
 import { GmailClientService } from '../src/gmail/gmail-client.service.js';
 import { GMAIL_QUOTA_WINDOW_MS, resolveGmailQuotaConfig } from '../src/gmail/gmail-quota-config.js';
 import { buildOutboxConsumer } from '../src/outbox/outbox-consumer-router.js';
@@ -106,7 +109,14 @@ async function main(): Promise<void> {
         SCORE_JOB,
         { mailboxAccountId: mailboxArg, trigger: 'manual_rescore', producedAtMs },
         // `-` separator — BullMQ rejects custom jobIds containing ':'.
-        { jobId: `${mailboxArg}-star-${producedAtMs}` },
+        // `scoreJobOptions()` (not a bare `{ jobId }`) so this job gets the
+        // same `perMailboxPolicy` retry budget every other score producer
+        // does. Safe here: the `scoreBull` consumer this job is enqueued
+        // FOR (the harness's separate default/no-args invocation, already
+        // running) registers `...perMailboxWorkerSettings()` below, so the
+        // custom backoff strategy this now carries is understood
+        // (2026-09-29).
+        scoreJobOptions(`${mailboxArg}-star-${producedAtMs}`),
       );
       log('score_enqueued', { mailboxAccountId: mailboxArg, producedAtMs });
       await q.close();
@@ -180,7 +190,7 @@ async function main(): Promise<void> {
       account.encryptedRefreshToken,
       account.dekEncrypted,
     );
-    const oauth = new OAuth2Client(clientId, clientSecret);
+    const oauth = googleOAuthClient({ clientId, clientSecret });
     oauth.setCredentials({ refresh_token: refreshToken });
     let limiter = limiterByMailbox.get(mailboxAccountId);
     if (!limiter) {
@@ -233,6 +243,7 @@ async function main(): Promise<void> {
   const scoreBull = new Worker<ScoreJobData>(SCORE_QUEUE, (job) => scoreWorker.run(job), {
     connection,
     concurrency: 2,
+    ...perMailboxWorkerSettings(),
   });
   scoreBull.on('error', (err) => log('score_bull_error', { message: err.message }));
 
@@ -258,14 +269,23 @@ async function main(): Promise<void> {
   const applyBull = new Worker<AutopilotApplyJobData>(
     AUTOPILOT_APPLY_QUEUE,
     (job) => applyWorker.run(job),
-    { connection, concurrency: 2 },
+    // Same function `apps/api/src/worker.ts` calls for the real
+    // registration (architecture-guardian review, 2026-09-29) — not a
+    // hand-copied `{ connection, concurrency, ...perMailboxWorkerSettings() }`
+    // literal, which is exactly the blind spot this PR exists to avoid.
+    autopilotApplyWorkerOptions(connection, 2),
   );
   applyBull.on('error', (err) => log('apply_bull_error', { message: err.message }));
 
   const actionBull = new Worker<AutopilotActionJobData>(
     AUTOPILOT_ACTION_QUEUE,
     (job) => actionWorker.run(job),
-    { connection, concurrency: 2 },
+    // `perMailboxWorkerSettings()`: this queue's jobs DO carry a custom
+    // backoff (`autopilotActionSweepJobOptions` via
+    // `createAutopilotExecutionChain`, and this harness's own
+    // `enqueue-action` via `autopilotActionJobOptions`) — the same
+    // missing-registration gap `scoreBull` above had (2026-09-29).
+    { connection, concurrency: 2, ...perMailboxWorkerSettings() },
   );
   actionBull.on('error', (err) => log('action_bull_error', { message: err.message }));
 
@@ -281,7 +301,10 @@ async function main(): Promise<void> {
   const labelBull = new Worker<LabelActionJobData>(
     LABEL_ACTION_QUEUE,
     (job) => labelWorker.run(job),
-    { connection, concurrency: 2 },
+    // `perMailboxWorkerSettings()`: the undo path's `labelActionJobOptions`
+    // (`actions.service.ts`) sets the same custom backoff — same gap as
+    // `actionBull` above (2026-09-29).
+    { connection, concurrency: 2, ...perMailboxWorkerSettings() },
   );
   labelBull.on('error', (err) => log('label_bull_error', { message: err.message }));
 

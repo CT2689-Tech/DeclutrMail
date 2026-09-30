@@ -87,6 +87,7 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {
   ALL_MAIL_EXCLUDED_LABELS,
+  followupReplyExists,
   readStateNotSweeperMarked,
   readStateSweeperMarked,
   senderActionWhere,
@@ -103,7 +104,9 @@ export {
   ruleMatchIsQueuedAction,
   ruleMatchIsStaleAction,
   ruleMatchLabelClaimKey,
+  ruleMatchRuleCanStart,
   ruleMatchSenderIsProtected,
+  ruleMatchUnsubscribeAlreadyDone,
 } from './autopilot-suggestions';
 export { deriveSenderId } from './sender-id';
 export {

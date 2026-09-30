@@ -23,10 +23,12 @@ import { mailboxAccounts } from './mailbox-accounts';
  * the hash is computed app-side by the sync worker and stored here as
  * hex text. A sender is one email address, not one domain.
  *
- * `gmail_category` is the sender's dominant Gmail category, taken from
- * Gmail's own CATEGORY_* labels on its messages. This is NOT a predicted
- * category — D222 bans category prediction; we only mirror the label
- * Gmail itself assigned.
+ * `gmail_category` is the Gmail tab more than half of the sender's
+ * LABELLED inbound mail carries, taken from Gmail's own CATEGORY_*
+ * labels. `unknown` when none of its mail carries one, or when no tab
+ * holds a majority — an absent label is never read as Primary (mig
+ * 0079). This is NOT a predicted category — D222 bans category
+ * prediction; we only mirror the label Gmail itself assigned.
  *
  * `first_seen_at` / `last_seen_at` are the earliest / latest
  * `internal_date` across this sender's messages — they drive the
@@ -43,6 +45,7 @@ export const gmailCategory = pgEnum('gmail_category', [
   'social',
   'updates',
   'forums',
+  'unknown',
 ]);
 
 /**
@@ -208,6 +211,11 @@ export const senders = pgTable(
       table.mailboxAccountId,
       table.totalReceived.desc(),
       table.id.desc(),
+    ),
+    /** Mirrors migration 0063 — the wrote-to attribution join looks senders up by normalized address. */
+    normalizedEmailIdx: index('senders_account_normalized_email_idx').on(
+      table.mailboxAccountId,
+      sql`dm_normalize_email((${table.email})::text)`,
     ),
     /**
      * `deriveUnsubscribe` invariant (initial-sync.worker.ts, migration

@@ -88,6 +88,22 @@ export const OutcomesUnreported: Story<typeof UnsubBatchReceipt> = {
   } satisfies ReceiptArgs,
 };
 
+/**
+ * D245 — every sender became Protected before its request went out, so
+ * nothing was sent: neutral, never a tick, and no "accepted" caveat.
+ */
+export const NoneSentAllProtected: Story<typeof UnsubBatchReceipt> = {
+  args: {
+    receipt: {
+      senderCount: 0,
+      skipped: [{ reason: 'protected' as const }, { reason: 'protected' as const }],
+      outcomes: { endpointAccepted: 0, unconfirmed: 0, actionRequired: 0, failed: 0 },
+      pending: 0,
+    },
+    onDismiss: noop,
+  } satisfies ReceiptArgs,
+};
+
 /** Every request accepted; the caveat still qualifies what that means. */
 export const AllAccepted: Story<typeof UnsubBatchReceipt> = {
   args: {

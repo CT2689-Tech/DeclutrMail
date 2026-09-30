@@ -160,14 +160,17 @@ export function useConfirmActionRecovery() {
   return useMutation<
     ActionRecoveryEnqueueResult,
     Error,
-    { previewId: string; idempotencyKey: string; wakeAt?: string }
+    { previewId: string; idempotencyKey: string; wakeAt?: string; senderProtected?: boolean }
   >({
-    mutationFn: ({ previewId, idempotencyKey, wakeAt }) =>
+    mutationFn: ({ previewId, idempotencyKey, wakeAt, senderProtected }) =>
       confirmActionRecovery(previewId, {
         idempotencyKey,
         ...(wakeAt ? { wakeAt } : {}),
+        ...(senderProtected ? { senderProtected } : {}),
       }),
-    onSuccess: () => {
+    // A refusal changes what the row should offer as much as a success
+    // does (a retry already running, an action no longer failed).
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
     },
     onError: (err) => refreshActivityIfStale(queryClient, err),

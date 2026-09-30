@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ToastHost } from '@declutrmail/shared';
+import { LABEL_SENDER_PROTECTED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -29,6 +30,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import type { BriefWire } from '@/lib/api/brief';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 
 import { ACTION_OVERDUE_MS } from './api/use-noise-archive';
@@ -38,6 +40,8 @@ vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
   getActiveMailboxEmail: () => 'active+mailbox@example.com',
 }));
+const sentry = vi.hoisted(() => ({ captureFeatureException: vi.fn(), addBreadcrumb: vi.fn() }));
+vi.mock('@/lib/sentry', () => sentry);
 
 const ID_NEWS = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ID_SHOP = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -104,11 +108,23 @@ function jsonConflict(code: string): Response {
   });
 }
 
-function briefHandler() {
+/**
+ * `protectedNow` is read per request: a sender that turns Protected shows
+ * as such once the section re-reads the Brief.
+ */
+function briefHandler(protectedNow: () => readonly string[] = () => []) {
   return {
     method: 'GET' as const,
     path: '/api/briefs/today',
-    respond: () => jsonOk({ data: BRIEF }),
+    respond: () =>
+      jsonOk({
+        data: {
+          ...BRIEF,
+          noiseSenders: BRIEF.noiseSenders.map((s) =>
+            protectedNow().includes(s.senderId!) ? { ...s, isProtected: true } : s,
+          ),
+        },
+      }),
   };
 }
 
@@ -121,32 +137,71 @@ function bulkPreviewHandler(respond?: () => Response) {
 }
 
 /**
- * `GET /api/actions/:id` — the undo-truth read the section derives its
- * Done marks and receipt from. `reverted` flips `undoRevertedAt`, which is
- * exactly what an undo taken in the global tray produces.
+ * `GET /api/actions/batch/:id` — the outcome, and the undo truth the
+ * section derives its Done marks and receipt from. `undo` is read per
+ * request, so a test can land an Undo taken in the global tray.
  */
 function batchStatusHandler(
-  opts: { done?: number; failed?: number; status?: string } = {},
+  opts: {
+    total?: number;
+    done?: number;
+    failed?: number;
+    status?: string;
+    affectedCount?: number;
+    skippedProtectedSenderIds?: string[];
+    undo?: () => { reverted?: boolean; revertedSenderIds?: string[]; expired?: boolean };
+    /** An API that predates the batch's own undo fields (deploy skew). */
+    legacy?: boolean;
+  } = {},
 ): FetchStubHandler {
   return {
     method: 'GET',
     path: /^\/api\/actions\/batch\//,
-    respond: () =>
-      jsonOk({
+    respond: () => {
+      const undo = opts.undo?.() ?? {};
+      if (opts.legacy) {
+        return jsonOk({
+          data: {
+            batchId: 'batch-1',
+            status: opts.status ?? 'done',
+            total: opts.total ?? 2,
+            done: opts.done ?? 2,
+            failed: opts.failed ?? 0,
+            requestedCount: 351,
+            affectedCount: opts.affectedCount ?? 348,
+            undoToken: 'undo-token-1',
+            unsubscribeOutcomes: null,
+          },
+        });
+      }
+      return jsonOk({
         data: {
           batchId: 'batch-1',
           status: opts.status ?? 'done',
-          total: 2,
+          total: opts.total ?? 2,
           done: opts.done ?? 2,
           failed: opts.failed ?? 0,
           requestedCount: 351,
-          affectedCount: 348,
+          affectedCount: opts.affectedCount ?? 348,
+          skippedProtectedSenderIds: opts.skippedProtectedSenderIds ?? [],
           undoToken: 'undo-token-1',
+          undoExpiresAt: undo.expired
+            ? new Date(Date.now() - 1_000).toISOString()
+            : new Date(Date.now() + 86_400_000).toISOString(),
+          undoRevertedAt: undo.reverted ? new Date().toISOString() : null,
+          revertedSenderIds: undo.revertedSenderIds ?? (undo.reverted ? [ID_NEWS, ID_SHOP] : []),
+          unsubscribeOutcomes: null,
         },
-      }),
+      });
+    },
   };
 }
 
+/**
+ * `GET /api/actions/:id` — a single archive's status and undo truth. In a
+ * batch it is only the FIRST sender's job, which is why batch tests give
+ * it a state the batch contradicts: the section must read the batch.
+ */
 function undoStateHandler(opts: { reverted?: boolean; expired?: boolean } = {}) {
   return {
     method: 'GET' as const,
@@ -191,6 +246,81 @@ function enqueueHandler() {
       });
     },
   };
+}
+
+/** Live composite preview for Newsletter Daily — the one-sender path. */
+function singlePreviewHandler(): FetchStubHandler {
+  const none = {
+    all: [],
+    olderThan30d: [],
+    olderThan90d: [],
+    olderThan180d: [],
+    olderThan365d: [],
+  };
+  return {
+    method: 'GET',
+    path: '/api/actions/preview',
+    respond: () =>
+      jsonOk({
+        data: {
+          sender: {
+            id: ID_NEWS,
+            name: 'Newsletter Daily',
+            domain: 'news.example',
+            lastSeenDays: 1,
+            wroteToCount: 0,
+            monthly: 30,
+          },
+          counts: {
+            all: 210,
+            olderThan30d: 0,
+            olderThan90d: 0,
+            olderThan180d: 0,
+            olderThan365d: 0,
+          },
+          recentMessages: none,
+          recentSubjects: none,
+          allMail: null,
+          unsubAvailable: false,
+          protected: false,
+        },
+      }),
+  };
+}
+
+function singleEnqueueHandler(): FetchStubHandler {
+  return {
+    method: 'POST',
+    path: '/api/actions',
+    respond: async (req: Request) => {
+      enqueued.push((await req.json()) as Record<string, unknown>);
+      return jsonOk({
+        data: {
+          actionId: 'act-news',
+          compositeId: 'act-news',
+          secondaryId: null,
+          status: 'queued',
+          primaryCount: 210,
+          secondaryCount: null,
+        },
+      });
+    },
+  };
+}
+
+/** Uncheck Old Navy so the archive runs for Newsletter Daily alone. */
+async function selectNewsOnly() {
+  fireEvent.click(
+    await screen.findByRole('checkbox', { name: /include old navy in the archive/i }),
+  );
+  await waitFor(() => expect(archiveButton()).toHaveAccessibleName('Archive 1 sender'));
+}
+
+async function confirmArchive() {
+  const dialog = await openPreview();
+  const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
 }
 
 function renderScreen() {
@@ -292,6 +422,44 @@ describe('Brief Noise bulk archive (D65)', () => {
     // The snapshot still reports what it measured — the row states the
     // exclusion in addition to the count, never instead of it.
     await screen.findByText(/2 messages yesterday · Protected/i);
+  });
+
+  it('reads busy when the SERVER reports a Noise sender busy, with zero local inFlight state (2026-09-28)', async () => {
+    // No `inFlight`/`overdueInFlight` here at all — this section has never
+    // dispatched anything itself. Only `GET /api/actions/active` knows
+    // Newsletter Daily's sender is busy, the fact a different surface or a
+    // second tab firing the job would produce. Brief's section-wide `busy`
+    // (unlike the other 4 surfaces' per-row locks) locks the WHOLE CTA.
+    installFetchStub([
+      briefHandler(),
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: 'other-tab-group',
+                verb: 'archive',
+                mixedVerbs: false,
+                running: true,
+                total: 1,
+                done: 0,
+                failed: 0,
+                senderCount: 1,
+                leadSenderName: 'Newsletter Daily',
+                startedAt: '2026-09-28T10:00:00.000Z',
+                senderIds: [ID_NEWS],
+                senderKeys: ['sk-news'],
+              },
+            ],
+          }),
+      },
+    ]);
+    renderScreen();
+
+    await screen.findByRole('checkbox', { name: /include newsletter daily in the archive/i });
+    await waitFor(() => expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled());
   });
 
   it('opens the preview on the archive click and sends NO mutation (D226 order)', async () => {
@@ -527,6 +695,402 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(screen.getByText(/2 messages yesterday · Protected/i)).toBeInTheDocument();
   });
 
+  // D245: a sender protected while its job waited is left out exactly
+  // like one protected at the click — no ✓, not counted, unchecked, and
+  // its row re-reads as Protected. The bottom pill (not mounted here) is
+  // the one voice for the skip, so the section adds no toast.
+  it('leaves out a sender that became Protected while the archive waited', async () => {
+    installFetchStub([
+      briefHandler(() => (enqueued.length > 0 ? [ID_SHOP] : [])),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({
+        total: 1,
+        done: 1,
+        affectedCount: 210,
+        skippedProtectedSenderIds: [ID_SHOP],
+      }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/Archived 210 emails from 1 sender\b/i, undefined, { timeout: 5000 });
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    await screen.findByText(/3 messages yesterday · Protected/i);
+    expect(screen.queryByText(/3 messages yesterday · Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Protected sender skipped/i)).not.toBeInTheDocument();
+  });
+
+  it('says nothing was archived when every sender became Protected while it waited', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({
+        total: 0,
+        done: 0,
+        affectedCount: 0,
+        skippedProtectedSenderIds: [ID_NEWS, ID_SHOP],
+      }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText('Nothing archived — 2 Protected senders skipped.', undefined, {
+      timeout: 5000,
+    });
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Archived 0 emails/i)).not.toBeInTheDocument();
+  });
+
+  // D245 (founder decision D1): one sender, no "…anyway" confirm — a
+  // sender protected before the job ran is skipped. "Done, 0 changed" is
+  // not an archive: no ✓, no "Archived 0 emails".
+  it('claims nothing for a single sender that became Protected before its archive ran', async () => {
+    installFetchStub([
+      briefHandler(() => (enqueued.length > 0 ? [ID_NEWS] : [])),
+      singlePreviewHandler(),
+      singleEnqueueHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () => {
+          return jsonOk({
+            data: {
+              actionId: 'act-news',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 210,
+              affectedCount: 0,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: LABEL_SENDER_PROTECTED_ERROR_CODE,
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await selectNewsOnly();
+    await confirmArchive();
+
+    await screen.findByText(/4 messages yesterday · Protected/i, undefined, { timeout: 5000 });
+    await screen.findByText('Nothing archived — 1 Protected sender skipped.');
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Archived 0 emails/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+  });
+
+  // The line says what the LAST attempt did. An archive that moved nothing
+  // left the one before it on screen, reading as this click's result.
+  it("replaces the last archive's line when the next one is refused, keeping its ✓", async () => {
+    let posts = 0;
+    installFetchStub([
+      briefHandler(() => (posts > 1 ? [ID_SHOP] : [])),
+      singlePreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req: Request) => {
+          posts += 1;
+          enqueued.push((await req.json()) as Record<string, unknown>);
+          if (posts > 1) return jsonConflict('PROTECTED_SENDER');
+          return jsonOk({
+            data: {
+              actionId: 'act-news',
+              compositeId: 'act-news',
+              secondaryId: null,
+              status: 'queued',
+              primaryCount: 210,
+              secondaryCount: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'act-news',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 210,
+              affectedCount: 210,
+              wakeAt: null,
+              undoToken: 'undo-news',
+              undoExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    await selectNewsOnly();
+    await confirmArchive();
+    await screen.findByText(/Archived 210 emails from 1 sender\b/i, undefined, { timeout: 5000 });
+
+    fireEvent.click(screen.getByRole('checkbox', { name: /include old navy in the archive/i }));
+    await waitFor(() => expect(archiveButton()).toHaveAccessibleName('Archive 1 sender'));
+    await confirmArchive();
+
+    await screen.findByText('Nothing archived — 1 Protected sender skipped.');
+    expect(screen.queryByText(/Archived 210 emails/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+  });
+
+  it('unchecks a sender the archive refused at the click', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req: Request) => {
+          enqueued.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({
+            data: {
+              batchId: 'batch-1',
+              status: 'queued',
+              senderCount: 1,
+              requestedTotal: 210,
+              wakeAt: null,
+              skipped: [{ senderId: ID_SHOP, reason: 'protected' }],
+            },
+          });
+        },
+      },
+      batchStatusHandler({ total: 1, done: 1, affectedCount: 210 }),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText('Archive: 1 Protected sender skipped');
+    await screen.findByText(/Archived 210 emails from 1 sender\b/i, undefined, { timeout: 5000 });
+    expect(
+      screen.getByRole('checkbox', { name: /include old navy in the archive/i }),
+    ).not.toBeChecked();
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+  });
+
+  it('says nothing was archived when the server refuses every sender, without a crash report', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => jsonConflict('NO_ACTIONABLE_SENDERS'),
+      },
+    ]);
+    sentry.captureFeatureException.mockClear();
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(
+      'Nothing changed — those senders are Protected or no longer in this mailbox.',
+    );
+    expect(
+      screen.getByText(
+        'Nothing archived — those senders are Protected or no longer in this mailbox.',
+      ),
+    ).toBeInTheDocument();
+    expect(sentry.captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  // A 5xx does not prove nothing ran: the senders must not stay armed for
+  // a second run.
+  it('disarms the senders when the archive may have started', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      { method: 'POST', path: '/api/actions', respond: () => jsonServerError() },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/^Can't tell if Archive for those \d+ senders started/);
+    await screen.findByText(/couldn.t confirm what that archive did/i);
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+    // …and they cannot be checked again: a second archive would run twice.
+    expect(screen.getAllByText(/· Archive: unknown/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('checkbox', { name: /in the archive/i })).toHaveLength(0);
+  });
+
+  it('keeps the senders checked when the archive was refused', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'VALIDATION_FAILED', message: 'bad' } }), {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/^Couldn't start Archive for those \d+ senders — nothing changed/);
+    await screen.findByText('Nothing was archived — try again.');
+    expect(archiveButton()).not.toHaveAccessibleName('Archive 0 senders');
+  });
+
+  // A mailbox switch: the section now lists another mailbox's senders.
+  it("drops the last mailbox's receipt and ✓ marks on a mailbox switch", async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler(),
+      undoStateHandler(),
+    ]);
+    renderScreen();
+    await confirmArchive();
+    await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
+
+    act(() => {
+      window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+    });
+
+    await waitFor(() => expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+  });
+
+  // Web deploys ahead of the API: a batch read without its own undo
+  // fields falls back to the first sender's job, as before.
+  it('still sees an undo when the API predates the batch undo fields', async () => {
+    let reverted = false;
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ legacy: true }),
+      // The anchor job — the batch handle's own id.
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch-1$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'batch-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 351,
+              affectedCount: 348,
+              wakeAt: null,
+              undoToken: 'undo-token-1',
+              undoExpiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+              undoExecutedAt: null,
+              undoRevertedAt: reverted ? new Date().toISOString() : null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await confirmArchive();
+    await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
+
+    reverted = true;
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['undo'] });
+    });
+
+    await screen.findByText(/That archive was undone/i);
+    expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+  });
+
+  // The anchor is the first sender's job. When that sender was skipped
+  // (D245) or had nothing to move it holds no undo token, and a receipt
+  // read from it said nothing about the Undo the batch does have.
+  it('reads undo from the whole batch, not its first sender', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler(),
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: 'batch-1',
+              verb: 'archive',
+              direction: 'forward',
+              status: 'done',
+              requestedCount: 210,
+              affectedCount: 0,
+              wakeAt: null,
+              undoToken: null,
+              undoExpiresAt: null,
+              undoExecutedAt: null,
+              undoRevertedAt: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText(/Archived 348 emails from 2 senders/i, undefined, { timeout: 5000 });
+    await screen.findByText(/Undo it from Recent actions/i);
+  });
+
+  it('clears only the ✓ of a sender undone on its own from the pill', async () => {
+    let revertedSenderIds: string[] = [];
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ undo: () => ({ revertedSenderIds }) }),
+      // The first sender's own job says nothing was undone.
+      undoStateHandler(),
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await confirmArchive();
+    await screen.findByText(/3 messages yesterday · Archived ✓/i, undefined, { timeout: 5000 });
+
+    revertedSenderIds = [ID_SHOP];
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ['undo'] });
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText(/3 messages yesterday · Archived ✓/i)).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText(/4 messages yesterday · Archived ✓/i)).toBeInTheDocument();
+    expect(
+      screen.getByText('Email from 1 of 2 senders is back in your inbox.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument();
+  });
+
   /**
    * The worst blocker the gates found: `Archived ✓` and the receipt were
    * plain component state, which no invalidation can reach, so a tray
@@ -541,12 +1105,9 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      batchStatusHandler(),
-      {
-        method: 'GET',
-        path: /^\/api\/actions\/[^/]+$/,
-        respond: () => undoStateHandler({ reverted }).respond(),
-      },
+      batchStatusHandler({ undo: () => ({ reverted }) }),
+      // The first sender's own job never reads reverted: only the batch does.
+      undoStateHandler(),
     ]);
     const client = createTestQueryClient();
     render(
@@ -571,7 +1132,7 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     await waitFor(() => expect(screen.queryByText(/Archived 348 emails/i)).not.toBeInTheDocument());
     expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
-    await screen.findByText(/That archive was undone/i);
+    await screen.findByText(/That archive was undone — email from/);
     // The senders are selectable again, so a fresh archive is possible.
     expect(
       screen.getByRole('checkbox', { name: /include newsletter daily in the archive/i }),
@@ -583,8 +1144,8 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      batchStatusHandler(),
-      undoStateHandler({ expired: true }),
+      batchStatusHandler({ undo: () => ({ expired: true }) }),
+      undoStateHandler(),
     ]);
     renderScreen();
 
@@ -595,6 +1156,23 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     await screen.findByText(/The undo window for this archive has passed/i);
     expect(screen.queryByText(/Undo it from Recent actions/i)).not.toBeInTheDocument();
+  });
+
+  // A job that ends failed may have moved part of its mail first (it sends
+  // in chunks and keeps going after one lands): never "nothing was archived".
+  it('sends an archive that ended failed to Activity, never "nothing was archived"', async () => {
+    installFetchStub([
+      briefHandler(),
+      bulkPreviewHandler(),
+      enqueueHandler(),
+      batchStatusHandler({ status: 'failed', done: 0, failed: 2, affectedCount: 0 }),
+      undoStateHandler(),
+    ]);
+    renderScreen();
+    await confirmArchive();
+
+    await screen.findByText('Archive failed — check Activity before retrying.');
+    expect(screen.queryByText(/Nothing was archived/)).toBeNull();
   });
 
   it('leaves a persistent line on partial failure and disarms the succeeded senders', async () => {
@@ -640,7 +1218,7 @@ describe('Brief Noise bulk archive (D65)', () => {
           });
         },
       },
-      batchStatusHandler({ done: 1 }),
+      batchStatusHandler({ total: 1, done: 1 }),
       undoStateHandler(),
     ]);
     renderScreen();
@@ -650,7 +1228,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
 
-    await screen.findByText(/1 no longer in this mailbox — left out of this archive/i);
+    await screen.findByText('Archive: 1 sender no longer in this mailbox');
   });
 
   it('renders the scope-conflict state instead of a Retry that would 409 forever', async () => {
@@ -689,6 +1267,132 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(archiveButton()).toBeDisabled());
     expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  // The parked twins of the skips above: a handle past ACTION_OVERDUE_MS
+  // runs the same terminal branch when it finally lands.
+  describe('a parked archive that ends skipped as Protected (D245)', () => {
+    const tick = (ms: number) =>
+      act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+
+    it('says nothing was archived when every sender was skipped', async () => {
+      vi.useFakeTimers();
+      try {
+        let finished = false;
+        const skippedBoth = batchStatusHandler({
+          total: 0,
+          done: 0,
+          affectedCount: 0,
+          skippedProtectedSenderIds: [ID_NEWS, ID_SHOP],
+        });
+        installFetchStub([
+          briefHandler(),
+          bulkPreviewHandler(),
+          enqueueHandler(),
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/batch\//,
+            respond: (req, url) =>
+              finished
+                ? skippedBoth.respond(req, url)
+                : jsonOk({
+                    data: {
+                      batchId: 'batch-1',
+                      status: 'executing',
+                      total: 2,
+                      done: 0,
+                      failed: 0,
+                      requestedCount: 351,
+                      affectedCount: 0,
+                      undoToken: null,
+                    },
+                  }),
+          },
+        ]);
+        renderScreen();
+        await tick(200);
+        fireEvent.click(archiveButton());
+        await tick(200);
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: /^Archive/ }),
+        );
+        await tick(200);
+        // The toast store outlives a test: count, don't just find.
+        const parked = () =>
+          screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+        const before = parked();
+        await tick(ACTION_OVERDUE_MS);
+        expect(parked()).toBe(before + 1);
+
+        finished = true;
+        await tick(2_500);
+        screen.getByText('Nothing archived — 2 Protected senders skipped.');
+        expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says nothing was archived when its one sender was skipped', async () => {
+      vi.useFakeTimers();
+      try {
+        let finished = false;
+        installFetchStub([
+          briefHandler(),
+          singlePreviewHandler(),
+          singleEnqueueHandler(),
+          {
+            method: 'GET',
+            path: /^\/api\/actions\/[^/]+$/,
+            respond: () =>
+              jsonOk({
+                data: {
+                  actionId: 'act-news',
+                  verb: 'archive',
+                  direction: 'forward',
+                  status: finished ? 'done' : 'executing',
+                  requestedCount: 210,
+                  affectedCount: 0,
+                  wakeAt: null,
+                  undoToken: null,
+                  undoExpiresAt: null,
+                  undoExecutedAt: null,
+                  undoRevertedAt: null,
+                  errorCode: finished ? LABEL_SENDER_PROTECTED_ERROR_CODE : null,
+                },
+              }),
+          },
+        ]);
+        renderScreen();
+        await tick(200);
+        fireEvent.click(screen.getByRole('checkbox', { name: /include old navy in the archive/i }));
+        await tick(50);
+        expect(archiveButton()).toHaveAccessibleName('Archive 1 sender');
+        fireEvent.click(archiveButton());
+        await tick(200);
+        fireEvent.click(
+          within(screen.getByRole('dialog')).getByRole('button', { name: /^Archive/ }),
+        );
+        await tick(200);
+        // The toast store outlives a test: count, don't just find.
+        const parked = () =>
+          screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+        const before = parked();
+        await tick(ACTION_OVERDUE_MS);
+        expect(parked()).toBe(before + 1);
+
+        finished = true;
+        await tick(2_500);
+        screen.getByText('Nothing archived — 1 Protected sender skipped.');
+        expect(screen.queryByText(/Archived ✓/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Archiving…/ })).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   it('parks a stuck archive at ACTION_OVERDUE_MS: toast fires, busy stays, done still settles and frees (2026-08-12 incident)', async () => {
@@ -761,8 +1465,12 @@ describe('Brief Noise bulk archive (D65)', () => {
       // At the deadline the handle parks: overdue toast fires, and busy
       // deliberately STAYS — the section must not assert idle while the
       // parked archive may still be moving these very senders.
+      // The toast store outlives a test: count, don't just find.
+      const parked = () =>
+        screen.queryAllByText('The Noise archive is still running — see Activity.').length;
+      const before = parked();
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText('The Noise archive is still running — see Activity.');
+      expect(parked()).toBe(before + 1);
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real

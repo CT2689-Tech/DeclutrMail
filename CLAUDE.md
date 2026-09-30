@@ -1,5 +1,16 @@
 # DeclutrMail Operating Manual
 
+## Parallel sessions and integration
+
+Before starting a branch or preparing a PR, read
+[the shared parallel-development runbook](docs/runbooks/parallel-development.md).
+Use an isolated worktree, declare dependencies and shared-file ownership, and
+hand related changes to one integration owner. Queue ready independent PRs
+together; do not repeatedly update branches merely because main advanced.
+Keep ready, queued, merged, deployed, and production-verified states distinct.
+Follow explicit user limits on sessions, delegation, merging, and deployment.
+
+
 > **What this is.** Gmail cleanup SaaS. V2 in active build. Solo founder + AI agents.
 >
 > **Full plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (locked; decision count

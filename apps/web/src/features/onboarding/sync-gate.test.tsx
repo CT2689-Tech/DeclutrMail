@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
-import { SyncGate, stageSentence } from './sync-gate';
+import { SyncGate, stageSentence, timeLeftPhrase } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
@@ -89,7 +89,9 @@ describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => 
 describe('SyncGate render', () => {
   it('syncing: the title, ONE progressbar at the real percent, ONE stage sentence', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    expect(html).toContain('Reading your inbox');
+    // "Gmail": the scan reads all mail but Spam and Trash, not the inbox.
+    expect(html).toContain('Reading your Gmail');
+    expect(html).toContain('aria-label="Scan progress"');
     expect(html).toContain('aria-valuenow="45"');
     expect(html.match(/role="progressbar"/g)).toHaveLength(1);
     expect(html).toContain('Grouping email by sender.');
@@ -102,7 +104,8 @@ describe('SyncGate render', () => {
     expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
-    // No time promise (D109 hard rule) — in either leave-line variant.
+    // The leave line promises no time, in either variant: time left is
+    // only ever an estimate on the count line, from watched progress.
     for (const variant of [html, renderToStaticMarkup(<SyncGate status={SYNCING} readyEmail />)]) {
       expect(variant).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
     }
@@ -157,7 +160,7 @@ describe('SyncGate render', () => {
   it('ready: says so plainly — no "Reading…" title, no leave line, no second ready line', () => {
     const html = renderToStaticMarkup(<SyncGate status={READY} readyEmail />);
     expect(html).toContain('Your inbox is ready.');
-    expect(html).not.toContain('Reading your inbox');
+    expect(html).not.toContain('Reading your Gmail');
     expect(html).not.toContain('data-testid="sync-leave"');
     expect(html.match(/Your inbox is ready\./g)).toHaveLength(1);
   });
@@ -247,6 +250,172 @@ describe('SyncGate render', () => {
   });
 });
 
+describe('SyncGate — the scan line "12,400 of 40,898 emails" (D109 reversal 2026-09-26)', () => {
+  const READING: SyncStatus = {
+    readiness_status: 'syncing',
+    current_stage: 'fetching_metadata',
+    progress_pct: 26,
+    is_ready_for_triage: false,
+    last_synced_at: null,
+    message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
+  };
+  const reading = (processed: number): SyncStatus => ({
+    ...READING,
+    message_progress: { processed, total: 40_898, age_ms: 0 },
+  });
+
+  it('shows emails read of emails in the mailbox, in place of the stage sentence', () => {
+    render(<SyncGate status={READING} />);
+
+    const line = screen.getByTestId('sync-count');
+    expect(line).toHaveTextContent('12,400 of 40,898 emails');
+    // Nothing watched arriving yet, so no time — but its place is kept,
+    // so a phone's card does not jump when one arrives.
+    expect(line).not.toHaveTextContent(/left/);
+    expect(line.querySelector('.dm-scan-time')).toBeEmptyDOMElement();
+    // The stage sentence stays the live status — for screen readers only,
+    // so each new count is not announced.
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Reading sender info.');
+    expect(status).toHaveStyle({ position: 'absolute' });
+    expect(line).not.toHaveAttribute('role');
+  });
+
+  it('before the mailbox is listed: no count, the stage sentence on screen', () => {
+    render(<SyncGate status={{ ...READING, message_progress: null }} />);
+
+    expect(screen.queryByTestId('sync-count')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading sender info.');
+    expect(screen.getByRole('status')).not.toHaveStyle({ position: 'absolute' });
+  });
+
+  it('an API without the field (an older deploy) shows no count', () => {
+    const { message_progress: _drop, ...older } = READING;
+
+    render(<SyncGate status={older} />);
+
+    expect(screen.queryByTestId('sync-count')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading sender info.');
+  });
+
+  it('shows counts only while the scan reads the mailbox', () => {
+    for (const html of [
+      renderToStaticMarkup(
+        <SyncGate status={{ ...READING, current_stage: 'building_sender_index' }} />,
+      ),
+      renderToStaticMarkup(
+        <SyncGate
+          status={{
+            ...READING,
+            readiness_status: 'ready',
+            current_stage: 'ready',
+            is_ready_for_triage: true,
+          }}
+        />,
+      ),
+      renderToStaticMarkup(
+        withClient(
+          <SyncGate
+            status={{
+              ...READING,
+              readiness_status: 'failed',
+              current_stage: 'failed',
+              error_code: 'TransientError',
+            }}
+          />,
+        ),
+      ),
+    ]) {
+      expect(html).not.toContain('data-testid="sync-count"');
+      expect(html).not.toContain('40,898');
+    }
+  });
+
+  it('adds time left once two gaps are seen after the first poll', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { rerender } = render(<SyncGate status={reading(12_400)} />);
+      vi.setSystemTime(10_000);
+      rerender(<SyncGate status={reading(12_900)} />);
+      vi.setSystemTime(20_000);
+      rerender(<SyncGate status={reading(13_400)} />);
+      expect(screen.getByTestId('sync-count')).not.toHaveTextContent(/left/);
+
+      vi.setSystemTime(30_000);
+      rerender(<SyncGate status={reading(13_900)} />);
+      // 26,998 left at 500 per 10s ≈ 9.0 min, rounded up.
+      const line = screen.getByTestId('sync-count');
+      expect(line).toHaveTextContent('13,900');
+      expect(line).toHaveTextContent('about 9 min left');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says what the listing found before the first batch lands, not a zero', () => {
+    render(<SyncGate status={reading(0)} />);
+
+    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^Found 40,898 emails$/);
+  });
+
+  it('counts one email as "email"', () => {
+    render(
+      <SyncGate status={{ ...READING, message_progress: { processed: 0, total: 1, age_ms: 0 } }} />,
+    );
+
+    expect(screen.getByTestId('sync-count')).toHaveTextContent(/^Found 1 email$/);
+  });
+
+  it('never splits the total or the time across lines, and gives a phone the time on its own line', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const { container, rerender } = render(<SyncGate status={reading(12_400)} />);
+      for (const [at, processed] of [
+        [10_000, 12_900],
+        [20_000, 13_400],
+        [30_000, 13_900],
+      ] as const) {
+        vi.setSystemTime(at);
+        rerender(<SyncGate status={reading(processed)} />);
+      }
+
+      const line = screen.getByTestId('sync-count');
+      // No break inside "40,898 emails" or before the dot…
+      expect(line.textContent).toContain('40,898\u00a0emails\u00a0·');
+      // …and the time is one unbreakable phrase.
+      const time = line.querySelector('.dm-scan-time');
+      expect(time).toHaveTextContent(/^about 9 min left$/);
+      expect(time).toHaveStyle({ whiteSpace: 'nowrap' });
+      // Below 540px the dot goes and the time takes its own line (a
+      // phone cannot hold both on one). The dot is its own element so
+      // that rule can drop it.
+      expect(line.querySelector('.dm-scan-sep')).toHaveTextContent('·');
+      const css = container.querySelector('style')?.textContent ?? '';
+      expect(css).toMatch(/@media \(max-width: 539px\)/);
+      expect(css).toMatch(/\.dm-scan-sep \{ display: none; \}/);
+      expect(css).toMatch(/\.dm-scan-time \{ display: block; min-height: 1\.45em; \}/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('timeLeftPhrase', () => {
+  it.each([
+    [10_000, 'about 1 min left'],
+    [549_960, 'about 10 min left'],
+    [59 * 60_000, 'about 59 min left'],
+    [60 * 60_000, 'about 1 hr left'],
+    [61 * 60_000, 'about 1 hr 5 min left'],
+    [119 * 60_000, 'about 2 hr left'],
+    [150 * 60_000 + 1, 'about 2 hr 35 min left'],
+  ])('%i ms → %s (minutes up; past an hour, up to 5)', (ms, phrase) => {
+    expect(timeLeftPhrase(ms)).toBe(phrase);
+  });
+});
+
 describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-sync-20260831-07)', () => {
   it('offers "Reconnect Gmail" instead of "Try again" for InvalidGrantError', () => {
     // The negative control: reverting the `needsReconnect` branch makes
@@ -260,6 +429,16 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     );
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  // D108: a reconnect that comes back without Gmail lands here again, so
+  // the line cannot promise that reconnecting restores access.
+  it('tells an expired grant what reconnecting needs, without promising it', () => {
+    const html = renderToStaticMarkup(
+      withClient(<SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} />),
+    );
+    expect(html).toContain('Reconnect the account and allow Gmail access');
+    expect(html).not.toContain('restores it');
   });
 
   it('offers "Reconnect Gmail" for AuthExpiredError too', () => {

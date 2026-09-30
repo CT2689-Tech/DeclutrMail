@@ -19,12 +19,7 @@ import {
   type QuietHoursConfig,
   type QuietHoursState,
 } from '@declutrmail/shared/contracts';
-import {
-  isQuietActive,
-  msUntilQuietEnds,
-  persistQuietHoursState,
-  readQuietHoursState,
-} from '@declutrmail/workers';
+import { isQuietActive, persistQuietHoursState, readQuietHoursState } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { AppException } from '../common/app-exception.js';
@@ -442,22 +437,20 @@ export class MailboxAccountsService {
   /**
    * Assemble the `QuietHoursState` wire shape shared by the GET + PUT
    * paths: persisted config, the combined `activeNow` predicate the
-   * AutopilotActionWorker defers on, the held-action count, and the ISO
-   * end of the CURRENT quiet spell (`null` when quiet is inactive or
-   * indefinite).
+   * AutopilotActionWorker defers on, and the held-action count. No end
+   * time: the End row on the card already states it, and a rule's daily
+   * cap can hold some actions past it, so a second "ends at" line would
+   * misstate a release time this endpoint doesn't back (D92 usability
+   * review, 2026-09-27).
    */
   private async toQuietHoursState(
     quietState: unknown,
     mailboxAccountId: string,
   ): Promise<QuietHoursState> {
-    const now = new Date();
-    const activeNow = isQuietActive(quietState, now);
-    const ms = msUntilQuietEnds(quietState, now);
     return {
       config: readQuietHoursState(quietState),
-      activeNow,
+      activeNow: isQuietActive(quietState, new Date()),
       heldCount: await this.quietHeldCount(mailboxAccountId),
-      endsAt: activeNow && ms != null ? new Date(now.getTime() + ms).toISOString() : null,
     };
   }
 

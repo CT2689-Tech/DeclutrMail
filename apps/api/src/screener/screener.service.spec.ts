@@ -282,12 +282,27 @@ describe('ScreenerService.decide (D72, D226)', () => {
       mailboxAccountId: mailboxId,
       senderId,
       idempotencyKey: 'key-unsub-1',
+      override: false,
     });
     expect(res.execution).toMatchObject({
       kind: 'unsubscribe',
       method: 'mailto',
       mailtoUrl: 'mailto:leave@list.example',
     });
+  });
+
+  it('unsubscribe forwards the "…anyway" override, so a Protected sender is not re-checked (D245)', async () => {
+    await svc.decide({
+      mailboxAccountId: mailboxId,
+      senderId,
+      verb: 'unsubscribe',
+      olderThanDays: null,
+      idempotencyKey: 'key-unsub-anyway',
+      override: true,
+    });
+    expect(actions.recordUnsubscribeIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ override: true }),
+    );
   });
 
   it('a replay resolves nothing the second time (resolved: false) without throwing', async () => {

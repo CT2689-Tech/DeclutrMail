@@ -655,4 +655,103 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
       );
     expect(activeAfterReplay).toHaveLength(PRO_INBOX_LIMIT);
   });
+
+  /**
+   * Documents the known limitation of the 2026-09-28 same-sender busy
+   * guard (`ActionsService.liveForwardJobSenderKeys`), stated in the PR
+   * body rather than hidden: `lockCleanupWorkspace` only takes a row lock
+   * for a CAPPED tier (Free). For an uncapped tier (Plus/Pro/Team/
+   * Enterprise) the guard's SELECT and the INSERT it gates run with no
+   * serializing lock between two independent transactions, so two
+   * genuinely concurrent requests can each see "not busy" before either
+   * commits. PGlite cannot demonstrate this (single in-process
+   * connection); this is why the real-Postgres file exists.
+   *
+   * This does not exercise `ActionsService.enqueueComposite` directly —
+   * a black-box race through two full method calls has no synchronizing
+   * point to force the interleaving deterministically (unlike the
+   * Free-tier tests above, which pin a real lock via `controlClient`),
+   * so it would be exactly as likely to pass by lucky scheduling as to
+   * catch the gap. Driving the two transactions explicitly proves the
+   * READ COMMITTED visibility property the guard's SELECT depends on,
+   * which is the actual mechanism at risk, deterministically every run.
+   */
+  it('KNOWN LIMITATION: the busy guard is not airtight for an uncapped tier', async () => {
+    const { workspaceId, mailboxId, senderId } = await seedQuotaFixture(
+      databases[0]!,
+      0,
+      'uncapped-race',
+    );
+    await databases[0]!
+      .update(workspaces)
+      .set({ tier: 'plus' })
+      .where(eq(workspaces.id, workspaceId));
+    const [sender] = await databases[0]!
+      .select({ senderKey: senders.senderKey })
+      .from(senders)
+      .where(eq(senders.id, senderId));
+    const senderKey = sender!.senderKey;
+
+    const busyCheckSql = `
+      select distinct selector->>'senderKey' as sender_key
+      from action_jobs
+      where mailbox_account_id = $1
+        and direction = 'forward'
+        and status in ('queued', 'executing')
+        and selector->>'senderKey' = $2
+    `;
+
+    await clients[0]!.unsafe('BEGIN');
+    await clients[1]!.unsafe('BEGIN');
+    try {
+      // Both transactions run the guard's own SELECT before either has
+      // written anything — this is the moment `enqueueComposite` reads
+      // `liveForwardJobSenderKeys` for a sender that, from EACH
+      // transaction's own read-committed snapshot, has nothing live yet.
+      const busyForA = await clients[0]!.unsafe(busyCheckSql, [mailboxId, senderKey]);
+      const busyForB = await clients[1]!.unsafe(busyCheckSql, [mailboxId, senderKey]);
+      expect(busyForA).toHaveLength(0);
+      expect(busyForB).toHaveLength(0);
+
+      // Both proceed to insert their own forward job for the SAME sender —
+      // exactly what enqueueComposite does once its busy-check comes back
+      // clear. Neither has committed, so neither can see the other's row.
+      await databases[0]!.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        requestedCount: 1,
+        status: 'queued',
+        idempotencyKey: 'uncapped-race-a',
+      });
+      await databases[1]!.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        requestedCount: 1,
+        status: 'queued',
+        idempotencyKey: 'uncapped-race-b',
+      });
+      await clients[0]!.unsafe('COMMIT');
+      await clients[1]!.unsafe('COMMIT');
+    } catch (error) {
+      // Best-effort rollback so a mid-test failure doesn't leave either
+      // connection wedged in an open transaction for the next test.
+      await clients[0]!.unsafe('ROLLBACK').catch(() => {});
+      await clients[1]!.unsafe('ROLLBACK').catch(() => {});
+      throw error;
+    }
+
+    // Both landed — a real double-job for one sender, on an uncapped
+    // tier, with the guard fully in place. This is the residual gap
+    // documented in the PR body: airtight for Free (the workspace lock
+    // serializes it), narrowed-but-not-closed for every other tier.
+    const rows = await databases[0]!
+      .select({ idempotencyKey: actionJobs.idempotencyKey })
+      .from(actionJobs)
+      .where(inArray(actionJobs.idempotencyKey, ['uncapped-race-a', 'uncapped-race-b']));
+    expect(rows).toHaveLength(2);
+  });
 });

@@ -3,13 +3,14 @@
 import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import type { ActionReach, UNSUB_MANUAL_REQUIRED_ERROR_CODE } from '@declutrmail/shared/contracts';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 
 import {
   useActionStatus,
@@ -20,9 +21,25 @@ import {
   useEnqueueComposite,
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
+import {
+  backlogAfterUnsubFailureCopy,
+  NO_ACTIONABLE_SENDERS_COPY,
+  skippedAtClickCopy,
+} from '@/lib/bulk-action-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -74,11 +91,6 @@ import { TodayHandledLine } from './today-handled-line';
 import { TriageQueue } from './triage-queue';
 import type { ActionVerb } from './types';
 import type { ConfirmDetails } from './action-sheet';
-
-// Pinned to the contract at compile time, with no runtime import: taking
-// it from `actions.ts` or the contracts package regrouped the shared chunks
-// of other routes over their bundle budgets.
-const UNSUB_MANUAL_ERROR_CODE: typeof UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
 
 // The two confirm sheets open only after a verb is chosen, and they carry
 // the shared modal — loading them after first paint keeps /triage inside
@@ -158,10 +170,6 @@ function openPricing(): void {
  */
 export const ACTION_OVERDUE_MS = 120_000;
 
-/** Overdue is a status, not a failure — same wording as Senders and the Screener. */
-const stillRunningToast = (verb: string, subject: string): string =>
-  `${verb} for ${subject} is still running — see Activity.`;
-
 /**
  * Handle for one enqueued async action (enqueue → worker → poll).
  * Lives in the active slot while confirming; moves to the overdue
@@ -180,6 +188,9 @@ interface ActionHandle {
    */
   followOn?: boolean;
 }
+
+/** A verb whose start may not have been confirmed — what a held row names. */
+type HeldVerb = ActionHandle['verb'] | 'Unsubscribe';
 
 /** Handle for one enqueued domain-batch composite — same lifecycle. */
 interface BatchHandle {
@@ -311,6 +322,26 @@ export function TriageScreen({
   // frees (the effect keys on both) — displacing would stop the parked
   // poll and silently re-arm a row whose job is still running.
   const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
+  // The route rebuilds `state` on every render; key the listed ids on
+  // their content so what reads them re-runs only when the list does.
+  const listedKey =
+    state.kind === 'ready'
+      ? state.rows.map((r) => r.id).join('\n')
+      : state.kind === 'empty'
+        ? ''
+        : null;
+  const listedRowIds = useMemo(
+    () => (listedKey === null ? null : listedKey === '' ? [] : listedKey.split('\n')),
+    [listedKey],
+  );
+  /** Rows whose job may be running although we could not confirm it. */
+  const holds = useUnconfirmedHolds<HeldVerb>(actionMailboxId, listedRowIds);
+  const holdUnconfirmed = holds.hold;
+  const resetHolds = holds.reset;
+  const unknownVerbs = useMemo(
+    () => new Map([...holds.held].map(([id, hold]) => [id, hold.verb] as const)),
+    [holds.held],
+  );
   const overdueActionStatus = useActionStatus(
     overdueAction?.actionId ?? null,
     overdueAction?.mailboxId,
@@ -369,6 +400,7 @@ export function TriageScreen({
   const [heldKey, setHeldKey] = useState<string | null>(null);
   const resetPendingScope = useCallback(() => {
     clearPending();
+    resetHolds();
     setPendingBatch(null);
     setExpandedRow(null);
     setMailtoFollowup(null);
@@ -412,10 +444,12 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
         }),
         'warn',
       );
+      // The job may still be running: its rows must not re-arm.
+      holdUnconfirmed(batchAction.rowIds, batchAction.verb);
       setBatchAction(null);
       return;
     }
@@ -446,7 +480,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+          action: actionLabel(batchAction.verb, `the ${batchAction.domain} batch`),
         }),
         'warn',
       );
@@ -481,28 +515,8 @@ export function TriageScreen({
       setUnsubWatch(null);
       return;
     }
-    // The same sentences as `unsubscribeOutcomeToast` (senders/unsub-status),
-    // inline so this route does not load the Senders pill table (bundle
-    // budget). A test pins the two equal.
-    if (data.status === 'done') {
-      toast(
-        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-      invalidateAfterDecision(qc);
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else if (data.errorCode === UNSUB_MANUAL_ERROR_CODE) {
-      toast(
-        `${unsubWatch.senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
+    if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [
     actionMailboxId,
@@ -709,10 +723,11 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${activeAction.verb} for ${activeAction.senderName}`,
+          action: actionLabel(activeAction.verb, activeAction.senderName),
         }),
         'warn',
       );
+      holdUnconfirmed([activeAction.rowId], activeAction.verb);
       setActiveAction(null);
       return;
     }
@@ -727,8 +742,9 @@ export function TriageScreen({
       // No success toast (D35 — the tray is the feedback channel).
       invalidateAfterDecision(qc);
       // Session burn-down: count on server confirmation only (D226).
-      // A backlog-archive riding an Unsubscribe already counted.
-      if (!activeAction.followOn) {
+      // A backlog-archive riding an Unsubscribe already counted, and a
+      // sender found Protected when the job ran (D245) was not decided.
+      if (!activeAction.followOn && !isProtectedSkip(data)) {
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
@@ -736,7 +752,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${activeAction.verb} for ${activeAction.senderName}`,
+          action: actionLabel(activeAction.verb, activeAction.senderName),
         }),
         'warn',
       );
@@ -769,7 +785,7 @@ export function TriageScreen({
     // fresh deadline) when the slot frees.
     if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningToast(activeAction.verb, activeAction.senderName), 'info');
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       // Parking is the one moment the client KNOWS a backend hang
       // happened (the 2026-08-12 incident was invisible until a human
       // noticed) — measure recurrence.
@@ -784,7 +800,7 @@ export function TriageScreen({
     // Same free-slot rule as the single-action park above.
     if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
-      toast(stillRunningToast(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
+      toast(stillRunningCopy(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
       void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
@@ -805,10 +821,11 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+          action: actionLabel(overdueAction.verb, overdueAction.senderName),
         }),
         'warn',
       );
+      holdUnconfirmed([overdueAction.rowId], overdueAction.verb);
       setOverdueAction(null);
       return;
     }
@@ -821,14 +838,14 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       invalidateAfterDecision(qc);
-      if (!overdueAction.followOn) {
+      if (!overdueAction.followOn && !isProtectedSkip(data)) {
         incrementSessionDecided();
       }
       addSessionMessagesMoved(data.affectedCount);
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+          action: actionLabel(overdueAction.verb, overdueAction.senderName),
         }),
         'warn',
       );
@@ -854,10 +871,11 @@ export function TriageScreen({
       });
       toast(
         getActionFailureCopy('status', {
-          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
         }),
         'warn',
       );
+      holdUnconfirmed(overdueBatch.rowIds, overdueBatch.verb);
       setOverdueBatch(null);
       return;
     }
@@ -884,7 +902,7 @@ export function TriageScreen({
     } else {
       toast(
         getActionFailureCopy('terminal', {
-          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+          action: actionLabel(overdueBatch.verb, `the ${overdueBatch.domain} batch`),
         }),
         'warn',
       );
@@ -901,6 +919,16 @@ export function TriageScreen({
     addSessionMessagesMoved,
   ]);
 
+  // Server truth (via `listInFlight`) for which senders have a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this screen's own unmount/navigation. Additive to the local
+  // handles below, which stay exactly as they were: Triage's queue can
+  // remove a decided row before a job goes terminal, so a rowId that has
+  // already left `state.rows` is not something `sharedLock` (keyed on
+  // senderId) needs to reach — the local `overdueAction`/`overdueBatch`
+  // membership below is what still protects a row that is somehow still
+  // visible.
+  const sharedLock = useSenderInFlightLock(actionMailboxId);
   // Rows with an outstanding job — confirming, intent-settling, OR
   // parked overdue — render busy and refuse re-dispatch. A set, not a
   // single id: parking exists precisely so the NEXT action can start
@@ -908,14 +936,33 @@ export function TriageScreen({
   // a parked batch keeps all its member rows busy). Re-dispatching any
   // of them would mint a second real Gmail job for the same sender.
   // Declared ABOVE dispatchAction: the dispatch choke point reads it.
+  //
+  // …and rows whose job may have started without our knowing (a 5xx
+  // enqueue, or a lost status read): a second dispatch would run it
+  // twice. `useUnconfirmedHolds` says when one is released.
   const busyRowIds = useMemo(() => {
     const ids = new Set<string>();
     if (activeAction) ids.add(activeAction.rowId);
     if (overdueAction) ids.add(overdueAction.rowId);
     if (intentRowId != null) ids.add(intentRowId);
     for (const id of overdueBatch?.rowIds ?? []) ids.add(id);
+    if (state.kind === 'ready' && sharedLock.senderIds.size > 0) {
+      for (const row of state.rows) {
+        if (sharedLock.senderIds.has(row.senderId)) ids.add(row.id);
+      }
+    }
+    for (const id of listedRowIds ?? []) if (holds.held.has(id)) ids.add(id);
     return ids;
-  }, [activeAction, overdueAction, intentRowId, overdueBatch]);
+  }, [
+    activeAction,
+    overdueAction,
+    intentRowId,
+    overdueBatch,
+    state,
+    sharedLock.senderIds,
+    listedRowIds,
+    holds.held,
+  ]);
 
   /**
    * Run the mutation for `verb` against `row` after the preview has
@@ -1027,6 +1074,9 @@ export function TriageScreen({
             mailboxId: actionMailboxId,
             senderId: row.senderId,
             includesBacklogAction: Boolean(details?.archiveHistoric),
+            // The preview named the protection and its confirm says
+            // "anyway" (D245); without this the send is re-checked.
+            ...(row.protectionReason !== null ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
@@ -1094,8 +1144,16 @@ export function TriageScreen({
                         surface: 'triage',
                         reason: 'enqueue_archive_after_unsub',
                       });
+                      if (enqueueMayHaveStarted(err)) {
+                        holdUnconfirmed([row.id], 'Archive');
+                        invalidateAfterDecision(qc);
+                      }
                       toast(
-                        `Unsubscribe request recorded, but older email from ${row.senderName} wasn't archived — Archive it from Senders.`,
+                        backlogAfterUnsubFailureCopy({
+                          verb: 'Archive',
+                          senderName: row.senderName,
+                          error: err,
+                        }),
                         'warn',
                       );
                     },
@@ -1109,11 +1167,24 @@ export function TriageScreen({
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
+              // Designed too: one request to this sender is still on its way.
+              if (isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(row.senderName), 'info');
+                invalidateAfterDecision(qc);
+                return;
+              }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
+              // A 5xx cannot prove nothing started: a second click would send
+              // a second one-way request (D58).
+              if (enqueueMayHaveStarted(err)) {
+                holdUnconfirmed([row.id], 'Unsubscribe');
+                invalidateAfterDecision(qc);
+              }
               toast(
                 getActionFailureCopy('enqueue', {
                   action: `Unsubscribe for ${row.senderName}`,
                   outcome: 'no request was sent',
+                  error: err,
                 }),
                 'warn',
               );
@@ -1198,13 +1269,19 @@ export function TriageScreen({
             // this row's protection changed after the queue loaded.
             // Refetch, or the reopened sheet shows the same stale row and
             // 409s again — forever.
-            if (staleProtection) invalidateAfterDecision(qc);
+            // …and a job that may have started: the queue drops a row it
+            // took, and the pill finds the job through the in-flight read.
+            if (staleProtection || enqueueMayHaveStarted(err)) invalidateAfterDecision(qc);
+            if (enqueueMayHaveStarted(err)) holdUnconfirmed([row.id], verb);
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : sendDisabled
                   ? UNSUB_SEND_DISABLED_MESSAGE
-                  : getActionFailureCopy('enqueue', { action: `${verb} for ${row.senderName}` }),
+                  : getActionFailureCopy('enqueue', {
+                      action: actionLabel(verb, row.senderName),
+                      error: err,
+                    }),
               'warn',
             );
           },
@@ -1382,6 +1459,12 @@ export function TriageScreen({
     const { verb, batch, wakeAt } = pendingBatch;
     const eligible = batch.eligibleRows;
     setPendingBatch(null);
+    // A member held since the sheet opened may still be running; sending it
+    // again would run it twice. The re-planned batch leaves it out.
+    if (eligible.some((r) => busyRowIds.has(r.id))) {
+      toast('Still confirming your last decision — give it a moment.', 'info');
+      return;
+    }
     enqueueBulk.mutate(
       {
         mailboxId: actionMailboxId,
@@ -1404,30 +1487,67 @@ export function TriageScreen({
             source: 'triage_domain_batch',
           });
           trackActionConfirmed(verb === 'Archive' ? 'archive' : 'later', journey);
+          // A member refused at the click (Protected or gone since the
+          // preview) has no job: only this can say so, and its row is not
+          // part of what runs.
+          const leftOut = skippedAtClickCopy(verb, res.skipped);
+          if (leftOut !== null) toast(leftOut, 'warn');
+          const refused = new Set(res.skipped.map((skip) => skip.senderId));
           setBatchAction({
             mailboxId: actionMailboxId,
             batchId: res.batchId,
             domain: batch.domain,
             verb,
-            rowIds: eligible.map((r) => r.id),
+            rowIds: eligible.filter((r) => !refused.has(r.senderId)).map((r) => r.id),
           });
         },
         onError: (err) => {
           // 402 FREE_CAP_REACHED — the UpgradeModal (global handler)
           // already explains; skip Sentry + the generic toast.
           if (err instanceof ApiError && err.status === 402) return;
-          captureFeatureException(err, {
-            surface: 'triage',
-            reason: 'enqueue_domain_batch',
-          });
+          // Every member refused at the click — a designed state. The rows
+          // still read as before it, so the queue is re-read.
+          if (apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS') {
+            void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+            toast(NO_ACTIONABLE_SENDERS_COPY, 'warn');
+            return;
+          }
+          // The mailbox guard's 409s are designed states too.
+          if (!(err instanceof ApiError && err.status === 409)) {
+            captureFeatureException(err, {
+              surface: 'triage',
+              reason: 'enqueue_domain_batch',
+            });
+          }
+          // Some members may have started (a bulk answers 5xx when any one
+          // add fails while the rest run).
+          if (enqueueMayHaveStarted(err)) {
+            holdUnconfirmed(
+              eligible.map((r) => r.id),
+              verb,
+            );
+            invalidateAfterDecision(qc);
+          }
           toast(
-            getActionFailureCopy('enqueue', { action: `${verb} for the ${batch.domain} batch` }),
+            getActionFailureCopy('enqueue', {
+              action: actionLabel(verb, `the ${batch.domain} batch`),
+              error: err,
+            }),
             'warn',
           );
         },
       },
     );
-  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId, journey]);
+  }, [
+    pendingBatch,
+    enqueueBulk,
+    bulkPreview.data,
+    actionMailboxId,
+    journey,
+    qc,
+    busyRowIds,
+    holdUnconfirmed,
+  ]);
 
   /**
    * Escape clears an INLINE pending preview — the contract the comment
@@ -1457,8 +1577,8 @@ export function TriageScreen({
   // ── Focus stack ───────────────────────────────────────────────────
   const readyRows = state.kind === 'ready' ? state.rows : NO_ROWS;
   const focusItems = useMemo(
-    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily'),
-    [readyRows, dismissedBatchDomains, journey],
+    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily', busyRowIds),
+    [readyRows, dismissedBatchDomains, journey, busyRowIds],
   );
   // A sender with an open preview stays on stage. The stack re-plans on
   // every refetch (a batch offer can appear, the order can change), and
@@ -1493,7 +1613,7 @@ export function TriageScreen({
   // it is a card in the stack (`planFocusItems`); here it leads the list.
   const verdictBatch =
     mode === 'list' && journey === 'daily' && hasQueue
-      ? findVerdictBatch(readyRows, dismissedBatchDomains)
+      ? findVerdictBatch(readyRows, dismissedBatchDomains, busyRowIds)
       : null;
   const resting = state.kind === 'empty' || (state.kind === 'ready' && !hasQueue);
 
@@ -1616,6 +1736,7 @@ export function TriageScreen({
             onSkip={onSkip}
             onAction={onRowActionWithInlineConfirm}
             busyRowIds={busyRowIds}
+            unknownVerbs={unknownVerbs}
             previewInboxCount={previewInboxCount}
             previewDetail={previewDetail}
             previewQuotaRemaining={cleanupRemaining}
@@ -1628,6 +1749,7 @@ export function TriageScreen({
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}
           busyRowIds={busyRowIds}
+          unknownVerbs={unknownVerbs}
           previewInboxCount={previewInboxCount}
           previewDetail={previewDetail}
           previewQuotaRemaining={cleanupRemaining}
