@@ -1,4 +1,8 @@
 import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
+import type { ToastTone } from '@declutrmail/shared';
+
+import type { ActionStatusResult } from '@/lib/api/actions';
+import { unsubscribeOutcomeToast as outcomeToast } from '@/lib/unsubscribe-outcome-copy';
 
 import type { Sender } from './data';
 
@@ -61,4 +65,13 @@ export function unsubscribeStatusCopy(
     status ??
     (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'unconfirmed');
   return UNSUB_PILL[resolved];
+}
+
+/** Object-shaped adapter for callers of the original status helper. */
+export function unsubscribeOutcomeToast(
+  senderName: string,
+  outcome: Pick<ActionStatusResult, 'status' | 'errorCode'>,
+): { message: string; tone: ToastTone } {
+  const [message, tone] = outcomeToast(senderName, outcome);
+  return { message, tone };
 }

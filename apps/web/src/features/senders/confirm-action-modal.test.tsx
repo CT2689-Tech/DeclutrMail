@@ -1629,7 +1629,10 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
     );
 
     const text = breakdown();
-    expect(text).toContain('2 senders, we unsubscribe for you');
+    expect(text).toContain('2 senders, we send the request for you');
+    // D248: a sent request is not an outcome — whether mail stops is the
+    // sender's call, so the preview never promises "we unsubscribe".
+    expect(text).not.toMatch(/we unsubscribe/i);
     expect(text).toContain('2 senders, you send the email yourself');
     expect(text).toMatch(/No unsubscribe1 sender(?!s)/);
     expect(text).toMatch(/Not checked yet1 sender(?!s)/);

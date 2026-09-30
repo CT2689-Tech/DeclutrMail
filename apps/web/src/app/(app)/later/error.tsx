@@ -21,7 +21,7 @@ export default function LaterError({
       reset={reset}
       boundary="snoozed"
       headline="We couldn't load your Later items."
-      body="Nothing was moved or rescheduled. Try again, or continue in Triage."
+      body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

@@ -117,11 +117,21 @@ function HomeBody({
         </section>
       );
     case 'sync-failed':
+      // Never "the connection": a scan also stops on Gmail throttling, a
+      // Google error or a response it could not process. The step names
+      // reconnect only when the grant is what failed.
       return (
         <section className={styles.beginning} aria-label="Mailbox needs attention">
-          <span className={styles.eyebrow}>Connection needs attention</span>
+          <span className={styles.eyebrow}>Mailbox needs attention</span>
           <h2>Gmail scan failed</h2>
-          <p>Open your Gmail account settings to review the connection and try again.</p>
+          {/* `failedScanSettingsStep`'s sentences, inline: a new import of
+              mailbox-health from this route regrouped shared chunks over
+              other routes' bundle budgets. A test pins the two equal. */}
+          <p>
+            {state.needsReconnect
+              ? 'Reconnect it in Settings → Gmail accounts.'
+              : 'Scan again in Settings → Gmail accounts.'}
+          </p>
           <PrimaryLink action={SYNC_FAILED_ACTION} />
         </section>
       );

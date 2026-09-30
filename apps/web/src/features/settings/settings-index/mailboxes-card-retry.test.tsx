@@ -93,4 +93,35 @@ describe('MailboxesCard — failed-sync retry', () => {
     expect(screen.getByText('Not syncing')).toBeInTheDocument();
     expect(screen.queryByText('Ready')).not.toBeInTheDocument();
   });
+
+  it("falls back to me's needsReconnect while the row's own status is not loaded", () => {
+    // Triage, Senders, Home and the scan toast send these users to
+    // "Reconnect it in Settings"; the loading (or failed) health read must
+    // not show them a retry instead.
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <MailboxesCard
+          mailboxes={
+            [
+              { id: ACTIVE_ID, email: 'primary@example.com', status: 'active', readiness: 'ready' },
+              {
+                id: FAILED_ID,
+                email: 'second@example.com',
+                status: 'active',
+                readiness: 'failed',
+                needsReconnect: true,
+              },
+            ] as never
+          }
+          activeMailboxId={ACTIVE_ID}
+          inboxLimit={3}
+          healthById={{} as never}
+          onConnect={() => undefined}
+          onReactivate={() => undefined}
+        />
+      </QueryWrapper>,
+    );
+    expect(screen.getByText('Needs reconnect')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
+  });
 });

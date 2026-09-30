@@ -701,7 +701,7 @@ export interface BatchStatusResult {
   /** Senders whose changes an Undo put back — all, or one from the pill. */
   revertedSenderIds?: string[];
   /**
-   * D248 — the three terminal outcomes the unsubscribe worker records,
+   * D248 — the terminal outcomes the unsubscribe worker records,
    * counted across the batch. `null` for a label batch. Read THIS for
    * an unsubscribe receipt, never `done`/`failed`: an `unconfirmed` row
    * carries job status `failed`, and calling that a failure would round
@@ -719,8 +719,14 @@ export interface UnsubscribeBatchOutcomes {
   endpointAccepted: number;
   /** Sent; the outcome could not be established. Never rounded away. */
   unconfirmed: number;
-  /** The request did not go through. */
+  /** Every row that ended without the endpoint accepting or redirecting. */
   failed: number;
+  /**
+   * The part of `failed` whose sender refused one-click but takes email —
+   * the user can finish it from Gmail (D252). A subset of `failed`.
+   * Optional during a rolling API/web deploy (D245): absent reads as 0.
+   */
+  actionRequired?: number;
   /** Still queued or executing — no outcome yet. */
   pending: number;
 }

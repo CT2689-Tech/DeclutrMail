@@ -20,7 +20,7 @@ export default function HomeError({
       reset={reset}
       boundary="home"
       headline="We couldn't load Home."
-      body="Nothing in Gmail changed. Try again, or go to Senders."
+      body="Try again, or go to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

@@ -2049,6 +2049,69 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     });
   });
 
+  it.each([
+    ['ACTION_ALREADY_RECOVERED', 409, /already recovered/i],
+    ['RECOVERY_ATTEMPT_STALE', 409, /newer attempt/i],
+    ['ACTION_NOT_RECOVERABLE', 409, /no longer needs recovery/i],
+  ] as const)(
+    'a %s start refusal names the refusal, not a Gmail check that never ran',
+    async (code, status, says) => {
+      // These are raised before any Gmail read and repeat on every attempt:
+      // "We couldn't check Gmail's current state" + "Check again" sent the
+      // user into the same refusal.
+      let activityReads = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/activity',
+          respond: () => {
+            activityReads += 1;
+            return jsonOk({
+              data: [
+                row({
+                  action: 'archive',
+                  affectedCount: 3,
+                  executionState: {
+                    kind: 'failed',
+                    actionId: '11111111-1111-1111-1111-111111111111',
+                    rootActionId: '11111111-1111-1111-1111-111111111111',
+                    requestedCount: 3,
+                    errorCode: 'TransientError',
+                    resolution: 'review',
+                  },
+                }),
+              ],
+              meta: META_BASE,
+            });
+          },
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+          respond: () =>
+            new Response(JSON.stringify({ error: { code, message: 'refused' } }), {
+              status,
+              headers: { 'content-type': 'application/json' },
+            }),
+        },
+      ]);
+      renderScreen();
+
+      await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
+      const dialog = await screen.findByRole('dialog', { name: /review this failed archive/i });
+      const alert = await within(dialog).findByRole('alert');
+      expect(alert).toHaveTextContent(says);
+      expect(alert).not.toHaveTextContent(/couldn.t check gmail/i);
+      // No "Refresh Activity" control exists — Activity re-reads itself so
+      // Close shows the row as it is now.
+      expect(alert).not.toHaveTextContent(/refresh activity/i);
+      expect(within(dialog).queryByRole('button', { name: 'Check again' })).toBeNull();
+      const readsAtRefusal = activityReads;
+      await waitFor(() => expect(activityReads).toBeGreaterThan(1));
+      expect(readsAtRefusal).toBeGreaterThanOrEqual(1);
+    },
+  );
+
   it('requires a future return time when the failed Later schedule has passed', async () => {
     let confirmedWakeAt: string | undefined;
     installFetchStub([

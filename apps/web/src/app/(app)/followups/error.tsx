@@ -23,7 +23,7 @@ export default function FollowupsError({
       reset={reset}
       boundary="followups"
       headline="We couldn't load your follow-ups."
-      body="Your follow-ups are unchanged. Try again, or continue in Triage."
+      body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

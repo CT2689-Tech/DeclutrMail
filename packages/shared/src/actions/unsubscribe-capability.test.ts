@@ -127,16 +127,22 @@ describe('unsubscribeUnavailableReason', () => {
 });
 
 describe('unsubscribeOutcomeBreakdown', () => {
-  it('reports all three terminal outcomes without collapsing any', () => {
-    expect(unsubscribeOutcomeBreakdown({ endpointAccepted: 6, unconfirmed: 2, failed: 1 })).toEqual(
-      ['6 requests accepted', '2 requests sent, results unconfirmed', '1 request failed'],
-    );
+  it('reports every terminal outcome without collapsing any', () => {
+    expect(
+      unsubscribeOutcomeBreakdown({
+        endpointAccepted: 6,
+        unconfirmed: 2,
+        actionRequired: 0,
+        failed: 1,
+      }),
+    ).toEqual(['6 requests accepted', '2 requests sent, results unconfirmed', '1 request failed']);
   });
 
   it('says "accepted", never "unsubscribed"', () => {
     const line = unsubscribeOutcomeBreakdown({
       endpointAccepted: 3,
       unconfirmed: 0,
+      actionRequired: 0,
       failed: 0,
     }).join(' ');
     expect(line).toContain('accepted');
@@ -147,6 +153,7 @@ describe('unsubscribeOutcomeBreakdown', () => {
     const lines = unsubscribeOutcomeBreakdown({
       endpointAccepted: 0,
       unconfirmed: 4,
+      actionRequired: 0,
       failed: 0,
     });
     expect(lines).toEqual(['4 requests sent, results unconfirmed']);
@@ -154,9 +161,27 @@ describe('unsubscribeOutcomeBreakdown', () => {
     expect(lines.join(' ')).not.toContain('failed');
   });
 
+  it('never counts a refused-but-emailable request as failed', () => {
+    // D252: the sender refused one-click but takes email, so the user can
+    // still finish it. `failed` means nothing is left to try.
+    const lines = unsubscribeOutcomeBreakdown({
+      endpointAccepted: 0,
+      unconfirmed: 0,
+      actionRequired: 2,
+      failed: 0,
+    });
+    expect(lines).toEqual(['2 requests not accepted — send from Gmail instead']);
+    expect(lines.join(' ')).not.toContain('failed');
+  });
+
   it('omits outcomes that did not happen', () => {
-    expect(unsubscribeOutcomeBreakdown({ endpointAccepted: 0, unconfirmed: 0, failed: 0 })).toEqual(
-      [],
-    );
+    expect(
+      unsubscribeOutcomeBreakdown({
+        endpointAccepted: 0,
+        unconfirmed: 0,
+        actionRequired: 0,
+        failed: 0,
+      }),
+    ).toEqual([]);
   });
 });
