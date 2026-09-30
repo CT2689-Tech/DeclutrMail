@@ -43,6 +43,7 @@ import {
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
   autopilotActionJobOptions,
+  autopilotApplyWorkerOptions,
   createAutopilotExecutionChain,
   createRedisConnection,
   InvalidGrantError,
@@ -268,7 +269,11 @@ async function main(): Promise<void> {
   const applyBull = new Worker<AutopilotApplyJobData>(
     AUTOPILOT_APPLY_QUEUE,
     (job) => applyWorker.run(job),
-    { connection, concurrency: 2 },
+    // Same function `apps/api/src/worker.ts` calls for the real
+    // registration (architecture-guardian review, 2026-09-29) — not a
+    // hand-copied `{ connection, concurrency, ...perMailboxWorkerSettings() }`
+    // literal, which is exactly the blind spot this PR exists to avoid.
+    autopilotApplyWorkerOptions(connection, 2),
   );
   applyBull.on('error', (err) => log('apply_bull_error', { message: err.message }));
 

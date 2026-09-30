@@ -31,6 +31,7 @@ import {
   ActionRecoveryWorker,
   AUTOPILOT_ACTION_QUEUE,
   AUTOPILOT_APPLY_QUEUE,
+  autopilotApplyWorkerOptions,
   BILLING_VERDICT_INTERVAL_MS,
   BILLING_VERDICT_QUEUE,
   BillingVerdictWorker,
@@ -2362,8 +2363,14 @@ async function bootstrap(): Promise<void> {
     AUTOPILOT_APPLY_QUEUE,
     (job) => autopilotApplyWorker.run(job),
     // Matcher sweeps are DB-only (no Gmail, no lock); modest parallelism
-    // across mailboxes is plenty — sweeps are event-paced, not throughput.
-    { connection, concurrency: 5, ...userFacingTuning },
+    // across mailboxes is plenty — sweeps are event-paced, not throughput
+    // (concurrency: 5, inside `autopilotApplyWorkerOptions`). That helper's
+    // `...perMailboxWorkerSettings()` pairs with `autopilotApplyJobOptions`'s
+    // `backoff: { type: 'custom' }` — omitting it made BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure instead
+    // of retrying (2026-09-29; the same gap PR #827 fixed for
+    // `scoreBullWorker`).
+    autopilotApplyWorkerOptions(connection),
   );
   autopilotApplyBullWorker.on('error', (err) => {
     console.error(
