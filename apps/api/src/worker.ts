@@ -96,6 +96,7 @@ import {
   SCORE_JOB,
   SCORE_QUEUE,
   scoreJobId,
+  scoreJobOptions,
   ScoreWorker,
   OPS_RETENTION_INTERVAL_MS,
   OPS_RETENTION_QUEUE,
@@ -912,7 +913,7 @@ async function bootstrap(): Promise<void> {
         trigger: 'sync_complete',
         producedAtMs: Date.now(),
       };
-      await scoreProducerQueue.add(SCORE_JOB, data, { jobId: scoreJobId(data) });
+      await scoreProducerQueue.add(SCORE_JOB, data, scoreJobOptions(scoreJobId(data)));
     },
   });
   // D159: install the Sentry seam on every BaseDeclutrWorker BEFORE the
@@ -975,7 +976,7 @@ async function bootstrap(): Promise<void> {
         trigger: 'signal_change',
         producedAtMs: Date.now(),
       };
-      await scoreProducerQueue.add(SCORE_JOB, data, { jobId: scoreJobId(data) });
+      await scoreProducerQueue.add(SCORE_JOB, data, scoreJobOptions(scoreJobId(data)));
     },
     // Delta processed → debounced Autopilot apply sweep (D100 "on new
     // message arrival"; 2026-07-07 P0 — known-sender mail never
@@ -1178,7 +1179,13 @@ async function bootstrap(): Promise<void> {
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
     (job) => scoreWorker.run(job),
-    { connection, concurrency: 20, ...userFacingTuning },
+    // `perMailboxWorkerSettings()` pairs with `scoreJobOptions`'s
+    // `backoff: { type: 'custom' }` — omitting it makes BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure, and
+    // the job then sits `active` until the stalled-job reclaim instead
+    // of reaching `failed` (no Sentry capture, no dead-letter row) —
+    // worse than having no retry budget at all (2026-09-29).
+    { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
 
   scoreBullWorker.on('error', (err) => {
@@ -1800,7 +1807,7 @@ async function bootstrap(): Promise<void> {
       await scoreProducerQueue.add(
         SCORE_JOB,
         { mailboxAccountId, senderKeys, trigger: 'signal_change', producedAtMs: Date.now() },
-        { jobId: rescoreJobId(mailboxAccountId, sweepTick) },
+        scoreJobOptions(rescoreJobId(mailboxAccountId, sweepTick)),
       );
     },
   });

@@ -5,7 +5,7 @@ import { and, count, eq, inArray, lt, ne } from 'drizzle-orm';
 import { senders, triageDecisions } from '@declutrmail/db';
 import type { TriageDecision } from '@declutrmail/db';
 import type { ScoreJobData } from '@declutrmail/workers';
-import { SCORE_JOB, scoreJobId } from '@declutrmail/workers';
+import { SCORE_JOB, scoreJobId, scoreJobOptions } from '@declutrmail/workers';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -191,7 +191,7 @@ export class TriageService {
       producedAtMs: input.producedAtMs ?? Date.now(),
     };
     const idempotencyKey = scoreJobId(payload);
-    await this.scoreQueue.add(SCORE_JOB, payload, { jobId: idempotencyKey });
+    await this.scoreQueue.add(SCORE_JOB, payload, scoreJobOptions(idempotencyKey));
     return { idempotencyKey };
   }
 
