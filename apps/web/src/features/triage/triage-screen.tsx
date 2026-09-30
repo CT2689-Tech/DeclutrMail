@@ -231,8 +231,9 @@ export function TriageScreen({
   // QA-sync-20260831-01: Triage otherwise has zero sync awareness — the
   // resting-queue empty state must not claim "nothing to do" while the
   // active mailbox's initial sync has terminally failed.
-  const mailboxSyncFailed =
-    auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId)?.readiness === 'failed';
+  const activeMailbox = auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId);
+  const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
   // Stored WITH the pending action it was chosen for, so a wider
@@ -1714,6 +1715,7 @@ export function TriageScreen({
             stats={state.stats}
             onOpenUpgrade={openPricing}
             syncFailed={mailboxSyncFailed}
+            syncNeedsReconnect={mailboxNeedsReconnect}
             footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
           />
         </section>

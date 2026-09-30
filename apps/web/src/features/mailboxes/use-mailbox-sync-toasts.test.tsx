@@ -23,12 +23,19 @@ vi.mock('@/lib/posthog', () => ({ track: h.track }));
 import { resetSyncLifecycleForTests } from '@/features/sync/sync-lifecycle';
 import { useMailboxSyncToasts } from './use-mailbox-sync-toasts';
 
-function meWith(readiness: SyncReadiness | null) {
+function meWith(readiness: SyncReadiness | null, needsReconnect = false) {
   return {
     user: { id: 'u', email: 'u@example.com', workspaceId: 'w' },
     activeMailboxId: null,
     mailboxes: [
-      { id: 'b', email: 'b@example.com', status: 'active', connectedAt: null, readiness },
+      {
+        id: 'b',
+        email: 'b@example.com',
+        status: 'active',
+        connectedAt: null,
+        readiness,
+        needsReconnect,
+      },
     ],
   };
 }
@@ -68,9 +75,23 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed');
     rerender();
     expect(h.toast).toHaveBeenCalledWith(
-      "b@example.com's scan didn't finish — see Settings to try again.",
+      "b@example.com's scan didn't finish — scan again in Settings → Gmail accounts.",
       'danger',
     );
+  });
+
+  it('points a failed scan that needs reconnecting at Reconnect, not a retry', () => {
+    // Settings shows "Needs reconnect" + Reconnect for a refused grant and
+    // no retry button, so "see Settings to try again" named a missing step.
+    h.me = meWith('syncing');
+    const { rerender } = renderHook(() => useMailboxSyncToasts());
+    h.me = meWith('failed', true);
+    rerender();
+    expect(h.toast).toHaveBeenCalledWith(
+      "b@example.com's scan didn't finish — reconnect it in Settings → Gmail accounts.",
+      'danger',
+    );
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringContaining('scan again'), 'danger');
   });
 
   it('stays silent for a mailbox already failed at mount', () => {

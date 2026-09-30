@@ -317,6 +317,58 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.reply[0]!.subject).toBe('Inside local yesterday');
   });
 
+  it('never puts a draft or a chat line in the Brief — its subject and preview would go to the model', async () => {
+    // Ingest no longer stores these, and the purge deletes old ones; the
+    // Brief still refuses them, for the window before a purge reaches
+    // one (a capped run, a failed run, a draft an old worker wrote
+    // during a deploy).
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db, 'drafts@example.com', 'America/Los_Angeles');
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Real mail',
+      internalDate: new Date('2026-05-24T08:00:00Z'),
+      idSuffix: 'real',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'My unsent draft',
+      // Earliest of the day, so it would lead the Reply item.
+      internalDate: new Date('2026-05-24T07:30:00Z'),
+      idSuffix: 'draft',
+      labelIds: ['DRAFT'],
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'A chat line',
+      internalDate: new Date('2026-05-24T07:45:00Z'),
+      idSuffix: 'chat',
+      labelIds: ['CHAT', 'INBOX'],
+    });
+
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    await worker.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(row!.briefPayload.reply).toHaveLength(1);
+    expect(row!.briefPayload.reply[0]!.subject).toBe('Real mail');
+    expect(JSON.stringify(row!.briefPayload)).not.toMatch(/msg-draft|msg-chat/);
+  });
+
   it('D64 — generates on a Saturday, so Friday mail is never skipped', async () => {
     const db = await freshDb();
     await seedMailbox(db, 'saturday@example.com', 'America/Los_Angeles');

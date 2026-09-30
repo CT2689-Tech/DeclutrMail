@@ -685,3 +685,31 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
     expect(onReturn).toHaveBeenCalledOnce();
   });
 });
+
+describe('SyncGate — failure copy names only what its error proves', () => {
+  function failedCopy(status: SyncStatus): string {
+    return renderToStaticMarkup(withClient(<SyncGate status={status} mailboxId="mb-1" />));
+  }
+
+  it('does not blame a lost connection for a TransientError', () => {
+    // TransientError is also a Google 5xx, an unrecognised 403, another
+    // 4xx or a malformed response. The 2026-09-04 signup behind a missing
+    // Gmail permission read "kept losing its connection" and retried twice.
+    const html = failedCopy({ ...FAILED, error_code: 'TransientError' });
+    expect(html).not.toMatch(/connection/i);
+    expect(html).toContain('Try again');
+    expect(html).toContain('support@declutrmail.com');
+  });
+
+  it('keeps "Try again" when the incremental grant failure is older than a success', () => {
+    const status: SyncStatus = {
+      ...FAILED,
+      error_code: 'TransientError',
+      last_synced_at: '2026-09-06T00:00:00.000Z',
+      last_sync_error_at: '2026-09-05T23:50:49.872Z',
+      last_sync_error_code: 'InvalidGrantError',
+    };
+    render(withClient(<SyncGate status={status} mailboxId="mb-1" />));
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+});

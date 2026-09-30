@@ -83,13 +83,27 @@ async function seedDecision(
     verdict: TriageVerdict;
     daysOld: number;
     senderEmail?: string;
+    /** A verdict whose sender the index has since dropped. */
+    orphan?: boolean;
   },
 ): Promise<void> {
   const producedAt = new Date(Date.now() - args.daysOld * 24 * 60 * 60 * 1000);
   const expiresAt = new Date(producedAt.getTime() + 14 * 24 * 60 * 60 * 1000);
+  const email = args.senderEmail ?? `${randomUUID()}@example.com`;
+  if (!args.orphan) {
+    await db.insert(senders).values({
+      mailboxAccountId: args.mailboxAccountId,
+      senderKey: senderKeyFor(email),
+      email,
+      domain: 'example.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: producedAt,
+      lastSeenAt: producedAt,
+    });
+  }
   await db.insert(triageDecisions).values({
     mailboxAccountId: args.mailboxAccountId,
-    senderKey: senderKeyFor(args.senderEmail ?? `${randomUUID()}@example.com`),
+    senderKey: senderKeyFor(email),
     verdict: args.verdict,
     confidence: '0.90',
     reasoning: 'test fixture',
@@ -360,6 +374,22 @@ describe('TriageService.getQueueSize — D30 integration', () => {
       });
     }
     expect(await service.getQueueSize(mailboxA)).toBe(10);
+  });
+
+  it('ignores verdicts whose sender no longer exists — the queue could never show them', async () => {
+    // The queue joins `senders`. A verdict left behind when the index
+    // dropped its sender (a rebuild, the non-mail purge) is a card that
+    // cannot render, so it must not size the day's session.
+    for (let i = 0; i < 30; i += 1) {
+      await seedDecision(db, {
+        mailboxAccountId: mailboxA,
+        verdict: 'archive',
+        daysOld: 14,
+        senderEmail: `gone-${i}@example.com`,
+        orphan: true,
+      });
+    }
+    expect(await service.getQueueSize(mailboxA)).toBe(TRIAGE_QUEUE_MIN);
   });
 
   it('clamps to the ceiling on heavy backlog', async () => {

@@ -114,10 +114,10 @@ export const TOPICS = {
 
   /**
    * Stored drafts and chat lines were deleted from `mail_messages` (the
-   * non-mail purge, PR #791). Consumers repair what those rows fed in
-   * features the sync pipeline does not own: Triage re-scores the senders
-   * that were recounted, and Follow-ups reopens a thread a draft had
-   * marked replied.
+   * non-mail purge, `packages/workers/src/non-mail-purge.ts`). Consumers
+   * repair what those rows fed in features the sync pipeline does not
+   * own: Triage re-scores the senders that were recounted, and
+   * Follow-ups reopens a thread a draft had marked replied.
    */
   MAILBOX_NON_MAIL_PURGED: 'mailbox.non_mail_purged',
 

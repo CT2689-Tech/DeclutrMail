@@ -135,8 +135,38 @@ describe('useRetryInitialSync', () => {
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      "Couldn't start the scan. Wait a minute and try again — nothing in Gmail changed.",
+      "Couldn't start the scan — try again in a minute.",
       'danger',
     );
   });
+
+  it.each([
+    [409, 'MAILBOX_NOT_OWNED', /no longer connected/],
+    [409, 'NO_ACTIVE_MAILBOX', /no longer connected/],
+    [500, 'INTERNAL_ERROR', /try again/],
+  ] as const)(
+    'does not tell the user to wait a minute for a %i %s',
+    async (status, code, remedy) => {
+      // Waiting fixes only the route's 3-per-minute limit. A 409 means the
+      // inbox was disconnected in another tab or device — every retry after
+      // "a minute" fails the same way.
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/v1/sync/initial/retry',
+          respond: () =>
+            new Response(JSON.stringify({ error: { code } }), {
+              status,
+              headers: { 'content-type': 'application/json' },
+            }),
+        },
+      ]);
+      const { result } = renderRetry();
+      act(() => result.current.mutate());
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      const [message] = vi.mocked(toast).mock.calls[0] ?? [];
+      expect(message).toMatch(remedy);
+      expect(message).not.toMatch(/a minute/i);
+    },
+  );
 });

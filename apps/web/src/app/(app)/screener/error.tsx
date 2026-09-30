@@ -22,7 +22,7 @@ export default function ScreenerError({
       reset={reset}
       boundary="screener"
       headline="We couldn't load the Screener."
-      body="Your decisions are unchanged. Try again, or continue in Triage."
+      body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

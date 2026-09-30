@@ -59,6 +59,18 @@ describe('MailboxReconnectBanner', () => {
     expect(banner).not.toHaveTextContent('primary@example.com');
   });
 
+  it('asks for the Gmail permission instead of blaming an expiry', () => {
+    // `needsReconnect` is also a Gmail permission left unticked at consent
+    // (403 insufficientPermissions) — "expired" names the wrong cause and
+    // a reconnect without the box ticked fails the same way.
+    me = meWith([ACTIVE, { ...SECOND, needsReconnect: true }]);
+    render(<MailboxReconnectBanner />);
+
+    const banner = screen.getByTestId('mailbox-reconnect-banner');
+    expect(banner).toHaveTextContent('allow Gmail access');
+    expect(banner).not.toHaveTextContent(/expired/i);
+  });
+
   it('reconnect is bound to that mailbox, not the active one', async () => {
     me = meWith([ACTIVE, { ...SECOND, needsReconnect: true }]);
     render(<MailboxReconnectBanner />);

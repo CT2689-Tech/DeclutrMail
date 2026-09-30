@@ -22,7 +22,7 @@ export default function BillingError({
       reset={reset}
       boundary="billing"
       headline="We couldn't load your billing details."
-      body="Your plan is unchanged. Try again in a moment."
+      body="Try again, or return to Settings."
       escape={{ href: '/settings', label: 'Back to Settings' }}
     />
   );

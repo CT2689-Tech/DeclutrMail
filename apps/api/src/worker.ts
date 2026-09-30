@@ -1803,6 +1803,9 @@ async function bootstrap(): Promise<void> {
     enqueueContinuation: (payload) =>
       enqueueSenderIndexSweepContinuation(senderIndexSweepSchedulerQueue, payload),
     statementTimeoutMs: workerBudgets.sweepStatementTimeoutMs,
+    // `mailbox.non_mail_purged` rides each purge batch's transaction; the
+    // consumer router below re-scores and reopens follow-ups (D204).
+    outbox: new OutboxPublisher(),
     // Senders whose Gmail tab the recount changed → ONE score job for
     // the set (mig 0079). Their verdicts were computed from the old tab.
     // Keyed on the sweep tick, not the clock: a sweep job that committed

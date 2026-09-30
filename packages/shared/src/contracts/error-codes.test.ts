@@ -41,9 +41,20 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     // Rate limiting is the one generic code that is retryable.
     expect(ERROR_CODES.RATE_LIMITED.retryable).toBe(true);
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).toContain(
-      "moving a Gmail account between DeclutrMail accounts isn't supported yet.",
+      "moving a Gmail account between DeclutrMail accounts isn't supported.",
     );
     expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toContain('disconnect');
+    // The ownership check reads the row whatever its status, so the
+    // message cannot claim the Gmail account is still CONNECTED there.
+    expect(ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message).not.toMatch(/already connected/i);
+  });
+
+  it('BILLING_PROVIDER_ERROR claims neither reach nor refusal', () => {
+    // Raised for a network failure AND for a provider that answered — a
+    // non-2xx refusal or a malformed body — so "could not be reached" was
+    // false for every answered call.
+    expect(ERROR_CODES.BILLING_PROVIDER_ERROR.message).not.toMatch(/reach|declin|refus/i);
+    expect(ERROR_CODES.BILLING_PROVIDER_ERROR.message).toContain('support@declutrmail.com');
   });
 
   // D253 — the three-way checkout guard. Same status, same tier; the ONE

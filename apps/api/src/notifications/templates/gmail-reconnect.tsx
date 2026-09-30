@@ -7,15 +7,19 @@ export async function gmailReconnectEmail(input: {
   appUrl: string;
 }): Promise<RenderedEmail> {
   const url = `${input.appUrl.replace(/\/$/, '')}/settings#mailbox-${encodeURIComponent(input.mailboxAccountId)}`;
-  const explanation = `Gmail access needs renewing for ${input.mailboxEmail}. New inbox updates are paused until you reconnect this account and allow Gmail access.`;
+  // Sent for every `InvalidGrantError`: a refused refresh, and also a Gmail
+  // permission left unticked at consent — so no "renewing" and no expiry.
+  // Nothing here assumes the inbox ever synced: the 2026-09-04 recipient's
+  // never had, so "previously synced data" was not theirs to view. Only
+  // syncing pauses: an Archive or Delete on a refused grant fails, it does
+  // not wait for the reconnect.
+  const explanation = `Google isn't granting DeclutrMail access to ${input.mailboxEmail}. Syncing for this inbox is paused until you reconnect it and allow Gmail access.`;
   const footer = 'This is a required account notice; it cannot be turned off.';
   const text = [
     explanation,
     '',
-    'Open your connected accounts and choose Reconnect for this inbox:',
+    'Open Settings → Gmail accounts and choose Reconnect for this inbox:',
     url,
-    '',
-    'You can still view previously synced data. Other connected inboxes are unaffected.',
     '',
     footer,
   ].join('\n');
@@ -24,11 +28,10 @@ export async function gmailReconnectEmail(input: {
       <Eyebrow>Gmail connection needs attention</Eyebrow>
       <Text style={BODY_TEXT}>{explanation}</Text>
       <Text style={BODY_TEXT}>
-        You can still view previously synced data. Open your connected accounts and choose Reconnect
-        for this inbox.
+        Open Settings → Gmail accounts and choose Reconnect for this inbox.
       </Text>
       <Button href={url} style={CTA_BUTTON}>
-        Review Gmail connection
+        Open Gmail accounts
       </Button>
     </Shell>,
   );

@@ -16,6 +16,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 
@@ -25,6 +26,8 @@ const mockAuth = vi.hoisted(() => ({
   cleanupRemaining: null as number | null,
   /** Active mailbox's initial-sync readiness (QA-onboarding-20260828-01). */
   readiness: 'ready' as 'queued' | 'syncing' | 'ready' | 'failed' | null,
+  /** Server-computed `me.mailboxes[].needsReconnect` for the active mailbox. */
+  needsReconnect: false,
   activeMailboxId: 'mb-1',
 }));
 
@@ -60,6 +63,7 @@ vi.mock('@/features/auth/auth-provider', () => {
           status: 'active',
           connectedAt: null,
           readiness: mockAuth.readiness,
+          needsReconnect: mockAuth.needsReconnect,
         },
       ],
     },
@@ -169,6 +173,7 @@ beforeEach(() => {
   mockAuth.tier = 'plus';
   mockAuth.cleanupRemaining = null;
   mockAuth.readiness = 'ready';
+  mockAuth.needsReconnect = false;
   mockAuth.activeMailboxId = 'mb-1';
   trackMock.mockClear();
 });
@@ -505,7 +510,7 @@ describe('SendersScreen — edge states', () => {
     );
     // Said once: the empty state owns it, the warning line stays out.
     expect(screen.getAllByText(/scan failed/i)).toHaveLength(1);
-    expect(screen.getByText(/retry in settings/i)).toBeInTheDocument();
+    expect(screen.getByText(/scan again in settings/i)).toBeInTheDocument();
     expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
   });
@@ -695,6 +700,25 @@ describe('SendersScreen — edge states', () => {
     // The negative control: reverting to that phrasing makes this fail.
     expect(freshness).not.toHaveTextContent(/from before this scan started/i);
     expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
+    expect(freshness).toHaveTextContent(failedScanSettingsStep(false));
+  });
+
+  it('sends a failed scan that needs reconnecting to Reconnect, not to a retry Settings lacks', async () => {
+    // Settings → Gmail accounts shows "Needs reconnect" + Reconnect for a
+    // refused grant and no retry button; "retry in Settings" named a step
+    // the user could not find there.
+    mockAuth.readiness = 'failed';
+    mockAuth.needsReconnect = true;
+    installFetchStub([oneSenderHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/Reconnect it in Settings/);
+    expect(freshness).not.toHaveTextContent(/retry/i);
+    // Inline in the screen for the bundle budget; pinned to the helper.
+    expect(freshness).toHaveTextContent(failedScanSettingsStep(true));
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {
@@ -2095,6 +2119,91 @@ describe('SendersScreen — edge states', () => {
     ).toBeInTheDocument();
   });
 
+  describe('single-sender one-click unsubscribe toast', () => {
+    // The toast bus is module-level and a toast lives 3.6 s: expire this
+    // block's toasts so "…unsubscribe from Sender A" cannot land in a later
+    // test's "no Unsubscribe preview opened" check.
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+    });
+    afterEach(async () => {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4000);
+      });
+      vi.useRealTimers();
+    });
+
+    function installOneClick(status: () => Response) {
+      installFetchStub([
+        oneSenderHandler(),
+        compositePreviewHandler(3),
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-intent',
+          respond: () =>
+            jsonOk({
+              data: {
+                senderId: 'a',
+                recordedAt: '2026-07-12T12:00:00.000Z',
+                activityLogId: 'activity-a',
+                method: 'one_click',
+                executionActionId: 'exec-a',
+                mailtoUrl: null,
+              },
+            }),
+        },
+        { method: 'GET', path: '/api/actions/exec-a', respond: status },
+      ]);
+    }
+
+    async function confirmRowUnsubscribe() {
+      renderScreenWithToasts();
+      fireEvent.click(await screen.findByRole('button', { name: /More actions for Sender A/i }));
+      fireEvent.click(
+        within(screen.getByRole('menu', { name: /Actions for Sender A/i })).getByRole('menuitem', {
+          name: 'Unsubscribe',
+        }),
+      );
+      await screen.findByRole('radiogroup', { name: /also act on past emails/i });
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: /^Unsubscribe/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+    }
+
+    it('names the Gmail step when one-click was refused and the sender takes email', async () => {
+      installOneClick(() =>
+        jsonOk({
+          data: {
+            actionId: 'exec-a',
+            status: 'failed',
+            requestedCount: 1,
+            affectedCount: 0,
+            undoToken: null,
+            errorCode: 'UNSUB_MANUAL_REQUIRED',
+          },
+        }),
+      );
+      await confirmRowUnsubscribe();
+
+      expect(await screen.findByText(/send the unsubscribe email from Gmail/)).toBeInTheDocument();
+      expect(screen.queryByText(/Archive still works/)).toBeNull();
+    });
+
+    it('a failed status poll makes no promise about where the result shows', async () => {
+      // Nothing refetches the list after a failed poll, so "the sender's
+      // chip will show the result" named an update no code makes.
+      installOneClick(() => jsonServerError());
+      await confirmRowUnsubscribe();
+
+      expect(
+        await screen.findByText(/Couldn't confirm the unsubscribe from Sender A/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/chip/)).toBeNull();
+    });
+  });
+
   it('never advertises more sample subjects than the real total in "Show what currently matches" (live smoke 2026-06-09)', async () => {
     // The disclosure used to hardcode "(5 of N)" — a sender with 3 mails
     // rendered "Show 5 of 3". The label must read the
@@ -2642,6 +2751,45 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /select sender b/i }));
     fireEvent.keyDown(document.body, { key });
   }
+
+  it.each([
+    ['UNSUB_SEND_DISABLED', /nothing was sent/i, /archive/i],
+    ['NO_ACTIONABLE_SENDERS', /No unsubscribe requests sent/, /archive|has an unsubscribe/i],
+    ['NO_ACTIVE_MAILBOX', /couldn't start Unsubscribe/i, /has an unsubscribe/i],
+  ] as const)(
+    'a %s refusal on bulk Unsubscribe says only what that code proves',
+    async (code, says, neverSays) => {
+      // Every 409 used to read "None of these senders has an unsubscribe we
+      // can send — Archive moves their email instead": false when sending
+      // is off, when the active mailbox moved, and — for senders that
+      // became Protected — Archive refuses them too.
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            new Response(JSON.stringify({ error: { code, message: 'refused' } }), {
+              status: 409,
+              headers: { 'content-type': 'application/json' },
+            }),
+        },
+      ]);
+
+      renderScreenWithToasts();
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      const dialog = screen.getByRole('dialog');
+      await waitFor(() =>
+        expect(within(dialog).getByRole('button', { name: /unsubscribe/i })).toBeEnabled(),
+      );
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      const toast = await screen.findByText(says);
+      expect(toast.textContent).not.toMatch(neverSays);
+    },
+  );
 
   it('qualifies bulk selection as the currently loaded rows', async () => {
     installFetchStub([TWO_SENDER_LIST]);
@@ -4026,7 +4174,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   );
 
   // ─────────────────── D248 — bulk unsubscribe receipt ───────────────────
-  it('reports the three terminal outcomes and never claims "unsubscribed"', async () => {
+  it('reports the terminal outcomes and never claims "unsubscribed"', async () => {
     installFetchStub([
       TWO_SENDER_LIST,
       BULK_PREVIEW_OK,
@@ -4095,6 +4243,71 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(within(receipt).queryByRole('button', { name: /^undo$/i })).toBeNull();
   });
 
+  it('shows a refused-but-emailable request as "send from Gmail", never as failed', async () => {
+    // The API counts it inside `failed` AND in `actionRequired` (so a tab
+    // that predates the field still reads it as not accepted); this client
+    // splits them.
+    installFetchStub([
+      TWO_SENDER_LIST,
+      BULK_PREVIEW_OK,
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-manual',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 2,
+              wakeAt: null,
+              skipped: [],
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/batch/batch-unsub-manual',
+        respond: () =>
+          jsonOk({
+            data: {
+              batchId: 'batch-unsub-manual',
+              status: 'done',
+              total: 2,
+              done: 0,
+              failed: 2,
+              requestedCount: 2,
+              affectedCount: 0,
+              undoToken: null,
+              unsubscribeOutcomes: {
+                endpointAccepted: 0,
+                unconfirmed: 0,
+                failed: 2,
+                actionRequired: 1,
+                pending: 0,
+              },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('u');
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText(/unsubscribe from 2 senders/i);
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Unsubscribe/ })).toBeEnabled(),
+    );
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    const receipt = await findReceipt();
+    await waitFor(() =>
+      expect(receipt).toHaveTextContent('1 request not accepted — send from Gmail instead'),
+    );
+    expect(receipt).toHaveTextContent('1 request failed');
+    expect(receipt).not.toHaveTextContent(/2 requests failed/);
+  });
+
   // D245 (founder decision D2): a sender refused as Protected when its
   // request was due was never sent to — "not sent", never a failure.
   function unsubBatch(batch: Record<string, unknown>) {
@@ -4149,7 +4362,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     });
     const receipt = await confirmBulkUnsubscribe();
     await waitFor(() => expect(receipt).toHaveTextContent(/1 request accepted/i));
-    expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
+    expect(receipt).toHaveTextContent('Unsubscribe requests · 1 sender');
     expect(receipt).toHaveTextContent('Not sent: 1 Protected sender');
     expect(receipt).not.toHaveTextContent(/failed/i);
   });
@@ -4235,7 +4448,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       finished = true;
       await tick(2_500);
       const receipt = screen.getByRole('status');
-      expect(receipt).toHaveTextContent('Unsubscribe requests sent · 1 sender');
+      expect(receipt).toHaveTextContent('Unsubscribe requests · 1 sender');
       expect(receipt).toHaveTextContent('Not sent: 1 Protected sender');
       expect(receipt).not.toHaveTextContent(/failed/i);
     } finally {
