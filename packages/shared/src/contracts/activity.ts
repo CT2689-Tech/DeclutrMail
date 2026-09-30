@@ -54,6 +54,24 @@ const ActivityStatsSchema = z.object({
   later: z.number(),
   /** D227 K/A/U/L/D — always present; `0` when no delete activity. */
   deleted: z.number(),
+  /**
+   * Completed, non-reverted message moves. Optional during API/web deploy
+   * skew: absent means unknown, never zero or an action count.
+   */
+  emailCounts: z
+    .object({
+      archived: z.number().int().nonnegative(),
+      deleted: z.number().int().nonnegative(),
+      later: z.number().int().nonnegative(),
+    })
+    .optional(),
+  /** Distinct senders per decision; unsubscribe requests do not prove delivery. */
+  senderCounts: z
+    .object({
+      unsubscribed: z.number().int().nonnegative(),
+      kept: z.number().int().nonnegative(),
+    })
+    .optional(),
   followupsDismissed: z.number(),
   needsAttention: z.number(),
   /** Historic monthly volume, not a prevention claim. Null = unknown. */

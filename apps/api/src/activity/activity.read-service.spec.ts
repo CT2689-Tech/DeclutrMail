@@ -1058,12 +1058,145 @@ describe('ActivityReadService', () => {
         unsubscribed: 2,
         kept: 1,
         later: 1,
+        emailCounts: { archived: 3, deleted: 0, later: 1 },
+        senderCounts: { unsubscribed: 0, kept: 0 },
         followupsDismissed: 1,
         needsAttention: 0,
         // The seeded deflecting rows carry no sender_key → zero
         // deflected senders → null (nothing to project).
         noisePreventedPerMonth: null,
       });
+    });
+
+    it('totals completed email moves and distinct senders across the full window, independent of pagination', async () => {
+      const key = 'impact-wanted';
+      const senderId = await seedSender(
+        db,
+        mailboxA.mailboxAccountId,
+        key,
+        'wanted@example.com',
+        'Wanted',
+      );
+      await seedSender(db, mailboxA.mailboxAccountId, 'impact-other', 'other@example.com', 'Other');
+      for (const [action, affectedCount] of [
+        ['archive', 120],
+        ['archive', 30],
+        ['delete', 234],
+        ['later', 48],
+        ['keep', 0],
+        ['keep', 0],
+        ['unsubscribe', 0],
+        ['unsubscribe', 0],
+        ['unsubscribe_confirmed', 900],
+      ] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderKey: key,
+          occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+          source: 'manual',
+          action,
+          affectedCount,
+        });
+      }
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: key,
+        occurredAt: new Date(NOW_MS - 40 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 5,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: 'impact-other',
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 800,
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxB.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'delete',
+        affectedCount: 40000,
+      });
+      for (const status of ['failed', 'queued'] as const) {
+        await seedExecutionAttempt(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          senderId,
+          senderKey: key,
+          status,
+          requestedCount: 5000,
+          createdAt: new Date(NOW_MS),
+        });
+      }
+      const params = {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d' as const,
+        source: 'autopilot' as const,
+        verbs: ['delete' as const],
+        cursor: null,
+        limit: 1,
+        nowMs: NOW_MS,
+      };
+      const allSenders = await svc.listActivity(params);
+      expect(allSenders.stats.emailCounts).toEqual({ archived: 950, deleted: 234, later: 48 });
+      expect(allSenders.allTimeStats.emailCounts).toEqual({
+        archived: 955,
+        deleted: 234,
+        later: 48,
+      });
+      const scoped = await svc.listActivity({ ...params, senderQuery: 'Wanted' });
+      expect(scoped.stats.emailCounts).toEqual({ archived: 150, deleted: 234, later: 48 });
+      expect(scoped.allTimeStats.emailCounts).toEqual({ archived: 155, deleted: 234, later: 48 });
+      expect(scoped.stats.senderCounts).toEqual({ kept: 1, unsubscribed: 1 });
+      expect(scoped.stats).toMatchObject({ kept: 2, unsubscribed: 2 });
+      const custom = await svc.listActivity({
+        ...params,
+        senderQuery: 'Wanted',
+        dateFrom: new Date(NOW_MS - 50 * ONE_DAY_MS),
+        dateTo: new Date(NOW_MS - 2 * ONE_DAY_MS),
+      });
+      expect(custom.stats.emailCounts).toEqual({ archived: 5, deleted: 0, later: 0 });
+      expect(custom.stats.senderCounts).toEqual({ kept: 0, unsubscribed: 0 });
+    });
+
+    it('removes email impact from both window and lifetime totals only after Undo completes', async () => {
+      const ids = [];
+      for (const [action, affectedCount] of [
+        ['archive', 150],
+        ['delete', 234],
+        ['later', 48],
+      ] as const) {
+        ids.push(
+          await seedActivity(db, {
+            mailboxAccountId: mailboxA.mailboxAccountId,
+            occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+            source: 'manual',
+            action,
+            affectedCount,
+          }),
+        );
+      }
+      const params = {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d' as const,
+        source: null,
+        cursor: null,
+        limit: 1,
+        nowMs: NOW_MS,
+      };
+      const before = await svc.listActivity(params);
+      expect(before.stats.emailCounts).toEqual({ archived: 150, deleted: 234, later: 48 });
+      await db
+        .update(activityLog)
+        .set({ revertedAt: new Date(NOW_MS) })
+        .where(inArray(activityLog.id, ids));
+      const after = await svc.listActivity(params);
+      expect(after.stats.emailCounts).toEqual({ archived: 0, deleted: 0, later: 0 });
+      expect(after.allTimeStats.emailCounts).toEqual(after.stats.emailCounts);
+      expect(after.stats).toMatchObject({ archived: 0, deleted: 0, later: 0 });
     });
 
     it('noisePreventedPerMonth — deflected senders project last-90d volume to per-month; null with no deflections (D33)', async () => {

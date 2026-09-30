@@ -471,7 +471,7 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     ]);
     renderScreen();
 
-    expect(await screen.findByText(/Actions, not emails/)).toBeInTheDocument();
+    expect(await screen.findByText(/Totals from every source/)).toBeInTheDocument();
     // Same window, narrowed to failures.
     expect(screen.getByRole('link', { name: '6 failed · Review' })).toHaveAttribute(
       'href',
@@ -1168,6 +1168,75 @@ describe('ActivityScreen — populated', () => {
     ).toEqual(['Archived12', 'Deleted0', 'Unsubscribes4', 'Later1', 'Kept3']);
   });
 
+  it('shows email impact and distinct sender totals ahead of action counts', async () => {
+    const stats = {
+      ...STATS_BASE,
+      archived: 60,
+      deleted: 1,
+      later: 2,
+      emailCounts: { archived: 8420, deleted: 1, later: 96 },
+      senderCounts: { unsubscribed: 2, kept: 1 },
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({ affectedCount: 10 })],
+            meta: {
+              ...META_BASE,
+              stats,
+              allTimeStats: {
+                ...stats,
+                emailCounts: { archived: 41850, deleted: 234, later: 731 },
+              },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('8,420')).toBeInTheDocument();
+    expect(within(archived).getByText('emails archived')).toBeInTheDocument();
+    expect(within(archived).getByText('60 actions')).toBeInTheDocument();
+    expect(within(archived).getByText('41,850 emails all time')).toBeInTheDocument();
+    const deleted = within(summary).getByRole('button', { name: /Deleted/ });
+    expect(within(deleted).getByText('email moved to Trash')).toBeInTheDocument();
+    expect(within(deleted).getByText('1 action')).toBeInTheDocument();
+    expect(within(deleted).getByText('234 emails all time')).toBeInTheDocument();
+    const later = within(summary).getByRole('button', { name: /Later/ });
+    expect(within(later).getByText('96')).toBeInTheDocument();
+    expect(within(later).getByText('emails moved to Later')).toBeInTheDocument();
+    const unsubscribes = within(summary).getByRole('button', { name: /Unsubscribes/ });
+    expect(within(unsubscribes).getByText('2')).toBeInTheDocument();
+    expect(within(unsubscribes).getByText('senders with requests')).toBeInTheDocument();
+    expect(within(unsubscribes).getByText('4 actions')).toBeInTheDocument();
+    const kept = within(summary).getByRole('button', { name: /Kept/ });
+    expect(within(kept).getByText('sender kept')).toBeInTheDocument();
+    expect(within(kept).getByText('3 actions')).toBeInTheDocument();
+    await userEvent.click(deleted);
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=delete');
+  });
+
+  it('labels an older API count as actions when email totals are unavailable', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ affectedCount: 1000 })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('12')).toBeInTheDocument();
+    expect(within(archived).getByText('actions')).toBeInTheDocument();
+    expect(within(archived).queryByText('emails archived')).toBeNull();
+    expect(within(archived).queryByText('1,000')).toBeNull();
+  });
+
   it('puts the all-time total under each window count, formatted', async () => {
     installFetchStub([
       {
@@ -1183,7 +1252,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
     const summary = await screen.findByRole('region', { name: 'Activity summary' });
     const archived = within(summary).getByRole('button', { name: /Archived/ });
-    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(within(archived).getByText('1,335 actions all time')).toBeInTheDocument();
     expect(within(archived).getByText('12')).toBeInTheDocument();
     // Still the verb filter.
     await userEvent.click(archived);
@@ -1229,7 +1298,7 @@ describe('ActivityScreen — populated', () => {
     expect(within(summary).queryByText(/Nothing in/)).toBeNull();
     expect(within(summary).getAllByRole('button')).toHaveLength(5);
     const archived = within(summary).getByRole('button', { name: /Archived/ });
-    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(within(archived).getByText('1,335 actions all time')).toBeInTheDocument();
     expect(summary.querySelector<HTMLElement>('[data-summary-count="archived"]')?.style.color).toBe(
       'var(--dm-fg-muted)',
     );
@@ -1247,7 +1316,7 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
     const summary = await screen.findByRole('region', { name: 'Activity summary' });
-    expect(within(summary).getByText(/Actions, not emails/)).toBeInTheDocument();
+    expect(within(summary).getByText(/Totals from every source/)).toBeInTheDocument();
     expect(within(summary).queryByText(/Undone actions/)).toBeNull();
   });
 

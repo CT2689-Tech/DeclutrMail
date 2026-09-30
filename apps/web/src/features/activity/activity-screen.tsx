@@ -839,6 +839,34 @@ function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/** Older API deployments can only report action totals; never relabel them as emails. */
+function summaryMetric(
+  stats: ActivityStatsWire,
+  key: (typeof SUMMARY_VERBS)[number]['key'],
+): { count: number; unit: 'emails' | 'senders' | 'actions' } {
+  if (key === 'archived' || key === 'deleted' || key === 'later') {
+    const count = stats.emailCounts?.[key];
+    if (count !== undefined) return { count, unit: 'emails' };
+  } else {
+    const count = stats.senderCounts?.[key];
+    if (count !== undefined) return { count, unit: 'senders' };
+  }
+  return { count: stats[key], unit: 'actions' };
+}
+
+function summaryUnitLabel(
+  key: (typeof SUMMARY_VERBS)[number]['key'],
+  metric: ReturnType<typeof summaryMetric>,
+): string {
+  const unit = metric.count === 1 ? metric.unit.slice(0, -1) : metric.unit;
+  if (metric.unit === 'actions') return unit;
+  if (key === 'deleted') return `${unit} moved to Trash`;
+  if (key === 'later') return `${unit} moved to Later`;
+  if (key === 'archived') return `${unit} archived`;
+  if (key === 'unsubscribed') return `${unit} with requests`;
+  return `${unit} kept`;
+}
+
 /** Any counted action in these stats. */
 function hasAnyCount(stats: ActivityStatsWire | null | undefined): boolean {
   return Boolean(
@@ -889,11 +917,10 @@ function SummaryRow({
   // alone — a panel of zeros would say nothing it doesn't.
   if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
-  // `aggregateStats` counts activity_log ROWS, drops reverted ones, and
-  // ignores the source chips — none of which the numbers can say for
-  // themselves (QA-activity-20260918-05).
+  // The totals drop reverted activity and ignore source chips. Each
+  // metric names its unit; action counts stay secondary to email impact.
   const caption = [
-    'Actions, not emails, from every source.',
+    'Totals from every source.',
     hasUndoneRows ? 'Undone actions aren’t counted.' : null,
   ]
     .filter(Boolean)
@@ -943,12 +970,14 @@ function SummaryRow({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))',
             gap: 2,
           }}
         >
           {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
             const isActive = verbs.includes(verb);
+            const metric = summaryMetric(stats, key);
+            const allTimeMetric = allTimeStats ? summaryMetric(allTimeStats, key) : null;
             return (
               <button
                 key={key}
@@ -995,14 +1024,26 @@ function SummaryRow({
                     fontWeight: 500,
                     letterSpacing: '-0.02em',
                     lineHeight: 1.05,
-                    color: stats[key] === 0 ? color.fgMuted : tone,
+                    color: metric.count === 0 ? color.fgMuted : tone,
                   }}
                 >
-                  {formatCount(stats[key])}
+                  {formatCount(metric.count)}
                 </span>
-                {showAllTime && allTimeStats && (
+                <span style={{ fontSize: text.xs, color: color.fgSoft }}>
+                  {summaryUnitLabel(key, metric)}
+                </span>
+                {metric.unit !== 'actions' && (
                   <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
-                    {formatCount(allTimeStats[key])} all time
+                    {formatCount(stats[key])} {stats[key] === 1 ? 'action' : 'actions'}
+                  </span>
+                )}
+                {showAllTime && allTimeMetric && (
+                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
+                    {formatCount(allTimeMetric.count)}{' '}
+                    {allTimeMetric.count === 1
+                      ? allTimeMetric.unit.slice(0, -1)
+                      : allTimeMetric.unit}{' '}
+                    all time
                   </span>
                 )}
               </button>
