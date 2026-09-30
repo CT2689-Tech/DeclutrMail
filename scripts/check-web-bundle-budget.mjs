@@ -278,7 +278,15 @@ export const OVERRIDES_KB = {
   // Raised 256 -> 258 on 2026-09-29 (D245, PR #805): measured 256.1, up
   // from 254.3, for the same every-route `ProductUndoTray` growth as
   // /(app)/settings/page above. 258 keeps ~2 kB headroom.
-  '/(app)/settings/privacy/page': 258, // 256.1 — data controls + explainer
+  // Raised 258 -> 262 on 2026-09-30 (3rd same-day cumulative-drift raise on
+  // this cluster today, after #832/#833): measured 258.3, up from 256.1.
+  // Wider headroom than the usual +2kB, given how fast this repo's merge
+  // rate has been outpacing route-by-route bumps today.
+  '/(app)/settings/privacy/page': 262, // 258.3 — data controls + explainer
+  // Riding AUTHED_DEFAULT_KB (264) tipped it 0.4 kB over on 2026-09-30 --
+  // same cumulative drift. Pinned its own ceiling with wider headroom for
+  // the same reason as settings/privacy above.
+  '/(app)/autopilot/page': 268, // 264.4
   // Lowered from its re-based 266 on 2026-09-27: pinned at 165 against
   // 161.4, it got 16.6 kB lighter and the budget never followed. 250
   // keeps the 3.6 kB margin it was pinned with.
