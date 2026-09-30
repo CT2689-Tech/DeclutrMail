@@ -1,7 +1,8 @@
-import type { JobsOptions } from 'bullmq';
+import type { JobsOptions, WorkerOptions } from 'bullmq';
 import { and, desc, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { ENGAGEMENT_WINDOW_MS } from '@declutrmail/shared/contracts';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { Redis } from 'ioredis';
 
 import {
   activityLog,
@@ -30,8 +31,9 @@ import {
   type ConcurrencyLimiter,
   type ReasoningLlmPort,
 } from './reasoning.js';
-import { backoffJobOptions } from './rate-limit-backoff.js';
+import { backoffJobOptions, perMailboxWorkerSettings } from './rate-limit-backoff.js';
 import { RateLimiter } from './rate-limiter.js';
+import { workerTuningOptions } from './queue.js';
 import { sqlTextArray } from './sql-text-array.js';
 import {
   CASCADE_RULE_PHRASE,
@@ -1974,6 +1976,31 @@ export function scoreJobOptions(jobId: string): JobsOptions {
     ...backoffJobOptions(policy.backoff),
     removeOnComplete: { age: 24 * 60 * 60 },
     removeOnFail: false,
+  };
+}
+
+/**
+ * BullMQ `Worker` options for `scoreBullWorker` — the consumer half of the
+ * `scoreJobOptions()` pairing (D203/D225). `...perMailboxWorkerSettings()`
+ * registers the `custom` backoff STRATEGY that `scoreJobOptions()`'s
+ * `backoff: { type: 'custom' }` jobs need; omitting it makes BullMQ throw
+ * `Unknown backoff strategy custom.` on any retryable failure instead of
+ * retrying (2026-09-29 — the exact bug this function exists to make
+ * impossible to reintroduce silently).
+ *
+ * Exported and called by BOTH `apps/api/src/worker.ts`'s registration and
+ * `score-bull-worker-registration.test.ts` — a hand-copied duplicate of
+ * this shape in the test cannot catch a future accidental removal of
+ * `...perMailboxWorkerSettings()` from the real registration, which is
+ * exactly what happened to the first version of that test (architecture-
+ * guardian, PR #827 round 3).
+ */
+export function scoreBullWorkerOptions(connection: Redis): WorkerOptions {
+  return {
+    connection,
+    concurrency: 20,
+    ...workerTuningOptions('user-facing'),
+    ...perMailboxWorkerSettings(),
   };
 }
 

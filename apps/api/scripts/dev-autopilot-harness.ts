@@ -55,6 +55,7 @@ import {
   RateLimiter,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreJobOptions,
   ScoreWorker,
   UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
@@ -107,7 +108,14 @@ async function main(): Promise<void> {
         SCORE_JOB,
         { mailboxAccountId: mailboxArg, trigger: 'manual_rescore', producedAtMs },
         // `-` separator — BullMQ rejects custom jobIds containing ':'.
-        { jobId: `${mailboxArg}-star-${producedAtMs}` },
+        // `scoreJobOptions()` (not a bare `{ jobId }`) so this job gets the
+        // same `perMailboxPolicy` retry budget every other score producer
+        // does. Safe here: the `scoreBull` consumer this job is enqueued
+        // FOR (the harness's separate default/no-args invocation, already
+        // running) registers `...perMailboxWorkerSettings()` below, so the
+        // custom backoff strategy this now carries is understood
+        // (2026-09-29).
+        scoreJobOptions(`${mailboxArg}-star-${producedAtMs}`),
       );
       log('score_enqueued', { mailboxAccountId: mailboxArg, producedAtMs });
       await q.close();
@@ -267,7 +275,12 @@ async function main(): Promise<void> {
   const actionBull = new Worker<AutopilotActionJobData>(
     AUTOPILOT_ACTION_QUEUE,
     (job) => actionWorker.run(job),
-    { connection, concurrency: 2 },
+    // `perMailboxWorkerSettings()`: this queue's jobs DO carry a custom
+    // backoff (`autopilotActionSweepJobOptions` via
+    // `createAutopilotExecutionChain`, and this harness's own
+    // `enqueue-action` via `autopilotActionJobOptions`) — the same
+    // missing-registration gap `scoreBull` above had (2026-09-29).
+    { connection, concurrency: 2, ...perMailboxWorkerSettings() },
   );
   actionBull.on('error', (err) => log('action_bull_error', { message: err.message }));
 
@@ -283,7 +296,10 @@ async function main(): Promise<void> {
   const labelBull = new Worker<LabelActionJobData>(
     LABEL_ACTION_QUEUE,
     (job) => labelWorker.run(job),
-    { connection, concurrency: 2 },
+    // `perMailboxWorkerSettings()`: the undo path's `labelActionJobOptions`
+    // (`actions.service.ts`) sets the same custom backoff — same gap as
+    // `actionBull` above (2026-09-29).
+    { connection, concurrency: 2, ...perMailboxWorkerSettings() },
   );
   labelBull.on('error', (err) => log('label_bull_error', { message: err.message }));
 

@@ -95,6 +95,7 @@ import {
   SCORE_EXPLAIN_QUEUE,
   SCORE_JOB,
   SCORE_QUEUE,
+  scoreBullWorkerOptions,
   scoreJobId,
   scoreJobOptions,
   ScoreWorker,
@@ -1179,13 +1180,16 @@ async function bootstrap(): Promise<void> {
   const scoreBullWorker = new Worker<ScoreJobData, ScoreJobResult>(
     SCORE_QUEUE,
     (job) => scoreWorker.run(job),
-    // `perMailboxWorkerSettings()` pairs with `scoreJobOptions`'s
-    // `backoff: { type: 'custom' }` — omitting it makes BullMQ throw
-    // `Unknown backoff strategy custom.` on any retryable failure, and
-    // the job then sits `active` until the stalled-job reclaim instead
-    // of reaching `failed` (no Sentry capture, no dead-letter row) —
-    // worse than having no retry budget at all (2026-09-29).
-    { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
+    // `scoreBullWorkerOptions()` (`score.worker.ts`) is the SAME function
+    // `score-bull-worker-registration.test.ts` imports and calls, so a
+    // future accidental removal of its `...perMailboxWorkerSettings()`
+    // spread — which pairs with `scoreJobOptions`'s
+    // `backoff: { type: 'custom' }`, and whose absence makes BullMQ throw
+    // `Unknown backoff strategy custom.` on any retryable failure instead
+    // of reaching `failed` (no Sentry capture, no dead-letter row) — fails
+    // that test for real instead of a hand-copied duplicate going stale
+    // (2026-09-29).
+    scoreBullWorkerOptions(connection),
   );
 
   scoreBullWorker.on('error', (err) => {
