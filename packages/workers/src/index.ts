@@ -360,6 +360,7 @@ export {
   SCORE_JOB,
   SCORE_QUEUE,
   scoreJobId,
+  scoreJobOptions,
   ScoreWorker,
 } from './score.worker.js';
 export type {

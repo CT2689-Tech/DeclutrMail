@@ -51,6 +51,7 @@ import {
   OutboxDispatcherWorker,
   OUTBOX_NOTIFY_CHANNEL,
   OutboxPublisher,
+  perMailboxWorkerSettings,
   RateLimiter,
   SCORE_JOB,
   SCORE_QUEUE,
@@ -233,6 +234,7 @@ async function main(): Promise<void> {
   const scoreBull = new Worker<ScoreJobData>(SCORE_QUEUE, (job) => scoreWorker.run(job), {
     connection,
     concurrency: 2,
+    ...perMailboxWorkerSettings(),
   });
   scoreBull.on('error', (err) => log('score_bull_error', { message: err.message }));
 
