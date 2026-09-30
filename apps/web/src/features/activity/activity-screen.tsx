@@ -814,7 +814,13 @@ const SUMMARY_VERBS: ReadonlyArray<{
   tone: string;
 }> = [
   { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived', tone: color.fg },
-  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted', tone: color.danger },
+  {
+    key: 'deleted',
+    verb: 'delete',
+    label: 'Moved to Trash',
+    allTimeWord: 'deleted',
+    tone: color.danger,
+  },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
   // intent rows), which for one-click include attempts that may fail
   // and mailto that we never confirm. "Unsubscribes" (a count of the
@@ -826,7 +832,7 @@ const SUMMARY_VERBS: ReadonlyArray<{
   {
     key: 'unsubscribed',
     verb: 'unsubscribe',
-    label: 'Unsubscribes',
+    label: 'Unsubscribe requests',
     allTimeWord: 'unsubscribes',
     tone: color.primary,
   },
@@ -852,19 +858,6 @@ function summaryMetric(
     if (count !== undefined) return { count, unit: 'senders' };
   }
   return { count: stats[key], unit: 'actions' };
-}
-
-function summaryUnitLabel(
-  key: (typeof SUMMARY_VERBS)[number]['key'],
-  metric: ReturnType<typeof summaryMetric>,
-): string {
-  const unit = metric.count === 1 ? metric.unit.slice(0, -1) : metric.unit;
-  if (metric.unit === 'actions') return unit;
-  if (key === 'deleted') return `${unit} moved to Trash`;
-  if (key === 'later') return `${unit} moved to Later`;
-  if (key === 'archived') return `${unit} archived`;
-  if (key === 'unsubscribed') return `${unit} with requests`;
-  return `${unit} kept`;
 }
 
 /** Any counted action in these stats. */
@@ -917,8 +910,16 @@ function SummaryRow({
   // alone — a panel of zeros would say nothing it doesn't.
   if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
+  const periodLabel = isWindowAllTime
+    ? 'Since you started'
+    : windowLabel.startsWith('Last ')
+      ? `In the ${windowLabel.toLowerCase()}`
+      : windowLabel;
+  const showActionDetails = SUMMARY_VERBS.some(
+    ({ key }) => summaryMetric(stats, key).unit !== 'actions',
+  );
   // The totals drop reverted activity and ignore source chips. Each
-  // metric names its unit; action counts stay secondary to email impact.
+  // metric names its unit and period; action counts live in the disclosure.
   const caption = [
     'Totals from every source.',
     hasUndoneRows ? 'Undone actions aren’t counted.' : null,
@@ -1009,41 +1010,50 @@ function SummaryRow({
                 <span
                   style={{
                     fontSize: text.sm,
+                    minHeight: 32,
+                    lineHeight: 1.2,
                     fontWeight: isActive ? 600 : 500,
                     color: isActive ? color.primary : color.fgMuted,
                   }}
                 >
                   {label}
                 </span>
-                <span
-                  data-summary-count={key}
-                  style={{
-                    ...numeralStyle,
-                    fontFamily: font.display,
-                    fontSize: text['3xl'],
-                    fontWeight: 500,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.05,
-                    color: metric.count === 0 ? color.fgMuted : tone,
-                  }}
-                >
-                  {formatCount(metric.count)}
-                </span>
-                <span style={{ fontSize: text.xs, color: color.fgSoft }}>
-                  {summaryUnitLabel(key, metric)}
-                </span>
-                {metric.unit !== 'actions' && (
-                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
-                    {formatCount(stats[key])} {stats[key] === 1 ? 'action' : 'actions'}
+                <span style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 6 }}>
+                  <span
+                    data-summary-count={key}
+                    style={{
+                      ...numeralStyle,
+                      fontFamily: font.display,
+                      fontSize: text['3xl'],
+                      fontWeight: 500,
+                      letterSpacing: '-0.02em',
+                      lineHeight: 1.05,
+                      color: metric.count === 0 ? color.fgMuted : tone,
+                    }}
+                  >
+                    {formatCount(metric.count)}
                   </span>
-                )}
+                  <span style={{ fontSize: text.sm, color: color.fgSoft }}>
+                    {metric.count === 1 ? metric.unit.slice(0, -1) : metric.unit}
+                  </span>
+                </span>
+                <span style={{ fontSize: text.xs, color: color.fgSoft }}>{periodLabel}</span>
                 {showAllTime && allTimeMetric && (
-                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
-                    {formatCount(allTimeMetric.count)}{' '}
+                  <span
+                    style={{
+                      ...numeralStyle,
+                      fontSize: text.xs,
+                      color: color.fgMuted,
+                      marginTop: 6,
+                      paddingTop: 8,
+                      borderTop: `1px solid ${color.line}`,
+                      alignSelf: 'stretch',
+                    }}
+                  >
+                    Since you started: {formatCount(allTimeMetric.count)}{' '}
                     {allTimeMetric.count === 1
                       ? allTimeMetric.unit.slice(0, -1)
-                      : allTimeMetric.unit}{' '}
-                    all time
+                      : allTimeMetric.unit}
                   </span>
                 )}
               </button>
@@ -1052,6 +1062,21 @@ function SummaryRow({
         </div>
       </div>
       <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>
+      {showActionDetails && (
+        <details style={{ fontSize: text.xs, color: color.fgMuted }}>
+          <summary style={{ cursor: 'pointer' }}>View action counts</summary>
+          <p style={{ margin: '8px 0' }}>
+            {windowLabel}. One cleanup action can handle many emails.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {SUMMARY_VERBS.map(({ key, label }) => (
+              <li key={key}>
+                {label}: {formatCount(stats[key])} {stats[key] === 1 ? 'action' : 'actions'}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }
