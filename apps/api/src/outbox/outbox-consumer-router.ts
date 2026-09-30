@@ -29,6 +29,7 @@ import type {
 } from '@declutrmail/events';
 import {
   AUTOPILOT_APPLY_JOB,
+  autopilotApplyJobOptions,
   seedAutopilotPresets,
   type AutopilotApplyJobData,
   type DispatchedEvent,
@@ -40,8 +41,14 @@ import type { DrizzleDb } from '../db/db.module.js';
  * Optional consumer dependencies beyond the db handle, injected by the
  * worker composition root (`apps/api/src/worker.ts` — integration-owned).
  * The router stays the seam; feature wiring (queues, ports) lives with
- * the feature and is passed in here. A dep whose wiring is absent logs
- * loudly + ACKs so the dispatcher never wedges on a deploy-ordering gap.
+ * the feature and is passed in here. Most absent wiring logs loudly and
+ * ACKs, so the dispatcher never wedges on a deploy-ordering gap —
+ * `onMailboxSyncReady`, `onMailboxSyncFailed`. Two throw instead, because
+ * their repair cannot be re-derived after the fact: `rescoreSenders`
+ * (`handleNonMailPurged`) and the pre-existing `onMailboxReconnectRequired`.
+ * Neither is enforced by its type — both are still `?:` — so a
+ * composition root that omits one still compiles; it only surfaces once
+ * the dispatcher's retries exhaust and the row flips to `failed`.
  */
 export interface OutboxConsumerDeps {
   /**
@@ -72,7 +79,8 @@ export interface OutboxConsumerDeps {
    * `mailbox.non_mail_purged` — enqueue a score job per recounted sender
    * (the ScoreWorker is the only writer of `triage_decisions`).
    * `producedAtMs` is the purge's clock, so a redelivery dedups by jobId.
-   * Optional: without it the router warns `rescore_unwired`.
+   * Optional so other roles can build the router, but an event that
+   * needs a re-score throws without it rather than being acked.
    */
   rescoreSenders?: (
     mailboxAccountId: string,
@@ -325,6 +333,9 @@ async function handleUnsubscribeExecuted(
  * worker's idempotency key with `-` instead of `:` — BullMQ reserves
  * `:` as its Redis key separator and REJECTS custom ids containing it
  * (caught live in the U14 smoke: `Error: Custom Id cannot contain :`).
+ * `autopilotApplyJobOptions` grants `perMailboxPolicy`'s 5-attempt
+ * budget with backoff, same as the incremental-sync delta trigger (the
+ * apply queue's other producer).
  */
 async function enqueueAutopilotApply(
   deps: OutboxConsumerDeps,
@@ -340,11 +351,11 @@ async function enqueueAutopilotApply(
     );
     return;
   }
-  await deps.autopilotApplyQueue.add(AUTOPILOT_APPLY_JOB, job, {
-    jobId: `${job.mailboxAccountId}-${job.triggeredAtMs}`,
-    removeOnComplete: { age: 86_400 },
-    removeOnFail: false,
-  });
+  await deps.autopilotApplyQueue.add(
+    AUTOPILOT_APPLY_JOB,
+    job,
+    autopilotApplyJobOptions(`${job.mailboxAccountId}-${job.triggeredAtMs}`),
+  );
 }
 
 /**
@@ -352,11 +363,13 @@ async function enqueueAutopilotApply(
  * purged drafts and chat lines fed (D204). The purge itself only touches
  * the sender index.
  *
- * Follow-ups: `FollowupCheckWorker.flipReplied` marked a thread replied
- * once an inbound message followed the user's send, and a draft saved in
- * the thread used to count as one. Reopen a replied row on those threads
- * when no reply is left — `followupReplyExists`, the same definition
- * `flipReplied` uses, negated over the mail that remains. Only
+ * Follow-ups: `FollowupCheckWorker.flipReplied` marks a thread replied
+ * once an inbound message follows the user's send, and until PR #791
+ * lands a draft saved in the thread still counts as one — this consumer
+ * is dormant until then, since nothing publishes this topic yet. Reopen
+ * a replied row on those threads when no reply is left —
+ * `followupReplyExists`, negated over the mail that remains, which
+ * `flipReplied` adopts in #791 so the two share one definition. Only
  * `flipReplied` sets `replied` (a user can only dismiss), so this undoes
  * no choice of theirs. Idempotent: a reopened row is `awaiting`, which
  * this never matches.
@@ -364,6 +377,18 @@ async function enqueueAutopilotApply(
  * Triage: the recounted senders' verdicts quote counts that changed, so
  * they are re-scored by the ScoreWorker, the only writer of
  * `triage_decisions`.
+ *
+ * Unwired re-score throws before touching anything. Acking the event
+ * without it would drop the repair for good (the rows that described
+ * those senders are gone), so the row stays for the dispatcher, which
+ * retries it and, if it gives up, logs `outbox.dispatch.event_failed`
+ * and reports it to Sentry. That retry protects the ENQUEUE only: once
+ * the outbox event is `dispatched`, `rescoreSenders` passes
+ * `scoreJobOptions(scoreJobId(data))` (PR #827, D203/D225) like every
+ * other score producer now does, so a transient failure inside the
+ * score run itself gets `perMailboxPolicy`'s own 5-attempt + backoff
+ * budget before dead-lettering — only a failure that exhausts that
+ * budget still leaves the repair with no further retry.
  */
 async function handleNonMailPurged(
   db: DrizzleDb,
@@ -371,37 +396,59 @@ async function handleNonMailPurged(
   payload: MailboxNonMailPurgedPayload,
   eventId: string,
 ): Promise<void> {
-  if (payload.threadIds.length > 0) {
-    await db
-      .update(followupTracker)
-      .set({ status: 'awaiting', updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
-          eq(followupTracker.status, 'replied'),
-          inArray(followupTracker.providerThreadId, payload.threadIds),
-          not(followupReplyExists(payload.mailboxAccountId)),
-        ),
-      );
+  const rescore = deps.rescoreSenders;
+  if (payload.recountedSenderKeys.length > 0 && !rescore) {
+    throw new Error('mailbox.non_mail_purged: rescoreSenders is not wired');
   }
-  if (payload.recountedSenderKeys.length === 0) return;
-  if (!deps.rescoreSenders) {
-    console.warn(
+  const reopened =
+    payload.threadIds.length === 0
+      ? []
+      : await db
+          .update(followupTracker)
+          .set({ status: 'awaiting', updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(followupTracker.mailboxAccountId, payload.mailboxAccountId),
+              eq(followupTracker.status, 'replied'),
+              inArray(followupTracker.providerThreadId, payload.threadIds),
+              not(followupReplyExists()),
+            ),
+          )
+          .returning({ id: followupTracker.id });
+  // Logged before `rescore`, not after both halves: on a retry (`rescore`
+  // threw last attempt), the reopen's WHERE now matches nothing — its
+  // rows are already `awaiting` — so a single combined line gated on full
+  // success would report 0 reopened for a repair that genuinely ran, on
+  // the one attempt that finally completes.
+  console.log(
+    JSON.stringify({
+      level: 'info',
+      kind: 'outbox.consumer.non_mail_purged_reopened',
+      eventId,
+      mailboxAccountId: payload.mailboxAccountId,
+      followupsReopened: reopened.length,
+    }),
+  );
+  if (rescore && payload.recountedSenderKeys.length > 0) {
+    await rescore(
+      payload.mailboxAccountId,
+      payload.recountedSenderKeys,
+      Date.parse(payload.purgedAt),
+    );
+    // Queued, not completed: a job can dedup onto an existing jobId or
+    // fail its one BullMQ attempt into `dead_letter_jobs` (score
+    // producers set no `attempts`). This line is evidence work was
+    // handed off, not that the re-score ran.
+    console.log(
       JSON.stringify({
-        level: 'warn',
-        kind: 'outbox.consumer.non_mail_purged_rescore_unwired',
+        level: 'info',
+        kind: 'outbox.consumer.non_mail_purged_queued_rescore',
         eventId,
         mailboxAccountId: payload.mailboxAccountId,
-        senders: payload.recountedSenderKeys.length,
+        sendersQueuedForRescore: payload.recountedSenderKeys.length,
       }),
     );
-    return;
   }
-  await deps.rescoreSenders(
-    payload.mailboxAccountId,
-    payload.recountedSenderKeys,
-    Date.parse(payload.purgedAt),
-  );
 }
 
 /**

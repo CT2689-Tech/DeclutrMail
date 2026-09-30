@@ -3,6 +3,7 @@
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -48,7 +49,7 @@ import {
 import { useSetSenderPolicy } from '../api/use-sender-policy';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
@@ -56,6 +57,7 @@ import { DecisionTimeline, type TimelineItem } from '../uplift-d';
 import { unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import {
   isUnsubSendDisabled,
@@ -66,6 +68,19 @@ import { relTime } from './data';
 import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
+import { backlogAfterUnsubFailureCopy } from '@/lib/bulk-action-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { undoKeys } from '@/features/undo/query-keys';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
 import styles from '../sender-workspace.module.css';
@@ -303,15 +318,24 @@ export function SenderDetailRoute({
   const timeseriesReady = !!timeseries.data && freshSinceReset(sendersKeys.timeseries(id), 'data');
   const historyReady = !!history.data && freshSinceReset(sendersKeys.history(id), 'data');
 
+  const now = useNow();
+  const timeZone = useUserTimeZone();
   const adapted = useMemo(() => {
     if (!detail.data || !cachedDataIsTrustworthy) {
       return null;
     }
+    // `useNow()` is null until mount. Pairing lastSeenDays with
+    // `useUserTimeZone()` is what keeps SSR (UTC runtime) and a US
+    // browser on the same calendar day; `Date.now()` here is only the
+    // pre-mount fallback and matches the rare midnight-crossing case
+    // already accepted for /later (DECLUTRMAIL-WEB-2C).
     return adaptSenderDetail({
       detail: detail.data.data,
       messages: messagesReady ? messages.data!.pages.flatMap((p) => p.data) : [],
       timeseries: timeseriesReady ? timeseries.data!.data : [],
       history: historyReady ? history.data!.pages.flatMap((p) => p.data) : [],
+      now: now ?? Date.now(),
+      timeZone,
     });
   }, [
     detail.data,
@@ -322,6 +346,8 @@ export function SenderDetailRoute({
     messagesReady,
     timeseriesReady,
     historyReady,
+    now,
+    timeZone,
   ]);
 
   // QA-sender-detail-20260903-01: checking ONLY `detail.error` here raced
@@ -477,6 +503,7 @@ function ReadyState({
   // "today" on one and "yesterday" on the other for the identical
   // instant (Codex review, QA-archive-20260828-03).
   const now = useNow();
+  const timeZone = useUserTimeZone();
   // Protect/Keep are real mutations: the chip flips
   // optimistically (standard non-destructive mutation UX, not the D226
   // lifecycle), `useSetSenderPolicy` persists the set-state patch +
@@ -506,7 +533,7 @@ function ReadyState({
   } | null>(null);
   // Page-level action feedback — the same model the senders list rows use
   // (`row-activity`). `settled` is what the toolbar says once the job is
-  // terminal, or "not confirmed" when its status poll was lost.
+  // terminal, or "unknown" when its status poll was lost.
   const [settled, setSettled] = useState<SenderRowActivity | null>(null);
   // The confirmed request is on its way; the confirm holds on
   // "Submitting…" until the server answers (it used to close first).
@@ -560,6 +587,14 @@ function ReadyState({
   // a second Unsubscribe on this page (see the Unsubscribe branch), but
   // its stall risk sits in the intent mutation, not this poll.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  // Server truth (via `listInFlight`) for whether THIS sender has a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this page's own unmount/navigation. By the time a job would
+  // reach `overdueAction`'s 120s park, this has already been true for
+  // most of that window (it starts reflecting the job within one ~2s poll
+  // of enqueue), so it is a strict superset of what `overdueAction` alone
+  // could cover for the re-entry guard below.
+  const sharedLock = useSenderInFlightLock(actionMailboxId);
   // What the toolbar says about this sender's own action. Live handles
   // win over a settled result.
   const pageActivity = useMemo(() => {
@@ -590,10 +625,7 @@ function ReadyState({
     if (!activeAction) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(activeAction.verb, activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -745,18 +777,20 @@ function ReadyState({
 
       // Re-entry guard for every destructive branch — see jsdoc above.
       // Composite + direct-enqueue share the same `activeAction` slot,
-      // so a single guard covers both. `overdueAction` counts too: this
-      // page is single-sender, so a parked (overdue) handle still owns
-      // THIS sender — re-dispatching would mint a fresh idempotency key
-      // and a SECOND real Gmail job (double cleanup unit, two undo
-      // tokens). The ACTION_OVERDUE_MS release frees other screens'
-      // subjects, never the hung sender itself. The pending confirm
-      // surface is deliberately NOT cleared here (2026-08-12 incident
-      // follow-up): clearing it dropped the user's confirmed intent —
-      // the toast explains the wait, the preview stays open, and the
-      // confirm can be retried once the latch truly frees (terminal
-      // status of the active OR parked handle).
-      if (activeAction != null || overdueAction != null || enqueueComposite.isPending) {
+      // so a single guard covers both. `sharedLock` covers what local
+      // state alone cannot: a job dispatched from a DIFFERENT surface or
+      // tab, or one that survives this page's own unmount/navigation —
+      // re-dispatching into either would mint a fresh idempotency key and
+      // a SECOND real Gmail job (double cleanup unit, two undo tokens).
+      // The pending confirm surface is deliberately NOT cleared here
+      // (2026-08-12 incident follow-up): clearing it dropped the user's
+      // confirmed intent — the toast explains the wait, the preview stays
+      // open, and the confirm can be retried once the sender is free.
+      if (
+        activeAction != null ||
+        sharedLock.senderIds.has(detail.sender.id) ||
+        enqueueComposite.isPending
+      ) {
         toast('Still confirming your last action — give it a moment.', 'info');
         return;
       }
@@ -840,10 +874,20 @@ function ReadyState({
               // page loaded. Refetch, or the reopened modal shows the same
               // stale sender and 409s again — forever.
               if (staleProtection) void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              // The job may be running: the verb must not re-arm for a
+              // second run, and the pill finds a job that did start
+              // through the in-flight read.
+              if (enqueueMayHaveStarted(err)) {
+                setSettled({ phase: 'unconfirmed', verb: primaryType });
+                void qc.invalidateQueries({ queryKey: undoKeys.all });
+              }
               toast(
                 staleProtection
                   ? `${sender.name} is Protected — reopen the action to confirm anyway`
-                  : `Couldn't ${primaryType} ${sender.name}`,
+                  : getActionFailureCopy('enqueue', {
+                      action: actionLabel(verb, sender.name),
+                      error: err,
+                    }),
                 'warn',
               );
             },
@@ -858,7 +902,9 @@ function ReadyState({
       // compose THE USER sends (never auto-sent). No undo token exists
       // for a network unsub (D58). Single-sender by design here; the
       // additional `recordUnsubIntent.isPending` check stops a
-      // double-fire while the unsub mutation itself is in flight.
+      // double-fire while the unsub mutation itself is in flight. The
+      // sender-wide `sharedLock` check above already covers "busy from a
+      // different verb, surface or tab" for this branch too.
       if (verb === 'Unsubscribe') {
         if (recordUnsubIntent.isPending || activeUnsub != null) {
           // Visible deferral, never a silent swallow — same voice as the
@@ -877,6 +923,7 @@ function ReadyState({
             mailboxId: actionMailboxId,
             senderId: sender.id,
             includesBacklogAction: secondary != null,
+            ...(opts?.override === true ? { override: true } : {}),
           },
           {
             onSuccess: (res) => {
@@ -926,8 +973,8 @@ function ReadyState({
                         : {}),
                     },
                     // The SAME acknowledgement the preview collected.
-                    // Unsubscribe has no Protected guard, so the intent
-                    // above always lands — one-click sends a real,
+                    // The intent above is never refused at the click, so
+                    // it lands — one-click sends a real,
                     // one-way request (D58). Dropping the override here
                     // 409s the backlog half AFTER that, leaving the user
                     // unsubscribed with their mail untouched: a partial
@@ -946,13 +993,23 @@ function ReadyState({
                       // 402 FREE_CAP_REACHED — the upgrade prompt
                       // explains why the backlog didn't enqueue.
                       if (err instanceof ApiError && err.status === 402) return;
-                      setSettled({ phase: 'failed', verb: secondary.type });
+                      // The job may still run: its outcome is not known.
+                      const unconfirmed = enqueueMayHaveStarted(err);
+                      setSettled({
+                        phase: unconfirmed ? 'unconfirmed' : 'failed',
+                        verb: secondary.type,
+                      });
+                      if (unconfirmed) void qc.invalidateQueries({ queryKey: undoKeys.all });
                       captureFeatureException(err, {
                         surface: 'senders',
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        `Couldn't ${secondary.type} the older email from ${sender.name}`,
+                        backlogAfterUnsubFailureCopy({
+                          verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
+                          senderName: sender.name,
+                          error: err,
+                        }),
                         'warn',
                       );
                     },
@@ -966,8 +1023,25 @@ function ReadyState({
                 toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                 return;
               }
+              // Designed too: one request to this sender is still on its way.
+              if (isUnsubscribeInFlight(err)) {
+                toast(unsubscribeInFlightCopy(sender.name), 'info');
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+                return;
+              }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
-              toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
+              // A 5xx cannot prove nothing started: show what the server has.
+              if (enqueueMayHaveStarted(err)) {
+                void qc.invalidateQueries({ queryKey: sendersKeys.all });
+              }
+              toast(
+                getActionFailureCopy('enqueue', {
+                  action: `Unsubscribe for ${sender.name}`,
+                  outcome: 'no request was sent',
+                  error: err,
+                }),
+                'warn',
+              );
             },
           },
         );
@@ -983,6 +1057,7 @@ function ReadyState({
       overdueAction,
       activeUnsub,
       actionMailboxId,
+      sharedLock.senderIds,
     ],
   );
 
@@ -1043,15 +1118,19 @@ function ReadyState({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: the sender was Protected by the time the job ran, so it was
+    // skipped. Its mail is all still there: the page claims no outcome.
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1088,15 +1167,18 @@ function ReadyState({
     // next-opened) confirm surface describes: its preview must re-count
     // before the freed guard lets it dispatch.
     reconcileAction(qc, data, data.actionId);
-    setSettled(
-      data.status === 'done'
-        ? {
-            phase: 'done',
-            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
-            affectedCount: data.affectedCount,
-          }
-        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
-    );
+    // D245: skipped as Protected — no outcome to claim (see above).
+    if (!isProtectedSkip(data)) {
+      setSettled(
+        data.status === 'done'
+          ? {
+              phase: 'done',
+              verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+              affectedCount: data.affectedCount,
+            }
+          : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+      );
+    }
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1130,19 +1212,7 @@ function ReadyState({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(activeUnsub.senderName, data));
     reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
@@ -1267,8 +1337,10 @@ function ReadyState({
     // row is marked: saying nothing beats promoting an undone row, and
     // an older standing decision is not on screen to point at.
     const currentIndex = history.findIndex((row) => row.undoneAt == null);
-    return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
-  }, [history, now]);
+    return history.map((row, i) =>
+      historyRowToTimelineItem(row, i === currentIndex, now, timeZone),
+    );
+  }, [history, now, timeZone]);
 
   // The list and inspector are simultaneous views of the same sender.
   // In the split workspace, inherit its activity map and action lifecycle;
@@ -1739,8 +1811,9 @@ function historyRowToTimelineItem(
   row: DecisionHistoryRow,
   isCurrent: boolean,
   now: number | null,
+  timeZone: string,
 ): TimelineItem {
-  const when = now === null ? '' : formatRelative(row.at, now);
+  const when = now === null ? '' : formatRelative(row.at, now, timeZone);
   return {
     id: row.id,
     when,
@@ -1775,8 +1848,8 @@ function historyRowToTimelineItem(
 // read here: this page has no `ssr:false` boundary, so a clock read
 // during render can put the server and the client on opposite sides of
 // a calendar-day cutoff and hydrate a different label than it rendered.
-function formatRelative(iso: string, now: number): string {
-  const days = daysSince(iso, now);
+function formatRelative(iso: string, now: number, timeZone: string): string {
+  const days = daysSince(iso, now, timeZone);
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days}d ago`;

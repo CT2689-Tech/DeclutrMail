@@ -46,9 +46,10 @@ const ConfidenceSchema = z.number().min(0).max(1);
 
 /**
  * Emitted by the score worker after EVERY score job — a whole-mailbox
- * `sync_complete` sweep or a single-sender `signal_change` /
- * `stale_refresh` / `manual_rescore` run (`cron_sweep` is declared but
- * has no producer). Drives the
+ * `sync_complete` sweep, a single-sender `signal_change` /
+ * `stale_refresh` / `manual_rescore` run, or a `signal_change` run over
+ * the set of senders a Gmail tab recount marked stale (`cron_sweep` is
+ * declared but has no producer). Drives the
  * AutopilotApplyWorker — the apply worker subscribes here and runs
  * preset matchers against the current `triage_decisions` rows.
  */
@@ -331,21 +332,32 @@ export type MailboxReconnectRequiredPayload = z.infer<typeof MailboxReconnectReq
 // ──────────────────────────────────────────────────────────────────────
 
 /**
- * Published by the non-mail purge in the same transaction as one batch
- * of deleted drafts and chat lines. Carries only what the consumers need
- * to repair their own tables: sender keys and Gmail thread ids, never a
- * subject, snippet or address (D7/D228). Both lists are bounded by the
- * purge's 1,000-row batch.
+ * Most entries either list may carry. The purge's batch cap is this
+ * bound, so one batch's threads always fit one event; its senders to
+ * re-score can outnumber its rows (recipients), and then span several.
+ */
+export const MAILBOX_NON_MAIL_PURGED_LIST_MAX = 1_000;
+
+/**
+ * Published by the non-mail purge (`packages/workers/src/non-mail-purge.ts`)
+ * in the same transaction as one batch of deleted drafts and chat lines.
+ * Carries only what the consumers need to repair their own tables: sender
+ * keys and Gmail thread ids, never a subject, snippet or address (D7/D228).
  */
 export const MailboxNonMailPurgedPayloadSchema = z
   .object({
     mailboxAccountId: UuidSchema,
     /** ISO-8601 — when the batch ran. Clocks the re-score jobs, so a redelivery dedups. */
     purgedAt: z.string().datetime(),
-    /** Senders that also have mail, recounted without the deleted rows. */
-    recountedSenderKeys: z.array(z.string().min(1)).max(1_000),
+    /**
+     * Senders whose counts the purge changed, to re-score: inbound totals
+     * recounted without the deleted rows, or the wrote-to count of a
+     * recipient of a deleted SENT line. A batch naming more than the
+     * bound publishes several events.
+     */
+    recountedSenderKeys: z.array(SenderKeySchema).max(MAILBOX_NON_MAIL_PURGED_LIST_MAX),
     /** Threads that held a deleted inbound row: follow-ups to re-check. */
-    threadIds: z.array(z.string().min(1)).max(1_000),
+    threadIds: z.array(z.string().min(1)).max(MAILBOX_NON_MAIL_PURGED_LIST_MAX),
   })
   .strict();
 export type MailboxNonMailPurgedPayload = z.infer<typeof MailboxNonMailPurgedPayloadSchema>;
@@ -499,21 +511,10 @@ export const EVENT_SCHEMAS = {
 } as const satisfies Record<EventTopic, z.ZodSchema>;
 
 /**
- * Map from topic literal → payload type. The `z.infer` form on each
- * value pulls the parsed type, so callers get full TS narrowing.
+ * Map from topic literal → payload type, derived from `EVENT_SCHEMAS` so
+ * the two cannot drift. (A hand-kept copy had already lost
+ * `mailbox.sync_failed` and `mailbox.reconnect_required`.)
  */
 export type EventPayloadByTopic = {
-  [TOPICS.TRIAGE_SCORE_RUN_COMPLETED]: TriageScoreRunCompletedPayload;
-  [TOPICS.TRIAGE_DECISION_RECOMPUTED]: TriageDecisionRecomputedPayload;
-  [TOPICS.TRIAGE_VERDICT_APPLIED]: TriageVerdictAppliedPayload;
-  [TOPICS.ACTION_LABEL_APPLIED]: ActionLabelAppliedPayload;
-  [TOPICS.AUTOPILOT_MATCH_RECORDED]: AutopilotMatchRecordedPayload;
-  [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayload;
-  [TOPICS.AUTOPILOT_RULE_ACTIVATED]: AutopilotRuleActivatedPayload;
-  [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;
-  [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
-  [TOPICS.MAILBOX_NON_MAIL_PURGED]: MailboxNonMailPurgedPayload;
-  [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;
-  [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayload;
-  [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayload;
+  [Topic in keyof typeof EVENT_SCHEMAS]: z.infer<(typeof EVENT_SCHEMAS)[Topic]>;
 };

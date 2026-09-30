@@ -294,6 +294,8 @@ describe('scrubSentryEvent — server profile (D158)', () => {
       job_id: 'unsub__mb-1__42',
       mailbox_account_id: '576df4e8-795b-4722-9aac-4ed22eafae99',
       kind: 'dead_letter.scheduler_failed',
+      topic: 'mailbox.non_mail_purged',
+      event_id: 'e2c0f0d4-8f1a-4b3e-9c2d-1a2b3c4d5e6f',
       smuggled: 'user@example.com wrote about...',
     },
   };
@@ -315,6 +317,11 @@ describe('scrubSentryEvent — server profile (D158)', () => {
       job_id: 'unsub__mb-1__42',
       mailbox_account_id: '576df4e8-795b-4722-9aac-4ed22eafae99',
       kind: 'dead_letter.scheduler_failed',
+      // The outbox dispatcher's `event_failed` tags (2026-09-28) — dropped
+      // once already because the caller put them beside `kind` instead of
+      // under `tags`, which this allowlist step cannot see either way.
+      topic: 'mailbox.non_mail_purged',
+      event_id: 'e2c0f0d4-8f1a-4b3e-9c2d-1a2b3c4d5e6f',
     });
   });
 

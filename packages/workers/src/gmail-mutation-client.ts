@@ -23,16 +23,30 @@ export interface LabelChange {
   removeLabelIds?: string[];
 }
 
+/** Gmail's per-request cap for `messages.batchModify`. */
+export const GMAIL_BATCH_MODIFY_MAX_IDS = 1000;
+
+export interface BatchModifyOptions {
+  /**
+   * Awaited once, immediately before the FIRST request is sent — after the
+   * quota wait and the token refresh, which can fail without Gmail seeing
+   * anything. A caller that records "Gmail may have changed" does it here;
+   * throwing sends nothing.
+   */
+  beforeFirstRequest?: () => Promise<void>;
+}
+
 /** Mutate labels on a mailbox's messages — one at a time, or in bulk. */
 export interface GmailMutationClient {
   /** Apply a label change to a single message (`messages.modify`). */
   modifyLabels(messageId: string, change: LabelChange): Promise<void>;
   /**
    * Apply the same label change to many messages
-   * (`messages.batchModify`). Gmail caps a batch at 1000 ids per call;
-   * the implementation chunks larger inputs into sequential calls.
+   * (`messages.batchModify`). Gmail caps a batch at
+   * `GMAIL_BATCH_MODIFY_MAX_IDS` ids per call; the implementation chunks
+   * larger inputs into sequential calls.
    */
-  batchModify(messageIds: string[], change: LabelChange): Promise<void>;
+  batchModify(messageIds: string[], change: LabelChange, opts?: BatchModifyOptions): Promise<void>;
   /**
    * Resolve a USER label NAME (e.g. `DeclutrMail/Later`) to its Gmail
    * label ID (`Label_123`), creating the label if it does not exist.

@@ -401,7 +401,7 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
       SET status = 'replied', updated_at = now()
       WHERE mailbox_account_id = ${mailboxAccountId}
         AND status = 'awaiting'
-        AND ${followupReplyExists(mailboxAccountId)}
+        AND ${followupReplyExists()}
       RETURNING id
     `);
     const rows = ((result as unknown as { rows?: unknown[] }).rows ?? result) as unknown[];

@@ -44,6 +44,11 @@ export interface UndoTrayEntry {
   mixedKinds?: boolean;
   /** Largest first; may be shorter than `senderCount` (capped server-side). */
   members?: UndoTrayMember[];
+  /**
+   * Host-composed aside for the decision's line, e.g. "1 Protected sender
+   * skipped" (D245): said once, where the Undo is, not on a line of its own.
+   */
+  note?: string | null;
 }
 
 /**

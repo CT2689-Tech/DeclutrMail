@@ -1,5 +1,7 @@
+import type { JobsOptions, WorkerOptions } from 'bullmq';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { Redis } from 'ioredis';
 
 import {
   AUTOPILOT_PRESET_KEYS,
@@ -9,6 +11,7 @@ import {
   type AutopilotPresetKey,
   automationRules,
   mailboxAccounts,
+  ruleMatchIsQueuedAction,
   ruleMatchLog,
   type schema,
   senders,
@@ -19,9 +22,12 @@ import { hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PRESETS, type PresetInput } from './autopilot-presets.js';
 import { materializeAutopilotSignals } from './autopilot-signals.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { workerTuningOptions } from './queue.js';
+import { backoffJobOptions, perMailboxWorkerSettings } from './rate-limit-backoff.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
+import { WORKER_POLICIES } from './worker-policies.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -71,11 +77,24 @@ export interface AutopilotApplyJobResult {
    * `action_jobs` / `activity_log` growth and an Activity feed full of
    * "archived 0" noise. New mail flips the sender back to actionable
    * (INBOX count > 0), so the D100 re-trigger semantics are preserved.
-   * Observe-mode suggestions are NOT gated: the pending-dedup index
-   * already bounds them, and a suggestion is meaningful even when the
-   * inbox is momentarily clear.
    */
   activeSkippedNotActionable: number;
+  /**
+   * Observe-mode suggestions SKIPPED for the same no-op reason as
+   * {@link activeSkippedNotActionable}: an unsubscribe-kind preset whose
+   * sender already carries `policy_type='unsubscribe'`, or an
+   * archive/later-kind preset (the two forced-Observe "review" presets —
+   * `auto_archive_low_engagement`, `auto_screen_new_senders`) whose
+   * sender has zero INBOX messages. Until 2026-09-29 Observe suggestions
+   * were NOT gated on this — "a suggestion is meaningful even when the
+   * inbox is momentarily clear" — but that let the Watch-first queue
+   * offer senders the Active sweep and the turn-on preview already
+   * excluded, and an approved review-only suggestion with no Inbox mail
+   * silently logged "archived 0". Founder decisions 2026-09-29:
+   * docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
+   * docs/log/founder-followups/2026-09-27-autopilot-review-only-numbers-vs-queue.md
+   */
+  observeSkippedNotActionable: number;
   /**
    * Active-mode matches SKIPPED because an UNAPPLIED approved row for
    * the same (rule, sender) already sits in `rule_match_log`. That row
@@ -206,6 +225,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         observeMatches: 0,
         activeMatches: 0,
         activeSkippedNotActionable: 0,
+        observeSkippedNotActionable: 0,
         activeSkippedAlreadyQueued: 0,
         sendersConsidered: 0,
         durationMs: Date.now() - startedAt,
@@ -233,6 +253,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     let observeMatches = 0;
     let activeMatches = 0;
     let activeSkippedNotActionable = 0;
+    let observeSkippedNotActionable = 0;
     let activeSkippedAlreadyQueued = 0;
     let rulesEvaluated = 0;
     let rulesFailed = 0;
@@ -297,17 +318,22 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           const input: PresetInput = { signals, triageDecision: decision };
           const result = def.match(input, threshold);
           if (!result.matched) continue;
-          // Active-mode actionability gate (see the
-          // `activeSkippedNotActionable` docstring): skip the insert
-          // when executing the verb would be a 0-affected no-op.
-          // Observe-mode suggestions pass through — the pending-dedup
-          // index bounds those.
-          if (modeAtMatch === 'active') {
-            const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
-            if (!actionable) {
-              activeSkippedNotActionable += 1;
-              continue;
-            }
+          // Actionability gate (see the `activeSkippedNotActionable` /
+          // `observeSkippedNotActionable` docstrings): skip the insert
+          // when the configured verb would be a 0-affected no-op —
+          // unsubscribe for a sender already carrying
+          // `policy_type='unsubscribe'`, or archive/later for a sender
+          // with zero INBOX messages. Applied to BOTH modes: Active
+          // already needed this so a re-trigger sweep does not stack
+          // 0-affected actions; Observe needs the identical check so the
+          // Watch-first queue never offers a suggestion the Active sweep
+          // and the turn-on preview would already have excluded (founder
+          // decisions 2026-09-29, see the docstrings for the citations).
+          const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
+          if (!actionable) {
+            if (modeAtMatch === 'active') activeSkippedNotActionable += 1;
+            else observeSkippedNotActionable += 1;
+            continue;
           }
           // Confidence stored on the match row: the engine's current
           // confidence if a decision row exists; otherwise the rule's
@@ -317,12 +343,31 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
 
         // Already-queued dedup (see `activeSkippedAlreadyQueued`): drop
-        // active-mode candidates that already have an unapplied approved
-        // row for this rule. `perMailboxPolicy` serializes apply sweeps
-        // per mailbox, so check-then-insert cannot race another sweep;
-        // the action worker flipping `intent_applied=true` concurrently
-        // only makes the check conservative (skip now, re-arm next
-        // sweep once the sender is actionable again).
+        // active-mode candidates that already have a row the action
+        // sweep will still pick up for this rule —
+        // `ruleMatchIsQueuedAction()` (approved, unapplied, AND evidence
+        // current). NOT race-free (architecture-guardian, 2026-09-29,
+        // reviewing PR #837): this check-then-insert runs outside the
+        // fingerprint-guarded transaction below, and — per the
+        // concurrency comment on `senderIndexStamp` above —
+        // `autopilotApplyBullWorker` runs at `concurrency: 5` with no
+        // per-mailbox grouping, so two independently-triggered sweeps
+        // for the SAME mailbox can both pass this check before either
+        // inserts. The action worker flipping `intent_applied=true`
+        // concurrently only makes the check conservative (skip now,
+        // re-arm next sweep); the two-sweeps-race is a separate,
+        // pre-existing gap, tracked as its own follow-up rather than
+        // fixed inline here.
+        //
+        // Uses `ruleMatchIsQueuedAction()` — INCLUDING its evidence-current
+        // test — rather than bare approved+unapplied. Until 2026-09-29 this
+        // deliberately used the bare predicate so a row whose evidence went
+        // stale (a resync re-created the sender after the row was approved)
+        // still blocked here, even though the action sweep would never load
+        // it: the rule could then never record a fresh match for that
+        // sender again. Founder decision 2026-09-29 (yes — the old action
+        // still never runs):
+        // docs/log/founder-followups/2026-09-27-stale-autopilot-action-blocks-its-rule.md
         if (modeAtMatch === 'active' && matchesForRule.length > 0) {
           const queuedRows = await this.deps.db
             .select({ senderKey: ruleMatchLog.senderKey })
@@ -330,8 +375,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
             .where(
               and(
                 eq(ruleMatchLog.ruleId, rule.id),
-                eq(ruleMatchLog.resolution, 'approved'),
-                eq(ruleMatchLog.intentApplied, false),
+                ruleMatchIsQueuedAction(),
                 inArray(
                   ruleMatchLog.senderKey,
                   matchesForRule.map((m) => m.senderKey),
@@ -417,6 +461,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
               observeMatches,
               activeMatches,
               activeSkippedNotActionable,
+              observeSkippedNotActionable,
               activeSkippedAlreadyQueued,
               sendersConsidered: eligible.length,
               abortedIndexRebuilt: true,
@@ -522,6 +567,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       observeMatches,
       activeMatches,
       activeSkippedNotActionable,
+      observeSkippedNotActionable,
       activeSkippedAlreadyQueued,
       sendersConsidered: eligible.length,
       durationMs: Date.now() - startedAt,
@@ -619,3 +665,63 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
 /** Queue + job name for the Autopilot apply worker (matches the score-worker pattern). */
 export const AUTOPILOT_APPLY_QUEUE = 'autopilot-apply';
 export const AUTOPILOT_APPLY_JOB = 'autopilot-apply';
+
+/**
+ * BullMQ job options for every `autopilot-apply` producer —
+ * `buildAutopilotApplyDeltaTrigger` (`autopilot-delta-trigger.ts`,
+ * debounced: pass the window's remaining ms as `delayMs`) and
+ * `enqueueAutopilotApply` (`apps/api/src/outbox/outbox-consumer-router.ts`,
+ * immediate: omit `delayMs`; wired from `mailbox.sync_ready`,
+ * `triage.score_run_completed` and `autopilot.rule_activated`). Mirrors
+ * this queue's sibling `perMailboxPolicy` producers —
+ * `autopilotActionJobOptions` (`autopilot-action.worker.ts`) and
+ * `scoreJobOptions` (`score.worker.ts`) — and `delayMs` follows
+ * `emailSendJobOptions`'s convention (omit/0 for an immediate add).
+ *
+ * Before this helper, both producers passed only `{ jobId, ... }` — no
+ * `attempts`/`backoff`. This worker's `policy` field (above) reads
+ * `perMailboxPolicy`, but that names the WORKER's nominal policy, not
+ * what BullMQ actually grants a given job — only the job's own
+ * `opts.attempts` decides whether BullMQ retries at all, and with
+ * neither producer setting it, BullMQ defaulted every job to a single
+ * try instead of the policy's 5-attempt budget with backoff.
+ */
+export function autopilotApplyJobOptions(jobId: string, delayMs = 0): JobsOptions {
+  const policy = WORKER_POLICIES.perMailboxPolicy;
+  return {
+    jobId,
+    attempts: policy.maxAttempts,
+    ...backoffJobOptions(policy.backoff),
+    ...(delayMs > 0 ? { delay: delayMs } : {}),
+    removeOnComplete: { age: 86_400 },
+    removeOnFail: false,
+  };
+}
+
+/**
+ * BullMQ `Worker` options for the `autopilot-apply` consumer
+ * (`autopilotApplyBullWorker` in `apps/api/src/worker.ts`). Exported —
+ * rather than left as an inline literal like this queue's sibling
+ * `perMailboxPolicy` consumers — so a real-Redis registration test can
+ * drive the EXACT options the production `Worker` uses. A hand-copied
+ * duplicate of these fields inside a test (as
+ * `score-bull-worker-registration.test.ts`'s `realScoreWorkerOptions()`
+ * does, PR #827) would still pass if `...perMailboxWorkerSettings()`
+ * were later removed from production code, since the test's own copy
+ * would still carry it; importing this function from both places closes
+ * that gap.
+ *
+ * `...perMailboxWorkerSettings()` registers the `custom` backoff
+ * STRATEGY that `autopilotApplyJobOptions`'s `backoff: { type: 'custom' }`
+ * requires — omitting it makes BullMQ throw `Unknown backoff strategy
+ * custom.` on any retryable failure instead of retrying (see
+ * `rate-limit-backoff.ts`'s doc comment for the full failure mode).
+ */
+export function autopilotApplyWorkerOptions(connection: Redis, concurrency = 5): WorkerOptions {
+  return {
+    connection,
+    concurrency,
+    ...workerTuningOptions('user-facing'),
+    ...perMailboxWorkerSettings(),
+  };
+}

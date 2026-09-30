@@ -10,7 +10,14 @@ import {
 import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
-import { actionJobs, actionRecoveryPreviews, senderPolicies } from '@declutrmail/db';
+import {
+  actionJobs,
+  actionRecoveryPreviews,
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
+  mailMessages,
+  senderPolicies,
+} from '@declutrmail/db';
+import type { LabelActionSelector } from '@declutrmail/db';
 import {
   ACTION_RECOVERY_JOB,
   actionRecoveryJobOptions,
@@ -121,6 +128,8 @@ export class ActionRecoveryService {
         preview: actionRecoveryPreviews,
         verb: actionJobs.verb,
         wakeAt: actionJobs.wakeAt,
+        selector: actionJobs.selector,
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
       })
       .from(actionRecoveryPreviews)
       .innerJoin(
@@ -143,7 +152,87 @@ export class ActionRecoveryService {
         message: 'Recovery preview not found.',
       });
     }
-    return projectPreview(row.preview, row.verb, row.wakeAt);
+    // The set Confirm checks and the retry re-applies, once verified.
+    const retrySet =
+      row.preview.targetMessageIds.length > 0
+        ? row.preview.targetMessageIds
+        : row.resolvedMessageIds;
+    return projectPreview(
+      row.preview,
+      row.verb,
+      row.wakeAt,
+      await this.senderProtection(this.db, mailboxAccountId, row.selector, retrySet),
+    );
+  }
+
+  /**
+   * Is a sender of this action Protected NOW? The review says so, and only
+   * then can its Confirm carry consent: without it the worker re-checks
+   * the retry at execution and stops it if the sender is Protected (D245;
+   * founder decision 2026-09-26). Read on every poll and again at Confirm,
+   * never frozen with the review. A legacy message-list action can span
+   * senders, so it asks whether ANY of its messages' senders is.
+   */
+  private async senderProtected(
+    executor: Pick<DrizzleDb, 'select'>,
+    mailboxAccountId: string,
+    selector: LabelActionSelector,
+    messageIds: string[],
+  ): Promise<boolean> {
+    return (await this.senderProtection(executor, mailboxAccountId, selector, messageIds))
+      .isProtected;
+  }
+
+  /**
+   * As `senderProtected`, with why: the sender's recorded reason, so the
+   * review can state it (CLAUDE.md §2.6). A message list has many senders
+   * and so no single reason.
+   */
+  private async senderProtection(
+    executor: Pick<DrizzleDb, 'select'>,
+    mailboxAccountId: string,
+    selector: LabelActionSelector,
+    messageIds: string[],
+  ): Promise<{ isProtected: boolean; reason: string | null }> {
+    // ADR-0008 §3 exception: actions → senders (read).
+    if (selector.type === 'sender') {
+      const [policy] = await executor
+        .select({
+          isProtected: senderPolicies.isProtected,
+          reason: senderPolicies.protectionReason,
+        })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, selector.senderKey),
+          ),
+        )
+        .limit(1);
+      return policy?.isProtected === true
+        ? { isProtected: true, reason: policy.reason ?? null }
+        : { isProtected: false, reason: null };
+    }
+    if (messageIds.length === 0) return { isProtected: false, reason: null };
+    const [hit] = await executor
+      .select({ one: sql<number>`1` })
+      .from(mailMessages)
+      .innerJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, mailMessages.mailboxAccountId),
+          eq(senderPolicies.senderKey, mailMessages.senderKey),
+        ),
+      )
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          inArray(mailMessages.providerMessageId, messageIds),
+          eq(senderPolicies.isProtected, true),
+        ),
+      )
+      .limit(1);
+    return { isProtected: hit !== undefined, reason: null };
   }
 
   async confirmPreview(input: {
@@ -151,6 +240,8 @@ export class ActionRecoveryService {
     previewId: string;
     idempotencyKey: string;
     wakeAt: Date | null;
+    /** What the review showed — see `actionRecoveryConfirmRequestSchema`. */
+    senderProtected?: boolean;
   }): Promise<ActionRecoveryEnqueueResult> {
     if (!this.actionQueue) {
       throw new ServiceUnavailableException({
@@ -160,7 +251,11 @@ export class ActionRecoveryService {
     }
 
     const storageKey = `recovery-${createHash('sha256').update(input.idempotencyKey).digest('hex')}`;
-    const confirmationFingerprint = recoveryConfirmationFingerprint(input.previewId, input.wakeAt);
+    const confirmationFingerprint = recoveryConfirmationFingerprint(
+      input.previewId,
+      input.wakeAt,
+      input.senderProtected === true,
+    );
     const existing = await this.findRecoveryByKey(storageKey);
     if (existing) {
       if (
@@ -174,7 +269,12 @@ export class ActionRecoveryService {
         });
       }
       if (existing.status === 'queued') {
-        await this.enqueueRecoveryAction(existing.id, input.mailboxAccountId, storageKey);
+        await this.enqueueRecoveryAction(
+          existing.id,
+          input.mailboxAccountId,
+          storageKey,
+          await this.retryConsent(input.mailboxAccountId, existing, input.senderProtected),
+        );
       }
       return {
         previewId: input.previewId,
@@ -267,6 +367,26 @@ export class ActionRecoveryService {
           message: 'No Gmail messages require reconciliation.',
         });
       }
+      // D245 — the retry re-applies its whole verified set, so it may change
+      // a Protected sender's mail only when the review said the sender is
+      // Protected (founder decision 2026-09-26). A review that loaded before
+      // protection landed did not, so it is sent back for another look —
+      // an already-applied one too: anything moved back since would change,
+      // and the worker would stop the retry anyway.
+      if (
+        input.senderProtected !== true &&
+        (await this.senderProtected(
+          tx,
+          input.mailboxAccountId,
+          action.selector,
+          preview.targetMessageIds,
+        ))
+      ) {
+        throw new ConflictException({
+          code: 'RECOVERY_SENDER_PROTECTED',
+          message: 'This sender is Protected now. Check again before retrying.',
+        });
+      }
 
       const wakeAt = await this.resolveRecoveryWakeAt(
         tx as DrizzleDb,
@@ -313,7 +433,10 @@ export class ActionRecoveryService {
           retryOfActionId: action.id,
           recoveryAttempt: attempt,
           selectionFrozenAt: new Date(),
-          compositeId: action.compositeId,
+          // The attempt stays in its decision: a batch member keeps its
+          // anchor, and an anchor's (or a lone action's) retry points at the
+          // lineage root — every reader groups by coalesce(composite_id, id).
+          compositeId: action.compositeId ?? preview.rootActionId,
           wakeAt,
           // ADR-0028: the attempt inherits the original reach. Without
           // this, an all-mail Delete's recovery journal would lose the
@@ -350,7 +473,12 @@ export class ActionRecoveryService {
     });
 
     if (created.child.status === 'queued') {
-      await this.enqueueRecoveryAction(created.child.id, input.mailboxAccountId, storageKey);
+      await this.enqueueRecoveryAction(
+        created.child.id,
+        input.mailboxAccountId,
+        storageKey,
+        await this.retryConsent(input.mailboxAccountId, created.child, input.senderProtected),
+      );
     }
 
     return {
@@ -376,6 +504,31 @@ export class ActionRecoveryService {
       action.status !== 'failed' ||
       action.direction !== 'forward' ||
       !isRecoverableVerb(action.verb)
+    ) {
+      throw new ConflictException({
+        code: 'ACTION_NOT_RECOVERABLE',
+        message: 'Only failed Archive, Later, or Delete actions can be reviewed here.',
+      });
+    }
+    // An Autopilot claim is not the user's action, and Activity lists no
+    // lineage that starts from one: a review of it would re-resolve the
+    // sender's current inbox into an Archive nobody asked for.
+    const [root] =
+      action.rootActionId === null
+        ? [action]
+        : await this.db
+            .select({ idempotencyKey: actionJobs.idempotencyKey })
+            .from(actionJobs)
+            .where(
+              and(
+                eq(actionJobs.id, action.rootActionId),
+                eq(actionJobs.mailboxAccountId, mailboxAccountId),
+              ),
+            )
+            .limit(1);
+    if (
+      root &&
+      AUTOPILOT_CLAIM_KEY_PREFIXES.some((prefix) => root.idempotencyKey.startsWith(prefix))
     ) {
       throw new ConflictException({
         code: 'ACTION_NOT_RECOVERABLE',
@@ -460,15 +613,43 @@ export class ActionRecoveryService {
     }
   }
 
+  /**
+   * The consent a retry carries to the worker's execution-time re-check:
+   * the review said the sender is Protected (the acknowledgement), and it
+   * still is. Anything else leaves the worker to re-check — and to stop the
+   * retry if the sender turned Protected after all (D245).
+   */
+  private async retryConsent(
+    mailboxAccountId: string,
+    child: { selector: LabelActionSelector; resolvedMessageIds: string[] },
+    acknowledged: boolean | undefined,
+  ): Promise<boolean> {
+    return (
+      acknowledged === true &&
+      (await this.senderProtected(
+        this.db,
+        mailboxAccountId,
+        child.selector,
+        child.resolvedMessageIds,
+      ))
+    );
+  }
+
   private async enqueueRecoveryAction(
     actionId: string,
     mailboxAccountId: string,
     storageKey: string,
+    protectedConfirmed: boolean,
   ): Promise<void> {
     try {
       await this.actionQueue!.add(
         LABEL_ACTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey: storageKey },
+        {
+          actionId,
+          mailboxAccountId,
+          idempotencyKey: storageKey,
+          ...(protectedConfirmed ? { protectedConfirmed: true } : {}),
+        },
         labelActionJobOptions(storageKey),
       );
     } catch (error) {
@@ -532,6 +713,8 @@ export class ActionRecoveryService {
         wakeAt: actionJobs.wakeAt,
         previewId: actionRecoveryPreviews.id,
         confirmationFingerprint: actionRecoveryPreviews.confirmationFingerprint,
+        selector: actionJobs.selector,
+        resolvedMessageIds: actionJobs.resolvedMessageIds,
       })
       .from(actionJobs)
       .leftJoin(actionRecoveryPreviews, eq(actionRecoveryPreviews.recoveryActionId, actionJobs.id))
@@ -568,6 +751,7 @@ export class ActionRecoveryService {
         message: 'Later recovery requires the original sender scope.',
       });
     }
+    // ADR-0008 §3 exception: actions → senders (read).
     const [policy] = await db
       .select({ snoozedUntil: senderPolicies.snoozedUntil })
       .from(senderPolicies)
@@ -597,6 +781,7 @@ function projectPreview(
   preview: typeof actionRecoveryPreviews.$inferSelect,
   verb: RecoverableVerb,
   wakeAt: Date | null,
+  protection: { isProtected: boolean; reason: string | null },
 ): ActionRecoveryPreviewResult {
   const unavailableCount = preview.unavailableCount;
   const alreadyAppliedCount = Math.max(
@@ -620,6 +805,8 @@ function projectPreview(
     requiresNewWakeAt: verb === 'later' && (!wakeAt || wakeAt.getTime() <= Date.now()),
     expiresAt: preview.expiresAt.toISOString(),
     recoveryActionId: preview.recoveryActionId,
+    senderProtected: protection.isProtected,
+    protectionReason: protection.reason,
   };
 }
 
@@ -627,8 +814,19 @@ function safeErrorName(error: unknown): string {
   return error instanceof Error ? error.name : 'UnknownError';
 }
 
-function recoveryConfirmationFingerprint(previewId: string, wakeAt: Date | null): string {
+function recoveryConfirmationFingerprint(
+  previewId: string,
+  wakeAt: Date | null,
+  senderProtected: boolean,
+): string {
   return createHash('sha256')
-    .update(JSON.stringify({ previewId, wakeAt: wakeAt?.toISOString() ?? null }))
+    .update(
+      JSON.stringify({
+        previewId,
+        wakeAt: wakeAt?.toISOString() ?? null,
+        // Only when given, so a confirm without consent hashes as before.
+        ...(senderProtected ? { senderProtected: true } : {}),
+      }),
+    )
     .digest('hex');
 }

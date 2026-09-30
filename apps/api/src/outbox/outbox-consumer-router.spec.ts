@@ -11,6 +11,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
+import { autopilotApplyJobOptions } from '@declutrmail/workers';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -364,7 +365,10 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
       mailboxAccountId: mailboxId,
       triggeredAtMs: Date.parse(readyAt),
     });
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(readyAt)}`);
+    // perMailboxPolicy retry budget (2026-09-29) — negative control:
+    // reverting `enqueueAutopilotApply` back to a bare `{ jobId, ... }`
+    // fails this assertion.
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-${Date.parse(readyAt)}`));
 
     // Redelivery: seeder is a no-op, enqueue dedups at BullMQ (same jobId).
     await consume({
@@ -403,7 +407,7 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
     expect(add).toHaveBeenCalledTimes(1);
     const [, jobData, opts] = add.mock.calls[0]!;
     expect(jobData).toEqual({ mailboxAccountId: mailboxId, triggeredAtMs: 777 });
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-777`);
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-777`));
   });
 
   it('autopilot.rule_activated enqueues the apply sweep the rule PATCH made durable', async () => {
@@ -437,7 +441,7 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
       triggeredAtMs: Date.parse(activatedAt),
     });
     // `-` not `:` — BullMQ reserves `:` and rejects custom ids using it.
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(activatedAt)}`);
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-${Date.parse(activatedAt)}`));
   });
 
   it('without a wired queue the event ACKs and warns instead of throwing', async () => {
@@ -583,8 +587,10 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
 
   it('reopens a follow-up a draft marked replied — not one with a real reply, nor a dismissed one', async () => {
     // What is left after the purge: the user's sends, and one real reply.
-    // The drafts that flipped these rows to `replied` are already gone.
-    for (const thread of ['t-draft', 't-real', 't-dismissed', 't-other']) {
+    // The drafts that flipped these rows to `replied` are already gone,
+    // except in `t-draft-left`, whose draft a later batch has not reached:
+    // a draft still in the thread is not a reply either.
+    for (const thread of ['t-draft', 't-draft-left', 't-real', 't-dismissed', 't-other']) {
       await db.insert(mailMessages).values({
         mailboxAccountId: mailboxId,
         providerMessageId: `sent-${thread}`,
@@ -607,6 +613,16 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
       isUnread: true,
       isOutbound: false,
     });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'draft-t-draft-left',
+      providerThreadId: 't-draft-left',
+      senderKey: 'owner-key',
+      internalDate: at(21),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
     const tracker = (thread: string, status: 'replied' | 'dismissed') => ({
       workspaceId,
       mailboxAccountId: mailboxId,
@@ -619,13 +635,26 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
       .insert(followupTracker)
       .values([
         tracker('t-draft', 'replied'),
+        tracker('t-draft-left', 'replied'),
         tracker('t-real', 'replied'),
         tracker('t-dismissed', 'dismissed'),
         tracker('t-other', 'replied'),
       ]);
 
     // `t-other` held no purged row, so it is not named and not touched.
-    await buildOutboxConsumer(db)(purgedEvent({ threadIds: ['t-draft', 't-real', 't-dismissed'] }));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await buildOutboxConsumer(db)(
+        purgedEvent({ threadIds: ['t-draft', 't-draft-left', 't-real', 't-dismissed'] }),
+      );
+      // What the repair did is on record, not just in the table.
+      const line = log.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged_reopened');
+      expect(line).toMatchObject({ eventId: 'evt-purged', followupsReopened: 2 });
+    } finally {
+      log.mockRestore();
+    }
 
     const rows = await db
       .select({ thread: followupTracker.providerThreadId, status: followupTracker.status })
@@ -633,6 +662,7 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
     expect(rows).toEqual(
       expect.arrayContaining([
         { thread: 't-draft', status: 'awaiting' },
+        { thread: 't-draft-left', status: 'awaiting' },
         { thread: 't-real', status: 'replied' },
         { thread: 't-dismissed', status: 'dismissed' },
         { thread: 't-other', status: 'replied' },
@@ -640,29 +670,143 @@ describe('OutboxConsumerRouter — mailbox.non_mail_purged (D204 repairs)', () =
     );
   });
 
+  it("never counts another mailbox's mail as this follow-up's reply", async () => {
+    // Gmail thread ids are per mailbox, so a second mailbox can hold the
+    // same id. Its real reply is not a reply to this mailbox's send.
+    const [other] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId: (await db.select().from(users))[0]!.id,
+        provider: 'gmail',
+        providerAccountId: 'other@x',
+      })
+      .returning({ id: mailboxAccounts.id });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: other!.id,
+      providerMessageId: 'reply-elsewhere',
+      providerThreadId: 't-shared',
+      senderKey: 'friend-key',
+      internalDate: at(22),
+      labelIds: ['INBOX'],
+      isUnread: true,
+      isOutbound: false,
+    });
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId: mailboxId,
+      providerThreadId: 't-shared',
+      recipientEmail: 'friend@example.com',
+      sentAt: at(20),
+      status: 'replied',
+    });
+
+    await buildOutboxConsumer(db)(purgedEvent({ threadIds: ['t-shared'] }));
+
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('awaiting');
+  });
+
+  // Sender keys are sha256 hex, as `senders.sender_key` stores them.
+  const KEY_A = 'a'.repeat(64);
+  const KEY_B = 'b'.repeat(64);
+
   it('hands recounted senders to the score queue, clocked by the purge so a redelivery dedups', async () => {
     const rescoreSenders = vi.fn(async () => {});
     await buildOutboxConsumer(db, { rescoreSenders })(
-      purgedEvent({ recountedSenderKeys: ['key-a', 'key-b'] }),
+      purgedEvent({ recountedSenderKeys: [KEY_A, KEY_B] }),
     );
     expect(rescoreSenders).toHaveBeenCalledWith(
       mailboxId,
-      ['key-a', 'key-b'],
+      [KEY_A, KEY_B],
       Date.parse('2026-09-26T21:00:00.000Z'),
     );
   });
 
-  it('warns by name, and still acks, when the re-score is not wired', async () => {
+  it('is handled, never acked as an unknown topic', async () => {
+    // This router ships before the purge that publishes the topic, so the
+    // revision a deploy replaces already handles it instead of acking it.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
-      await expect(
-        buildOutboxConsumer(db)(purgedEvent({ recountedSenderKeys: ['key-a'] })),
-      ).resolves.toBeUndefined();
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining('outbox.consumer.non_mail_purged_rescore_unwired'),
+      await buildOutboxConsumer(db)(purgedEvent({}));
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('outbox.consumer.unknown_topic'),
       );
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('throws before touching a follow-up when the re-score is not wired', async () => {
+    // Acking would drop the repair for good, so the row must stay for the
+    // dispatcher's retry, which then does both halves.
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId: mailboxId,
+      providerThreadId: 't-draft',
+      recipientEmail: 'friend@example.com',
+      sentAt: at(20),
+      status: 'replied',
+    });
+
+    await expect(
+      buildOutboxConsumer(db)(
+        purgedEvent({ recountedSenderKeys: [KEY_A], threadIds: ['t-draft'] }),
+      ),
+    ).rejects.toThrow('rescoreSenders is not wired');
+
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('replied');
+  });
+
+  it('logs a reopen that happened even on the attempt where rescore then rejects', async () => {
+    // The reopen commits (it is a plain UPDATE, not inside rescore's
+    // promise), then rescore rejects and the whole handler rejects for
+    // the dispatcher to retry. If the reopen's own log line were combined
+    // with rescore's into one line gated on full success, this attempt
+    // would leave NO record that a reopen happened at all.
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId: mailboxId,
+      providerThreadId: 't-draft',
+      recipientEmail: 'friend@example.com',
+      sentAt: at(20),
+      status: 'replied',
+    });
+    const rescoreSenders = vi.fn().mockRejectedValueOnce(new Error('redis down'));
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(
+        buildOutboxConsumer(db, { rescoreSenders })(
+          purgedEvent({ recountedSenderKeys: [KEY_A], threadIds: ['t-draft'] }),
+        ),
+      ).rejects.toThrow('redis down');
+
+      const reopenLine = log.mock.calls
+        .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+        .find((entry) => entry.kind === 'outbox.consumer.non_mail_purged_reopened');
+      expect(reopenLine).toMatchObject({ followupsReopened: 1 });
+      // No queued-rescore line: rescore rejected before it could log one.
+      expect(
+        log.mock.calls.some(
+          ([entry]) =>
+            (JSON.parse(String(entry)) as Record<string, unknown>).kind ===
+            'outbox.consumer.non_mail_purged_queued_rescore',
+        ),
+      ).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('awaiting'); // the reopen genuinely happened
+  });
+
+  it('rejects a payload whose sender key is not a sender_key hash', async () => {
+    const rescoreSenders = vi.fn(async () => {});
+    await expect(
+      buildOutboxConsumer(db, { rescoreSenders })(purgedEvent({ recountedSenderKeys: ['key-a'] })),
+    ).rejects.toThrow();
+    expect(rescoreSenders).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,7 @@ import {
 } from '@declutrmail/shared';
 
 import { ApiError } from '@/lib/api/client';
+import { protectedSkippedCopy } from '@/lib/action-error-copy';
 import type {
   BriefItemWire,
   BriefNoiseSenderWire,
@@ -682,7 +683,10 @@ function NoiseSection({
   const excludedCount = targets.filter((t) => blockedReason(t) !== null).length;
   const selectedCount = archive.selectedTargets.length;
   const eligibleCount = targets.filter(
-    (t) => blockedReason(t) === null && !archive.archivedKeys.has(t.senderKey),
+    (t) =>
+      blockedReason(t) === null &&
+      !archive.archivedKeys.has(t.senderKey) &&
+      !archive.unconfirmedKeys.has(t.senderKey),
   ).length;
 
   return (
@@ -745,6 +749,7 @@ function NoiseSection({
             target={target}
             checked={archive.selected.has(target.senderKey)}
             archived={archive.archivedKeys.has(target.senderKey)}
+            unconfirmed={archive.unconfirmedKeys.has(target.senderKey)}
             busy={archive.busy}
             onToggle={archive.toggle}
             isMobile={isMobile}
@@ -859,9 +864,14 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
       );
     }
     case 'reverted':
-      return (
+      // The pill can undo one sender of a bulk at a time.
+      return outcome.senderCount < outcome.of ? (
         <>
-          That archive was undone — mail from {outcome.senderCount} sender
+          Email from {outcome.senderCount} of {outcome.of} senders is back in your inbox.
+        </>
+      ) : (
+        <>
+          That archive was undone — email from {outcome.senderCount} sender
           {outcome.senderCount === 1 ? '' : 's'} is back in your inbox.
         </>
       );
@@ -873,7 +883,18 @@ function NoiseOutcomeLine({ outcome }: { outcome: NoiseArchiveOutcome }) {
         </>
       );
     case 'failed':
-      return <>Nothing was archived. The senders are still checked, so you can try again.</>;
+      return <>Archive failed — check Activity before retrying.</>;
+    case 'refused':
+      return <>Nothing was archived — try again.</>;
+    case 'skipped':
+      return (
+        <>
+          Nothing archived —{' '}
+          {outcome.protectedCount !== null
+            ? `${protectedSkippedCopy(outcome.protectedCount)}.`
+            : 'those senders are Protected or no longer in this mailbox.'}
+        </>
+      );
     case 'unconfirmed':
       return (
         <>
@@ -1100,6 +1121,7 @@ function NoiseRow({
   target,
   checked,
   archived,
+  unconfirmed,
   busy,
   onToggle,
   messageIds,
@@ -1109,6 +1131,8 @@ function NoiseRow({
   target: NoiseTarget;
   checked: boolean;
   archived: boolean;
+  /** Its archive may be running; a second one would run it twice. */
+  unconfirmed: boolean;
   busy: boolean;
   onToggle: (senderKey: string) => void;
   messageIds: string[];
@@ -1119,7 +1143,7 @@ function NoiseRow({
   const countLabel = `${count} message${count === 1 ? '' : 's'} yesterday`;
   const href = gmailHref(mailboxEmail, messageIds[0]);
   const blocked = blockedReason(target);
-  const selectable = blocked === null && !archived;
+  const selectable = blocked === null && !archived && !unconfirmed;
   return (
     <li
       style={{
@@ -1193,7 +1217,13 @@ function NoiseRow({
             what yesterday held, which an archive taken today does not
             change. The status that follows it is about now. */}
         {countLabel}
-        {archived ? ' · Archived ✓' : blocked ? ` · ${BLOCKED_COPY[blocked]}` : ''}
+        {archived
+          ? ' · Archived ✓'
+          : unconfirmed
+            ? ' · Archive: unknown'
+            : blocked
+              ? ` · ${BLOCKED_COPY[blocked]}`
+              : ''}
       </div>
       <div
         style={{

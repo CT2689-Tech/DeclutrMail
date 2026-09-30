@@ -1,0 +1,357 @@
+import {
+  mailboxAccounts,
+  mailMessages,
+  outboxEvents,
+  providerSyncState,
+  senders,
+  triageDecisions,
+  users,
+  workspaces,
+} from '@declutrmail/db';
+import { freshTestDb } from '@declutrmail/db/testing';
+import { TOPICS } from '@declutrmail/events';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { materializeAutopilotSignals } from './autopilot-signals.js';
+
+import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { OutboxPublisher } from './outbox-publisher.js';
+import type { ReasoningLlmPort } from './reasoning.js';
+import { ScoreWorker, type ScoreJobData, type ScoreWorkerDeps } from './score.worker.js';
+import { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+import type { WorkerContext } from './worker-context.js';
+
+/**
+ * The whole correction, as a user would meet it: a sender kept at 95%
+ * "because Gmail puts them in your Primary inbox" when none of its mail
+ * carries a Primary label. The sender-index sweep recounts its tab, hands the
+ * sender to the score worker, and the stored sentence must not survive —
+ * including when the NEW verdict is still Keep, which the explanation
+ * reuse (same verdict + unexpired → reuse) would otherwise let through.
+ */
+const CTX = { attempt: 1, jobId: 'j' } as WorkerContext;
+// Real time: the sweep's SQL and the score worker must share one clock.
+const NOW = new Date();
+const DAY = 86_400_000;
+const PRIMARY_SENTENCE = 'Kept because Gmail puts them in your Primary inbox.';
+
+describe('Gmail tab recount → re-score', () => {
+  let db: ScoreWorkerDeps['db'];
+  let mailboxAccountId: string;
+  let seq = 0;
+
+  beforeEach(async () => {
+    db = (await freshTestDb()) as unknown as ScoreWorkerDeps['db'];
+    const [ws] = await db.insert(workspaces).values({ name: 'W' }).returning({ id: workspaces.id });
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId: ws!.id, email: 'o@ex.com' })
+      .returning({ id: users.id });
+    const [mb] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId: ws!.id,
+        userId: user!.id,
+        provider: 'gmail',
+        providerAccountId: 'o@ex.com',
+      })
+      .returning({ id: mailboxAccounts.id });
+    mailboxAccountId = mb!.id;
+    await db.insert(providerSyncState).values({ mailboxAccountId, readinessStatus: 'ready' });
+  });
+
+  /** A sender the old default filed under Primary, with an unexpired Primary explanation. */
+  async function seedGuessedPrimary(
+    senderKey: string,
+    messages: { labelIds: string[]; read: boolean }[],
+  ): Promise<void> {
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: senderKey,
+      email: `${senderKey}@ex.com`,
+      domain: 'ex.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(NOW.getTime() - 400 * DAY),
+      lastSeenAt: new Date(NOW.getTime() - 2 * DAY),
+    });
+    for (const m of messages) {
+      seq += 1;
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `m${seq}`,
+        providerThreadId: `t${seq}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date(NOW.getTime() - 10 * DAY),
+        labelIds: m.labelIds,
+        isUnread: !m.read,
+        isOutbound: false,
+      });
+    }
+    await db.insert(triageDecisions).values({
+      mailboxAccountId,
+      senderKey,
+      verdict: 'keep',
+      confidence: '0.95',
+      reasoning: PRIMARY_SENTENCE,
+      generatedBy: 'llm_haiku',
+      producedAt: new Date(NOW.getTime() - DAY),
+      expiresAt: new Date(NOW.getTime() + 6 * DAY),
+    });
+  }
+
+  async function sweepThenRescore(llm: ReasoningLlmPort) {
+    const jobs: ScoreJobData[] = [];
+    await new SenderIndexSweepWorker({
+      db: db as never,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      onSendersRecategorized: async (mb, senderKeys) => {
+        jobs.push({
+          mailboxAccountId: mb,
+          senderKeys,
+          trigger: 'signal_change',
+          producedAtMs: NOW.getTime(),
+        });
+      },
+    }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+    const scorer = new ScoreWorker({ db, llm, now: () => NOW, outbox: new OutboxPublisher() });
+    for (const job of jobs) await scorer.processJob(job, CTX);
+    return jobs;
+  }
+
+  async function decisionOf(senderKey: string) {
+    const rows = await db.select().from(triageDecisions);
+    return rows.find((r) => r.senderKey === senderKey)!;
+  }
+
+  it('an unlabelled sender loses the Primary Keep and its Primary sentence', async () => {
+    await seedGuessedPrimary('newsletter', [
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+    ]);
+    const jobs = await sweepThenRescore({ explain: async () => 'Fresh explanation.' });
+
+    expect(jobs).toHaveLength(1);
+    const d = await decisionOf('newsletter');
+    expect(d.confidence).not.toBe('0.95');
+    // Whichever writes the new sentence — the model, or the template when
+    // no explanation is bought for this sender — it is not the old claim.
+    expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('rewrites the sentence even when the new verdict is still Keep', async () => {
+    // Read every message: rule 5 (at least half marked read) keeps it.
+    // Same verdict — the reuse path would have kept the Primary sentence
+    // if the recount had not expired the decision.
+    await seedGuessedPrimary('friend', [
+      { labelIds: ['INBOX'], read: true },
+      { labelIds: ['INBOX'], read: true },
+      { labelIds: ['INBOX'], read: true },
+    ]);
+    await sweepThenRescore({ explain: async () => 'Kept because you read what they send.' });
+
+    const d = await decisionOf('friend');
+    expect(d.verdict).toBe('keep');
+    expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('re-scores the set in ONE run, so one Autopilot sweep follows', async () => {
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('b', [{ labelIds: ['INBOX'], read: false }]);
+
+    const jobs = await sweepThenRescore({ explain: async () => null });
+
+    expect(jobs).toHaveLength(1);
+    expect([...jobs[0]!.senderKeys!].sort()).toEqual(['a', 'b']);
+    const runEvents = (await db.select().from(outboxEvents)).filter(
+      (e) => e.topic === TOPICS.TRIAGE_SCORE_RUN_COMPLETED,
+    );
+    expect(runEvents).toHaveLength(1);
+  });
+
+  it('scores only the named senders', async () => {
+    await seedGuessedPrimary('guessed', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('person', [{ labelIds: ['INBOX', 'CATEGORY_PERSONAL'], read: true }]);
+    const before = (await decisionOf('person')).producedAt.getTime();
+
+    await sweepThenRescore({ explain: async () => null });
+
+    // Its tab did not move, so its decision was neither expired nor redone.
+    expect((await decisionOf('person')).producedAt.getTime()).toBe(before);
+  });
+
+  it('a score job that overlapped the recount cannot bring the Primary sentence back', async () => {
+    // The race: a score job that read the sender BEFORE the recount
+    // committed writes its old-tab row afterwards, with a fresh expiry —
+    // undoing the recount's expiry. The set job must still not reuse it.
+    await seedGuessedPrimary('friend', [
+      { labelIds: ['INBOX'], read: true },
+      { labelIds: ['INBOX'], read: true },
+      { labelIds: ['INBOX'], read: true },
+    ]);
+    const jobs: ScoreJobData[] = [];
+    await new SenderIndexSweepWorker({
+      db: db as never,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      onSendersRecategorized: async (mb, senderKeys) => {
+        jobs.push({
+          mailboxAccountId: mb,
+          senderKeys,
+          trigger: 'signal_change',
+          producedAtMs: NOW.getTime(),
+        });
+      },
+    }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+    // The overlapping job lands its stale row after the commit.
+    await db.update(triageDecisions).set({
+      reasoning: PRIMARY_SENTENCE,
+      generatedBy: 'llm_haiku',
+      verdict: 'keep',
+      producedAt: new Date(NOW.getTime() - 60_000),
+      expiresAt: new Date(NOW.getTime() + 6 * DAY),
+    });
+
+    const scorer = new ScoreWorker({
+      db,
+      llm: { explain: async () => 'Kept because you read what they send.' },
+      now: () => NOW,
+    });
+    for (const job of jobs) await scorer.processJob(job, CTX);
+
+    const d = await decisionOf('friend');
+    expect(d.verdict).toBe('keep');
+    expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('buys no model prose on the sweep path — the new reason is the template', async () => {
+    // The recount runs on a timer across every mailbox; the founder's
+    // standing choice is no scheduled bulk re-buy (2026-08-19, 09-25).
+    await seedGuessedPrimary('newsletter', [
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+      { labelIds: ['INBOX'], read: false },
+    ]);
+    const explain = vi.fn(async () => 'Model prose.');
+
+    await sweepThenRescore({ explain });
+
+    expect(explain).not.toHaveBeenCalled();
+    const d = await decisionOf('newsletter');
+    expect(d.generatedBy).toBe('template');
+    expect(d.reasoning).not.toMatch(/primary/i);
+  });
+
+  it('a named set buys no prose even under a trigger that pays', async () => {
+    // The set is the recount's re-score whatever trigger it arrives with;
+    // `manual_rescore` would otherwise buy a sentence for every sender.
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    await db.update(triageDecisions).set({ expiresAt: new Date(NOW.getTime() - DAY) });
+    const explain = vi.fn(async () => 'Model prose.');
+
+    const result = await new ScoreWorker({ db, llm: { explain }, now: () => NOW }).processJob(
+      {
+        mailboxAccountId,
+        senderKeys: ['a'],
+        trigger: 'manual_rescore',
+        producedAtMs: NOW.getTime(),
+      },
+      CTX,
+    );
+
+    expect(explain).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ llmCalls: 0, explanationsNotRequested: 1 });
+    expect((await decisionOf('a')).generatedBy).toBe('template');
+  });
+
+  it('reports explanationsNotRequested on worker.succeeded — the allowlist drops silently', async () => {
+    // The journey report reads this to tell "no prose was asked for" from
+    // "the model is off" (LLM_OFF); a key missing from
+    // SAFE_WORKER_RESULT_KEYS vanishes from the line with no error.
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('b', [{ labelIds: ['INBOX'], read: false }]);
+    // Marked, as the sweep leaves every sender it hands over (expired as of
+    // its own production), so their stored prose is not reusable.
+    await db.update(triageDecisions).set({ expiresAt: new Date(NOW.getTime() - DAY) });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await new ScoreWorker({ db, llm: { explain: vi.fn(async () => 'x') }, now: () => NOW }).run({
+        id: 'job-subset',
+        data: {
+          mailboxAccountId,
+          senderKeys: ['a', 'b'],
+          trigger: 'signal_change',
+          producedAtMs: NOW.getTime(),
+        },
+        attemptsMade: 0,
+        queueName: 'score',
+      } as never);
+      const succeeded = logSpy.mock.calls
+        .flatMap((call) => {
+          try {
+            return [JSON.parse(String(call[0])) as { kind?: string; result?: unknown }];
+          } catch {
+            return [];
+          }
+        })
+        .find((line) => line.kind === 'worker.succeeded');
+      expect(succeeded?.result).toMatchObject({ explanationsNotRequested: 2, llmCalls: 0 });
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('Autopilot does not act on a verdict the recount marked stale', async () => {
+    // Between the recount's commit and the new verdict, the old one was
+    // computed from the wrong tab. Autopilot must read it as "no
+    // decision" — its verdict-gated presets then skip the sender.
+    await seedGuessedPrimary('stale', [{ labelIds: ['INBOX'], read: false }]);
+    await seedGuessedPrimary('fresh', [{ labelIds: ['INBOX', 'CATEGORY_PERSONAL'], read: true }]);
+    await db.update(triageDecisions).set({ verdict: 'archive', confidence: '0.90' });
+
+    await new SenderIndexSweepWorker({
+      db: db as never,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      onSendersRecategorized: async () => {}, // the re-score has not run yet
+    }).processJob({ scheduledAtMinute: '2026-09-26T03:00' }, CTX);
+
+    const rows = await materializeAutopilotSignals(db as never, mailboxAccountId, NOW);
+    const bySender = new Map(rows.map((r) => [r.senderKey, r.decision]));
+    expect(bySender.get('stale')).toBeNull();
+    expect(bySender.get('fresh')).toEqual({ verdict: 'archive', confidence: 0.9 });
+  });
+
+  it('refuses an empty set instead of scoring the whole mailbox', async () => {
+    await seedGuessedPrimary('a', [{ labelIds: ['INBOX'], read: false }]);
+    const before = (await decisionOf('a')).producedAt.getTime();
+
+    await expect(
+      new ScoreWorker({ db, now: () => NOW }).processJob(
+        { mailboxAccountId, senderKeys: [], trigger: 'signal_change', producedAtMs: NOW.getTime() },
+        CTX,
+      ),
+    ).rejects.toThrow(/empty senderKeys/);
+    expect((await decisionOf('a')).producedAt.getTime()).toBe(before);
+  });
+
+  it('a set job never shares an idempotency key with a sweep or a single sender', () => {
+    const key = (payload: ScoreJobData) =>
+      (
+        new ScoreWorker({ db }) as unknown as {
+          getIdempotencyKey: (p: ScoreJobData) => string;
+        }
+      ).getIdempotencyKey(payload);
+    const base = { mailboxAccountId, trigger: 'signal_change' as const, producedAtMs: 7 };
+
+    const keys = [
+      key({ ...base, senderKeys: ['a', 'b'] }),
+      key(base),
+      key({ ...base, senderKey: 'a' }),
+    ];
+
+    expect(new Set(keys).size).toBe(3);
+    expect(keys[0]).toBe(`${mailboxAccountId}:subset:7`);
+  });
+});

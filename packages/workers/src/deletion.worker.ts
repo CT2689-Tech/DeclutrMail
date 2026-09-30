@@ -40,6 +40,8 @@ import type { EmailSendJobData } from './email-send.worker.js';
 import { PASSTHROUGH_MAILBOX_LOCK, type MailboxActionLock } from './label-action.worker.js';
 import { InvalidGrantError, TransientError } from './worker-errors.js';
 import type { GmailLifecycleAccess } from './ports.js';
+import type { InitialSyncJobData } from './queue.js';
+import type { ScanProgressStore } from './scan-progress.js';
 import type { WorkerContext } from './worker-context.js';
 import type { WorkerObserver } from './worker-observer.js';
 
@@ -108,6 +110,33 @@ export interface DeletionPurgeDeps {
    * indexed-data scrub.
    */
   mailboxLock?: MailboxActionLock;
+  /**
+   * Clears the sync gate's short-lived `declutr:scan-progress:<id>` count
+   * (D245 `scan-progress-counts`, `removalTrigger: 'delete-indexed-data'`)
+   * the moment a mailbox's indexed data is dropped, so "delete my data"
+   * does not leave a live count behind for up to its 30-minute TTL.
+   * Optional keeps existing composition roots source-compatible;
+   * production always passes the real Redis-backed store. Best-effort:
+   * a write failure is logged, never blocks the purge (Redis cannot hold
+   * data deletion hostage, same as every other step here).
+   */
+  scanProgress?: ScanProgressStore;
+  /**
+   * The initial-sync queue (D157) — best-effort removes this mailbox's
+   * BullMQ job (`jobId = mailboxAccountId`, `initialSyncJobOptions`) and
+   * trims the queue's shared events stream (D245
+   * `processing-and-retry-records`) the moment its indexed data is
+   * dropped. A completed job keeps its result (`messagesSynced`) for up
+   * to 24h; a failed job keeps `failedReason` indefinitely
+   * (`removeOnFail: false`) — either can carry counts like "Gmail
+   * refused metadata for N of M messages", and BullMQ writes that same
+   * text into the events stream on every finish too. Optional keeps
+   * existing composition roots source-compatible; production passes the
+   * same `Queue` instance the initial-sync reconciler uses. Best-effort:
+   * a Redis failure is logged, never blocks the purge, same as every
+   * other step here.
+   */
+  initialSyncQueue?: Queue<InitialSyncJobData>;
   /** D159 seam for per-request failures (sweep records-and-continues). */
   observer?: WorkerObserver;
 }
@@ -198,6 +227,11 @@ function controlledErrorCode(error: unknown): string {
  *      then revoke the Google OAuth refresh token. Revocation is a
  *      required, retryable step and runs before any encrypted token is
  *      erased, so deletion cannot strand a live external grant.
+ *   3b. Clear every mailbox's short-lived scan-progress count
+ *      (`declutr:scan-progress:<id>`, D245 `scan-progress-counts`),
+ *      its initial-sync BullMQ job, and trim that queue's events stream
+ *      (D245 `processing-and-retry-records`) — best-effort, same
+ *      reasoning as the watch stop above.
  *   4. Enqueue the deletion-receipt email BEFORE the data drop — the
  *      job carries `recipientOverride` (the captured address) because
  *      the users row will be gone at send time. Idempotent on the
@@ -480,6 +514,8 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         })
         .where(eq(mailboxAccounts.id, request.mailboxAccountId));
       await this.clearMailboxPreferences(mailbox.userId, request.mailboxAccountId);
+      await this.clearScanProgress(request.mailboxAccountId);
+      await this.clearInitialSyncArtifacts(request.mailboxAccountId);
 
       const messagesDeleted = await this.deleteMailboxMessagesChunked(request.mailboxAccountId);
 
@@ -625,6 +661,78 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
     return { watch, grant: 'revoked' };
   }
 
+  /**
+   * Best-effort DEL of this mailbox's scan-progress key. Idempotent (a
+   * missing key is a no-op), so calling it again on a retried purge is
+   * safe. Never throws: a Redis failure is logged and the purge
+   * continues, exactly like a failed watch stop above.
+   */
+  private async clearScanProgress(mailboxAccountId: string): Promise<void> {
+    if (!this.deps.scanProgress) return;
+    try {
+      await this.deps.scanProgress.write(mailboxAccountId, null);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'account_deletion.scan_progress_clear_failed',
+          mailboxAccountId,
+          error: controlledErrorCode(err),
+        }),
+      );
+    }
+  }
+
+  /**
+   * Best-effort removal of this mailbox's initial-sync BullMQ job, plus a
+   * full trim of the queue's shared events stream (docs/log/
+   * founder-followups/2026-09-26-redis-sync-count-retention.md, D245
+   * `processing-and-retry-records`). The job's id is the mailbox id
+   * (`initialSyncJobOptions`); a completed job keeps its result for up
+   * to 24h and a failed one keeps `failedReason` indefinitely
+   * (`removeOnFail: false`), and BullMQ writes that same result/reason
+   * into `{queue}:events` on every finish too, trimmed only by length.
+   * A length-based cap can only ever drop the OLDEST entries — never a
+   * specific one — so it can't guarantee THIS mailbox's just-finished
+   * entry is gone. Only 0 can: with no floor to respect, `trimEvents(0)`
+   * clears the whole stream. That is queue-wide, not mailbox-scoped, but
+   * safe — nothing in the app reads this stream's history.
+   *
+   * Both steps are independently best-effort (one failing must not skip
+   * the other) and idempotent (a missing job or an already-empty stream
+   * is a no-op), so retrying a purge is safe. Never throws: an active
+   * job (mid-sync) cannot be removed and is left for its own run to
+   * finish, same as every other best-effort step here.
+   */
+  private async clearInitialSyncArtifacts(mailboxAccountId: string): Promise<void> {
+    if (!this.deps.initialSyncQueue) return;
+    try {
+      const job = await this.deps.initialSyncQueue.getJob(mailboxAccountId);
+      await job?.remove();
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'account_deletion.initial_sync_job_clear_failed',
+          mailboxAccountId,
+          error: controlledErrorCode(err),
+        }),
+      );
+    }
+    try {
+      await this.deps.initialSyncQueue.trimEvents(0);
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'account_deletion.initial_sync_events_trim_failed',
+          mailboxAccountId,
+          error: controlledErrorCode(err),
+        }),
+      );
+    }
+  }
+
   /** Clear mailbox-derived onboarding pins and only the matching active id. */
   private async clearMailboxPreferences(userId: string, mailboxAccountId: string): Promise<void> {
     await this.deps.db
@@ -758,6 +866,15 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         hasCredentials: Boolean(mailbox.encryptedRefreshToken && mailbox.dekEncrypted),
       })),
     );
+
+    // 3b. Clear every mailbox's scan-progress count, initial-sync job,
+    // and events stream. Same durability reasoning as the mailbox-only
+    // purge: idempotent, so it is safe this early and safe to repeat if
+    // this run is later retried.
+    for (const mailboxId of mailboxIds) {
+      await this.clearScanProgress(mailboxId);
+      await this.clearInitialSyncArtifacts(mailboxId);
+    }
 
     // 4. Receipt email — BEFORE the drop (see class doc for why).
     await this.enqueueReceipt(request, user.email);

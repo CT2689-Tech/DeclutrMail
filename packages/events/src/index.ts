@@ -21,6 +21,7 @@ export {
   FollowupDismissedPayloadSchema,
   MailboxDeletedPayloadSchema,
   AutopilotRuleActivatedPayloadSchema,
+  MAILBOX_NON_MAIL_PURGED_LIST_MAX,
   MailboxNonMailPurgedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   MailboxSyncFailedPayloadSchema,

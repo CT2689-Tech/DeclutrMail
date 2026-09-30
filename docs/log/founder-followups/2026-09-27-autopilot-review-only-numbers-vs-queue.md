@@ -25,4 +25,4 @@ a different set from the queue "Review all" acts on.
   - (b) Count every match in the headline instead.
 **Verifies by:** Tests pinning that each number equals the set its action
 acts on.
-**Status:** Open
+**Status:** Done 2026-09-29

@@ -1,6 +1,10 @@
 import type { Queue } from 'bullmq';
 
-import { AUTOPILOT_APPLY_JOB, type AutopilotApplyJobData } from './autopilot-apply.worker.js';
+import {
+  AUTOPILOT_APPLY_JOB,
+  autopilotApplyJobOptions,
+  type AutopilotApplyJobData,
+} from './autopilot-apply.worker.js';
 
 /**
  * Debounce window for sync-delta-triggered Autopilot apply sweeps
@@ -39,32 +43,43 @@ export const AUTOPILOT_APPLY_DELTA_WINDOW_MS = 5 * 60_000;
  *     still slip a window, which is accepted: the next delta (or
  *     sync_ready / score-run trigger) sweeps it.
  *
- * Options mirror the outbox consumer's `enqueueAutopilotApply` (the
- * apply queue's other producer): no retry override — the sweep is
- * DB-only and the next trigger is the safety net.
+ * Options come from `autopilotApplyJobOptions` (D203/D225
+ * `perMailboxPolicy`), same as the outbox consumer's
+ * `enqueueAutopilotApply` (the apply queue's other producer) — a
+ * transient failure mid-sweep gets the policy's 5-attempt budget with
+ * backoff before dead-lettering, same as every other `perMailboxPolicy`
+ * producer.
  *
  * The composition root wires the returned fn into
- * `IncrementalSyncDeps.onDeltaProcessed`; tests pass a fake queue +
- * clock.
+ * `IncrementalSyncDeps.onDeltaProcessed` AND (a second instance, with
+ * `settleMs`) `buildRescoreSenders`'s `sweepAfter` — the non-mail-purge
+ * repair's own trigger back into this same debounced sweep, so a purge
+ * that recounts senders also re-runs Autopilot against the fresh counts.
+ * Tests pass a fake queue + clock.
  */
 export function buildAutopilotApplyDeltaTrigger(
   applyQueue: Pick<Queue<AutopilotApplyJobData>, 'add'>,
-  opts: { windowMs?: number; now?: () => Date } = {},
+  opts: {
+    windowMs?: number;
+    now?: () => Date;
+    /**
+     * Minimum wait before the sweep: it lands on the first window end at
+     * least this far off. For a caller whose writes are still queued when
+     * it fires (the purge's re-scores), so the sweep reads them done.
+     */
+    settleMs?: number;
+  } = {},
 ): (mailboxAccountId: string) => Promise<void> {
   const windowMs = opts.windowMs ?? AUTOPILOT_APPLY_DELTA_WINDOW_MS;
   const now = opts.now ?? (() => new Date());
+  const settleMs = opts.settleMs ?? 0;
   return async (mailboxAccountId: string): Promise<void> => {
     const nowMs = now().getTime();
-    const windowEndMs = (Math.floor(nowMs / windowMs) + 1) * windowMs;
+    const windowEndMs = (Math.floor((nowMs + settleMs) / windowMs) + 1) * windowMs;
     await applyQueue.add(
       AUTOPILOT_APPLY_JOB,
       { mailboxAccountId, triggeredAtMs: windowEndMs },
-      {
-        jobId: `${mailboxAccountId}-delta-${windowEndMs}`,
-        delay: windowEndMs - nowMs,
-        removeOnComplete: { age: 86_400 },
-        removeOnFail: false,
-      },
+      autopilotApplyJobOptions(`${mailboxAccountId}-delta-${windowEndMs}`, windowEndMs - nowMs),
     );
   };
 }

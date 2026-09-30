@@ -24,14 +24,16 @@ export interface AutopilotSignalRow {
   signals: PresetSignals;
   decision: { verdict: TriageVerdict; confidence: number } | null;
   /**
-   * Actionability facts for ACTIVE-mode matching (not part of
-   * `PresetSignals` — preset matchers and the dry-run preview answer
-   * "does the rule match", these answer "would acting do anything").
-   * The apply worker skips active-mode inserts for non-actionable
-   * matches; without that gate every delta-triggered sweep (D100)
-   * re-executes the full match set as 0-affected actions — unbounded
-   * `rule_match_log`/`action_jobs`/`activity_log` growth plus an
-   * Activity feed full of "archived 0" entries.
+   * Actionability facts (not part of `PresetSignals` — preset matchers
+   * and the dry-run preview answer "does the rule match", these answer
+   * "would acting do anything"). The apply worker skips inserts for
+   * non-actionable matches in BOTH modes: for Active, without that gate
+   * every delta-triggered sweep (D100) re-executes the full match set as
+   * 0-affected actions — unbounded `rule_match_log`/`action_jobs`/
+   * `activity_log` growth plus an Activity feed full of "archived 0"
+   * entries; for Observe (since 2026-09-29), without it the Watch-first
+   * queue offers suggestions the Active sweep and the turn-on preview
+   * already exclude.
    */
   inboxCount: number;
   isUnsubscribed: boolean;
@@ -97,6 +99,8 @@ export async function materializeAutopilotSignals(
       senderKey: triageDecisions.senderKey,
       verdict: triageDecisions.verdict,
       confidence: triageDecisions.confidence,
+      producedAt: triageDecisions.producedAt,
+      expiresAt: triageDecisions.expiresAt,
     })
     .from(triageDecisions)
     .where(
@@ -111,6 +115,12 @@ export async function materializeAutopilotSignals(
   // mis-evaluate; treating it as "no decision" is the safe default.
   const decisionBy = new Map<string, { verdict: TriageVerdict; confidence: number }>();
   for (const r of decisionRows) {
+    // Awaiting re-score: the Gmail tab recount found this verdict was
+    // computed from the wrong tab and marked it (`expires_at =
+    // produced_at`, a value the score worker never writes). Until the
+    // new verdict lands, no preset may act on the old one — treated as
+    // "no decision", which every verdict-gated preset already skips.
+    if (r.expiresAt.getTime() === r.producedAt.getTime()) continue;
     const c = Number.parseFloat(r.confidence);
     if (!Number.isFinite(c)) {
       console.warn(

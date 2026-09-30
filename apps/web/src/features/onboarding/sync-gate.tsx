@@ -4,32 +4,40 @@ import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 import { OnboardingPhase } from './onboarding-phase';
 
 import { Button, tokens } from '@declutrmail/shared';
-import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  type SyncMessageProgress,
+  type SyncStatus,
+  type SyncStage,
+} from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
+import { useScanTimeLeft } from './scan-time-left';
 
 const { color, font, text, radius, motion } = tokens;
 
 /**
  * Onboarding sync gate (D109, D224).
  *
- * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
+ * "Reading your Gmail…" — the strict gate (D6) shown after a Gmail
  * connect, before the app opens. D109's one line saying the user may
  * leave, ONE progress bar bound to the real `progress_pct` and ONE
- * sentence naming the real `current_stage` — no fake ticking (D109 hard
- * rule), no aspirational stage list.
+ * line under it: while the scan reads the mailbox, the real counts
+ * ("12,400 of 40,898 emails", plus time left from the worker's own
+ * batches); otherwise a sentence naming the real
+ * `current_stage` — no fake ticking (D109 hard rule), no aspirational
+ * stage list.
  *
  * This file is the PRESENTATIONAL view: it takes a `SyncStatus` and
  * renders. Polling + the ready→advance redirect live in the route
  * (`app/onboarding/page.tsx`) so Storybook can drive every state
  * (queued / syncing / ready / failed) without a network.
  *
- * Privacy (D7 / D228): the gate shows a stage sentence + a percentage
- * and never renders message-derived data. The trust badge is NOT here:
+ * Privacy (D7 / D228): the gate shows a stage sentence, a percentage and
+ * message counts — no message content. The trust badge is NOT here:
  * a waiting screen is not a decision point — it renders on the promise
  * step, directly above the button that starts Google consent.
  */
@@ -53,15 +61,51 @@ const STAGE_SENTENCE: Record<SyncStage, string> = {
 /**
  * The sentence under the bar. "Your inbox is ready" is reachable ONLY
  * from `readiness_status === 'ready'` — the one signal that means it.
- * The worker writes late stages at 90–97% while the app is still gated
- * (the score cascade over every sender, minutes on a large mailbox), and
- * a stage/readiness disagreement must never read as done (audit
- * 2026-08-21).
+ * The worker writes late stages at 80–97% while the app is still gated —
+ * seconds on a 101k-message mailbox (dev `sync_runs`, 2026-09; scoring is
+ * queued, not run, in that stage) — and a stage/readiness disagreement
+ * must never read as done (audit 2026-08-21).
  */
 function stageSentence(status: SyncStatus): string {
   if (status.readiness_status === 'ready') return STAGE_SENTENCE.ready;
   if (status.current_stage === 'ready') return STAGE_SENTENCE.finalizing;
   return STAGE_SENTENCE[status.current_stage];
+}
+
+/**
+ * The counts, only while the scan reads the mailbox — the one stage they
+ * describe. `null` before the mailbox is listed; `undefined` when this
+ * poll could not read them, or from an API that does not send the field
+ * yet. Either way no line, never a guessed number — but a failed read
+ * leaves the time left's pace alone.
+ */
+function readingCounts(status: SyncStatus): SyncMessageProgress | null | undefined {
+  if (status.readiness_status !== 'syncing' || status.current_stage !== 'fetching_metadata') {
+    return null;
+  }
+  return status.message_progress;
+}
+
+/** "about 10 min left" — minutes rounded up; past an hour, up to the next 5. */
+function timeLeftPhrase(msLeft: number): string {
+  const minutes = Math.max(1, Math.ceil(msLeft / 60_000));
+  if (minutes < 60) return `about ${minutes} min left`;
+  const rounded = Math.ceil(minutes / 5) * 5;
+  const hours = Math.floor(rounded / 60);
+  const rest = rounded % 60;
+  return rest === 0 ? `about ${hours} hr left` : `about ${hours} hr ${rest} min left`;
+}
+
+/**
+ * "12,400 of 40,898 emails" — or, before the first batch lands, what the
+ * listing found: a zero that sits for a whole batch reads as stuck. The
+ * no-break space keeps "40,898 emails" whole when the line wraps.
+ */
+function countText(counts: SyncMessageProgress): string {
+  const total = `${counts.total.toLocaleString('en-US')}\u00A0${counts.total === 1 ? 'email' : 'emails'}`;
+  return counts.processed === 0
+    ? `Found ${total}`
+    : `${counts.processed.toLocaleString('en-US')} of ${total}`;
 }
 
 /**
@@ -74,26 +118,27 @@ function stageSentence(status: SyncStatus): string {
  * 2026-07-28). Every string here now points at the button instead.
  */
 /**
- * Error codes whose `ERROR_COPY` above already diagnoses a revoked/
- * expired Gmail grant. QA-sync-20260831-07: the gate used to offer only
- * "Try again" for these — re-queuing a full scan against the SAME dead
- * token, which fails again at `getClient` and burns one of the retry
- * route's rate-limited attempts, with no reconnect action anywhere on
- * screen. Display-only: this does NOT touch `syncStatusNeedsReconnect`
- * or the backend's `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep
- * contract (packages/workers/src/mailbox-reconnect.ts), which govern
- * periodic-sweep eligibility and are a separate, wider change.
+ * For the codes in `AUTH_RECOVERY_ERROR_CODES` (`@declutrmail/shared/
+ * contracts`), whose `ERROR_COPY` below diagnoses a revoked/expired Gmail
+ * grant, the gate offers Reconnect instead of "Try again".
+ * QA-sync-20260831-07: it used to offer only "Try again" — re-queuing a
+ * full scan against the SAME dead token, which fails again at `getClient`
+ * and burns one of the retry route's rate-limited attempts, with no
+ * reconnect action anywhere on screen. Display-only: this does NOT touch
+ * `syncStatusNeedsReconnect` or the backend's
+ * `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep contract
+ * (packages/workers/src/mailbox-reconnect.ts), which govern periodic-sweep
+ * eligibility and are a separate, wider change.
  *
  * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
- * review of this QA round) — both surfaces read the one set exported
- * from mailbox-health.ts so this classification can't drift between
- * them again.
+ * review of this QA round) — both surfaces read that one set so this
+ * classification can't drift between them again.
  */
 
 const ERROR_COPY: Record<string, string> = {
   RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
   AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
+    'Google stopped accepting our access. Reconnect Gmail and allow access on Google’s screen.',
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
@@ -203,10 +248,14 @@ function SyncProgress({
   // Strictly null: the API always sends the field, so a missing one is
   // unknown, and unknown promises nothing.
   const emailOnReady = readyEmail && status.last_synced_at === null;
+  const counts = readingCounts(status);
+  const msLeft = useScanTimeLeft(counts);
 
   return (
     <Shell>
-      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your inbox…'}</h1>
+      {/* "Gmail", not "inbox": the scan reads all mail but Spam and Trash,
+          and the count below says how much. */}
+      <h1 style={titleStyle}>{ready ? 'Your inbox is ready.' : 'Reading your Gmail…'}</h1>
       {!ready && (
         // Same sub-line treatment as StepShell on the sibling steps.
         <p
@@ -229,7 +278,7 @@ function SyncProgress({
         aria-valuenow={pct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label="Inbox scan progress"
+        aria-label="Scan progress"
         style={{
           height: 6,
           width: '100%',
@@ -251,21 +300,31 @@ function SyncProgress({
         />
       </div>
 
-      {/* The real current_stage, as one sentence. Ready says it in the title. */}
+      {/* The real current_stage, as one sentence. Ready says it in the title.
+          While counts show, it stays the live status for screen readers
+          only — a count that changes every batch would be announced each
+          time. */}
       {!ready && (
         <p
           role="status"
           data-testid="sync-stage"
-          style={{
-            color: color.fgMuted,
-            fontSize: text.lg,
-            lineHeight: 1.45,
-            margin: '16px 0 0',
-            fontVariantNumeric: 'tabular-nums',
-          }}
+          style={counts ? SCREEN_READER_ONLY : UNDER_BAR_LINE}
         >
           {stageSentence(status)}
         </p>
+      )}
+      {counts && (
+        <>
+          <p data-testid="sync-count" style={UNDER_BAR_LINE}>
+            {countText(counts)}
+            {/* Neither the total nor the time splits across lines. */}
+            {msLeft !== null && <span className="dm-scan-sep">{'\u00A0· '}</span>}
+            <span className="dm-scan-time" style={{ whiteSpace: 'nowrap' }}>
+              {msLeft !== null && timeLeftPhrase(msLeft)}
+            </span>
+          </p>
+          <style>{SCAN_COUNT_CSS}</style>
+        </>
       )}
 
       {/* The secondary keeps syncing in the background after the hop; the
@@ -309,7 +368,7 @@ function SyncFailed({
     'Something interrupted the scan. Your Gmail is untouched — try again.';
   return (
     <Shell>
-      <h1 style={titleStyle}>The inbox scan stopped.</h1>
+      <h1 style={titleStyle}>The scan stopped.</h1>
       <p
         style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
       >
@@ -392,6 +451,39 @@ function SyncFailed({
   );
 }
 
+const UNDER_BAR_LINE = {
+  color: color.fgMuted,
+  fontSize: text.lg,
+  lineHeight: 1.45,
+  margin: '16px 0 0',
+  fontVariantNumeric: 'tabular-nums',
+} as const;
+
+/**
+ * The count and its time share one line where they fit. On a phone they
+ * do not (~333px of text in a 222–332px card, measured 2026-09-26), and a
+ * wrapped line strands the dot at its end: there the time takes a line of
+ * its own, without the dot, held open while counts show so the centred
+ * card does not jump each time a time comes or goes. From 540px up the
+ * card holds even a seven-digit count with an hours estimate on one line.
+ */
+const SCAN_COUNT_CSS = `@media (max-width: 539px) {
+  .dm-scan-sep { display: none; }
+  .dm-scan-time { display: block; min-height: 1.45em; }
+}`;
+
+const SCREEN_READER_ONLY = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+} as const;
+
 const titleStyle = {
   fontFamily: font.display,
   fontSize: 'clamp(30px, 4vw, 42px)',
@@ -437,4 +529,4 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export { stageSentence };
+export { stageSentence, timeLeftPhrase };

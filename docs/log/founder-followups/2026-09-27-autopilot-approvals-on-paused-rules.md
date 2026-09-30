@@ -19,4 +19,4 @@ requests, at a moment the user saw no preview (D226).
 was chosen, and that resuming never runs an approval the user was not shown.
 To size how much is waiting today, run a read-only query for approved,
 not-yet-run Observe rows on off or paused rules.
-**Status:** Open
+**Status:** Done 2026-09-29

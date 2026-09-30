@@ -107,6 +107,63 @@ describe('SyncService.markQueued — incremental error lifecycle', () => {
     expect(row.lastIncrementalErrorCode).toBe('InvalidGrantError');
   });
 
+  // Independent review (2026-09-27): a re-queue that re-snapshotted skipped
+  // every Gmail change, between the two snapshots, to mail an earlier
+  // attempt had already saved. Incremental sync replays from the kept one.
+  describe("keeps an initial scan's snapshot cursor across its attempts", () => {
+    const snapshotAt = new Date('2026-09-26T10:00:00Z');
+
+    async function seed(
+      readinessStatus: 'syncing' | 'failed' | 'ready',
+      lastHistoryId: bigint,
+    ): Promise<void> {
+      await db.insert(providerSyncState).values({
+        mailboxAccountId: mailboxId,
+        readinessStatus,
+        currentStage: readinessStatus === 'syncing' ? 'fetching_metadata' : readinessStatus,
+        progressPct: readinessStatus === 'ready' ? 100 : 40,
+        lastHistoryId,
+        historyIdUpdatedAt: snapshotAt,
+      });
+    }
+
+    it.each(['syncing', 'failed'] as const)(
+      "a sign-in re-queue keeps a %s scan's snapshot",
+      async (readinessStatus) => {
+        await seed(readinessStatus, 123n);
+
+        await service.markQueued(db, mailboxId, { freshCredentials: true });
+
+        const row = await readState();
+        expect(row.readinessStatus).toBe('queued');
+        expect(row.lastHistoryId).toBe(123n);
+        expect(row.historyIdUpdatedAt).toEqual(snapshotAt);
+      },
+    );
+
+    it("the failed-scan retry keeps the failed attempt's snapshot", async () => {
+      await seed('failed', 123n);
+
+      await service.retryFailedInitialSync(mailboxId);
+
+      const row = await readState();
+      expect(row.readinessStatus).toBe('queued');
+      expect(row.lastHistoryId).toBe(123n);
+      expect(row.historyIdUpdatedAt).toEqual(snapshotAt);
+    });
+
+    it("still clears a READY mailbox's applied cursor — its re-scan takes a new base", async () => {
+      await seed('ready', 999n);
+
+      await service.markQueued(db, mailboxId, { freshCredentials: true });
+
+      const row = await readState();
+      expect(row.readinessStatus).toBe('queued');
+      expect(row.lastHistoryId).toBeNull();
+      expect(row.historyIdUpdatedAt).toBeNull();
+    });
+  });
+
   /**
    * "Your inbox is ready" sends only while `last_synced_at` is null
    * (InitialSyncWorker.markReady). A reset that cleared it would make

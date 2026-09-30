@@ -27,7 +27,8 @@ export const ACTIVITY_ACTION_LABELS = {
  */
 export const ACTIVITY_REVIEW_OUTCOME_ROW_LABELS = {
   skipped: 'Dismissed by you',
-  protected: 'Skipped — sender is Protected',
+  // "was": the record proves the sender was Protected when it ran, not now.
+  protected: 'Skipped — sender was Protected',
 } as const;
 
 export type ActivityPresentationAction = keyof typeof ACTIVITY_ACTION_LABELS;

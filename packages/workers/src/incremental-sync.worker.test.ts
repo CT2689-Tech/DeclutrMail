@@ -501,6 +501,51 @@ describe('IncrementalSyncWorker', () => {
     expect(fetches.mock.calls.map(([id]) => id)).toEqual(['draft-2', 'mail-1']);
   });
 
+  it.each([
+    [['INBOX'], 'unknown'],
+    [['INBOX', 'CATEGORY_PROMOTIONS'], 'promotions'],
+    [['INBOX', 'CATEGORY_PERSONAL'], 'primary'],
+  ] as const)(
+    'a first-seen sender takes its tab from Gmail’s label, never a guessed Primary (%j → %s)',
+    async (labelIds, expected) => {
+      const meta = makeMetadata(
+        'm-cat',
+        'thread-cat',
+        'first@example.com',
+        [...labelIds],
+        Date.UTC(2026, 5, 1),
+      );
+      const client = new FakeGmailClient(
+        [
+          {
+            forCursor: '1000',
+            page: {
+              records: [
+                {
+                  kind: 'added',
+                  messageId: 'm-cat',
+                  threadId: 'thread-cat',
+                  labelIds: [...labelIds],
+                },
+              ],
+              historyId: '1500',
+            },
+          },
+        ],
+        new Map([['m-cat', meta]]),
+      );
+
+      await new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+      const [sender] = await db.select({ category: senders.gmailCategory }).from(senders);
+      expect(sender?.category).toBe(expected);
+    },
+  );
+
   /**
    * `getMessageMetadata` resolves `null` for BOTH "deleted between the
    * history record and the get" and "Gmail refused to render it". Only the
@@ -812,6 +857,81 @@ describe('IncrementalSyncWorker', () => {
       .where(eq(mailMessages.providerMessageId, 'm-lab'));
     // INBOX is deduplicated, STARRED is appended.
     expect(row!.labelIds.sort()).toEqual(['INBOX', 'STARRED']);
+  });
+
+  it('logs an automatic protection a push withdraws, after the commit and by count only', async () => {
+    // A withdrawn protection re-exposes the sender to bulk and automatic
+    // actions, so the push path reports it like the sweep does.
+    const senderKey = deriveSenderKey('unstar@example.com');
+    const recent = new Date(Date.now() - 30 * 86_400_000);
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      email: 'unstar@example.com',
+      domain: 'example.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: recent,
+      lastSeenAt: recent,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'm-unstar',
+      providerThreadId: 'thread-unstar',
+      senderKey,
+      internalDate: recent,
+      labelIds: ['INBOX', 'STARRED'],
+      isUnread: false,
+    });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId,
+      senderKey,
+      policyType: 'keep',
+      isProtected: true,
+      protectionReason: 'starred',
+      protectionSetAt: recent,
+    });
+    const records: GmailHistoryRecord[] = [
+      { kind: 'labels_removed', messageId: 'm-unstar', labelIds: ['STARRED'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+    );
+
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((l: unknown) => {
+      lines.push(String(l));
+    });
+    try {
+      await new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const [policy] = await db
+      .select({ isProtected: senderPolicies.isProtected })
+      .from(senderPolicies)
+      .where(eq(senderPolicies.senderKey, senderKey));
+    expect(policy?.isProtected).toBe(false);
+    const released = lines
+      .flatMap((l) => {
+        try {
+          return [JSON.parse(l) as Record<string, unknown>];
+        } catch {
+          return [];
+        }
+      })
+      .find((l) => l.kind === 'automatic_protection.released');
+    expect(released).toMatchObject({
+      worker: 'IncrementalSyncWorker',
+      released: 1,
+      byReason: { starred: 1 },
+    });
+    expect(JSON.stringify(released)).not.toContain('unstar');
   });
 
   it('processes a `labels_removed` event — UNREAD shadow stays in lockstep', async () => {

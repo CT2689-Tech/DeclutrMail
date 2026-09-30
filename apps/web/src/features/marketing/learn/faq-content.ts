@@ -41,7 +41,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'anthropic',
     question: 'Are any Gmail details sent to an AI provider?',
     answer:
-      'To explain a suggestion, Anthropic receives sender totals and read rates without subject lines or snippets. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary. Neither use sends full email contents or attachments, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
+      'To explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, without subject lines or snippets. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary. Neither use sends full email contents or attachments, and DeclutrMail uses a standard summary when Anthropic is unavailable.',
     link: {
       href: '/answers/what-is-metadata-only-email-analysis',
       label: 'See exactly what is processed',

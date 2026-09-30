@@ -10939,3 +10939,54 @@ empty state. It was enforced nowhere, its wording appeared nowhere in
 source, and ADR-0030 now bans both halves (a blanket reversibility claim;
 a compressed privacy claim). Trust and privacy copy renders once per
 flow, at the decision point. See the struck line in the ADR itself.
+
+---
+
+### [REVERSAL 2026-09-26 on D109 — the scan count and time left]
+
+**Founder-directed, 2026-09-26.** D109 titles Step 3 *"strict gate, no
+time promise, no live counters"* and parks a live counter (*"Headers
+read: 2,847 of ~18,000"*) and a sync ETA estimator behind D111's
+devPreference keys `show_sync_live_counters` / `show_sync_eta`. Both now
+show to every user, as one line under the progress bar while the scan
+reads the mailbox: *"12,400 of 40,898 emails · about 5 min left"*.
+
+**Why.** On 2026-09-24/25 a new user's first scan of 40,898 emails
+showed only a bar creeping about a point a minute over "Reading sender
+info." — no count, no time. They left twice; it looked stuck. The worker
+knew both numbers the whole time.
+
+**What keeps it honest.**
+- The counts are the worker's own, written per 500 messages read (saved
+  or skipped) and as soon as the mailbox is listed ("Found 40,898 emails"
+  until the first batch lands). D224's field set gains
+  `message_progress`, read from a short-lived Redis key the worker writes
+  (no migration): cleared when an attempt starts and when the read ends,
+  expiring 30 minutes after its last write. No count before the mailbox
+  is listed or outside the reading stage; none for a poll whose read of
+  the key failed, which the wire marks as unknown rather than none.
+- Time left is never a fixed rate. It is the average pace of the
+  worker's own batches, each timed by when the worker wrote it — so a
+  late poll cannot shorten it — counted down between batches, and first
+  shown only once two gaps between batches agree within 1.5× per email
+  (otherwise the pace is measured again from the later gap): one gap
+  alone can hold a pause. It starts over after a stall against the pace already seen or a
+  hidden tab; a batch far faster per email than the pace so far means
+  an earlier gap held a pause, and the pace is measured again from there
+  (per email, not per step: a failed read can hide batches in one step). It is
+  dropped when batches stop arriving at their usual pace or the estimate
+  runs out. Minutes round up; past an hour, to the next five.
+- The title reads "Reading your Gmail…" (on Home too): the count covers
+  all mail but Spam and Trash, which "inbox" would misstate.
+- A sign-in or connect during the scan re-queues its row without a new
+  attempt; the running read takes the row back at its next count, so the
+  gate never sits on "Waiting to start." for the rest of the read. A
+  re-queue of a scan in progress or failed keeps its first snapshot
+  cursor (only a ready mailbox's re-scan takes a new base), so no attempt
+  re-snapshots past mail an earlier one saved.
+- The counts' Redis key is registered in the D245 inventory
+  (`scan-progress-counts`).
+- The "you can close this tab" line still promises no time.
+
+`show_sync_live_counters` and `show_sync_eta` are retired with this. In
+source checked 2026-09-26 no code read either key.

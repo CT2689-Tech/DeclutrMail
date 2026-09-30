@@ -274,6 +274,32 @@ test('a scoring run with no LLM explanations is flagged; one with some is not', 
   assert.ok(!codes(40).includes('LLM_OFF'));
 });
 
+test('a recount re-score that buys no prose by policy is not flagged LLM_OFF', () => {
+  // The Gmail tab recount re-scores with templates on purpose and says so
+  // in `explanationsNotRequested`; reading it as "the LLM is down" would
+  // page the founder after every sweep.
+  const mailboxRows = normalize([scanBegin('2026-01-01T00:00:00Z')]);
+  const ready = succeeded('2026-01-01T01:00:00Z', REF, 'InitialSyncWorker', { messagesSynced: 5 });
+  const codes = (notRequested) =>
+    summarize({
+      mailboxRows,
+      workerRows: normalize([
+        ready,
+        succeeded('2026-01-01T01:00:30Z', REF, 'ScoreWorker', {
+          decisionsWritten: 329,
+          llmExplanations: 0,
+          templateExplanations: 329,
+          explanationsNotRequested: notRequested,
+        }),
+      ]),
+      quota: null,
+      ref: REF,
+    }).flags.map((f) => f.code);
+  assert.ok(!codes(329).includes('LLM_OFF'));
+  // Still flagged when enough of the run WAS eligible for prose.
+  assert.ok(codes(300).includes('LLM_OFF'));
+});
+
 test('a run the provider refused is flagged by its skipped calls, even beside reused prose', () => {
   // Since the breaker, a refused account logs `llm.provider_rejected` once
   // and the run counts the skipped calls as `llmBlocked`. Reused prose

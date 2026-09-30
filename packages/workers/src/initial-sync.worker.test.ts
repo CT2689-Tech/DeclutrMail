@@ -11,6 +11,7 @@ import {
   schema,
   senders,
   syncRuns,
+  triageDecisions,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -24,6 +25,7 @@ import { InitialSyncWorker } from './initial-sync.worker.js';
 import * as nonMailPurge from './non-mail-purge.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
+import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
 import type { GmailAccess, GmailMessageListPage, GmailMessageMetadata } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
@@ -456,6 +458,58 @@ describe('InitialSyncWorker', () => {
     }
   });
 
+  // Independent review (2026-09-27): a sign-in during a retry's backoff, or
+  // "Try again" after a failure, re-queued the row and cleared the cursor,
+  // so the next attempt re-snapshotted past mail the first one had saved.
+  it('a re-queue between attempts keeps the first snapshot', async () => {
+    const proto = InitialSyncWorker.prototype as unknown as Record<
+      string,
+      (this: InitialSyncWorker, ...args: unknown[]) => Promise<unknown>
+    >;
+    const originalBuild = proto.buildSenderIndex!;
+    const buildSpy = vi
+      .spyOn(proto, 'buildSenderIndex')
+      .mockImplementationOnce(async (): Promise<never> => {
+        throw new Error('simulated crash after metadata fetch');
+      })
+      .mockImplementation(async function (
+        this: InitialSyncWorker,
+        ...args: unknown[]
+      ): Promise<unknown> {
+        return originalBuild.apply(this, args);
+      });
+
+    try {
+      const messages = makeMessages(10, 3);
+      await expect(
+        new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(messages, '1000')),
+        }).processJob({ mailboxAccountId }, CTX),
+      ).rejects.toThrow(/simulated crash/);
+
+      // What SyncService.markQueued now writes to a row that is not ready:
+      // queued again, the snapshot kept.
+      await db
+        .update(providerSyncState)
+        .set({ readinessStatus: 'queued', currentStage: 'queued', progressPct: 0 })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(messages, '2000')),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const [state] = await db
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      expect(state!.readinessStatus).toBe('ready');
+      expect(state!.lastHistoryId).toBe(1000n);
+    } finally {
+      buildSpy.mockRestore();
+    }
+  });
+
   it('orphan heal — a stored message lacking sender identity is re-fetched, not dropped', async () => {
     const orphanMsg = makeMessages(1, 1)[0]!;
     orphanMsg.id = 'orphan-msg';
@@ -854,6 +908,253 @@ describe('InitialSyncWorker', () => {
       upsertSpy.mockRestore();
       markReadySpy.mockRestore();
     }
+  });
+
+  describe('scan counts for the gate line ("12,400 of 40,898 emails")', () => {
+    type Write = {
+      counts: ScanCounts | null;
+      stage: string | undefined;
+      pct: number | undefined;
+    };
+
+    /** A store that records each write with the gate row as it stood at that instant. */
+    function recorder(): { writes: Write[]; scanProgress: ScanProgressStore } {
+      const writes: Write[] = [];
+      const scanProgress: ScanProgressStore = {
+        write: async (_mailbox, counts) => {
+          const [row] = await db
+            .select({ stage: providerSyncState.currentStage, pct: providerSyncState.progressPct })
+            .from(providerSyncState)
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          writes.push({ counts, stage: row?.stage, pct: row?.pct });
+        },
+      };
+      return { writes, scanProgress };
+    }
+
+    it('writes the total once the mailbox is listed, every 500 read, then clears', async () => {
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(1_200, 7))),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      expect(writes.map((w) => w.counts)).toEqual([
+        null, // an attempt starts clean — see the retry test below
+        { processed: 0, total: 1_200 },
+        { processed: 500, total: 1_200 },
+        { processed: 1_000, total: 1_200 },
+        null, // the read is over
+      ]);
+      // The bar and the line agree at every count: the row is already
+      // written for the same `processed` when the store hears it.
+      for (const w of writes.filter((x) => x.counts !== null)) {
+        const { processed, total } = w.counts!;
+        expect(w.stage).toBe('fetching_metadata');
+        expect(w.pct).toBe(5 + Math.round((70 * processed) / total));
+      }
+      expect(writes.at(-1)!.stage).toBe('building_sender_index');
+    });
+
+    it("clears a retried attempt's counts before the row drops back to 5%", async () => {
+      // What attempt 1 left behind when it failed mid-read.
+      await db.insert(providerSyncState).values({
+        mailboxAccountId,
+        currentStage: 'fetching_metadata',
+        readinessStatus: 'syncing',
+        progressPct: 34,
+      });
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(10, 2))),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, { ...CTX, attempt: 2 });
+
+      // Cleared while the row still showed attempt 1's 34% — so no read
+      // can pair attempt 1's counts with attempt 2's reset bar.
+      expect(writes[0]).toEqual({ counts: null, stage: 'fetching_metadata', pct: 34 });
+    });
+
+    it('a resumed scan counts what is already saved as read', async () => {
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(700, 5))),
+      }).processJob({ mailboxAccountId }, CTX);
+      await resetToQueued(db, mailboxAccountId);
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(makeMessages(1_200, 5))),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      expect(writes.map((w) => w.counts)).toEqual([
+        null,
+        { processed: 700, total: 1_200 },
+        { processed: 1_200, total: 1_200 },
+        null,
+      ]);
+    });
+
+    it('counts every message it fetched as read, stored or skipped, every 500 read', async () => {
+      // Oldest first: the first five fetched are ones Gmail will not render.
+      const messages = makeMessages(1_200, 7);
+      const unreadable = new Set(messages.slice(-5).map((m) => m.id));
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(messages, '987654', unreadable)),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      // Only 495 are saved after the first 500 read, and the first save
+      // lands after the second — the count follows what was read, not
+      // saved, so a stretch of skipped mail cannot freeze the line.
+      const counted = writes.flatMap((w) => (w.counts ? [w.counts.processed] : []));
+      expect(counted).toEqual([0, 500, 1_000]);
+    });
+
+    it('writes no count for an empty mailbox', async () => {
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient([])),
+        scanProgress,
+      }).processJob({ mailboxAccountId }, CTX);
+
+      expect(writes.map((w) => w.counts)).toEqual([null, null]);
+    });
+
+    // Round-2 review (2026-09-26): a sign-in or connect mid-read resets the
+    // row to `queued` and starts no attempt — the job is already active —
+    // so the gate sat on "Waiting to start." at 0% for the rest of the read.
+    it.each([
+      // What `markQueued` does to a row mid-scan: the snapshot stays.
+      ['a sign-in re-queues it mid-read', false],
+      // Whatever else might clear it: the read's own snapshot fills it.
+      ['the cursor is cleared too', true],
+    ] as const)('takes the row back, cursor included, when %s', async (_label, clearCursor) => {
+      const client = new FakeGmailClient(makeMessages(1_200, 7), '555');
+      const original = client.getMessageMetadata.bind(client);
+      let seen = 0;
+      client.getMessageMetadata = async (id) => {
+        seen += 1;
+        // After the first 500 are read, the row is reset while this
+        // attempt keeps reading.
+        if (seen === 501) {
+          await db
+            .update(providerSyncState)
+            .set({
+              readinessStatus: 'queued',
+              currentStage: 'queued',
+              progressPct: 0,
+              ...(clearCursor ? { lastHistoryId: null, historyIdUpdatedAt: null } : {}),
+            })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
+        return original(id);
+      };
+      const rows: Array<{ counts: ScanCounts; row: Record<string, unknown> | undefined }> = [];
+      const scanProgress: ScanProgressStore = {
+        write: async (_mailbox, counts) => {
+          if (counts === null) return;
+          const [row] = await db
+            .select({
+              readiness: providerSyncState.readinessStatus,
+              stage: providerSyncState.currentStage,
+              pct: providerSyncState.progressPct,
+              cursor: providerSyncState.lastHistoryId,
+            })
+            .from(providerSyncState)
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          rows.push({ counts, row });
+        },
+      };
+
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client), scanProgress }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      // The next count lands on a running read again, with the snapshot
+      // this read took — not a queued row at 0% with no cursor.
+      expect(rows.find((r) => r.counts.processed === 1_000)?.row).toEqual({
+        readiness: 'syncing',
+        stage: 'fetching_metadata',
+        pct: 5 + Math.round((70 * 1_000) / 1_200),
+        cursor: 555n,
+      });
+    });
+
+    it('the take-back leaves a failed row alone', async () => {
+      const client = new FakeGmailClient(makeMessages(1_200, 7));
+      const original = client.getMessageMetadata.bind(client);
+      let seen = 0;
+      client.getMessageMetadata = async (id) => {
+        seen += 1;
+        if (seen === 501) {
+          await db
+            .update(providerSyncState)
+            .set({ readinessStatus: 'failed', currentStage: 'failed', progressPct: 34 })
+            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        }
+        return original(id);
+      };
+      const { writes, scanProgress } = recorder();
+
+      await new InitialSyncWorker({ db, gmailAccess: accessFor(client), scanProgress }).processJob(
+        { mailboxAccountId },
+        CTX,
+      );
+
+      expect(writes.find((w) => w.counts?.processed === 1_000)).toMatchObject({
+        stage: 'failed',
+        pct: 34,
+      });
+    });
+
+    it('finishes the scan when a write fails, naming what failed', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const result = await new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(makeMessages(600, 3))),
+          scanProgress: {
+            write: async () => {
+              throw new Error('redis down');
+            },
+          },
+        }).processJob({ mailboxAccountId }, { ...CTX, attempt: 3 });
+
+        expect(result.messagesSynced).toBe(600);
+        const [state] = await db
+          .select({ readiness: providerSyncState.readinessStatus })
+          .from(providerSyncState)
+          .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+        expect(state!.readiness).toBe('ready');
+        const failures = warn.mock.calls
+          .map(
+            (c) => JSON.parse(String(c[0])) as { kind: string; phase?: string; attempt?: number },
+          )
+          .filter((l) => l.kind === 'sync.scan_progress_write_failed');
+        expect(failures.map((l) => l.phase)).toEqual([
+          'clear_start',
+          'count',
+          'count',
+          'clear_end',
+        ]);
+        expect(failures.every((l) => l.attempt === 3)).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 
   it('historyId — snapshot is persisted to provider_sync_state.last_history_id', async () => {
@@ -1499,12 +1800,14 @@ describe('InitialSyncWorker', () => {
     it('protects explicit stars and repeated Gmail importance, but not one weak importance signal', async () => {
       const fixture = [
         ...makeLabeledSender(10, [['INBOX', 'STARRED']]),
+        // Primary-labelled: importance only protects inside Primary, and
+        // mail with no tab label is no longer read as Primary (mig 0079).
         ...makeLabeledSender(11, [
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
-          ['INBOX', 'IMPORTANT'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
+          ['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL'],
         ]),
-        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT']]),
+        ...makeLabeledSender(12, [['INBOX', 'IMPORTANT', 'CATEGORY_PERSONAL']]),
       ];
 
       await new InitialSyncWorker({
@@ -1565,6 +1868,83 @@ describe('InitialSyncWorker', () => {
       expect(reasons.has(deriveSenderKey('sender20@example.com'))).toBe(false);
       expect(reasons.has(deriveSenderKey('sender21@example.com'))).toBe(false);
       expect(reasons.get(deriveSenderKey('sender22@example.com'))).toBe('gmail_important');
+    });
+
+    it('gmail importance does not protect a sender whose mail carries no tab label', async () => {
+      // The importance rule protects Primary senders only, which needs a
+      // Primary label behind it. With no CATEGORY_* label at all, the old
+      // default filed the sender under Primary and the importance rule
+      // protected it on nothing (mig 0079).
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(
+          new FakeGmailClient(
+            makeLabeledSender(23, [
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+              ['INBOX', 'IMPORTANT'],
+            ]),
+          ),
+        ),
+      }).processJob({ mailboxAccountId }, CTX);
+
+      const policies = await db
+        .select({ senderKey: schema.senderPolicies.senderKey })
+        .from(schema.senderPolicies);
+      expect(policies.map((p) => p.senderKey)).not.toContain(
+        deriveSenderKey('sender23@example.com'),
+      );
+    });
+
+    it('a rescan that withdraws a protection logs it after the commit, by count only', async () => {
+      const fixture = makeLabeledSender(24, [['INBOX', 'STARRED'], ['INBOX']]);
+      await new InitialSyncWorker({
+        db,
+        gmailAccess: accessFor(new FakeGmailClient(fixture)),
+      }).processJob({ mailboxAccountId }, CTX);
+      const senderKey = deriveSenderKey('sender24@example.com');
+      const policyOf = async () =>
+        (
+          await db
+            .select({
+              isProtected: schema.senderPolicies.isProtected,
+              reason: schema.senderPolicies.protectionReason,
+            })
+            .from(schema.senderPolicies)
+            .where(eq(schema.senderPolicies.senderKey, senderKey))
+        )[0];
+      expect(await policyOf()).toEqual({ isProtected: true, reason: 'starred' });
+
+      // The starred message is gone from Gmail; the rescan reconciles it out.
+      await resetToQueued(db, mailboxAccountId);
+      const lines: string[] = [];
+      const spy = vi.spyOn(console, 'log').mockImplementation((l: unknown) => {
+        lines.push(String(l));
+      });
+      try {
+        await new InitialSyncWorker({
+          db,
+          gmailAccess: accessFor(new FakeGmailClient(fixture.slice(1))),
+        }).processJob({ mailboxAccountId }, CTX);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect((await policyOf())?.isProtected).toBe(false);
+      const released = lines
+        .flatMap((l) => {
+          try {
+            return [JSON.parse(l) as Record<string, unknown>];
+          } catch {
+            return [];
+          }
+        })
+        .find((l) => l.kind === 'automatic_protection.released');
+      expect(released).toMatchObject({
+        worker: 'InitialSyncWorker',
+        released: 1,
+        byReason: { starred: 1 },
+      });
     });
 
     it('sweep withdraws importance-only protection from non-Primary senders (self-heals stale rows)', async () => {
@@ -1666,6 +2046,10 @@ describe('InitialSyncWorker', () => {
       // Re-run the worker. Same fixture, same engagement signal — but
       // the WHERE guard (only `protection_reason IS NULL` rows may be
       // auto-protected) must refuse the re-protect.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1704,6 +2088,10 @@ describe('InitialSyncWorker', () => {
         .where(eq(schema.senderPolicies.senderKey, senderKey));
 
       // Re-run — same fixture, same engagement signal (5 replies ≥ 3).
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1746,6 +2134,10 @@ describe('InitialSyncWorker', () => {
       // Run 2 (no new Gmail messages — same fixture). Worker rebuild
       // re-runs the auto-protect UPSERT; the WHERE guard should refuse
       // to overwrite the now-stronger user_defined reason.
+      // What SyncService.markQueued does before any intended re-sync.
+      // Without it the run below is the duplicate guard's no-op on a
+      // \`ready\` mailbox, and this test proved nothing about a re-run.
+      await resetToQueued(db, mailboxAccountId);
       await new InitialSyncWorker({
         db,
         gmailAccess: accessFor(new FakeGmailClient(fixture)),
@@ -1761,6 +2153,130 @@ describe('InitialSyncWorker', () => {
       // started, not the most recent rerun.
       expect(secondRun?.protectionSetAt?.getTime()).toBe(firstSetAt?.getTime());
     });
+  });
+});
+
+describe('InitialSyncWorker — gmail_category is Gmail’s own tab label, never a default (mig 0079)', () => {
+  let db: InitialSyncDeps['db'];
+  let mailboxAccountId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxAccountId = await seedMailbox(db);
+  });
+
+  /** One sender, one message per label set. */
+  function senderWith(index: number, labelSets: string[][]): GmailMessageMetadata[] {
+    const base = Date.UTC(2026, 0, 1) + index * 86_400_000;
+    return labelSets.map((labelIds, i) => ({
+      id: `cat-${index}-${i}`,
+      threadId: `cat-thread-${index}-${i}`,
+      labelIds,
+      snippet: '',
+      internalDate: String(base + i * 60_000),
+      from: `Sender ${index} <cat${index}@example.com>`,
+      subject: `Subject ${i}`,
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    }));
+  }
+
+  async function categories(fixture: GmailMessageMetadata[]): Promise<Map<string, string>> {
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(fixture)),
+    }).processJob({ mailboxAccountId }, CTX);
+    const rows = await db
+      .select({ email: senders.email, category: senders.gmailCategory })
+      .from(senders);
+    return new Map(rows.map((r) => [r.email, r.category]));
+  }
+
+  it('stores unknown — not primary — for a sender Gmail never filed under a tab', async () => {
+    // 30,443 of 38,259 inbound messages on one production mailbox carried
+    // no CATEGORY_* label (2026-09-25); each of their senders was stored
+    // as Primary and kept at 95%.
+    const byEmail = await categories(senderWith(1, [['INBOX'], ['INBOX', 'UNREAD'], ['CHAT']]));
+    expect(byEmail.get('cat1@example.com')).toBe('unknown');
+  });
+
+  it('lets labelled mail decide — unlabelled messages no longer vote for Primary', async () => {
+    const byEmail = await categories(
+      senderWith(2, [['INBOX'], ['INBOX'], ['INBOX'], ['INBOX', 'CATEGORY_PROMOTIONS']]),
+    );
+    expect(byEmail.get('cat2@example.com')).toBe('promotions');
+  });
+
+  it('stores unknown on a tie instead of handing it to Primary', async () => {
+    const byEmail = await categories(
+      senderWith(3, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+    );
+    expect(byEmail.get('cat3@example.com')).toBe('unknown');
+  });
+
+  it('keeps Primary when most of the labelled mail is Primary', async () => {
+    const byEmail = await categories(
+      senderWith(4, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_UPDATES'],
+        ['INBOX'],
+      ]),
+    );
+    expect(byEmail.get('cat4@example.com')).toBe('primary');
+  });
+
+  it('a rescan that moves a sender’s tab marks its decision for re-score; an unmoved one keeps its own', async () => {
+    // The rebuild rewrites `gmail_category` like the sweep's recount does,
+    // so it owes the same mark: without it the score that follows the
+    // rescan reuses prose written for the old tab ("…your Primary inbox").
+    await categories([
+      ...senderWith(5, [['INBOX', 'CATEGORY_PERSONAL']]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    const moved = deriveSenderKey('cat5@example.com');
+    const steady = deriveSenderKey('cat6@example.com');
+    const producedAt = new Date(Date.now() - 86_400_000);
+    const expiresAt = new Date(Date.now() + 6 * 86_400_000);
+    for (const senderKey of [moved, steady]) {
+      await db.insert(triageDecisions).values({
+        mailboxAccountId,
+        senderKey,
+        verdict: 'keep',
+        confidence: '0.95',
+        reasoning:
+          'Kept because Gmail puts them in your Primary inbox and they have no unsubscribe link.',
+        generatedBy: 'template',
+        producedAt,
+        expiresAt,
+      });
+    }
+
+    // New mail since the first scan: most of sender 5's is now Promotions.
+    await resetToQueued(db, mailboxAccountId);
+    const byEmail = await categories([
+      ...senderWith(5, [
+        ['INBOX', 'CATEGORY_PERSONAL'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+        ['INBOX', 'CATEGORY_PROMOTIONS'],
+      ]),
+      ...senderWith(6, [['INBOX', 'CATEGORY_PERSONAL']]),
+    ]);
+    expect(byEmail.get('cat5@example.com')).toBe('promotions');
+    expect(byEmail.get('cat6@example.com')).toBe('primary');
+
+    const rows = await db
+      .select({ senderKey: triageDecisions.senderKey, expiresAt: triageDecisions.expiresAt })
+      .from(triageDecisions);
+    const expiry = new Map(rows.map((r) => [r.senderKey, r.expiresAt.getTime()]));
+    // Marked: expired as of `produced_at`, the "awaiting re-score" state.
+    expect(expiry.get(moved)).toBe(producedAt.getTime());
+    expect(expiry.get(steady)).toBe(expiresAt.getTime());
   });
 });
 

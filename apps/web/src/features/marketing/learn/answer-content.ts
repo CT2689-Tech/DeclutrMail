@@ -168,7 +168,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'external-processing',
         title: 'External processing still belongs in the disclosure',
         paragraphs: [
-          'To explain a suggestion, Anthropic receives sender totals and read rates but no subject line or snippet. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary.',
+          'To explain a suggestion, Anthropic receives the sender’s name and domain and the facts behind it, but no subject line or snippet. Daily Brief works differently: it may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a short summary.',
           'Full email contents are not sent, and the saved Brief omits the snippets used to create it. Even so, sending any listed Gmail details to another company is processing and should not be hidden behind “no full bodies.”',
         ],
       },

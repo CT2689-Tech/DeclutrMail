@@ -101,9 +101,17 @@ export {
 } from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
 export {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
+  ruleMatchEvidenceIsCurrent,
+  ruleMatchIsHeldAction,
   ruleMatchIsOfferableSuggestion,
   ruleMatchIsPendingSuggestion,
+  ruleMatchIsQueuedAction,
+  ruleMatchIsStaleAction,
+  ruleMatchLabelClaimKey,
+  ruleMatchRuleCanStart,
   ruleMatchSenderIsProtected,
+  ruleMatchUnsubscribeAlreadyDone,
 } from './autopilot-suggestions';
 export { deriveSenderId } from './sender-id';
 export {

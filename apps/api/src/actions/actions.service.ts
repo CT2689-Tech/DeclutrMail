@@ -12,10 +12,12 @@ import {
 import { Queue } from 'bullmq';
 import { and, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-// `senderPolicies` is imported for READ-ONLY queries (Protect guards
-// on enqueueArchive / preview). D204 forbids cross-feature WRITES; reads
-// are explicitly allowed.
+// `senderPolicies` is read for the Protected checks (single-sender
+// enqueue, bulk preview + enqueue) and written only on the unsubscribe
+// paths below — ADR-0008 §3 exceptions to D204, which otherwise keeps
+// the table senders-owned.
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   actionJobs,
   activityLog,
   mailMessages,
@@ -27,12 +29,14 @@ import {
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
-  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
+  ENQUEUE_FAILED_ERROR_CODE,
+  LABEL_SENDER_PROTECTED_ERROR_CODE,
   labelActionJobOptions,
   OutboxPublisher,
   UNSUB_EXECUTION_JOB,
   UNSUB_SEND_DISABLED_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
   unsubSendsEnabled,
   unsubExecutionJobOptions,
 } from '@declutrmail/workers';
@@ -92,6 +96,8 @@ interface InFlightRow {
   started_at: string;
   verb: InFlightActionGroup['verb'];
   lead_sender_name: string | null;
+  sender_ids: string[];
+  sender_keys: string[];
 }
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
@@ -385,7 +391,9 @@ export class ActionsService {
    * Protected sender: BOTH primary and secondary share the override flag
    * (one click = one consent decision). The sender selector enforces it
    * up front — a non-overridden Protected sender 409s before either row
-   * is written.
+   * is written. With `override`, both rows carry `protectedConfirmed`, so
+   * the worker does not re-check them; without it, a sender that becomes
+   * Protected before the job runs is skipped (D245).
    */
   async enqueueComposite(input: {
     mailboxAccountId: string;
@@ -492,6 +500,18 @@ export class ActionsService {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
         await this.entitlements.assertCleanupCapacityForWorkspace(workspace, 1, tx);
+        // A genuinely new request (not a retried replay of this exact
+        // action — that case is handled above) must not race a still-live
+        // job for the same sender. The client's Idempotency-Key is
+        // randomly generated per click, so it cannot prevent a second
+        // dispatch on its own (founder-approved guard, 2026-09-28).
+        const busy = await this.liveForwardJobSenderKeys(mailboxAccountId, [senderKey], tx);
+        if (busy.has(senderKey)) {
+          throw new ConflictException({
+            code: 'SENDER_ACTION_IN_PROGRESS',
+            message: 'This sender already has an action running. Wait for it to finish.',
+          });
+        }
       }
 
       const primaryRow = await this.insertJob(
@@ -549,7 +569,13 @@ export class ActionsService {
         : null,
     ].filter((row): row is { actionId: string; idempotencyKey: string } => row !== null);
     const enqueueResults = await Promise.allSettled(
-      freshRows.map((row) => this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey)),
+      freshRows.map((row) =>
+        this.enqueueJob(row.actionId, mailboxAccountId, row.idempotencyKey, {
+          // Consent to what the user saw: the "…anyway" confirm on a sender
+          // that was Protected at the click (D245).
+          protectedConfirmed: override && policy?.isProtected === true,
+        }),
+      ),
     );
     const enqueueFailure = enqueueResults.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
@@ -717,7 +743,9 @@ export class ActionsService {
    * affordance does not exist on the bulk surface, and one stale row in
    * the selection must not block the other N-1 decisions. When the
    * whole selection is skipped there is nothing to enqueue → 409
-   * `NO_ACTIONABLE_SENDERS`.
+   * `NO_ACTIONABLE_SENDERS`. A sender protected AFTER the click is
+   * skipped by the worker (D245), and `getBatchStatus` reports it in
+   * `skippedProtectedSenderIds`.
    *
    * Idempotency: ONE client `Idempotency-Key` per bulk click; per-row
    * keys derive deterministically as `${verb}-${key}-${senderId}` (+
@@ -784,7 +812,7 @@ export class ActionsService {
     );
 
     const skipped: BulkActionEnqueueResult['skipped'] = [];
-    const actionable: Array<{ id: string; senderKey: string }> = [];
+    let actionable: Array<{ id: string; senderKey: string }> = [];
     for (const id of uniqueIds) {
       const row = byId.get(id);
       if (!row) {
@@ -795,14 +823,42 @@ export class ActionsService {
         actionable.push(row);
       }
     }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+
+    // Founder-approved guard, 2026-09-28: a sender already mid-action (any
+    // verb, including Autopilot) is skipped here rather than raced. The
+    // exclusion list is THIS bulk's own prospective per-sender keys, so a
+    // network-retried replay of this exact bulk never sees its own
+    // just-inserted rows as "busy" and wrongly re-skips a sender it
+    // already successfully enqueued.
+    const ownKeys = actionable.flatMap((sender) => [
+      `${primary.type}-${safeKey}-${sender.id}`,
+      ...(secondary ? [`${secondary.type}-${safeKey}-${sender.id}-sec`] : []),
+    ]);
+    const busyKeys = await this.liveForwardJobSenderKeys(
+      mailboxAccountId,
+      actionable.map((r) => r.senderKey),
+      this.db,
+      ownKeys,
+    );
+    if (busyKeys.size > 0) {
+      const stillActionable: typeof actionable = [];
+      for (const sender of actionable) {
+        if (busyKeys.has(sender.senderKey)) {
+          skipped.push({ senderId: sender.id, reason: 'in_progress' });
+        } else {
+          stillActionable.push(sender);
+        }
+      }
+      actionable = stillActionable;
+    }
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
-        message: 'Every selected sender is Protected or no longer exists.',
+        message: 'Every selected sender is Protected, already in progress, or no longer exists.',
       });
     }
-
-    const safeKey = idempotencyKey.replace(/:/g, '-');
 
     // D19/A3 cleanup cap — a bulk of N actionable senders is N units
     // (skipped senders never enqueue, so they don't count). Replay
@@ -993,7 +1049,7 @@ export class ActionsService {
     );
 
     const skipped: BulkActionEnqueueResult['skipped'] = [];
-    const actionable: Array<{ id: string; senderKey: string }> = [];
+    let actionable: Array<{ id: string; senderKey: string }> = [];
     // D252 — mailto senders are skipped for SENDING (D230 keeps that the
     // user's own act) but must still be RECORDED. Without the policy row
     // written below, `recordUnsubscribeManualStatus` 409s
@@ -1031,6 +1087,33 @@ export class ActionsService {
       const reason: BulkSkipReason = capability === 'unknown' ? 'unknown' : 'no_channel';
       skipped.push({ senderId: id, reason });
     }
+
+    const safeKey = idempotencyKey.replace(/:/g, '-');
+    const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
+
+    // Founder-approved guard, 2026-09-28 — same reasoning as
+    // `enqueueBulkComposite`: any live forward job (any verb, including
+    // Autopilot) makes a sender busy, and the exclusion list is this
+    // bulk's own prospective keys so a network-retried replay never
+    // re-skips a sender it already successfully enqueued.
+    const ownKeys = actionable.map((sender) => rowKey(sender.id));
+    const busyKeys = await this.liveForwardJobSenderKeys(
+      mailboxAccountId,
+      actionable.map((r) => r.senderKey),
+      this.db,
+      ownKeys,
+    );
+    if (busyKeys.size > 0) {
+      const stillActionable: typeof actionable = [];
+      for (const sender of actionable) {
+        if (busyKeys.has(sender.senderKey)) {
+          skipped.push({ senderId: sender.id, reason: 'in_progress' });
+        } else {
+          stillActionable.push(sender);
+        }
+      }
+      actionable = stillActionable;
+    }
     if (actionable.length === 0) {
       throw new ConflictException({
         code: 'NO_ACTIONABLE_SENDERS',
@@ -1056,8 +1139,6 @@ export class ActionsService {
       });
     }
 
-    const safeKey = idempotencyKey.replace(/:/g, '-');
-    const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
     const anchorKey = rowKey(actionable[0]!.id);
 
     const persisted = await this.db.transaction(async (tx) => {
@@ -1134,6 +1215,9 @@ export class ActionsService {
             affectedCount: 0,
             // D58 — a delivered unsubscribe cannot be recalled.
             undoToken: null,
+            // As the single-sender intent does: Activity closes the intent
+            // from its job, e.g. a request refused as Protected (D245).
+            actionJobId: jobRow.row.id,
           })
           .returning({ id: activityLog.id, occurredAt: activityLog.occurredAt });
         if (!inserted) {
@@ -1262,6 +1346,18 @@ export class ActionsService {
    * `composite_id = batchId` — the same group `enqueueCompositeRevert`
    * walks, so the `undoToken` returned here cascade-reverts the batch.
    * Mailbox-scoped → 404 for an unowned / unknown id.
+   *
+   * A job the worker skipped because its sender was Protected when it ran
+   * (D245) counts nowhere — not in the job counts, not in `requestedCount`
+   * or `affectedCount` — exactly like a sender skipped at the click, which
+   * never became a job. It is named in `skippedProtectedSenderIds` only
+   * when every job of that sender was skipped; a sender with one job run
+   * and one skipped is not named, and its Activity line records the skip.
+   *
+   * Only the latest attempt of each lineage counts: a retry from Activity
+   * joins its batch (a member's retry inherits `composite_id`; the
+   * anchor's points at the anchor), and the failure it replaced no longer
+   * does.
    */
   async getBatchStatus(batchId: string, mailboxAccountId: string): Promise<BatchStatusResult> {
     const rows = await this.db
@@ -1277,31 +1373,76 @@ export class ActionsService {
     if (rows.length === 0) {
       throw new NotFoundException({ code: 'ACTION_NOT_FOUND', message: 'Action not found.' });
     }
-    const total = rows.length;
-    const done = rows.filter((r) => r.status === 'done').length;
-    const failed = rows.filter((r) => r.status === 'failed').length;
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) {
+      const lineage = row.rootActionId ?? row.id;
+      const seen = latest.get(lineage);
+      if (!seen || row.recoveryAttempt > seen.recoveryAttempt) latest.set(lineage, row);
+    }
+    const current = [...latest.values()];
+    const live = current.filter((r) => !isProtectedSkip(r));
+    const total = live.length;
+    const done = live.filter((r) => r.status === 'done').length;
+    const failed = live.filter((r) => r.status === 'failed').length;
     const terminal = done + failed === total;
-    const anyProgress = done + failed > 0 || rows.some((r) => r.status === 'executing');
+    const anyProgress = done + failed > 0 || live.some((r) => r.status === 'executing');
     const status: ActionJobStatus = terminal
-      ? failed === total
+      ? total > 0 && failed === total
         ? 'failed'
         : 'done'
       : anyProgress
         ? 'executing'
         : 'queued';
-    const anchor = rows.find((r) => r.id === batchId);
+    const anchor = current.find((r) => r.id === batchId);
     const undoToken =
-      anchor?.undoToken ?? rows.map((r) => r.undoToken).find((t) => t !== null) ?? null;
+      anchor?.undoToken ?? current.map((r) => r.undoToken).find((t) => t !== null) ?? null;
+    // The whole decision's undo state, not just the anchor's: the anchor is
+    // one sender's job, and holds no token when that sender was skipped
+    // (D245) or had nothing to move. The pill also undoes one sender at a
+    // time, so "reverted" is per sender as well as for the whole.
+    const tokenRows = current.filter(
+      (r): r is typeof r & { undoToken: string } => r.undoToken !== null,
+    );
+    const journal =
+      tokenRows.length === 0
+        ? []
+        : await this.db
+            .select({
+              token: undoJournal.token,
+              expiresAt: undoJournal.expiresAt,
+              revertedAt: undoJournal.revertedAt,
+            })
+            .from(undoJournal)
+            .where(
+              and(
+                eq(undoJournal.mailboxAccountId, mailboxAccountId),
+                inArray(
+                  undoJournal.token,
+                  tokenRows.map((r) => r.undoToken),
+                ),
+              ),
+            );
+    const byToken = new Map(journal.map((j) => [j.token, j] as const));
+    const revertedAtOf = (r: { undoToken: string }) => byToken.get(r.undoToken)?.revertedAt ?? null;
+    const revertedAts = tokenRows.map(revertedAtOf);
+    const allReverted = revertedAts.length > 0 && revertedAts.every((at) => at !== null);
     return {
       batchId,
       status,
       total,
       done,
       failed,
-      requestedCount: rows.reduce((sum, r) => sum + r.requestedCount, 0),
-      affectedCount: rows.reduce((sum, r) => sum + r.affectedCount, 0),
+      requestedCount: live.reduce((sum, r) => sum + r.requestedCount, 0),
+      affectedCount: live.reduce((sum, r) => sum + r.affectedCount, 0),
+      skippedProtectedSenderIds: protectedSkippedSenderIds(current),
       undoToken,
-      unsubscribeOutcomes: summarizeUnsubscribeOutcomes(rows),
+      undoExpiresAt:
+        (undoToken !== null ? byToken.get(undoToken)?.expiresAt?.toISOString() : null) ?? null,
+      undoRevertedAt: allReverted
+        ? new Date(Math.max(...revertedAts.map((at) => at!.getTime()))).toISOString()
+        : null,
+      revertedSenderIds: revertedSenderIds(tokenRows, revertedAtOf),
+      unsubscribeOutcomes: summarizeUnsubscribeOutcomes(live),
     };
   }
 
@@ -1361,7 +1502,8 @@ export class ActionsService {
           aj.status,
           aj.requested_count,
           aj.created_at,
-          aj.selector->>'senderId' as sender_id
+          aj.selector->>'senderId' as sender_id,
+          aj.selector->>'senderKey' as sender_key
         from live l
         join lateral (
           -- Two indexed probes (pkey; composite_id idx) — an OR across the
@@ -1372,16 +1514,34 @@ export class ActionsService {
         ) aj on true
         where aj.mailbox_account_id = ${mailboxAccountId}
           and aj.direction = 'forward'
+          -- Only the latest attempt of each lineage: a retry from Activity
+          -- joins its batch, and the failure it replaced no longer counts.
+          -- (A later attempt always carries root_action_id — indexed.)
+          and not exists (
+            select 1 from action_jobs later
+            where later.mailbox_account_id = aj.mailbox_account_id
+              and later.root_action_id = coalesce(aj.root_action_id, aj.id)
+              and later.recovery_attempt > aj.recovery_attempt
+          )
       ),
       grouped as (
         select
           group_id,
           count(*)::int as total,
+          -- Progress, in jobs: one skipped as Protected (D245) has finished,
+          -- so it counts here; getBatchStatus leaves it out of the outcome.
           count(*) filter (where status = 'done')::int as done,
           count(*) filter (where status = 'failed')::int as failed,
           count(distinct sender_id)::int as sender_count,
           count(distinct verb)::int as verb_count,
-          min(created_at) as started_at
+          min(created_at) as started_at,
+          -- the "filter (where ... is not null)" below is load-bearing:
+          -- without it, array_agg(distinct ...) includes a literal NULL
+          -- element for any legacy messages-selector row (unlike
+          -- count(distinct ...) above, which already drops NULLs for
+          -- free) -- that would surface as senderIds: [null], not string[].
+          coalesce(array_agg(distinct sender_id) filter (where sender_id is not null), '{}') as sender_ids,
+          coalesce(array_agg(distinct sender_key) filter (where sender_key is not null), '{}') as sender_keys
         from members
         group by group_id
         order by min(created_at) desc, group_id
@@ -1397,6 +1557,7 @@ export class ActionsService {
       )
       select
         g.group_id, g.total, g.done, g.failed, g.sender_count, g.verb_count,
+        g.sender_ids, g.sender_keys,
         to_char(g.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as started_at,
         l.verb,
         coalesce(nullif(s.display_name, ''), s.email::text) as lead_sender_name
@@ -1421,6 +1582,8 @@ export class ActionsService {
       senderCount: row.sender_count,
       leadSenderName: row.lead_sender_name,
       startedAt: row.started_at,
+      senderIds: row.sender_ids,
+      senderKeys: row.sender_keys,
     }));
   }
 
@@ -1448,6 +1611,54 @@ export class ActionsService {
         ),
       );
     return new Set(rows.filter((r) => r.isProtected).map((r) => r.senderKey));
+  }
+
+  /**
+   * The `senderKeys` among `senderKeys` that already have a live forward
+   * job in this mailbox — ANY verb, INCLUDING Autopilot-claimed jobs (the
+   * double-job race this guards against is identical regardless of who
+   * fired the first job; unlike `listInFlight`, which excludes Autopilot
+   * because that query is display-only). No age window: a wedged job is
+   * still live.
+   */
+  private async liveForwardJobSenderKeys(
+    mailboxAccountId: string,
+    senderKeys: string[],
+    executor: EntitlementsExecutor = this.db,
+    /**
+     * Idempotency keys to exclude from "busy" — a bulk enqueue's own
+     * deterministic per-sender keys, so a network-retried replay of THIS
+     * exact request never sees its own just-inserted rows as a reason to
+     * re-skip the sender it already successfully enqueued.
+     */
+    excludeIdempotencyKeys: string[] = [],
+  ): Promise<Set<string>> {
+    if (senderKeys.length === 0) return new Set();
+    const keyList = sql.join(
+      senderKeys.map((key) => sql`${key}`),
+      sql`, `,
+    );
+    const excludeClause =
+      excludeIdempotencyKeys.length > 0
+        ? sql`and idempotency_key not in (${sql.join(
+            excludeIdempotencyKeys.map((key) => sql`${key}`),
+            sql`, `,
+          )})`
+        : sql``;
+    const result = await executor.execute(sql`
+      select distinct selector->>'senderKey' as sender_key
+      from action_jobs
+      where mailbox_account_id = ${mailboxAccountId}
+        and direction = 'forward'
+        and status in ('queued', 'executing')
+        and selector->>'senderKey' in (${keyList})
+        ${excludeClause}
+    `);
+    const rows =
+      ((result as { rows?: Array<{ sender_key: string | null }> }).rows ??
+        (result as unknown as Array<{ sender_key: string | null }>)) ||
+      [];
+    return new Set(rows.map((r) => r.sender_key).filter((key): key is string => key !== null));
   }
 
   /**
@@ -1537,8 +1748,16 @@ export class ActionsService {
     idempotencyKey: string;
     /** Separate backlog Archive/Delete will follow this same confirmation. */
     includesBacklogAction?: boolean;
+    /** "Unsubscribe anyway" on a sender shown as Protected (D245). */
+    override?: boolean;
   }): Promise<UnsubscribeIntentResult> {
-    const { mailboxAccountId, senderId, idempotencyKey, includesBacklogAction = false } = input;
+    const {
+      mailboxAccountId,
+      senderId,
+      idempotencyKey,
+      includesBacklogAction = false,
+      override = false,
+    } = input;
     // ADR-0008 §3 exception: actions → senders. The single-sender twin of
     // the bulk resolve above — read-only capability lookup that decides
     // which unsubscribe path this intent takes.
@@ -1583,6 +1802,22 @@ export class ActionsService {
           : 'none';
     const mailtoUrl = method === 'mailto' ? senderRow.unsubscribeUrl : null;
     const initialLifecycleStatus = initialUnsubscribeLifecycleStatus(method);
+    // Consent to what the user saw: "Unsubscribe anyway" on a sender that
+    // was Protected at the click (D245). Any other job is re-checked when
+    // it runs, and refused if its sender is Protected by then.
+    const [protection] = override
+      ? await this.db
+          .select({ isProtected: senderPolicies.isProtected })
+          .from(senderPolicies)
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              eq(senderPolicies.senderKey, senderKey),
+            ),
+          )
+          .limit(1)
+      : [];
+    const protectedConfirmed = override && protection?.isProtected === true;
 
     // The intent and its optional execution each have a globally-unique
     // storage key. Before projecting a cached response, bind BOTH rows
@@ -1746,7 +1981,7 @@ export class ActionsService {
           mailboxAccountId,
           senderKey,
           executionKey,
-          true,
+          protectedConfirmed,
         );
       }
       const [policy] = await this.db
@@ -1769,6 +2004,34 @@ export class ActionsService {
         executionActionId: execution?.id ?? null,
         mailtoUrl,
       };
+    }
+
+    // One request at a time per sender. A click after a 5xx cannot know
+    // whether the first started, and a second one-click request is one
+    // more send nobody can recall (D58) plus a second cleanup unit. Any
+    // execution still queued or executing — this route's, a bulk's or
+    // Autopilot's — means one is already on its way. Same-key replays
+    // returned above; a click after it ends is a new attempt.
+    if (method === 'one_click') {
+      const [live] = await this.db
+        .select({ id: actionJobs.id })
+        .from(actionJobs)
+        .where(
+          and(
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.verb, 'unsubscribe'),
+            eq(actionJobs.direction, 'forward'),
+            inArray(actionJobs.status, ['queued', 'executing']),
+            sql`${actionJobs.selector}->>'senderKey' = ${senderKey}`,
+          ),
+        )
+        .limit(1);
+      if (live) {
+        throw new ConflictException({
+          code: 'UNSUBSCRIBE_IN_FLIGHT',
+          message: 'An unsubscribe request to this sender is already on its way.',
+        });
+      }
     }
 
     const txResult = await this.db.transaction(async (tx) => {
@@ -2081,7 +2344,7 @@ export class ActionsService {
         mailboxAccountId,
         senderKey,
         executionKey,
-        true,
+        protectedConfirmed,
       );
     }
 
@@ -2102,21 +2365,18 @@ export class ActionsService {
    * honest terminal state — exec row 'failed' + `unsub_status='failed'`
    * (never a 'requested' chip with no job behind it) — then 503.
    *
-   * `explicit` must be `true` ONLY from `recordUnsubscribeIntent` (the
-   * single-sender click) — D245 excludes Protected senders from bulk and
-   * automatic actions, never from that explicit path (see
-   * `apps/web/src/features/senders/data.ts`'s `canUnsubscribe()`
-   * docblock). `enqueueBulkUnsubscribe` passes `false`: it already
-   * excludes Protected senders before calling this at all, and the
-   * worker's execution-time re-check (this method's whole reason to
-   * carry the flag) must stay active for that path.
+   * `protectedConfirmed` carries the single-sender "…anyway" confirm on a
+   * sender that was Protected at the click; only such a job skips the
+   * worker's execution-time Protected re-check (D245).
+   * `enqueueBulkUnsubscribe` passes `false`: it already excludes Protected
+   * senders at the click, and the re-check must stay active for it.
    */
   private async enqueueUnsubExecution(
     actionId: string,
     mailboxAccountId: string,
     senderKey: string,
     idempotencyKey: string,
-    explicit: boolean,
+    protectedConfirmed: boolean,
   ): Promise<void> {
     if (!this.unsubQueue) {
       // Callers guard up front; fail-fast for any future path that forgets.
@@ -2128,33 +2388,42 @@ export class ActionsService {
     try {
       await this.unsubQueue.add(
         UNSUB_EXECUTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey, source: 'manual', explicit },
+        {
+          actionId,
+          mailboxAccountId,
+          idempotencyKey,
+          source: 'manual',
+          ...(protectedConfirmed ? { protectedConfirmed: true } : {}),
+        },
         unsubExecutionJobOptions(idempotencyKey),
       );
     } catch (err) {
       await this.db.transaction(async (tx) => {
+        // Only a job still `queued`: the add can throw after the job landed
+        // (a timed-out reply), and the worker may already be sending — its
+        // outcome is the worker's to record, not a guessed "failed".
         const [failedJob] = await tx
           .update(actionJobs)
-          .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
+          .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
           .where(
             and(
               eq(actionJobs.id, actionId),
               eq(actionJobs.mailboxAccountId, mailboxAccountId),
-              inArray(actionJobs.status, ['queued', 'executing']),
+              eq(actionJobs.status, 'queued'),
             ),
           )
           .returning({ id: actionJobs.id });
-        await tx
-          .update(senderPolicies)
-          .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-              eq(senderPolicies.senderKey, senderKey),
-              inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
-            ),
-          );
         if (failedJob) {
+          await tx
+            .update(senderPolicies)
+            .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+            .where(
+              and(
+                eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+                eq(senderPolicies.senderKey, senderKey),
+                inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
+              ),
+            );
           await tx.insert(activityLog).values({
             mailboxAccountId,
             senderKey,
@@ -2565,9 +2834,9 @@ export class ActionsService {
 
     for (const sibling of siblings) {
       if (!sibling.undoToken) {
-        // No undo token issued — the forward action completed with zero
-        // affected messages (e.g. the sender had no inbox mail in the
-        // window). Nothing to revert.
+        // No undo token issued — the forward action changed nothing (the
+        // sender had no inbox mail in the window, or it was skipped as
+        // Protected when it ran). Nothing to revert.
         continue;
       }
       if (sibling.verb === 'unsubscribe') {
@@ -2711,12 +2980,14 @@ export class ActionsService {
             );
           }
         }
-        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
+        await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, {
+          queueJobId,
+        });
         return { actionId: inserted.row.id, status: 'queued' };
       }
       return { actionId: inserted.row.id, status: inserted.row.status };
     }
-    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, queueJobId);
+    await this.enqueueJob(inserted.row.id, input.mailboxAccountId, idempotencyKey, { queueJobId });
     return { actionId: inserted.row.id, status: 'queued' };
   }
 
@@ -2890,13 +3161,20 @@ export class ActionsService {
     }
   }
 
-  /** Enqueue the job; mark the row failed + surface 503 if Redis rejects. */
+  /**
+   * Enqueue the job; mark the row failed + surface 503 if Redis rejects.
+   *
+   * `protectedConfirmed` carries the single-sender "…anyway" confirm
+   * (`override`) — the only consent to act on a Protected sender. Every
+   * other job leaves it unset, so the worker re-checks protection (D245).
+   */
   private async enqueueJob(
     actionId: string,
     mailboxAccountId: string,
     idempotencyKey: string,
-    queueJobId: string = idempotencyKey,
+    opts: { queueJobId?: string; protectedConfirmed?: boolean } = {},
   ): Promise<void> {
+    const queueJobId = opts.queueJobId ?? idempotencyKey;
     if (!this.queue) {
       // Re-coupled to the fail-open `Queue | null` contract — every
       // current caller guards (lines 94, 388, 810, 904), but the
@@ -2914,7 +3192,12 @@ export class ActionsService {
         // The worker loads execution state by actionId; carrying the
         // queue-safe id here preserves its lifecycle correlation without
         // placing a capability token in BullMQ job data.
-        { actionId, mailboxAccountId, idempotencyKey: queueJobId },
+        {
+          actionId,
+          mailboxAccountId,
+          idempotencyKey: queueJobId,
+          ...(opts.protectedConfirmed ? { protectedConfirmed: true } : {}),
+        },
         labelActionJobOptions(queueJobId),
       );
     } catch (err) {
@@ -2924,16 +3207,71 @@ export class ActionsService {
       // includes `mailbox_account_id` in the predicate — keeping that
       // invariant uniform so a future refactor reusing `enqueueJob`
       // can't quietly cross tenants.
+      //
+      // Only a job still `queued`: an add can throw AFTER the job landed
+      // (a timed-out reply), and the worker may already have started or
+      // finished it — a Protected skip ends in milliseconds (D245).
       await this.db
         .update(actionJobs)
-        .set({ status: 'failed', errorCode: 'ENQUEUE_FAILED', updatedAt: sql`now()` })
-        .where(and(eq(actionJobs.id, actionId), eq(actionJobs.mailboxAccountId, mailboxAccountId)));
+        .set({ status: 'failed', errorCode: ENQUEUE_FAILED_ERROR_CODE, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(actionJobs.id, actionId),
+            eq(actionJobs.mailboxAccountId, mailboxAccountId),
+            eq(actionJobs.status, 'queued'),
+          ),
+        );
       throw new ServiceUnavailableException({
         code: 'ENQUEUE_FAILED',
         message: `Could not enqueue the action: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
   }
+}
+
+/**
+ * A job skipped because its sender was Protected when it ran (D245): a
+ * label job ends `done` with `LABEL_SENDER_PROTECTED`; an unsubscribe job
+ * the worker refused ends `failed` with `UNSUB_SENDER_PROTECTED` — nothing
+ * was sent either way.
+ */
+function isProtectedSkip(row: typeof actionJobs.$inferSelect): boolean {
+  return (
+    (row.status === 'done' && row.errorCode === LABEL_SENDER_PROTECTED_ERROR_CODE) ||
+    (row.status === 'failed' && row.errorCode === UNSUB_SENDER_PROTECTED_ERROR_CODE)
+  );
+}
+
+/**
+ * Senders whose every undoable job an Undo has put back — whether the
+ * whole decision was undone or just that sender, from the pill.
+ */
+function revertedSenderIds(
+  tokenRows: ReadonlyArray<typeof actionJobs.$inferSelect & { undoToken: string }>,
+  revertedAtOf: (row: { undoToken: string }) => Date | null,
+): string[] {
+  const allReverted = new Map<string, boolean>();
+  for (const row of tokenRows) {
+    if (row.selector.type !== 'sender') continue;
+    const id = row.selector.senderId;
+    allReverted.set(id, (allReverted.get(id) ?? true) && revertedAtOf(row) !== null);
+  }
+  return [...allReverted].flatMap(([id, reverted]) => (reverted ? [id] : []));
+}
+
+/**
+ * Senders whose every job in the batch was skipped as Protected. A sender
+ * whose first action ran and whose second was skipped is not listed — its
+ * row DID change, so it must not read as untouched.
+ */
+function protectedSkippedSenderIds(rows: ReadonlyArray<typeof actionJobs.$inferSelect>): string[] {
+  const allSkipped = new Map<string, boolean>();
+  for (const row of rows) {
+    if (row.selector.type !== 'sender') continue;
+    const id = row.selector.senderId;
+    allSkipped.set(id, (allSkipped.get(id) ?? true) && isProtectedSkip(row));
+  }
+  return [...allSkipped].flatMap(([id, skipped]) => (skipped ? [id] : []));
 }
 
 /**

@@ -18,6 +18,8 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { undoKeys } from '@/features/undo/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
 import dynamic from 'next/dynamic';
@@ -32,7 +34,6 @@ import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import {
   isTerminalStatus,
-  UNSUB_AMBIGUOUS_ERROR_CODE,
   type ActionReach,
   type CompositeActionPreviewResult,
 } from '@/lib/api/actions';
@@ -61,6 +62,18 @@ import {
 import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
+import {
+  actionLabel,
+  enqueueMayHaveStarted,
+  getActionFailureCopy,
+  stillRunningCopy,
+} from '@/lib/action-error-copy';
+import {
+  isUnsubscribeInFlight,
+  unsubscribeInFlightCopy,
+  unsubscribeOutcomeToast,
+} from '@/lib/unsubscribe-outcome-copy';
+import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 
 const { color, text } = tokens;
 
@@ -247,6 +260,29 @@ export function ScreenerScreen({
   } | null>(null);
   /** Row whose decide POST is in flight (intent verbs settle here). */
   const [decidingRowId, setDecidingRowId] = useState<string | null>(null);
+  // Keyed on content: a re-render with the same queue must not re-run
+  // what reads the ids.
+  const listedKey =
+    state.kind === 'ready'
+      ? state.rows.map((r) => r.id).join('\n')
+      : state.kind === 'empty'
+        ? ''
+        : null;
+  const listedRowIds = useMemo(
+    () => (listedKey === null ? null : listedKey === '' ? [] : listedKey.split('\n')),
+    [listedKey],
+  );
+  /**
+   * Rows whose job may be running although we could not confirm it (a 5xx
+   * decide, or a lost status read). A second decision would run it twice;
+   * `useUnconfirmedHolds` says when one is released.
+   */
+  const holds = useUnconfirmedHolds<string>(activeMailbox?.id, listedRowIds);
+  const { hold: holdRows, reset: resetHolds } = holds;
+  const holdUnconfirmed = useCallback(
+    (rowId: string, verb: ScreenerDecideVerb) => holdRows([rowId], VERB_LABEL[verb]),
+    [holdRows],
+  );
   /** D230 manual path — "finish in Gmail" callout after a mailto unsub. */
   const [mailtoFollowup, setMailtoFollowup] = useState<{
     senderId: string;
@@ -263,12 +299,13 @@ export function ScreenerScreen({
   const scopeGeneration = useRef(0);
   const resetScope = useCallback(() => {
     scopeGeneration.current += 1;
+    resetHolds();
     setPending(null);
     setExpandedRowId(null);
     setMailtoFollowup(null);
     setQueueFilter('all');
     setQueueSort('queued');
-  }, []);
+  }, [resetHolds]);
   useEffect(() => {
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
@@ -383,6 +420,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
+      holdUnconfirmed(activeAction.rowId, activeAction.verb);
       setActiveAction(null);
       return;
     }
@@ -420,10 +458,7 @@ export function ScreenerScreen({
     if (!activeAction || overdueAction != null) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb });
-      toast(
-        `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is still running — see Activity.`,
-        'info',
-      );
+      toast(stillRunningCopy(VERB_LABEL[activeAction.verb], activeAction.senderName), 'info');
       setOverdueAction(activeAction);
       setActiveAction(null);
     }, ACTION_OVERDUE_MS);
@@ -444,6 +479,7 @@ export function ScreenerScreen({
       });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
       invalidateAfterDecision(qc);
+      holdUnconfirmed(overdueAction.rowId, overdueAction.verb);
       setOverdueAction(null);
       return;
     }
@@ -479,20 +515,8 @@ export function ScreenerScreen({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(
-        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
-        'success',
-      );
-      invalidateAfterDecision(qc);
-    } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
-      toast(
-        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
-        'warn',
-      );
-    } else {
-      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
-    }
+    toast(...unsubscribeOutcomeToast(unsubWatch.senderName, data));
+    if (data.status === 'done') invalidateAfterDecision(qc);
     setUnsubWatch(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
 
@@ -504,11 +528,22 @@ export function ScreenerScreen({
   // rides the per-row busy render + per-row dispatch guards, while the
   // queue-wide re-entry latch stays on `busyRowId` alone.
   const parkedRowId = overdueAction?.rowId ?? null;
+  // Server truth (via `listInFlight`) for which senders have a live
+  // forward job anywhere — a different surface, another tab, or one that
+  // outlives this screen's own unmount/navigation. `busyRowId`/
+  // `parkedRowId` are unchanged; this only adds the cross-surface case
+  // local state structurally cannot see.
+  const sharedLock = useSenderInFlightLock(activeMailbox?.id);
+  /** Rows that may not take another decision yet: parked, or unconfirmed. */
+  const isHeld = useCallback(
+    (rowId: string) => rowId === parkedRowId || holds.held.has(rowId),
+    [parkedRowId, holds.held],
+  );
 
   /** Verb click — opens (or swaps) the mandatory preview (D226). */
   const onVerbClick = useCallback(
     (verb: ScreenerDecideVerb, row: ScreenerQueueRow) => {
-      if (row.id === busyRowId || row.id === parkedRowId) return;
+      if (row.id === busyRowId || isHeld(row.id) || sharedLock.senderIds.has(row.senderId)) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({
         mailboxId: activeMailbox?.id,
@@ -520,7 +555,7 @@ export function ScreenerScreen({
       });
       setExpandedRowId(row.id);
     },
-    [busyRowId, parkedRowId, activeMailbox?.id],
+    [busyRowId, isHeld, sharedLock.senderIds, activeMailbox?.id],
   );
 
   /** Preview confirm — the only place the decide mutation fires. */
@@ -532,8 +567,14 @@ export function ScreenerScreen({
       // `parkedRowId` joins the guard for THIS row only (a preview can
       // stay open across the park): the parked row may not re-dispatch,
       // while the queue-wide latch (`busyRowId`) frees at the overdue
-      // release so every other row keeps working.
-      if (busyRowId != null || decide.isPending || row.id === parkedRowId) {
+      // release so every other row keeps working. `sharedLock` adds the
+      // cross-surface/cross-tab case on top.
+      if (
+        busyRowId != null ||
+        decide.isPending ||
+        isHeld(row.id) ||
+        sharedLock.senderIds.has(row.senderId)
+      ) {
         toast('Still confirming your last decision — give it a moment.', 'info');
         return;
       }
@@ -611,6 +652,12 @@ export function ScreenerScreen({
             // (hook-level handler); 409 PROTECTED_SENDER is a designed
             // state — no Sentry for either.
             if (err instanceof ApiError && err.status === 402) return;
+            // One unsubscribe request to this sender is still on its way.
+            if (isUnsubscribeInFlight(err)) {
+              toast(unsubscribeInFlightCopy(row.senderName), 'info');
+              invalidateAfterDecision(qc);
+              return;
+            }
             // Read the CODE, not the status. `CurrentMailboxGuard` runs
             // in front of this endpoint and answers 409 as well
             // (NO_ACTIVE_MAILBOX / SELECT_MAILBOX / MAILBOX_NOT_OWNED),
@@ -626,10 +673,21 @@ export function ScreenerScreen({
             // carried no override. Refetch so the reopened preview shows
             // the acknowledgement — without this the retry 409s forever.
             if (staleProtection) invalidateAfterDecision(qc);
+            // A decision that may have started: the queue drops a row its
+            // job took, and the pill finds the job through the in-flight
+            // read.
+            if (enqueueMayHaveStarted(err)) {
+              holdUnconfirmed(row.id, verb);
+              invalidateAfterDecision(qc);
+              void qc.invalidateQueries({ queryKey: undoKeys.all });
+            }
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the preview to confirm anyway`
-                : `Couldn't ${VERB_LABEL[verb].toLowerCase()} ${row.senderName}`,
+                : getActionFailureCopy('enqueue', {
+                    action: actionLabel(VERB_LABEL[verb], row.senderName),
+                    error: err,
+                  }),
               'warn',
             );
           },
@@ -642,7 +700,9 @@ export function ScreenerScreen({
       pendingPreviewBlocked,
       previewAllMailCount,
       busyRowId,
-      parkedRowId,
+      isHeld,
+      sharedLock.senderIds,
+      holdUnconfirmed,
       decide,
       qc,
       activeMailbox?.id,
@@ -846,7 +906,10 @@ export function ScreenerScreen({
                 <ScreenerRow
                   row={row}
                   expanded={expandedRowId === row.id}
-                  busy={busyRowId === row.id || parkedRowId === row.id}
+                  busy={
+                    busyRowId === row.id || isHeld(row.id) || sharedLock.senderIds.has(row.senderId)
+                  }
+                  unknownVerb={holds.held.get(row.id)?.verb ?? null}
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}
                   previewInboxTotal={previewInboxTotal}

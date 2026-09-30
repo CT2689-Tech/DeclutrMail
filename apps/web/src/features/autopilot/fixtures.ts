@@ -249,4 +249,5 @@ export const RULE_PREVIEW_RESULT: AutopilotRulePreviewResultDto = {
       reason: 'Read rate 0%, last seen 42d ago',
     },
   ],
+  waitingApprovedCount: 0,
 };

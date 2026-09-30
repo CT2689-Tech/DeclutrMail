@@ -11,7 +11,7 @@ const { track } = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
-import { PublicHeader } from './public-shell';
+import { PublicFooter, PublicHeader } from './public-shell';
 
 const PERMISSION_ENTRY = '/sign-in';
 
@@ -84,5 +84,46 @@ describe('PublicHeader auth entry', () => {
     });
     expect(recoverable).toEqual([]);
     await act(async () => root?.unmount());
+  });
+});
+
+describe('PublicFooter directory', () => {
+  it('links Compare and Guides from the data modules, and keeps Privacy', () => {
+    render(<PublicFooter />);
+    const footer = within(screen.getByRole('contentinfo'));
+
+    expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(footer.getByRole('link', { name: 'All comparisons' })).toHaveAttribute(
+      'href',
+      '/compare',
+    );
+    expect(footer.getByRole('link', { name: 'DeclutrMail vs SaneBox' })).toHaveAttribute(
+      'href',
+      '/vs/sanebox',
+    );
+    expect(footer.getByRole('link', { name: 'SaneBox alternatives' })).toHaveAttribute(
+      'href',
+      '/alternatives/sanebox',
+    );
+    expect(
+      footer.getByRole('link', { name: 'How to auto archive emails in Gmail' }),
+    ).toHaveAttribute('href', '/how-to/auto-archive-future-emails-in-gmail');
+
+    expect(
+      within(footer.getByRole('navigation', { name: 'Compare' })).getAllByRole('link'),
+    ).toHaveLength(14);
+    expect(
+      within(footer.getByRole('navigation', { name: 'Guides' })).getAllByRole('link'),
+    ).toHaveLength(7);
+    expect(
+      within(footer.getByRole('navigation', { name: 'Learn' })).queryByRole('link', {
+        name: 'Compare',
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(footer.getByRole('navigation', { name: 'Learn' })).queryByRole('link', {
+        name: 'Guides',
+      }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -19,6 +19,7 @@ import {
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 
 import type {
+  AutopilotApproveAllScopeDto,
   AutopilotMatchDto,
   AutopilotRuleDto,
   AutopilotRulePreviewResultDto,
@@ -46,6 +47,7 @@ import { ApproveConfirmModal } from './approve-confirm-modal';
 import { AutopilotBannerStack } from './autopilot-banner-stack';
 import { ObserveWindowBanner } from './observe-window-banner';
 import { PauseConfirmModal } from './pause-confirm-modal';
+import { ResumeConfirmModal } from './resume-confirm-modal';
 import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
 import { isReviewOnlyPreset } from './preset-labels';
@@ -159,6 +161,15 @@ interface ApproveTarget {
   rule: AutopilotRuleDto;
   matches: AutopilotMatchDto[];
   kind: 'all' | 'selected';
+  /**
+   * `kind='all'` only, and only while the pending buffer is truncated:
+   * the instant the preview opened, so "Approve all ~N" can stay within
+   * what it showed instead of whatever is offerable at confirm time.
+   * Below the cap the visible `matches` ids are the exact scope and no
+   * cutoff is needed. Founder decision 2026-09-29 (a):
+   * docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+   */
+  matchedBefore?: string;
 }
 
 export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
@@ -177,6 +188,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // preview (D226) — the rule card's inline panel and the modal must
   // not stomp each other's state.
   const activatePreview = useRulePreview();
+  // Separate again for Resume's own preview (founder decision
+  // 2026-09-29 (a)) — same reasoning as `activatePreview` above.
+  const resumePreview = useRulePreview();
   // D251 — Plus reaches this screen via `autopilot` and may review
   // and approve matches, but only `autopilot-active` (Pro) may let a rule act
   // unattended. Without this the screen offers Activate to Plus, the
@@ -208,6 +222,14 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     rule: AutopilotRuleDto;
     intent: 'enable' | 'activate';
   } | null>(null);
+  /**
+   * The rule whose Resume D226 preview is open (founder decision
+   * 2026-09-29 (a)). Separate from `confirmTarget` — Resume commits a
+   * different PATCH (`mode: 'observe'`, never `active`) and is reached
+   * from a different entry point (the rule card's dedicated Resume
+   * button, shown whenever `mode==='paused'` regardless of `enabled`).
+   */
+  const [resumeTarget, setResumeTarget] = useState<AutopilotRuleDto | null>(null);
   /**
    * Which of the modal's two commits is running. The frame needs it to
    * put the busy label on the button the user actually clicked — one
@@ -334,6 +356,12 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     return derivePreviewState(activatePreview, confirmTarget.rule.id);
   }, [confirmTarget, activatePreview]);
 
+  /** Waiting-approvals preview state for the Resume modal (D226, founder decision 2026-09-29). */
+  const resumePreviewState: RulePreviewState = useMemo(() => {
+    if (resumeTarget == null) return { status: 'loading' };
+    return derivePreviewState(resumePreview, resumeTarget.id);
+  }, [resumeTarget, resumePreview]);
+
   // ── Rule mutations (D101) ──────────────────────────────────────────
 
   const savingRuleId =
@@ -380,20 +408,44 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     }
   };
 
+  /**
+   * Opens the Resume preview (founder decision 2026-09-29 (a)) — fires
+   * the same dry-run the activation modal uses, read here only for
+   * `waitingApprovedCount`. Resuming used to be a direct PATCH with no
+   * preview at all; an older approved-but-unapplied action (from back
+   * when the rule was Active) would then run on the very next sweep,
+   * unseen. The commit itself is `onResumeConfirm` below.
+   */
   const onResume = (rule: AutopilotRuleDto) => {
+    patchRule.reset();
+    resumePreview.reset();
+    setResumeTarget(rule);
+    resumePreview.mutate(rule.id);
+  };
+
+  const onResumeConfirm = () => {
+    if (resumeTarget == null || patchRule.isPending) return;
+    const rule = resumeTarget;
     void track('autopilot_resumed', { trigger: 'manual' });
     addBreadcrumb({ category: 'action', message: 'autopilot: rule resumed', level: 'info' });
     patchRule.mutate(
       { ruleId: rule.id, patch: { mode: 'observe' } },
       {
-        onSuccess: () => toast('Rule resumed — observing again', 'info'),
+        onSuccess: () => {
+          setResumeTarget(null);
+          toast('Rule resumed — observing again', 'info');
+        },
         onError: (err) => {
-          toast(patchFailureMessage(err), 'warn');
           captureFeatureException(err, { surface: 'autopilot', reason: 'rule_resume_failed' });
         },
       },
     );
   };
+
+  const resumeError = mutationErrorMessage(
+    resumeTarget != null ? patchRule.error : null,
+    'Could not resume the rule. Please retry.',
+  );
 
   // ── Activation (D10 day-7 prompt → D226 preview → PATCH) ──────────
 
@@ -526,7 +578,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 
   const onApproveConfirm = () => {
     if (approveTarget == null || isApproving) return;
-    const { rule, matches, kind } = approveTarget;
+    const { rule, matches, kind, matchedBefore } = approveTarget;
     // The toast/analytics count MUST come from the server's approvedCount
     // (D226 honesty). 'all' is an UNCAPPED server-side update, so
     // matches.length is at most the 50-row page (2026-07-16 audit); and a
@@ -559,7 +611,14 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       captureFeatureException(err, { surface: 'autopilot', reason: 'approve_failed' });
     };
     if (kind === 'all') {
-      approveAllForRule.mutate(rule.id, { onSuccess, onError });
+      // Founder decision 2026-09-29 (a): approve exactly what the
+      // preview showed. Below the cap, `matches` IS that set — send the
+      // exact ids. At the cap (`matchedBefore` set at open time,
+      // see `openApprove`'s caller), send the cutoff instead: the FE
+      // never fetched every id "Approve all ~N" promises.
+      const scope: AutopilotApproveAllScopeDto =
+        matchedBefore != null ? { matchedBefore } : { matchIds: matches.map((m) => m.id) };
+      approveAllForRule.mutate({ ruleId: rule.id, scope }, { onSuccess, onError });
     } else {
       approveMatches.mutate(
         matches.map((m) => m.id),
@@ -1013,7 +1072,16 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                       dismissingMatchId={
                         dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
                       }
-                      onApproveAll={(rule, matches) => openApprove({ rule, matches, kind: 'all' })}
+                      onApproveAll={(rule, matches) =>
+                        openApprove({
+                          rule,
+                          matches,
+                          kind: 'all',
+                          ...(pendingBufferTruncated
+                            ? { matchedBefore: new Date().toISOString() }
+                            : {}),
+                        })
+                      }
                       onApproveSelected={(rule, matches) =>
                         openApprove({ rule, matches, kind: 'selected' })
                       }
@@ -1035,6 +1103,18 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         onConfirm={onConfirmPauseAll}
         isPausing={pauseAll.isPending}
         pauseError={pauseErrorMessage}
+      />
+
+      <ResumeConfirmModal
+        rule={resumeTarget}
+        preview={resumePreviewState}
+        mailboxEmail={activeEmail ?? undefined}
+        isResuming={resumeTarget != null && patchRule.isPending}
+        error={resumeError}
+        onCancel={() => {
+          if (!patchRule.isPending) setResumeTarget(null);
+        }}
+        onConfirm={onResumeConfirm}
       />
 
       {approveTarget != null && (

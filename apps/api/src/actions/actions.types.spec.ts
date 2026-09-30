@@ -131,11 +131,15 @@ describe('unsubscribeManualStatusRequestSchema', () => {
 });
 
 describe('unsubscribeIntentRequestSchema', () => {
-  it('defaults the optional backlog preflight flag to false', () => {
+  it('defaults the optional backlog preflight flag and the Protected override to false', () => {
     expect(unsubscribeIntentRequestSchema.parse({ senderId: SENDER_ID })).toEqual({
       senderId: SENDER_ID,
       includesBacklogAction: false,
+      override: false,
     });
+    expect(
+      unsubscribeIntentRequestSchema.parse({ senderId: SENDER_ID, override: true }),
+    ).toMatchObject({ override: true });
   });
 
   it('accepts an explicit strict boolean and rejects unknown fields', () => {
@@ -144,7 +148,7 @@ describe('unsubscribeIntentRequestSchema', () => {
         senderId: SENDER_ID,
         includesBacklogAction: true,
       }),
-    ).toEqual({ senderId: SENDER_ID, includesBacklogAction: true });
+    ).toEqual({ senderId: SENDER_ID, includesBacklogAction: true, override: false });
     expect(
       unsubscribeIntentRequestSchema.safeParse({
         senderId: SENDER_ID,

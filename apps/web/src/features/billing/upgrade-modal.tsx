@@ -13,6 +13,7 @@ import {
   type ActionTierDetails,
   type FreeCapDetails,
   type InboxLimitDetails,
+  type ProFeatureDetails,
 } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 
@@ -34,6 +35,8 @@ const { color, font, radius, shadow, space, text } = tokens;
  *     exceed the tier's inbox limit.
  *   - `ACTION_TIER_REQUIRED` — an Action Registry selector requires a
  *     higher plan (A3: only all-matching cleanup sits above Free).
+ *   - `PRO_FEATURE_REQUIRED` — a capability-gated route (Quiet, Screener,
+ *     Autopilot, Briefs, Follow-ups) sits above the workspace tier.
  *
  * Shape: the limit as the title, ONE sentence, ONE button carrying the
  * nudged plan's price, and a quiet line with the D121 money-back note
@@ -72,14 +75,18 @@ export function UpgradeModal() {
   // Pro+ tiers have no upgrade path to offer (Team isn't purchasable)
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
-  const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
-  const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
+  // action_tier and pro_feature both carry a manifest-derived requiredTier;
+  // free_cap and inbox_limit don't name one (free_cap always nudges Plus,
+  // inbox_limit always nudges Pro — see targetPlan below).
+  const requiredTier =
+    hit.reason === 'action_tier' || hit.reason === 'pro_feature' ? hit.details.requiredTier : null;
+  const requiredTierName = requiredTier ? TIER_MANIFEST[requiredTier].name : null;
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
   // page uses — the copy above quotes monthly prices, so the intent
   // carries `monthly` (the billing screen's toggle flips it in place).
-  const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (actionTier ?? 'pro');
+  const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
   const upgradeHref = billingIntentPath({ plan: targetPlan, cycle: 'monthly' });
   const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
@@ -139,7 +146,9 @@ export function UpgradeModal() {
             ? freeCapTitle(hit.details)
             : hit.reason === 'action_tier'
               ? actionTierTitle(hit.details)
-              : inboxLimitTitle(hit.details, tierName(tier))}
+              : hit.reason === 'pro_feature'
+                ? proFeatureTitle(hit.details)
+                : inboxLimitTitle(hit.details, tierName(tier))}
         </h2>
         <p
           style={{
@@ -161,9 +170,11 @@ export function UpgradeModal() {
             </>
           ) : hit.reason === 'action_tier' ? (
             <>
-              {actionTierName} unlocks{' '}
+              {requiredTierName} unlocks{' '}
               {hit.details.selector === 'sender-filter' ? 'all-matching cleanup' : 'this workflow'}.
             </>
+          ) : hit.reason === 'pro_feature' ? (
+            <>{requiredTierName} unlocks this feature.</>
           ) : nudge ? (
             <>
               {TIER_MANIFEST.pro.name} raises the limit to {TIER_MANIFEST.pro.inboxLimit} connected
@@ -265,6 +276,10 @@ function actionTierTitle(d: ActionTierDetails): string {
     : d.selector === 'multi-sender'
       ? `Multi-sender actions are part of ${plan}`
       : `This action is part of ${plan}`;
+}
+
+function proFeatureTitle(d: ProFeatureDetails): string {
+  return `This feature is part of ${TIER_MANIFEST[d.requiredTier].name}`;
 }
 
 function tierName(tier: string): string {

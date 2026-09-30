@@ -1,6 +1,8 @@
 import { mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import { sql } from 'drizzle-orm';
 
+import { telemetryReference } from './base-declutr-worker.js';
+import { markDecisionsStale, rowsOf } from './gmail-category.js';
 import type { OutboxTx } from './outbox-publisher.js';
 import { sqlTextArray } from './sql-text-array.js';
 
@@ -21,6 +23,45 @@ export interface AutomaticProtectionScope {
 }
 
 /**
+ * What a pass withdrew: automatic protections it demoted and did NOT
+ * restore under a current reason (a reason correction — star aged out,
+ * now `replied` — is not a release). Returned so every caller logs a
+ * withdrawn safety state (`logProtectionReleases`) instead of it
+ * happening silently.
+ */
+export interface AutomaticProtectionResult {
+  released: Array<{ senderKey: string; priorReason: string }>;
+}
+
+/**
+ * One line for a pass that withdrew automatic protections, counted by the
+ * reason each had: a release re-exposes senders to bulk and automatic
+ * actions. Call it AFTER the transaction that ran the pass commits —
+ * logged before, a rollback would leave a line claiming a release that
+ * never happened. Counts only: no sender identity leaves the process.
+ */
+export function logProtectionReleases(
+  worker: string,
+  mailboxAccountId: string,
+  released: AutomaticProtectionResult['released'],
+): void {
+  if (released.length === 0) return;
+  const byReason: Record<string, number> = {};
+  for (const r of released) byReason[r.priorReason] = (byReason[r.priorReason] ?? 0) + 1;
+  console.log(
+    JSON.stringify({
+      severity: 'INFO',
+      level: 'info',
+      kind: 'automatic_protection.released',
+      worker,
+      mailboxRef: telemetryReference(mailboxAccountId),
+      released: released.length,
+      byReason,
+    }),
+  );
+}
+
+/**
  * Strong, explainable signals that may automatically protect a sender.
  *
  * The ordering is intentional: when more than one signal is present we
@@ -37,11 +78,16 @@ export interface AutomaticProtectionScope {
  * - starred: at least one inbound message starred in the past year
  * - gmail_important: at least three inbound messages carrying Gmail's
  *   IMPORTANT label in the past year, AND the sender lives in Gmail's
- *   Primary category. Gmail hands out IMPORTANT liberally to promotions
- *   and updates (founder mailbox 2026-07-15: 176 of 187 importance-only
- *   protections were non-primary), so importance alone is not a strong
- *   signal — importance in Primary is. The category is Gmail-assigned
- *   (CATEGORY_* labels), never predicted by us (D222).
+ *   Primary category (most of its labelled mail). Gmail hands out
+ *   IMPORTANT liberally to promotions and updates (founder mailbox
+ *   2026-07-15: 176 of 187 importance-only protections were non-primary),
+ *   so importance alone is not a strong signal — importance in Primary
+ *   is. The category is Gmail-assigned (CATEGORY_* labels), never
+ *   predicted by us (D222). An EXISTING automatic protection keeps (or
+ *   falls back to) this reason while any of the sender's inbound mail
+ *   carries a Primary label: a tie is not evidence against it, and
+ *   keeping protection is the safe direction. A NEW one needs the
+ *   majority.
  *
  * Read/open rate is deliberately excluded. A manual Unprotect leaves a
  * non-null reason as a memory pin, so a later sync never silently reverses
@@ -76,13 +122,13 @@ export async function applyAutomaticProtection(
   tx: OutboxTx,
   mailboxAccountId: string,
   scope?: AutomaticProtectionScope,
-): Promise<void> {
+): Promise<AutomaticProtectionResult> {
   const senderKeys = scope?.senderKeys;
   if (senderKeys !== undefined && senderKeys.length === 0) {
     // An explicit empty scope is "this push moved nobody", which is a
     // no-op — NOT "sweep everything". Returning here keeps that
     // distinction from depending on how Postgres reads `= ANY('{}')`.
-    return;
+    return { released: [] };
   }
   // Built once; interpolated into all three passes so they cannot drift
   // apart on which senders they consider.
@@ -137,7 +183,7 @@ export async function applyAutomaticProtection(
   // Scoped to sweep-authored reasons. `user_defined` is manual and must
   // never be withdrawn by a sweep, and `is_protected = true` keeps
   // manual-unprotect memory pins (which sit at false) untouched.
-  await tx.execute(sql`
+  const demoted = await tx.execute(sql`
     WITH sender_signals AS (
       SELECT
         ${sql.identifier('sender_key')} AS sender_key,
@@ -148,7 +194,8 @@ export async function applyAutomaticProtection(
         COUNT(*) FILTER (
           WHERE 'IMPORTANT' = ANY(${sql.identifier('label_ids')})
             AND ${sql.identifier('internal_date')} >= now() - interval '1 year'
-        ) AS recent_important_count
+        ) AS recent_important_count,
+        bool_or('CATEGORY_PERSONAL' = ANY(${sql.identifier('label_ids')})) AS has_primary_label
       FROM ${mailMessages}
       WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
         AND ${sql.identifier('is_outbound')} = false
@@ -169,7 +216,14 @@ export async function applyAutomaticProtection(
             AND COALESCE(sig.recent_important_count, 0) >= 3
             THEN 'gmail_important'::protection_reason
           ELSE NULL
-        END AS protection_reason
+        END AS protection_reason,
+        -- Importance an EXISTING protection may stand on: 3+ recent
+        -- Important messages and some Primary-labelled mail, majority or not.
+        COALESCE(sig.recent_important_count, 0) >= 3
+          AND (
+            s.${sql.identifier('gmail_category')} = 'primary'
+            OR COALESCE(sig.has_primary_label, false)
+          ) AS keeps_importance
       FROM ${senders} AS s
       LEFT JOIN sender_signals AS sig ON sig.sender_key = s.${sql.identifier('sender_key')}
       WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
@@ -177,23 +231,47 @@ export async function applyAutomaticProtection(
     )
     UPDATE ${senderPolicies} AS sp
     SET
-      ${sql.identifier('is_protected')} = false,
-      ${sql.identifier('protection_reason')} = NULL,
-      ${sql.identifier('protection_set_at')} = NULL,
+      -- Before releasing, fall back to importance if it still holds for
+      -- this existing protection (a star aged out, say): corrected in
+      -- place, still protected, since unchanged. Otherwise the row is
+      -- released here and re-protected below if a current reason holds.
+      ${sql.identifier('is_protected')} = (cr.protection_reason IS NULL AND cr.keeps_importance),
+      ${sql.identifier('protection_reason')} = CASE
+        WHEN cr.protection_reason IS NULL AND cr.keeps_importance
+          THEN 'gmail_important'::protection_reason
+      END,
+      ${sql.identifier('protection_set_at')} = CASE
+        WHEN cr.protection_reason IS NULL AND cr.keeps_importance
+          THEN sp.${sql.identifier('protection_set_at')}
+      END,
       ${sql.identifier('updated_at')} = now()
-    FROM current_reason AS cr
+    FROM current_reason AS cr, ${senderPolicies} AS prior
     WHERE sp.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
       AND sp.${sql.identifier('is_protected')} = true
       AND sp.${sql.identifier('protection_reason')} IN ('replied', 'starred', 'gmail_important')
       AND cr.sender_key = sp.${sql.identifier('sender_key')}
       AND cr.protection_reason IS DISTINCT FROM sp.${sql.identifier('protection_reason')}
+      -- An importance protection that still stands on importance is left
+      -- exactly as it is. What is withdrawn is the Primary GUESS: a sender
+      -- with no Primary-labelled mail at all (the old "no tab label →
+      -- primary" default, mig 0079), or importance decayed below three.
+      AND NOT (
+        cr.protection_reason IS NULL
+        AND cr.keeps_importance
+        AND sp.${sql.identifier('protection_reason')} = 'gmail_important'
+      )
+      -- The same row as read at statement start: RETURNING reports the
+      -- reason being withdrawn, not the NULL this statement writes.
+      AND prior.${sql.identifier('id')} = sp.${sql.identifier('id')}
       -- Redundant with the scoped current_reason join above, which
       -- already cannot match an out-of-scope policy row. Kept so the
       -- scope of a DEMOTION is stated on the statement that demotes,
       -- rather than inferred two CTEs away.
       ${policyScope}
+    RETURNING sp.${sql.identifier('sender_key')} AS sender_key,
+      prior.${sql.identifier('protection_reason')}::text AS prior_reason
   `);
-  await tx.execute(sql`
+  const granted = await tx.execute(sql`
     WITH sender_signals AS (
       -- ONE GROUPED PASS PER MAILBOX, replacing three correlated
       -- subqueries per sender.
@@ -282,5 +360,33 @@ export async function applyAutomaticProtection(
       ${sql.identifier('updated_at')} = now()
     WHERE sender_policies.${sql.identifier('is_protected')} = false
       AND sender_policies.${sql.identifier('protection_reason')} IS NULL
+    RETURNING sender_policies.${sql.identifier('sender_key')} AS sender_key
   `);
+
+  // A sender whose protection changed — released, corrected, or newly
+  // granted — has a decision that names the old state ("Protected because
+  // you've starred…", or no protection at all). Expired in this
+  // transaction, like a tab change, so the next score replaces it.
+  const demotedRows = rowsOf<{ sender_key: string; prior_reason: string }>(demoted);
+  const grantedKeys = rowsOf<{ sender_key: string }>(granted).map((r) => r.sender_key);
+  await markDecisionsStale(tx, mailboxAccountId, [
+    ...new Set([...demotedRows.map((r) => r.sender_key), ...grantedKeys]),
+  ]);
+
+  // Net releases: a demoted row the upsert just re-protected under its
+  // current reason, or one corrected in place, was not a withdrawal.
+  if (demotedRows.length === 0) return { released: [] };
+  const stillOff = await tx.execute(sql`
+    SELECT ${sql.identifier('sender_key')} AS sender_key
+    FROM ${senderPolicies}
+    WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+      AND ${sql.identifier('sender_key')} = ANY(${sqlTextArray(demotedRows.map((r) => r.sender_key))})
+      AND ${sql.identifier('is_protected')} = false
+  `);
+  const off = new Set(rowsOf<{ sender_key: string }>(stillOff).map((r) => r.sender_key));
+  return {
+    released: demotedRows
+      .filter((r) => off.has(r.sender_key))
+      .map((r) => ({ senderKey: r.sender_key, priorReason: r.prior_reason })),
+  };
 }

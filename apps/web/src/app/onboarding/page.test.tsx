@@ -15,6 +15,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { toast as sharedToast } from '@declutrmail/shared';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -24,6 +25,20 @@ import type { TierId } from '@declutrmail/shared/entitlements';
 
 const replace = vi.fn();
 let searchParams = new URLSearchParams();
+
+// Records each toast while still showing it: the module-level toast queue
+// outlives a test, so an on-screen count could see the previous one.
+const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => {
+  const actual = await importOriginal<{ toast: typeof sharedToast }>();
+  return {
+    ...actual,
+    toast: (...args: Parameters<typeof sharedToast>) => {
+      toastSpy(...args);
+      actual.toast(...args);
+    },
+  };
+});
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace }),
@@ -113,6 +128,23 @@ const syncStatus = (ready: boolean): FetchStubHandler => ({
     }),
 });
 
+/** Mid-read, as the API sends it: the running scan's counts ride along. */
+const syncStatusReading: FetchStubHandler = {
+  method: 'GET',
+  path: '/api/v1/sync/status',
+  respond: () =>
+    json({
+      data: {
+        readiness_status: 'syncing',
+        current_stage: 'fetching_metadata',
+        progress_pct: 26,
+        is_ready_for_triage: false,
+        last_synced_at: null,
+        message_progress: { processed: 12_400, total: 40_898, age_ms: 0 },
+      },
+    }),
+};
+
 const emptyRules: FetchStubHandler = {
   method: 'GET',
   path: '/api/autopilot/rules',
@@ -189,6 +221,72 @@ function renderPage() {
     </QueryWrapper>,
   );
 }
+
+describe('onboarding page — a result carried from Settings (D108)', () => {
+  const setURL = (u: string) =>
+    (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
+
+  afterEach(() => setURL('http://localhost/onboarding'));
+
+  it.each([
+    [
+      'reconnect_result=gmail_access_missing',
+      'DeclutrMail needs Gmail access. Reconnect and allow it on Google’s screen.',
+      'status',
+    ],
+    [
+      'reconnect_result=account_mismatch',
+      'That was a different Google account. Reconnect with the account you meant.',
+      'alert',
+    ],
+    ['connect_start_result=failed', 'Could not connect Gmail. Try again.', 'alert'],
+    ['connect_error=connect_failed', 'Could not connect that Gmail account. Try again.', 'alert'],
+    ['connect_error=something-new', 'Could not connect that Gmail account. Try again.', 'alert'],
+  ] as const)('shows the carried %s once, then clears it', async (query, line, role) => {
+    setURL(`http://localhost/onboarding?${query}`);
+    searchParams = new URLSearchParams(query);
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
+
+    renderPage();
+
+    // Screen readers get it from the region that was already on the page;
+    // the toast is the visual.
+    await waitFor(() => expect(screen.getByTestId(`oauth-result-${role}`)).toHaveTextContent(line));
+    const other = role === 'status' ? 'alert' : 'status';
+    expect(screen.getByTestId(`oauth-result-${other}`)).toBeEmptyDOMElement();
+    expect(toastSpy).toHaveBeenCalledOnce();
+    expect(toastSpy).toHaveBeenCalledWith(line, expect.any(String));
+    await waitFor(() => expect(window.location.search).toBe(''));
+  });
+
+  it('shows nothing to a signed-out visitor, whatever the URL says', async () => {
+    setURL('http://localhost/onboarding?reconnect_result=success');
+    searchParams = new URLSearchParams('reconnect_result=success');
+    installFetchStub([me401, refresh401]);
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Clear thousands of emails by sender — and see exactly what moves.'),
+    ).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId('oauth-result-status')).toBeEmptyDOMElement();
+    expect(screen.getByTestId('oauth-result-alert')).toBeEmptyDOMElement();
+  });
+
+  it('keeps both result regions on the page, empty, when nothing was carried', async () => {
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
+
+    renderPage();
+
+    const status = screen.getByTestId('oauth-result-status');
+    const alert = screen.getByTestId('oauth-result-alert');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+    expect(alert).toHaveAttribute('aria-live', 'assertive');
+    expect(status).toBeEmptyDOMElement();
+    expect(alert).toBeEmptyDOMElement();
+  });
+});
 
 describe('onboarding page — pre-auth boundary (D107/D108)', () => {
   it('unauthed visitor sees the promise screen with the D228 trust copy — no OAuth bounce', async () => {
@@ -294,8 +392,15 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     installFetchStub([meAuthed('syncing'), onboardingState(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('the first-run gate shows how far the scan has read', async () => {
+    installFetchStub([meAuthed('syncing'), onboardingState(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   // Asserted at the page: the gate renders the promise correctly on its own,
@@ -416,9 +521,46 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([secondaryMe(), syncStatus(false)]);
     renderPage();
 
-    expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail…')).toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
+  });
+
+  it('the secondary gate claims no scan state before it has read one', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      secondaryMe(),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: async (req, url) => {
+          await held;
+          return syncStatusReading.respond(req, url);
+        },
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText('Checking the scan…')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting to start.')).toBeNull();
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    // A slow first read must not strand the user: the way back stays.
+    expect(screen.getByRole('button', { name: 'Go back to a@b.com' })).toBeInTheDocument();
+
+    release();
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
+  });
+
+  it('the secondary gate shows how far the scan has read too', async () => {
+    searchParams = new URLSearchParams('mailbox=mb2');
+    installFetchStub([secondaryMe(), syncStatusReading]);
+    renderPage();
+
+    expect(await screen.findByText('12,400 of 40,898 emails')).toBeInTheDocument();
   });
 
   it('the secondary gate passes the ready-email setting through too (D109)', async () => {
@@ -490,7 +632,10 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       installFetchStub([secondaryMe(), syncStatus(false), setPrimaryActive]);
       renderPage();
 
-      await userEvent.click(await screen.findByRole('button', { name: 'Go back to a@b.com' }));
+      // The gate, not the "Checking the scan…" screen it replaces — both
+      // offer the way back, and a click on the one leaving is lost.
+      await screen.findByText('Reading your Gmail…');
+      await userEvent.click(screen.getByRole('button', { name: 'Go back to a@b.com' }));
 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
     },
@@ -535,7 +680,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
         },
       ]);
       renderPage();
-      await screen.findByText("We couldn't check your inbox scan.");
+      await screen.findByText("We couldn't check the scan.");
       expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
       recovered = true;
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
@@ -564,7 +709,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText("We couldn't check your inbox scan.");
+    await screen.findByText("We couldn't check the scan.");
     expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });
