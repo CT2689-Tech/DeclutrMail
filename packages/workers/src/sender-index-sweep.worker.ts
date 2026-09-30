@@ -13,6 +13,8 @@ import {
 } from './gmail-category.js';
 import type { MailboxActionLock } from './label-action.worker.js';
 import { notNeedingReconnect } from './mailbox-reconnect.js';
+import { purgeAllNonMail } from './non-mail-purge.js';
+import type { OutboxPublisher } from './outbox-publisher.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import type { WorkerContext } from './worker-context.js';
 
@@ -21,6 +23,21 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 /** Each transaction batch stays bounded; keyset continuations cover the whole fleet. */
 export const MAILBOX_BATCH_SIZE = 1;
+
+/**
+ * Most non-mail purge batches (of up to `NON_MAIL_PURGE_BATCH` rows) one
+ * run spends on a mailbox. Bounds the purge's share of the cron job's
+ * time so the reconcile after it still runs; a bigger backlog finishes
+ * over later runs (the tick at worker boot, then nightly).
+ */
+export const NON_MAIL_PURGE_SWEEP_BATCHES = 10;
+
+/**
+ * And at most this long: no new batch starts after it, so a slow database
+ * cannot spend the cron job's 60 s on the purge and leave the reconcile
+ * to the deadline.
+ */
+export const NON_MAIL_PURGE_SWEEP_BUDGET_MS = 20_000;
 
 /**
  * Most senders one sweep asks the score worker to re-score for a mailbox.
@@ -96,6 +113,16 @@ export interface SenderIndexSweepResult {
   timeseriesCorrected: number;
   /** Sender-months whose messages are all gone, zeroed rather than deleted. */
   timeseriesZeroed: number;
+  /** Stored drafts and chat lines deleted (`purgeNonMailMessages`). */
+  nonMailMessagesDeleted: number;
+  /** Senders that existed only because of those rows, deleted. */
+  nonMailSendersDeleted: number;
+  /** Recounts of senders that also have real mail, one per purge batch. */
+  nonMailSendersRecounted: number;
+  /** Mailboxes whose purge stopped at the per-run batch cap; the rest waits for the next run. */
+  nonMailPurgeCapped: number;
+  /** Mailboxes whose purge threw. Their reconcile still ran. */
+  nonMailPurgeFailed: number;
   /** Senders whose Gmail tab changed on a recount of their labelled mail. */
   categoriesCorrected: number;
   /** Primary Keeps (rule 3) the current rule no longer backs, marked for re-score. */
@@ -144,6 +171,11 @@ export interface SenderIndexSweepResult {
  * evidence: a sender the product says is protected "because you starred
  * it" whose star is two years old. D245 requires the reason be true.
  *
+ * It also runs `purgeNonMailMessages` first in each mailbox: drafts and
+ * chat lines stored before ingest learned to skip them, or by an old
+ * worker in the minutes before a deploy went live. The tick enqueued at
+ * worker boot makes that pass land right after a deploy.
+ *
  * ## Policy and isolation
  *
  * `cronPolicy` (D203/D225). The cron driver in `apps/api/src/worker.ts`
@@ -170,6 +202,13 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       lock: MailboxActionLock;
       statementTimeoutMs?: number;
       enqueueContinuation?: (payload: SenderIndexSweepJobData) => Promise<void>;
+      /**
+       * Publishes `mailbox.non_mail_purged` in each purge batch, so the
+       * features that own verdicts and follow-ups repair them (D204).
+       * Without it the purge refuses to delete anything, and each refusal
+       * is reported like any purge failure.
+       */
+      outbox?: OutboxPublisher;
       /**
        * Re-score the senders whose Gmail tab a recount changed. Their
        * verdict and explanation were computed from the old tab — "Kept
@@ -241,15 +280,72 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
     let mailboxesFailed = 0;
     let timeseriesCorrected = 0;
     let timeseriesZeroed = 0;
+    let nonMailMessagesDeleted = 0;
+    let nonMailSendersDeleted = 0;
+    let nonMailSendersRecounted = 0;
+    let nonMailPurgeCapped = 0;
+    let nonMailPurgeFailed = 0;
     let categoriesCorrected = 0;
     let primaryKeepsExpired = 0;
     let protectionsReleased = 0;
     let rescoresRequested = 0;
     let rescoresNotRequested = 0;
-    const statementTimeout = String(this.deps.statementTimeoutMs ?? 25_000);
+    const statementTimeout = sql`select set_config('statement_timeout', ${String(this.deps.statementTimeoutMs ?? 25_000)}, true)`;
 
     for (const { id: mailboxAccountId } of mailboxes) {
       ctx.signal?.throwIfAborted();
+      // Drafts and chat lines FIRST, so the reconcile below computes from
+      // mail only. Each batch takes the lock and a transaction of its own,
+      // so a user action waits for one batch at most, and a run stops
+      // starting batches after NON_MAIL_PURGE_SWEEP_BATCHES or
+      // NON_MAIL_PURGE_SWEEP_BUDGET_MS so the reconcile keeps most of the
+      // job's time; a bigger backlog finishes on later runs. A purge that
+      // throws is reported and the reconcile still runs: the nightly
+      // protection retirement (D245) must not depend on it.
+      try {
+        const purged = await purgeAllNonMail(
+          this.deps.db,
+          (purge) =>
+            this.deps.lock.run(mailboxAccountId, () =>
+              this.deps.db.transaction(async (tx) => {
+                await tx.execute(statementTimeout);
+                return purge(tx);
+              }),
+            ),
+          mailboxAccountId,
+          {
+            signal: ctx.signal,
+            outbox: this.deps.outbox,
+            maxBatches: NON_MAIL_PURGE_SWEEP_BATCHES,
+            budgetMs: NON_MAIL_PURGE_SWEEP_BUDGET_MS,
+          },
+        );
+        nonMailMessagesDeleted += purged.messagesDeleted;
+        nonMailSendersDeleted += purged.sendersDeleted;
+        nonMailSendersRecounted += purged.sendersRecounted;
+        if (purged.capped) nonMailPurgeCapped += 1;
+      } catch (err) {
+        // A job-deadline abort is not a purge failure: the reconcile below
+        // stops the same way, and the base worker reports the timeout
+        // once (D203). Anything else is reported here, because the job
+        // itself still succeeds.
+        if (!ctx.signal?.aborted) {
+          nonMailPurgeFailed += 1;
+          const error = err instanceof Error ? err : new Error(String(err));
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'sender_index_sweep.non_mail_purge_failed',
+              worker: this.workerName,
+              errorName: error.name,
+            }),
+          );
+          this.observer.captureBackgroundFailure(error, {
+            kind: 'sender_index_sweep.non_mail_purge_failed',
+            tags: { worker: this.workerName },
+          });
+        }
+      }
       // Which step threw, for the failure line — the error itself may
       // carry row data and never leaves this process (D7). `lock` is a
       // failure to acquire, before any step ran.
@@ -276,9 +372,7 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
           step = name;
           return this.deps.db.transaction(async (tx) => {
             // SET LOCAL disappears at transaction end and works through transaction pooling.
-            await tx.execute(
-              sql`select set_config('statement_timeout', ${statementTimeout}, true)`,
-            );
+            await tx.execute(statementTimeout);
             ctx.signal?.throwIfAborted();
             const out = await body(tx);
             ctx.signal?.throwIfAborted();
@@ -369,6 +463,11 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       timeseriesCorrected,
       timeseriesZeroed,
+      nonMailMessagesDeleted,
+      nonMailSendersDeleted,
+      nonMailSendersRecounted,
+      nonMailPurgeCapped,
+      nonMailPurgeFailed,
       categoriesCorrected,
       primaryKeepsExpired,
       protectionsReleased,

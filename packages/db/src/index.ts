@@ -88,8 +88,13 @@ export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {
   ALL_MAIL_EXCLUDED_LABELS,
   followupReplyExists,
+  isNonMail,
+  NON_MAIL_LABELS,
+  nonMailRowWhere,
   readStateNotSweeperMarked,
   readStateSweeperMarked,
+  SCREENER_AGE_OUT_DAYS,
+  screenerAwaitingWhere,
   senderActionWhere,
   senderHasActionableMail,
   senderInboxActionWhere,

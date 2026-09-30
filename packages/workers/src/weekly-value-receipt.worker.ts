@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gte, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -6,7 +6,9 @@ import {
   briefRuns,
   mailboxAccounts,
   type schema,
+  screenerAwaitingWhere,
   screenerQuarantine,
+  senders,
   users,
   workspaces,
 } from '@declutrmail/db';
@@ -349,15 +351,27 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
     // ACTIVE mailboxes only. The copy says "right now", and a
     // disconnected mailbox's stale queue is not something the user can
     // act on — counting it would overstate the backlog.
+    //
+    // And only entries the Screener shows — the same rule as its list and
+    // badge (`screenerAwaitingWhere`): the sender still exists, and the
+    // entry has not aged out. Counting more promised a queue the link
+    // could not open, and could send an otherwise-empty week.
     const [screener] = await this.deps.db
       .select({ pending: count() })
       .from(screenerQuarantine)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, screenerQuarantine.mailboxAccountId))
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, screenerQuarantine.mailboxAccountId),
+          eq(senders.senderKey, screenerQuarantine.senderKey),
+        ),
+      )
       .where(
         and(
           eq(mailboxAccounts.userId, userId),
           eq(mailboxAccounts.status, 'active'),
-          isNull(screenerQuarantine.decidedAt),
+          screenerAwaitingWhere(now),
         ),
       );
 

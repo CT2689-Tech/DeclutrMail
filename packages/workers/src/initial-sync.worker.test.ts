@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
 import { InitialSyncWorker } from './initial-sync.worker.js';
+import * as nonMailPurge from './non-mail-purge.js';
 import { OutboxPublisher } from './outbox-publisher.js';
 import type { InitialSyncDeps } from './initial-sync.worker.js';
 import type { ScanCounts, ScanProgressStore } from './scan-progress.js';
@@ -682,6 +683,154 @@ describe('InitialSyncWorker', () => {
     expect(ccRow!.recipientEmails).toEqual(
       expect.arrayContaining(['recipient0@example.com', 'cc@example.com']),
     );
+  });
+
+  it('a re-sync purges draft rows stored before the ingest skip, before the rebuild folds them', async () => {
+    // A draft Gmail still lists, stored (with the owner-as-sender it
+    // built) by the old ingest. The resume keeps stored rows, so only the
+    // purge stands between it and the rebuild.
+    const ownerKey = deriveSenderKey('owner@declutrmail.ai');
+    await db.insert(senders).values({
+      id: deriveSenderId(mailboxAccountId, ownerKey),
+      mailboxAccountId,
+      senderKey: ownerKey,
+      email: 'owner@declutrmail.ai',
+      domain: 'declutrmail.ai',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(Date.UTC(2026, 0, 5)),
+      lastSeenAt: new Date(Date.UTC(2026, 0, 5)),
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'legacy-draft',
+      providerThreadId: 'thread-legacy-draft',
+      senderKey: ownerKey,
+      internalDate: new Date(Date.UTC(2026, 0, 5)),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    const draft: GmailMessageMetadata = {
+      id: 'legacy-draft',
+      threadId: 'thread-legacy-draft',
+      labelIds: ['DRAFT'],
+      snippet: '',
+      internalDate: String(Date.UTC(2026, 0, 5)),
+      from: 'Owner <owner@declutrmail.ai>',
+      subject: '',
+      to: null,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    };
+    const client = new FakeGmailClient([...makeMessages(4, 2), draft]);
+
+    await new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(client),
+      outbox: new OutboxPublisher(),
+    }).processJob({ mailboxAccountId }, CTX);
+
+    const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
+    expect(stored.map((r) => r.id)).not.toContain('legacy-draft');
+    const emails = await db.select({ email: senders.email }).from(senders);
+    expect(emails.map((r) => r.email)).not.toContain('owner@declutrmail.ai');
+  });
+
+  it('a failed purge is reported and the sync still completes', async () => {
+    const spy = vi
+      .spyOn(nonMailPurge, 'purgeAllNonMail')
+      .mockRejectedValueOnce(new Error('purge boom'));
+    const worker = new InitialSyncWorker({
+      db,
+      gmailAccess: accessFor(new FakeGmailClient(makeMessages(6, 2))),
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+    try {
+      await worker.processJob({ mailboxAccountId }, CTX);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state?.readinessStatus).toBe('ready');
+    expect(captureBackgroundFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'purge boom' }),
+      expect.objectContaining({ kind: 'sync.non_mail_purge_failed' }),
+    );
+  });
+
+  it('drafts and chat lines are not mail — never stored, never a sender, never "you wrote to them"', async () => {
+    // Gmail lists both beside real mail. A draft carries only DRAFT, never
+    // SENT, so it landed as INBOUND mail From the owner — a senders row for
+    // the mailbox itself, scored and carded. Chat lines counted as email.
+    const day = (d: number): number => Date.UTC(2026, 2, d);
+    const item = (
+      id: string,
+      labelIds: string[],
+      from: string,
+      to: string,
+      d: number,
+    ): GmailMessageMetadata => ({
+      id,
+      threadId: `thread-${id}`,
+      labelIds,
+      snippet: `snippet ${id}`,
+      internalDate: String(day(d)),
+      from,
+      subject: `Subject ${id}`,
+      to,
+      cc: null,
+      listUnsubscribe: null,
+      listUnsubscribePost: null,
+    });
+    const owner = 'Owner <owner@declutrmail.ai>';
+    const friend = 'Friend <friend@example.com>';
+    const client = new FakeGmailClient([
+      item('mail-1', ['INBOX', 'CATEGORY_PERSONAL'], friend, 'owner@declutrmail.ai', 10),
+      item('draft-1', ['DRAFT'], owner, 'friend@example.com', 11),
+      item('chat-in', ['CHAT'], friend, 'owner@declutrmail.ai', 3),
+      item('chat-only', ['CHAT'], 'Buddy <buddy@example.com>', 'owner@declutrmail.ai', 4),
+      item('chat-own', ['CHAT'], owner, 'friend@example.com', 5),
+      item('chat-sent', ['CHAT', 'SENT'], owner, 'friend@example.com', 6),
+    ]);
+
+    await new InitialSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId },
+      CTX,
+    );
+
+    const stored = await db.select({ id: mailMessages.providerMessageId }).from(mailMessages);
+    expect(stored.map((r) => r.id)).toEqual(['mail-1']);
+    // Only the friend: no row for the owner (draft, own chat line) or for
+    // the chat-only buddy. The earlier chat line moves neither the count
+    // nor first-seen, and the SENT chat line is not "you wrote to them".
+    const senderRows = await db
+      .select({
+        email: senders.email,
+        total: senders.totalReceived,
+        firstSeenAt: senders.firstSeenAt,
+        wroteTo: senders.wroteToCount,
+      })
+      .from(senders);
+    expect(senderRows).toEqual([
+      { email: 'friend@example.com', total: 1, firstSeenAt: new Date(day(10)), wroteTo: 0 },
+    ]);
+    const months = await db
+      .select({
+        senderKey: schema.senderTimeseries.senderKey,
+        volume: schema.senderTimeseries.volume,
+      })
+      .from(schema.senderTimeseries);
+    expect(months).toEqual([{ senderKey: deriveSenderKey('friend@example.com'), volume: 1 }]);
   });
 
   it('D6 sync gate — writes D224 stage sequence + monotonic progress + final ready', async () => {

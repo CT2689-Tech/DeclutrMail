@@ -339,10 +339,10 @@ export type MailboxReconnectRequiredPayload = z.infer<typeof MailboxReconnectReq
 export const MAILBOX_NON_MAIL_PURGED_LIST_MAX = 1_000;
 
 /**
- * Published by the non-mail purge (PR #791) in the same transaction as
- * one batch of deleted drafts and chat lines. Carries only what the
- * consumers need to repair their own tables: sender keys and Gmail thread
- * ids, never a subject, snippet or address (D7/D228).
+ * Published by the non-mail purge (`packages/workers/src/non-mail-purge.ts`)
+ * in the same transaction as one batch of deleted drafts and chat lines.
+ * Carries only what the consumers need to repair their own tables: sender
+ * keys and Gmail thread ids, never a subject, snippet or address (D7/D228).
  */
 export const MailboxNonMailPurgedPayloadSchema = z
   .object({

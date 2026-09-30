@@ -6,6 +6,7 @@ import {
   mailboxAccounts,
   type schema,
   senderPolicies,
+  senders,
   TRIAGE_DECIDED_WINDOW_DAYS,
   triageDecisions,
   users,
@@ -395,12 +396,23 @@ export class LapseReengagementWorker extends BaseDeclutrWorker<
    *
    * Both narrowings, plus the account-wide scope, are why the email
    * says "across your mailboxes" and never claims to equal the queue.
+   *
+   * Only verdicts whose sender still exists: the queue joins `senders`,
+   * so a verdict left behind when the index dropped its sender can never
+   * be shown, and counting it could summon a user to an empty Triage.
    */
   private async countPendingTriageSenders(userId: string, now: Date): Promise<number> {
     const [row] = await this.deps.db
       .select({ pending: count() })
       .from(triageDecisions)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, triageDecisions.mailboxAccountId))
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, triageDecisions.mailboxAccountId),
+          eq(senders.senderKey, triageDecisions.senderKey),
+        ),
+      )
       .leftJoin(
         senderPolicies,
         and(
