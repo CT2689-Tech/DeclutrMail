@@ -1,5 +1,7 @@
+import type { JobsOptions, WorkerOptions } from 'bullmq';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { Redis } from 'ioredis';
 
 import {
   AUTOPILOT_PRESET_KEYS,
@@ -20,9 +22,12 @@ import { hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PRESETS, type PresetInput } from './autopilot-presets.js';
 import { materializeAutopilotSignals } from './autopilot-signals.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
+import { workerTuningOptions } from './queue.js';
+import { backoffJobOptions, perMailboxWorkerSettings } from './rate-limit-backoff.js';
 import { lockSenderIndex } from './sender-index-lock.js';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
+import { WORKER_POLICIES } from './worker-policies.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -653,3 +658,63 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
 /** Queue + job name for the Autopilot apply worker (matches the score-worker pattern). */
 export const AUTOPILOT_APPLY_QUEUE = 'autopilot-apply';
 export const AUTOPILOT_APPLY_JOB = 'autopilot-apply';
+
+/**
+ * BullMQ job options for every `autopilot-apply` producer —
+ * `buildAutopilotApplyDeltaTrigger` (`autopilot-delta-trigger.ts`,
+ * debounced: pass the window's remaining ms as `delayMs`) and
+ * `enqueueAutopilotApply` (`apps/api/src/outbox/outbox-consumer-router.ts`,
+ * immediate: omit `delayMs`; wired from `mailbox.sync_ready`,
+ * `triage.score_run_completed` and `autopilot.rule_activated`). Mirrors
+ * this queue's sibling `perMailboxPolicy` producers —
+ * `autopilotActionJobOptions` (`autopilot-action.worker.ts`) and
+ * `scoreJobOptions` (`score.worker.ts`) — and `delayMs` follows
+ * `emailSendJobOptions`'s convention (omit/0 for an immediate add).
+ *
+ * Before this helper, both producers passed only `{ jobId, ... }` — no
+ * `attempts`/`backoff`. This worker's `policy` field (above) reads
+ * `perMailboxPolicy`, but that names the WORKER's nominal policy, not
+ * what BullMQ actually grants a given job — only the job's own
+ * `opts.attempts` decides whether BullMQ retries at all, and with
+ * neither producer setting it, BullMQ defaulted every job to a single
+ * try instead of the policy's 5-attempt budget with backoff.
+ */
+export function autopilotApplyJobOptions(jobId: string, delayMs = 0): JobsOptions {
+  const policy = WORKER_POLICIES.perMailboxPolicy;
+  return {
+    jobId,
+    attempts: policy.maxAttempts,
+    ...backoffJobOptions(policy.backoff),
+    ...(delayMs > 0 ? { delay: delayMs } : {}),
+    removeOnComplete: { age: 86_400 },
+    removeOnFail: false,
+  };
+}
+
+/**
+ * BullMQ `Worker` options for the `autopilot-apply` consumer
+ * (`autopilotApplyBullWorker` in `apps/api/src/worker.ts`). Exported —
+ * rather than left as an inline literal like this queue's sibling
+ * `perMailboxPolicy` consumers — so a real-Redis registration test can
+ * drive the EXACT options the production `Worker` uses. A hand-copied
+ * duplicate of these fields inside a test (as
+ * `score-bull-worker-registration.test.ts`'s `realScoreWorkerOptions()`
+ * does, PR #827) would still pass if `...perMailboxWorkerSettings()`
+ * were later removed from production code, since the test's own copy
+ * would still carry it; importing this function from both places closes
+ * that gap.
+ *
+ * `...perMailboxWorkerSettings()` registers the `custom` backoff
+ * STRATEGY that `autopilotApplyJobOptions`'s `backoff: { type: 'custom' }`
+ * requires — omitting it makes BullMQ throw `Unknown backoff strategy
+ * custom.` on any retryable failure instead of retrying (see
+ * `rate-limit-backoff.ts`'s doc comment for the full failure mode).
+ */
+export function autopilotApplyWorkerOptions(connection: Redis, concurrency = 5): WorkerOptions {
+  return {
+    connection,
+    concurrency,
+    ...workerTuningOptions('user-facing'),
+    ...perMailboxWorkerSettings(),
+  };
+}

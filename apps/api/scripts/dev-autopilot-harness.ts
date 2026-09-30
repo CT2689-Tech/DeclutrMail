@@ -260,7 +260,7 @@ async function main(): Promise<void> {
   const applyBull = new Worker<AutopilotApplyJobData>(
     AUTOPILOT_APPLY_QUEUE,
     (job) => applyWorker.run(job),
-    { connection, concurrency: 2 },
+    { connection, concurrency: 2, ...perMailboxWorkerSettings() },
   );
   applyBull.on('error', (err) => log('apply_bull_error', { message: err.message }));
 

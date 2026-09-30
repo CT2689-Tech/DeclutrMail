@@ -1,3 +1,4 @@
+import type { JobsOptions } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import {
   automationRules,
@@ -14,7 +15,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { describe, expect, it, vi } from 'vitest';
 
-import { AUTOPILOT_APPLY_JOB } from './autopilot-apply.worker.js';
+import { AUTOPILOT_APPLY_JOB, autopilotApplyJobOptions } from './autopilot-apply.worker.js';
 import {
   AUTOPILOT_APPLY_DELTA_WINDOW_MS,
   buildAutopilotApplyDeltaTrigger,
@@ -276,16 +277,19 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     const [jobName, jobData, opts] = applyAdd.mock.calls[0] as [
       string,
       { mailboxAccountId: string; triggeredAtMs: number },
-      { jobId: string; delay: number },
+      JobsOptions,
     ];
     const windowEndMs =
       (Math.floor(NOW.getTime() / AUTOPILOT_APPLY_DELTA_WINDOW_MS) + 1) *
       AUTOPILOT_APPLY_DELTA_WINDOW_MS;
     expect(jobName).toBe(AUTOPILOT_APPLY_JOB);
     expect(jobData).toEqual({ mailboxAccountId: mailboxId, triggeredAtMs: windowEndMs });
-    expect(opts.jobId).toBe(`${mailboxId}-delta-${windowEndMs}`);
+    // perMailboxPolicy retry budget (2026-09-29) — negative control:
+    // reverting the trigger back to a bare `{ jobId, delay }` fails this.
+    expect(opts).toEqual(
+      autopilotApplyJobOptions(`${mailboxId}-delta-${windowEndMs}`, windowEndMs - NOW.getTime()),
+    );
     expect(opts.jobId).not.toContain(':');
-    expect(opts.delay).toBe(windowEndMs - NOW.getTime());
 
     // Deliver the delayed job (as BullMQ would at window end): the
     // Active-mode rule matches the known sender and chains one action
@@ -381,16 +385,17 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
 
     await trigger('mbx-1');
 
-    const [, jobData, opts] = add.mock.calls[0] as [
-      string,
-      { triggeredAtMs: number },
-      { jobId: string; delay: number },
-    ];
+    const [, jobData, opts] = add.mock.calls[0] as [string, { triggeredAtMs: number }, JobsOptions];
     expect(opts.delay).toBeGreaterThanOrEqual(AUTOPILOT_APPLY_DELTA_WINDOW_MS);
     expect(opts.delay).toBeLessThan(2 * AUTOPILOT_APPLY_DELTA_WINDOW_MS);
     expect(jobData.triggeredAtMs % AUTOPILOT_APPLY_DELTA_WINDOW_MS).toBe(0);
     expect(jobData.triggeredAtMs - nowMs).toBe(opts.delay);
     expect(opts.jobId).toBe(`mbx-1-delta-${jobData.triggeredAtMs}`);
+    // perMailboxPolicy retry budget (2026-09-29) — this call site too.
+    expect(opts.attempts).toBe(5);
+    expect(opts.backoff).toEqual({ type: 'custom' });
+    expect(opts.removeOnComplete).toEqual({ age: 86_400 });
+    expect(opts.removeOnFail).toBe(false);
   });
 
   it('steady state — a completed unsubscribe is NOT re-matched; removing the policy re-arms it', async () => {

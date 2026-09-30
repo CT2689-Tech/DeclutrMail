@@ -11,6 +11,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { TOPICS } from '@declutrmail/events';
+import { autopilotApplyJobOptions } from '@declutrmail/workers';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -364,7 +365,10 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
       mailboxAccountId: mailboxId,
       triggeredAtMs: Date.parse(readyAt),
     });
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(readyAt)}`);
+    // perMailboxPolicy retry budget (2026-09-29) — negative control:
+    // reverting `enqueueAutopilotApply` back to a bare `{ jobId, ... }`
+    // fails this assertion.
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-${Date.parse(readyAt)}`));
 
     // Redelivery: seeder is a no-op, enqueue dedups at BullMQ (same jobId).
     await consume({
@@ -403,7 +407,7 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
     expect(add).toHaveBeenCalledTimes(1);
     const [, jobData, opts] = add.mock.calls[0]!;
     expect(jobData).toEqual({ mailboxAccountId: mailboxId, triggeredAtMs: 777 });
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-777`);
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-777`));
   });
 
   it('autopilot.rule_activated enqueues the apply sweep the rule PATCH made durable', async () => {
@@ -437,7 +441,7 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
       triggeredAtMs: Date.parse(activatedAt),
     });
     // `-` not `:` — BullMQ reserves `:` and rejects custom ids using it.
-    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(activatedAt)}`);
+    expect(opts).toEqual(autopilotApplyJobOptions(`${mailboxId}-${Date.parse(activatedAt)}`));
   });
 
   it('without a wired queue the event ACKs and warns instead of throwing', async () => {

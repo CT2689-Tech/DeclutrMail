@@ -231,6 +231,8 @@ export { seedAutopilotPresets } from './autopilot-preset-seeder.js';
 export {
   AUTOPILOT_APPLY_JOB,
   AUTOPILOT_APPLY_QUEUE,
+  autopilotApplyJobOptions,
+  autopilotApplyWorkerOptions,
   AutopilotApplyWorker,
 } from './autopilot-apply.worker.js';
 export type {
