@@ -81,7 +81,7 @@ async function confirmUnsubscribe() {
   fireEvent.keyDown(window, { key: 'u' });
   fireEvent.click(
     await screen.findByRole('button', {
-      name: new RegExp(`^Confirm Unsubscribe for ${row.senderName}`),
+      name: new RegExp(`^Unsubscribe for ${row.senderName}`),
     }),
   );
 }

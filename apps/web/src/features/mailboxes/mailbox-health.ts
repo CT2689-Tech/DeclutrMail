@@ -3,9 +3,6 @@ import { AUTH_RECOVERY_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/
 /** Worker classification for a revoked/expired Gmail OAuth grant. */
 export const INVALID_GRANT_CODE = 'InvalidGrantError';
 
-/** Worker classification for an expired-but-not-revoked Gmail OAuth grant. */
-export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
-
 /**
  * INITIAL-sync `error_code`s that send the user to reconnect Gmail.
  *
@@ -21,9 +18,10 @@ export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
  * already out of every sweep), so this changes what the user is shown,
  * never what a worker does. The incremental check stays
  * `InvalidGrantError`-only to match the workers' own reconnect gate
- * (packages/workers/src/mailbox-reconnect.ts).
+ * (packages/workers/src/mailbox-reconnect.ts). `AUTH_RECOVERY_ERROR_CODES`
+ * itself now lives in `@declutrmail/shared/contracts` (#781) so the API's
+ * `SyncService` and every web surface read the exact same set.
  */
-// Initial-sync recovery codes are shared with every reconnect surface.
 
 /**
  * True only while the scoped mailbox's Gmail grant currently needs

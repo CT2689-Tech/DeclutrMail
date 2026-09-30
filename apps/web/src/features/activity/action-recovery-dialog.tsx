@@ -502,8 +502,8 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
   if (code === 'LATER_WAKE_TIME_REQUIRED') {
     return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
   }
-  // Activity re-reads on these two (`useConfirmActionRecovery`); there is
-  // no "Refresh Activity" control to point at.
+  // Activity re-reads on every one of these (`useConfirmActionRecovery`'s
+  // `onSettled`); there is no "Refresh Activity" control to point at.
   if (code === 'ACTION_NO_LONGER_FAILED') {
     return 'This action no longer needs recovery.';
   }

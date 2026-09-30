@@ -36,7 +36,7 @@
  */
 
 import { useQueries } from '@tanstack/react-query';
-import { AUTH_RECOVERY_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
+import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
 import { syncStatusQueryOptions } from '@/features/onboarding/api/use-sync-status';
@@ -71,11 +71,10 @@ export interface MailboxHealth {
 export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const syncedAt = status.last_synced_at ?? null;
   // A first scan that failed on an expired grant is reconnect-only too,
-  // as on the onboarding gate and the top-bar indicator. Display only:
-  // `syncStatusNeedsReconnect` stays InvalidGrantError-only (see there).
-  const needsReconnect =
-    syncStatusNeedsReconnect(status) ||
-    (status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code));
+  // as on the onboarding gate and the top-bar indicator —
+  // `syncStatusNeedsReconnect` already covers the wide, shared
+  // `AUTH_RECOVERY_ERROR_CODES` set for the initial-sync `error_code` (#784).
+  const needsReconnect = syncStatusNeedsReconnect(status);
   const errorAt = status.last_sync_error_at ?? null;
   const hasSyncError =
     !needsReconnect &&
