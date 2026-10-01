@@ -40,12 +40,15 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
  * this log to keep the two drivers behaviorally equivalent.
  */
 const driverParamLog: unknown[][] = [];
+const driverQueryLog: string[] = [];
 
-async function freshDb(): Promise<Db> {
+async function freshDb(driverDelayMs = 0): Promise<Db> {
   const pg = await freshTestPglite();
   const originalQuery = pg.query.bind(pg);
   pg.query = (async (...args: Parameters<typeof originalQuery>) => {
+    driverQueryLog.push(args[0]);
     if (Array.isArray(args[1])) driverParamLog.push(args[1]);
+    if (driverDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, driverDelayMs));
     return originalQuery(...args);
   }) as typeof pg.query;
   return drizzle(pg, { schema });
@@ -236,10 +239,12 @@ describe('ActivityReadService', () => {
     mailboxB = await seedMailbox(db, 'b@example.com');
   });
 
-  it('starts counters before row hydration finishes and reuses unbounded counters', async () => {
+  it('starts counters but waits for execution hydration before reading feed sources', async () => {
     const internals = svc as unknown as {
       loadPagedExecutionLineages: () => Promise<never[]>;
       aggregateStats: () => Promise<unknown>;
+      loadRuleReviewRows: () => Promise<unknown>;
+      loadProtectedSkipRows: () => Promise<unknown>;
     };
     let release!: (value: never[]) => void;
     const blocked = new Promise<never[]>((resolve) => {
@@ -247,10 +252,14 @@ describe('ActivityReadService', () => {
     });
     const lineageSpy = vi.spyOn(internals, 'loadPagedExecutionLineages').mockReturnValue(blocked);
     const statsSpy = vi.spyOn(internals, 'aggregateStats');
+    const reviewSpy = vi.spyOn(internals, 'loadRuleReviewRows');
+    const protectedSpy = vi.spyOn(internals, 'loadProtectedSkipRows');
+    driverQueryLog.length = 0;
     const pending = svc.listActivity({
       mailboxAccountId: mailboxA.mailboxAccountId,
       window: 'all',
       source: null,
+      outcomes: ['skipped', 'protected'],
       nowMs: NOW_MS,
       limit: 50,
       cursor: null,
@@ -258,12 +267,104 @@ describe('ActivityReadService', () => {
     try {
       expect(lineageSpy).toHaveBeenCalledOnce();
       expect(statsSpy).toHaveBeenCalledOnce();
+      await Promise.resolve();
+      expect(reviewSpy).not.toHaveBeenCalled();
+      expect(protectedSpy).not.toHaveBeenCalled();
+      expect(driverQueryLog.some((query) => query.includes('"activity_log"."undo_token"'))).toBe(
+        false,
+      );
     } finally {
       release([]);
+      await pending;
     }
     const result = await pending;
     expect(result.stats).toEqual(result.allTimeStats);
   });
+
+  it('starts supplementary feed reads while persisted rows are still loading', async () => {
+    const internals = svc as unknown as {
+      loadRuleReviewRows: () => Promise<unknown>;
+      loadProtectedSkipRows: () => Promise<unknown>;
+    };
+    const reviewSpy = vi.spyOn(internals, 'loadRuleReviewRows');
+    const protectedSpy = vi.spyOn(internals, 'loadProtectedSkipRows');
+    let release!: () => void;
+    let persistedStarted = false;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalQuery = db.$client.query.bind(db.$client);
+    vi.spyOn(db.$client, 'query').mockImplementation((async (
+      ...args: Parameters<typeof originalQuery>
+    ) => {
+      if (args[0].includes('"activity_log"."undo_token"')) {
+        persistedStarted = true;
+        await blocked;
+      }
+      return originalQuery(...args);
+    }) as typeof db.$client.query);
+    const pending = svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      window: 'all',
+      source: null,
+      outcomes: ['skipped', 'protected'],
+      nowMs: NOW_MS,
+      limit: 50,
+      cursor: null,
+    });
+    try {
+      await vi.waitFor(
+        () => {
+          expect(persistedStarted).toBe(true);
+          expect(reviewSpy).toHaveBeenCalledOnce();
+          expect(protectedSpy).toHaveBeenCalledOnce();
+        },
+        { timeout: 500 },
+      );
+    } finally {
+      release();
+      await pending;
+    }
+  });
+
+  it.skipIf(process.env.ACTIVITY_READ_BENCH !== '1')(
+    'measures feed reads with synthetic driver latency',
+    async () => {
+      // Optional before/after harness: real SQL and service results, with an
+      // identical 100ms delay at each driver call. Not production page timing.
+      const measuredDb = await freshDb(100);
+      const mailbox = await seedMailbox(measuredDb, 'latency@example.test');
+      await seedActivity(measuredDb, {
+        mailboxAccountId: mailbox.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+      const service = new ActivityReadService(measuredDb as never);
+      const times: number[] = [];
+      for (let run = 0; run < 3; run++) {
+        const start = performance.now();
+        const result = await service.listActivity({
+          mailboxAccountId: mailbox.mailboxAccountId,
+          window: '30d',
+          source: null,
+          nowMs: NOW_MS,
+          limit: 25,
+          cursor: null,
+        });
+        times.push(performance.now() - start);
+        expect(result.rows).toHaveLength(1);
+      }
+      process.stdout.write(
+        JSON.stringify({
+          driverDelayMs: 100,
+          samplesMs: times,
+          medianMs: [...times].sort((a, b) => a - b)[1],
+          maxMs: Math.max(...times),
+        }) + '\n',
+      );
+    },
+  );
 
   it('returns only rows for the requested mailbox (tenant isolation)', async () => {
     await seedActivity(db, {
