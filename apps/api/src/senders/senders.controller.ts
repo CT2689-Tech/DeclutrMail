@@ -47,6 +47,7 @@ import {
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
+import { measureRequestOperation } from '../observability/request-performance.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SendersPolicyService } from './senders-policy.service.js';
 import { IconsService } from '../icons/icons.service.js';
@@ -219,39 +220,43 @@ export class SendersController {
     // exactly this reason.
     const isFirstPage = cursor === null;
     const [rows, query] = await Promise.all([
-      this.reads.listSenders({
-        ...(currentMailOnly ? { currentMailOnly: true } : {}),
-        ...(hasInboxMail ? { hasInboxMail: true } : {}),
-        mailboxAccountId: accountId,
-        category,
-        isProtected,
-        sort,
-        direction,
-        cursor,
-        limit,
-        q,
-        activity,
-        unsubReady,
-        wroteTo,
-        quietForDays,
-        domain,
-        unsubIgnored,
-      }),
+      measureRequestOperation('senders.rows', () =>
+        this.reads.listSenders({
+          ...(currentMailOnly ? { currentMailOnly: true } : {}),
+          ...(hasInboxMail ? { hasInboxMail: true } : {}),
+          mailboxAccountId: accountId,
+          category,
+          isProtected,
+          sort,
+          direction,
+          cursor,
+          limit,
+          q,
+          activity,
+          unsubReady,
+          wroteTo,
+          quietForDays,
+          domain,
+          unsubIgnored,
+        }),
+      ),
       isFirstPage
-        ? this.reads.getSenderListQueryMeta({
-            ...(currentMailOnly ? { currentMailOnly: true } : {}),
-            ...(hasInboxMail ? { hasInboxMail: true } : {}),
-            mailboxAccountId: accountId,
-            category,
-            isProtected,
-            q,
-            activity,
-            unsubReady,
-            wroteTo,
-            quietForDays,
-            domain,
-            unsubIgnored,
-          })
+        ? measureRequestOperation('senders.meta', () =>
+            this.reads.getSenderListQueryMeta({
+              ...(currentMailOnly ? { currentMailOnly: true } : {}),
+              ...(hasInboxMail ? { hasInboxMail: true } : {}),
+              mailboxAccountId: accountId,
+              category,
+              isProtected,
+              q,
+              activity,
+              unsubReady,
+              wroteTo,
+              quietForDays,
+              domain,
+              unsubIgnored,
+            }),
+          )
         : Promise.resolve(null),
     ]);
 
@@ -263,7 +268,9 @@ export class SendersController {
       hasMore: nextCursor !== null,
       limit,
     };
-    const marks = await this.brandMarksFor(page.map((row) => row.domain));
+    const marks = await measureRequestOperation('senders.marks', () =>
+      this.brandMarksFor(page.map((row) => row.domain)),
+    );
     const data = page.map((row) => ({ ...row, brandMark: marks.has(row.domain) }));
     return { data, meta: { pagination, ...(query !== null ? { query } : {}) } };
   }
@@ -327,11 +334,13 @@ export class SendersController {
     // Default true — match the list endpoint default. Pivots the whole
     // summary in lockstep w/ the FE "show one-time" toggle.
     const includeOneTime = rawIncludeOneTime !== 'false';
-    const data = await this.reads.getSenderSummary({
-      mailboxAccountId: mailbox.id,
-      q,
-      includeOneTime,
-    });
+    const data = await measureRequestOperation('senders.summary', () =>
+      this.reads.getSenderSummary({
+        mailboxAccountId: mailbox.id,
+        q,
+        includeOneTime,
+      }),
+    );
     return ok(data);
   }
 
