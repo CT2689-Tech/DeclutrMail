@@ -242,6 +242,14 @@ export const mailMessages = pgTable(
     nonMailIdx: index('mail_messages_non_mail_idx')
       .on(table.mailboxAccountId, table.internalDate)
       .where(sql`${table.labelIds} && ARRAY['DRAFT','CHAT']::text[]`),
+    /** Migration 0081: live cleanup scope, including archived inbound mail.
+     * Must match Senders' hasCurrentMail predicate, including label order.
+     */
+    senderCurrentIdx: index('mail_messages_account_sender_current_idx')
+      .on(table.mailboxAccountId, table.senderKey)
+      .where(
+        sql`${table.isOutbound} = false AND NOT (${table.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+      ),
     /**
      * Channel-split scheme invariants (migration 0032, FOUNDER-FOLLOWUPS
      * 2026-05-22). The header parser enforces these shapes; the CHECKs
