@@ -542,7 +542,7 @@ export class ActivityReadService {
 
     // ADR-0008 §3 exception: the feed joins the senders-owned `senders`
     // (display name) and the autopilot-owned `automation_rules` (rule name).
-    const rows = await this.db
+    const persistedRows = this.db
       .select({
         id: activityLog.id,
         occurredAt: activityLog.occurredAt,
@@ -592,6 +592,15 @@ export class ActivityReadService {
       .orderBy(desc(feedTime(activityLog.occurredAt)), desc(activityLog.id))
       .limit(limit + 1);
 
+    // Execution lineages have already been captured before these reads:
+    // a completing job must appear as either in-progress or persisted.
+    // The subsequent feed sources can overlap, then merge after all finish.
+    const [rows, ruleReviewRows, protectedSkipRows] = await Promise.all([
+      persistedRows,
+      this.loadRuleReviewRows(params),
+      this.loadProtectedSkipRows(params, snapshotCreatedAt),
+    ]);
+
     const projected = rows.map((row): ActivityRowFacts => {
       const sender =
         row.senderKey && row.senderEmail
@@ -634,10 +643,6 @@ export class ActivityReadService {
       cursor,
       outcomes,
     });
-    const [ruleReviewRows, protectedSkipRows] = await Promise.all([
-      this.loadRuleReviewRows(params),
-      this.loadProtectedSkipRows(params, snapshotCreatedAt),
-    ]);
     return [...projected, ...executionRows, ...ruleReviewRows, ...protectedSkipRows]
       .sort(compareActivityRowsNewestFirst)
       .slice(0, limit + 1);
