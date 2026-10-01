@@ -44,30 +44,8 @@ export class SnoozedReadService {
   ) {}
 
   async list(mailboxAccountId: string, now = new Date()): Promise<SnoozedSenderRow[]> {
-    const labelId = await this.resolveLaterLabelId(mailboxAccountId);
-
-    // Mirror side — per-sender count of messages carrying the Later id.
-    const mirrorCounts = new Map<string, number>();
-    if (labelId !== null) {
-      const rows = await this.db
-        .select({
-          senderKey: mailMessages.senderKey,
-          laterCount: sql<number>`count(*)::int`,
-        })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            sql`${labelId} = ANY(${mailMessages.labelIds})`,
-          ),
-        )
-        .groupBy(mailMessages.senderKey);
-      for (const row of rows) {
-        mirrorCounts.set(row.senderKey, row.laterCount);
-      }
-    }
-
-    // Timer side — active snoozes (D79).
+    // Timers define list membership (D79/D245). An empty list needs neither
+    // Redis's label mapping nor a scan of the mailbox's message labels.
     const timerRows = await this.db
       .select({
         senderKey: senderPolicies.senderKey,
@@ -90,6 +68,30 @@ export class SnoozedReadService {
     const senderKeys = Array.from(timers.keys());
     if (senderKeys.length === 0) {
       return [];
+    }
+
+    const labelId = await this.resolveLaterLabelId(mailboxAccountId);
+    const mirrorCounts = new Map<string, number>();
+    if (labelId !== null) {
+      const rows = await this.db
+        .select({
+          senderKey: mailMessages.senderKey,
+          laterCount: sql<number>`count(*)::int`,
+        })
+        .from(mailMessages)
+        .where(
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            // Counts decorate timer-backed rows only. The existing
+            // mailbox/sender index bounds this read to those senders.
+            inArray(mailMessages.senderKey, senderKeys),
+            sql`${labelId} = ANY(${mailMessages.labelIds})`,
+          ),
+        )
+        .groupBy(mailMessages.senderKey);
+      for (const row of rows) {
+        mirrorCounts.set(row.senderKey, row.laterCount);
+      }
     }
 
     const senderRows = await this.db

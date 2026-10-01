@@ -206,7 +206,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 1. Paywall: Archive on /senders → D226 preview → confirm →
   // server 402 FREE_CAP_REACHED → the designed UpgradeModal.
   await page.goto('/senders');
-  const card = page.getByTestId(`sender-row-${BILLING_SEED.archiveSenderId}`);
+  // Responsive rows share an identity; exercise the row visible at this viewport.
+  const card = page
+    .getByTestId(`sender-row-${BILLING_SEED.archiveSenderId}`)
+    .filter({ visible: true });
   await expect(card).toBeVisible({ timeout: 60_000 });
   await card.scrollIntoViewIfNeeded();
   await card.getByRole('button', { name: 'More actions' }).click();

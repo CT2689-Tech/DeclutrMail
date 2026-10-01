@@ -193,6 +193,69 @@ describe('SnoozedReadService.list', () => {
     expect(await service.list(mailboxId)).toEqual([]);
   });
 
+  it('does not resolve labels or scan messages when no Later timers exist', async () => {
+    await seedMessage(db, mailboxId, KEY_A, 'mirror-only', [LATER_ID]);
+    const get = vi.fn(async () => LATER_ID);
+    const driver = vi.spyOn(db.$client, 'query');
+    const rows = await new SnoozedReadService(db as never, { get, set: async () => {} }).list(
+      mailboxId,
+    );
+    expect(rows).toEqual([]);
+    expect(get).not.toHaveBeenCalled();
+    expect(driver.mock.calls.some(([query]) => query.includes('"mail_messages"'))).toBe(false);
+  });
+
+  it('counts only timer-backed senders while preserving all matching labels and mailbox scope', async () => {
+    const senderBId = await seedSender(db, mailboxId, KEY_B, 'offers@shop.example');
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: KEY_B,
+      snoozedUntil: new Date('2026-06-12T09:00:00Z'),
+    });
+    await seedMessage(db, mailboxId, KEY_A, 'unrelated', [LATER_ID]);
+    await seedMessage(db, mailboxId, KEY_B, 'inbound', [LATER_ID]);
+    await seedMessage(db, mailboxId, KEY_B, 'trash', [LATER_ID, 'TRASH']);
+    await seedMessage(db, mailboxId, KEY_B, 'outbound', [LATER_ID, 'SENT']);
+    const otherMailbox = await seedMailbox(db, 'another@declutrmail.ai');
+    await seedMessage(db, otherMailbox, KEY_B, 'other-mailbox', [LATER_ID]);
+    const driver = vi.spyOn(db.$client, 'query');
+    const rows = await new SnoozedReadService(
+      db as never,
+      labelMapWith({ [mailboxId]: LATER_ID }),
+    ).list(mailboxId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.senderId).toBe(senderBId);
+    expect(rows[0]!.laterCount).toBe(3);
+    const mirror = driver.mock.calls.find(([query]) => query.includes('"mail_messages"'));
+    expect(mirror?.[1]).toContain(KEY_B);
+    expect(mirror?.[1]).not.toContain(KEY_A);
+    expect(mirror?.[1]).toContain(mailboxId);
+  });
+
+  it.skipIf(process.env.LATER_READ_BENCH !== '1')(
+    'benchmarks the complete empty Later read with synthetic driver latency',
+    async () => {
+      await seedMessage(db, mailboxId, KEY_A, 'mirror-only', [LATER_ID]);
+      const query = db.$client.query.bind(db.$client);
+      vi.spyOn(db.$client, 'query').mockImplementation(
+        async (...args: Parameters<typeof query>) => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return query(...args);
+        },
+      );
+      const samples: number[] = [];
+      const service = new SnoozedReadService(db as never, labelMapWith({ [mailboxId]: LATER_ID }));
+      for (let i = 0; i < 3; i++) {
+        const start = performance.now();
+        expect(await service.list(mailboxId)).toEqual([]);
+        samples.push(Number((performance.now() - start).toFixed(2)));
+      }
+      process.stdout.write(
+        `${JSON.stringify({ benchmark: 'empty-later-driver-latency', driverDelayMs: 100, samples })}\n`,
+      );
+    },
+  );
+
   it('distinguishes returning, missed, and recorded retry failures', async () => {
     await db.insert(senderPolicies).values({
       mailboxAccountId: mailboxId,
