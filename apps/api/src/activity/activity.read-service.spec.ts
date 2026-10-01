@@ -239,6 +239,139 @@ describe('ActivityReadService', () => {
     mailboxB = await seedMailbox(db, 'b@example.com');
   });
 
+  it('captures complete sender recovery facts in one database trip', async () => {
+    const senderKey = 'single-trip';
+    const senderId = await seedSender(
+      db,
+      mailboxA.mailboxAccountId,
+      senderKey,
+      'recovery@example.test',
+      'Recovery Sender',
+    );
+    await seedSender(
+      db,
+      mailboxB.mailboxAccountId,
+      senderKey,
+      'other@example.test',
+      'Other Mailbox',
+    );
+    const createdAt = new Date(NOW_MS - 3 * ONE_DAY_MS);
+    const rootId = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'failed',
+      requestedCount: 7,
+      errorCode: 'TransientError',
+      createdAt,
+    });
+    const recoveryId = await seedExecutionAttempt(db, {
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      senderId,
+      senderKey,
+      status: 'executing',
+      requestedCount: 5,
+      rootActionId: rootId,
+      retryOfActionId: rootId,
+      recoveryAttempt: 1,
+      createdAt: new Date(NOW_MS - ONE_DAY_MS),
+    });
+    const capture = svc as unknown as {
+      loadPagedExecutionLineages: (
+        params: Record<string, unknown>,
+        lower: null,
+        upper: null,
+      ) => Promise<
+        Array<{
+          root: Record<string, unknown>;
+          current: Record<string, unknown>;
+          sender: Record<string, unknown> | null;
+        }>
+      >;
+    };
+    driverQueryLog.length = 0;
+    const lineages = await capture.loadPagedExecutionLineages(
+      {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        source: null,
+        limit: 25,
+        cursor: null,
+      },
+      null,
+      null,
+    );
+    expect(lineages).toHaveLength(1);
+    expect(lineages[0]!.root).toMatchObject({
+      id: rootId,
+      status: 'failed',
+      requestedCount: 7,
+      errorCode: 'TransientError',
+      createdAt,
+      rootActionId: null,
+      recoveryAttempt: 0,
+    });
+    expect(lineages[0]!.current).toMatchObject({
+      id: recoveryId,
+      status: 'executing',
+      requestedCount: 5,
+      rootActionId: rootId,
+      recoveryAttempt: 1,
+    });
+    expect(lineages[0]!.sender).toEqual({
+      senderKey,
+      displayName: 'Recovery Sender',
+      email: 'recovery@example.test',
+      domain: 'example.test',
+    });
+    expect(driverQueryLog).toHaveLength(1);
+  });
+
+  it.skipIf(process.env.ACTIVITY_LINEAGE_BENCH !== '1')(
+    'measures complete sender lineage capture with synthetic driver latency',
+    async () => {
+      const measuredDb = await freshDb(100);
+      const mb = await seedMailbox(measuredDb, 'lineage-benchmark@example.test');
+      const senderId = await seedSender(
+        measuredDb,
+        mb.mailboxAccountId,
+        'bench',
+        'bench@example.test',
+        'Benchmark',
+      );
+      await seedExecutionAttempt(measuredDb, {
+        mailboxAccountId: mb.mailboxAccountId,
+        senderId,
+        senderKey: 'bench',
+        status: 'failed',
+        createdAt: new Date(NOW_MS - ONE_DAY_MS),
+      });
+      const service = new ActivityReadService(measuredDb as never);
+      const times: number[] = [];
+      for (let run = 0; run < 3; run++) {
+        const start = performance.now();
+        const result = await service.listActivity({
+          mailboxAccountId: mb.mailboxAccountId,
+          window: '30d',
+          source: null,
+          nowMs: NOW_MS,
+          limit: 25,
+          cursor: null,
+        });
+        times.push(performance.now() - start);
+        expect(result.rows).toHaveLength(1);
+        expect(result.rows[0]!.executionState?.kind).toBe('failed');
+      }
+      process.stdout.write(
+        JSON.stringify({
+          driverDelayMs: 100,
+          samplesMs: times,
+          medianMs: [...times].sort((a, b) => a - b)[1],
+          maxMs: Math.max(...times),
+        }) + '\n',
+      );
+    },
+  );
+
   it('starts counters but waits for execution hydration before reading feed sources', async () => {
     const internals = svc as unknown as {
       loadPagedExecutionLineages: () => Promise<never[]>;
@@ -462,11 +595,11 @@ describe('ActivityReadService', () => {
         status: 'queued',
         createdAt: new Date(NOW_MS),
       });
-      const hydrate = vi.spyOn(
+      const capture = vi.spyOn(
         svc as unknown as {
-          hydrateCurrentExecutionLineages(id: string, attempts: unknown[]): Promise<unknown>;
+          loadPagedExecutionLineages(...args: unknown[]): Promise<unknown[]>;
         },
-        'hydrateCurrentExecutionLineages',
+        'loadPagedExecutionLineages',
       );
       const params = {
         mailboxAccountId: mailboxA.mailboxAccountId,
@@ -482,7 +615,7 @@ describe('ActivityReadService', () => {
       expect(first.rows.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(0, 3));
       expect(first.stats.needsAttention).toBe(6);
       expect(first.allTimeStats.needsAttention).toBe(6);
-      expect(hydrate.mock.calls[0]![1]).toHaveLength(3);
+      expect(await capture.mock.results[0]!.value).toHaveLength(3);
       const last = first.rows[1]!;
       const second = await svc.listActivity({
         ...params,
@@ -490,7 +623,7 @@ describe('ActivityReadService', () => {
       });
       expect(second.rows.map((row) => row.id)).toEqual([...ids].sort().reverse().slice(2, 5));
       expect(second.stats.needsAttention).toBe(6);
-      expect(hydrate.mock.calls[1]![1]).toHaveLength(3);
+      expect(await capture.mock.results[1]!.value).toHaveLength(3);
     });
 
     it('merges an unresolved root action into chronological Activity with current sender facts', async () => {
