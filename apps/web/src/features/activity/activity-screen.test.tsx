@@ -14,6 +14,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
+import { renderToString } from 'react-dom/server';
+import { hydrateRoot } from 'react-dom/client';
 
 import {
   addFetchHandlers,
@@ -698,6 +700,58 @@ describe('ActivityScreen — outcome filter (D246)', () => {
 });
 
 describe('ActivityScreen — Filter popover', () => {
+  it('does not accept a first filter click until its server-rendered control is hydrated', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: WEEKLY_ZERO }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    client.setQueryData(activityKeys.list({}), {
+      pages: [{ data: [], meta: META_BASE }],
+      pageParams: [undefined],
+    });
+    client.setQueryData(activityKeys.weeklyReview(), WEEKLY_ZERO);
+    const ui = (
+      <QueryWrapper client={client}>
+        <ActivityScreen />
+      </QueryWrapper>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(ui);
+    document.body.append(container);
+    const trigger = within(container).getByRole('button', { name: /^Filter/ });
+    expect(trigger).toBeDisabled();
+    const exportTrigger = within(container).getByRole('button', { name: 'Export support bundle' });
+    expect(exportTrigger).toBeDisabled();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    let root: ReturnType<typeof hydrateRoot> | undefined;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, ui);
+      });
+      expect(within(container).getByRole('button', { name: /^Filter/ })).toBe(trigger);
+      await waitFor(() => expect(trigger).toBeEnabled());
+      expect(exportTrigger).toBeEnabled();
+      await userEvent.click(trigger);
+      expect(
+        await within(container).findByRole('dialog', { name: 'Activity filters' }),
+      ).toBeVisible();
+      expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+      client.clear();
+    }
+  });
+
   it('keeps every filter behind the one button until it is opened', async () => {
     installFetchStub([
       {

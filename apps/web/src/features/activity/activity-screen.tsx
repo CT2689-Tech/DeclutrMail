@@ -1218,7 +1218,16 @@ const headerButtonStyle: CSSProperties = {
  * The one entry to every filter. Desktop opens an anchored popover; below
  * `sm` (D60) the same fields open as a bottom sheet.
  */
+// Server HTML can appear before this component's click handler is attached.
+// Keep dialog triggers inert until their own hydration completes.
+function useHydratedDialogTrigger() {
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  return hydrated;
+}
+
 function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: boolean }) {
+  const hydrated = useHydratedDialogTrigger();
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
@@ -1255,6 +1264,7 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
       <button
         ref={buttonRef}
         type="button"
+        disabled={!hydrated}
         onClick={() => setOpen((prev) => !prev)}
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -1381,13 +1391,14 @@ function ExportSupportBundleButton({
   /** 44px target in the mobile header. */
   touch: boolean;
 }) {
+  const hydrated = useHydratedDialogTrigger();
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        disabled={disabled}
+        disabled={disabled || !hydrated}
         aria-haspopup="dialog"
         aria-expanded={open}
         title={
