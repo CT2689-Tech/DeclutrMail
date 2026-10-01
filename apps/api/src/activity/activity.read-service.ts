@@ -1095,26 +1095,65 @@ export class ActivityReadService {
         failedOnly: Boolean(params.outcomes?.length),
         cursor: params.cursor,
       });
-      const attempts = await this.db
+      // The root is already joined to choose the current attempt. Capture its
+      // display facts here too, before persisted feed reads can observe completion.
+      const lineages = await this.db
         .select({
-          id: current.id,
-          rootActionId: current.rootActionId,
-          verb: current.verb,
-          status: current.status,
-          selector: current.selector,
-          requestedCount: current.requestedCount,
-          errorCode: current.errorCode,
-          createdAt: current.createdAt,
-          updatedAt: current.updatedAt,
-          recoveryAttempt: current.recoveryAttempt,
+          root: {
+            id: root.id,
+            rootActionId: root.rootActionId,
+            verb: root.verb,
+            status: root.status,
+            selector: root.selector,
+            requestedCount: root.requestedCount,
+            errorCode: root.errorCode,
+            createdAt: root.createdAt,
+            updatedAt: root.updatedAt,
+            recoveryAttempt: root.recoveryAttempt,
+          },
+          current: {
+            id: current.id,
+            rootActionId: current.rootActionId,
+            verb: current.verb,
+            status: current.status,
+            selector: current.selector,
+            requestedCount: current.requestedCount,
+            errorCode: current.errorCode,
+            createdAt: current.createdAt,
+            updatedAt: current.updatedAt,
+            recoveryAttempt: current.recoveryAttempt,
+          },
+          // ADR-0008 §3: read-only sender identity owned by the senders module.
+          sender: {
+            senderKey: senders.senderKey,
+            displayName: senders.displayName,
+            email: senders.email,
+          },
         })
         .from(current)
         .innerJoin(root, join)
+        .leftJoin(
+          senders,
+          and(
+            eq(senders.mailboxAccountId, params.mailboxAccountId),
+            sql`${root.selector}->>'type' = 'sender'`,
+            sql`${senders.senderKey} = ${root.selector}->>'senderKey'`,
+          ),
+        )
         .where(where)
         .orderBy(desc(feedTime(outcomeTime)), desc(current.id))
         .limit(params.limit + 1);
-      if (!attempts.length) return [];
-      return this.hydrateCurrentExecutionLineages(params.mailboxAccountId, attempts);
+      return lineages.map(({ root, current, sender }) => ({
+        root,
+        current,
+        sender: sender
+          ? {
+              ...sender,
+              displayName: sender.displayName ?? sender.email,
+              domain: domainOf(sender.email),
+            }
+          : null,
+      }));
     });
   }
 
