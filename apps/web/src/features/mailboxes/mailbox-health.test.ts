@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { AUTH_RECOVERY_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
 
 import { syncStatusNeedsReconnect } from './mailbox-health';
 
@@ -90,5 +90,13 @@ describe('syncStatusNeedsReconnect', () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it('keeps AUTH_RECOVERY_ERROR_CODES in step with the shared reconnect set', () => {
+    expect(AUTH_RECOVERY_ERROR_CODES.has('InvalidGrantError')).toBe(true);
+    expect(AUTH_RECOVERY_ERROR_CODES.has('AuthExpiredError')).toBe(true);
+    expect(AUTH_RECOVERY_ERROR_CODES.has('ProviderPermissionError')).toBe(true);
+    expect(AUTH_RECOVERY_ERROR_CODES.has('GmailQuotaError')).toBe(false);
+    expect(AUTH_RECOVERY_ERROR_CODES.has('RateLimitError')).toBe(false);
   });
 });

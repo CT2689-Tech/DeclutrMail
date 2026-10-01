@@ -18,7 +18,7 @@ import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-c
  * start a second one.
  */
 export interface InitialSyncRetryResponse {
-  outcome: 'requeued' | 'not_failed' | 'no_state';
+  outcome: 'requeued' | 'already_running' | 'not_failed' | 'no_state';
 }
 
 /**
@@ -98,6 +98,8 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // confirmed.
       if (data.outcome === 'requeued') {
         toast('Scan queued.', 'success');
+      } else if (data.outcome === 'already_running') {
+        toast("Still scanning — we'll keep going.", 'success');
       }
     },
     // QA-sync-20260831-10 item 4: this is the user's ONLY recovery
