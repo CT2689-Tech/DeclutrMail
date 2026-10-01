@@ -559,6 +559,10 @@ export class TriageReadService {
         totalReceived: senders.totalReceived,
       })
       .from(triageDecisions)
+      // ADR-0008 §3 exception: triage reads the senders-owned `senders`
+      // table — sender identity rides every queue row, and the inner join
+      // is what keeps a verdict whose sender is gone off the queue. See
+      // the ADR's exception table.
       .innerJoin(
         senders,
         and(
@@ -844,8 +848,9 @@ export class TriageReadService {
     limit: number;
   }): Promise<ProtectionReviewRead> {
     // ADR-0008 §3 exception: triage reads senders-owned
-    // `sender_policies` directly (here and in the weak-keys query
-    // below). Read-only; ratified in the ADR's exception table.
+    // `sender_policies` and `senders` directly (here and in the weak-keys
+    // query below) — `senders` only to require that the protected sender
+    // exists. Read-only; see the ADR's exception table.
     //
     // GROUP BY + TS bucketing rather than three SQL FILTER literals:
     // the literals were a second copy of the reason taxonomy the shared
@@ -860,6 +865,12 @@ export class TriageReadService {
     // and `total_received`; the mailbox-level "is this measurable at
     // all" gate is read separately below, because a mailbox with no
     // indexed outbound would otherwise report every shield unsupported.
+    //
+    // INNER, not LEFT: a protection whose sender the index has dropped
+    // can be neither shown here nor found in Settings → Protected
+    // senders (both list `senders`), so counting it promised senders the
+    // user could never reach. The weak-keys query below requires the
+    // sender for the same reason.
     const reasonRows = await this.db
       .select({
         reason: senderPolicies.protectionReason,
@@ -868,7 +879,7 @@ export class TriageReadService {
         n: count(),
       })
       .from(senderPolicies)
-      .leftJoin(
+      .innerJoin(
         senders,
         and(
           eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
@@ -896,8 +907,8 @@ export class TriageReadService {
         const holds = evaluateProtectionEvidence({
           isProtected: true,
           reason: 'replied',
-          wroteToCount: Number(row.wroteToCount ?? 0),
-          receivedCount: Number(row.receivedCount ?? 0),
+          wroteToCount: Number(row.wroteToCount),
+          receivedCount: Number(row.receivedCount),
           mailboxHasOutbound,
         });
         // `false` is the ONLY value that surfaces a shield. `null` means
@@ -923,6 +934,13 @@ export class TriageReadService {
     const weakRows = await this.db
       .select({ senderKey: senderPolicies.senderKey })
       .from(senderPolicies)
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, senderPolicies.mailboxAccountId),
+          eq(senders.senderKey, senderPolicies.senderKey),
+        ),
+      )
       .where(
         and(
           eq(senderPolicies.mailboxAccountId, input.mailboxAccountId),

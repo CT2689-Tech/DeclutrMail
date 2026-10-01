@@ -18,6 +18,7 @@ import {
 import {
   buildActionReceiptResult,
   countUnsubscribeCapabilities,
+  type UnsubscribeOutcomeCounts,
 } from '@declutrmail/shared/actions';
 import {
   canBulkArchive,
@@ -83,7 +84,11 @@ import {
 import { useUnconfirmedHolds } from '@/features/undo/unconfirmed-holds';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
-import { isProtectedSkip, isTerminalStatus } from '@/lib/api/actions';
+import {
+  isProtectedSkip,
+  isTerminalStatus,
+  type UnsubscribeBatchOutcomes,
+} from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
@@ -656,6 +661,7 @@ function SendersScreenContent({
   // currency claim `mailboxStillSyncing` exists to prevent, for the one
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
     mailboxReady: activeMailbox?.readiness === 'ready',
     hasCompletedCleanup,
@@ -1623,7 +1629,7 @@ function SendersScreenContent({
               });
               // In-flight receipt: it names how many requests are going
               // out and claims NO outcome. The polled effect below fills
-              // in the three terminal outcomes when the worker reports.
+              // in the terminal outcomes when the worker reports.
               setUnsubBatchReceipt({
                 senderCount: res.senderCount,
                 skipped,
@@ -2033,10 +2039,9 @@ function SendersScreenContent({
     if (unsubExecStatus.isError) {
       const err = unsubExecStatus.error;
       captureFeatureException(err, { surface: 'senders', reason: 'unsub_status_poll' });
-      toast(
-        `Couldn't confirm the unsubscribe from ${activeUnsub.senderName} — the sender's chip will show the result`,
-        'warn',
-      );
+      // No promise about where the result appears: nothing refetches the
+      // list after a failed poll, so the row can keep its last state.
+      toast(`Couldn't confirm the unsubscribe from ${activeUnsub.senderName}`, 'warn');
       setActiveUnsub(null);
       return;
     }
@@ -2077,13 +2082,7 @@ function SendersScreenContent({
       ],
       // An API that predates the field leaves the receipt honestly
       // outcome-less rather than inventing a success/failure split.
-      outcomes: outcomes
-        ? {
-            endpointAccepted: outcomes.endpointAccepted,
-            unconfirmed: outcomes.unconfirmed,
-            failed: outcomes.failed,
-          }
-        : null,
+      outcomes: outcomes ? receiptOutcomes(outcomes) : null,
       pending: outcomes?.pending ?? 0,
     });
     reconcileAction(qc, data);
@@ -2124,13 +2123,7 @@ function SendersScreenContent({
         ...overdueUnsubBatch.skipped,
         ...refused.map(() => ({ reason: 'protected' as const })),
       ],
-      outcomes: outcomes
-        ? {
-            endpointAccepted: outcomes.endpointAccepted,
-            unconfirmed: outcomes.unconfirmed,
-            failed: outcomes.failed,
-          }
-        : null,
+      outcomes: outcomes ? receiptOutcomes(outcomes) : null,
       pending: outcomes?.pending ?? 0,
     });
     reconcileAction(qc, data);
@@ -2740,6 +2733,7 @@ function SendersScreenContent({
               // With no rows, the empty state below already says it.
               stillSyncing={mailboxStillSyncing && senders.length > 0}
               syncFailed={mailboxSyncFailed && senders.length > 0}
+              needsReconnect={mailboxNeedsReconnect}
             />
 
             <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
@@ -2861,7 +2855,7 @@ function SendersScreenContent({
             ) : senders.length === 0 && mailboxSyncFailed ? (
               // Same shape for the one readiness value that guard didn't
               // cover — a search over a failed scan never really ran.
-              <EmptyState title="Scan failed" body="Retry in Settings → Gmail accounts." />
+              <EmptyState title="Scan failed" body={failedScanStep(mailboxNeedsReconnect)} />
             ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
               // First-visit default is active-only (launch-audit B2). A
               // mailbox with nothing ACTIVE must not read as a filter
@@ -3073,11 +3067,38 @@ function SendersScreenContent({
  * question and are read-only, or the count is from loaded rows only.
  * A healthy list says nothing.
  */
+/**
+ * `failedScanSettingsStep`'s two sentences, local: importing mailbox-health
+ * from this route regrouped shared chunks over other routes' bundle
+ * budgets. A test pins the two equal.
+ */
+function failedScanStep(needsReconnect: boolean): string {
+  return needsReconnect
+    ? 'Reconnect it in Settings → Gmail accounts.'
+    : 'Scan again in Settings → Gmail accounts.';
+}
+
+/**
+ * The server counts a refused-but-emailable request inside `failed` AND in
+ * `actionRequired` (so an older client never reads it as a success); the
+ * receipt shows them as separate lines.
+ */
+function receiptOutcomes(outcomes: UnsubscribeBatchOutcomes): UnsubscribeOutcomeCounts {
+  const actionRequired = outcomes.actionRequired ?? 0;
+  return {
+    endpointAccepted: outcomes.endpointAccepted,
+    unconfirmed: outcomes.unconfirmed,
+    actionRequired,
+    failed: Math.max(0, outcomes.failed - actionRequired),
+  };
+}
+
 function SenderResultsWarning({
   approximate,
   rowsReadOnly,
   stillSyncing,
   syncFailed,
+  needsReconnect,
 }: {
   /** No mailbox-wide count on the wire — the hero counts loaded rows. */
   approximate: boolean;
@@ -3085,9 +3106,11 @@ function SenderResultsWarning({
   rowsReadOnly: boolean;
   stillSyncing: boolean;
   syncFailed: boolean;
+  /** Settings offers Reconnect, not a retry, for this mailbox. */
+  needsReconnect: boolean;
 }) {
   const message = syncFailed
-    ? 'The last scan failed, so this list may be incomplete or stale — retry in Settings → Gmail accounts.'
+    ? `The last scan failed, so this list may be incomplete or stale. ${failedScanStep(needsReconnect)}`
     : stillSyncing
       ? 'Still syncing — this list may be incomplete or stale.'
       : rowsReadOnly

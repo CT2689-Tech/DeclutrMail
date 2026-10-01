@@ -39,7 +39,8 @@ export function HomeScreen() {
   const pending = useHomePending({ tier, enabled: hasActiveMailbox });
   const workflows = useHomeWorkflows(tier, hasActiveMailbox);
 
-  const readiness = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.readiness;
+  const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
+  const readiness = activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
 
   // The active mailbox could not be resolved — the same takeover the app
@@ -60,7 +61,9 @@ export function HomeScreen() {
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
-      if (readiness === 'failed') return { kind: 'sync-failed' };
+      if (readiness === 'failed') {
+        return { kind: 'sync-failed', needsReconnect: activeMailbox?.needsReconnect === true };
+      }
       return { kind: 'empty', syncing, action, senders: pending.senders };
     }
     return {

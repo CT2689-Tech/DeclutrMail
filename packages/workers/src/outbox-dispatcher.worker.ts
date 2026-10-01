@@ -57,11 +57,49 @@ export type DispatchedEvent = Pick<
  *     `outbox.dispatch.consumer_failed`; the attempt that flips the row
  *     to `failed` logs `outbox.dispatch.event_failed` and goes to the
  *     observer (Sentry).
- *   - The consumer MUST be idempotent on `event.id`: at-least-once
- *     delivery is the dispatcher's guarantee, and consumer-side dedup
- *     (e.g. BullMQ `jobId: event.id`) is the at-most-once correction.
+ *   - The consumer MUST be idempotent on `event.id`: at-least-once,
+ *     SEQUENTIAL delivery is the dispatcher's guarantee — the same
+ *     event's consumer is never invoked again while a previous call for
+ *     it is still running (see the orphan guard below) — so
+ *     "idempotent on `event.id`" only ever has to mean "safe against a
+ *     LATER, non-overlapping redelivery" (e.g. BullMQ `jobId: event.id`,
+ *     or an upsert keyed on the event), never "safe if invoked
+ *     concurrently with itself." An earlier draft of this contract
+ *     reasoned that any consumer with a stable BullMQ jobId was
+ *     automatically safe to abandon on timeout — that was wrong for a
+ *     multi-step read-modify-write like `enqueueEmailSend`'s
+ *     reap-and-replace path (get job → check state → remove → add),
+ *     which is NOT safe if two copies of it interleave. The orphan
+ *     guard is what actually closes that gap; jobId dedup alone does
+ *     not (architecture-guardian review, 2026-09-28).
  *   - Throws here do NOT crash the worker — the dispatcher isolates one
  *     row's failure from the rest of the batch.
+ *   - The call is raced against `consumerTimeoutMs`
+ *     (`runConsumerWithOrphanGuard`): a consumer that hangs (e.g. a
+ *     BullMQ publish during a Redis outage — CLAUDE.md §2.6) is
+ *     abandoned after the deadline rather than held forever. The
+ *     abandoned call keeps running in the background with no way to
+ *     cancel it; the dispatcher tracks it and will not invoke ANY
+ *     event sharing this one's (topic, aggregateId) again until that
+ *     abandoned call actually finishes — see `orphanGuardKey`.
+ *   - The real rule the bullet above depends on: the promise THIS
+ *     FUNCTION RETURNS must never settle while any I/O it started is
+ *     still in flight. No internal timeout, and no race against a
+ *     local timer of ANY length, anywhere inside a consumer — the
+ *     orphan guard tracks this exact promise reference and has no
+ *     visibility into the real work underneath it. A consumer-side
+ *     timer that settles this promise early defeats the guard whether
+ *     it is shorter OR longer than `consumerTimeoutMs`: shorter, and
+ *     `trackOrphan` receives an already-settled promise and clears it
+ *     the very next microtask; longer, and the SAME clear-on-settle
+ *     handler fires the moment the inner timer eventually fires anyway
+ *     — the real call keeps running untracked either way. Verified live
+ *     both ways: a 5s inner timer against production's 30s default
+ *     (round-3 architecture-guardian review, 2026-09-29 — the shipped
+ *     instance, `rescore-senders.ts`'s former `withPublishTimeout`; see
+ *     that file's own docstring) and a 40ms inner timer against a 20ms
+ *     test bound (round-4 architecture-guardian review, 2026-09-29 —
+ *     longer, not shorter, and still broken).
  */
 export type OutboxConsumer = (event: DispatchedEvent) => Promise<void>;
 
@@ -72,6 +110,8 @@ interface ConsumerFailure {
   attempts: number;
   /** This attempt flipped the row to `failed`. */
   failed: boolean;
+  /** This attempt was a `consumerTimeoutMs` timeout, not the consumer itself throwing. */
+  timedOut: boolean;
 }
 
 /**
@@ -109,7 +149,12 @@ export interface OutboxDispatcherDeps {
    * Max delivery attempts before the row flips to `failed`. The
    * consumer's own worker policy (D203) controls in-job retries; this
    * is the dispatcher-level "stop retrying" gate that prevents a
-   * persistently-broken event from spinning forever.
+   * persistently-broken event from spinning forever. A `consumerTimeoutMs`
+   * timeout is deliberately EXEMPT from this budget (see `runOneTick`'s
+   * catch block) — an infrastructure outage is not evidence the event
+   * itself is broken — but that exemption has its OWN separate ceiling,
+   * `timeoutStuckCeilingMs`, so a timeout that never stops recurring for
+   * one event still eventually fails instead of retrying forever.
    */
   maxAttempts?: number;
   /**
@@ -141,15 +186,398 @@ export interface OutboxDispatcherDeps {
    * letting the wake-up queue grow unbounded.
    */
   maxPendingTicks?: number;
+  /**
+   * Hard PER-CALL ceiling on one `consumer(event)` invocation, ms
+   * (CLAUDE.md §2.6). The call runs inside this tick's open claim
+   * transaction, and several consumers registered today make BullMQ
+   * calls on a Redis connection configured to buffer commands across an
+   * outage rather than reject them (`queue.ts`'s `createRedisConnection`)
+   * — so without a bound, a Redis outage hangs the awaited call forever,
+   * which means the claim transaction never commits and every later
+   * tick coalesces onto (or is dropped waiting behind) this one stuck
+   * tick.
+   *
+   * This bounds ONE row's call, not the whole tick: a batch where every
+   * row hits the same outage can still hold the transaction for up to
+   * `claimBatchSize * consumerTimeoutMs` (32 * 30s = 16 minutes at the
+   * defaults) — bounded, not eliminated. See `runConsumerWithOrphanGuard`
+   * for what happens to the abandoned call and the class docstring's
+   * "Orphan guard" section for why that is safe.
+   *
+   * Defaults to 30 seconds, matching this codebase's existing short-job
+   * `timeoutMs` convention (`WORKER_POLICIES.webhookPolicy`/
+   * `adminPolicy`) — generous for the handful of DB reads/writes and
+   * BullMQ calls any current consumer makes. Must be a finite, positive
+   * number — `setTimeout` itself clamps `Infinity`/`NaN`/out-of-range
+   * values to ~1ms, which is the opposite of what a caller passing
+   * `Infinity` to mean "no timeout" would expect, so an invalid value
+   * falls back to the default instead of silently timing out every call.
+   */
+  consumerTimeoutMs?: number;
+  /**
+   * Age ceiling on a row's OWN unbroken streak of `consumerTimeoutMs`
+   * timeouts (tracked from the first timeout of the streak; a success
+   * or a non-timeout failure resets it). A timeout is exempt from
+   * `maxAttempts` (see `runOneTick`'s catch block) — correctly, since
+   * an infrastructure outage is not evidence the event itself is broken
+   * — but with no ceiling that exemption has no end state: a
+   * PERMANENTLY stuck row retries forever with no Sentry signal, and
+   * looks identical to a healthy skip in the logs (the exact "guard
+   * that cannot fail" shape CLAUDE.md warns about). Once a row's streak
+   * has lasted this long, its NEXT timeout is treated like an ordinary
+   * exhausted failure — flipped to `failed` and reported to the
+   * observer (Sentry) — same as a non-timeout failure hitting
+   * `maxAttempts`.
+   *
+   * Defaults to 30 minutes: comfortably longer than the outage windows
+   * this fix was written for (single-digit minutes, per this dep's own
+   * worked example above), short enough that a truly stuck event still
+   * eventually reaches a terminal state instead of silence forever.
+   * Same finite-positive normalization as `consumerTimeoutMs`.
+   */
+  timeoutStuckCeilingMs?: number;
 }
 
 const DEFAULT_CLAIM_BATCH = 32;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_MAX_PENDING_TICKS = 16;
+const DEFAULT_CONSUMER_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_STUCK_CEILING_MS = 30 * 60_000;
+/** Fixed — there is only ever one dispatcher class; shared by the class field and free functions below that need it but have no `this`. */
+const WORKER_NAME = 'OutboxDispatcherWorker';
 const NOOP_OBSERVER: OutboxObserver = {
   captureBackgroundFailure: () => undefined,
 };
+
+/**
+ * `setTimeout` clamps a non-finite or non-positive delay to ~1ms rather
+ * than rejecting it — confirmed against Node's actual behavior during
+ * review (Infinity, NaN, and values >= 2^31 all fire almost
+ * immediately). A caller passing `Infinity` to mean "disable the
+ * timeout" would get the opposite: every consumer call would time out
+ * instantly. Fall back to the given default instead. Shared by
+ * `consumerTimeoutMs` and `timeoutStuckCeilingMs` — both are "a
+ * duration, or trust the default" knobs with the same failure mode.
+ */
+function normalizePositiveMs(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/**
+ * Branded timeout marker for a call the dispatcher (or a consumer
+ * cooperating with it) recognizes as an infrastructure timeout rather
+ * than a genuine consumer bug — checked by CLASS IDENTITY
+ * (`isOutboxTimeoutError`), never by `.name`. A `.name` string is
+ * mutable and this codebase's own Gmail/BIMI/billing HTTP clients
+ * already throw a native `TimeoutError`-named `DOMException` from
+ * `AbortSignal.timeout()` (`gmail-client.service.ts`, `bimi-resolver.ts`,
+ * `paddle.adapter.ts`, `razorpay.adapter.ts`) — a string match would
+ * give a stuck, genuinely-broken call to one of THOSE clients the same
+ * `maxAttempts` exemption and orphan-guard treatment this dispatcher
+ * reserves for its own bound, forever, since nothing would ever
+ * distinguish them (architecture-guardian review, 2026-09-29).
+ *
+ * Internal only — used by this file alone (`escalateStuckOrphans`,
+ * `runOneTick`) and no longer re-exported from `index.ts` (round-4
+ * architecture-guardian review, 2026-09-29). It used to be exported so
+ * a consumer wanting the SAME treatment for its own inner bound could
+ * throw this exact class instead of an unbranded `Error` — that advice
+ * was itself the bug this round closed: see `OutboxConsumer`'s own
+ * docstring above for why NO consumer-side timeout is safe, of any
+ * length, regardless of which class it throws. `rescore-senders.ts`'s
+ * `withPublishTimeout` was the worked example for the old advice; it is
+ * gone (round-3 review, 2026-09-29 — see that file's own docstring).
+ * Added to `SENTRY_SERVER_EXCEPTION_TYPES`
+ * (`packages/shared/src/observability/sentry-scrubber.ts`) so a row
+ * that eventually reaches `timeoutStuckCeilingMs` and reports to Sentry
+ * keeps a legible exception type on the wire instead of being scrubbed
+ * to an empty shell.
+ */
+export class OutboxConsumerTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OutboxConsumerTimeoutError';
+  }
+}
+
+/** True if `err` is (or was passed through as) a timeout this dispatcher recognizes as its own. */
+function isOutboxTimeoutError(err: unknown): boolean {
+  return err instanceof OutboxConsumerTimeoutError;
+}
+
+/**
+ * `String(err)` can itself throw — e.g. a null-prototype rejection
+ * value, or an object whose `toString` throws — and this runs inside a
+ * bare `.then()` handler with nothing awaiting the promise it returns.
+ * An escaping throw there is an unhandled rejection, which (Node's
+ * default settings; no global handler is installed anywhere in this
+ * codebase) crashes the WHOLE worker process — every BullMQ worker in
+ * it, not just this dispatcher — not just this one abandoned call.
+ * Never let building an error message be the thing that crashes the
+ * process (silent-failure-hunter + architecture-guardian review,
+ * 2026-09-28 — both independently reproduced this with a null-prototype
+ * rejection value).
+ */
+function safeErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  try {
+    return String(err);
+  } catch {
+    return 'unstringifiable rejection value';
+  }
+}
+
+/**
+ * Normalize any thrown/rejected value into a real `Error`, safe to hand
+ * to `OutboxObserver.captureBackgroundFailure` unmodified. The
+ * production adapter (`apps/api/src/worker.ts`) branches on
+ * `err instanceof Error` and calls `String(err)` ONLY in the else
+ * branch — passing an already-real `Error` through here guarantees that
+ * branch is never taken, so the adapter's own `String()` call (which
+ * throws on a null-prototype or otherwise unstringifiable value, same
+ * as `safeErrorMessage` above) never runs. Built on `safeErrorMessage`,
+ * which already cannot throw.
+ */
+function toSafeObservedError(err: unknown): Error {
+  return err instanceof Error ? err : new Error(safeErrorMessage(err), { cause: err });
+}
+
+/**
+ * Race `consumerPromise` against a hard `ms` deadline and reject if the
+ * deadline wins.
+ *
+ * This is deliberately NOT `BaseDeclutrWorker`'s private `withTimeout`
+ * (`base-declutr-worker.ts`), which signals an `AbortController` and
+ * then still awaits the original promise to completion — right for a
+ * BullMQ job attempt, which must not be released while ITS OWN
+ * transaction/lock is held elsewhere (see `mailbox-action-lock.ts`'s
+ * account of the incident a bare-race version of that helper caused:
+ * a detached retry ran a non-idempotent purge twice). Here the
+ * situation is the opposite: OUR OWN open claim transaction is the
+ * thing being held hostage by the awaited call, so giving up on it is
+ * the fix, not the risk.
+ *
+ * The abandoned call keeps running with no way to cancel it (there is
+ * no cancellable BullMQ/ioredis API). A late settle cannot change this
+ * call's own outcome, but silently discarding it would hide a real
+ * signal, so it is logged instead
+ * (`outbox.dispatch.consumer_settled_after_timeout`). Whether abandoning
+ * the call is SAFE — i.e. whether a later retry running concurrently
+ * with it can cause a duplicate side effect — is NOT this function's
+ * concern; see `runConsumerWithOrphanGuard` and the class docstring's
+ * "Orphan guard" section, which is what actually makes that safe.
+ */
+function withConsumerTimeout(
+  consumerPromise: Promise<void>,
+  ms: number,
+  event: DispatchedEvent,
+  observer: OutboxObserver,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(
+        new OutboxConsumerTimeoutError(
+          `Outbox consumer for topic "${event.topic}" (event ${event.id}) exceeded ${ms}ms`,
+        ),
+      );
+    }, ms);
+    // Promise.resolve(...) normalizes a non-Promise/broken-thenable
+    // `consumerPromise` instead of throwing on `.then` access.
+    // `OutboxConsumer`'s type already guarantees a real Promise; this is
+    // cheap insurance against a runtime-only violation crashing the
+    // process instead of just rejecting this one call.
+    Promise.resolve(consumerPromise).then(
+      () => {
+        if (settled) {
+          logConsumerSettledAfterTimeout(event, 'resolved', observer);
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      },
+      (err: unknown) => {
+        if (settled) {
+          logConsumerSettledAfterTimeout(event, 'rejected', observer, err);
+          return;
+        }
+        // Compute the safe message BEFORE flipping `settled` / clearing
+        // the timer. The previous ordering did this after — so if the
+        // conversion threw, `settled` was already true and the timer
+        // already cleared, `reject` was never reached, and this
+        // promise was stuck pending forever: the exact failure this
+        // helper exists to prevent, reintroduced through a different
+        // door (silent-failure-hunter + architecture-guardian review,
+        // 2026-09-28).
+        const message = safeErrorMessage(err);
+        settled = true;
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(message, { cause: err }));
+      },
+    );
+  });
+}
+
+/**
+ * Observability for a consumer call that finally settles after the
+ * dispatcher already timed it out. Only `errorName` is logged, never
+ * the raw message — the same convention `reportConsumerFailure` below
+ * follows, because a Drizzle query error's message can carry bound
+ * query parameters (#807). A 'rejected' outcome also reports to the
+ * observer (Sentry): it means the abandoned call's real problem was NOT
+ * a mere timeout, the dispatcher has already moved on, and nothing else
+ * will ever report this specific failure — a warn-only console line is
+ * easy to miss for a signal this is the only record of.
+ *
+ * The whole body runs inside a try/catch (round-4 architecture-guardian
+ * review, 2026-09-29): this function is called from an unawaited
+ * `.then()` handler in `withConsumerTimeout`, with no `.catch` on that
+ * chain and no `unhandledRejection` listener anywhere in this codebase,
+ * so ANY escaping throw here — not just from `observer
+ * .captureBackgroundFailure`, which is a port this file does not
+ * control the implementation of — would crash the whole worker
+ * process. Today it happens not to throw only because the production
+ * adapter (`apps/api/src/worker.ts`) only calls `String()` on a
+ * non-Error and the Sentry observer doesn't throw on a real `Error`;
+ * neither is a guarantee this file can rely on going forward.
+ */
+function logConsumerSettledAfterTimeout(
+  event: DispatchedEvent,
+  outcome: 'resolved' | 'rejected',
+  observer: OutboxObserver,
+  err?: unknown,
+): void {
+  try {
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'outbox.dispatch.consumer_settled_after_timeout',
+        outcome,
+        topic: event.topic,
+        eventId: event.id,
+        ...(outcome === 'rejected'
+          ? { errorName: err instanceof Error ? err.name : typeof err }
+          : {}),
+      }),
+    );
+    if (outcome === 'rejected') {
+      // `err` is the raw rejection reason from an ABANDONED call — it never
+      // passes through `withConsumerTimeout`'s own reject-wrapping, which
+      // only ever runs for the FIRST settle (see the `settled` guard
+      // there). Wrap it the same safe way before it reaches the observer:
+      // the production adapter (`apps/api/src/worker.ts`) does
+      // `err instanceof Error ? err : new Error(String(err))`, and
+      // `String()` on a non-Error, non-stringifiable value (e.g. a
+      // null-prototype object) throws — inside this un-awaited `.then()`
+      // handler, with no `unhandledRejection` listener anywhere in this
+      // codebase, that crashes the whole worker process. Same crash class
+      // `safeErrorMessage` was added to close (round 1); it came back
+      // through this new call site (round-3 architecture-guardian review,
+      // 2026-09-29, reproduced live against the real production adapter
+      // shape).
+      observer.captureBackgroundFailure(toSafeObservedError(err), {
+        kind: 'outbox.dispatch.consumer_settled_after_timeout',
+        tags: { worker: WORKER_NAME, topic: event.topic, event_id: event.id },
+      });
+    }
+  } catch (loggingErr) {
+    // Log-and-swallow, never rethrow: see this function's own docstring
+    // for why an escaping throw here is an unhandled rejection that
+    // takes down the whole process. `safeErrorMessage` is already
+    // guaranteed not to throw, so this fallback cannot recurse into the
+    // same failure.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'outbox.dispatch.late_settle_handler_failed',
+        topic: event.topic,
+        eventId: event.id,
+        message: safeErrorMessage(loggingErr),
+      }),
+    );
+  }
+}
+
+/**
+ * The orphan guard's tracking key — the event's (topic, aggregateId),
+ * NOT `event.id`.
+ *
+ * `event.id` identifies one outbox ROW; it is not the unit that is
+ * actually unsafe to run concurrently with itself. A downstream
+ * dedup key like `syncFailedEmailJobId` (mailbox + UTC day) or
+ * `syncReminderEmailJobId` (mailbox alone) is shared by MULTIPLE
+ * distinct outbox events for the same topic — e.g. two separate
+ * `mailbox.sync_ready` events for the same mailbox (a sync retry after
+ * a crash re-publishes with `firstReady: true` again). Keying the
+ * orphan guard on `event.id` let two DIFFERENT events with the SAME
+ * downstream key interleave through `enqueueEmailSend`'s non-atomic
+ * reap-and-replace (`get job → check state → remove → add`) the moment
+ * the first one orphaned — reproducing the exact duplicate-send race
+ * this file's own orphan guard exists to prevent (architecture-guardian
+ * review, 2026-09-29).
+ *
+ * `(topic, aggregateId)` is the coarsest key that is STILL SAFE for
+ * every topic the router (`outbox-consumer-router.ts`) currently
+ * handles, checked one by one:
+ *   - `mailbox.sync_ready` / `mailbox.sync_failed` /
+ *     `mailbox.reconnect_required`: `aggregateId` IS the
+ *     `mailboxAccountId` at publish (`initial-sync.worker.ts`,
+ *     `mailbox-reconnect.ts`) — exactly the granularity (or coarser
+ *     than) every downstream email dedup key for these topics
+ *     (`syncCompleteEmailJobId` embeds the event id itself;
+ *     `syncReminderEmailJobId`/`syncFailedEmailJobId`/the
+ *     `gmail-reconnect` key are all `mailboxAccountId`-rooted).
+ *   - `mailbox.non_mail_purged`: `rescoreSenders` only ever calls
+ *     atomic, jobId-deduped BullMQ operations (`addBulk`, a debounced
+ *     `sweepAfter` add) — no reap-and-replace — so no cross-event
+ *     interleaving is possible regardless of key granularity; keying by
+ *     aggregateId (mailboxAccountId) is simply consistent, not required
+ *     for safety here.
+ *   - `autopilot.rule_activated` / `triage.score_run_completed`: same
+ *     shape — `enqueueAutopilotApply`/the delta trigger are plain
+ *     deduped `.add()` calls, safe regardless.
+ *   - `actions.unsubscribe_intent_recorded` / `actions.unsubscribe_executed`
+ *     / `triage.verdict_applied` / `action.label_applied`: `aggregateId`
+ *     is the publishing row's OWN id (`activity_log.id` / `actionId` /
+ *     `job.id`) — already as fine-grained as `event.id` — and every
+ *     downstream write is a single atomic Postgres upsert/UPDATE
+ *     (`sender_policies` `onConflictDoUpdate`, `screener_quarantine`
+ *     UPDATE guarded by `decided_at IS NULL`), never a JS-level
+ *     read-modify-write, so no interleaving is possible either way.
+ *
+ * CORRECTION (round-3 review, 2026-09-29): an earlier version of this
+ * paragraph claimed a cross-TOPIC collision on the same aggregateId
+ * (e.g. a `mailbox.sync_ready` orphan blocking an unrelated
+ * `mailbox.sync_failed` event for the same mailbox) was "included in the
+ * key on purpose." That was simply false given the key as written above:
+ * `topic` IS part of the key, so two DIFFERENT topics sharing an
+ * aggregateId never collide here and are NOT serialized against each
+ * other — an orphaned `mailbox.sync_ready` call does not block a
+ * concurrently-dispatched `mailbox.sync_failed` event for the same
+ * mailbox at all. Topics are NOT cross-blocked; do not read this key as
+ * providing that protection.
+ *
+ * The bullets above establish per-topic safety only — that EACH topic's
+ * own downstream operations tolerate THIS guard's granularity for that
+ * topic alone (e.g. `mailbox.sync_ready`'s reasoning about
+ * `syncCompleteEmailJobId` says nothing about `mailbox.sync_failed`, and
+ * vice versa). Two different topics that can target the same
+ * aggregateId and that share a non-atomic downstream key with EACH OTHER
+ * are not protected by anything here — that risk has to be checked by
+ * hand, per topic pair, same as the per-topic checks above. Keeping the
+ * dispatcher ignorant of each consumer's actual downstream key (private
+ * to the router/feature) is what keeps this a dispatcher-level guard
+ * rather than one re-derived from scratch for every new topic — it is
+ * NOT what makes cross-topic interleaving safe; nothing here does that.
+ */
+function orphanGuardKey(event: DispatchedEvent): string {
+  return JSON.stringify([event.topic, event.aggregateId]);
+}
 
 /**
  * One dispatcher tick's result counters — returned for the test harness
@@ -158,13 +586,52 @@ const NOOP_OBSERVER: OutboxObserver = {
 export interface DispatcherTickResult {
   /** Rows claimed by the SKIP LOCKED query this tick. */
   claimed: number;
+  /** Rows whose consumer call threw or timed out; left pending unless `failed` below. */
+  consumerFailed: number;
+  /**
+   * Of `consumerFailed`, how many were specifically a `consumerTimeoutMs`
+   * timeout rather than the consumer itself throwing. These still bump
+   * `attempts` and set `last_error`, and do NOT by themselves count
+   * toward `flippedToFailed` (`maxAttempts` never applies to a timeout —
+   * see `runOneTick`'s catch block) — but a timeout's OWN streak, once it
+   * outlives `timeoutStuckCeilingMs`, is exempt from THAT exemption and
+   * DOES flip the row to `failed` (same catch block, plus
+   * `escalateStuckOrphans` for a call that never settles at all). A
+   * timeout is not a permanent shield against `flippedToFailed`, only
+   * against the ORDINARY `maxAttempts` budget.
+   */
+  consumerTimedOut: number;
   /** Rows whose consumer returned successfully and were marked dispatched. */
   dispatched: number;
-  /** Rows whose consumer threw; left pending unless `failed` below. */
-  consumerFailed: number;
-  /** Rows that exceeded `maxAttempts` and were flipped to `failed`. */
+  /**
+   * Rows flipped to `failed` this tick: either a non-timeout failure
+   * that exceeded `maxAttempts`, or a timeout whose own unbroken streak
+   * exceeded `timeoutStuckCeilingMs` (see `runOneTick`'s catch block) —
+   * a timeout alone never counts toward this on its own.
+   */
   flippedToFailed: number;
+  /**
+   * Distinct (topic, aggregateId) concurrency units currently
+   * orphan-guarded — a snapshot of `orphanedEvents.size` at the end of
+   * this tick, NOT a per-tick count of skipped rows: the claim query
+   * excludes an orphaned key's rows entirely (see `runOneTick`'s claim
+   * SQL), so they are never even fetched to be counted one by one. A
+   * sustained nonzero value across many ticks is the signal that
+   * distinguishes "quiet" from "an outage is ongoing," which a bare
+   * `outbox.tick` line with zero claims cannot — see
+   * `runConsumerWithOrphanGuard`.
+   */
+  skippedOrphaned: number;
 }
+
+const EMPTY_TICK_RESULT: DispatcherTickResult = {
+  claimed: 0,
+  consumerFailed: 0,
+  consumerTimedOut: 0,
+  dispatched: 0,
+  flippedToFailed: 0,
+  skippedOrphaned: 0,
+};
 
 /**
  * OutboxDispatcherWorker (D13).
@@ -227,15 +694,59 @@ export interface DispatcherTickResult {
  * key for the cron-polled tick is `(worker_name, tick_started_at_ms)`
  * — meaningful only for the structured log, not for dedup (the
  * dispatcher is a continuous process, not a BullMQ-scheduled job).
+ *
+ * Orphan guard (2026-09-28, CLAUDE.md §2.6). Every consumer call is
+ * bounded by `consumerTimeoutMs` (`runConsumerWithOrphanGuard`) so a
+ * hung network call (a BullMQ publish during a Redis outage — see
+ * `queue.ts`'s `createRedisConnection`) cannot hold a tick's claim
+ * transaction open forever. A timed-out call is abandoned but keeps
+ * running in the background with no way to cancel it; the dispatcher
+ * tracks it (`orphanedEvents`, keyed by `orphanGuardKey` — the event's
+ * (topic, aggregateId), NOT its id; see that function's docstring for
+ * why) and refuses to re-invoke ANY event sharing that concurrency
+ * unit on a later tick until the original call actually finishes —
+ * restoring, via an in-memory guard, the "never runs concurrently with
+ * itself" property the `FOR UPDATE` row lock used to provide for the
+ * whole consumer call before this bound existed (without it, a retry —
+ * of the SAME event, or, before the 2026-09-29 key fix, of a DIFFERENT
+ * event sharing the same downstream dedup key — could run a
+ * concurrency unit's consumer concurrently with its own abandoned
+ * attempt — safe for a simple jobId-keyed `.add()`, but demonstrably
+ * NOT safe for a multi-step read-modify-write like `enqueueEmailSend`'s
+ * reap-and-replace path, which has a real interleaving that sends a
+ * duplicate email — architecture-guardian review, 2026-09-28 and
+ * 2026-09-29).
+ *
+ * This guard is PROCESS-LOCAL: it prevents self-overlap within one
+ * dispatcher instance, not across multiple concurrently-running
+ * dispatcher replicas — a cross-process version would need a DB-backed
+ * lease, not an in-memory Map; not implemented here. The design
+ * therefore DEPENDS on there being exactly one live dispatcher process
+ * at a time — enforced today by `--max-instances=1` on the worker
+ * Cloud Run service (`.github/workflows/deploy-cloud-run.yml`). Before
+ * this fix that assumption didn't matter here (a consumer call held
+ * its `FOR UPDATE` lock for its whole duration, so Postgres itself kept
+ * two dispatcher instances from double-processing a row); now that a
+ * call can be abandoned and the row released before it settles, a
+ * deploy's brief two-instance overlap window is the one time two
+ * processes could each think they alone own a given orphan.
+ *
+ * A timeout also never counts toward `maxAttempts` on its own (see
+ * `runOneTick`'s catch block) — an infrastructure outage must not
+ * permanently fail an event the way a genuinely broken one should —
+ * but that exemption is itself capped by `timeoutStuckCeilingMs`, past
+ * which a persistently-timing-out event is allowed to fail for real.
  */
 export class OutboxDispatcherWorker {
-  readonly workerName = 'OutboxDispatcherWorker';
+  readonly workerName = WORKER_NAME;
   readonly policy = 'cronPolicy' as const;
 
   private readonly claimBatchSize: number;
   private readonly maxAttempts: number;
   private readonly pollIntervalMs: number;
   private readonly maxPendingTicks: number;
+  private readonly consumerTimeoutMs: number;
+  private readonly timeoutStuckCeilingMs: number;
   private readonly listen?: OutboxDispatcherDeps['listen'];
   private readonly observer: OutboxObserver;
 
@@ -255,12 +766,60 @@ export class OutboxDispatcherWorker {
   private pendingTickCalls = 0;
   /** Set true on `stop()`; in-flight ticks drain, no new ones scheduled. */
   private shuttingDown = false;
+  /**
+   * `orphanGuardKey(event)` (topic + aggregateId — the real unsafe-
+   * concurrency unit, NOT `event.id`; see the class docstring's "Orphan
+   * guard" section) → the still-running consumer call a previous tick
+   * gave up waiting on. While a key is present, no tick will invoke
+   * ANY event sharing that (topic, aggregateId) again, even a
+   * different event id — see `runConsumerWithOrphanGuard`. Removed
+   * automatically once the abandoned call settles (resolve or reject).
+   *
+   * `eventId`/`since`/`escalated` exist for `escalateStuckOrphans`
+   * (round-3 review, 2026-09-29): a key that never clears (the call
+   * truly never settles, not just settles late) also never lets its row
+   * be reclaimed, so the ORIGINAL per-row timeout-streak check in
+   * `runOneTick` — which only runs when a row IS reclaimed and times out
+   * AGAIN — can never fire for it. `since` is this entry's OWN age,
+   * independent of any reclaim; `escalated` guards against reporting the
+   * same permanently-stuck event to the observer on every later tick
+   * once it has crossed `timeoutStuckCeilingMs` once.
+   */
+  private readonly orphanedEvents = new Map<
+    string,
+    {
+      topic: string;
+      aggregateId: string;
+      eventId: string;
+      since: number;
+      escalated: boolean;
+      promise: Promise<void>;
+    }
+  >();
+  /**
+   * event.id → wall-clock start of that ROW's own unbroken streak of
+   * `consumerTimeoutMs` timeouts. Keyed by event id (not the orphan-
+   * guard key above): two different events sharing a concurrency unit
+   * are different pieces of work, and one's retry history must not
+   * blame or clear the other's. Cleared on a success or a non-timeout
+   * failure for that event; read by `runOneTick`'s catch block against
+   * `timeoutStuckCeilingMs`.
+   */
+  private readonly timeoutStuckSince = new Map<string, number>();
 
   constructor(private readonly deps: OutboxDispatcherDeps) {
     this.claimBatchSize = deps.claimBatchSize ?? DEFAULT_CLAIM_BATCH;
     this.maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
     this.pollIntervalMs = deps.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
     this.maxPendingTicks = deps.maxPendingTicks ?? DEFAULT_MAX_PENDING_TICKS;
+    this.consumerTimeoutMs = normalizePositiveMs(
+      deps.consumerTimeoutMs,
+      DEFAULT_CONSUMER_TIMEOUT_MS,
+    );
+    this.timeoutStuckCeilingMs = normalizePositiveMs(
+      deps.timeoutStuckCeilingMs,
+      DEFAULT_TIMEOUT_STUCK_CEILING_MS,
+    );
     this.listen = deps.listen;
     this.observer = deps.observer ?? NOOP_OBSERVER;
   }
@@ -305,6 +864,13 @@ export class OutboxDispatcherWorker {
    * any in-flight tick to drain, then close the LISTEN subscription.
    *
    * Idempotent — extra calls after the first are no-ops.
+   *
+   * Does NOT wait for orphaned consumer calls tracked in
+   * `orphanedEvents` — those are, by definition, calls this process has
+   * already given up waiting on, and a sustained outage could make
+   * waiting for them here take as long as the outage itself. They
+   * continue running detached until they settle or the process exits;
+   * see the class docstring's "Orphan guard" section.
    */
   async stop(): Promise<void> {
     this.shuttingDown = true;
@@ -340,7 +906,7 @@ export class OutboxDispatcherWorker {
    */
   async tick(): Promise<DispatcherTickResult> {
     if (this.shuttingDown) {
-      return { claimed: 0, dispatched: 0, consumerFailed: 0, flippedToFailed: 0 };
+      return { ...EMPTY_TICK_RESULT };
     }
     if (this.inFlight) {
       // Back-pressure: a NOTIFY flurry can queue dozens of wake-ups
@@ -359,7 +925,7 @@ export class OutboxDispatcherWorker {
             maxPendingTicks: this.maxPendingTicks,
           }),
         );
-        return { claimed: 0, dispatched: 0, consumerFailed: 0, flippedToFailed: 0 };
+        return { ...EMPTY_TICK_RESULT };
       }
       this.pendingTickCalls += 1;
       try {
@@ -373,6 +939,122 @@ export class OutboxDispatcherWorker {
     });
     this.inFlight = promise;
     return promise;
+  }
+
+  /**
+   * Invoke the consumer for `event`, bounded by `consumerTimeoutMs`. On
+   * timeout, tracks the still-running call as an orphan
+   * (`orphanedEvents`, keyed by `orphanGuardKey(event)`) so no LATER
+   * tick invokes the SAME (topic, aggregateId) concurrency unit's
+   * consumer again until the original call actually finishes — see the
+   * class docstring's "Orphan guard" section for why that matters.
+   */
+  private runConsumerWithOrphanGuard(event: DispatchedEvent): Promise<void> {
+    const consumerPromise = this.deps.consumer(event);
+    return withConsumerTimeout(consumerPromise, this.consumerTimeoutMs, event, this.observer).catch(
+      (err: unknown) => {
+        if (isOutboxTimeoutError(err)) {
+          this.trackOrphan(event, consumerPromise);
+        }
+        throw err;
+      },
+    );
+  }
+
+  /** Track `consumerPromise` as an in-flight orphan for `event`'s concurrency unit until it settles. */
+  private trackOrphan(event: DispatchedEvent, consumerPromise: Promise<void>): void {
+    const key = orphanGuardKey(event);
+    this.orphanedEvents.set(key, {
+      topic: event.topic,
+      aggregateId: event.aggregateId,
+      eventId: event.id,
+      since: Date.now(),
+      escalated: false,
+      promise: consumerPromise,
+    });
+    const clear = (): void => {
+      // Only clear if this is still the entry we set — defensive: a
+      // given concurrency unit is never invoked again while orphaned,
+      // so in practice there is only ever one entry per key at a time.
+      if (this.orphanedEvents.get(key)?.promise === consumerPromise) {
+        this.orphanedEvents.delete(key);
+      }
+    };
+    consumerPromise.then(clear, clear);
+  }
+
+  /**
+   * Give every currently-orphaned concurrency unit its OWN age check,
+   * independent of whether a NEW timeout occurs on it this tick.
+   *
+   * `runOneTick`'s per-row `timeoutStreakExceededCeiling` check only
+   * ever runs inside the per-row catch block, which only runs when a row
+   * IS reclaimed and times out AGAIN. But a key stays in
+   * `orphanedEvents` — and its row stays excluded from the claim SQL
+   * entirely — for exactly as long as the original abandoned call has
+   * not settled. A call that truly never settles (a sustained outage,
+   * not one that eventually answers late) is therefore never reclaimed,
+   * never re-times-out, and so never reaches that check at all: the row
+   * would sit `pending` forever with zero Sentry signal — a guard whose
+   * positive case cannot fire is not a guard (CLAUDE.md §8's "a guard
+   * that cannot fail is not a guard"; round-3 architecture-guardian
+   * review, 2026-09-29).
+   *
+   * Called once per tick from `runOneTick`. Escalating does NOT clear
+   * the orphan-guard entry — the underlying call is still running and
+   * uncancellable, so a LATER event sharing this same (topic,
+   * aggregateId) must still wait for it to actually settle, exactly as
+   * before. Only the ONE row this specific event named is marked
+   * `failed` and reported — `escalated` on the entry stops it from
+   * being re-reported on every later tick while the call remains
+   * abandoned.
+   *
+   * Returns the number of rows newly flipped to `failed` this call, for
+   * `runOneTick` to fold into `DispatcherTickResult.flippedToFailed`.
+   */
+  private async escalateStuckOrphans(): Promise<number> {
+    let flipped = 0;
+    const now = Date.now();
+    for (const [key, orphan] of this.orphanedEvents) {
+      if (orphan.escalated || now - orphan.since < this.timeoutStuckCeilingMs) continue;
+      const stuckError = new OutboxConsumerTimeoutError(
+        `Outbox consumer for topic "${orphan.topic}" (event ${orphan.eventId}) never settled within timeoutStuckCeilingMs (${this.timeoutStuckCeilingMs}ms)`,
+      );
+      // `status = 'pending'` guard: nothing else can legitimately be
+      // writing this row's status while its key is orphaned (the claim
+      // SQL excludes it entirely), but the guard keeps this a safe no-op
+      // rather than a clobber if that assumption is ever wrong.
+      const bumped = await this.deps.db
+        .update(outboxEvents)
+        .set({ status: 'failed' as const, lastError: truncateError(stuckError) })
+        .where(and(eq(outboxEvents.id, orphan.eventId), eq(outboxEvents.status, 'pending')))
+        .returning({ id: outboxEvents.id });
+      // Mark escalated only after the write succeeds — if the UPDATE
+      // itself throws (a transient DB error), the next tick must retry
+      // this escalation, not silently treat it as done. A thrown error
+      // here propagates to `runOneTick`'s own try/catch (`logTickError`).
+      const current = this.orphanedEvents.get(key);
+      if (current === orphan) this.orphanedEvents.set(key, { ...orphan, escalated: true });
+      this.timeoutStuckSince.delete(orphan.eventId);
+      if (bumped.length === 0) continue; // already moved off `pending` by something else
+      flipped += 1;
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'outbox.dispatch.event_failed',
+          worker: this.workerName,
+          topic: orphan.topic,
+          eventId: orphan.eventId,
+          errorName: 'OutboxConsumerTimeoutError',
+          timedOut: true,
+        }),
+      );
+      this.observer.captureBackgroundFailure(stuckError, {
+        kind: 'outbox.dispatch.event_failed',
+        tags: { worker: this.workerName, topic: orphan.topic, event_id: orphan.eventId },
+      });
+    }
+    return flipped;
   }
 
   /**
@@ -409,18 +1091,48 @@ export class OutboxDispatcherWorker {
    * `attempts` past `maxAttempts` and prematurely flip to `failed`.
    *
    * What's NOT defended: a consumer that succeeds (e.g. enqueues to
-   * BullMQ) and then the dispatcher's commit fails. The consumer ran
-   * — its idempotency guarantee (consumer-side dedup on `event.id`)
-   * is the only protection, which is why the `OutboxConsumer` port
-   * contract requires idempotency. See the port docstring.
+   * BullMQ) and then the dispatcher's commit fails, OR an abandoned
+   * (timed-out) call that succeeds after a LATER retry has already
+   * re-run it — the orphan guard (below) guarantees that re-run only
+   * ever happens SEQUENTIALLY, after the original call settled, never
+   * concurrently with it, which is what makes every consumer's existing
+   * idempotent-on-redelivery design (already required by the
+   * `OutboxConsumer` port) sufficient protection for both cases. See the
+   * port docstring.
+   *
+   * A narrower, related fact: this savepoint's rollback-on-throw only
+   * ever undoes the bookkeeping UPDATE below (`sp.update(...)`), NOT
+   * anything the consumer itself wrote to the database. The consumer
+   * closure is built once at the composition root
+   * (`buildOutboxConsumer(db, ...)` in `apps/api/src/worker.ts`) against
+   * the plain root `db`, never against `tx`/`sp` — the `OutboxConsumer`
+   * type only ever receives the `DispatchedEvent`, no db handle — so any
+   * `db.insert`/`db.update` a consumer does runs on its own connection
+   * and commits independently of whether this transaction later commits
+   * or a later step in the SAME consumer call throws. The transaction's
+   * actual job is narrower than "isolates one consumer's effects" — it
+   * isolates only the dispatcher's OWN status/attempts bookkeeping.
+   *
+   * `this.deps.consumer(event)` below runs through
+   * `runConsumerWithOrphanGuard`, which bounds it with
+   * `consumerTimeoutMs` (a hung network call can no longer hold this
+   * transaction open indefinitely) and tracks a timed-out call as an
+   * orphan so no later tick re-invokes ANY event sharing this one's
+   * (topic, aggregateId) concurrency unit — not merely "the same event"
+   * by id; see `orphanGuardKey`'s own docstring for why the coarser key
+   * is required — concurrently with it. This bounds — it does not
+   * remove — the network call from inside the transaction: a full
+   * batch hitting the same outage can still
+   * hold it for up to `claimBatchSize * consumerTimeoutMs`. Moving the
+   * call fully outside the transaction would need a different
+   * claim/commit protocol (this dispatcher relies on holding the `FOR
+   * UPDATE` lock across the consumer call so a crash reverts the row to
+   * `pending` for free — see the lock-expiry section above; committing
+   * the claim first would need a lease/visibility-timeout scheme
+   * instead) — a larger, separate change this PR does not attempt.
    */
   private async runOneTick(): Promise<DispatcherTickResult> {
-    const result: DispatcherTickResult = {
-      claimed: 0,
-      dispatched: 0,
-      consumerFailed: 0,
-      flippedToFailed: 0,
-    };
+    const result: DispatcherTickResult = { ...EMPTY_TICK_RESULT };
     // Consumer failures this tick recorded, reported only once the claim
     // transaction has committed them — never a log or Sentry call inside
     // it, and nothing reported for bookkeeping that rolled back.
@@ -428,6 +1140,28 @@ export class OutboxDispatcherWorker {
 
     try {
       await this.deps.db.transaction(async (tx) => {
+        // Exclude every currently-orphaned (topic, aggregateId) unit
+        // from the claim itself, rather than claiming it and skipping
+        // it in the loop below. Orphaned rows never age out of
+        // `ORDER BY created_at`'s FIFO order — they keep their original
+        // `created_at` and `attempts` untouched — so once the number of
+        // distinct orphaned keys reaches `claimBatchSize`, a
+        // claim-then-skip design re-claims the SAME stuck rows on
+        // every tick forever, and any genuinely-processable row behind
+        // them in FIFO order is never claimed at all: a livelock during
+        // a real outage (architecture-guardian review, 2026-09-29).
+        // Excluding them here lets SKIP LOCKED's own query plan move
+        // past them to the next claimable rows within the same LIMIT.
+        const orphanExclusion =
+          this.orphanedEvents.size === 0
+            ? sql``
+            : sql`AND NOT (${sql.join(
+                [...this.orphanedEvents.values()].map(
+                  (orphan) =>
+                    sql`(topic = ${orphan.topic} AND aggregate_id = ${orphan.aggregateId})`,
+                ),
+                sql` OR `,
+              )})`;
         // Claim a batch with FOR UPDATE SKIP LOCKED — Postgres locks
         // these rows for the duration of THIS transaction; a parallel
         // dispatcher's claim transaction sees them locked and skips
@@ -443,6 +1177,7 @@ export class OutboxDispatcherWorker {
           SELECT id, topic, aggregate_id, payload, attempts, created_at
           FROM outbox_events
           WHERE status = 'pending'
+          ${orphanExclusion}
           ORDER BY created_at
           LIMIT ${this.claimBatchSize}
           FOR UPDATE SKIP LOCKED
@@ -484,6 +1219,21 @@ export class OutboxDispatcherWorker {
             attempts: row.attempts,
             createdAt: row.created_at,
           };
+          // The SQL claim above already excludes a key orphaned BEFORE
+          // this tick started. This check catches the one window that
+          // can't be excluded at claim time: a row LATER in this SAME
+          // claimed batch sharing a (topic, aggregateId) with an
+          // EARLIER row in the batch that just timed out and orphaned,
+          // mid-tick (rows are processed one at a time, sequentially —
+          // see the loop below). Re-invoking it now would run that
+          // concurrency unit's consumer concurrently with the still-
+          // running orphaned call, which is not safe for every consumer
+          // today (see the class docstring's "Orphan guard" section).
+          // Leave the row completely untouched — still `pending`,
+          // `attempts` unchanged — until the orphan settles.
+          if (this.orphanedEvents.has(orphanGuardKey(event))) {
+            continue;
+          }
           // Per-row savepoint isolates one consumer failure from the
           // rest of the batch — a thrown consumer rolls back ONLY its
           // own UPDATE attempt and the outer tx continues to the next
@@ -491,18 +1241,69 @@ export class OutboxDispatcherWorker {
           // and we'd re-claim the whole batch next tick (livelock).
           try {
             await tx.transaction(async (sp) => {
-              await this.deps.consumer(event);
+              await this.runConsumerWithOrphanGuard(event);
               await sp
                 .update(outboxEvents)
                 .set({ status: 'dispatched', dispatchedAt: new Date() })
                 .where(eq(outboxEvents.id, event.id));
             });
             result.dispatched += 1;
+            // This event's timeout streak (if it had one) is over.
+            this.timeoutStuckSince.delete(event.id);
           } catch (err) {
             result.consumerFailed += 1;
+            const isTimeout = isOutboxTimeoutError(err);
+            if (isTimeout) {
+              result.consumerTimedOut += 1;
+            }
             const nextAttempts = event.attempts + 1;
             const lastError = truncateError(err);
-            const shouldFail = nextAttempts >= this.maxAttempts;
+            // A timeout is an infrastructure failure (Redis/DB slow or
+            // down), not evidence the EVENT is broken — `maxAttempts`
+            // exists to stop a persistently-broken event from spinning
+            // forever (see the dep's docstring), and failing to reach
+            // a downstream dependency is not that. Excluding timeouts
+            // also matters in practice because the orphaned event is
+            // now skip-guarded above: `attempts` cannot even be bumped
+            // again until the orphan settles, so a sustained outage
+            // cannot burn through `maxAttempts` and permanently fail
+            // an event that a few more minutes would have delivered
+            // (silent-failure-hunter + architecture-guardian review,
+            // 2026-09-28 — the previous version of this fix could flip
+            // a row to `failed` after roughly 2.5-7.5 minutes of Redis
+            // being down, sometimes AFTER the abandoned call had
+            // already succeeded).
+            //
+            // That exemption has no end state on its own — a row whose
+            // OWN streak of timeouts never breaks would otherwise retry
+            // forever with no Sentry signal (2026-09-29 review). Track
+            // the streak's start per event id (not the orphan-guard
+            // key: a different event sharing this one's concurrency
+            // unit has its own, independent streak) and, once it has
+            // run longer than `timeoutStuckCeilingMs`, let this timeout
+            // fail like any other exhausted event instead of exempting
+            // it again.
+            let timeoutStreakExceededCeiling = false;
+            if (isTimeout) {
+              const streakStartedAt = this.timeoutStuckSince.get(event.id) ?? Date.now();
+              if (!this.timeoutStuckSince.has(event.id)) {
+                this.timeoutStuckSince.set(event.id, streakStartedAt);
+              }
+              timeoutStreakExceededCeiling =
+                Date.now() - streakStartedAt >= this.timeoutStuckCeilingMs;
+            } else {
+              // A genuine (non-timeout) failure ends any prior timeout
+              // streak this event had — it is no longer "stuck on
+              // infrastructure," it is failing for a different reason,
+              // and `nextAttempts >= maxAttempts` below already governs
+              // it.
+              this.timeoutStuckSince.delete(event.id);
+            }
+            const shouldFail =
+              timeoutStreakExceededCeiling || (!isTimeout && nextAttempts >= this.maxAttempts);
+            if (shouldFail) {
+              this.timeoutStuckSince.delete(event.id);
+            }
             // The savepoint that ran the consumer + UPDATE rolled
             // back; the bookkeeping UPDATE runs in the outer tx so it
             // commits even on consumer failure. Without this, a
@@ -538,7 +1339,13 @@ export class OutboxDispatcherWorker {
             // A parallel tick that bumped the row first owns this attempt,
             // and reports it.
             if (bumped.length > 0) {
-              failures.push({ event, error: err, attempts: nextAttempts, failed: shouldFail });
+              failures.push({
+                event,
+                error: err,
+                attempts: nextAttempts,
+                failed: shouldFail,
+                timedOut: isTimeout,
+              });
             }
           }
         }
@@ -551,7 +1358,28 @@ export class OutboxDispatcherWorker {
       this.logTickError(err);
     }
 
-    if (result.claimed > 0) {
+    // Independent of the claim/dispatch loop above: a call that has
+    // NEVER settled keeps its row excluded from every claim, so the
+    // per-row streak check inside that loop can never run for it again.
+    // This is what actually gives `timeoutStuckCeilingMs` an end state
+    // for that case — see `escalateStuckOrphans`'s own docstring.
+    try {
+      result.flippedToFailed += await this.escalateStuckOrphans();
+    } catch (err) {
+      this.logTickError(err);
+    }
+
+    // A gauge, not a per-tick count: how many distinct concurrency
+    // units are orphan-guarded RIGHT NOW, including any this very tick
+    // just created. See `DispatcherTickResult.skippedOrphaned`.
+    result.skippedOrphaned = this.orphanedEvents.size;
+
+    // Also log when nothing was claimed but an orphan is outstanding —
+    // otherwise a sustained outage (every claimable row excluded by the
+    // orphan guard, `claimed` pinned at 0 every tick) goes completely
+    // silent in the logs at exactly the moment it most needs to be
+    // visible.
+    if (result.claimed > 0 || result.skippedOrphaned > 0) {
       console.log(
         JSON.stringify({
           level: 'info',
@@ -570,14 +1398,26 @@ export class OutboxDispatcherWorker {
    * error and goes to the observer, because that row is never claimed
    * again — its work is lost unless someone replays it. The error's name
    * only: a query error's message can carry its parameters.
+   *
+   * `timedOut` lets a `failed` line be told apart from a `maxAttempts`
+   * exhaustion: when true, this is a `timeoutStuckCeilingMs` failure —
+   * the event kept timing out past the ceiling, not a consumer that
+   * kept throwing a real error.
    */
-  private reportConsumerFailure({ event, error, attempts, failed }: ConsumerFailure): void {
+  private reportConsumerFailure({
+    event,
+    error,
+    attempts,
+    failed,
+    timedOut,
+  }: ConsumerFailure): void {
     const fields = {
       worker: this.workerName,
       topic: event.topic,
       eventId: event.id,
       attempts,
       errorName: error instanceof Error ? error.name : typeof error,
+      timedOut,
     };
     if (!failed) {
       console.warn(

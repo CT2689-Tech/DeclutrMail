@@ -103,7 +103,11 @@ export function MailboxesCard({
           {mailboxes.map((m) => {
             const isSelected = m.id === activeMailboxId && m.status === 'active';
             const health = healthById[m.id];
-            const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
+            // `me`'s server-computed flag (same rule) covers the window while
+            // this mailbox's own status is loading or failed to load — the
+            // screens that send users here promise Reconnect is waiting.
+            const needsReconnect =
+              m.status === 'active' && (health?.needsReconnect ?? m.needsReconnect === true);
             const showReconnect = m.status === 'disconnected' || needsReconnect;
             const indexedDataState =
               m.indexedDataState ?? (m.status === 'active' ? 'indexed' : 'retained');

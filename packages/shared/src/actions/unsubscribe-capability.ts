@@ -96,12 +96,17 @@ export function unsubscribeUnavailableReason(
 }
 
 /**
- * The three terminal outcomes `UnsubExecutionWorker` writes for a
- * one-click request. `unconfirmed` is its own outcome on purpose:
+ * The terminal outcomes `UnsubExecutionWorker` writes for a one-click
+ * request. `unconfirmed` is its own outcome on purpose:
  * rounding it into accepted or failed is the same unknown-as-fact
  * substitution the `unknown` capability above exists to prevent.
  */
-export const UNSUBSCRIBE_REQUEST_OUTCOMES = ['endpointAccepted', 'unconfirmed', 'failed'] as const;
+export const UNSUBSCRIBE_REQUEST_OUTCOMES = [
+  'endpointAccepted',
+  'unconfirmed',
+  'actionRequired',
+  'failed',
+] as const;
 export type UnsubscribeRequestOutcome = (typeof UNSUBSCRIBE_REQUEST_OUTCOMES)[number];
 
 export type UnsubscribeOutcomeCounts = Readonly<Record<UnsubscribeRequestOutcome, number>>;
@@ -120,6 +125,12 @@ export function unsubscribeOutcomeBreakdown(counts: UnsubscribeOutcomeCounts): s
     lines.push(
       `${requests(counts.unconfirmed)} sent, ${counts.unconfirmed === 1 ? 'result' : 'results'} unconfirmed`,
     );
+  }
+  // The endpoint did not accept one-click (any 4xx or 5xx) but the sender
+  // takes email (D252): not a dead end, so never counted with `failed`,
+  // which means nothing is left to try.
+  if (counts.actionRequired > 0) {
+    lines.push(`${requests(counts.actionRequired)} not accepted — send from Gmail instead`);
   }
   if (counts.failed > 0) {
     lines.push(`${requests(counts.failed)} failed`);

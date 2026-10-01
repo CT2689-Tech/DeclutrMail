@@ -24,6 +24,10 @@
  *                          "12,400 of 40,898 emails" and time left from
  *                          observed progress (reverses D109's "no live
  *                          counters").
+ *   - `updated_at`       — wall-clock of the last worker heartbeat on
+ *                          this row. The onboarding gate uses it to
+ *                          surface a stuck `queued`/`syncing` scan
+ *                          (same age gate as the initial-sync reconciler).
  *
  * No body data, no headers, no message content of any kind — stage
  * enum + numeric progress + message counts + an allowlisted boolean. Safe by construction
@@ -31,6 +35,7 @@
  */
 
 import { z } from 'zod';
+import { INITIAL_SYNC_RECONNECT_ERROR_CODES } from './initial-sync-recovery';
 
 /** Coarse readiness state — drives the strict sync gate (D6). */
 export const SyncReadinessSchema = z.enum(['queued', 'syncing', 'ready', 'failed']);
@@ -115,6 +120,13 @@ export const SyncStatusSchema = z
      * Counts only — no message content.
      */
     message_progress: SyncMessageProgressSchema.nullable().optional(),
+    /**
+     * ISO-8601 wall-clock of the last `provider_sync_state` heartbeat
+     * (`updated_at`). Optional so pre-field responses and existing
+     * fixtures stay valid. Operational timestamp only — no
+     * message-derived data.
+     */
+    updated_at: z.string().datetime().optional(),
   })
   .strict();
 
@@ -123,7 +135,8 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
 /**
  * First-scan failures whose only real recovery is reconnecting Gmail: a
  * revoked grant (`InvalidGrantError`) or one Gmail stopped accepting
- * partway through (`AuthExpiredError`). Names match
+ * partway through (`AuthExpiredError`), or insufficient permissions
+ * (`ProviderPermissionError`). Names match
  * `packages/workers/src/worker-errors.ts`. Read today by the web app's
  * surfaces that offer Reconnect instead of a retry: the onboarding sync
  * gate, the top-bar Sync now button, and mailbox health on Settings and
@@ -135,7 +148,6 @@ export type SyncStatus = z.infer<typeof SyncStatusSchema>;
  * again" against the same dead token; the Settings row and the account
  * menu had the same gap (D108). They all read this set now.
  */
-export const AUTH_RECOVERY_ERROR_CODES: ReadonlySet<string> = new Set([
-  'InvalidGrantError',
-  'AuthExpiredError',
-]);
+export const AUTH_RECOVERY_ERROR_CODES: ReadonlySet<string> = new Set(
+  INITIAL_SYNC_RECONNECT_ERROR_CODES,
+);

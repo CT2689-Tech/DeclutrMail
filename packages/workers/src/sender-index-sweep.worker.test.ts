@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as protection from './automatic-protection.js';
 import * as gmailCategory from './gmail-category.js';
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
+import { OutboxPublisher } from './outbox-publisher.js';
 import {
   MAILBOX_BATCH_SIZE,
   rescoreJobId,
@@ -981,6 +982,193 @@ describe('SenderIndexSweepWorker', () => {
     ]) {
       expect(succeeded?.result).toHaveProperty(key);
     }
+  });
+
+  it('purges stored drafts before reconciling, and says so on the ops line', async () => {
+    // A draft used to land as INBOUND mail From the owner, so the owner
+    // became a sender built from nothing else. The purge runs first so
+    // the reconcile after it never sees that row — the sender and its
+    // months go, rather than surviving as a zeroed shell.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'owner-self',
+      email: 'owner@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'primary',
+      firstSeenAt: RECENT,
+      lastSeenAt: RECENT,
+      totalReceived: 1,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'draft-1',
+      providerThreadId: 't-draft-1',
+      senderKey: 'owner-self',
+      internalDate: new Date('2026-08-05T00:00:00Z'),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    await db.insert(senderTimeseries).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'owner-self',
+      yearMonth: MONTH,
+      volume: 1,
+      readCount: 1,
+    });
+
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      lines.push(String(line));
+    });
+    try {
+      await new SenderIndexSweepWorker({
+        db: db as never,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        outbox: new OutboxPublisher(),
+        onSendersRecategorized: NO_RESCORE,
+      }).run({
+        id: 'sweep-1',
+        data: { scheduledAtMinute: '2026-08-24T03:00' },
+        attemptsMade: 0,
+      } as never);
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(await db.select().from(mailMessages)).toEqual([]);
+    expect(await db.select().from(senders)).toEqual([]);
+    expect(await db.select().from(senderTimeseries)).toEqual([]);
+    const succeeded = lines
+      .map((l) => {
+        try {
+          return JSON.parse(l) as { kind?: string; result?: Record<string, unknown> };
+        } catch {
+          return null;
+        }
+      })
+      .find((l) => l?.kind === 'worker.succeeded');
+    expect(succeeded?.result).toMatchObject({
+      nonMailMessagesDeleted: 1,
+      nonMailSendersDeleted: 1,
+      nonMailPurgeFailed: 0,
+      timeseriesZeroed: 0,
+    });
+  });
+
+  it('still retires protections when the purge throws — D245 never waits on the cleanup', async () => {
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'stale-star',
+      email: 'stale@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: LONG_AGO,
+    });
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'old-star',
+        providerThreadId: 't-old-star',
+        senderKey: 'stale-star',
+        internalDate: LONG_AGO,
+        labelIds: ['INBOX', 'STARRED'],
+        isUnread: false,
+        isOutbound: false,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        providerMessageId: 'draft-1',
+        providerThreadId: 't-draft-1',
+        senderKey: 'owner-self',
+        internalDate: RECENT,
+        labelIds: ['DRAFT'],
+        isUnread: false,
+        isOutbound: false,
+      },
+    ]);
+    await seedProtection('stale-star', 'starred');
+    // The purge's batch is the first thing to take the lock; fail it.
+    let calls = 0;
+    const worker = new SenderIndexSweepWorker({
+      db: db as never,
+      lock: {
+        run: async (_id, fn) => {
+          calls += 1;
+          if (calls === 1) throw new Error('purge boom');
+          return fn();
+        },
+      },
+      outbox: new OutboxPublisher(),
+      onSendersRecategorized: NO_RESCORE,
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-24T03:00' }, CTX);
+
+    expect(result).toMatchObject({
+      nonMailPurgeFailed: 1,
+      nonMailMessagesDeleted: 0,
+      mailboxesProcessed: 1,
+      mailboxesFailed: 0,
+    });
+    // Reported, not just counted: the job itself still succeeds.
+    expect(captureBackgroundFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'purge boom' }),
+      expect.objectContaining({ kind: 'sender_index_sweep.non_mail_purge_failed' }),
+    );
+    expect((await policyFor('stale-star'))?.isProtected).toBe(false);
+    // Not purged this pass; the next one will.
+    const drafts = await db
+      .select({ id: mailMessages.providerMessageId })
+      .from(mailMessages)
+      .where(eq(mailMessages.providerMessageId, 'draft-1'));
+    expect(drafts).toHaveLength(1);
+  });
+
+  it('leaves a deadline abort during the purge to the base worker — never reported twice (D203)', async () => {
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'draft-1',
+      providerThreadId: 't-draft-1',
+      senderKey: 'owner-self',
+      internalDate: RECENT,
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    // The job's deadline fires while a purge batch waits for the lock.
+    const controller = new AbortController();
+    const worker = new SenderIndexSweepWorker({
+      db: db as never,
+      lock: {
+        run: async () => {
+          controller.abort(new Error('fixture deadline'));
+          throw new Error('fixture deadline');
+        },
+      },
+      outbox: new OutboxPublisher(),
+      onSendersRecategorized: NO_RESCORE,
+    });
+    const captureBackgroundFailure = vi.fn();
+    worker.setObserver({
+      captureFailure: vi.fn(),
+      captureBackgroundFailure,
+      recordBackgroundNotice: vi.fn(),
+    });
+
+    await expect(
+      worker.processJob(
+        { scheduledAtMinute: '2026-08-24T03:00' },
+        { ...CTX, signal: controller.signal },
+      ),
+    ).rejects.toThrow('fixture deadline');
+    expect(captureBackgroundFailure).not.toHaveBeenCalled();
   });
 
   it('bounds each job and queues a continuation rather than dropping overflow', async () => {

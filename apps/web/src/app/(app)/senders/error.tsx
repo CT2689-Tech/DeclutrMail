@@ -23,7 +23,7 @@ export default function SendersError({
       reset={reset}
       boundary="senders"
       headline="We couldn't load your senders."
-      body="Your mailbox and decisions are untouched. Try again, or head to Triage and come back in a moment."
+      body="Try again, or head back to Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

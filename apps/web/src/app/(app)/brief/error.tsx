@@ -23,7 +23,7 @@ export default function BriefError({
       reset={reset}
       boundary="brief"
       headline="We couldn't open your Brief."
-      body="Your mailbox is unchanged. Try again, or continue in Triage."
+      body="Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

@@ -6,6 +6,7 @@ import type { SyncReadiness } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { observeSyncReadiness } from '@/features/sync/sync-lifecycle';
+import { failedScanSettingsStep } from './mailbox-health';
 
 /**
  * Fires a one-time toast when a mailbox finishes its initial sync
@@ -37,7 +38,12 @@ export function useMailboxSyncToasts(): void {
       if (becameReady) {
         toast(`${mailbox.email} is ready.`, 'success');
       } else if (becameFailed) {
-        toast(`${mailbox.email}'s scan didn't finish — see Settings to try again.`, 'danger');
+        // The same step Triage, Senders and Home name, in the same words.
+        const step = failedScanSettingsStep(mailbox.needsReconnect === true);
+        toast(
+          `${mailbox.email}'s scan didn't finish — ${step.charAt(0).toLowerCase()}${step.slice(1)}`,
+          'danger',
+        );
       }
       // D159 — same transition the toast already observed. Shared
       // session pairing means the onboarding gate cannot also emit

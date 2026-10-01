@@ -442,6 +442,51 @@ describe('FollowupCheckWorker', () => {
     expect(result.awaitingUpserted).toBe(0);
   });
 
+  it('a draft the user saves in the thread is not a reply', async () => {
+    // Drafts are no longer stored, but one written before the purge
+    // reaches it must not mark the thread replied — that row would
+    // otherwise never reopen on its own.
+    const db = await freshDb();
+    const { workspaceId, mailboxAccountId } = await seedMailbox(db);
+    await db.insert(followupTracker).values({
+      workspaceId,
+      mailboxAccountId,
+      providerThreadId: 'thread-d',
+      recipientEmail: 'boss@example.com',
+      subject: 'Q4 plans',
+      sentAt: new Date('2026-05-19T08:00:00Z'),
+      status: 'awaiting',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-d',
+      internalDate: new Date('2026-05-19T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['boss@example.com'],
+      idSuffix: 'd-out',
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'msg-d-draft',
+      providerThreadId: 'thread-d',
+      senderKey: 'a'.repeat(64),
+      internalDate: new Date('2026-05-21T09:00:00Z'),
+      labelIds: ['DRAFT'],
+      isUnread: false,
+      isOutbound: false,
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.repliedFlipped).toBe(0);
+    const [row] = await db.select({ status: followupTracker.status }).from(followupTracker);
+    expect(row?.status).toBe('awaiting');
+  });
+
   it('existing awaiting row → flipped to replied once an inbound arrives', async () => {
     const db = await freshDb();
     const { workspaceId, mailboxAccountId } = await seedMailbox(db);

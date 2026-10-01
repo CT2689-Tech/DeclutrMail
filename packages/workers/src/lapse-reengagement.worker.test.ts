@@ -7,6 +7,7 @@ import {
   activityLog,
   mailboxAccounts,
   senderPolicies,
+  senders,
   triageDecisions,
   users,
   workspaces,
@@ -35,6 +36,8 @@ interface SeedInput {
   lastSeenDaysAgo?: number;
   /** Non-Keep triage verdicts awaiting a decision. */
   pending?: number;
+  /** Seed the pending verdicts WITHOUT their senders rows. */
+  orphanPending?: boolean;
   protectPending?: boolean;
   /** Write a K/A/U/L/D activity row for each pending sender ("already decided"). */
   decidePending?: boolean;
@@ -98,6 +101,17 @@ async function seedUser(db: Db, input: SeedInput, clock: Date = NOW): Promise<Se
 
   for (let index = 0; index < (input.pending ?? 0); index += 1) {
     const senderKey = `${input.email}-sender-${index}`;
+    if (!input.orphanPending) {
+      await db.insert(senders).values({
+        mailboxAccountId: mailbox!.id,
+        senderKey,
+        email: `sender-${index}@${input.email.split('@')[1]}`,
+        domain: input.email.split('@')[1]!,
+        gmailCategory: 'promotions',
+        firstSeenAt: new Date(clock.getTime() - 20 * DAY_MS),
+        lastSeenAt: new Date(clock.getTime() - 2 * DAY_MS),
+      });
+    }
     await db.insert(triageDecisions).values({
       mailboxAccountId: mailbox!.id,
       senderKey,
@@ -367,6 +381,26 @@ describe('LapseReengagementWorker', () => {
     const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
 
     expect(result).toMatchObject({ emailsQueued: 0, emptyQueueSkips: 2 });
+    expect(enqueued).toHaveLength(0);
+  });
+
+  it('never counts a verdict whose sender is gone — that card cannot render', async () => {
+    const db = await freshDb();
+    // Verdicts left behind when the index dropped their senders (a
+    // rebuild, the non-mail purge). The queue joins `senders`, so the
+    // email would summon this user to an empty Triage.
+    await seedUser(db, {
+      email: 'all-orphaned@example.com',
+      ageDays: 30,
+      lastSeenDaysAgo: 5.5,
+      pending: 3,
+      orphanPending: true,
+    });
+
+    const { worker, enqueued } = buildWorker(db);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-08-10T12:00' }, CTX);
+
+    expect(result).toMatchObject({ emailsQueued: 0, emptyQueueSkips: 1 });
     expect(enqueued).toHaveLength(0);
   });
 

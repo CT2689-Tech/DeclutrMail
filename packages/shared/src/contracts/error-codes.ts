@@ -111,9 +111,12 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
+    // "Linked", not "connected": the ownership check reads the row whatever
+    // its status, so a Gmail account DISCONNECTED from the other
+    // DeclutrMail account is refused here too.
     message:
-      'This Gmail account is already connected to a different DeclutrMail account. ' +
-      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported yet.",
+      'This Gmail account is linked to a different DeclutrMail account. ' +
+      "Sign in to that one to use it — moving a Gmail account between DeclutrMail accounts isn't supported.",
   },
 
   // --- domain: tier entitlements (D19, D77, D81) ---
@@ -180,7 +183,10 @@ export const ERROR_CODES = {
     status: 502,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Our payment provider could not be reached. Please try again.',
+    // Also raised when the provider WAS reached — a non-2xx refusal or a
+    // malformed answer — so the message claims neither reach nor refusal.
+    message:
+      "The payment provider didn't confirm this. Try again, or email support@declutrmail.com.",
   },
   /**
    * States the FACT and stops. It must not name a remedy.

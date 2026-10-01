@@ -626,7 +626,7 @@ export interface BatchStatusResult {
    */
   revertedSenderIds: string[];
   /**
-   * D248 — the three terminal outcomes `UnsubExecutionWorker` records,
+   * D248 — the terminal outcomes `UnsubExecutionWorker` records,
    * aggregated over the batch's unsubscribe rows. `null` when the batch
    * holds no unsubscribe row, so a label batch never renders an
    * unsubscribe receipt.
@@ -681,8 +681,15 @@ export interface UnsubscribeBatchOutcomes {
   endpointAccepted: number;
   /** Sent, outcome unknowable (ambiguous redirect). Never rounded. */
   unconfirmed: number;
-  /** The request did not go through. */
+  /** Every row that ended without the endpoint accepting or redirecting. */
   failed: number;
+  /**
+   * The part of `failed` whose sender refused one-click but also takes
+   * email (D252, `UNSUB_MANUAL_REQUIRED`) — the user can still finish it
+   * from Gmail. A SUBSET of `failed`, so a client that predates this field
+   * still counts these as not accepted.
+   */
+  actionRequired: number;
   /** Rows still queued or executing — no outcome yet. */
   pending: number;
 }

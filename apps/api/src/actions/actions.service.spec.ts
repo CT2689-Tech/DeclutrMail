@@ -3914,7 +3914,7 @@ describe('ActionsService', () => {
       });
     });
 
-    describe('getBatchStatus — three terminal outcomes', () => {
+    describe('getBatchStatus — terminal unsubscribe outcomes', () => {
       async function seedUnsubBatch(): Promise<{ batchId: string; rowIds: string[] }> {
         const sender3Id = await seedExtraSender('d');
         await setMethod(senderId, 'one_click', 'https://a.example/oc');
@@ -3950,6 +3950,7 @@ describe('ActionsService', () => {
         expect(status.unsubscribeOutcomes).toEqual({
           endpointAccepted: 1,
           unconfirmed: 1,
+          actionRequired: 0,
           failed: 1,
           pending: 0,
         });
@@ -3975,6 +3976,7 @@ describe('ActionsService', () => {
         expect(status.unsubscribeOutcomes).toEqual({
           endpointAccepted: 2,
           unconfirmed: 0,
+          actionRequired: 0,
           failed: 0,
           pending: 0,
         });
@@ -3996,8 +3998,34 @@ describe('ActionsService', () => {
         expect(status.unsubscribeOutcomes).toEqual({
           endpointAccepted: 0,
           unconfirmed: 0,
+          actionRequired: 0,
           failed: 0,
           pending: 3,
+        });
+      });
+
+      it('counts a refused-but-emailable request apart from failed (D252)', async () => {
+        const { batchId, rowIds } = await seedUnsubBatch();
+        // Exactly what UnsubExecutionWorker.recordOutcome writes when the
+        // endpoint refuses a sender that also advertises mailto.
+        await db
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: 'UNSUB_MANUAL_REQUIRED' })
+          .where(eq(actionJobs.id, rowIds[0]!));
+        await db
+          .update(actionJobs)
+          .set({ status: 'failed', errorCode: 'UNSUB_TARGET_REJECTED' })
+          .where(eq(actionJobs.id, rowIds[1]!));
+        await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, rowIds[2]!));
+
+        const status = await service.getBatchStatus(batchId, mailboxId);
+
+        // `actionRequired` is counted INSIDE `failed` too, so a client that
+        // predates the field still reads the refusal as not accepted.
+        expect(status.unsubscribeOutcomes).toMatchObject({
+          actionRequired: 1,
+          failed: 2,
+          endpointAccepted: 1,
         });
       });
 

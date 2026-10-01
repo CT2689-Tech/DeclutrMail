@@ -45,6 +45,7 @@ export function TriageEmptyState({
   stats,
   onOpenUpgrade,
   syncFailed = false,
+  syncNeedsReconnect = false,
   footnote,
 }: {
   stats: TriageSessionStats;
@@ -57,6 +58,8 @@ export function TriageEmptyState({
    * confident "nothing to do" claim as a genuinely caught-up mailbox.
    */
   syncFailed?: boolean;
+  /** The failed mailbox needs reconnecting — Settings offers no retry for it. */
+  syncNeedsReconnect?: boolean;
   /** One muted line under the completion numerals (the D214 "today" fact). */
   footnote?: ReactNode;
 }) {
@@ -75,7 +78,14 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="This mailbox's last scan didn't finish."
-        description="Your Gmail is untouched. Retry the scan in Settings → Gmail accounts."
+        // `failedScanSettingsStep`'s two sentences, inline: importing
+        // mailbox-health put Triage over its bundle budget. A test pins
+        // them equal to the helper.
+        description={
+          syncNeedsReconnect
+            ? 'Reconnect it in Settings → Gmail accounts.'
+            : 'Scan again in Settings → Gmail accounts.'
+        }
         action={
           <a href="/settings#mailboxes" style={LINK_BUTTON}>
             Open Settings

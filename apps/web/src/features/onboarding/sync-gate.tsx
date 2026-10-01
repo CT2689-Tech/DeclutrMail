@@ -5,7 +5,9 @@ import { OnboardingPhase } from './onboarding-phase';
 
 import { Button, tokens } from '@declutrmail/shared';
 import {
-  AUTH_RECOVERY_ERROR_CODES,
+  initialSyncRecovery,
+  isStaleInitialSync,
+  type InitialSyncRecovery,
   type SyncMessageProgress,
   type SyncStatus,
   type SyncStage,
@@ -15,6 +17,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import { useNow } from '@/lib/use-now';
 import { useScanTimeLeft } from './scan-time-left';
 
 const { color, font, text, radius, motion } = tokens;
@@ -109,46 +112,58 @@ function countText(counts: SyncMessageProgress): string {
 }
 
 /**
- * Friendly copy for the known terminal error codes.
- *
- * These describe a TERMINAL state — the worker has spent its attempts
- * and nothing re-queues the mailbox on its own. The old copy promised
- * "we'll retry automatically", which was simply untrue and left users
- * waiting for a retry that never came (first-run flow audit,
- * 2026-07-28). Every string here now points at the button instead.
+ * Onboarding-owned recovery copy, keyed on `InitialSyncReasonCode`
+ * (`data-reason-code`). Button branching stays on `recovery.action` /
+ * `partlyReady`. Worker `error.name` is only an input to
+ * `initialSyncRecovery` — so a future taxonomy that writes
+ * `ProviderPermissionError` for insufficientPermissions picks up the
+ * scopes body, not the grant-revoked tone.
  */
-/**
- * For the codes in `AUTH_RECOVERY_ERROR_CODES` (`@declutrmail/shared/
- * contracts`), whose `ERROR_COPY` below diagnoses a revoked/expired Gmail
- * grant, the gate offers Reconnect instead of "Try again".
- * QA-sync-20260831-07: it used to offer only "Try again" — re-queuing a
- * full scan against the SAME dead token, which fails again at `getClient`
- * and burns one of the retry route's rate-limited attempts, with no
- * reconnect action anywhere on screen. Display-only: this does NOT touch
- * `syncStatusNeedsReconnect` or the backend's
- * `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep contract
- * (packages/workers/src/mailbox-reconnect.ts), which govern periodic-sweep
- * eligibility and are a separate, wider change.
- *
- * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
- * review of this QA round) — both surfaces read that one set so this
- * classification can't drift between them again.
- */
-
-const ERROR_COPY: Record<string, string> = {
-  RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
-  AuthExpiredError:
-    'Google stopped accepting our access. Reconnect Gmail and allow access on Google’s screen.',
-  InvalidGrantError:
-    'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
-  TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
-  // The address, not "contact support": on a first run the onboarding
-  // guard bounces every in-app route back here, so Help is unreachable.
-  PermanentError:
-    'Gmail refused part of the scan. Try again — if it fails twice, email support@declutrmail.com.',
-  ValidationError:
-    'The scan stopped on something we could not process. Try again — if it fails twice, email support@declutrmail.com.',
-};
+function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: string } {
+  switch (recovery.reason) {
+    case 'insufficient_scopes':
+      return {
+        title: 'Gmail needs a fuller permission grant',
+        body: 'DeclutrMail couldn’t finish setup because Google didn’t get all the permissions we asked for. Reconnect and approve every permission on the Google screen — we need them to find senders and clean up mail.',
+      };
+    case 'invalid_grant':
+      return {
+        title: 'Reconnect Gmail to keep going',
+        body: 'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
+      };
+    case 'reconnect_required':
+      return {
+        title: 'Reconnect Gmail to keep going',
+        body: 'Google stopped accepting our access. Reconnect Gmail and allow access on Google’s screen.',
+      };
+    case 'rate_limit':
+      return recovery.partlyReady
+        ? {
+            title: 'Your inbox is partly ready',
+            body: 'We already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what’s ready if that control is shown.',
+          }
+        : {
+            title: 'Gmail paused your sync for a bit',
+            body: 'Google temporarily limited how fast we can read your inbox. Your progress is saved — tap Try again when you’re ready.',
+          };
+    case 'stuck':
+      return {
+        title: 'This scan has not moved.',
+        body: 'The scan has not moved in a while. Try again — Gmail is untouched.',
+      };
+    case 'unknown':
+      return {
+        title: 'We hit a snag reading your inbox',
+        // The address, not "contact support": on a first run the onboarding
+        // guard bounces every in-app route back here, so Help is unreachable.
+        body: 'Something interrupted the scan. Your Gmail is untouched — try again, or email support@declutrmail.com if it keeps happening.',
+      };
+    default: {
+      const _exhaustive: never = recovery.reason;
+      return _exhaustive;
+    }
+  }
+}
 
 /**
  * "Go back to <address>" can run past a phone-width card: Button is
@@ -203,6 +218,8 @@ export function SyncGate({
   status,
   escape,
   mailboxId,
+  nowMs,
+  onContinuePartial,
   readyEmail = false,
 }: {
   status: SyncStatus;
@@ -216,11 +233,34 @@ export function SyncGate({
    * rather than aimed at whatever happens to be active.
    */
   mailboxId?: string | null | undefined;
+  /**
+   * Test/Storybook clock for the stuck-sync age gate. Production reads
+   * `useNow` so a tab that sits on a frozen progress bar can flip to
+   * recovery without a reload.
+   */
+  nowMs?: number | undefined;
+  /**
+   * Hook for the rate_limit + partlyReady branch ("Continue ready").
+   * Onboarding owns the destination; this gate only exposes the control.
+   * Omitted → the Continue control is not rendered (no silent no-op).
+   */
+  onContinuePartial?: (() => void) | undefined;
   /** True only when the sync-complete email is switched on for this user. */
   readyEmail?: boolean | undefined;
 }) {
-  if (status.readiness_status === 'failed') {
-    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
+  const clock = useNow(30_000);
+  const now = nowMs ?? clock ?? undefined;
+  const stuck = now !== undefined && isStaleInitialSync(status, now);
+  if (status.readiness_status === 'failed' || stuck) {
+    return (
+      <SyncFailed
+        status={status}
+        escape={escape}
+        mailboxId={mailboxId}
+        stuck={stuck}
+        onContinuePartial={onContinuePartial}
+      />
+    );
   }
   return <SyncProgress status={status} escape={escape} readyEmail={readyEmail} />;
 }
@@ -349,10 +389,14 @@ function SyncFailed({
   status,
   escape,
   mailboxId,
+  stuck,
+  onContinuePartial,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   mailboxId?: string | null | undefined;
+  stuck: boolean;
+  onContinuePartial?: (() => void) | undefined;
 }) {
   const retry = useRetryInitialSync(mailboxId);
   const logout = useLogout();
@@ -361,18 +405,26 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
-  const needsReconnect =
-    status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code);
-  const copy =
-    (status.error_code && ERROR_COPY[status.error_code]) ??
-    'Something interrupted the scan. Your Gmail is untouched — try again.';
+  const recovery = initialSyncRecovery({
+    errorCode: status.error_code,
+    stuck,
+    progressPct: status.progress_pct,
+  });
+  const needsReconnect = recovery.action === 'reconnect';
+  const copy = recoverySurface(recovery);
+  const retryLabel =
+    recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish sync' : 'Try again';
   return (
     <Shell>
-      <h1 style={titleStyle}>The scan stopped.</h1>
+      <h1 style={titleStyle}>{copy.title}</h1>
       <p
         style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
+        data-recovery-action={recovery.action}
+        data-reason-code={recovery.reason}
+        data-partly-ready={recovery.partlyReady ? 'true' : 'false'}
+        data-sync-surface={stuck ? 'stuck' : 'failed'}
       >
-        {copy}
+        {copy.body}
       </p>
       <div
         style={{
@@ -383,11 +435,9 @@ function SyncFailed({
         }}
       >
         {needsReconnect ? (
-          // QA-sync-20260831-07: "Try again" here would re-queue a full
-          // scan against the SAME revoked/expired token, fail again at
-          // `getClient`, and burn a rate-limited retry attempt for
-          // nothing — the copy above already tells the user the real
-          // fix is reconnecting.
+          // insufficient_scopes / invalid_grant / reconnect_required:
+          // Retry would re-queue a scan against a grant that cannot
+          // authorize it. Reconnect only — no Try again on this branch.
           <Button
             tone="primary"
             size="xl"
@@ -398,10 +448,6 @@ function SyncFailed({
             Reconnect Gmail
           </Button>
         ) : (
-          // A REAL retry: re-queues the failed sync server-side. This
-          // was `window.location.reload()`, which re-rendered the same
-          // dead screen — the reconciler sweeps `queued` rows only, so
-          // nothing re-queued a `failed` one.
           <Button
             tone="primary"
             size="xl"
@@ -409,7 +455,12 @@ function SyncFailed({
             disabled={!canRetry || retry.isPending}
             style={editorialOnboardingActionStyle}
           >
-            {retry.isPending ? 'Starting…' : 'Try again'}
+            {retry.isPending ? 'Starting…' : retryLabel}
+          </Button>
+        )}
+        {recovery.reason === 'rate_limit' && recovery.partlyReady && onContinuePartial && (
+          <Button tone="ghost" onClick={onContinuePartial}>
+            Continue ready
           </Button>
         )}
         {/* Don't strand a secondary connect on a failed gate — let them

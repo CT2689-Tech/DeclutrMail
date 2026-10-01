@@ -97,6 +97,17 @@ describe('SyncController.getStatus', () => {
     await expect(controller.getStatus(MAILBOX)).rejects.toThrow(':unrecognized_keys[stray]');
   });
 
+  it('passes through updated_at so the gate can detect a stuck heartbeat', async () => {
+    const withHeartbeat: SyncStatus = {
+      ...VALID_STATUS,
+      updated_at: '2026-09-21T12:00:00.000Z',
+    };
+    const getStatus = vi.fn().mockResolvedValue(withHeartbeat);
+    const controller = makeController({ getStatus });
+    const result = await controller.getStatus(MAILBOX);
+    expect(result).toEqual({ data: { ...withHeartbeat, message_progress: null } });
+  });
+
   it('passes through the error_code when present (failed readiness)', async () => {
     const failed: SyncStatus = {
       readiness_status: 'failed',

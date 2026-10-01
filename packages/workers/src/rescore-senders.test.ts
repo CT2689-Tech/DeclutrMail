@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { buildRescoreSenders } from './rescore-senders.js';
 import { SCORE_JOB, scoreJobId, scoreJobOptions } from './score.worker.js';
@@ -72,56 +72,85 @@ describe('buildRescoreSenders', () => {
     expect(sweepAfter).not.toHaveBeenCalled();
   });
 
-  describe('a hung Redis call (CLAUDE.md §2.6)', () => {
-    // This runs inside the outbox dispatcher's open claim transaction
-    // (see the file's own docstring). ioredis's retry-forever connection
-    // never rejects during an outage — it buffers — so an unbounded
-    // `await` here would hold that transaction's row locks indefinitely,
-    // with no failure signal. `addBulk`/`sweepAfter` below never settle,
-    // matching that exact shape, not the mocked "resolves at once" that
-    // does not represent the real client during an outage.
-    beforeEach(() => vi.useFakeTimers());
-    afterEach(() => vi.useRealTimers());
+  // A hung Redis call used to be bounded HERE too, by this file's own
+  // local 5s `withPublishTimeout` — removed 2026-09-29 (round-3
+  // architecture-guardian review). That inner bound settled this
+  // function's own returned promise BEFORE the dispatcher's
+  // `consumerTimeoutMs` could, which meant `OutboxDispatcherWorker`'s
+  // orphan guard tracked an already-settled promise and cleared it on
+  // the next microtask — the real, abandoned `addBulk` kept running
+  // completely untracked, and the very next tick could re-invoke this
+  // function for the same mailbox concurrently with it.
+  // `outbox-dispatcher.worker.test.ts`'s "rescoreSenders composed with
+  // the real dispatcher" suite proves that composition end-to-end, but
+  // ONLY against a 20ms dispatcher-side test bound — short enough that
+  // it always wins the race regardless of whether this file still has
+  // its own inner timer or not, so that composed test alone cannot tell
+  // a correct fix apart from a still-broken one (round-4
+  // architecture-guardian review, 2026-09-29 — corrects this comment's
+  // own prior claim that "isolated unit tests on this file alone cannot
+  // see the interaction that broke"; they can, and the two tests below
+  // are how). Both hang their dependency forever and advance a fake
+  // clock 60 minutes — a safe margin past any realistic dispatcher
+  // bound — to prove directly that THIS function's own returned promise
+  // never settles on its own, which is the actual property "the inner
+  // bound is gone" means.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-    it('fails a hung score-queue publish within the bound, instead of hanging', async () => {
-      const addBulk = vi.fn(() => new Promise(() => {})); // never settles
-      const sweepAfter = vi.fn(async () => {});
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      const assertion = expect(result).rejects.toThrow(/score queue addBulk exceeded 5000ms/);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-      expect(sweepAfter).not.toHaveBeenCalled(); // never reached
-    });
+  it('never settles while addBulk hangs, even 60 minutes of fake time past the dispatcher bound', async () => {
+    vi.useFakeTimers();
+    const addBulk = vi.fn(() => new Promise<unknown[]>(() => {})); // never resolves
+    const sweepAfter = vi.fn(async () => {});
+    let settled = false;
+    const pending = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+      MAILBOX,
+      [KEY_A],
+      CLOCK,
+    );
+    pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
 
-    it('fails a hung Autopilot sweep trigger within the bound, instead of hanging', async () => {
-      const addBulk = vi.fn(async () => []);
-      const sweepAfter = vi.fn(() => new Promise<void>(() => {})); // never settles
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      const assertion = expect(result).rejects.toThrow(/autopilot sweep trigger exceeded 5000ms/);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-    });
+    // If this function ever re-grows an inner timeout of ANY length
+    // (exactly what round 3 removed), advancing fake time past it
+    // settles `pending` and this assertion goes red.
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
 
-    it('a slow-but-real publish under the bound still succeeds', async () => {
-      const addBulk = vi.fn(() => new Promise((resolve) => setTimeout(() => resolve([]), 4_000)));
-      const sweepAfter = vi.fn(async () => {});
-      const result = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
-        MAILBOX,
-        [KEY_A],
-        CLOCK,
-      );
-      await vi.advanceTimersByTimeAsync(4_000);
-      await expect(result).resolves.toBeUndefined();
-      expect(sweepAfter).toHaveBeenCalledWith(MAILBOX);
-    });
+    expect(settled).toBe(false);
+    expect(addBulk).toHaveBeenCalledTimes(1);
+    expect(sweepAfter).not.toHaveBeenCalled();
+  });
+
+  it('never settles while sweepAfter hangs (addBulk already resolved), even 60 minutes past the dispatcher bound', async () => {
+    vi.useFakeTimers();
+    const addBulk = vi.fn(async () => []);
+    const sweepAfter = vi.fn(() => new Promise<void>(() => {})); // never resolves
+    let settled = false;
+    const pending = buildRescoreSenders({ scoreQueue: { addBulk } as never, sweepAfter })(
+      MAILBOX,
+      [KEY_A],
+      CLOCK,
+    );
+    pending.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    await vi.advanceTimersByTimeAsync(60 * 60_000);
+
+    expect(settled).toBe(false);
+    expect(sweepAfter).toHaveBeenCalledTimes(1);
   });
 });
 

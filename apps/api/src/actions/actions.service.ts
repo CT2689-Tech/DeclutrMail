@@ -50,6 +50,7 @@ import {
   initialUnsubscribeLifecycleStatus,
   normalizeUnsubscribeLifecycleStatus,
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
+  UNSUB_MANUAL_REQUIRED_ERROR_CODE,
   type UnsubscribeManualTransition,
 } from '@declutrmail/shared/contracts';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
@@ -3275,7 +3276,7 @@ function protectedSkippedSenderIds(rows: ReadonlyArray<typeof actionJobs.$inferS
 }
 
 /**
- * Aggregate the three terminal one-click outcomes across a batch's
+ * Aggregate the terminal one-click outcomes across a batch's
  * unsubscribe rows (D248). Returns `null` for a batch with no
  * unsubscribe row so a label batch cannot render an unsubscribe receipt.
  */
@@ -3287,6 +3288,7 @@ function summarizeUnsubscribeOutcomes(
   const outcomes: UnsubscribeBatchOutcomes = {
     endpointAccepted: 0,
     unconfirmed: 0,
+    actionRequired: 0,
     failed: 0,
     pending: 0,
   };
@@ -3299,7 +3301,14 @@ function summarizeUnsubscribeOutcomes(
     // what keeps a worker-side rename from silently reclassifying every
     // `unconfirmed` row as `failed` (D248).
     else if (row.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE) outcomes.unconfirmed += 1;
-    else outcomes.failed += 1;
+    else {
+      outcomes.failed += 1;
+      // D252's refused-but-emailable sender is counted INSIDE `failed` as
+      // well as here: a client that predates `actionRequired` then still
+      // reads it as not accepted, never as a success. Readers that know the
+      // field subtract it to show the "send from Gmail" line.
+      if (row.errorCode === UNSUB_MANUAL_REQUIRED_ERROR_CODE) outcomes.actionRequired += 1;
+    }
   }
   return outcomes;
 }

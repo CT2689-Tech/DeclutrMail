@@ -1,10 +1,13 @@
 import type { ToastTone } from '@declutrmail/shared';
+import type { UNSUB_MANUAL_REQUIRED_ERROR_CODE } from '@declutrmail/shared/contracts';
 import {
   UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE,
   UNSUB_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 
 import { apiErrorCode } from './api/client';
+
+const UNSUB_MANUAL_ERROR_CODE: typeof UNSUB_MANUAL_REQUIRED_ERROR_CODE = 'UNSUB_MANUAL_REQUIRED';
 
 /**
  * The toast for a single-sender one-click unsubscribe that reached a
@@ -22,6 +25,12 @@ export function unsubscribeOutcomeToast(
   }
   if (outcome.errorCode === UNSUB_AMBIGUOUS_REDIRECT_ERROR_CODE) {
     return [`Unsubscribe from ${senderName} is unconfirmed — watch for new email.`, 'warn'];
+  }
+  if (outcome.errorCode === UNSUB_MANUAL_ERROR_CODE) {
+    return [
+      `${senderName} didn't accept the one-click request — send the unsubscribe email from Gmail instead.`,
+      'warn',
+    ];
   }
   // Refused before anything was sent: the sender was Protected when the
   // request was due (D245).
