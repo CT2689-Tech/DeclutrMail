@@ -895,9 +895,9 @@ export class SendersReadService {
    *                      to its own max, so bars stay comparable.
    * - `asOf`           — server time at compute (observability).
    *
-   * Two separate SELECTs because the predicates differ: `totalMatching`
-   * honors filters; `globalMaxTotal` does not. Each is a single
-   * indexed scan; cheaper than a CTE that joins them.
+   * The axis aggregate also provides the exact unfiltered total. Reuse
+   * it when matching has the same mailbox/current-mail scope; composed
+   * filters retain their separate exact COUNT query.
    */
   async getSenderListQueryMeta(args: {
     mailboxAccountId: string;
@@ -921,8 +921,9 @@ export class SendersReadService {
   }): Promise<SenderListQueryMeta> {
     const { mailboxAccountId, category, isProtected } = args;
 
-    const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
-    if (args.currentMailOnly) totalMatchingConditions.push(hasCurrentMail());
+    const mailboxConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
+    if (args.currentMailOnly) mailboxConditions.push(hasCurrentMail());
+    const totalMatchingConditions = [...mailboxConditions];
     if (args.hasInboxMail) totalMatchingConditions.push(hasInboxMail());
     if (category) {
       totalMatchingConditions.push(eq(senders.gmailCategory, category));
@@ -1042,16 +1043,21 @@ export class SendersReadService {
           eq(senderPolicies.senderKey, senders.senderKey),
         ),
       )
-      .where(
-        and(
-          eq(senders.mailboxAccountId, mailboxAccountId),
-          args.currentMailOnly ? hasCurrentMail() : undefined,
-        ),
-      );
+      .where(and(...mailboxConditions));
 
-    const [totalRow, countsRow] = await Promise.all([totalMatchingQuery, filterCountsQuery]);
-    const totalMatching = ensureSafeIntegerNumber(totalRow[0]?.count ?? 0, 'totalMatching');
+    // With no composed filters both aggregates count the exact same rows.
+    // Avoid another mailbox-wide current-mail scan on the default list.
+    const [totalRow, countsRow] = await Promise.all([
+      totalMatchingConditions.length === mailboxConditions.length
+        ? Promise.resolve(null)
+        : totalMatchingQuery,
+      filterCountsQuery,
+    ]);
     const counts = countsRow[0];
+    const totalMatching = ensureSafeIntegerNumber(
+      totalRow === null ? (counts?.total ?? 0) : (totalRow[0]?.count ?? 0),
+      'totalMatching',
+    );
     const globalMaxTotal = ensureSafeIntegerNumber(counts?.max ?? 0, 'globalMaxTotal');
     const filterCounts = counts
       ? {
