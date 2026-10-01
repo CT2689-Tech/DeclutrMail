@@ -159,7 +159,7 @@ function renderScreen() {
 /** Every filter lives behind the one header button. */
 async function openFilters(): Promise<HTMLElement> {
   await userEvent.click(await screen.findByRole('button', { name: /^Filter/ }));
-  return screen.getByRole('dialog', { name: 'Activity filters' });
+  return screen.findByRole('dialog', { name: 'Activity filters' });
 }
 
 beforeEach(() => {
@@ -3188,6 +3188,9 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
       }),
     ).toHaveStyle({ minHeight: '44px' });
     expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: /view results/i }));
+    expect(screen.queryByRole('dialog', { name: /activity filters/i })).toBeNull();
+    expect(trigger).toHaveFocus();
   });
 
   // The mobile card computes its own `sourceAttribution` independently of

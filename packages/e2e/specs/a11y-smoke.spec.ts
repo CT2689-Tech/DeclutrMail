@@ -112,6 +112,29 @@ for (const route of ROUTES) {
   });
 }
 
+test('Activity filters load on first open and restore focus', async ({ page }, testInfo) => {
+  await page.goto('/activity');
+  const trigger = page.getByRole('button', { name: /^Filter\b/ });
+  await expect(trigger).toBeVisible({ timeout: 60_000 });
+  const dialog = page.getByRole('dialog', { name: 'Activity filters' });
+  await expect(dialog).toHaveCount(0);
+
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Manual', exact: true })).toBeVisible();
+  await expectNoViewportOverflow(page);
+  await expectNoBlockingAxeViolations(page);
+
+  if (testInfo.project.name === MOBILE_PROJECT) {
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await dialog.getByRole('button', { name: 'View results' }).click();
+  } else {
+    await page.keyboard.press('Escape');
+  }
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
+
 test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   await page.goto('/senders');
   await expect(page.getByRole('heading', { name: /^Senders\b/, level: 1 })).toBeVisible({
