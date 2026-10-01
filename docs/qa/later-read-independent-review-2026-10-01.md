@@ -76,3 +76,7 @@ QA accurately reports only two production-before requests6505.80ms and8611.99ms,
 ## Final disposition
 
 No unresolved privacy, architecture or introduced correctness blocker. Ready for integration-owner final-head CI and authorized integration. Exact runtime hash above identifies the reviewed candidate. Production latency/throughput, count-read concurrency and very large populated timer sets remain practical limits; the candidate removes proven irrelevant work while retaining label, membership, mailbox and action-authority semantics.
+
+## Billing CI locator correction review
+
+The independent reviewer approved the visible-row restriction: a disposable Playwright fixture selected only desktop at 1280px and mobile at 375px, while duplicate visible rows still threw strict-mode errors and zero visible rows still timed out. No production browser, cookies, or billing runtime changes were used. E2E typecheck and changed ESLint passed after wiring the isolated checkout dependencies. Full billing journey validation remains required in CI.

@@ -70,3 +70,7 @@ performance depends on the size of the timer sender set and message history.
   mailbox action, return, reschedule or billing change was performed.
 - Deployment and post-release production timing must be verified before
   claiming the production delay has been reduced.
+
+## CI integration correction
+
+The initial PR CI run (36887413383) passed API tests but failed the billing browser journey because its sender-row test ID matched both responsive representations. The billing locator now requires the visible row and retains strict matching, the preview, paywall, signed sandbox webhook and entitlement assertions. No billing runtime behavior changed. This is an integration correction owned by this PR.
