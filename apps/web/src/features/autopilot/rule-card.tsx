@@ -36,6 +36,7 @@ const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')
 export function RuleCard({
   rule,
   canActivate,
+  canChangeMode = true,
   pendingCount,
   pendingApproximate,
   isSaving,
@@ -54,8 +55,9 @@ export function RuleCard({
    * worker, so the card must not render it as running.
    */
   canActivate: boolean;
+  canChangeMode?: boolean;
   /** Pending Observe-mode suggestions currently buffered for this rule. */
-  pendingCount: number;
+  pendingCount: number | undefined;
   /**
    * True when the pending buffer hit the BE's 50-row page cap — the
    * count is then a floor, not a total, and the copy must say so.
@@ -122,7 +124,7 @@ export function RuleCard({
         </div>
         <Switch
           checked={rule.enabled}
-          disabled={isSaving}
+          disabled={isSaving || !canChangeMode}
           ariaLabel={`${rule.enabled ? 'Disable' : 'Enable'} rule ${name}`}
           onChange={() => onToggleEnabled(!rule.enabled)}
         />
@@ -160,7 +162,7 @@ export function RuleCard({
             tone="default"
             size="sm"
             onClick={onResume}
-            disabled={isSaving}
+            disabled={isSaving || !canChangeMode}
             ariaLabel={`Resume rule ${name}`}
           >
             {isSaving ? 'Resuming…' : 'Resume'}
@@ -192,9 +194,11 @@ export function RuleCard({
             <span>{lastRunSummary(rule, now !== null)}</span>
             <span aria-hidden="true">·</span>
             <span>
-              {pendingApproximate
-                ? `${pendingCount}+ pending`
-                : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
+              {pendingCount === undefined
+                ? 'Pending suggestions not loaded'
+                : pendingApproximate
+                  ? `${pendingCount}+ pending`
+                  : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
             </span>
             {observeSummary != null && (
               <>

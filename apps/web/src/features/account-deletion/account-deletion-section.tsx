@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Button, tokens } from '@declutrmail/shared';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
@@ -10,7 +11,12 @@ import {
   useRequestAccountDeletion,
 } from './api/use-account-deletion';
 import { SettingsRow, SettingsRowStatus } from '@/features/settings/settings-list';
-import { DeleteAccountModal, formatDate } from './delete-account-modal';
+import { formatDate } from './date-format';
+
+const DeleteAccountModal = dynamic(
+  () => import('./delete-account-modal').then((module) => module.DeleteAccountModal),
+  { ssr: false, loading: () => <span role="status">Loading account deletion options…</span> },
+);
 
 const { color, font, text } = tokens;
 
@@ -25,6 +31,10 @@ const { color, font, text } = tokens;
  */
 export function AccountDeletionSection() {
   const status = useAccountDeletionStatus();
+  // The shell can fill this query before this subtree hydrates. Match the
+  // server's pending row on the first client render, then show cached status.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const request = useRequestAccountDeletion();
   const cancel = useCancelAccountDeletion();
   const [modalOpen, setModalOpen] = useState(false);
@@ -33,7 +43,7 @@ export function AccountDeletionSection() {
 
   return (
     <>
-      {status.isPending ? (
+      {!mounted || status.isPending ? (
         <SettingsRowStatus
           state={{ kind: 'loading' }}
           loadingLabel="Loading deletion status…"
@@ -67,24 +77,26 @@ export function AccountDeletionSection() {
         </SettingsRow>
       )}
 
-      <DeleteAccountModal
-        open={modalOpen}
-        projection={status.data?.projection ?? null}
-        isSubmitting={request.isPending}
-        submitError={submitError}
-        onCancel={() => {
-          request.reset();
-          setModalOpen(false);
-        }}
-        onConfirm={(confirmPhrase) =>
-          request.mutate(
-            { confirmPhrase },
-            {
-              onSuccess: () => setModalOpen(false),
-            },
-          )
-        }
-      />
+      {modalOpen && (
+        <DeleteAccountModal
+          open={modalOpen}
+          projection={status.data?.projection ?? null}
+          isSubmitting={request.isPending}
+          submitError={submitError}
+          onCancel={() => {
+            request.reset();
+            setModalOpen(false);
+          }}
+          onConfirm={(confirmPhrase) =>
+            request.mutate(
+              { confirmPhrase },
+              {
+                onSuccess: () => setModalOpen(false),
+              },
+            )
+          }
+        />
+      )}
     </>
   );
 }

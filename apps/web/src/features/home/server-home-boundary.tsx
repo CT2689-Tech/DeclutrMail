@@ -1,24 +1,18 @@
 import 'server-only';
 
 import type { ReactNode } from 'react';
-import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { getServerMe } from '@/features/auth/api/server-me';
-import { screenerCountQueryOptions } from '@/features/screener/api/query-options';
-import {
-  triageBootstrapQueryOptions,
-  type TriageBootstrap,
-} from '@/features/triage/api/query-options';
 import { serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import { homeSummaryQueryOptions } from './api/query-options';
 import type { HomeSummary } from './api/use-home-summary';
 
 /**
- * Start Home's critical reads alongside app-shell hydration, rather than
+ * Seed Home's primary summary alongside app-shell hydration, rather than
  * after its HTML and browser JavaScript. The session lookup is request-cached.
- * Reuse destination query keys so Home and navigation badges share results;
- * optional workflow signals remain client-owned and never delay this boundary.
+ * Review tasks and optional workflow signals are client-owned progressive reads.
+ * Their existing destination query keys still share results with navigation.
  */
 export async function ServerHomeBoundary({
   cookieHeader,
@@ -47,35 +41,6 @@ export async function ServerHomeBoundary({
           ),
         ),
       ];
-      const tier = me.tier ?? 'free';
-      if (hasCapability(tier, 'triage')) {
-        queries.push(
-          queryClient.fetchQuery(
-            triageBootstrapQueryOptions((signal) =>
-              serverGet<TriageBootstrap>(
-                '/api/triage/bootstrap',
-                cookieHeader,
-                signal,
-                mailboxOptions,
-              ),
-            ),
-          ),
-        );
-      }
-      if (hasCapability(tier, 'screener')) {
-        queries.push(
-          queryClient.fetchQuery(
-            screenerCountQueryOptions((signal) =>
-              serverGet<{ pending: number }>(
-                '/api/screener/count',
-                cookieHeader,
-                signal,
-                mailboxOptions,
-              ),
-            ),
-          ),
-        );
-      }
       return queries;
     },
     children,

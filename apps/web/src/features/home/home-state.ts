@@ -22,6 +22,7 @@ import type { HomeSummary } from './api/use-home-summary';
 export interface HomeAction {
   label: string;
   href: string;
+  loading?: boolean;
 }
 
 export interface HomeStat {

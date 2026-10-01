@@ -118,11 +118,11 @@ export function AutopilotRoute() {
   }, [refetchRules, refetchSuggestions, refetchPattern]);
 
   const state: AutopilotScreenState = useMemo(() => {
-    if (rulesQuery.isLoading || suggestionsQuery.isLoading || patternQuery.isLoading) {
+    if (rulesQuery.data === undefined && rulesQuery.isPending) {
       return { kind: 'loading' };
     }
-    if (rulesQuery.isError || suggestionsQuery.isError || patternQuery.isError) {
-      const err = rulesQuery.error ?? suggestionsQuery.error ?? patternQuery.error;
+    if (rulesQuery.isError) {
+      const err = rulesQuery.error;
       return { kind: 'error', message: loadErrorDescription(err), retry };
     }
     const rules = rulesQuery.data ?? [];
@@ -153,7 +153,13 @@ export function AutopilotRoute() {
     retry,
   ]);
 
-  return <AutopilotScreen state={state} />;
+  return (
+    <AutopilotScreen
+      state={state}
+      suggestionsState={sectionState(suggestionsQuery, refetchSuggestions)}
+      patternState={sectionState(patternQuery, refetchPattern)}
+    />
+  );
 }
 
 /** Approve preview target — which rule + which matches the modal covers. */
@@ -172,7 +178,34 @@ interface ApproveTarget {
   matchedBefore?: string;
 }
 
-export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
+type SectionState =
+  { kind: 'loading' } | { kind: 'error'; message: string; retry: () => void } | { kind: 'ready' };
+
+function sectionState(
+  query: { isPending: boolean; isError: boolean; error: unknown; data: unknown },
+  refetch: () => Promise<unknown>,
+): SectionState {
+  if (query.isError)
+    return {
+      kind: 'error',
+      message: loadErrorDescription(query.error),
+      retry: () => {
+        void refetch();
+      },
+    };
+  if (query.isPending && query.data === undefined) return { kind: 'loading' };
+  return { kind: 'ready' };
+}
+
+export function AutopilotScreen({
+  state,
+  suggestionsState = { kind: 'ready' },
+  patternState = { kind: 'ready' },
+}: {
+  state: AutopilotScreenState;
+  suggestionsState?: SectionState;
+  patternState?: SectionState;
+}) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
   // Which mailbox these rules run on — named in the confirm modals,
@@ -261,7 +294,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     ruleFilter === 'all' ? rules : rules.filter((rule) => ruleStatus(rule) === ruleFilter);
   const suggestions: SuggestionWithRule[] = state.kind === 'ready' ? state.suggestions : [];
   const patternSuggestion =
-    state.kind === 'ready' || state.kind === 'empty' ? (state.patternSuggestion ?? null) : null;
+    (state.kind === 'ready' || state.kind === 'empty') && patternState.kind === 'ready'
+      ? (state.patternSuggestion ?? null)
+      : null;
   const allPaused = rules.length > 0 && rules.every((r) => r.mode === 'paused');
   // "Pause all" is only meaningful for rules that could actually run.
   // Without the `enabled` term a workspace whose rules are all switched
@@ -743,7 +778,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // something new; the slot's "+N" steps to the rest.
   const banners = [
     ...(allPaused ? [{ key: 'paused', node: <PausedBanner rules={rules} /> }] : []),
-    ...(state.kind === 'ready' && elapsedObserveRules.length > 0
+    ...(state.kind === 'ready' &&
+    suggestionsState.kind === 'ready' &&
+    elapsedObserveRules.length > 0
       ? [
           {
             key: 'observe-window',
@@ -824,6 +861,16 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       />
 
       <AutopilotBannerStack banners={banners} />
+      {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'loading' && (
+        <p role="status">Checking rule suggestions…</p>
+      )}
+      {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'error' && (
+        <ErrorState
+          title="Couldn't check rule suggestions"
+          description={patternState.message}
+          onRetry={patternState.retry}
+        />
+      )}
 
       {state.kind === 'ready' && (
         <nav
@@ -838,7 +885,12 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {
               href: '#pending-heading',
               label: 'Review first',
-              count: `${suggestions.length}${pendingBufferTruncated ? '+' : ''} suggestion${suggestions.length === 1 ? '' : 's'}`,
+              count:
+                suggestionsState.kind === 'loading'
+                  ? 'Loading suggestions…'
+                  : suggestionsState.kind === 'error'
+                    ? 'Suggestions unavailable'
+                    : `${suggestions.length}${pendingBufferTruncated ? '+' : ''} suggestion${suggestions.length === 1 ? '' : 's'}`,
               detail: 'Preview before approving, or skip',
               filter: null,
             },
@@ -1003,7 +1055,12 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                     key={rule.id}
                     rule={rule}
                     canActivate={canActivate}
-                    pendingCount={pendingCountByRule.get(rule.id) ?? 0}
+                    canChangeMode={suggestionsState.kind === 'ready'}
+                    pendingCount={
+                      suggestionsState.kind === 'ready'
+                        ? (pendingCountByRule.get(rule.id) ?? 0)
+                        : undefined
+                    }
                     pendingApproximate={pendingBufferTruncated}
                     isSaving={savingRuleId === rule.id}
                     onToggleEnabled={(next) => onToggleEnabled(rule, next)}
@@ -1055,10 +1112,23 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                 )}
               </div>
 
-              {state.kind === 'loading' && <SuggestionsSkeleton />}
-              {state.kind === 'empty' && <SuggestionsEmptyState />}
-              {state.kind === 'ready' && suggestions.length === 0 && <SuggestionsEmptyState />}
-              {state.kind === 'ready' && groups.length > 0 && (
+              {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
+                <SuggestionsSkeleton />
+              )}
+              {suggestionsState.kind === 'error' && (
+                <ErrorState
+                  title="Couldn't load pending suggestions"
+                  description={suggestionsState.message}
+                  onRetry={suggestionsState.retry}
+                />
+              )}
+              {state.kind === 'empty' && suggestionsState.kind === 'ready' && (
+                <SuggestionsEmptyState />
+              )}
+              {state.kind === 'ready' &&
+                suggestionsState.kind === 'ready' &&
+                suggestions.length === 0 && <SuggestionsEmptyState />}
+              {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {groups.map((group) => (
                     <SuggestionGroup

@@ -26,7 +26,7 @@ import { BriefScreen } from '@/features/brief/brief-screen';
 import { briefTodayQueryOptions } from '@/features/brief/api/query-options';
 import { getServerMe } from '@/features/auth/api/server-me';
 import type { BriefWire } from '@/lib/api/brief';
-import { serverGetEnvelope } from '@/lib/api/server';
+import { ServerApiError, serverGetEnvelope } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
@@ -45,9 +45,22 @@ export default async function BriefPage() {
         enabled
           ? [
               queryClient.fetchQuery(
-                briefTodayQueryOptions((signal) =>
-                  serverGetEnvelope<BriefWire>('/api/briefs/today', cookieHeader, signal),
-                ),
+                briefTodayQueryOptions(async (signal) => {
+                  try {
+                    return await serverGetEnvelope<BriefWire>(
+                      '/api/briefs/today',
+                      cookieHeader,
+                      signal,
+                    );
+                  } catch (error) {
+                    // The browser already treats today's 404 as no edition yet.
+                    // Seed that absence so hydration doesn't repeat the same read.
+                    if (error instanceof ServerApiError && error.status === 404) {
+                      return { data: null };
+                    }
+                    throw error;
+                  }
+                }),
               ),
             ]
           : []

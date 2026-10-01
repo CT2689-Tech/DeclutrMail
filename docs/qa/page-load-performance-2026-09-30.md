@@ -1,5 +1,7 @@
 # Page-load performance — September 30, 2026
 
+This records the first candidate. The expanded [all-screen sweep](screen-load-performance-2026-09-30.md) supersedes its Home/shell ownership and timing conclusions.
+
 Baseline: `efbb9e0139e583245bce615e0e7f956441ebd4cb` (freshly fetched main).
 Integration owner: this Codex session, branch `codex/page-load-performance`.
 Scope: Home hydration, sender-detail server entry, and shared Screener badge

@@ -1,7 +1,7 @@
 import { headers } from 'next/headers';
 import type { PaginatedEnvelope } from '@declutrmail/shared/contracts';
 
-import { getServerMe } from '@/features/auth/api/server-me';
+import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { securityEventsQueryOptions } from '@/features/admin-security/api/query-options';
 import { AdminSecurityEventsScreen } from '@/features/admin-security/security-events-screen';
 import type { SecurityEventWire } from '@/lib/api/security-events';
@@ -23,13 +23,13 @@ import { ServerQueryHydration } from '@/lib/server-query-hydration';
  */
 export default async function AdminSecurityPage() {
   const cookieHeader = (await headers()).get('cookie') ?? '';
-  const me = await getServerMe(cookieHeader);
+  const eligible = hasServerAccessCookie(cookieHeader);
   const filters = {};
   return (
     <ServerQueryHydration
       surface="admin-security"
       prefetch={(queryClient) =>
-        me === null
+        !eligible
           ? []
           : [
               queryClient.fetchInfiniteQuery(

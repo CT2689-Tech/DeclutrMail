@@ -35,17 +35,19 @@ export default async function QuietPage() {
       surface="quiet"
       prefetch={(queryClient) =>
         enabled
-          ? me.mailboxes.map((mailbox) =>
-              queryClient.fetchQuery(
-                quietHoursQueryOptions(mailbox.id, (signal) =>
-                  serverGet<QuietHoursState>(
-                    `/api/mailboxes/${encodeURIComponent(mailbox.id)}/quiet-hours`,
-                    cookieHeader,
-                    signal,
+          ? me.mailboxes
+              .filter((mailbox) => mailbox.id === me.activeMailboxId)
+              .map((mailbox) =>
+                queryClient.fetchQuery(
+                  quietHoursQueryOptions(mailbox.id, (signal) =>
+                    serverGet<QuietHoursState>(
+                      `/api/mailboxes/${encodeURIComponent(mailbox.id)}/quiet-hours`,
+                      cookieHeader,
+                      signal,
+                    ),
                   ),
                 ),
-              ),
-            )
+              )
           : []
       }
     >

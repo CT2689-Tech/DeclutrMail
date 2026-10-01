@@ -14,7 +14,7 @@ import { getServerBillingSubscription } from '@/features/billing/api/server-bill
 import { ServerBillingInvoices } from '@/features/billing/server-billing-invoices';
 import { parseBillingIntentParams } from '@/features/billing/billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
-import { getServerMe } from '@/features/auth/api/server-me';
+import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 import { COUNTRY_HEADER } from '@/middleware';
 
@@ -27,19 +27,19 @@ export default async function BillingPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const initialIntent = parseBillingIntentParams(await searchParams);
+  const [requestHeaders, params] = await Promise.all([headers(), searchParams]);
+  const initialIntent = parseBillingIntentParams(params);
   // Geo is resolved at the edge and read HERE (server) so the picker
   // renders the right rail on first paint — a client-side guess would
   // flash the wrong currency before correcting itself.
-  const requestHeaders = await headers();
   const country = requestHeaders.get(COUNTRY_HEADER);
   const cookieHeader = requestHeaders.get('cookie') ?? '';
-  const me = await getServerMe(cookieHeader);
+  const eligible = hasServerAccessCookie(cookieHeader);
   return (
     <ServerQueryHydration
       surface="billing"
       prefetch={(queryClient) =>
-        me === null
+        !eligible
           ? []
           : [
               queryClient.fetchQuery(

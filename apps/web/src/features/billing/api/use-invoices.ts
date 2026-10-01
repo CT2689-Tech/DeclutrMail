@@ -20,7 +20,7 @@ import { BillingInvoiceDocumentSchema } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
 
-import { BillingPayloadError } from '../billing-model';
+import { BillingPayloadError } from '../billing-payload-error';
 import { billingInvoicesQueryOptions } from './query-options';
 import { parseBillingInvoices } from './parse-payload';
 

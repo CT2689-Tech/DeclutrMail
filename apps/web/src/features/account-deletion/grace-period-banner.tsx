@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
-import { formatDate } from './delete-account-modal';
+import { formatDate } from './date-format';
 
 const { color, font, text } = tokens;
 

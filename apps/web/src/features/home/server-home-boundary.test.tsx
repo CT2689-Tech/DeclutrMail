@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 describe('Home server hydration', () => {
-  it('makes the main number and action counts immediately available without duplicate browser reads', async () => {
+  it('hydrates the main number and resolves client-owned tasks without duplicate reads', async () => {
     const fetchSpy = stub();
     const boundary = await ServerHomeBoundary({
       cookieHeader: 'dm_access=synthetic',
@@ -73,7 +73,7 @@ describe('Home server hydration', () => {
       </QueryClientProvider>,
     );
     try {
-      expect(screen.getByText('9 cleared; 0 to review; 3 new')).toBeInTheDocument();
+      expect(await screen.findByText('9 cleared; 0 to review; 3 new')).toBeInTheDocument();
       expect(await screen.findByText('Badge: 3')).toBeInTheDocument();
       expect(fetchSpy.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
         '/api/auth/me',
@@ -81,7 +81,7 @@ describe('Home server hydration', () => {
         '/api/triage/bootstrap',
         '/api/screener/count',
       ]);
-      for (const [, init] of fetchSpy.mock.calls.slice(1)) {
+      for (const [, init] of fetchSpy.mock.calls.slice(1, 2)) {
         expect(init?.headers).toMatchObject({ 'X-Active-Mailbox-Id': 'mb-synthetic' });
       }
     } finally {
@@ -90,7 +90,7 @@ describe('Home server hydration', () => {
     }
   });
 
-  it('starts all critical reads together and leaves optional workflows to the browser', async () => {
+  it('waits only for the primary summary and leaves tasks to the browser', async () => {
     vi.useFakeTimers();
     const fetchSpy = stub();
     const original = fetchSpy.getMockImplementation()!;
@@ -109,19 +109,19 @@ describe('Home server hydration', () => {
       return boundary;
     });
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(ready).toBe(false);
     await vi.advanceTimersByTimeAsync(500);
     expect(ready).toBe(true);
-    expect((await render).props.state?.queries).toHaveLength(3);
+    expect((await render).props.state?.queries).toHaveLength(1);
   });
 
   it.each(['free', 'plus', 'pro'] as const)('preserves %s capability gates', async (tier) => {
     const fetchSpy = stub(tier);
     await ServerHomeBoundary({ cookieHeader: 'dm_access=synthetic', children: <div /> });
     const paths = fetchSpy.mock.calls.map(([input]) => new URL(String(input)).pathname);
-    expect(paths.includes('/api/triage/bootstrap')).toBe(true);
-    expect(paths.includes('/api/screener/count')).toBe(tier !== 'free');
+    expect(paths.includes('/api/triage/bootstrap')).toBe(false);
+    expect(paths.includes('/api/screener/count')).toBe(false);
   });
 
   it('skips mailbox reads when there is no active mailbox', async () => {
@@ -157,8 +157,8 @@ describe('Home server hydration', () => {
       cookieHeader: 'dm_access=synthetic',
       children: <div />,
     });
-    expect(boundary.props.state?.queries).toHaveLength(2);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(boundary.props.state?.queries).toHaveLength(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('bounds a hung read and preserves successful siblings for client recovery', async () => {
@@ -181,7 +181,7 @@ describe('Home server hydration', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     const boundary = await render;
     expect(aborted).toBe(true);
-    expect(boundary.props.state?.queries).toHaveLength(2);
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(boundary.props.state?.queries).toHaveLength(0);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });

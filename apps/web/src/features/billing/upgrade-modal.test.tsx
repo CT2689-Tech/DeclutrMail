@@ -33,6 +33,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
 
 import { UpgradeModal } from './upgrade-modal';
+import { UpgradeModalHost } from './upgrade-modal-host';
 
 beforeEach(() => {
   mockTier = 'free';
@@ -65,6 +66,21 @@ function setViewportWidth(width: number): void {
 describe('UpgradeModal', () => {
   afterEach(() => {
     window.matchMedia = originalMatchMedia;
+  });
+
+  it('loads the global dialog only after a gate hit and dismisses it', async () => {
+    render(<UpgradeModalHost />);
+    expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();
+    act(() => {
+      useUpgradeGateStore.getState().report({
+        reason: 'free_cap',
+        details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+      });
+    });
+    expect(await screen.findByTestId('upgrade-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
+    expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();
   });
 
   it('renders as a bottom sheet at phone width', () => {

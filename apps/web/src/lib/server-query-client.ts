@@ -47,7 +47,7 @@ function isDesignedPrefetchFailure(error: unknown): boolean {
  * Per-prefetch deadline, in milliseconds.
  *
  * WHY A DEADLINE EXISTS AT ALL. Every authenticated route renders
- * inside `ServerAppBoundary`, which awaits its whole prefetch set
+ * inside `ServerAppBoundary`, which awaits its authentication and onboarding gates
  * before the first byte of HTML is sent. With no bound, ONE slow read
  * holds the entire signed-in app's TTFB, and one hung read holds it
  * forever — a `server-hydration` timeout did fire in production on

@@ -6,20 +6,11 @@
 // read; suggestions and every mutation stay unmounted and server-gated.
 
 import { headers } from 'next/headers';
-import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AutopilotEntitlementSurface } from '@/features/autopilot/autopilot-entitlement-surface';
-import {
-  autopilotRulesQueryOptions,
-  patternSuggestionQueryOptions,
-  pendingSuggestionsQueryOptions,
-} from '@/features/autopilot/api/query-options';
+import { autopilotRulesQueryOptions } from '@/features/autopilot/api/query-options';
 import { getServerMe } from '@/features/auth/api/server-me';
-import type {
-  AutopilotMatchDto,
-  AutopilotPatternSuggestionDto,
-  AutopilotRuleDto,
-} from '@/lib/api/autopilot';
+import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
@@ -31,7 +22,6 @@ export default async function AutopilotPage() {
   const cookieHeader = (await headers()).get('cookie') ?? '';
   const me = await getServerMe(cookieHeader);
   const mailboxId = me?.activeMailboxId ?? undefined;
-  const fullSurface = me !== null && hasCapability(me.tier, 'autopilot');
 
   return (
     <ServerQueryHydration
@@ -51,30 +41,6 @@ export default async function AutopilotPage() {
             ),
           ),
         ];
-        if (fullSurface) {
-          queries.push(
-            queryClient.fetchQuery(
-              pendingSuggestionsQueryOptions((signal) =>
-                serverGet<AutopilotMatchDto[]>(
-                  '/api/autopilot/pending-suggestions',
-                  cookieHeader,
-                  signal,
-                  mailboxOptions,
-                ),
-              ),
-            ),
-            queryClient.fetchQuery(
-              patternSuggestionQueryOptions((signal) =>
-                serverGet<AutopilotPatternSuggestionDto | null>(
-                  '/api/autopilot/pattern-suggestion',
-                  cookieHeader,
-                  signal,
-                  mailboxOptions,
-                ),
-              ),
-            ),
-          );
-        }
         return queries;
       }}
     >

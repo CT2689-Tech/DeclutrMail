@@ -418,6 +418,12 @@ function SecondaryRow({ stats }: { stats: HomeStat[] }) {
 }
 
 function PrimaryLink({ action }: { action: HomeAction }) {
+  if (action.loading)
+    return (
+      <span role="status" className={styles.primary}>
+        {action.label}
+      </span>
+    );
   return (
     <Link href={action.href} data-dm-button="" className={styles.primary}>
       {action.label}

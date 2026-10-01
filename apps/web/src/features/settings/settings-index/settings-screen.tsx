@@ -100,10 +100,14 @@ export function SettingsScreen({
   const updateBriefPrefs = useUpdateBriefPrefs();
   const billing = useBillingSubscription();
   const queriedHealthById = useMailboxesHealth(me.mailboxes);
+  // Sync can finish in the shell before Settings hydrates. Keep the first
+  // client health rows identical to SSR; cached health follows after mount.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const healthById = Object.fromEntries(
     me.mailboxes.map((mailbox) => [
       mailbox.id,
-      queriedHealthById[mailbox.id] ?? initialMailboxHealth[mailbox.id],
+      (mounted ? queriedHealthById[mailbox.id] : undefined) ?? initialMailboxHealth[mailbox.id],
     ]),
   );
   const searchParams = useSearchParams();

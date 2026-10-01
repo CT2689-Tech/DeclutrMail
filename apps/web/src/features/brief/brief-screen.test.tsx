@@ -31,6 +31,8 @@ import {
   truncate,
 } from './brief-screen';
 import type { BriefWire } from '@/lib/api/brief';
+import { briefKeys } from './api/query-keys';
+import { makeQueryClient } from '@/lib/query-client';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
@@ -142,6 +144,37 @@ describe('BriefScreen — edge states', () => {
 
     renderScreen();
     expect(screen.getByRole('status')).toBeInTheDocument();
+  });
+
+  it('uses the server-hydrated absence without refetching, and can refresh', async () => {
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => {
+          reads += 1;
+          return jsonOk({ data: BASE_BRIEF });
+        },
+      },
+      { method: 'GET', path: '/api/briefs', respond: () => jsonOk({ data: [] }) },
+    ]);
+    const client = makeQueryClient();
+    client.setQueryData(briefKeys.today(), { data: null });
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    expect(
+      screen.getByRole('heading', { name: /your brief is not available yet/i }),
+    ).toBeInTheDocument();
+    expect(reads).toBe(0);
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(reads).toBe(1));
+    await waitFor(() =>
+      expect(screen.queryByText(/your brief is not available yet/i)).not.toBeInTheDocument(),
+    );
   });
 
   it('renders the "Brief lands soon" branch on 404 (worker has not ticked yet)', async () => {

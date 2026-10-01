@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { renderToString } from 'react-dom/server';
+import { hydrateRoot } from 'react-dom/client';
+import { accountDeletionQueryOptions } from './api/query-options';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 
 import { ERROR_CODES } from '@declutrmail/shared/contracts';
 
 import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { deletionSubmitError } from './account-deletion-section';
+import { AccountDeletionSection, deletionSubmitError } from './account-deletion-section';
 import { useAccountDeletionStatus, useRequestAccountDeletion } from './api/use-account-deletion';
 
 function conflict(code: string): ApiError {
@@ -26,6 +29,83 @@ describe('deletionSubmitError', () => {
     expect(deletionSubmitError(new ApiError(400, {}, 'bad'))).toMatch(/phrase did not match/);
     expect(deletionSubmitError(new ApiError(500, {}, 'boom'))).toMatch(/try again/i);
     expect(deletionSubmitError(null)).toBeNull();
+  });
+});
+
+describe('AccountDeletionSection', () => {
+  it('hydrates safely when the shell populated deletion status after SSR', async () => {
+    const client = createTestQueryClient();
+    const status = {
+      request: null,
+      projection: {
+        flatGraceAt: '2026-10-08T00:00:00Z',
+        latestUndoExpiresAt: null,
+        activeUndoCount: 0,
+        projectedEffectiveAt: '2026-10-08T00:00:00Z',
+        projectedBasis: 'flat-grace' as const,
+      },
+    };
+    const node = (
+      <QueryWrapper client={client}>
+        <AccountDeletionSection />
+      </QueryWrapper>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(node);
+    document.body.appendChild(container);
+    client.setQueryData(accountDeletionQueryOptions(async () => status).queryKey, status);
+    const onRecoverableError = vi.fn();
+    let root!: ReturnType<typeof hydrateRoot>;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, node, { onRecoverableError });
+      });
+      expect(onRecoverableError).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('Delete account and data');
+    } finally {
+      act(() => root?.unmount());
+      container.remove();
+      client.clear();
+    }
+  });
+
+  it('loads the dialog on demand and retains both confirmation steps', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () =>
+          jsonOk({
+            data: {
+              request: null,
+              projection: {
+                flatGraceAt: '2026-10-08T00:00:00Z',
+                latestUndoExpiresAt: null,
+                activeUndoCount: 0,
+                projectedEffectiveAt: '2026-10-08T00:00:00Z',
+                projectedBasis: 'flat-grace',
+              },
+            },
+          }),
+      },
+    ]);
+    try {
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <AccountDeletionSection />
+        </QueryWrapper>,
+      );
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete account' }));
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      const continueButton = screen.getByRole('button', { name: /review deletion timing/i });
+      expect(continueButton).toBeDisabled();
+      fireEvent.click(screen.getByRole('checkbox'));
+      fireEvent.click(continueButton);
+      expect(screen.getByRole('textbox')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /schedule deletion/i })).toBeDisabled();
+    } finally {
+      resetFetchStub();
+    }
   });
 });
 

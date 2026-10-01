@@ -60,11 +60,13 @@ export function HomeScreen() {
     if (summary.isError) {
       return { kind: 'error', error: summary.error, retry: () => void summary.refetch() };
     }
-    // Wait for the button's count too, so its label never changes under
-    // the user's cursor a moment after first paint.
-    if (summary.data === undefined || pending.isLoading) return { kind: 'loading' };
+    // Totals can render independently. Keep the action non-interactive
+    // until its destination/count is known, so a link never moves under the cursor.
+    if (summary.data === undefined) return { kind: 'loading' };
 
-    const action = composeHomeAction(pending);
+    const action = pending.isLoading
+      ? { label: 'Loading review tasks…', href: '/senders', loading: true }
+      : composeHomeAction(pending);
     const numbers = composeHomeNumbers(summary.data);
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".

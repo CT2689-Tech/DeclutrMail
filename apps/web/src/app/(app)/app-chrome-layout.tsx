@@ -14,7 +14,7 @@ import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge'
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
-import { UpgradeModal } from '@/features/billing/upgrade-modal';
+import { UpgradeModalHost } from '@/features/billing/upgrade-modal-host';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
@@ -323,7 +323,7 @@ function AppChrome({ children }: { children: ReactNode }) {
       {/* D19/D77/D81 — entitlement-402 upgrade flow. Mounted ONCE in
           the authed chrome; fed by the global MutationCache handler
           (lib/query-client) so every mutation surface is covered. */}
-      <UpgradeModal />
+      <UpgradeModalHost />
       {/* D245 — one receipt/undo host survives navigation between every
           mailbox-backed product surface. The Z shortcut remains a Triage
           affordance; other screens still show the same server-backed tray.

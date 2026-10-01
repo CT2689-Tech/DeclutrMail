@@ -4,8 +4,9 @@
  * Returns the frozen 8am snapshot for the current mailbox (D69). The
  * BE returns 404 when the snapshot worker hasn't fired yet — the
  * screen routes that into a "Brief lands soon" empty branch rather
- * than the generic error state (the hook surfaces `query.error` as an
- * `ApiError` with `status === 404`, the screen branches on that).
+ * than the generic error state. Server hydration can seed `{ data: null }`
+ * for the same absence, avoiding a duplicate browser request. Client 404s
+ * remain `ApiError`s; the screen accepts both forms.
  *
  * No polling. D69 is "static for the day" — refetch on focus is
  * sufficient (default behaviour); the worker takes up to an hour to

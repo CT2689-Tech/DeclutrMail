@@ -5,7 +5,7 @@ import {
   type BillingSubscription,
 } from '@declutrmail/shared/contracts';
 
-import { BillingPayloadError } from '../billing-model';
+import { BillingPayloadError } from '../billing-payload-error';
 
 export function parseBillingSubscription(payload: unknown): BillingSubscription {
   const parsed = BillingSubscriptionSchema.safeParse(payload);

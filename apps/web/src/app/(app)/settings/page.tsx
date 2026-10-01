@@ -9,21 +9,11 @@
 
 import { Suspense } from 'react';
 import { headers } from 'next/headers';
-import type { MeSettings, SyncStatus } from '@declutrmail/shared/contracts';
+import type { MeSettings } from '@declutrmail/shared/contracts';
 
 import { SettingsScreen } from '@/features/settings/settings-index/settings-screen';
 import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
-import { billingSubscriptionQueryOptions } from '@/features/billing/api/query-options';
-import { parseBillingSubscription } from '@/features/billing/api/parse-payload';
 import { getServerMe } from '@/features/auth/api/server-me';
-import {
-  syncStatusQueryKey,
-  syncStatusQueryOptions,
-} from '@/features/onboarding/api/use-sync-status';
-import {
-  deriveMailboxHealth,
-  type MailboxHealth,
-} from '@/features/settings/api/use-mailbox-health';
 import { serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
@@ -45,47 +35,18 @@ export default async function SettingsPage() {
       surface="settings"
       prefetch={(queryClient) => {
         if (me === null) return [];
-        const queries: Array<Promise<unknown>> = [
+        return [
           queryClient.fetchQuery(
             meSettingsQueryOptions((signal) =>
               serverGet<MeSettings>('/api/me/settings', cookieHeader, signal),
             ),
           ),
-          queryClient.fetchQuery(
-            billingSubscriptionQueryOptions(async (signal) =>
-              parseBillingSubscription(
-                await serverGet<unknown>('/api/billing/subscription', cookieHeader, signal),
-              ),
-            ),
-          ),
         ];
-        for (const mailbox of me.mailboxes) {
-          if (mailbox.status !== 'active' || mailbox.id === me.activeMailboxId) continue;
-          queries.push(
-            queryClient.fetchQuery(
-              syncStatusQueryOptions(mailbox.id, (signal) =>
-                serverGet<SyncStatus>('/api/v1/sync/status', cookieHeader, signal, {
-                  mailboxId: mailbox.id,
-                }),
-              ),
-            ),
-          );
-        }
-        return queries;
       }}
     >
-      {(queryClient) => {
-        const initialMailboxHealth: Record<string, MailboxHealth | undefined> = {};
-        for (const mailbox of me?.mailboxes ?? []) {
-          const status = queryClient.getQueryData<SyncStatus>(syncStatusQueryKey(mailbox.id));
-          if (status !== undefined) initialMailboxHealth[mailbox.id] = deriveMailboxHealth(status);
-        }
-        return (
-          <Suspense fallback={null}>
-            <SettingsScreen initialMailboxHealth={initialMailboxHealth} />
-          </Suspense>
-        );
-      }}
+      <Suspense fallback={null}>
+        <SettingsScreen />
+      </Suspense>
     </ServerQueryHydration>
   );
 }

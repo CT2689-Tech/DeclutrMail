@@ -151,6 +151,40 @@ describe('HomeScreen', () => {
     expect(link).toHaveTextContent('Review 4 new');
   });
 
+  it('shows cleanup totals while review tasks are still loading', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      { method: 'GET', path: '/api/activity/summary', respond: () => jsonOk({ data: SUMMARY }) },
+      {
+        method: 'GET',
+        path: '/api/triage/bootstrap',
+        respond: async () => {
+          await held;
+          return jsonOk({ data: { queue: [], stats: {}, todaySummary: {} } });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => jsonOk({ data: { pending: 0 } }),
+      },
+    ]);
+    renderHome();
+    try {
+      expect(await screen.findByTestId('home-hero', {}, { timeout: 300 })).toHaveTextContent(
+        '1,234',
+      );
+      expect(screen.getByText('Loading review tasks…')).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Review senders' })).not.toBeInTheDocument();
+    } finally {
+      release();
+    }
+    expect(await screen.findByRole('link', { name: 'Review senders' })).toBeInTheDocument();
+  });
+
   it('never reads the Screener for a tier without it', async () => {
     authCell.me = meFor('free', 'ready');
     const calls = stub({ screenerPending: 4 });
