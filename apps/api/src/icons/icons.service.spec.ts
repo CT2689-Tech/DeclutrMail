@@ -48,6 +48,88 @@ async function seedIcon(db: Db, overrides: Partial<typeof domainIcons.$inferInse
 }
 
 describe('IconsService', () => {
+  it('serves exact-domain artwork through a verified alias in one database round trip', async () => {
+    const db = await freshTestDb();
+    await db.insert(brandDomainAliases).values({
+      aliasDomain: 'mailing.example',
+      canonicalDomain: 'brand.example',
+      source: 'manual_review',
+      confidence: 100,
+    });
+    await seedIcon(db);
+    const exact = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"/>');
+    await seedIcon(db, {
+      domain: 'welcome.mailing.example',
+      image: exact,
+      byteSize: exact.byteLength,
+      contentHash: 'b'.repeat(64),
+    });
+    const driver = vi.spyOn(db.$client, 'query');
+    const result = await new IconsService(db as never, null).lookup('welcome.mailing.example', {
+      mayEnqueue: false,
+    });
+    expect(result.kind === 'hit' && result.image.equals(exact)).toBe(true);
+    expect(result.kind === 'hit' && result.etag).toBe(`"${'b'.repeat(64)}"`);
+    expect(driver).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers mixed batch availability in one round trip without reading image bytes', async () => {
+    const db = await freshTestDb();
+    await seedIcon(db);
+    await db.insert(brandDomainAliases).values({
+      aliasDomain: 'mailing.example',
+      canonicalDomain: 'brand.example',
+      source: 'manual_review',
+      confidence: 100,
+    });
+    const driver = vi.spyOn(db.$client, 'query');
+    const result = await new IconsService(db as never, null).marksFor(
+      [
+        'brand.example',
+        'news.mailing.example',
+        'unknown.example',
+        'invalid',
+        'news.mailing.example',
+      ],
+      { mayEnqueue: false },
+    );
+    expect(result).toEqual(new Set(['brand.example', 'news.mailing.example']));
+    expect(driver).toHaveBeenCalledTimes(1);
+    expect(driver.mock.calls[0]?.[0]).not.toMatch(/"domain_icons"\."image"/);
+  });
+
+  it.skipIf(process.env.ICON_READ_BENCH !== '1')(
+    'benchmarks complete icon reads with synthetic driver latency',
+    async () => {
+      const db = await freshTestDb();
+      await seedIcon(db);
+      const query = db.$client.query.bind(db.$client);
+      vi.spyOn(db.$client, 'query').mockImplementation(
+        async (...args: Parameters<typeof query>) => {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return query(...args);
+        },
+      );
+      const service = new IconsService(db as never, null);
+      for (const read of ['lookup', 'marksFor'] as const) {
+        const samples: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const start = performance.now();
+          if (read === 'lookup')
+            expect((await service.lookup('brand.example', { mayEnqueue: false })).kind).toBe('hit');
+          else
+            expect(
+              await service.marksFor(['brand.example', 'unknown.example'], { mayEnqueue: false }),
+            ).toEqual(new Set(['brand.example']));
+          samples.push(Number((performance.now() - start).toFixed(2)));
+        }
+        process.stdout.write(
+          `${JSON.stringify({ benchmark: 'icon-driver-latency', read, driverDelayMs: 100, samples })}\n`,
+        );
+      }
+    },
+  );
+
   it('serves a cached mark with a strong ETag', async () => {
     const db = await freshTestDb();
     await seedIcon(db);
