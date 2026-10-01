@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { Queue } from 'bullmq';
 
 import { brandDomainAliases, domainIcons } from '@declutrmail/db';
@@ -201,39 +201,16 @@ export class IconsService {
     if (candidate === null) return { kind: 'miss' };
     const { discoveryDomain, organizational } = candidate;
 
-    const [alias] = await this.db
-      .select({ canonicalDomain: brandDomainAliases.canonicalDomain })
-      .from(brandDomainAliases)
-      .where(
-        and(
-          eq(brandDomainAliases.aliasDomain, organizational),
-          eq(brandDomainAliases.confidence, 100),
-        ),
-      )
-      .limit(1);
-    const domain = alias?.canonicalDomain ?? organizational;
-    // The migration seeds validated values and schema checks prevent
-    // self-aliases, but a manually reviewed future row is still input
-    // to outbound resolution and must cross the same boundary.
+    const rows = await this.readCachedIcons([candidate], true);
+    const domain = rows[0]?.canonicalDomain ?? organizational;
+    // Reviewed alias values still cross the same outbound boundary.
     if (!isResolvableDomain(domain)) return { kind: 'miss' };
-
     const cacheDomains = discoveryDomain === domain ? [domain] : [discoveryDomain, domain];
-    const rows = await this.db
-      .select({
-        domain: domainIcons.domain,
-        status: domainIcons.status,
-        image: domainIcons.image,
-        mime: domainIcons.mime,
-        contentHash: domainIcons.contentHash,
-        source: domainIcons.source,
-        resolverVersion: domainIcons.resolverVersion,
-        fetchedAt: domainIcons.fetchedAt,
-      })
-      .from(domainIcons)
-      .where(inArray(domainIcons.domain, cacheDomains));
 
     const now = new Date();
-    const byDomain = new Map(rows.map((row) => [row.domain, row] as const));
+    const byDomain = new Map(
+      rows.flatMap((row) => (row.icon === null ? [] : [[row.icon.domain, row.icon] as const])),
+    );
     const canonicalRow = byDomain.get(domain);
     const canonicalStale =
       canonicalRow !== undefined &&
@@ -306,7 +283,7 @@ export class IconsService {
    * The list read already knows every domain on the page and is
    * already authenticated, so it can answer availability for all of
    * them in ONE query and let the renderer emit URLs only for domains
-   * that will actually return bytes. Two queries total regardless of
+   * that will actually return bytes. One query total regardless of
    * page size, and neither reads the `bytea` column.
    *
    * ENQUEUEING BELONGS HERE, NOT ON THE IMAGE REQUEST. `mayEnqueue` on
@@ -332,28 +309,16 @@ export class IconsService {
     }
     if (candidates.size === 0) return new Set();
 
-    const organizationals = [...new Set([...candidates.values()].map((c) => c.organizational))];
-    const aliasRows = await this.db
-      .select({
-        aliasDomain: brandDomainAliases.aliasDomain,
-        canonicalDomain: brandDomainAliases.canonicalDomain,
-      })
-      .from(brandDomainAliases)
-      .where(
-        and(
-          inArray(brandDomainAliases.aliasDomain, organizationals),
-          eq(brandDomainAliases.confidence, 100),
-        ),
-      );
-    const canonicalByAlias = new Map(aliasRows.map((r) => [r.aliasDomain, r.canonicalDomain]));
-
-    // Resolve each input to the domains its mark could be cached
-    // under, exactly as `lookup` does, before a single cache read.
+    // One statement resolves aliases and reads metadata for the full batch.
+    // Image bytes are excluded from this query's projection.
+    const rows = await this.readCachedIcons([...candidates.values()], false);
+    const canonicalByOrganizational = new Map(
+      rows.map((row) => [row.organizationalDomain, row.canonicalDomain]),
+    );
     const resolved = new Map<string, { canonical: string; cacheDomains: string[] }>();
     for (const [raw, candidate] of candidates) {
-      const canonical = canonicalByAlias.get(candidate.organizational) ?? candidate.organizational;
-      // A manually reviewed alias row is still input to outbound
-      // resolution and crosses the same boundary as the raw domain.
+      const canonical =
+        canonicalByOrganizational.get(candidate.organizational) ?? candidate.organizational;
       if (!isResolvableDomain(canonical)) continue;
       resolved.set(raw, {
         canonical,
@@ -364,22 +329,9 @@ export class IconsService {
       });
     }
     if (resolved.size === 0) return new Set();
-
-    const cacheDomains = [...new Set([...resolved.values()].flatMap((r) => r.cacheDomains))];
-    // No `image` column: `status` alone settles availability (see
-    // `isUsableMark`), so page size never pulls artwork through the
-    // connection pool.
-    const rows = await this.db
-      .select({
-        domain: domainIcons.domain,
-        status: domainIcons.status,
-        source: domainIcons.source,
-        resolverVersion: domainIcons.resolverVersion,
-        fetchedAt: domainIcons.fetchedAt,
-      })
-      .from(domainIcons)
-      .where(inArray(domainIcons.domain, cacheDomains));
-    const byDomain = new Map(rows.map((row) => [row.domain, row] as const));
+    const byDomain = new Map(
+      rows.flatMap((row) => (row.icon === null ? [] : [[row.icon.domain, row.icon] as const])),
+    );
 
     const marked = new Set<string>();
     const toSchedule = new Map<string, string>();
@@ -464,6 +416,52 @@ export class IconsService {
     }
 
     return marked;
+  }
+
+  /** Public alias/cache dependency is resolved within one database round trip. */
+  private readCachedIcons(
+    candidates: Array<{ discoveryDomain: string; organizational: string }>,
+    includeImage: boolean,
+  ) {
+    const inputs = sql`(values ${sql.join(
+      candidates.map(
+        ({ discoveryDomain, organizational }) =>
+          sql`(${discoveryDomain}::text, ${organizational}::text)`,
+      ),
+      sql`, `,
+    )}) as icon_input(discovery_domain, organizational_domain)`;
+    const discovery = sql<string>`icon_input.discovery_domain`;
+    const organizational = sql<string>`icon_input.organizational_domain`;
+    const canonical = sql<string>`coalesce(${brandDomainAliases.canonicalDomain}, ${organizational})`;
+    // LEFT JOIN keeps canonical identity even when neither cache row exists:
+    // a miss must still schedule the correct domain, with the same discovery.
+    return this.db
+      .select({
+        organizationalDomain: organizational,
+        canonicalDomain: canonical,
+        icon: {
+          domain: domainIcons.domain,
+          status: domainIcons.status,
+          source: domainIcons.source,
+          resolverVersion: domainIcons.resolverVersion,
+          fetchedAt: domainIcons.fetchedAt,
+          image: includeImage ? domainIcons.image : sql<Buffer | null>`NULL`,
+          mime: includeImage ? domainIcons.mime : sql<string | null>`NULL`,
+          contentHash: includeImage ? domainIcons.contentHash : sql<string | null>`NULL`,
+        },
+      })
+      .from(inputs)
+      .leftJoin(
+        brandDomainAliases,
+        and(
+          eq(brandDomainAliases.aliasDomain, organizational),
+          eq(brandDomainAliases.confidence, 100),
+        ),
+      )
+      .leftJoin(
+        domainIcons,
+        or(eq(domainIcons.domain, discovery), eq(domainIcons.domain, canonical)),
+      );
   }
 
   /**
