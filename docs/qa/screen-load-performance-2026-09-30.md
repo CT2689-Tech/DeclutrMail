@@ -57,7 +57,9 @@ is max(FCP, primary-content visibility), from navigation start. Home requires
 its real summary, Autopilot its rules, Quiet the active mailbox's inputs, and
 Settings its notifications region. Generic screens require their main heading
 without a primary skeleton; Brief additionally waits for the not-yet state.
-These are first-useful-content proxies, not LCP, full hydration/interaction
+Timing samples below are from `f76e02c5fd928b6c968675bbb082b113b9a6c7ad`,
+before the later export-download chunk split; no new timing claim is made for
+that split. These are first-useful-content proxies, not LCP, full hydration/interaction
 readiness, INP, production percentiles, or completion of every secondary read.
 Browser-tool overhead is excluded. Three samples use warm browser assets.
 Cold-cache, slow-device, populated large-mailbox, and real-provider latencies
@@ -149,3 +151,30 @@ cause of every intermittent stall. Real-account cold/warm traces, API p95/p99,
 connection-pool wait, and instance utilization still need verification before
 choosing infrastructure/database changes. Existing auth/read deadlines remain
 failure guards, not latency targets.
+
+## CI bundle follow-up
+
+The first expanded candidate's Linux CI build measured Privacy & Data at
+262.1 kB against its unchanged 262 kB budget, despite the local build passing.
+The export hook now imports its existing file-download implementation only
+after an explicit export request. It keeps the same pending/error state,
+filename/blob handling, session refresh/replay, and consent-gated events.
+Privacy/export tests pass all 18 cases, including expired and dead sessions;
+all eight consent preference tests also pass.
+A CI-equivalent local build also reproduced a public Cookies-page byte-budget
+overrun. Its static consent guidance now stays in a server component around the
+interactive consent controls. Copy, stored preferences, withdrawal, and
+keyboard controls are unchanged.
+The implementation-log CI failure was a GitHub GraphQL 502, not row drift.
+Fresh CI is required for the updated candidate.
+
+The preceding expanded head also passed CI web tests, typecheck, lint, format,
+and the complete authenticated/public accessibility and product-journey job.
+Those results precede the two chunk splits; they do not establish exact-head
+readiness for the follow-up.
+
+The final local build passes all 51 unchanged budgets (Privacy & Data 261.9 kB;
+Cookies 150.8 kB), all 45 public prerender checks, web typecheck, lint on the
+changed modules, formatting, and diff checks. The production Cookies page
+rendered its guidance and both consent options; selecting Accept all and then
+Essential only updated the displayed selection with no warnings/errors.
