@@ -283,6 +283,11 @@ interface RollingWindowStats {
   baselineMsgs: number;
 }
 
+interface InboxStats {
+  inboxCount: number;
+  unreadInboxCount: number;
+}
+
 function buildRollingWindowSubqueries(mailboxAccountId: string) {
   const outerMailboxId = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('mailbox_account_id')}`;
   const outerSenderKey = sql`${sql.identifier(getTableName(senders))}.${sql.identifier('sender_key')}`;
@@ -315,43 +320,21 @@ function buildRollingWindowSubqueries(mailboxAccountId: string) {
         AND ${mailMessages.internalDate} >= now() - (${oldestDays} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
     )`,
-    // Messages currently carrying INBOX — the set every inbox verb can
-    // act on (`senderInboxActionWhere` without a window). Surfaced so a
-    // sender whose Gmail filters skip the inbox (hundreds received, 0 in
-    // inbox — founder report 2026-07-28) is visibly dead to
-    // Archive/Later before three modals say so. Live count, not a
-    // maintained counter: label membership changes on every action and
-    // sync, and a nightly-reconciled column would just re-create the
-    // stale-counter class ADR-0014 documents.
-    inboxCount: sql<number | string>`(
-      SELECT COUNT(*)::int
+    // Both counts describe the same all-time inbound Inbox action set.
+    // Scan it once using the partial Inbox index; is_unread is already
+    // an index key. The unread subset adds a FILTER, not another scan.
+    // Keep this separate from rolling statistics so old Inbox mail counts.
+    // Preserve senderInboxActionWhere's exact predicate, including dual
+    // labels; changing scope here would change protection/action facts.
+    inboxStats: sql<InboxStats>`(
+      SELECT jsonb_build_object(
+        'inboxCount', COUNT(*)::int,
+        'unreadInboxCount', COUNT(*) FILTER (WHERE ${mailMessages.isUnread} = true)::int
+      )
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
         AND ${mailMessages.senderKey} = ${outerSenderKey}
         AND ${mailMessages.isOutbound} = false
-        AND 'INBOX' = ANY(${mailMessages.labelIds})
-    )`,
-    // The UNREAD subset of the same set. For a Protected sender this is
-    // exactly what the protection is shielding from bulk and automatic
-    // cleanup, which is what makes a wrong protection expensive — and
-    // it is the ranking key the D245 protection review sorts on. Served
-    // by the partial index `mail_messages_account_sender_unread_idx`,
-    // which exists for precisely this predicate.
-    //
-    // MUST stay row-for-row equal to `senderInboxActionWhere`
-    // (`is_outbound = false AND 'INBOX' = ANY(label_ids)`, scoped by
-    // mailbox + sender). The correlated form can't call the value-list
-    // helper, so this is a deliberate transcription of that predicate,
-    // not a private opinion about "inbox" — the 2026-07-26 action-
-    // surface finding is what happens when the two drift (mail absent
-    // from a preview moved at execution). Change one, change both.
-    unreadInboxCount: sql<number | string>`(
-      SELECT COUNT(*)::int
-      FROM ${mailMessages}
-      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
-        AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.isOutbound} = false
-        AND ${mailMessages.isUnread} = true
         AND 'INBOX' = ANY(${mailMessages.labelIds})
     )`,
   };
@@ -540,11 +523,8 @@ export class SendersReadService {
     // Shared with `getSenderDetail` so the two paths cannot drift —
     // see `buildRollingWindowSubqueries` for the window definitions and
     // the correlation quote-trap note.
-    const {
-      inboxCount: inboxCountSql,
-      unreadInboxCount: unreadInboxCountSql,
-      rollingStats: rollingStatsSql,
-    } = buildRollingWindowSubqueries(mailboxAccountId);
+    const { inboxStats: inboxStatsSql, rollingStats: rollingStatsSql } =
+      buildRollingWindowSubqueries(mailboxAccountId);
 
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
     // refs use `sql.identifier(getTableName(senders))` so a Drizzle
@@ -662,8 +642,7 @@ export class SendersReadService {
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         rollingStats: rollingStatsSql,
-        inboxCount: inboxCountSql,
-        unreadInboxCount: unreadInboxCountSql,
+        inboxStats: inboxStatsSql,
         lastDecision: lastDecisionSql,
         sparkline: sparklineSql,
         // Standing-policy flags — left-joined so a sender with no
@@ -759,10 +738,13 @@ export class SendersReadService {
         monthlyVolume: last90dMsgs,
         // Messages currently in INBOX — what Archive/Later/inbox-Delete
         // can actually reach (see the subquery note above).
-        inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+        inboxCount: ensureSafeIntegerNumber(row.inboxStats.inboxCount, 'senders.inboxCount'),
         // The unread subset of the same set — what a Protected sender's
         // protection is shielding from bulk and automatic cleanup.
-        unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
+        unreadInboxCount: ensureSafeIntegerNumber(
+          row.inboxStats.unreadInboxCount,
+          'senders.unreadInboxCount',
+        ),
         readRate: computeReadRate(last90dMsgs, last90dReadCount),
         readRateSweeperMarked: ensureSafeIntegerNumber(
           row.rollingStats.last90dSweeperReadCount,
@@ -1490,11 +1472,8 @@ export class SendersReadService {
     // Same ROLLING-WINDOW stats the list path uses — `monthlyVolume` /
     // `readRate` / `volumeTrend` are one product-wide fact, so they are
     // computed from one definition.
-    const {
-      inboxCount: inboxCountSql,
-      unreadInboxCount: unreadInboxCountSql,
-      rollingStats: rollingStatsSql,
-    } = buildRollingWindowSubqueries(mailboxAccountId);
+    const { inboxStats: inboxStatsSql, rollingStats: rollingStatsSql } =
+      buildRollingWindowSubqueries(mailboxAccountId);
     // Detail-only current Archive count. Lifetime `totalReceived` cannot be
     // used here: it includes mail now in Trash/Spam and is reconciled on a
     // different cadence. Keep this predicate aligned with the archived
@@ -1536,9 +1515,8 @@ export class SendersReadService {
           string | null
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         rollingStats: rollingStatsSql,
-        inboxCount: inboxCountSql,
+        inboxStats: inboxStatsSql,
         archivedCount: archivedCountSql,
-        unreadInboxCount: unreadInboxCountSql,
         lastDecision: lastDecisionSql,
         // Policy fields nullable — a sender without an explicit
         // policy row is "engine default" (D42).
@@ -1623,9 +1601,12 @@ export class SendersReadService {
       // are the ENGINE's 90-day window (ADR-0037); the trend keeps its
       // own recent-vs-baseline split.
       monthlyVolume: last90dMsgs,
-      inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+      inboxCount: ensureSafeIntegerNumber(row.inboxStats.inboxCount, 'senders.inboxCount'),
       archivedCount: ensureSafeIntegerNumber(row.archivedCount, 'senders.archivedCount'),
-      unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
+      unreadInboxCount: ensureSafeIntegerNumber(
+        row.inboxStats.unreadInboxCount,
+        'senders.unreadInboxCount',
+      ),
       readRate: computeReadRate(last90dMsgs, last90dReadCount),
       readRateSweeperMarked: ensureSafeIntegerNumber(
         row.rollingStats.last90dSweeperReadCount,

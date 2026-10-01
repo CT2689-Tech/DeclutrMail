@@ -20,7 +20,7 @@ describe('current-mail query plans', () => {
       FROM generate_series(1,500) i;
       INSERT INTO mail_messages(mailbox_account_id,sender_key,provider_message_id,provider_thread_id,internal_date,label_ids,is_unread)
       SELECT '${mailbox}',md5(i::text),i||'-'||j,i||'-'||j,now()-j*interval '1 day',
-        CASE WHEN i%10=0 AND j=80 THEN ARRAY[]::text[] ELSE ARRAY['TRASH'] END,false
+        CASE WHEN i%10=0 AND j=80 THEN ARRAY['INBOX']::text[] ELSE ARRAY['TRASH'] END,i%20=0
       FROM generate_series(1,500) i CROSS JOIN generate_series(1,80) j;
       ANALYZE senders; ANALYZE mail_messages;`);
     const captured: Array<{ query: string; params: unknown[] }> = [];
@@ -34,7 +34,11 @@ describe('current-mail query plans', () => {
     });
     const service = new SendersReadService(db as never);
     const args = { mailboxAccountId: mailbox, category: null, currentMailOnly: true };
-    expect(await service.listSenders({ ...args, cursor: null, limit: 50 })).toHaveLength(50);
+    const rows = await service.listSenders({ ...args, cursor: null, limit: 50 });
+    expect(rows).toHaveLength(50);
+    expect(rows.every((row) => row.inboxCount === 1)).toBe(true);
+    expect(rows.filter((row) => row.unreadInboxCount === 1)).toHaveLength(25);
+    expect(rows.filter((row) => row.unreadInboxCount === 0)).toHaveLength(25);
     const meta = await service.getSenderListQueryMeta(args);
     expect(meta.totalMatching).toBe(50);
     expect(meta.filterCounts?.total).toBe(50);
@@ -75,6 +79,10 @@ describe('current-mail query plans', () => {
         }) + '\n',
       );
       expect.soft(plan).toContain('mail_messages_account_sender_current_idx');
+      if (statement === 0) {
+        expect.soft(plan).toContain('mail_messages_account_sender_inbox_idx');
+        expect.soft(plan).not.toContain('mail_messages_account_sender_unread_idx');
+      }
     }
   }, 60_000);
 });

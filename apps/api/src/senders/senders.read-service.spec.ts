@@ -582,6 +582,7 @@ describe('SendersReadService', () => {
         senderKey: inboxy.senderKey,
         internalDate: new Date('2026-07-19T00:00:00Z'),
         labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+        isUnread: true,
       });
       // Outbound self-send in the inbox — never counted (matches the
       // action predicate's inbound-only rule).
@@ -591,9 +592,45 @@ describe('SendersReadService', () => {
         internalDate: new Date('2026-07-18T00:00:00Z'),
         labelIds: ['SENT', 'INBOX'],
         isOutbound: true,
+        isUnread: true,
       });
 
-      const rows = await svc.listSenders({
+      // Exact all-time scope, including a stale dual-label record, must
+      // match the action predicate rather than the rolling statistics.
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2010-01-01T00:00:00Z'),
+        labelIds: ['INBOX', 'TRASH'],
+        isUnread: true,
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2010-01-02T00:00:00Z'),
+        labelIds: [],
+        isUnread: true,
+      });
+      const otherMailbox = await seedMailbox(db, 'other-inbox-counts');
+      await seedMessage(db, {
+        mailboxAccountId: otherMailbox,
+        senderKey: inboxy.senderKey,
+        internalDate: new Date('2010-01-01T00:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+      const queries: string[] = [];
+      const measured = new SendersReadService(
+        drizzle(db.$client, {
+          schema,
+          logger: {
+            logQuery(query) {
+              queries.push(query);
+            },
+          },
+        }) as never,
+      );
+      const rows = await measured.listSenders({
         mailboxAccountId: mailboxId,
         category: null,
         cursor: null,
@@ -601,14 +638,23 @@ describe('SendersReadService', () => {
       });
       const byEmail = new Map(rows.map((r) => [r.email, r] as const));
       expect(byEmail.get('hello@splitwise.example')!.inboxCount).toBe(0);
-      expect(byEmail.get('news@inboxy.example')!.inboxCount).toBe(2);
+      expect(byEmail.get('news@inboxy.example')!.inboxCount).toBe(3);
+      expect(byEmail.get('news@inboxy.example')!.unreadInboxCount).toBe(2);
+      expect(byEmail.get('hello@splitwise.example')!.unreadInboxCount).toBe(0);
 
-      const detail = await svc.getSenderDetail(mailboxId, inboxy.id);
-      expect(detail!.inboxCount).toBe(2);
-      expect(detail!.archivedCount).toBe(0);
-      const archivedDetail = await svc.getSenderDetail(mailboxId, filtered.id);
+      const detail = await measured.getSenderDetail(mailboxId, inboxy.id);
+      expect(detail!.inboxCount).toBe(3);
+      expect(detail!.unreadInboxCount).toBe(2);
+      expect(detail!.archivedCount).toBe(1);
+      const archivedDetail = await measured.getSenderDetail(mailboxId, filtered.id);
       expect(archivedDetail!.inboxCount).toBe(0);
       expect(archivedDetail!.archivedCount).toBe(1);
+      expect(archivedDetail!.unreadInboxCount).toBe(0);
+      // The actual list/detail SQL should scan the positive Inbox set
+      // once for both exact counts, instead of revisiting its unread subset.
+      expect(queries).toHaveLength(3);
+      for (const query of queries)
+        expect([...query.matchAll(/AND 'INBOX' = ANY\(/g)].length).toBe(1);
     });
 
     it('filters across the mailbox by live inbound Inbox membership without hiding unsubscribe-only senders by default', async () => {
