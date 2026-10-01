@@ -1,4 +1,4 @@
-h1:5G28rM3QIX8kRmi4RQPypJcYcUtGrA1KYf2tE/67cFo=
+h1:1lTa5cQ8kV1pZwt3UwHufG2444LKGGP5ZuzoFuPCkYY=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -78,3 +78,4 @@ h1:5G28rM3QIX8kRmi4RQPypJcYcUtGrA1KYf2tE/67cFo=
 0078_session_refresh_grace_window.sql h1:4yOmaJEmxW0iqoJ85Eg7Gj9AgGCZxYj/FAvcVLun+KQ=
 0079_gmail_category_unknown.sql h1:tWxZCEuATvUWY01rQuiqjKfnoMkMjnDoHECTAIys0Zk=
 0080_mail_messages_non_mail_idx.sql h1:nBMqDa89xRnX96/AupzQJhhyPff2psfFlPsH05/YU9c=
+0081_mail_messages_current_partial_index.sql h1:3s5sUPzCh3AydNLq2W/akXz+ZuYz6sWnft7fJ5LSqaM=

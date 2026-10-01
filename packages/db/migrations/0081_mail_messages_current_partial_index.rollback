@@ -1,0 +1,3 @@
+-- atlas:txmode none
+-- Additive-index rollback: all queries remain correct with the old indexes.
+DROP INDEX CONCURRENTLY IF EXISTS "mail_messages_account_sender_current_idx";
