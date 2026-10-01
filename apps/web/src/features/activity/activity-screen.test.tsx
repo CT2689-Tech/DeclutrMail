@@ -1211,13 +1211,13 @@ describe('ActivityScreen — populated', () => {
     await userEvent.click(within(details).getByText('View action counts'));
     expect(details).toHaveAttribute('open');
     expect(within(details).getByText('Archived: 60 actions')).toBeVisible();
-    expect(within(archived).getByText('Since you started: 41,850 emails')).toBeInTheDocument();
+    expect(within(archived).getByText('All time: 41,850 emails')).toBeInTheDocument();
     const deleted = within(summary).getByRole('button', { name: /Moved to Trash/ });
     expect(within(deleted).getByText('email')).toBeInTheDocument();
     expect(within(deleted).getByText('from 1 sender')).toBeInTheDocument();
     expect(within(deleted).getByText('from 3 senders')).toBeInTheDocument();
     expect(within(deleted).queryByText('1 action')).toBeNull();
-    expect(within(deleted).getByText('Since you started: 234 emails')).toBeInTheDocument();
+    expect(within(deleted).getByText('All time: 234 emails')).toBeInTheDocument();
     const later = within(summary).getByRole('button', { name: /Later/ });
     expect(within(later).getByText('96')).toBeInTheDocument();
     expect(within(later).getByText('emails')).toBeInTheDocument();
@@ -1286,7 +1286,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
     const summary = await screen.findByRole('region', { name: 'Activity summary' });
     const archived = within(summary).getByRole('button', { name: /Archived/ });
-    expect(within(archived).getByText('Since you started: 1,335 actions')).toBeInTheDocument();
+    expect(within(archived).getByText('All time: 1,335 actions')).toBeInTheDocument();
     expect(within(archived).getByText('12')).toBeInTheDocument();
     // Still the verb filter.
     await userEvent.click(archived);
@@ -1304,7 +1304,7 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
     await screen.findByRole('region', { name: 'Activity summary' });
-    expect(screen.queryByText(/^Since you started:/)).toBeNull();
+    expect(screen.queryByText(/^All time:/)).toBeNull();
   });
 
   it('keeps the five columns for an all-zero window, zeros muted, with the all-time totals', async () => {
@@ -1332,7 +1332,7 @@ describe('ActivityScreen — populated', () => {
     expect(within(summary).queryByText(/Nothing in/)).toBeNull();
     expect(within(summary).getAllByRole('button')).toHaveLength(5);
     const archived = within(summary).getByRole('button', { name: /Archived/ });
-    expect(within(archived).getByText('Since you started: 1,335 actions')).toBeInTheDocument();
+    expect(within(archived).getByText('All time: 1,335 actions')).toBeInTheDocument();
     expect(summary.querySelector<HTMLElement>('[data-summary-count="archived"]')?.style.color).toBe(
       'var(--dm-fg-muted)',
     );

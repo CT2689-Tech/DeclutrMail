@@ -911,7 +911,7 @@ function SummaryRow({
   if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
   const periodLabel = isWindowAllTime
-    ? 'Since you started'
+    ? 'All time'
     : windowLabel.startsWith('Last ')
       ? `In the ${windowLabel.toLowerCase()}`
       : windowLabel;
@@ -1057,7 +1057,7 @@ function SummaryRow({
                       alignSelf: 'stretch',
                     }}
                   >
-                    Since you started: {formatCount(allTimeMetric.count)}{' '}
+                    All time: {formatCount(allTimeMetric.count)}{' '}
                     {allTimeMetric.count === 1
                       ? allTimeMetric.unit.slice(0, -1)
                       : allTimeMetric.unit}
