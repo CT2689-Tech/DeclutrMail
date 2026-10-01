@@ -1,4 +1,4 @@
-// Storybook CSF3 stories for the UpgradeModal (D19/D77/D81, D123).
+// Storybook CSF3 stories for the lazy UpgradeModalHost (D19/D77/D81, D123).
 //
 // The modal reads the upgrade-gate store (fed in production by the
 // global MutationCache 402 handler) + the workspace tier from `me`.
@@ -16,7 +16,7 @@ import { AuthProvider } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
 import { useUpgradeGateStore, type UpgradeGateHit } from '@/lib/entitlements/upgrade-gate';
 
-import { UpgradeModal } from './upgrade-modal';
+import { UpgradeModalHost } from './upgrade-modal-host';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -49,15 +49,18 @@ function meFixture(tier: Me['tier']): Me {
   };
 }
 
-function SeedHit({ hit }: { hit: UpgradeGateHit }) {
+function SeedHit({ hit }: { hit: UpgradeGateHit | null }) {
   const report = useUpgradeGateStore((s) => s.report);
+  const dismiss = useUpgradeGateStore((s) => s.dismiss);
   useEffect(() => {
-    report(hit);
-  }, [report, hit]);
+    if (hit) report(hit);
+    else dismiss();
+    return dismiss;
+  }, [report, dismiss, hit]);
   return null;
 }
 
-function frame(tier: Me['tier'], hit: UpgradeGateHit) {
+function frame(tier: Me['tier'], hit: UpgradeGateHit | null) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
@@ -67,16 +70,16 @@ function frame(tier: Me['tier'], hit: UpgradeGateHit) {
       <QueryClientProvider client={client}>
         <AuthProvider>
           <SeedHit hit={hit} />
-          <UpgradeModal />
+          <UpgradeModalHost />
         </AuthProvider>
       </QueryClientProvider>
     </div>
   );
 }
 
-const meta: StoryMeta<typeof UpgradeModal> = {
+const meta: StoryMeta<typeof UpgradeModalHost> = {
   title: 'Features/Billing/UpgradeModal',
-  component: UpgradeModal,
+  component: UpgradeModalHost,
   parameters: {
     layout: 'fullscreen',
     docs: {
@@ -91,9 +94,14 @@ const meta: StoryMeta<typeof UpgradeModal> = {
 
 export default meta;
 
+/** No gate hit: the shared chrome keeps the dialog and its chunk unloaded. */
+export const Closed: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) => frame('free', null),
+};
+
 /** Free workspace spent all 50 monthly cleanup actions (A3). */
-export const FreeCapSpent: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const FreeCapSpent: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('free', {
       reason: 'free_cap',
       details: {
@@ -107,8 +115,8 @@ export const FreeCapSpent: Story<typeof UpgradeModal> = {
 };
 
 /** Bulk needs more units than remain — partial-cap headline. */
-export const FreeCapPartial: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const FreeCapPartial: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('free', {
       reason: 'free_cap',
       details: {
@@ -122,20 +130,20 @@ export const FreeCapPartial: Story<typeof UpgradeModal> = {
 };
 
 /** Plus workspace at its 1-inbox limit — nudge toward Pro (2 inboxes). */
-export const InboxLimitPlus: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const InboxLimitPlus: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('plus', { reason: 'inbox_limit', details: { limit: 1, connected: 1 } }),
 };
 
 /** Pro workspace at its 2-inbox ceiling — honest statement, NO nudge (D123). */
-export const InboxLimitPro: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const InboxLimitPro: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('pro', { reason: 'inbox_limit', details: { limit: 2, connected: 2 } }),
 };
 
 /** Free workspace hits a Plus-gated capability (Quiet) after a downgrade. */
-export const ProFeatureQuiet: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const ProFeatureQuiet: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('free', {
       reason: 'pro_feature',
       details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
@@ -143,8 +151,8 @@ export const ProFeatureQuiet: Story<typeof UpgradeModal> = {
 };
 
 /** Plus workspace hits a Pro-gated capability (Follow-ups). */
-export const ProFeatureFollowups: Story<typeof UpgradeModal> = {
-  render: (_args: ComponentProps<typeof UpgradeModal>) =>
+export const ProFeatureFollowups: Story<typeof UpgradeModalHost> = {
+  render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('plus', {
       reason: 'pro_feature',
       details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },

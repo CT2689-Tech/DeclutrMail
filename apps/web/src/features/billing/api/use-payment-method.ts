@@ -28,7 +28,7 @@ import type { PaymentMethodSession } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
 
-import { BillingPayloadError } from '../billing-model';
+import { BillingPayloadError } from '../billing-payload-error';
 
 export function usePaymentMethodSession() {
   return useMutation<PaymentMethodSession, Error, void>({

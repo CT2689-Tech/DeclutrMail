@@ -8,6 +8,9 @@ import {
   type AccountDeletionProjection,
 } from '@declutrmail/shared/contracts';
 
+import { formatDate } from './date-format';
+export { formatDate } from './date-format';
+
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 
 const { color, font, motion, radius, text } = tokens;
@@ -373,22 +376,6 @@ const bodyStyle = {
   gap: 16,
   textAlign: 'left' as const,
 };
-
-/**
- * "June 18, 2026". Locale + zone pinned: the grace-period banner
- * renders this into server-hydrated HTML on every app route (the
- * deletion status is prefetched by the ServerAppBoundary), so both
- * halves must be deterministic (React #418; e2e hydration-smoke). The
- * user zone decides the calendar day.
- */
-export function formatDate(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone,
-  }).format(new Date(iso));
-}
 
 /** "12 days" / "1 day" / "less than a day" until an ISO instant. */
 export function daysUntil(iso: string): string {

@@ -14,7 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { CanonicalVerb } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
-import { homeKeys } from './query-keys';
+import { homeSummaryQueryOptions } from './query-options';
 
 /** Wire shape — mirrors the API's `ActivitySummary`, minus what Home ignores. */
 export interface HomeSummary {
@@ -35,11 +35,10 @@ export interface HomeSummary {
 
 export function useHomeSummary(options: { enabled: boolean }) {
   return useQuery({
-    queryKey: homeKeys.summary(),
-    queryFn: async ({ signal }) => {
+    ...homeSummaryQueryOptions(async (signal) => {
       const envelope = await apiGet<HomeSummary>('/api/activity/summary?window=all', { signal });
       return envelope.data;
-    },
+    }),
     enabled: options.enabled,
   });
 }

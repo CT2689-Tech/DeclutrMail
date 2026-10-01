@@ -11,13 +11,18 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useSyncExternalStore } from 'react';
 
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { apiGet, apiPost } from '@/lib/api/client';
 import { defaultLaterWakeAt, newIdempotencyKey, type ActionReach } from '@/lib/api/actions';
 
 import type { ScreenerDecideResult, ScreenerDecideVerb, ScreenerQueueRow } from '../data';
-import { screenerCountQueryOptions, screenerQueueQueryOptions } from './query-options';
+import {
+  SCREENER_COUNT_KEY,
+  screenerCountQueryOptions,
+  screenerQueueQueryOptions,
+} from './query-options';
 
 export {
   SCREENER_ALL_KEY,
@@ -50,6 +55,30 @@ export function useScreenerCount(options: { enabled?: boolean } = {}) {
     }),
     enabled: options.enabled ?? true,
   });
+}
+
+/** Observe the badge without creating a query before Home's route hydrates it.
+ * Even a disabled useQuery creates an empty cache entry; HydrationBoundary
+ * then defers that existing entry to an effect and Home races it on mount. */
+export function useCachedScreenerCount(): number | undefined {
+  const client = useQueryClient();
+  const subscribe = useCallback(
+    (onChange: () => void) =>
+      client.getQueryCache().subscribe((event) => {
+        if (
+          event.query.queryKey.length === SCREENER_COUNT_KEY.length &&
+          SCREENER_COUNT_KEY.every((part, index) => event.query.queryKey[index] === part)
+        ) {
+          onChange();
+        }
+      }),
+    [client],
+  );
+  const snapshot = useCallback(
+    () => client.getQueryData<{ pending: number }>(SCREENER_COUNT_KEY)?.pending,
+    [client],
+  );
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
 /**

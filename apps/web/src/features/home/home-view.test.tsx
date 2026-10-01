@@ -8,6 +8,20 @@ import { HomeView } from './home-view';
 const action = { label: 'Review senders', href: '/senders' };
 
 describe('HomeView', () => {
+  it('formats the cleanup month in an explicit timezone on either side of hydration', () => {
+    const state = {
+      kind: 'ready' as const,
+      hero: { label: 'emails cleared', value: 12 },
+      since: '2026-01-01T00:00:00.000Z',
+      secondary: [],
+      action,
+    };
+    const { rerender } = render(<HomeView state={state} />);
+    expect(screen.getByText('emails cleared since Jan 2026')).toBeInTheDocument();
+    rerender(<HomeView state={state} timeZone="America/Los_Angeles" />);
+    expect(screen.getByText('emails cleared since Dec 2025')).toBeInTheDocument();
+  });
+
   it('keeps the complete workspace discoverable with clear plan context', () => {
     const ready = {
       kind: 'ready' as const,

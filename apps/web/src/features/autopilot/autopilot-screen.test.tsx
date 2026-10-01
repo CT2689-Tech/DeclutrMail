@@ -135,6 +135,83 @@ describe('AutopilotScreen — edge states', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('shows rules while suggestions are still loading without inventing an empty queue', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: PRESET_RULES_OBSERVE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: async () => {
+          await held;
+          return jsonOk({ data: [] });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    try {
+      expect(
+        await screen.findByRole('list', { name: 'Autopilot rules' }, { timeout: 300 }),
+      ).toBeInTheDocument();
+      expect(screen.getByText('Loading Autopilot suggestions')).toBeInTheDocument();
+      expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Approve all/ })).not.toBeInTheDocument();
+    } finally {
+      release();
+    }
+    expect(await screen.findByText('No pending suggestions')).toBeInTheDocument();
+  });
+
+  it('retries a failed suggestion section without replacing the rules', async () => {
+    let ruleReads = 0;
+    let suggestionReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => {
+          ruleReads += 1;
+          return jsonOk({ data: PRESET_RULES_OBSERVE });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => {
+          suggestionReads += 1;
+          return suggestionReads === 1 ? jsonServerError() : jsonOk({ data: [] });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(
+      await screen.findByRole('heading', { name: "Couldn't load pending suggestions" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeInTheDocument();
+    expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(await screen.findByText('No pending suggestions')).toBeInTheDocument();
+    expect(ruleReads).toBe(1);
+    expect(suggestionReads).toBe(2);
+  });
+
   it('renders the loading skeletons (rules + suggestions)', () => {
     renderScreen({ kind: 'loading' });
     expect(screen.getAllByRole('status').length).toBeGreaterThanOrEqual(2);

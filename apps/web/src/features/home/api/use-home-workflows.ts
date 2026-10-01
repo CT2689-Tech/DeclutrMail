@@ -32,7 +32,7 @@ export function useHomeWorkflows(tier: TierId, enabled: boolean) {
   });
 
   return {
-    brief: brief.data
+    brief: brief.data?.data
       ? {
           ready: true,
           opened: brief.data.data.openedAt !== null,

@@ -31,7 +31,7 @@ import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { toast as sharedToast } from '@declutrmail/shared';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { DEFAULT_SENDERS_QUERY } from '@/features/senders/api/query-options';
@@ -629,6 +629,35 @@ describe('(app) layout integration mounts — U-NAV', () => {
 });
 
 describe('(app) layout — screener badge tier gating (D74/D77)', () => {
+  it('lets Home own the count while its route is streaming and observes the hydrated badge', async () => {
+    pathnameRef.current = '/home';
+    const countSpy = vi.fn(() => ok({ data: { pending: 3 } }));
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'pro' }),
+      { method: 'GET', path: '/api/screener/count', respond: countSpy },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <AppLayout>
+          <span>Home route pending</span>
+        </AppLayout>
+      </QueryWrapper>,
+    );
+    expect(await screen.findByText('Home route pending')).toBeInTheDocument();
+    expect(countSpy).not.toHaveBeenCalled();
+    expect(client.getQueryState(['screener', 'count'])).toBeUndefined();
+
+    await act(async () => {
+      client.setQueryData(['screener', 'count'], { pending: 3 });
+    });
+    await openFullNavigation();
+    expect(
+      await screen.findByLabelText('3 senders awaiting a first review in Screener'),
+    ).toBeInTheDocument();
+    expect(countSpy).not.toHaveBeenCalled();
+  });
+
   it('renders the pending-count badge for a Pro workspace', async () => {
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'pro' }),
