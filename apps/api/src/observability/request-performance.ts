@@ -2,6 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 
 // Closed names only: never attach SQL, route parameters or mailbox content.
 const OPERATIONS = new Set([
+  'senders.rows',
+  'senders.meta',
+  'senders.marks',
+  'senders.summary',
   'triage.enrichment',
   'auth.sync-state',
   'autopilot.observe',
@@ -11,6 +15,10 @@ const OPERATIONS = new Set([
 ] as const);
 
 export type RequestOperation =
+  | 'senders.rows'
+  | 'senders.meta'
+  | 'senders.marks'
+  | 'senders.summary'
   | 'triage.enrichment'
   | 'auth.sync-state'
   | 'autopilot.observe'

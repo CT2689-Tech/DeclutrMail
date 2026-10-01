@@ -2,6 +2,11 @@ import { BadRequestException, HttpException } from '@nestjs/common';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  createRequestPerformance,
+  withRequestPerformance,
+} from '../observability/request-performance.js';
+
 import type { IconsService } from '../icons/icons.service.js';
 import type { SendersPolicyService } from './senders-policy.service.js';
 import { SendersController } from './senders.controller.js';
@@ -296,7 +301,17 @@ describe('SendersController', () => {
         ] as const;
 
       // Page 1 — meta present, scans paid once.
-      const first = await ctrl.list(...args(undefined));
+      const firstContext = createRequestPerformance('1')!;
+      const first = await withRequestPerformance(firstContext, () => ctrl.list(...args(undefined)));
+      expect(Object.keys(firstContext.operations).sort()).toEqual([
+        'senders.marks',
+        'senders.meta',
+        'senders.rows',
+      ]);
+      expect(firstContext.operations['senders.rows']).toMatchObject({ count: 1, failures: 0 });
+      expect(firstContext.operations['senders.meta']).toMatchObject({ count: 1, failures: 0 });
+      expect(JSON.stringify(firstContext)).not.toContain(MAILBOX_ID);
+      expect(JSON.stringify(firstContext)).not.toContain('sender@example.com');
       expect(first.meta.query).toBeDefined();
       expect(reads.getSenderListQueryMeta).toHaveBeenCalledTimes(1);
       const nextCursor = first.meta.pagination.nextCursor;
@@ -304,7 +319,14 @@ describe('SendersController', () => {
 
       // Page 2, driven by page 1's own cursor exactly as the client
       // does — the scans must NOT run again.
-      const second = await ctrl.list(...args(nextCursor as string));
+      const secondContext = createRequestPerformance('1')!;
+      const second = await withRequestPerformance(secondContext, () =>
+        ctrl.list(...args(nextCursor as string)),
+      );
+      expect(Object.keys(secondContext.operations).sort()).toEqual([
+        'senders.marks',
+        'senders.rows',
+      ]);
       expect(second.meta.query).toBeUndefined();
       expect(reads.getSenderListQueryMeta).toHaveBeenCalledTimes(1);
       // The page itself still comes back — this drops the meta, not data.
@@ -845,7 +867,12 @@ describe('SendersController', () => {
 
     it('returns the summary envelope and forwards mailbox + q + includeOneTime to the service', async () => {
       reads.getSenderSummary.mockResolvedValue(SAMPLE_SUMMARY);
-      const res = await ctrl.summary(MAILBOX, 'promo', undefined);
+      const context = createRequestPerformance('1')!;
+      const res = await withRequestPerformance(context, () =>
+        ctrl.summary(MAILBOX, 'promo', undefined),
+      );
+      expect(context.operations['senders.summary']).toMatchObject({ count: 1, failures: 0 });
+      expect(JSON.stringify(context)).not.toContain('promo');
       expect(reads.getSenderSummary).toHaveBeenCalledWith({
         mailboxAccountId: MAILBOX_ID,
         q: 'promo',
