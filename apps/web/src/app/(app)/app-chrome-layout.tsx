@@ -23,7 +23,7 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
-import { useScreenerCount } from '@/features/screener/api/use-screener';
+import { useCachedScreenerCount, useScreenerCount } from '@/features/screener/api/use-screener';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
 import { BannerSlot } from '@/features/shell/banner-slot';
@@ -199,8 +199,10 @@ function AppChrome({ children }: { children: ReactNode }) {
   // error state.
   const { tier } = useTier();
   const screenerUnlocked = hasCapability(tier, 'screener');
-  const screenerCount = useScreenerCount({ enabled: screenerUnlocked && hasActiveMailbox });
-  const screenerPending = screenerUnlocked ? screenerCount.data?.pending : undefined;
+  // Home owns this query while its route streams. The shell only observes
+  // cached values; it must not create an empty query before route hydration.
+  const cachedScreenerPending = useCachedScreenerCount();
+  const screenerPending = screenerUnlocked ? cachedScreenerPending : undefined;
 
   // Plan locks on nav items (2026-07-10 dogfood): paid nav surfaces are
   // tier-gated but nothing marked them, so users discovered paywalls by
@@ -259,6 +261,7 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      {screenerUnlocked && hasActiveMailbox && pathname !== '/home' && <ScreenerCountPoller />}
       <SyncNowAnimationStyle />
       <div className="dm-app-viewport" style={{ display: 'flex', flexDirection: 'column' }}>
         {/* ONE banner slot. Child order is the priority order: the first
@@ -335,4 +338,9 @@ function AppChrome({ children }: { children: ReactNode }) {
       <ToastHost />
     </>
   );
+}
+
+function ScreenerCountPoller() {
+  useScreenerCount();
+  return null;
 }

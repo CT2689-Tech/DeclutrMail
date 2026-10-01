@@ -47,7 +47,14 @@ export function HomeScreen() {
   // chrome renders once `me` agrees.
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
 
-  return <HomeView state={resolve()} tier={tier} workflows={workflows} />;
+  return (
+    <HomeView
+      state={resolve()}
+      tier={tier}
+      workflows={workflows}
+      timeZone={me.user.timezone ?? 'UTC'}
+    />
+  );
 
   function resolve(): HomeState {
     if (summary.isError) {

@@ -1,14 +1,18 @@
 // /home — the authed landing screen: one number, one label, one button.
 //
-// Client-fetched on purpose. The screen is three small reads and no list,
-// so there is nothing for server hydration to save.
-
+import { headers } from 'next/headers';
 import { HomeScreen } from '@/features/home/home-screen';
+import { ServerHomeBoundary } from '@/features/home/server-home-boundary';
 
 export const metadata = {
   title: 'Home — DeclutrMail',
 };
 
-export default function HomePage() {
-  return <HomeScreen />;
+export default async function HomePage() {
+  const cookieHeader = (await headers()).get('cookie') ?? '';
+  return (
+    <ServerHomeBoundary cookieHeader={cookieHeader}>
+      <HomeScreen />
+    </ServerHomeBoundary>
+  );
 }

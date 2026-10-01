@@ -14,6 +14,7 @@ export type ServerHydrationSurface =
   | 'billing-invoices'
   | 'brief'
   | 'followups'
+  | 'home'
   | 'later'
   | 'onboarding'
   | 'onboarding-step'

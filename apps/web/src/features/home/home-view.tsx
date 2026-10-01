@@ -20,10 +20,12 @@ export function HomeView({
   state,
   tier = 'free',
   workflows,
+  timeZone = 'UTC',
 }: {
   state: HomeState;
   tier?: TierId;
   workflows?: HomeWorkflows | undefined;
+  timeZone?: string;
 }) {
   return (
     <div className={styles.page}>
@@ -48,7 +50,7 @@ export function HomeView({
             <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
             <span>
               {state.hero.label}
-              {state.since ? ` since ${formatSince(state.since)}` : ''}
+              {state.since ? ` since ${formatSince(state.since, timeZone)}` : ''}
             </span>
             <small>Undone actions excluded</small>
           </section>
@@ -442,6 +444,8 @@ function HomeSkeleton() {
   );
 }
 
-function formatSince(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+function formatSince(iso: string, timeZone: string): string {
+  // A UTC server and a local browser can disagree at a month boundary.
+  // Use the session's timezone (or the same UTC fallback) for both renders.
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone });
 }
