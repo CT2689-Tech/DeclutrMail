@@ -81,6 +81,9 @@ export function SelectionBar({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 8,
+        flexShrink: 0,
+        flexWrap: variant === 'sheet' ? 'wrap' : undefined,
+        whiteSpace: variant === 'bar' ? 'nowrap' : undefined,
         color: color.fgInverseSoft,
         fontSize: text.sm,
       }}
@@ -108,7 +111,12 @@ export function SelectionBar({
     allProtected ? (
       <span
         role="note"
-        style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: text.sm }}
+        style={{
+          color: dark ? color.fgInverseSoft : color.fgSoft,
+          fontSize: text.sm,
+          flexShrink: 0,
+          whiteSpace: dark ? 'nowrap' : undefined,
+        }}
       >
         {senders.length === 1
           ? `${senders[0]!.name} is protected — unprotect it first`
@@ -159,6 +167,8 @@ export function SelectionBar({
         aria-keyshortcuts={entitled ? (shortcut ?? undefined) : undefined}
         style={{
           display: 'flex',
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
           alignItems: 'center',
           justifyContent: stretch ? 'space-between' : undefined,
           gap: 6,
@@ -180,6 +190,7 @@ export function SelectionBar({
         <span
           style={{
             fontSize: stretch ? text.sm : text.xs,
+            flexShrink: 0,
             fontVariantNumeric: 'tabular-nums',
             opacity: 0.8,
           }}
@@ -246,19 +257,31 @@ export function SelectionBar({
         bottom: floatingSurfaceLayout.selectionBarBottom,
         height: floatingSurfaceLayout.selectionBarHeight,
         flexShrink: 0,
+        minWidth: 0,
         boxSizing: 'border-box',
         zIndex: floatingSurfaceLayout.selectionBarZIndex,
         display: 'flex',
         alignItems: 'center',
-        gap: 14,
-        padding: '8px 8px 8px 22px',
+        gap: 10,
+        // Keep each action/count intact in narrow split panes. Scroll the
+        // bar rather than shrinking buttons below their content width.
+        overflowX: 'auto',
+        scrollbarWidth: 'thin',
+        padding: '4px 8px 4px 16px',
         background: color.fg,
         borderRadius: radius.pill,
         boxShadow: shadow.pop,
       }}
     >
       <span
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 10, color: color.fgInverse }}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 10,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+          color: color.fgInverse,
+        }}
       >
         <strong
           style={{

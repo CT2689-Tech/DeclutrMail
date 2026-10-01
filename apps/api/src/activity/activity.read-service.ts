@@ -1205,6 +1205,8 @@ export class ActivityReadService {
         .select({
           action: activityLog.action,
           n: count(activityLog.id),
+          emails: sum(activityLog.affectedCount),
+          senders: countDistinct(activityLog.senderKey),
         })
         .from(activityLog)
         .where(and(...whereParts))
@@ -1257,10 +1259,24 @@ export class ActivityReadService {
       const byVerb = new Map<ActivityLogEntry['action'], number>(
         rows.map((r) => [r.action, Number(r.n)]),
       );
+      const emailsByVerb = new Map(rows.map((r) => [r.action, Number(r.emails ?? 0)]));
+      const sendersByVerb = new Map(rows.map((r) => [r.action, Number(r.senders)]));
       return {
         archived: byVerb.get('archive') ?? 0,
         // D227 K/A/U/L/D — Delete verb count (ADR-0019).
         deleted: byVerb.get('delete') ?? 0,
+        emailCounts: {
+          archived: emailsByVerb.get('archive') ?? 0,
+          deleted: emailsByVerb.get('delete') ?? 0,
+          later: emailsByVerb.get('later') ?? 0,
+        },
+        senderCounts: {
+          archived: sendersByVerb.get('archive') ?? 0,
+          deleted: sendersByVerb.get('delete') ?? 0,
+          later: sendersByVerb.get('later') ?? 0,
+          unsubscribed: sendersByVerb.get('unsubscribe') ?? 0,
+          kept: sendersByVerb.get('keep') ?? 0,
+        },
         unsubscribed: byVerb.get('unsubscribe') ?? 0,
         kept: byVerb.get('keep') ?? 0,
         later: byVerb.get('later') ?? 0,

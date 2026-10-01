@@ -20,6 +20,8 @@ const STATS = {
   kept: 7,
   later: 1,
   deleted: 3,
+  emailCounts: { archived: 840, deleted: 234, later: 12 },
+  senderCounts: { archived: 3, deleted: 2, later: 1, unsubscribed: 2, kept: 5 },
   followupsDismissed: 0,
   needsAttention: 1,
   noisePreventedPerMonth: 120,
@@ -77,6 +79,37 @@ describe('fetchActivity meta parsing', () => {
   it('throws when a known field arrives with the wrong type', async () => {
     stubActivity({ ...META, stats: { ...STATS, archived: '4' } });
 
+    await expect(fetchActivity({})).rejects.toThrow();
+  });
+
+  it('preserves missing impact totals as unknown during an older API deployment', async () => {
+    const { emailCounts: _emails, senderCounts: _senders, ...legacy } = STATS;
+    stubActivity({ ...META, stats: legacy, allTimeStats: legacy });
+    const res = await fetchActivity({});
+    expect(res.meta?.stats.emailCounts).toBeUndefined();
+    expect(res.meta?.stats.senderCounts).toBeUndefined();
+  });
+
+  it('rejects malformed impact totals rather than substituting action counts', async () => {
+    stubActivity({
+      ...META,
+      stats: { ...STATS, emailCounts: { archived: '840', deleted: 234, later: 12 } },
+    });
+    await expect(fetchActivity({})).rejects.toThrow();
+  });
+
+  it('accepts older sender totals without inventing counts for message moves', async () => {
+    stubActivity({ ...META, stats: { ...STATS, senderCounts: { unsubscribed: 2, kept: 5 } } });
+    const res = await fetchActivity({});
+    expect(res.meta?.stats.senderCounts).toEqual({ unsubscribed: 2, kept: 5 });
+    expect(res.meta?.stats.senderCounts?.archived).toBeUndefined();
+  });
+
+  it('rejects negative sender totals rather than displaying misleading impact', async () => {
+    stubActivity({
+      ...META,
+      stats: { ...STATS, senderCounts: { ...STATS.senderCounts, archived: -1 } },
+    });
     await expect(fetchActivity({})).rejects.toThrow();
   });
 

@@ -26,7 +26,6 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import Link from 'next/link';
-import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel as sharedActivityActionLabel,
@@ -72,7 +71,6 @@ import {
   readActivityOutcomeFilters,
 } from './activity-route-filters';
 import {
-  FilterFields,
   OUTCOME_CHIPS,
   SOURCE_CHIPS,
   SenderSearchInput,
@@ -87,7 +85,11 @@ import {
 import type { RecoveryConfirmation } from './action-recovery-dialog';
 
 // Click-only dialogs: loaded on first open so their code stays out of the
-// /activity first-load bundle (180 kB budget).
+// /activity first-load bundle.
+const ActivityFilterDialog = dynamic(
+  () => import('./activity-filter-dialog').then((m) => m.ActivityFilterDialog),
+  { ssr: false },
+);
 const ActivitySupportBundleDialog = dynamic(
   () => import('./support-bundle-dialog').then((m) => m.ActivitySupportBundleDialog),
   { ssr: false },
@@ -808,13 +810,16 @@ const SUMMARY_VERBS: ReadonlyArray<{
   key: 'archived' | 'deleted' | 'unsubscribed' | 'later' | 'kept';
   verb: ActivityVerbFilterWire;
   label: string;
-  /** Lower-case form for the one-line all-time total. */
-  allTimeWord: string;
   /** The number's colour — the verb's, as on the rows' rails. */
   tone: string;
 }> = [
-  { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived', tone: color.fg },
-  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted', tone: color.danger },
+  { key: 'archived', verb: 'archive', label: 'Archived', tone: color.fg },
+  {
+    key: 'deleted',
+    verb: 'delete',
+    label: 'Moved to Trash',
+    tone: color.danger,
+  },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
   // intent rows), which for one-click include attempts that may fail
   // and mailto that we never confirm. "Unsubscribes" (a count of the
@@ -826,17 +831,31 @@ const SUMMARY_VERBS: ReadonlyArray<{
   {
     key: 'unsubscribed',
     verb: 'unsubscribe',
-    label: 'Unsubscribes',
-    allTimeWord: 'unsubscribes',
+    label: 'Unsubscribe requests',
     tone: color.primary,
   },
-  { key: 'later', verb: 'later', label: 'Later', allTimeWord: 'later', tone: color.primary },
-  { key: 'kept', verb: 'keep', label: 'Kept', allTimeWord: 'kept', tone: color.fgMuted },
+  { key: 'later', verb: 'later', label: 'Later', tone: color.primary },
+  { key: 'kept', verb: 'keep', label: 'Kept', tone: color.fgMuted },
 ];
 
 /** Thousands separators pinned to one locale — server-rendered (React #418). */
 function formatCount(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+/** Older API deployments can only report action totals; never relabel them as emails. */
+function summaryMetric(
+  stats: ActivityStatsWire,
+  key: (typeof SUMMARY_VERBS)[number]['key'],
+): { count: number; unit: 'emails' | 'senders' | 'actions' } {
+  if (key === 'archived' || key === 'deleted' || key === 'later') {
+    const count = stats.emailCounts?.[key];
+    if (count !== undefined) return { count, unit: 'emails' };
+  } else {
+    const count = stats.senderCounts?.[key];
+    if (count !== undefined) return { count, unit: 'senders' };
+  }
+  return { count: stats[key], unit: 'actions' };
 }
 
 /** Any counted action in these stats. */
@@ -889,11 +908,18 @@ function SummaryRow({
   // alone — a panel of zeros would say nothing it doesn't.
   if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
-  // `aggregateStats` counts activity_log ROWS, drops reverted ones, and
-  // ignores the source chips — none of which the numbers can say for
-  // themselves (QA-activity-20260918-05).
+  const periodLabel = isWindowAllTime
+    ? 'All time'
+    : windowLabel.startsWith('Last ')
+      ? `In the ${windowLabel.toLowerCase()}`
+      : windowLabel;
+  const showActionDetails = SUMMARY_VERBS.some(
+    ({ key }) => summaryMetric(stats, key).unit !== 'actions',
+  );
+  // The totals drop reverted activity and ignore source chips. Each
+  // metric names its unit and period; action counts live in the disclosure.
   const caption = [
-    'Actions, not emails, from every source.',
+    'Totals from every source.',
     hasUndoneRows ? 'Undone actions aren’t counted.' : null,
   ]
     .filter(Boolean)
@@ -943,12 +969,17 @@ function SummaryRow({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(140px, 100%), 1fr))',
             gap: 2,
           }}
         >
           {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
             const isActive = verbs.includes(verb);
+            const metric = summaryMetric(stats, key);
+            const allTimeMetric = allTimeStats ? summaryMetric(allTimeStats, key) : null;
+            const senders = metric.unit === 'emails' ? stats.senderCounts?.[key] : undefined;
+            const allTimeSenders =
+              allTimeMetric?.unit === 'emails' ? allTimeStats?.senderCounts?.[key] : undefined;
             return (
               <button
                 key={key}
@@ -980,29 +1011,60 @@ function SummaryRow({
                 <span
                   style={{
                     fontSize: text.sm,
+                    minHeight: 32,
+                    lineHeight: 1.2,
                     fontWeight: isActive ? 600 : 500,
                     color: isActive ? color.primary : color.fgMuted,
                   }}
                 >
                   {label}
                 </span>
-                <span
-                  data-summary-count={key}
-                  style={{
-                    ...numeralStyle,
-                    fontFamily: font.display,
-                    fontSize: text['3xl'],
-                    fontWeight: 500,
-                    letterSpacing: '-0.02em',
-                    lineHeight: 1.05,
-                    color: stats[key] === 0 ? color.fgMuted : tone,
-                  }}
-                >
-                  {formatCount(stats[key])}
+                <span style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 6 }}>
+                  <span
+                    data-summary-count={key}
+                    style={{
+                      ...numeralStyle,
+                      fontFamily: font.display,
+                      fontSize: text['3xl'],
+                      fontWeight: 500,
+                      letterSpacing: '-0.02em',
+                      lineHeight: 1.05,
+                      color: metric.count === 0 ? color.fgMuted : tone,
+                    }}
+                  >
+                    {formatCount(metric.count)}
+                  </span>
+                  <span style={{ fontSize: text.sm, color: color.fgSoft }}>
+                    {metric.count === 1 ? metric.unit.slice(0, -1) : metric.unit}
+                  </span>
                 </span>
-                {showAllTime && allTimeStats && (
-                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
-                    {formatCount(allTimeStats[key])} all time
+                <span style={{ fontSize: text.sm, color: color.fgSoft, minHeight: 20 }}>
+                  {senders !== undefined &&
+                    `from ${formatCount(senders)} ${senders === 1 ? 'sender' : 'senders'}`}
+                </span>
+                <span style={{ fontSize: text.xs, color: color.fgSoft }}>{periodLabel}</span>
+                {showAllTime && allTimeMetric && (
+                  <span
+                    style={{
+                      ...numeralStyle,
+                      fontSize: text.xs,
+                      color: color.fgMuted,
+                      marginTop: 6,
+                      paddingTop: 8,
+                      borderTop: `1px solid ${color.line}`,
+                      alignSelf: 'stretch',
+                    }}
+                  >
+                    All time: {formatCount(allTimeMetric.count)}{' '}
+                    {allTimeMetric.count === 1
+                      ? allTimeMetric.unit.slice(0, -1)
+                      : allTimeMetric.unit}
+                    {allTimeSenders !== undefined && (
+                      <span style={{ display: 'block' }}>
+                        from {formatCount(allTimeSenders)}{' '}
+                        {allTimeSenders === 1 ? 'sender' : 'senders'}
+                      </span>
+                    )}
                   </span>
                 )}
               </button>
@@ -1011,6 +1073,21 @@ function SummaryRow({
         </div>
       </div>
       <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>
+      {showActionDetails && (
+        <details style={{ fontSize: text.xs, color: color.fgMuted }}>
+          <summary style={{ cursor: 'pointer' }}>View action counts</summary>
+          <p style={{ margin: '8px 0' }}>
+            {windowLabel}. One cleanup action can handle many emails.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {SUMMARY_VERBS.map(({ key, label }) => (
+              <li key={key}>
+                {label}: {formatCount(stats[key])} {stats[key] === 1 ? 'action' : 'actions'}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </section>
   );
 }
@@ -1190,116 +1267,8 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
         Filter
         {count > 0 && <span style={numeralStyle}>{count}</span>}
       </button>
-      {open && !isMobile && (
-        <div
-          role="dialog"
-          aria-label="Activity filters"
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            right: 0,
-            zIndex: 20,
-            width: 380,
-            padding: 20,
-            background: color.card,
-            borderRadius: radius.xl,
-            boxShadow: shadow.pop,
-            transformOrigin: 'top right',
-            animation: `dm-activity-pop-in ${motion.fast} ${motion.ease} both`,
-          }}
-        >
-          <style>{`@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
-          <FilterFields {...fields} showVerbs={false} />
-        </div>
-      )}
-      {open && isMobile && <FilterSheet onClose={close} {...fields} />}
+      {open && <ActivityFilterDialog isMobile={isMobile} onClose={close} {...fields} />}
     </div>
-  );
-}
-
-/**
- * D60 bottom-sheet filters (mobile only). Slides up from the bottom edge
- * and dismisses on backdrop tap, Escape, or the button. Focus is trapped
- * while open — mirrors the triage action-sheet modal contract.
- */
-function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () => void }) {
-  const trapRef = useFocusTrap<HTMLDivElement>(true);
-  return (
-    <>
-      <div
-        className="dm-scrim"
-        onClick={onClose}
-        style={{ position: 'fixed', inset: 0, zIndex: 150 }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Activity filters"
-        className="dm-sheet"
-        style={{
-          position: 'fixed',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          maxHeight: '82vh',
-          overflow: 'auto',
-          background: color.card,
-          borderTopLeftRadius: radius['2xl'],
-          borderTopRightRadius: radius['2xl'],
-          boxShadow: shadow.modal,
-          zIndex: 151,
-          fontFamily: font.sans,
-          padding: '10px 20px calc(20px + env(safe-area-inset-bottom))',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
-      >
-        {/* Grab handle */}
-        <div
-          aria-hidden="true"
-          style={{
-            width: 36,
-            height: 4,
-            borderRadius: radius.pill,
-            background: color.fillHover,
-            margin: '2px auto 4px',
-          }}
-        />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}
-        >
-          <span
-            style={{
-              fontSize: text.xl,
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
-              color: color.fg,
-            }}
-          >
-            Filter
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close filters"
-            style={{ ...iconButtonStyle, width: 44, height: 44 }}
-          >
-            <CloseGlyph />
-          </button>
-        </div>
-        <FilterFields {...fields} touch showVerbs={false} />
-        <Button tone="primary" size="lg" onClick={onClose}>
-          View results
-        </Button>
-      </div>
-    </>
   );
 }
 
@@ -2280,38 +2249,6 @@ const rowControlStyle: CSSProperties = {
 };
 
 /** 32px ghost circle — the row's icon-only controls. */
-const iconButtonStyle: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: 32,
-  height: 32,
-  padding: 0,
-  border: 'none',
-  borderRadius: radius.pill,
-  background: 'transparent',
-  color: color.fgMuted,
-  cursor: 'pointer',
-  transition: `background ${motion.fast} ${motion.ease}`,
-};
-
-function CloseGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      aria-hidden="true"
-    >
-      <path d="M6 6l12 12M18 6 6 18" />
-    </svg>
-  );
-}
-
 /**
  * Outcome-aware recovery entry point for failed label actions. A click starts
  * a metadata-only Gmail verification pass; the mutation is offered only

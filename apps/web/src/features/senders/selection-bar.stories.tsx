@@ -87,6 +87,42 @@ export const MixedSelection: Story<typeof SelectionBar> = {
   render: frame,
 };
 
+/** Split-pane width with the partial eligibility counts from the reported bug. */
+export const NarrowPartialSelection: Story<typeof SelectionBar> = {
+  args: {
+    senders: Array.from({ length: 29 }, (_, index) =>
+      sender({
+        id: `sender-${index}`,
+        unsubscribeMethod: 'one_click',
+        ...(index === 0 ? { protectionFlags: PROTECTED } : {}),
+      }),
+    ),
+    tier: 'pro',
+    onClear: noop,
+    onAct: noop,
+  },
+  render: (args) => (
+    <div style={{ background: color.bg, padding: 24, maxWidth: 740 }}>
+      <SelectionBar {...args} />
+    </div>
+  ),
+};
+
+/** Protection note and disabled verbs must remain reachable in a narrow pane. */
+export const NarrowProtectedSelection: Story<typeof SelectionBar> = {
+  args: {
+    senders: [sender({ id: 'Bank Statements', protectionFlags: PROTECTED })],
+    tier: 'pro',
+    onClear: noop,
+    onAct: noop,
+  },
+  render: (args) => (
+    <div style={{ background: color.bg, padding: 24, maxWidth: 420 }}>
+      <SelectionBar {...args} />
+    </div>
+  ),
+};
+
 /** Single sender — the count copy reads "1 sender selected". */
 export const SingleSelection: Story<typeof SelectionBar> = {
   args: {

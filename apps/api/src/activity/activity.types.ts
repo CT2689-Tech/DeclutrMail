@@ -179,6 +179,16 @@ export interface ActivityStats {
    *  `activity_log.action = 'delete'`. Zero when no Delete activity in
    *  the window. */
   deleted: number;
+  /** Confirmed message moves, excluding activity whose Undo completed. */
+  emailCounts: { archived: number; deleted: number; later: number };
+  /** Distinct senders per action in this scope, excluding completed Undo. */
+  senderCounts: {
+    archived: number;
+    deleted: number;
+    later: number;
+    unsubscribed: number;
+    kept: number;
+  };
   followupsDismissed: number;
   /**
    * D59 "needing attention" — truthful unsubscribe terminal outcomes

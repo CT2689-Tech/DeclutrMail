@@ -72,6 +72,8 @@ const STATS: ActivityStatsWire = {
   later: 3,
 
   deleted: 0,
+  emailCounts: { archived: 8420, deleted: 0, later: 96 },
+  senderCounts: { archived: 47, deleted: 0, later: 3, unsubscribed: 10, kept: 7 },
   followupsDismissed: 2,
   needsAttention: 0,
   noisePreventedPerMonth: null,
@@ -214,6 +216,8 @@ const ALL_TIME_STATS: ActivityStatsWire = {
   kept: 41,
   later: 19,
   deleted: 212,
+  emailCounts: { archived: 41850, deleted: 9642, later: 731 },
+  senderCounts: { archived: 975, deleted: 184, later: 19, unsubscribed: 74, kept: 35 },
 };
 
 const ZERO_STATS: ActivityStatsWire = {
@@ -223,6 +227,8 @@ const ZERO_STATS: ActivityStatsWire = {
   kept: 0,
   later: 0,
   deleted: 0,
+  emailCounts: { archived: 0, deleted: 0, later: 0 },
+  senderCounts: { archived: 0, deleted: 0, later: 0, unsubscribed: 0, kept: 0 },
 };
 
 function makeClient(
