@@ -256,6 +256,72 @@ describe('SendersReadService', () => {
     expect(rows[0]?.protectionFlags.protectionEvidenceCurrent).toBe(false);
   });
 
+  it.each([false, true])(
+    'reuses exact mailbox totals without duplicate scans (currentMailOnly=%s)',
+    async (currentMailOnly) => {
+      const current = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'current@example.test',
+        category: 'primary',
+        lastSeenAt: new Date(),
+      });
+      const cleared = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'cleared@example.test',
+        category: 'promotions',
+        lastSeenAt: new Date(),
+      });
+      await db.update(senders).set({ totalReceived: 10 }).where(eq(senders.id, current.id));
+      await db.update(senders).set({ totalReceived: 90 }).where(eq(senders.id, cleared.id));
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: current.senderKey,
+        internalDate: new Date(),
+        labelIds: [],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: cleared.senderKey,
+        internalDate: new Date(),
+        labelIds: ['TRASH'],
+      });
+      const other = await seedMailbox(db, 'other-counts');
+      await seedMessage(db, {
+        mailboxAccountId: other,
+        senderKey: cleared.senderKey,
+        internalDate: new Date(),
+        labelIds: ['INBOX'],
+      });
+      const query = vi.spyOn(db.$client, 'query');
+      try {
+        const meta = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: null,
+          currentMailOnly,
+          q: '   ',
+          isProtected: null,
+        });
+        expect(meta.totalMatching).toBe(currentMailOnly ? 1 : 2);
+        expect(meta.filterCounts?.total).toBe(meta.totalMatching);
+        expect(meta.filterCounts?.active).toBe(meta.totalMatching);
+        expect(meta.globalMaxTotal).toBe(currentMailOnly ? 10 : 90);
+        expect(query).toHaveBeenCalledOnce();
+        query.mockClear();
+        const filtered = await svc.getSenderListQueryMeta({
+          mailboxAccountId: mailboxId,
+          category: 'primary',
+          currentMailOnly,
+        });
+        expect(filtered.totalMatching).toBe(1);
+        expect(filtered.filterCounts?.total).toBe(currentMailOnly ? 1 : 2);
+        expect(filtered.globalMaxTotal).toBe(currentMailOnly ? 10 : 90);
+        expect(query).toHaveBeenCalledTimes(2);
+      } finally {
+        query.mockRestore();
+      }
+    },
+  );
+
   it('removes cleared senders from cleanup rows and counts, and restores them on Undo or new mail', async () => {
     const sender = await seedSender(db, {
       mailboxAccountId: mailboxId,

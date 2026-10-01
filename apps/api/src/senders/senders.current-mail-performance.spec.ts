@@ -16,7 +16,7 @@ describe('current-mail query plans', () => {
       INSERT INTO mailbox_accounts(id,workspace_id,user_id,provider,provider_account_id)
       VALUES ('${mailbox}','${workspace}','${user}','gmail','synthetic@example.test');
       INSERT INTO senders(mailbox_account_id,sender_key,email,domain,first_seen_at,last_seen_at,total_received,gmail_category)
-      SELECT '${mailbox}',md5(i::text),'sender'||i||'@example.test','example.test',now()-interval '80 days',now(),80,'updates'
+      SELECT '${mailbox}',md5(i::text),'sender'||i||'@example.test','example.test',now()-interval '80 days',now(),80,CASE WHEN i%20=0 THEN 'updates'::gmail_category ELSE 'promotions'::gmail_category END
       FROM generate_series(1,500) i;
       INSERT INTO mail_messages(mailbox_account_id,sender_key,provider_message_id,provider_thread_id,internal_date,label_ids,is_unread)
       SELECT '${mailbox}',md5(i::text),i||'-'||j,i||'-'||j,now()-j*interval '1 day',
@@ -41,11 +41,21 @@ describe('current-mail query plans', () => {
     expect(
       (await service.getSenderSummary({ mailboxAccountId: mailbox })).cleanupActiveSenders,
     ).toBe(50);
-    const currentMailQueries = captured.filter(({ query }) =>
+    const defaultQueries = captured.filter(({ query }) =>
       query.includes("ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']"),
     );
-    // All four statements must be observed: rows, matching count, axis counts, summary.
-    expect(currentMailQueries).toHaveLength(4);
+    // Default rows, shared matching/axis counts and summary: no duplicate COUNT.
+    expect(defaultQueries).toHaveLength(3);
+    const filteredStart = captured.length;
+    const filtered = await service.getSenderListQueryMeta({ ...args, category: 'updates' });
+    expect(filtered.totalMatching).toBe(25);
+    expect(filtered.filterCounts?.total).toBe(50);
+    const filteredQueries = captured
+      .slice(filteredStart)
+      .filter(({ query }) => query.includes("ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']"));
+    // Filtered matching and absolute axis counts still have distinct predicates.
+    expect(filteredQueries).toHaveLength(2);
+    const currentMailQueries = [...defaultQueries, ...filteredQueries];
     for (const [statement, { query, params }] of currentMailQueries.entries()) {
       const times: number[] = [];
       let plan = '';
