@@ -3,7 +3,20 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const OPERATIONS = new Set([
+  'senders.rows',
+  'senders.meta',
+  'senders.marks',
+  'senders.summary',
   'triage.enrichment',
+  'auth.jwt',
+  'auth.session',
+  'auth.session-cache',
+  'auth.session-row',
+  'auth.profile',
+  'auth.mailboxes',
+  'auth.quota',
+  'mailbox.resolve',
+  'rate-limit.consume',
   'auth.sync-state',
   'autopilot.observe',
   'activity.lineages',

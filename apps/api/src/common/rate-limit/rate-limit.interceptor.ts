@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../../observability/request-performance.js';
 import {
   type CallHandler,
   type ExecutionContext,
@@ -114,7 +115,8 @@ export class RateLimitInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    if (!this.store) {
+    const store = this.store;
+    if (!store) {
       // No store wired (e.g. REDIS_URL absent in local dev). Fail open
       // — the alternative is bricking every annotated route in dev.
       return next.handle();
@@ -128,7 +130,9 @@ export class RateLimitInterceptor implements NestInterceptor {
 
     let result;
     try {
-      result = await this.store.consume(key, resolved, Date.now());
+      result = await measureRequestOperation('rate-limit.consume', () =>
+        store.consume(key, resolved, Date.now()),
+      );
     } catch (err) {
       // Fail-open: log structured, allow request. The Sentry counter
       // wiring (D159) will hook off `kind: 'rate_limit.store_error'`

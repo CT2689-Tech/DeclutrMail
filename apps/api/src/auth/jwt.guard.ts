@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   CanActivate,
   ExecutionContext,
@@ -76,13 +77,15 @@ export class JwtGuard implements CanActivate {
 
     let claims;
     try {
-      claims = await this.jwt.verify(token, 'access');
+      claims = await measureRequestOperation('auth.jwt', () => this.jwt.verify(token, 'access'));
     } catch (err) {
       this.logger.debug(`JWT verify failed: ${err instanceof Error ? err.message : err}`);
       throw new UnauthorizedException('Invalid or expired session.');
     }
 
-    const row = await this.sessions.lookupByJti(claims.jti);
+    const row = await measureRequestOperation('auth.session', () =>
+      this.sessions.lookupByJti(claims.jti),
+    );
     if (!row) {
       throw new UnauthorizedException('Session revoked.');
     }

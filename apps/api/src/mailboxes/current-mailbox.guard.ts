@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   CanActivate,
   ConflictException,
@@ -68,11 +69,13 @@ export class CurrentMailboxGuard implements CanActivate {
     const headerValue = Array.isArray(headerValueRaw) ? headerValueRaw[0] : headerValueRaw;
     const requestedMailboxId =
       typeof headerValue === 'string' && headerValue.length > 0 ? headerValue : undefined;
-    const resolved = await this.mailboxes.resolveActiveForRequest({
-      workspaceId: principal.workspaceId,
-      userId: principal.userId,
-      ...(requestedMailboxId === undefined ? {} : { requestedMailboxId }),
-    });
+    const resolved = await measureRequestOperation('mailbox.resolve', () =>
+      this.mailboxes.resolveActiveForRequest({
+        workspaceId: principal.workspaceId,
+        userId: principal.userId,
+        ...(requestedMailboxId === undefined ? {} : { requestedMailboxId }),
+      }),
+    );
     // Both 409s are DESIGNED states with different recovery screens, so the
     // two must not collapse into one. A stale header sent by a tab whose
     // last mailbox was disconnected elsewhere resolves `none-active`, not
