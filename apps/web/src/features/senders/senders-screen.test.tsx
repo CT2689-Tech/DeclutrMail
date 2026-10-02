@@ -646,7 +646,7 @@ describe('SendersScreen — edge states', () => {
     expect(screen.queryByText(/results as of/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/senders match|in this mailbox/i)).not.toBeInTheDocument();
     // The default view is active-only and no chip says so — the hero does.
-    expect(screen.getByTestId('senders-hero')).toHaveTextContent(/active senders/);
+    expect(screen.getByTestId('senders-hero')).toHaveTextContent(/active sender\b/);
     expect(screen.queryByRole('group', { name: 'Active filters' })).not.toBeInTheDocument();
   });
 
@@ -1028,7 +1028,7 @@ describe('SendersScreen — edge states', () => {
       // The sender the old empty state denied the existence of.
       expect(
         await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE),
-      ).toHaveTextContent(/No active senders match/);
+      ).toHaveTextContent(/Searching across all activity levels/);
       expect(screen.getAllByText(/TechGig Latest News/).length).toBeGreaterThan(0);
       // And no contradiction: the empty state must be gone, not merely
       // rendered underneath the rows.
@@ -1161,7 +1161,7 @@ describe('SendersScreen — edge states', () => {
       const notice = await screen.findByTestId('senders-widened-notice', undefined, {
         timeout: 3_000,
       });
-      expect(notice).toHaveTextContent(/No senders match .* under your filters/);
+      expect(notice).toHaveTextContent(/Searching without your filters/);
       expect(notice.textContent).not.toMatch(/matching senders match/);
       expect(screen.getByRole('button', { name: /^Use my filters$/ })).toBeInTheDocument();
     });

@@ -2,6 +2,7 @@
 
 import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import type { Verb } from '@declutrmail/shared/observability';
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
@@ -1141,16 +1142,6 @@ export function ConfirmActionModal({
   // fact as the sentence it replaced — cut, never widened or narrowed.
   // The count itself is the title; the undo is the note.
   const facts: SheetFactItem[] = [];
-  if (activeMailboxEmail) {
-    facts.push({
-      label: 'Gmail account',
-      value: (
-        <span role="note" aria-label={`Gmail account: ${activeMailboxEmail}`}>
-          {activeMailboxEmail}
-        </span>
-      ),
-    });
-  }
   // The senders card's own arrival facts, from the same row and in the
   // same words — "N in last 90d · N received" (ADR-0037). INBOX-now is
   // deliberately NOT repeated: the title is that number, live. Unknown
@@ -1401,6 +1392,11 @@ export function ConfirmActionModal({
     // previous overlay was; `PreviewSheet` itself is fixed to the viewport.
     <div style={{ position: 'relative', zIndex: 151 }}>
       <PreviewSheet
+        context={
+          activeMailboxEmail ? (
+            <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
+          ) : undefined
+        }
         onClose={onCancel}
         testId="senders-confirm-sheet"
         icon={

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 
 const FOCUSABLE =
-  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  'summary,a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /**
  * Focus management for modal surfaces. While `active`: focus moves into
@@ -28,7 +28,22 @@ export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(
     if (!node) return;
 
     const restoreTo = document.activeElement as HTMLElement | null;
-    const focusable = () => Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE));
+    const focusable = () =>
+      Array.from(node.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((element) => {
+        // Descendants of a closed disclosure are in the DOM but cannot
+        // receive focus. Its summary remains a keyboard control.
+        for (
+          let parent = element.parentElement;
+          parent && parent !== node;
+          parent = parent.parentElement
+        ) {
+          if (parent.tagName === 'DETAILS' && !parent.hasAttribute('open')) {
+            const summary = parent.querySelector('summary');
+            if (!summary?.contains(element)) return false;
+          }
+        }
+        return true;
+      });
     const preferred = initialFocusSelector
       ? node.querySelector<HTMLElement>(initialFocusSelector)
       : null;

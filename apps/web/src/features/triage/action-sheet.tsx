@@ -1,5 +1,7 @@
 'use client';
 
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+
 import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -238,21 +240,7 @@ export function ActionSheet({
       detail={
         detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? detail : undefined
       }
-      leadFacts={[
-        ...(mailboxEmail
-          ? [
-              {
-                label: 'Gmail account',
-                value: (
-                  <span role="note" aria-label={`Gmail account: ${mailboxEmail}`}>
-                    {mailboxEmail}
-                  </span>
-                ),
-              },
-            ]
-          : []),
-        ...facts.disclosures,
-      ]}
+      leadFacts={facts.disclosures}
       trailingFacts={[
         { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
         ...(verb === 'Delete'
@@ -294,6 +282,9 @@ export function ActionSheet({
       data-dm-preview-mode="modal"
     >
       <PreviewSheet
+        context={
+          mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
+        }
         onClose={onCancel}
         testId="triage-action-sheet"
         icon={

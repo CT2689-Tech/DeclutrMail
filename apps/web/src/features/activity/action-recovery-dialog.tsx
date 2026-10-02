@@ -15,6 +15,8 @@ import { enqueueMayHaveStarted, technicalErrorDetails } from '@/lib/action-error
 import type { ActivityRowWire } from '@/lib/api/activity';
 import type { ActionRecoveryPreviewResult } from '@/lib/api/actions';
 
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+
 import { numeralStyle } from './activity-filter-fields';
 
 /**
@@ -37,6 +39,7 @@ export interface RecoveryConfirmation {
 
 export function ActionRecoveryDialog({
   row,
+  mailboxEmail,
   preview,
   isStarting,
   startError,
@@ -48,6 +51,7 @@ export function ActionRecoveryDialog({
   onClose,
 }: {
   row: ActivityRowWire;
+  mailboxEmail?: string | null;
   preview: ActionRecoveryPreviewResult | undefined;
   isStarting: boolean;
   startError: Error | null;
@@ -129,6 +133,11 @@ export function ActionRecoveryDialog({
         }}
       >
         <div style={{ padding: '28px 28px 12px' }}>
+          {mailboxEmail && (
+            <div style={{ marginBottom: tokens.space[3] }}>
+              <MailboxActionContextView mailboxEmail={mailboxEmail} />
+            </div>
+          )}
           <h2
             id="action-recovery-title"
             style={{

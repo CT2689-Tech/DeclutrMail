@@ -2710,7 +2710,8 @@ function SendersScreenContent({
                       marginLeft: 10,
                     }}
                   >
-                    {isDefaultCompose(compose) && !hasQuery ? 'active senders' : 'senders'}
+                    {isDefaultCompose(compose) && !hasQuery ? 'active ' : ''}
+                    {(totalMatching ?? serverSenders.length) === 1 ? 'sender' : 'senders'}
                   </span>
                 </div>
                 {!showingStaleRows && (
@@ -2803,23 +2804,14 @@ function SendersScreenContent({
                 color: color.fgSoft,
               }}
             >
-              {/* No "showing all N": only a page is ever rendered. The
-                singular "that filter" is reached only when Activity really
-                was the only filter set aside (`describeNarrowedFilters`). */}
+              {/* State the effective search scope. The count is total matches,
+                  not a claim that every result is rendered on this page. */}
               <span>
-                {widenedFrom === 'filtered' ? (
-                  <>
-                    No senders match &ldquo;{query}&rdquo; under your filters —{' '}
-                    {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'}{' '}
-                    without them.
-                  </>
-                ) : (
-                  <>
-                    No {widenedFrom} senders match &ldquo;{query}&rdquo; —{' '}
-                    {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'}{' '}
-                    without that filter.
-                  </>
-                )}
+                {widenedFrom === 'filtered'
+                  ? 'Searching without your filters'
+                  : 'Searching across all activity levels'}{' '}
+                · {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'match' : 'matches'}{' '}
+                for &ldquo;{query}&rdquo;.
               </span>
               <Button tone="ghost" onClick={onKeepNarrow}>
                 {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}

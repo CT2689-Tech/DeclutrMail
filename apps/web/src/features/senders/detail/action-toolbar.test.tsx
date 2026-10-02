@@ -17,6 +17,20 @@ const sender: typeof makeSender = (overrides = {}) =>
   });
 
 describe('ActionToolbar — D245 fact-derived primary', () => {
+  it('does not describe unchecked unsubscribe availability as a missing link', () => {
+    render(<ActionToolbar sender={sender({ unsubscribeMethod: null })} onAction={vi.fn()} />);
+    const unsubscribe = screen.getByRole('button', { name: 'Unsubscribe' });
+    expect(unsubscribe).toBeDisabled();
+    expect(unsubscribe.title).toMatch(/hasn’t been checked/);
+    expect(screen.getByRole('button', { name: 'Keep' }).title).not.toMatch(/offer no/);
+  });
+
+  it('shows why one-click Unsubscribe is highlighted without requiring a hover', () => {
+    render(
+      <ActionToolbar sender={sender({ unsubscribeMethod: 'one_click' })} onAction={vi.fn()} />,
+    );
+    expect(screen.getByText('One-click unsubscribe available')).toBeVisible();
+  });
   function actionButtonTag(html: string, label: string): string {
     const marker = `aria-label="${label} (${label[0]})"`;
     const markerAt = html.indexOf(marker);

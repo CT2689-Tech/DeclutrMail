@@ -265,6 +265,18 @@ describe('FilterButton', () => {
 });
 
 describe('ActiveFilterChips', () => {
+  it('does not claim absent unsubscribe when the filter also includes unchecked senders', () => {
+    render(
+      <ActiveFilterChips
+        state={{ ...EMPTY_COMPOSE, unsubReady: false }}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Remove filter: No known unsubscribe' }),
+    ).toBeVisible();
+  });
   it('renders nothing on the first-visit default', () => {
     const { container } = render(
       <ActiveFilterChips state={DEFAULT_COMPOSE} onChange={vi.fn()} onClear={vi.fn()} />,

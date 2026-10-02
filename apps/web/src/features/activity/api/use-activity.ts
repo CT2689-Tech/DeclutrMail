@@ -41,6 +41,9 @@ import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { undoKeys } from '@/features/undo/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 
+import { SCREENER_ALL_KEY } from '@/features/screener/api/query-keys';
+import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
+
 import { activityKeys } from './query-keys';
 import { activityInfiniteQueryOptions, activityWeeklyReviewQueryOptions } from './query-options';
 
@@ -102,6 +105,8 @@ export function useRevertActivity() {
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
       void queryClient.invalidateQueries({ queryKey: sendersKeys.all });
       void queryClient.invalidateQueries({ queryKey: undoKeys.all });
+      void queryClient.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+      void queryClient.invalidateQueries({ queryKey: SCREENER_ALL_KEY });
       void queryClient.invalidateQueries({ queryKey: ['composite-preview'] });
       void queryClient.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     },

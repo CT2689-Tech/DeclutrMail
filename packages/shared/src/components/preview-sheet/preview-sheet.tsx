@@ -9,7 +9,7 @@ import { Button, type ButtonTone } from '../button';
  * The one confirmation surface (ADR-0042). A preview owes the user three
  * things, each once: the COUNT, WHERE the email goes, and HOW TO UNDO it
  * (CLAUDE.md §2.3). This component gives those three a fixed place —
- * title, subtitle, note — and puts everything else behind one "Details"
+ * title, subtitle, note — with account context always visible and other facts behind "Details"
  * disclosure, so a caller cannot grow the sheet by adding another line.
  *
  * Presentational only: no fetching, no mutation. The feature owns the
@@ -21,6 +21,8 @@ export type PreviewSheetProps = {
   onClose: () => void;
   /** Sender logo / verb glyph — what the action is about. */
   icon?: ReactNode;
+  /** Account identity, always visible before confirmation. */
+  context?: ReactNode;
   /** "Delete 6,728 emails?" — the count and the verb, as a question. */
   title: string;
   /** One sentence: whose email, and where it goes. */
@@ -51,6 +53,7 @@ export type PreviewSheetProps = {
 export function PreviewSheet({
   onClose,
   icon,
+  context,
   title,
   subtitle,
   children,
@@ -67,12 +70,13 @@ export function PreviewSheet({
   const subtitleId = useId();
   const busy = primary.busyLabel != null;
   // Focus lands on the action — except a destructive one, where Enter on
-  // open must never be enough; there it lands on Cancel.
+  // open must never be enough; there it lands on Cancel. A loading
+  // primary falls back to Cancel without moving focus again when it loads.
   const trapRef = useFocusTrap<HTMLDivElement>(true, {
     initialFocusSelector:
       primary.tone === 'danger'
         ? '[data-dm-sheet-cancel] button'
-        : '[data-dm-sheet-primary] button',
+        : '[data-dm-sheet-primary] button:not([disabled]), [data-dm-sheet-cancel] button:not([disabled])',
   });
 
   useEffect(() => {
@@ -125,6 +129,8 @@ export function PreviewSheet({
         }}
       >
         {icon != null && <div style={{ marginBottom: space[4] }}>{icon}</div>}
+
+        {context != null && <div style={{ marginBottom: space[4], width: '100%' }}>{context}</div>}
 
         <h2
           id={titleId}
