@@ -1,5 +1,7 @@
 'use client';
 
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+
 import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import {
   Avatar,
@@ -205,16 +207,6 @@ export function BatchActionSheet({
 
   // ── Details ──────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
-  if (mailboxEmail) {
-    facts.push({
-      label: 'Gmail account',
-      value: (
-        <span role="note" aria-label={`Gmail account: ${mailboxEmail}`}>
-          {mailboxEmail}
-        </span>
-      ),
-    });
-  }
   if (total !== null && total > 0) {
     facts.push({ label: 'Count', value: 'Inbox now, rechecked when it runs' });
   }
@@ -266,6 +258,9 @@ export function BatchActionSheet({
       style={{ position: 'relative', zIndex: 151 }}
     >
       <PreviewSheet
+        context={
+          mailboxEmail ? <MailboxActionContextView mailboxEmail={mailboxEmail} /> : undefined
+        }
         onClose={onCancel}
         testId="triage-batch-sheet"
         icon={

@@ -697,7 +697,7 @@ function activeFilterChips(s: ComposeState): ActiveChip[] {
     if (s[key] === null) return;
     out.push({ key, label: s[key] ? on : off, cleared: { ...s, [key]: null } });
   };
-  tri('unsubReady', 'Has unsubscribe', 'No unsubscribe');
+  tri('unsubReady', 'Has unsubscribe', 'No known unsubscribe');
   tri('wroteTo', 'You wrote to them', 'Never wrote to them');
   tri('protectedFlag', 'Protected', 'Not protected');
   if (s.hasInboxMail) {

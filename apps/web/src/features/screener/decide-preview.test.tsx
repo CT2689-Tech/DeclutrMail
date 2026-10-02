@@ -112,9 +112,9 @@ describe('DecidePreview — live-preview confirm gate', () => {
       screen.getByText(new RegExp(`^2 emails from ${esc(row.senderName)}\\.`)),
     ).toBeInTheDocument();
     expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
-    ).toBeInTheDocument();
+    const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });

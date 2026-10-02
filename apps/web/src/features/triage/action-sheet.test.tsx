@@ -32,6 +32,24 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('shows the account before expanding Details, including while the count loads', () => {
+    render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount="loading"
+        mailboxEmail="active@gmail.com"
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
+  });
   it('renders the modal title + preview body when open=true', () => {
     const html = renderToStaticMarkup(
       <ActionSheet

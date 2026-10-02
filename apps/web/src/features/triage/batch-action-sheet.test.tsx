@@ -107,9 +107,9 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.getByText(/From example\.com\./)).toBeInTheDocument();
     expect(screen.getByText(/One undo reverses the whole batch/)).toBeInTheDocument();
-    expect(
-      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
-    ).toBeInTheDocument();
+    const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
   });
 
   it('requires an exact future return time for Later', () => {

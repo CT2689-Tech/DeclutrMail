@@ -1,5 +1,7 @@
 'use client';
 
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+
 import { useEffect, type ReactNode } from 'react';
 import { Button, PreviewSheet, SheetFactList, tokens } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -107,6 +109,7 @@ export function NoiseArchiveSheet({
 
   return (
     <PreviewSheet
+      context={accountEmail ? <MailboxActionContextView mailboxEmail={accountEmail} /> : undefined}
       onClose={onCancel}
       testId="brief-noise-archive-sheet"
       icon={<ArchiveGlyph />}
@@ -216,18 +219,6 @@ export function NoiseArchiveSheet({
             facts={[
               ...(ready && !nothingToActOn
                 ? [{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]
-                : []),
-              ...(accountEmail
-                ? [
-                    {
-                      label: 'Gmail account',
-                      value: (
-                        <span role="note" aria-label={`Gmail account: ${accountEmail}`}>
-                          {accountEmail}
-                        </span>
-                      ),
-                    },
-                  ]
                 : []),
             ]}
           />

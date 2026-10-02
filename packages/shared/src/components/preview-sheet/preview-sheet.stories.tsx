@@ -37,12 +37,7 @@ const noop = () => undefined;
 // a row of their own. Never a stack of full sentences.
 const details = (
   <>
-    <SheetFactList
-      facts={[
-        { label: 'Gmail account', value: 'you@example.com' },
-        { label: 'Count', value: 'Inbox now, rechecked when it runs' },
-      ]}
-    />
+    <SheetFactList facts={[{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]} />
     <SheetLinks>
       <SheetTextAction href="https://mail.google.com/">
         Check in Gmail <span aria-hidden="true">↗</span>
@@ -56,7 +51,6 @@ const deleteDetails = (
   <>
     <SheetFactList
       facts={[
-        { label: 'Gmail account', value: 'you@example.com' },
         { label: 'Where it is now', value: '0 in your inbox · 6,728 elsewhere in Gmail' },
         { label: 'Count', value: 'Inbox + archived now, rechecked when it runs' },
         { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
@@ -77,6 +71,11 @@ export const Archive: Story = {
   render: () => (
     <PreviewSheet
       onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: you@example.com
+        </span>
+      }
       icon={<Avatar name="Macy's" size={64} />}
       title="Archive 174 emails?"
       subtitle="From Macy's. They leave your inbox and stay in Gmail."
@@ -94,6 +93,11 @@ function DeleteWithReach() {
   return (
     <PreviewSheet
       onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: you@example.com
+        </span>
+      }
       icon={<Avatar name="Bank of America" size={64} />}
       title={
         count === 0
@@ -132,6 +136,11 @@ export const Unsubscribe: Story = {
   render: () => (
     <PreviewSheet
       onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: you@example.com
+        </span>
+      }
       icon={<Avatar name="Robinhood" size={64} />}
       title="Unsubscribe from Robinhood?"
       subtitle="DeclutrMail asks Robinhood to stop emailing you."
@@ -147,6 +156,11 @@ export const Submitting: Story = {
   render: () => (
     <PreviewSheet
       onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: you@example.com
+        </span>
+      }
       icon={<Avatar name="Macy's" size={64} />}
       title="Archive 174 emails?"
       subtitle="From Macy's. They leave your inbox and stay in Gmail."
@@ -160,11 +174,34 @@ export const Failed: Story = {
   render: () => (
     <PreviewSheet
       onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: you@example.com
+        </span>
+      }
       icon={<Avatar name="Macy's" size={64} />}
       title="Archive 174 emails?"
       subtitle="From Macy's. They leave your inbox and stay in Gmail."
       primary={{ label: 'Try again', onClick: noop }}
       status="Gmail didn't answer. Nothing moved."
+    />
+  ),
+};
+
+/** Long identities must wrap on the phone-width sheet. */
+export const LongAccount: Story = {
+  render: () => (
+    <PreviewSheet
+      onClose={noop}
+      context={
+        <span role="note" style={{ overflowWrap: 'anywhere' }}>
+          Gmail account: very.long.synthetic.mailbox.name@example.com
+        </span>
+      }
+      title="Archive 2 emails?"
+      subtitle="They leave your inbox and stay in Gmail."
+      note="Undo from Activity for 30 days."
+      primary={{ label: 'Archive 2', onClick: noop }}
     />
   ),
 };

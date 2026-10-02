@@ -116,8 +116,7 @@ export function InlinePreviewBlock({
     wakeAt: preview.wakeAt ?? null,
   });
   const costLine = cleanupCostLine(facts.unitsNeeded, preview.quotaRemaining);
-  const hasDetails =
-    accountContext != null || facts.disclosures.length > 0 || preview.detailSlot != null;
+  const hasDetails = facts.disclosures.length > 0 || preview.detailSlot != null;
   return (
     <div
       role="region"
@@ -130,6 +129,7 @@ export function InlinePreviewBlock({
         background: color.fill,
       }}
     >
+      {accountContext != null && <div style={{ marginBottom: space[3] }}>{accountContext}</div>}
       <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>
         {facts.nothingToMove ? facts.title : facts.compactLine}
       </p>
@@ -170,7 +170,6 @@ export function InlinePreviewBlock({
               color: color.fg,
             }}
           >
-            {accountContext}
             <SheetFactList facts={facts.disclosures} />
             {preview.detailSlot}
           </div>
