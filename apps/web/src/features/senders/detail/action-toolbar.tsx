@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Button, Kbd, tokens } from '@declutrmail/shared';
+import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import {
   canArchive,
   canDelete,
@@ -57,7 +58,9 @@ function primaryVerbReason(sender: Sender, highlight: Verdict): string | null {
   // Unsubscribe", which contradicted an Unsubscribe or Archive suggestion
   // shown right under it. The reason states only what this rule checked.
   if (highlight === 'keep') {
-    return 'Highlighted because they’ve emailed you in the last 180 days and offer no one-click unsubscribe.';
+    return unsubscribeCapabilityOf(sender.unsubscribeMethod) === 'unknown'
+      ? 'Highlighted because they’ve emailed you in the last 180 days.'
+      : 'Highlighted because they’ve emailed you in the last 180 days and offer no one-click unsubscribe.';
   }
   return null;
 }
@@ -177,7 +180,9 @@ export function ActionToolbar({
         // explanation, though the screen already knows exactly why.
         const buttonTitle =
           verb === 'Unsubscribe' && disabled
-            ? "No unsubscribe link in this sender's emails — Archive still works."
+            ? unsubscribeCapabilityOf(sender.unsubscribeMethod) === 'unknown'
+              ? 'Unsubscribe availability hasn’t been checked yet.'
+              : "No unsubscribe link in this sender's emails — Archive still works."
             : isHighlighted
               ? primaryVerbReason(sender, verdict)
               : null;
@@ -252,6 +257,11 @@ export function ActionToolbar({
           </Button>
         );
       })}
+      {highlight === 'unsubscribe' && !activity && (
+        <span style={{ flexBasis: '100%', fontSize: tokens.text.sm, color: color.fgMuted }}>
+          One-click unsubscribe available
+        </span>
+      )}
       {activity && !takesButtonSlot(activity) && <RowActivityPill activity={activity} />}
     </div>
   );

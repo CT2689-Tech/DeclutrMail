@@ -2218,7 +2218,12 @@ function RowActions({
         style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: touch ? 44 : 0 }}
       >
         {row.executionState && (
-          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+          <RecoveryCell
+            row={row}
+            execution={row.executionState}
+            mailboxId={mailboxId}
+            mailboxEmail={mailboxEmail}
+          />
         )}
         <UndoCell row={row} bulkFailedTokens={failedTokens} />
         <OpenInGmailLink row={row} href={gmailHref} touch={touch} />
@@ -2270,10 +2275,12 @@ function RecoveryCell({
   row,
   execution,
   mailboxId,
+  mailboxEmail,
 }: {
   row: ActivityRowWire;
   execution: ActivityExecutionStateWire;
   mailboxId: string | null;
+  mailboxEmail: string | null;
 }) {
   const createPreview = useCreateActionRecoveryPreview();
   const confirmRecovery = useConfirmActionRecovery();
@@ -2404,6 +2411,7 @@ function RecoveryCell({
         ? createPortal(
             <ActionRecoveryDialog
               row={row}
+              mailboxEmail={mailboxEmail}
               preview={preview}
               isStarting={createPreview.isPending || (previewId !== null && previewQuery.isPending)}
               startError={createPreview.error ?? (previewQuery.data ? null : previewQuery.error)}

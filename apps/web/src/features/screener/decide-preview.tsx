@@ -1,5 +1,7 @@
 'use client';
 
+import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
+
 import {
   Button,
   SheetFactList,
@@ -267,16 +269,6 @@ export function DecidePreview({
 
   // ── Details ─────────────────────────────────────────────────────────
   const facts: SheetFactItem[] = [];
-  if (activeMailboxEmail) {
-    facts.push({
-      label: 'Gmail account',
-      value: (
-        <span role="note" aria-label={`Gmail account: ${activeMailboxEmail}`}>
-          {activeMailboxEmail}
-        </span>
-      ),
-    });
-  }
   if (moves && liveCount !== null) {
     facts.push({
       label: 'Count',
@@ -352,6 +344,11 @@ export function DecidePreview({
         fontFamily: font.sans,
       }}
     >
+      {activeMailboxEmail && (
+        <div style={{ marginBottom: space[3] }}>
+          <MailboxActionContextView mailboxEmail={activeMailboxEmail} />
+        </div>
+      )}
       <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>{headline}</p>
 
       {/* Why confirm is disabled while the live count is not a number (D211). */}

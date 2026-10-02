@@ -479,10 +479,9 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByText(/^Inbox now, rechecked when it runs$/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Show 1 of 4$/ })).toBeInTheDocument();
     expect(screen.queryByText(/will move to Archive/i)).not.toBeInTheDocument();
-    // In the collapsed Details disclosure (ADR-0042) — present, one click away.
-    expect(
-      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
-    ).toBeInTheDocument();
+    const account = screen.getByRole('note', { name: 'Gmail account: active@gmail.com' });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
   });
 
   it('discloses that an unsubscribe backlog move consumes a second Free action', () => {

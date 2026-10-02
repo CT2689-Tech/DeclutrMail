@@ -467,6 +467,11 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
+    const account = within(dialog).getByRole('note', {
+      name: 'Gmail account: active+mailbox@example.com',
+    });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
     expect(within(dialog).getByRole('heading', { name: /^Archive/ })).toBeInTheDocument();
     // The whole point: the click that opens a preview must not mutate.
     expect(enqueued).toHaveLength(0);

@@ -1952,6 +1952,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       { name: /review this failed archive/i },
       { timeout: 5000 },
     );
+    const account = within(dialog).getByRole('note', {
+      name: 'Gmail account: active+mailbox@example.com',
+    });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
     expect(within(dialog).getByText(/nothing changes until you confirm/i)).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByText('2')).toBeInTheDocument());
     expect(within(dialog).getByText('1')).toBeInTheDocument();

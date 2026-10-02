@@ -561,9 +561,9 @@ describe('TriageRow — inline preview composition', () => {
     const preview = screen.getByRole('region', {
       name: `Preview · Archive ${row.senderName}`,
     });
-    expect(
-      within(preview).getByRole('note', { name: 'Gmail account: active@gmail.com' }),
-    ).toBeInTheDocument();
+    const account = within(preview).getByRole('note', { name: 'Gmail account: active@gmail.com' });
+    expect(account.closest('details')).toBeNull();
+    expect(account).toBeVisible();
   });
 });
 
