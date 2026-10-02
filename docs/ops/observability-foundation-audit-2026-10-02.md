@@ -112,8 +112,8 @@ There is no code dependency on PRs 851/852; `worker.ts` is shared with readiness
 work, but this change is confined to Sentry initialization and observer wiring.
 
 Validation passed: workspace typecheck; lint (six pre-existing warnings); 26
-focused web tests; nine API tests; 723 shared tests; eleven diagnostic/infra script
-tests; production web build; all 51 route bundle budgets and 45 prerender checks.
+focused web tests; nine API tests; 723 shared tests; all 258 script
+tests (including diagnostic/infra coverage); production web build; all 51 route bundle budgets and 45 prerender checks.
 A built Next server started with an unreachable loopback Sentry DSN and served
 `/sign-in` successfully. This proves local bootstrap resilience, not live Sentry
 event delivery. The existing production monitoring dashboard and the new PostHog

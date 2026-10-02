@@ -78,7 +78,7 @@ test('runtime metric labels remain bounded and chart definitions reference the s
   }
   const names = new Set(RUNTIME_LOG_METRICS.map((m) => m.name));
   for (const w of dashboard('test').gridLayout.widgets) {
-    const filter = w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter.filter;
+    const filter = w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter?.filter;
     const metric = filter?.match(/logging.googleapis.com\/user\/(ops_[a-z_]+)/)?.[1];
     if (metric) assert.ok(names.has(metric), `${metric} lacks a provisioned definition`);
   }
@@ -155,4 +155,20 @@ test('reconnect counter is scoped to closed worker outcomes and never equates se
     w.title.includes('Reconnect email —'),
   );
   assert.ok(chart.title.includes('not delivered'));
+});
+
+test('snapshot age uses the source timestamp and keeps absence unavailable', () => {
+  const widgets = dashboard('test').gridLayout.widgets;
+  const freshness = widgets.find((w) => w.title.startsWith('Vendor snapshot age'));
+  const query = freshness.xyChart.dataSets[0].timeSeriesQuery.prometheusQuery;
+  assert.equal(
+    query,
+    '(time() - max_over_time({"__name__"="custom.googleapis.com/declutrmail/infra/observed_at","monitored_resource"="global"}[3d])) / 3600',
+  );
+  const copy = widgets.find((w) => w.title === 'Read this first').text.content;
+  assert.match(
+    copy,
+    /Empty event-only failure or outcome counters mean no matching events observed/,
+  );
+  assert.match(copy, /Periodic runtime gauges and heartbeats.*blank means unavailable/);
 });
