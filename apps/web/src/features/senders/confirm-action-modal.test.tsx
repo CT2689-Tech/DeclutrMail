@@ -5,6 +5,9 @@ import { ConfirmActionModal } from './confirm-action-modal';
 import type { ActionRequest } from './data';
 import { makeSender } from './testing/make-sender';
 
+const { track } = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('@/lib/posthog', () => ({ track }));
+
 const sender = makeSender();
 const buckets = {
   all: 4,
@@ -2604,4 +2607,22 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
     expect(screen.getByRole('heading', { name: 'Delete 3 emails?' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete 3' })).toBeEnabled();
   });
+});
+
+it('records a loaded preview once, not loading, failed, or closed renders', () => {
+  track.mockClear();
+  const props = { request: request('Archive'), onConfirm: vi.fn(), onCancel: vi.fn() };
+  const { rerender } = render(<ConfirmActionModal {...props} />);
+  expect(track).not.toHaveBeenCalled();
+  rerender(<ConfirmActionModal {...props} compositePreviewError />);
+  expect(track).not.toHaveBeenCalled();
+  rerender(<ConfirmActionModal {...props} compositePreview={livePreview} />);
+  rerender(<ConfirmActionModal {...props} compositePreview={livePreview} />);
+  expect(track).toHaveBeenCalledExactlyOnceWith('action_preview_viewed', {
+    verb: 'archive',
+    journey: 'daily',
+  });
+  rerender(<ConfirmActionModal {...props} request={null} />);
+  rerender(<ConfirmActionModal {...props} compositePreview={livePreview} />);
+  expect(track).toHaveBeenCalledTimes(2);
 });

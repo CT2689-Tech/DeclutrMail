@@ -1,5 +1,6 @@
 'use client';
 
+import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import {
@@ -114,6 +115,7 @@ export function DecidePreview({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
   // ADR-0028 reach. Offered only where the server accepts it — a Delete
   // — and only when the preview actually carries the all-mail block

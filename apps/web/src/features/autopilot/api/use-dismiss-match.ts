@@ -9,6 +9,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postDismissMatch } from '@/lib/api/autopilot';
+import { track } from '@/lib/posthog';
 import { autopilotKeys } from './query-keys';
 
 export function useDismissMatch() {
@@ -16,6 +17,11 @@ export function useDismissMatch() {
   return useMutation({
     mutationFn: (matchId: string) => postDismissMatch(matchId).then((env) => env.data),
     onSuccess: () => {
+      void track('autopilot_suggestion_decided', {
+        decision: 'rejected',
+        suggestion_kind: 'preset_rule',
+        count: 1,
+      });
       void queryClient.invalidateQueries({ queryKey: autopilotKeys.pendingSuggestions() });
     },
   });

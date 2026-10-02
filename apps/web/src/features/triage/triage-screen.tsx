@@ -1,5 +1,7 @@
 'use client';
 
+import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
+
 import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
@@ -681,19 +683,21 @@ export function TriageScreen({
     };
   })();
 
-  const trackedPreviews = useRef(new Set<string>());
   /** Same-tick dispatch latch — see dispatchAction. */
   const dispatchLatchRef = useRef(false);
-  useEffect(() => {
-    if (pendingAction == null || typeof previewInboxCount !== 'number') return;
-    const key = `${pendingAction.rowId}:${pendingAction.verb}`;
-    if (trackedPreviews.current.has(key)) return;
-    trackedPreviews.current.add(key);
-    void track('action_preview_viewed', {
-      journey,
-      verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later' | 'delete',
-    });
-  }, [journey, pendingAction, previewInboxCount]);
+  useActionPreviewAnalytics(
+    pendingAction?.rowId ?? null,
+    (pendingAction?.verb.toLowerCase() ?? 'keep') as
+      'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete',
+    typeof previewInboxCount === 'number',
+    journey,
+  );
+  useActionPreviewAnalytics(
+    pendingBatch ? 'batch' : null,
+    pendingBatch?.verb === 'Later' ? 'later' : 'archive',
+    !bulkPreview.isFetching && !bulkPreview.isError && bulkPreview.data != null,
+    journey,
+  );
   // Blocked while the live count has not resolved (D226 — no mutation
   // without a real number) AND when it resolved to zero: an inbox-moving
   // verb with nothing to move is a no-op that still costs a cleanup

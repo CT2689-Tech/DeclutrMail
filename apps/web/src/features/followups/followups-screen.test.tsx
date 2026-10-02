@@ -365,11 +365,42 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // Optimistic removal first…
     await waitFor(() => expect(screen.queryByText('Big Boss')).not.toBeInTheDocument());
     releaseFailure();
-    // …then the 500 rolls the snapshot back — the row returns, nothing
+    // …then the 500 triggers a fresh server read — the row returns, nothing
     // pretends to have worked.
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
   });
+});
+
+it('shows a retryable read error if reconciliation after dismissal also fails', async () => {
+  let dismissed = false;
+  let readsFail = false;
+  installFetchStub([
+    {
+      method: 'GET',
+      path: '/api/followups',
+      respond: () => (readsFail ? jsonServerError() : jsonOk({ data: [ROW_HIGH] })),
+    },
+    {
+      method: 'POST',
+      path: `/api/followups/${ROW_HIGH.id}/dismiss`,
+      respond: () => {
+        dismissed = true;
+        readsFail = true;
+        return jsonServerError();
+      },
+    },
+  ]);
+  renderScreen();
+  fireEvent.click(await screen.findByRole('button', { name: /mark resolved in declutrmail/i }));
+  await waitFor(() => expect(dismissed).toBe(true));
+  expect(
+    await screen.findByRole('heading', { name: /couldn[’']t load your follow-ups/i }),
+  ).toBeInTheDocument();
+  readsFail = false;
+  fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+  expect(await screen.findByText('Big Boss')).toBeInTheDocument();
+  resetFetchStub();
 });
 
 describe('FollowupsScreen — pure helpers', () => {

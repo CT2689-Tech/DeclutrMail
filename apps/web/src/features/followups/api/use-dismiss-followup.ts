@@ -1,16 +1,16 @@
 /**
  * `useDismissFollowup` — D88 "Mark resolved" mutation.
  *
- * Optimistic with rollback. Dismissal is NOT a destructive Gmail
+ * Optimistic with server reconciliation. Dismissal is NOT a destructive Gmail
  * action (no message is touched — the BE flips an internal
  * `followup_tracker` row to `dismissed`), so the D226 preview/undo
  * lifecycle does not apply; this follows the non-destructive optimistic
  * pattern documented on `useSetSenderPolicy`:
  *
- *   - `onMutate` snapshots the cached list envelope and removes the row
+ *   - `onMutate` removes the row from the current cached list envelope
  *     so it leaves the screen immediately.
- *   - `onError` restores the snapshot and surfaces an honest failure
- *     toast — the row comes back, nothing pretends to have worked.
+ *   - `onError` refetches the current mailbox and surfaces a failure toast.
+ *     Never restore an old snapshot across mailbox switches or sibling dismissals.
  *   - `onSuccess` fires the D159 `followup_dismissed` event, confirms
  *     via toast, and invalidates:
  *       - `followupsKeys.all` — the list + the stats summary line both
@@ -41,14 +41,9 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 
 import { followupsKeys } from './query-keys';
 
-interface DismissContext {
-  /** Cache snapshot taken before the optimistic removal. */
-  previous: Envelope<FollowupRow[], unknown> | undefined;
-}
-
 export function useDismissFollowup() {
   const qc = useQueryClient();
-  return useMutation<FollowupDismissResult, Error, FollowupRow, DismissContext>({
+  return useMutation<FollowupDismissResult, Error, FollowupRow>({
     mutationFn: async (row) => {
       const env = await postDismissFollowup(row.id);
       return env.data;
@@ -64,18 +59,12 @@ export function useDismissFollowup() {
           data: previous.data.filter((r) => r.id !== row.id),
         });
       }
-      return { previous };
     },
-    onError: (_err, _row, ctx) => {
-      // Roll back — the server state did not change, so no refetch
-      // needed; the restored snapshot IS the server truth.
-      if (ctx?.previous) {
-        qc.setQueryData(followupsKeys.list(), ctx.previous);
-      }
-      toast(
-        "Couldn't mark resolved in DeclutrMail — the item is still listed. Try again.",
-        'danger',
-      );
+    onError: () => {
+      // An old snapshot can contain another mailbox or a sibling already dismissed.
+      // Only a fresh read of the active scope can restore the correct rows.
+      void qc.invalidateQueries({ queryKey: followupsKeys.all });
+      toast("Couldn't mark resolved in DeclutrMail. Try again.", 'danger');
     },
     onSuccess: (result, row) => {
       void track('followup_dismissed', {

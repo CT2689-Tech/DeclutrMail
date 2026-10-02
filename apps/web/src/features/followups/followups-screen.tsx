@@ -43,7 +43,7 @@ const { color, font, motion, radius, text } = tokens;
  * D88 "Mark resolved": every row carries an always-visible labeled
  * button (never hover-only — touch + keyboard users must reach it).
  * Click → `useDismissFollowup` removes the row optimistically
- * (rolled back with a toast on failure) and the BE flips the
+ * (reconciled from the server with a toast on failure) and the BE flips the
  * `followup_tracker` row + writes the Activity audit entry. When the
  * last row is dismissed the D91 empty state renders on the same pass.
  * The UI explicitly distinguishes this DeclutrMail-only dismissal from

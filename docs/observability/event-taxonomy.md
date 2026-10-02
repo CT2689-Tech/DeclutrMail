@@ -109,11 +109,18 @@ onboarding funnel insight. No per-user breakdown beyond `user_id`.
 
 `activation_goal_selected` fires after the goal preference is durably saved.
 `first_relief_session_started` fires once when the bounded real-sender session
-renders. `action_preview_viewed` fires once per sender/verb preview, and
+renders. `action_preview_viewed` fires once per loaded preview opening and verb (including
+Triage domain batches, Senders, Sender Detail, Screener, and Brief noise-archive).
+Refetches do not emit again; closing and reopening does. These are observed
+previews, including zero eligible results, not proof of action eligibility.
 `action_confirmed` fires only after the corresponding intent is accepted
 — from every real confirmation path (Triage including domain-batch,
 Senders, Sender Detail, Screener, Brief noise-archive), not only the
-first-relief Triage session.
+first-relief Triage session. Keep can save a policy directly in Senders and
+Sender Detail and therefore need not have a preceding preview. Compare
+preview-requiring verbs within the same journey and person funnel; dividing
+raw event totals does not measure conversion. Missing consent, closed tabs,
+and different release versions also limit coverage.
 `first_relief_session_completed` fires once for a completed, voluntarily
 stopped, or empty session.
 
@@ -293,10 +300,10 @@ and a live capability token must never reach telemetry.
 
 ### `unsubscribe_attempted`
 
-**When fired.** When an unsubscribe action enters the unsubscribe
-worker. Per D230 mailto unsubscribes are manual at launch, so `method`
-will only ever be `http` or `mailto_draft` (draft prepared, not sent)
-or `manual` (user takeover).
+**When fired.** Not currently emitted to PostHog. This is a reserved typed
+name, not an implemented worker capture. Browser consent cannot be inferred by
+a worker. Use the recorded action jobs, unsubscribe lifecycle and Activity
+outcomes for operational success, failure, and unconfirmed counts.
 
 **Payload.**
 
@@ -306,14 +313,15 @@ or `manual` (user takeover).
 | `method`    | `'http' \| 'mailto_draft' \| 'manual'` | Per D230      |
 | `outcome`   | `'success' \| 'failed' \| 'queued'`    | Worker result |
 
-**Retention / aggregation.** 1y raw. Powers the unsubscribe success
-rate dashboard.
+**Retention / aggregation.** No PostHog series exists from this producer.
+Any future capture needs an explicit consent-safe design; do not use this name
+as the final step of a currently working funnel.
 
 ### `rule_fired`
 
-**When fired.** Each time an Autopilot rule (D99–D105) matches and
-performs an action. Fires once per rule-match per execution, NOT once
-per affected message (to keep cardinality bounded).
+**When fired.** Not currently emitted to PostHog. This reserved name does
+not establish rule execution coverage. The first-party rule-match log and
+action jobs establish whether a match was approved, executed, skipped, or failed.
 
 **Payload.**
 
@@ -324,8 +332,9 @@ per affected message (to keep cardinality bounded).
 | `verb`              | `'keep' \| 'archive' \| 'unsubscribe' \| 'later'` | The rule's action                      |
 | `affected_messages` | `number`                                          | Count this firing covered              |
 
-**Retention / aggregation.** 6mo raw. Drives "rules saving users time"
-metric — affected_messages aggregated per user per week.
+**Retention / aggregation.** No implemented PostHog producer. Calculate
+completed message counts from terminal action results, excluding Undo as
+appropriate; message counts alone cannot establish time saved.
 
 ### `billing_event`
 
@@ -459,7 +468,7 @@ signal — users who pause often don't trust the rules.
 
 **When fired.** When the user resumes a paused rule from the rules
 list (`PATCH /api/autopilot/rules/:id` with `mode='observe'`). Fires
-once per resumed rule.
+once per successful resumed-rule save; a failed PATCH emits nothing.
 
 **Payload.**
 
@@ -473,7 +482,7 @@ for the pause→resume gap metric.
 ### `autopilot_suggestion_decided`
 
 **When fired.** When the user decides a D104 Observe-mode suggestion:
-per-row Dismiss (`decision='rejected'`, `count=1`), or a confirmed
+after a successful server write: per-row Dismiss (`decision='rejected'`, `count=1`), or a confirmed
 approve — approve-all / approve-selected — after the D226 preview
 modal (`decision='accepted'`, `count=N`). Batch approves fire ONE
 event per mutation, not per row (bounded cardinality, like
@@ -481,11 +490,11 @@ event per mutation, not per row (bounded cardinality, like
 
 **Payload.**
 
-| Field             | Type                                                  | Notes                                |
-| ----------------- | ----------------------------------------------------- | ------------------------------------ |
-| `decision`        | `'accepted' \| 'rejected' \| 'snoozed'`               | V2 emits accepted/rejected only      |
-| `suggestion_kind` | `'preset_rule' \| 'sender_policy' \| 'preset_change'` | V2 emits `preset_rule` only (D234)   |
-| `count`           | `number`                                              | Suggestions covered by this decision |
+| Field             | Type                                                  | Notes                                                                  |
+| ----------------- | ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| `decision`        | `'accepted' \| 'rejected' \| 'snoozed'`               | V2 emits accepted/rejected only                                        |
+| `suggestion_kind` | `'preset_rule' \| 'sender_policy' \| 'preset_change'` | Rule decisions use `preset_rule`; day-7 dismissal uses `preset_change` |
+| `count`           | `number`                                              | Suggestions covered by this decision                                   |
 
 **Retention / aggregation.** 1y raw. Accept rate per rule is the
 "are the presets trustworthy?" metric that gates Active-mode adoption.

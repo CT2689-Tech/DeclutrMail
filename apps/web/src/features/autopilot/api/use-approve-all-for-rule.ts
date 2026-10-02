@@ -13,6 +13,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postApproveAllForRule, type AutopilotApproveAllScopeDto } from '@/lib/api/autopilot';
+import { track } from '@/lib/posthog';
 import { autopilotKeys } from './query-keys';
 
 export function useApproveAllForRule() {
@@ -20,7 +21,12 @@ export function useApproveAllForRule() {
   return useMutation({
     mutationFn: ({ ruleId, scope }: { ruleId: string; scope: AutopilotApproveAllScopeDto }) =>
       postApproveAllForRule(ruleId, scope).then((env) => env.data),
-    onSuccess: () => {
+    onSuccess: (result) => {
+      void track('autopilot_suggestion_decided', {
+        decision: 'accepted',
+        suggestion_kind: 'preset_rule',
+        count: result.approvedCount,
+      });
       void queryClient.invalidateQueries({ queryKey: autopilotKeys.pendingSuggestions() });
       void queryClient.invalidateQueries({ queryKey: autopilotKeys.rules() });
     },

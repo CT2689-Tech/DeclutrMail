@@ -1,5 +1,6 @@
 'use client';
 
+import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
 import { MailboxActionContextView } from '../auth/mailbox-action-context-view';
 
 import { useEffect, type ReactNode } from 'react';
@@ -48,6 +49,7 @@ export function NoiseArchiveSheet({
   onRetryPreview: () => void;
 }) {
   const ready = typeof preview === 'object';
+  useActionPreviewAnalytics(open ? 'noise' : null, 'archive', ready);
   // Archive's ENTIRE effect is moving inbox mail, so a zero live count
   // makes confirm a pure no-op that would still enqueue a job, write an
   // Activity row and spend a cleanup unit. Gated on the SAME number the
