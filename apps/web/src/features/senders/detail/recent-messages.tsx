@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState, tokens } from '@declutrmail/shared';
 import { adaptMailMessageRow } from '../api/adapters';
 import { useSenderMessages } from '../api/use-sender-messages';
@@ -38,6 +38,22 @@ export function RecentMessages({
   senderEmail: string;
   senderId?: string;
 }) {
+  const [decodeSnippet, setDecodeSnippet] = useState<((text: string) => string) | null>(null);
+  useEffect(() => {
+    let mounted = true;
+    // Keep the entity table out of the initial route bundle. Until it loads,
+    // the original snippet remains readable, safely escaped React text.
+    void import('entities/lib/decode.js')
+      .then(({ decodeHTML }) => {
+        if (mounted) setDecodeSnippet(() => decodeHTML);
+      })
+      .catch(() => {
+        // A failed optional chunk must not hide the message or its Gmail link.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [scope, setScope] = useState<'all_mail' | 'inbox' | 'archived'>('all_mail');
   const scopedQuery = useSenderMessages(senderId ?? '', {
     scope,
@@ -154,7 +170,12 @@ export function RecentMessages({
                 padding: '12px 0',
               }}
             >
-              <MessageRow message={m} mailboxEmail={mailboxEmail} senderEmail={senderEmail} />
+              <MessageRow
+                message={m}
+                mailboxEmail={mailboxEmail}
+                senderEmail={senderEmail}
+                decodeSnippet={decodeSnippet}
+              />
             </li>
           ))}
         </ol>
@@ -187,7 +208,9 @@ function MessageRow({
   message,
   mailboxEmail,
   senderEmail,
+  decodeSnippet,
 }: {
+  decodeSnippet: ((text: string) => string) | null;
   message: RecentMessage;
   mailboxEmail: string | null;
   senderEmail: string;
@@ -300,7 +323,7 @@ function MessageRow({
             marginTop: 2,
           }}
         >
-          {message.snippet}
+          {decodeSnippet ? decodeSnippet(message.snippet) : message.snippet}
         </span>
         {message.location && (
           <span

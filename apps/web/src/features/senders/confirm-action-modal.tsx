@@ -1,5 +1,8 @@
 'use client';
 
+import { useActionPreviewAnalytics } from '@/lib/use-action-preview-analytics';
+import type { Verb } from '@declutrmail/shared/observability';
+
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   Avatar,
@@ -264,6 +267,16 @@ export function ConfirmActionModal({
   mailboxEmail?: string | undefined;
 }) {
   const verb = request?.verb;
+  useActionPreviewAnalytics(
+    request ? request.senders.map((sender) => sender.id).join(',') : null,
+    (verb?.toLowerCase() ?? 'keep') as Verb,
+    !compositePreviewLoading &&
+      !compositePreviewError &&
+      !previewSenderGone &&
+      (bulkPreview == null
+        ? compositePreview != null
+        : !bulkPreview.loading && !bulkPreview.error && bulkPreview.data != null),
+  );
   // Composite secondary (chip row) — applies only on Unsubscribe + Later
   // primary. `null` = "Leave alone" (the default — keeps the modal
   // non-destructive for first-time openers).

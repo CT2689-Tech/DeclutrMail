@@ -414,7 +414,6 @@ export function AutopilotScreen({
       openConfirm(rule, 'enable');
       return;
     }
-    void track('autopilot_preset_changed', { preset_id: rule.id, action: 'disabled' });
     addBreadcrumb({ category: 'action', message: 'autopilot: rule disabled', level: 'info' });
     patchRule.mutate(
       { ruleId: rule.id, patch: { enabled: false } },
@@ -429,7 +428,6 @@ export function AutopilotScreen({
   };
 
   const onCommitThreshold = async (rule: AutopilotRuleDto, value: number): Promise<boolean> => {
-    void track('autopilot_preset_changed', { preset_id: rule.id, action: 'parameter_changed' });
     try {
       await patchRule.mutateAsync({ ruleId: rule.id, patch: { confidenceThreshold: value } });
       toast(`Threshold set to ${Math.round(value * 100)}%`, 'info');
@@ -461,7 +459,6 @@ export function AutopilotScreen({
   const onResumeConfirm = () => {
     if (resumeTarget == null || patchRule.isPending) return;
     const rule = resumeTarget;
-    void track('autopilot_resumed', { trigger: 'manual' });
     addBreadcrumb({ category: 'action', message: 'autopilot: rule resumed', level: 'info' });
     patchRule.mutate(
       { ruleId: rule.id, patch: { mode: 'observe' } },
@@ -517,10 +514,6 @@ export function AutopilotScreen({
     // the mode would put the busy label on a button that isn't there.
     setPendingCommit(source);
     const patch = intent === 'enable' ? { enabled: true, mode } : { mode };
-    void track('autopilot_preset_changed', {
-      preset_id: rule.id,
-      action: intent === 'enable' ? 'enabled' : 'activated',
-    });
     addBreadcrumb({
       category: 'action',
       message: `autopilot: rule ${intent === 'enable' ? `enabled in ${mode}` : 'switched to active'}`,
@@ -554,11 +547,6 @@ export function AutopilotScreen({
 
   /** D10 — persist the day-7 prompt dismissal on the rule row. */
   const onDismissPrompt = (rule: AutopilotRuleDto) => {
-    void track('autopilot_suggestion_decided', {
-      decision: 'rejected',
-      suggestion_kind: 'preset_change',
-      count: 1,
-    });
     addBreadcrumb({
       category: 'action',
       message: 'autopilot: day-7 prompt dismissed',
@@ -621,11 +609,6 @@ export function AutopilotScreen({
     // the list loaded, so the selection size overstates that case too.
     const onSuccess = (result: { approvedCount: number }) => {
       const count = result.approvedCount;
-      void track('autopilot_suggestion_decided', {
-        decision: 'accepted',
-        suggestion_kind: 'preset_rule',
-        count,
-      });
       addBreadcrumb({
         category: 'action',
         message: `autopilot: ${count} suggestion(s) approved`,
@@ -676,11 +659,6 @@ export function AutopilotScreen({
   // ── Skip suggestion (D104; API state remains `dismissed`) ──────────
 
   const onDismiss = (matchId: string) => {
-    void track('autopilot_suggestion_decided', {
-      decision: 'rejected',
-      suggestion_kind: 'preset_rule',
-      count: 1,
-    });
     addBreadcrumb({
       category: 'action',
       message: `autopilot: suggestion dismissed`,

@@ -13,6 +13,9 @@ vi.mock('@/lib/sentry', () => ({
   track: vi.fn(),
 }));
 
+const { track } = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('@/lib/posthog', () => ({ track }));
+
 const CLEANUP_REMAINING = 34;
 
 vi.mock('@/features/auth/auth-provider', () => ({
@@ -281,4 +284,42 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh triage' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   }, 15000);
+  it('does not count a reopened cached batch until the live preview succeeds', async () => {
+    track.mockClear();
+    const client = createTestQueryClient();
+    renderScreen(client);
+    const open = () =>
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Archive all 3 senders from batchdomain.com' }),
+      );
+    open();
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(track).toHaveBeenCalledWith('action_preview_viewed', {
+        verb: 'archive',
+        journey: 'daily',
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    let release!: () => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return new Response(
+          JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'preview failed' } }),
+          { status: 500, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+    open();
+    await screen.findByText(/Counting the inbox/);
+    expect(track.mock.calls.filter(([event]) => event === 'action_preview_viewed')).toHaveLength(1);
+    release();
+    await screen.findByRole('button', { name: 'Retry preview' });
+    expect(track.mock.calls.filter(([event]) => event === 'action_preview_viewed')).toHaveLength(1);
+  });
 });

@@ -20,7 +20,7 @@ const { color } = tokens;
  *   - ⌘/Ctrl+Enter commits the primary action, under the same guard as
  *     the visible button (never while busy, never before `canConfirm`);
  *   - Details reads list → facts → sample: the caller's list (senders,
- *     rules) first, then its short facts with the Gmail account last,
+ *     rules) first, then its short facts,
  *     then any trailing block;
  *   - a failed commit renders in the sheet's live status line.
  *
@@ -55,7 +55,7 @@ export function ConfirmModalFrame({
   note?: ReactNode;
   /** Collapsed, first: the list the commit acts on (senders, rules). */
   details?: ReactNode;
-  /** Collapsed, after `details`: short label/value facts. The Gmail account is appended. */
+  /** Collapsed, after `details`: short label/value facts. The account is always visible above the main content. */
   facts?: readonly SheetFactItem[];
   /** Collapsed, last: e.g. the sample of matching senders. */
   trailing?: ReactNode;
@@ -64,7 +64,7 @@ export function ConfirmModalFrame({
   confirmTone?: ButtonTone;
   /** Mirrors the visible confirm button's enablement on the keyboard path. */
   canConfirm: boolean;
-  /** The active mailbox, shown in Details; omitted renders nothing. */
+  /** The active mailbox, shown without expanding Details; omitted renders nothing. */
   mailboxEmail?: string | undefined;
   isBusy: boolean;
   error: string | null;
@@ -84,10 +84,7 @@ export function ConfirmModalFrame({
     return () => window.removeEventListener('keydown', onKey);
   }, [onConfirm, confirmEnabled]);
 
-  const allFacts: readonly SheetFactItem[] = mailboxEmail
-    ? [...facts, { label: 'Gmail account', value: mailboxEmail }]
-    : facts;
-  const hasDetails = details != null || trailing != null || allFacts.length > 0;
+  const hasDetails = details != null || trailing != null || facts.length > 0;
 
   return (
     <PreviewSheet
@@ -99,7 +96,7 @@ export function ConfirmModalFrame({
         hasDetails ? (
           <>
             {details}
-            <SheetFactList facts={allFacts} />
+            <SheetFactList facts={facts} />
             {trailing}
           </>
         ) : undefined
@@ -120,6 +117,7 @@ export function ConfirmModalFrame({
       }
       {...(testId == null ? {} : { testId })}
     >
+      {mailboxEmail && <SheetFactList facts={[{ label: 'Gmail account', value: mailboxEmail }]} />}
       {children}
     </PreviewSheet>
   );
