@@ -370,6 +370,7 @@ jobs:
       - run: pnpm --filter @declutrmail/api test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
         env:
           CLEANUP_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
+          API_DRIVER_TEST_PG_URL: postgres://postgres:postgres@localhost:5432/declutrmail_quota_test
 
   test-workers:
     name: Tests — Workers

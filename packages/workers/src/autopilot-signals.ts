@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import {
   mailMessages,
@@ -13,7 +13,7 @@ import {
 
 import type { PresetSignals } from './autopilot-presets.js';
 
-type WorkerDb = PostgresJsDatabase<typeof schema>;
+type WorkerDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * One sender's materialized preset-signal row: the minimal
