@@ -98,6 +98,9 @@ describe('AuthController me', () => {
     return {
       controller,
       principal,
+      users,
+      mailboxes,
+      sync,
       entitlements,
       release: (rows: unknown[]) => releaseMailboxes(rows),
     };
@@ -115,5 +118,84 @@ describe('AuthController me', () => {
     expect(data.cleanupResetsAt).toBe('2026-10-01T00:00:00.000Z');
     expect(data.activeMailboxId).toBe('mb-1');
     expect(data.mailboxes[0]).toMatchObject({ readiness: 'ready', needsReconnect: false });
+  });
+
+  it('starts sync health when user and mailboxes resolve even while quota is pending', async () => {
+    const h = meHarness();
+    let releaseQuota!: (value: unknown) => void;
+    h.entitlements.cleanupSummary.mockImplementation(
+      () => new Promise((resolve) => (releaseQuota = resolve)),
+    );
+    let settled = false;
+    const pending = h.controller.me(h.principal).finally(() => (settled = true));
+    h.release([{ id: 'mb-1', email: 'a@example.com', status: 'active', connectedAt: null }]);
+    try {
+      await vi.waitFor(() => expect(h.sync.getMailboxHealth).toHaveBeenCalledWith(['mb-1']), {
+        timeout: 100,
+        interval: 5,
+      });
+      expect(settled).toBe(false);
+    } finally {
+      releaseQuota({ tier: 'pro', remaining: null, resetsAt: null });
+      await pending;
+    }
+  });
+
+  it('does not read sync health for a missing user', async () => {
+    const h = meHarness();
+    h.users.findById.mockResolvedValue(null);
+    const pending = h.controller.me(h.principal);
+    h.release([{ id: 'mb-1', email: 'a@example.com', status: 'active' }]);
+    await expect(pending).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(h.sync.getMailboxHealth).not.toHaveBeenCalled();
+  });
+
+  it('does not start a new health read after quota has already failed', async () => {
+    const h = meHarness();
+    const failure = new Error('Quota database unavailable');
+    h.entitlements.cleanupSummary.mockRejectedValue(failure);
+    const pending = h.controller.me(h.principal);
+    await expect(pending).rejects.toBe(failure);
+    h.release([{ id: 'mb-1', status: 'active' }]);
+    // Release all promise continuations without relying on elapsed time.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(h.sync.getMailboxHealth).not.toHaveBeenCalled();
+  });
+
+  it('returns no active mailbox for an empty mailbox list', async () => {
+    const h = meHarness();
+    const pending = h.controller.me(h.principal);
+    h.release([]);
+    const { data } = await pending;
+    expect(data.activeMailboxId).toBeNull();
+    expect(data.mailboxes).toEqual([]);
+    expect(h.sync.getMailboxHealth).toHaveBeenCalledWith([]);
+  });
+
+  it('keeps the selected active mailbox and reconnect health in the same envelope', async () => {
+    const h = meHarness();
+    h.users.findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@example.com',
+      workspaceId: 'ws-1',
+      timezone: 'UTC',
+      preferences: { activeMailboxId: 'mb-2' },
+      signupAttributionRef: null,
+      signupAttributionHeardFrom: 'friend',
+    });
+    h.sync.getMailboxHealth.mockResolvedValue(
+      new Map([
+        ['mb-1', { readiness: 'ready', needsReconnect: false }],
+        ['mb-2', { readiness: 'ready', needsReconnect: true }],
+      ]),
+    );
+    const pending = h.controller.me(h.principal);
+    h.release([
+      { id: 'mb-1', status: 'active' },
+      { id: 'mb-2', status: 'active' },
+    ]);
+    const { data } = await pending;
+    expect(data.activeMailboxId).toBe('mb-2');
+    expect(data.mailboxes[1]).toMatchObject({ readiness: 'ready', needsReconnect: true });
   });
 });

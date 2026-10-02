@@ -67,3 +67,37 @@ test('ignores nonmetric lines and never copies arbitrary log fields or raw URLs'
   assert.ok(!JSON.stringify(result).includes('private'));
   assert.deepEqual(summarizePerformance('null'), []);
 });
+
+test('retains shared request and existing Senders phases without private operation fields', () => {
+  const operations = Object.fromEntries(
+    [
+      'senders.rows',
+      'senders.meta',
+      'senders.marks',
+      'senders.summary',
+      'auth.jwt',
+      'auth.session',
+      'auth.session-cache',
+      'auth.session-row',
+      'auth.profile',
+      'auth.mailboxes',
+      'auth.quota',
+      'mailbox.resolve',
+      'rate-limit.consume',
+    ].map((name) => [name, { count: 1, durationMs: 7, sql: 'private@example.test' }]),
+  );
+  operations['private@example.test'] = { count: 1, durationMs: 100 };
+  const [result] = summarizePerformance(
+    JSON.stringify({
+      kind: 'http.request',
+      route: 'GET /api/senders',
+      status: 200,
+      durationMs: 100,
+      operations,
+    }),
+  );
+  assert.equal(Object.keys(result.operations).length, 13);
+  assert.equal(result.operations['auth.session-row'].p50Ms, 7);
+  assert.equal(result.operations['senders.rows'].p50Ms, 7);
+  assert.ok(!JSON.stringify(result).includes('private'));
+});

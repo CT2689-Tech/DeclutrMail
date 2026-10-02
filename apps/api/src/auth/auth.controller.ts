@@ -107,11 +107,37 @@ export class AuthController {
     // free-cap position (D19/D77) is two serial statements for a finite
     // tier, so starting it here instead of behind the mailbox list takes
     // those round trips off every page's `me` (2026-09-21).
-    const [user, mailboxes, quota] = await Promise.all([
+    const userRead = measureRequestOperation('auth.profile', () =>
       this.users.findById(principal.userId),
+    );
+    const mailboxRead = measureRequestOperation('auth.mailboxes', () =>
       this.mailboxes.listByWorkspace(principal.workspaceId),
+    );
+    const quotaRead = measureRequestOperation('auth.quota', () =>
       this.entitlements.cleanupSummary(principal.workspaceId),
-    ]);
+    );
+    // Sync health needs only the verified user and mailbox list. Start it
+    // as soon as those reads finish, overlapping the quota's serial reads.
+    // Promise.all below observes every rejection immediately, including
+    // a health failure while quota is still pending. After a known failure
+    // do not start a new health read; already in-flight reads can finish.
+    let bootstrapFailed = false;
+    const healthRead = Promise.all([userRead, mailboxRead]).then(([user, mailboxes]) =>
+      user && !bootstrapFailed
+        ? measureRequestOperation('auth.sync-state', () =>
+            this.sync.getMailboxHealth(mailboxes.map((m) => m.id)),
+          )
+        : null,
+    );
+    const [user, mailboxes, quota, health] = await Promise.all([
+      userRead,
+      mailboxRead,
+      quotaRead,
+      healthRead,
+    ]).catch((error: unknown) => {
+      bootstrapFailed = true;
+      throw error;
+    });
     if (!user) {
       throw new UnauthorizedException('User no longer exists.');
     }
@@ -122,13 +148,10 @@ export class AuthController {
         ? stored
         : (mailboxes.find((m) => m.status === 'active')?.id ?? null);
     // Compose per-mailbox sync readiness via the sync facade (D116, D204).
-    const health = await measureRequestOperation('auth.sync-state', () =>
-      this.sync.getMailboxHealth(mailboxes.map((m) => m.id)),
-    );
     const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
       ...m,
-      readiness: health.get(m.id)?.readiness ?? null,
-      needsReconnect: health.get(m.id)?.needsReconnect ?? false,
+      readiness: health?.get(m.id)?.readiness ?? null,
+      needsReconnect: health?.get(m.id)?.needsReconnect ?? false,
     }));
     return ok({
       user: {

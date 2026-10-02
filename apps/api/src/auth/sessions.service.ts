@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   Inject,
   Injectable,
@@ -301,14 +302,16 @@ export class SessionsService implements OnModuleDestroy {
    * circuits the DB hit for known-revoked jtis.
    */
   async lookupByJti(jti: string): Promise<ActiveSession | null> {
-    if (await this.isRevokedInCache(jti)) {
+    if (await measureRequestOperation('auth.session-cache', () => this.isRevokedInCache(jti))) {
       return null;
     }
-    const [row] = await this.db
-      .select()
-      .from(activeSessions)
-      .where(and(eq(activeSessions.jti, jti), eq(activeSessions.isRevoked, false)))
-      .limit(1);
+    const [row] = await measureRequestOperation('auth.session-row', () =>
+      this.db
+        .select()
+        .from(activeSessions)
+        .where(and(eq(activeSessions.jti, jti), eq(activeSessions.isRevoked, false)))
+        .limit(1),
+    );
     if (!row) {
       // Either no such jti or it's revoked — both → cache as revoked
       // so the next call short-circuits.

@@ -7,6 +7,15 @@ const OPERATIONS = new Set([
   'senders.marks',
   'senders.summary',
   'triage.enrichment',
+  'auth.jwt',
+  'auth.session',
+  'auth.session-cache',
+  'auth.session-row',
+  'auth.profile',
+  'auth.mailboxes',
+  'auth.quota',
+  'mailbox.resolve',
+  'rate-limit.consume',
   'auth.sync-state',
   'autopilot.observe',
   'activity.lineages',
@@ -20,6 +29,15 @@ export type RequestOperation =
   | 'senders.marks'
   | 'senders.summary'
   | 'triage.enrichment'
+  | 'auth.jwt'
+  | 'auth.session'
+  | 'auth.session-cache'
+  | 'auth.session-row'
+  | 'auth.profile'
+  | 'auth.mailboxes'
+  | 'auth.quota'
+  | 'mailbox.resolve'
+  | 'rate-limit.consume'
   | 'auth.sync-state'
   | 'autopilot.observe'
   | 'activity.lineages'
