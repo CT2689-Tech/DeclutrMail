@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import {
   AUTOPILOT_PRESET_KEYS,
@@ -13,7 +13,7 @@ import {
 import { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 
 /** Drizzle client bound to the full schema. */
-type Db = PostgresJsDatabase<typeof schema>;
+type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * Seed the 5 D101 preset rules for one mailbox (D99, D101, D124).

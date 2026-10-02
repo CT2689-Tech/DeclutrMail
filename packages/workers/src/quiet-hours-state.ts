@@ -1,5 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { mailboxAccounts } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import {
@@ -9,7 +9,7 @@ import {
 } from '@declutrmail/shared/contracts';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
-type QuietStateDb = PostgresJsDatabase<typeof schema>;
+type QuietStateDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * Quiet-hours persistence + the quiet predicate (U18 — D92, D93, D95).

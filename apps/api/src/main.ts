@@ -136,6 +136,7 @@ async function bootstrap(): Promise<void> {
   // webhook (D162) verify their HMAC/svix signatures over the EXACT
   // bytes received, never a re-serialized parse.
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
   app.set('trust proxy', 1);
   // Security headers (D175) — registered FIRST so every response,
   // including CORS preflights, 404s, and error envelopes, carries the

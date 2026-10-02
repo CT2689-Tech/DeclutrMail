@@ -1,12 +1,12 @@
 import { MailboxReconnectRequiredPayloadSchema, TOPICS } from '@declutrmail/events';
 import { OutboxPublisher } from './outbox-publisher.js';
 import { and, eq, or, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
-type WorkerDb = PostgresJsDatabase<typeof schema>;
+type WorkerDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * The classified error name for a revoked or expired Gmail OAuth grant.

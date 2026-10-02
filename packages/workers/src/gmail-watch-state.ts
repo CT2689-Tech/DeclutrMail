@@ -1,10 +1,10 @@
 import { eq, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { mailboxAccounts } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
-type WatchStateDb = PostgresJsDatabase<typeof schema>;
+type WatchStateDb = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 /**
  * Gmail watch-state persistence (D8/D225 — `users.watch` pipeline).

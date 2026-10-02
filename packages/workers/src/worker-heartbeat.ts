@@ -1,9 +1,9 @@
 import { cronRuns } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { eq, sql } from 'drizzle-orm';
-import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
-type Db = PostgresJsDatabase<typeof schema>;
+type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 export const WORKER_HEARTBEAT_KEY = 'WorkerHeartbeat:singleton';
 
 /** One bounded row in the existing operations ledger; DB time avoids host clock drift. */
