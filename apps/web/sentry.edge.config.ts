@@ -1,49 +1,6 @@
-// Sentry edge-runtime init for Next.js — D159 + ADR-0021.
-// Loaded by `instrumentation.ts` when `process.env.NEXT_RUNTIME === 'edge'`.
-//
-// Edge runtime hosts Next.js Middleware and any route handlers explicitly
-// opted into the `edge` runtime. Today the project has neither (every
-// route is node-default + middleware does not exist), so this file is
-// future-proofing: when an edge route is added, errors there flow
-// into Sentry with the same scrubbed shape as server + client.
-//
-// Same privacy posture as sentry.server.config.ts.
-
+// Loaded by instrumentation.ts for the edge runtime. Request errors are
+// captured explicitly through onRequestError; auto-instrumentation stays off.
 import * as Sentry from '@sentry/nextjs';
-import { scrubTelemetryPayload } from '@declutrmail/shared/observability';
+import { initSentryServerRuntime } from './src/lib/sentry-server-runtime';
 
-const dsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
-
-if (dsn) {
-  Sentry.init({
-    dsn,
-    environment: process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? 'development',
-    // See `next.config.ts`: omitted when unknown so the build plugin's
-    // own release applies instead of one we invented.
-    ...((process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE)
-      ? { release: process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE }
-      : {}),
-    tracesSampleRate: 0,
-    traceLifecycle: 'static',
-    dataCollection: {
-      userInfo: false,
-      cookies: false,
-      httpHeaders: {
-        request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
-        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
-      },
-      httpBodies: [],
-      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
-      genAI: { inputs: false, outputs: false },
-      databaseQueryData: false,
-      graphQL: { document: false, variables: false },
-    },
-    integrations: [],
-    beforeSend: (event) =>
-      scrubTelemetryPayload(event as unknown as Record<string, unknown>) as unknown as typeof event,
-    beforeBreadcrumb: (breadcrumb) =>
-      scrubTelemetryPayload(
-        breadcrumb as unknown as Record<string, unknown>,
-      ) as unknown as typeof breadcrumb,
-  });
-}
+initSentryServerRuntime(Sentry);

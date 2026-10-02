@@ -289,7 +289,7 @@ const TRUSTED_NEXT_ASSET =
  * `URL` in `sanitizeFrameUrl`) so a frame cannot smuggle data in a path.
  */
 const SAFE_SERVER_FRAME_PATH =
-  /^\/?(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:js|mjs|cjs|ts|mts|cts)$/u;
+  /^\/?(?:[A-Za-z0-9._-]+\/|\([A-Za-z0-9_-]+\)\/|\[(?:\.\.\.)?[A-Za-z0-9_-]+\]\/|\[\[\.\.\.[A-Za-z0-9_-]+\]\]\/)*[A-Za-z0-9._-]+\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts)$/u;
 /**
  * A stack frame's function name — `processJob`, `Worker.run`,
  * `async DeadLetterWorker.processJob`, `Object.<anonymous>`.

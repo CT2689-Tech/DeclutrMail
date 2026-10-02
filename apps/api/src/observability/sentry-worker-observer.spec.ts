@@ -2,20 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createSentryWorkerObserver } from './sentry-worker-observer.js';
 
-/**
- * SentryWorkerObserver unit tests (D159).
- *
- * These verify the *no-DSN* branch (the only one the test harness can
- * exercise without a Sentry mock harness — the SDK-wired branch is
- * verified manually per the FOUNDER-FOLLOWUPS "Verifies by" criterion).
- *
- * The contract these lock in: with `dsnSet: false`, both methods are
- * inert no-ops (no throws, no SDK side effects). That's what every
- * local-dev + CI run depends on — without it, calling
- * `observer.captureBackgroundFailure` from the reconciler in a dev
- * environment without `SENTRY_DSN` would either explode or accidentally
- * exfiltrate events to a stale DSN.
- */
+/** The delayed-SDK recovery integration is exercised in sentry-init.spec.ts. */
 
 describe('createSentryWorkerObserver (no DSN)', () => {
   it('returns a no-op observer when dsnSet=false (does not throw on capture)', async () => {

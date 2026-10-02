@@ -19,7 +19,7 @@ import type {
  * Privacy posture (D7, D228): the contexts here are metric-only per the
  * `WorkerObserver` contract (worker name, job id, mailbox id, attempt,
  * policy / kind, tags). The Sentry SDK's `beforeSend` (see
- * `./sentry.ts`) runs the shared `scrubTelemetryPayload` as defense in
+ * `./sentry.ts`) runs the strict shared Sentry scrubbers as defense in
  * depth. Callers must still not pass body / snippet / token data here.
  *
  * Closes the FOUNDER-FOLLOWUPS 2026-05-22 "D-CANDIDATE: D159 Sentry seam
@@ -29,12 +29,14 @@ import type {
 export interface SentryWorkerObserverOptions {
   /** Whether `SENTRY_DSN` was set + the SDK initialised. False = no-op. */
   dsnSet: boolean;
+  /** Optional nonblocking lookup so capture recovers after delayed initialization. */
+  getSdk?: () => typeof import('@sentry/node') | undefined;
 }
 
 export async function createSentryWorkerObserver(
   opts: SentryWorkerObserverOptions,
 ): Promise<WorkerObserver> {
-  if (!opts.dsnSet) {
+  if (!opts.dsnSet && !opts.getSdk) {
     // No DSN → return a no-op (we only own logging then; observer is
     // additive). The structured log line in `BaseDeclutrWorker` still
     // fires, so operators in dev/test still see the failure.
@@ -46,9 +48,12 @@ export async function createSentryWorkerObserver(
   }
   // Dynamic import keeps the heavy @sentry/node bundle out of test/dev
   // paths where the DSN is unset (mirrors `initSentry`'s same pattern).
-  const Sentry = await import('@sentry/node');
+  const sdk = opts.getSdk ? undefined : await import('@sentry/node');
+  const getSdk = opts.getSdk ?? (() => sdk);
   return {
     captureFailure(error: Error, ctx: WorkerFailureContext): void {
+      const Sentry = getSdk();
+      if (!Sentry) return;
       Sentry.withScope((scope) => {
         scope.setTags({
           worker: ctx.workerName,
@@ -67,6 +72,8 @@ export async function createSentryWorkerObserver(
       });
     },
     captureBackgroundFailure(error: Error, ctx: BackgroundFailureContext): void {
+      const Sentry = getSdk();
+      if (!Sentry) return;
       Sentry.withScope((scope) => {
         scope.setTags({
           kind: ctx.kind,
@@ -76,6 +83,8 @@ export async function createSentryWorkerObserver(
       });
     },
     recordBackgroundNotice(ctx: BackgroundNoticeContext): void {
+      const Sentry = getSdk();
+      if (!Sentry) return;
       // The LOGS channel, not `captureException` — see
       // `BackgroundNoticeContext`. `kind` rides as an attribute because
       // `scrubSentryLog` rebuilds the log's message from it; the message

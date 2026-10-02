@@ -2,7 +2,7 @@ import {
   scrubSentryEvent,
   scrubSentryLog,
   scrubSentryTransaction,
-  scrubTelemetryPayload,
+  scrubSentryBreadcrumb,
 } from '@declutrmail/shared/observability';
 
 /**
@@ -14,8 +14,8 @@ import {
  *
  * Privacy posture (D7, D228):
  *   - Captures exceptions, plus one closed message
- *     (`llm.provider_rejected`) when the LLM breaker trips. No
- *     performance traces, no profiling, no replay (server-side replay
+ *     (`llm.provider_rejected`) when the LLM breaker trips. Sanitized sampled
+ *     traces and closed operational logs are enabled; no profiling or replay (server-side replay
  *     doesn't exist, but the principle stands: opt out of anything
  *     that could carry user data).
  *   - `beforeSend` runs every event through the shared scrubber, which
@@ -30,22 +30,15 @@ import {
  */
 
 let initialized = false;
+let readySdk: typeof import('@sentry/node') | undefined;
+let pendingInit: Promise<boolean> | undefined;
 
 /**
- * Hard timeout for the Sentry init phase, in ms. 2026-06-08 session:
- * `await initSentry()` blocked indefinitely on a Cloud Run worker
- * revision (last-logged boot step was `initSentry_begin`, never
- * `initSentry_done`). @sentry/node v10+'s OTel-aware init can stall
- * when modules are already imported above it; the worker entrypoint
- * imports the NestJS / Drizzle / BullMQ / Anthropic graph at the top
- * of `worker.ts` before any code runs, so Sentry attaching after-the-
- * fact is the structural mismatch. The right long-term fix is to
- * preload `@sentry/node/import` via `node --import @sentry/node/import`
- * BEFORE `@swc-node/register` (v11 removed `/preload`); tracked as a
- * follow-up. Until then,
- * this timeout prevents a single observability dependency from blocking
- * the entire worker indefinitely. Sentry is "best-effort" by design
- * (D159 — privacy preserved is more important than error capture).
+ * Bound asynchronous SDK loading to five seconds. The Docker entrypoint already
+ * preloads @sentry/node/import before the application graph to avoid the historic
+ * late instrumentation hang. This deadline handles a stalled asynchronous import;
+ * it cannot interrupt synchronous code that blocks the JavaScript event loop.
+ * A late successful initialization remains available to worker observers.
  */
 const SENTRY_INIT_TIMEOUT_MS = 5_000;
 
@@ -65,12 +58,12 @@ function readSampleRate(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
-export async function initSentry(): Promise<void> {
-  if (initialized) return;
+export async function initSentry(): Promise<boolean> {
+  if (initialized) return true;
   const dsn = process.env.SENTRY_DSN;
-  if (!dsn) return; // local dev / unconfigured — no-op silently
+  if (!dsn) return false; // local dev / unconfigured — no-op silently
 
-  const initPromise = (async () => {
+  pendingInit ??= (async () => {
     const Sentry = await import('@sentry/node');
     Sentry.init({
       dsn,
@@ -111,12 +104,11 @@ export async function initSentry(): Promise<void> {
       dataCollection: {
         userInfo: false,
         cookies: false,
-        httpHeaders: {
-          request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
-          response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
-        },
+        httpHeaders: { request: false, response: false },
         httpBodies: [],
-        urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        urlQueryParams: false,
+        stackFrameVariables: false,
+        frameContextLines: 0,
         genAI: { inputs: false, outputs: false },
         databaseQueryData: false,
         graphQL: { document: false, variables: false },
@@ -170,41 +162,51 @@ export async function initSentry(): Promise<void> {
       beforeSendTransaction: (event) =>
         scrubSentryTransaction(event as unknown as Record<string, unknown>, 'server') as unknown as
           typeof event | null,
+      beforeSendMetric: () => null,
       beforeBreadcrumb: (breadcrumb) =>
-        scrubTelemetryPayload(
-          breadcrumb as unknown as Record<string, unknown>,
-        ) as unknown as typeof breadcrumb,
+        scrubSentryBreadcrumb(breadcrumb as unknown as Record<string, unknown>) as unknown as
+          typeof breadcrumb | null,
     });
+    readySdk = Sentry;
     initialized = true;
-  })();
+    return true;
+  })().catch(() => {
+    // Closed diagnostic only: SDK errors can contain credentials or request data.
+    console.warn(JSON.stringify({ level: 'warn', kind: 'sentry.init_failed' }));
+    pendingInit = undefined;
+    return false;
+  });
 
-  await Promise.race([
-    initPromise,
-    new Promise<void>((resolve) => {
-      setTimeout(() => {
-        if (!initialized) {
-          // eslint-disable-next-line no-console
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pendingInit,
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => {
           console.warn(
             JSON.stringify({
               level: 'warn',
               kind: 'sentry.init_timeout',
               timeoutMs: SENTRY_INIT_TIMEOUT_MS,
-              dsnSet: true,
-              message:
-                'Sentry init did not resolve before the timeout — proceeding without capture wiring.',
             }),
           );
-        }
-        resolve();
-      }, SENTRY_INIT_TIMEOUT_MS);
-    }),
-  ]);
+          resolve(false);
+        }, SENTRY_INIT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
-/**
- * Test seam — re-set so multiple `initSentry()` calls in unit tests
- * behave deterministically. Not exported from the package barrel.
- */
+/** Nonblocking observer lookup; late SDK initialization can restore capture. */
+export function getInitializedSentry(): typeof readySdk {
+  return readySdk;
+}
+
+/** Test seam; not exported from the package barrel. */
 export function __resetForTests(): void {
   initialized = false;
+  pendingInit = undefined;
+  readySdk = undefined;
 }
