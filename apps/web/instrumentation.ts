@@ -13,15 +13,26 @@
 // it, RSC throws go to Next's default error handler and never reach
 // Sentry.
 
-import * as Sentry from '@sentry/nextjs';
+import type * as Sentry from '@sentry/nextjs';
 
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    await import('./sentry.server.config');
-  }
-  if (process.env.NEXT_RUNTIME === 'edge') {
-    await import('./sentry.edge.config');
+  try {
+    if (process.env.NEXT_RUNTIME === 'nodejs') await import('./sentry.server.config');
+    if (process.env.NEXT_RUNTIME === 'edge') await import('./sentry.edge.config');
+  } catch {
+    // Optional telemetry must not abort Next.js bootstrap, even on chunk-load failure.
+    console.warn(JSON.stringify({ level: 'warn', kind: 'sentry.init_failed' }));
   }
 }
 
-export const onRequestError = Sentry.captureRequestError;
+export async function onRequestError(
+  ...args: Parameters<typeof Sentry.captureRequestError>
+): Promise<void> {
+  try {
+    const sdk = await import('@sentry/nextjs');
+    await sdk.captureRequestError(...args);
+  } catch {
+    // Do not replace the original application error or disclose SDK error details.
+    console.warn(JSON.stringify({ level: 'warn', kind: 'sentry.capture_failed' }));
+  }
+}

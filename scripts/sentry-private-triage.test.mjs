@@ -182,3 +182,36 @@ test('HTTP failures disclose only status and never read response error bodies', 
     (error) => error.httpStatus === 403 && !error.message.includes('SECRET'),
   );
 });
+
+test('canonical app source paths survive private triage without mailbox path data', () => {
+  const out = eventSummary({
+    entries: [
+      {
+        type: 'exception',
+        data: {
+          values: [
+            {
+              type: 'Error',
+              stacktrace: {
+                frames: [
+                  { inApp: true, filename: 'app:///.next/server/app/(app)/senders/[id]/page.js' },
+                  { inApp: true, filename: 'app:///src/worker.ts?token=private' },
+                  { inApp: true, filename: '/src/private@example.invalid/page.js' },
+                  { inApp: true, filename: '/src/private subject/page.js' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal(
+    out.exceptions[0].frames[0].filename,
+    '/.next/server/app/(app)/senders/[id]/page.js',
+  );
+  assert.equal(out.exceptions[0].frames[1].filename, '/src/worker.ts');
+  assert.equal(out.exceptions[0].frames[2].filename, null);
+  assert.equal(out.exceptions[0].frames[3].filename, null);
+  assert.ok(!JSON.stringify(out).includes('private'));
+});

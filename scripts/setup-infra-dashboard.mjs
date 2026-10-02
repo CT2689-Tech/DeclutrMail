@@ -50,7 +50,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Database and runtime panels depend on their collectors; blank means unavailable. Empty runtime panels mean unavailable; do not infer a healthy zero. Distribution percentiles describe observations and are approximate. Billing export panels require fresh rows; withheld readings mean unavailable.',
+              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Periodic runtime gauges and heartbeats depend on their collectors; blank means unavailable. Empty event-only failure or outcome counters mean no matching events observed, not proof of successful delivery or a healthy collector. Check collector freshness alongside them. Distribution percentiles describe observations and are approximate. Billing export panels require fresh rows; withheld readings mean unavailable.',
           },
         },
         {
@@ -75,6 +75,21 @@ export function dashboard(project) {
           'Daily collector heartbeat — absent points mean no collection',
           'collector_completed',
         ),
+        {
+          title: 'Vendor snapshot age — hours since actual observation (missing = unavailable)',
+          xyChart: {
+            dataSets: [
+              {
+                timeSeriesQuery: {
+                  prometheusQuery:
+                    '(time() - max_over_time({"__name__"="custom.googleapis.com/declutrmail/infra/observed_at","monitored_resource"="global"}[3d])) / 3600',
+                },
+                plotType: 'LINE',
+              },
+            ],
+            yAxis: { label: 'Hours', scale: 'LINEAR' },
+          },
+        },
         resource('Google Cloud gross usage charges — MTD USD', 'gcp_gross_mtd_usd'),
         resource('Google Cloud credits — MTD USD', 'gcp_credits_mtd_usd'),
         resource('Google Cloud billing export age — hours', 'billing_export_age_hours'),
@@ -307,7 +322,7 @@ export function dashboard(project) {
   const widgets = definition.gridLayout.widgets;
   const operational = (w) =>
     Boolean(w.logsPanel) ||
-    w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter.filter.includes(PREFIX) === false;
+    w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter?.filter.includes(PREFIX) === false;
   definition.gridLayout.widgets = [
     widgets[0],
     widgets[1],

@@ -224,7 +224,7 @@ import { BillingWebhookService } from './billing/billing-webhook.service.js';
 import { PaddleAdapter } from './billing/paddle.adapter.js';
 import { RazorpayAdapter } from './billing/razorpay.adapter.js';
 import { captureLlmProviderRejection } from './observability/llm-provider-rejection.js';
-import { initSentry } from './observability/sentry.js';
+import { getInitializedSentry, initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
 import { SecurityEventsService } from './security-events/security-events.service.js';
 import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
@@ -412,43 +412,22 @@ async function bootstrap(): Promise<void> {
     );
   }
 
-  // D159: initialise Sentry before anything else so the worker process —
-  // including the boot-time reconciler sweep — has the SDK installed for
-  // any uncaught error path. No-op without `SENTRY_DSN` (mirrors the API
-  // process; local dev + tests are unaffected).
-  //
-  // 2026-06-08 session: `@sentry/node` v10 hangs the worker bootstrap
-  // when initialized AFTER the NestJS / Drizzle / BullMQ / Anthropic
-  // module graph is loaded (which `worker.ts` does at top-of-file
-  // imports). Cloud Run worker rev 12 + 13 hung at `initSentry_begin`;
-  // rev 14 + 15 hung at `createSentryWorkerObserver_begin` even with
-  // `defaultIntegrations: false`. The correct long-term fix is to
-  // preload Sentry via `node --import @sentry/node/import …` BEFORE
-  // `@swc-node/register` so the v11 diagnostics-channel hook (including
-  // Anthropic auto-capture) patches modules at load time, not after.
-  // `/preload` was removed in Sentry 11. Tracked in FOUNDER-FOLLOWUPS
-  // as the "Sentry preload on worker" item.
-  //
-  // Until then this gate keeps the worker boot reliable: set
-  // `WORKER_SENTRY_ENABLED=true` to opt in once the preload flag is
-  // wired. Default OFF emits structured `worker.*` logs only, which
-  // Cloud Logging captures normally and which we wire alerts off via
-  // log-based metrics. Privacy posture unchanged (D7) — Sentry on
-  // the worker was always best-effort; structured logs are the canonical
-  // signal.
+  // D159: optional capture, bounded before worker setup. Docker preloads the SDK
+  // before the application graph; the explicit gate remains for operational
+  // rollback. Structured worker logs remain the canonical fallback. The observer
+  // below checks readiness without waiting and recovers if loading finishes late.
   const workerSentryEnabled = process.env.WORKER_SENTRY_ENABLED === 'true';
   bootStep('initSentry_begin', {
     dsnSet: Boolean(process.env.SENTRY_DSN),
     enabled: workerSentryEnabled,
   });
-  if (workerSentryEnabled) {
-    await initSentry();
-  }
-  bootStep('initSentry_done', { skipped: !workerSentryEnabled });
+  const sentryReady = workerSentryEnabled ? await initSentry() : false;
+  bootStep('initSentry_done', { skipped: !workerSentryEnabled, ready: sentryReady });
   bootStep('createSentryWorkerObserver_begin');
-  const observer = workerSentryEnabled
-    ? await createSentryWorkerObserver({ dsnSet: Boolean(process.env.SENTRY_DSN) })
-    : await createSentryWorkerObserver({ dsnSet: false });
+  const observer = await createSentryWorkerObserver({
+    dsnSet: sentryReady,
+    ...(workerSentryEnabled ? { getSdk: getInitializedSentry } : {}),
+  });
   bootStep('createSentryWorkerObserver_done');
 
   bootStep('postgres_pool_init');

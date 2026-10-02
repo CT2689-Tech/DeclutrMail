@@ -30,8 +30,13 @@ function sourceFile(value) {
   const clean = value
     .split(/[?#]/)[0]
     .replace(/^https?:\/\/[^/]+/, '')
-    .replace(/^webpack-internal:\/\//, '');
-  return /^[A-Za-z0-9_./()[\]@ -]{1,300}$/.test(clean) && /\.(?:[cm]?[jt]sx?)$/.test(clean)
+    .replace(/^webpack-internal:\/\//, '')
+    .replace(/^app:\/\/\//, '/');
+  return /^\/?(?:[A-Za-z0-9._-]+\/|\([A-Za-z0-9_-]+\)\/|\[(?:\.\.\.)?[A-Za-z0-9_-]+\]\/|\[\[\.\.\.[A-Za-z0-9_-]+\]\]\/)*[A-Za-z0-9._-]+$/.test(
+    clean,
+  ) &&
+    clean.length <= 300 &&
+    /\.(?:[cm]?[jt]sx?)$/.test(clean)
     ? clean
     : null;
 }
