@@ -288,3 +288,28 @@ test('canonical app source paths survive private triage without mailbox path dat
   assert.equal(out.exceptions[0].frames[3].filename, null);
   assert.ok(!JSON.stringify(out).includes('private'));
 });
+
+test('capture-page labels remain finite through encrypted triage projection', () => {
+  for (const surface of [
+    'landing',
+    'home',
+    'sender-detail',
+    'activity',
+    'screener',
+    'cookies',
+    'sign-in',
+    'pricing',
+    'help',
+  ]) {
+    assert.equal(
+      eventSummary({ tags: [{ key: 'surface', value: surface }] }).tags.surface,
+      surface,
+    );
+  }
+  for (const surface of ['/senders/private-id', 'private@example.com', 'unknown-flow']) {
+    assert.equal(
+      eventSummary({ tags: [{ key: 'surface', value: surface }] }).tags.surface,
+      undefined,
+    );
+  }
+});
