@@ -155,6 +155,47 @@ test('runtime activation rejects missing, stale, future and failed-only observat
   );
 });
 
+test('GCP aggregation accepts the descriptor type at every runtime chart stage', () => {
+  // Google Aggregation's type constraints, not just a desired chart shape:
+  // https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v1/projects.dashboards#Aggregation
+  let checked = 0;
+  for (const widget of dashboard('test').gridLayout.widgets) {
+    for (const dataSet of widget.xyChart?.dataSets ?? []) {
+      const filter = dataSet.timeSeriesQuery.timeSeriesFilter;
+      const metric = RUNTIME_LOG_METRICS.find((m) =>
+        filter?.filter.includes(`metric.type="logging.googleapis.com/user/${m.name}"`),
+      );
+      if (!metric) continue;
+      let type = metric.metricDescriptor.valueType;
+      for (const stage of [filter.aggregation, filter.secondaryAggregation].filter(Boolean)) {
+        if (stage.perSeriesAligner === 'ALIGN_MEAN') {
+          assert.notEqual(
+            type,
+            'DISTRIBUTION',
+            `${widget.title}: mean aligner requires numeric input`,
+          );
+          type = 'DOUBLE';
+        } else if (stage.perSeriesAligner.startsWith('ALIGN_PERCENTILE_')) {
+          assert.equal(type, 'DISTRIBUTION');
+          type = 'DOUBLE';
+        } else {
+          assert.equal(stage.perSeriesAligner, 'ALIGN_SUM');
+        }
+        if (stage.crossSeriesReducer === 'REDUCE_MEAN') type = 'DOUBLE';
+        if (stage.crossSeriesReducer === 'REDUCE_MAX') {
+          assert.notEqual(
+            type,
+            'DISTRIBUTION',
+            `${widget.title}: max reducer requires numeric input`,
+          );
+        }
+      }
+      checked++;
+    }
+  }
+  assert.ok(checked >= 16, 'must inspect action and sibling runtime charts, not an empty match');
+});
+
 test('action panels preserve snapshot means rather than estimating counts from histogram percentiles', () => {
   const widgets = dashboard('test').gridLayout.widgets;
   const charts = widgets.filter((w) => w.title.startsWith('Cleanup / Undo'));
@@ -162,16 +203,77 @@ test('action panels preserve snapshot means rather than estimating counts from h
   for (const w of charts) {
     const series = w.xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter;
     assert.match(series.filter, /logging\.googleapis\.com\/user\/ops_action_/);
-    assert.equal(series.aggregation.perSeriesAligner, 'ALIGN_MEAN');
-    assert.equal(series.aggregation.crossSeriesReducer, 'REDUCE_MAX');
+    assert.equal(series.aggregation.perSeriesAligner, 'ALIGN_SUM');
+    assert.equal(series.aggregation.crossSeriesReducer, 'REDUCE_MEAN');
     assert.equal(series.aggregation.alignmentPeriod, '300s');
     assert.ok(series.aggregation.groupByFields.includes('metric.label.direction'));
     assert.ok(series.aggregation.groupByFields.includes('metric.label.verb'));
+    assert.ok(series.aggregation.groupByFields.includes('metric.label.log'));
+    for (const key of [
+      'project_id',
+      'location',
+      'service_name',
+      'configuration_name',
+      'revision_name',
+    ])
+      assert.ok(series.aggregation.groupByFields.includes('resource.label.' + key));
+    assert.equal(series.secondaryAggregation.perSeriesAligner, 'ALIGN_MEAN');
+    assert.equal(series.secondaryAggregation.crossSeriesReducer, 'REDUCE_MAX');
+    assert.equal(series.secondaryAggregation.alignmentPeriod, '300s');
+    assert.deepEqual(
+      series.secondaryAggregation.groupByFields,
+      series.aggregation.groupByFields.filter((key) =>
+        /^metric\.label\.(direction|verb|outcome|reason)$/.test(key),
+      ),
+    );
   }
   assert.match(
     widgets.find((w) => w.title === 'Cleanup and Undo: durable results').text.content,
     /exact mean of snapshots/,
   );
+});
+
+test('distribution stages retain weighted means, revision maxima, zero and absent cohorts', () => {
+  const series = dashboard('test').gridLayout.widgets.find((w) =>
+    w.title.startsWith('Cleanup / Undo pending —'),
+  ).xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter;
+  const sample = (revision, verb, count, mean) => ({
+    'metric.label.direction': 'forward',
+    'metric.label.verb': verb,
+    'metric.label.log': 'stdout',
+    'resource.label.project_id': 'test',
+    'resource.label.location': 'us-central1',
+    'resource.label.service_name': 'declutrmail-worker',
+    'resource.label.configuration_name': 'declutrmail-worker',
+    'resource.label.revision_name': revision,
+    count,
+    mean,
+  });
+  // Independent distribution arithmetic for one aligned bin. Unequal sample
+  // counts must not become a mean of means; revisions must not be pooled.
+  const bins = new Map();
+  for (const point of [
+    sample('old', 'archive', 1, 2),
+    sample('old', 'archive', 3, 10),
+    sample('new', 'archive', 2, 5),
+    sample('new', 'delete', 1, 0),
+    sample('new', 'later', 0, 0),
+  ]) {
+    if (!point.count) continue;
+    const key = series.aggregation.groupByFields.map((field) => point[field]).join('|');
+    const prior = bins.get(key) ?? { point, sum: 0, count: 0 };
+    prior.sum += point.count * point.mean;
+    prior.count += point.count;
+    bins.set(key, prior);
+  }
+  const maxima = new Map();
+  for (const { point, sum, count } of bins.values()) {
+    const key = series.secondaryAggregation.groupByFields.map((field) => point[field]).join('|');
+    maxima.set(key, Math.max(maxima.get(key) ?? -Infinity, sum / count));
+  }
+  assert.equal(maxima.get('forward|archive'), 8);
+  assert.equal(maxima.get('forward|delete'), 0);
+  assert.equal(maxima.has('forward|later'), false);
 });
 
 test('reconnect counter is scoped to closed worker outcomes and never equates sent with delivered', () => {
