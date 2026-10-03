@@ -83,6 +83,21 @@ export const NoSuggestion: Story<typeof TriageFocusCard> = {
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
 
+/** Long identities must keep all five choices usable at phone widths. */
+export const LongIdentity: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: {
+      ...row('t-linkedin'),
+      senderName: 'The Weekly Community Newsletter and Events Digest',
+      senderEmail: 'weekly-community-newsletter-and-events@example.invalid',
+      senderDomain: 'example.invalid',
+      brandMark: false,
+    },
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+
 export const Protected: Story<typeof TriageFocusCard> = {
   args: { ...base, row: row('t-sarah') },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
