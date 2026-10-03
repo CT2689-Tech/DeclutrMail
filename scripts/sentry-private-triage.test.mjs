@@ -234,12 +234,14 @@ test('collector fixes API origin, GET and redirects; caps issue/event reads', as
           })),
         ),
       );
-    return new Response(JSON.stringify({ eventID: 'abc', entries: [] }));
+    return new Response(
+      JSON.stringify([{ eventID: 'abc', environment: 'production', entries: [] }]),
+    );
   };
   const report = await collectSentry({ token: 'test-token', org: 'example', fetchImpl });
   assert.equal(report.issues.length, 25);
   assert.equal(calls.length, 12);
-  assert.equal(report.issues.filter((issue) => issue.latestEvent).length, 10);
+  assert.equal(report.issues.filter((issue) => issue.productionEvent).length, 10);
   assert.ok(calls[1].url.includes('statsPeriod=7d'));
   assert.ok(!JSON.stringify(report).includes('test-token'));
   await assert.rejects(collectSentry({ token: 'test', org: '../escape', fetchImpl }));
@@ -387,4 +389,137 @@ test('ambiguous query tags fail closed and malformed tag records do not abort tr
       .tags,
     { surface: 'query', reason: 'undo' },
   );
+});
+
+test('production diagnostics select a filtered event rather than the latest development event', async () => {
+  const calls = [];
+  const report = await collectSentry({
+    token: 'test-token',
+    org: 'example',
+    fetchImpl: async (url) => {
+      calls.push(url);
+      if (url.pathname.endsWith('/projects/')) return Response.json([]);
+      if (url.pathname.endsWith('/issues/')) return Response.json([{ id: '1' }]);
+      if (url.pathname.endsWith('/events/latest/'))
+        return Response.json({ environment: 'development' });
+      assert.equal(url.searchParams.get('environment'), 'production');
+      assert.equal(url.searchParams.get('statsPeriod'), '7d');
+      assert.equal(url.searchParams.get('full'), 'true');
+      assert.equal(url.searchParams.get('per_page'), '1');
+      return Response.json([{ environment: 'production', eventID: 'prod-event' }]);
+    },
+  });
+  assert.equal(calls[1].searchParams.get('environment'), 'production');
+  assert.equal(report.environment, 'production');
+  assert.equal(report.issues[0].productionEvent.eventId, 'prod-event');
+  assert.ok(!JSON.stringify(report).includes('development'));
+});
+
+test('source-backed preview and polling labels survive only on their known surfaces', () => {
+  for (const surface of ['screener', 'triage', 'senders']) {
+    for (const reason of ['composite_preview', 'action_status_poll', 'unsub_status_poll']) {
+      assert.equal(
+        eventSummary({
+          tags: [
+            { key: 'reason', value: reason },
+            { key: 'surface', value: surface },
+          ],
+        }).tags.reason,
+        reason,
+      );
+    }
+  }
+  for (const surface of ['triage', 'senders']) {
+    for (const reason of ['bulk_preview', 'batch_status_poll']) {
+      assert.equal(
+        eventSummary({
+          tags: [
+            { key: 'surface', value: surface },
+            { key: 'reason', value: reason },
+          ],
+        }).tags.reason,
+        reason,
+      );
+    }
+  }
+  for (const [surface, reason] of [
+    ['home', 'composite_preview'],
+    ['screener', 'bulk_preview'],
+    ['triage', 'private-id'],
+    ['query', 'action_status_poll'],
+  ]) {
+    assert.equal(
+      eventSummary({
+        tags: [
+          { key: 'surface', value: surface },
+          { key: 'reason', value: reason },
+        ],
+      }).tags.reason,
+      undefined,
+    );
+  }
+});
+
+test('missing, malformed or conflicting production events stay unavailable without cross-environment fallback', async () => {
+  for (const payload of [
+    [],
+    {},
+    [null],
+    [{ environment: 'development' }],
+    [{ environment: 'production', tags: [{ key: 'environment', value: 'development' }] }],
+  ]) {
+    const paths = [];
+    const report = await collectSentry({
+      token: 'test',
+      org: 'example',
+      fetchImpl: async (url) => {
+        paths.push(url.pathname);
+        if (url.pathname.endsWith('/projects/')) return Response.json([]);
+        if (url.pathname.endsWith('/issues/')) return Response.json([{ id: '1' }]);
+        return Response.json(payload);
+      },
+    });
+    assert.equal(report.issues[0].productionEventUnavailable, true);
+    assert.equal(report.issues[0].productionEvent, undefined);
+    assert.equal(paths.length, 3);
+    assert.ok(!paths.some((path) => path.includes('/latest/')));
+  }
+});
+
+test('event endpoint failure retains only its HTTP status and operation conflicts fail closed', async () => {
+  const report = await collectSentry({
+    token: 'test',
+    org: 'example',
+    fetchImpl: async (url) => {
+      if (url.pathname.endsWith('/projects/')) return Response.json([]);
+      if (url.pathname.endsWith('/issues/')) return Response.json([{ id: '1' }]);
+      return new Response('PRIVATE_ERROR_BODY', { status: 403 });
+    },
+  });
+  assert.equal(report.issues[0].productionEventHttpStatus, 403);
+  assert.equal(report.issues[0].productionEventUnavailable, true);
+  assert.ok(!JSON.stringify(report).includes('PRIVATE_ERROR_BODY'));
+  assert.equal(
+    eventSummary({
+      tags: [
+        { key: 'surface', value: 'screener' },
+        { key: 'reason', value: 'composite_preview' },
+        { key: 'reason', value: 'PRIVATE' },
+      ],
+    }).tags.reason,
+    undefined,
+  );
+});
+
+test('non-string surfaces cannot coerce an operation pair or abort projection', () => {
+  for (const surface of [['screener'], { toString: null }, {}, null, 1]) {
+    const event = eventSummary({
+      tags: [
+        { key: 'surface', value: surface },
+        { key: 'reason', value: 'composite_preview' },
+      ],
+    });
+    assert.equal(event.tags.surface, undefined);
+    assert.equal(event.tags.reason, undefined);
+  }
 });

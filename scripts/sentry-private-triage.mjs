@@ -27,7 +27,25 @@ const timestamp = (value) =>
 const list = (value) => (Array.isArray(value) ? value : []);
 // Existing query tags, not query keys: never accept mailbox IDs, filter text
 // or an arbitrary token. Extend only for source-verified diagnostic scopes.
-const QUERY_REASON_ALLOWLIST = new Set(['undo', 'snoozed']);
+const REASONS_BY_SURFACE = {
+  query: new Set(['undo', 'snoozed']),
+  screener: new Set(['composite_preview', 'action_status_poll', 'unsub_status_poll']),
+  triage: new Set([
+    'composite_preview',
+    'bulk_preview',
+    'action_status_poll',
+    'batch_status_poll',
+    'unsub_status_poll',
+  ]),
+  senders: new Set([
+    'composite_preview',
+    'bulk_preview',
+    'action_status_poll',
+    'batch_status_poll',
+    'unsub_status_poll',
+    'unsub_batch_status_poll',
+  ]),
+};
 function sourceFile(value) {
   if (typeof value !== 'string') return null;
   const clean = value
@@ -125,7 +143,9 @@ export function eventSummary(event) {
       value === reason &&
       typeof value === 'string' &&
       (/^react-error-[0-9]{1,4}$/.test(value) ||
-        (surface === 'query' && QUERY_REASON_ALLOWLIST.has(value)))
+        (typeof surface === 'string' &&
+          Object.hasOwn(REASONS_BY_SURFACE, surface) &&
+          REASONS_BY_SURFACE[surface].has(value)))
     )
       tags.reason = value;
     if (
@@ -264,14 +284,17 @@ export async function collectSentry({ token, org, fetchImpl = fetch }) {
   };
   const projects = await get(`/api/0/organizations/${org}/projects/?per_page=100`);
   const issues = await get(
-    `/api/0/organizations/${org}/issues/?query=is%3Aunresolved&statsPeriod=7d&sort=date&per_page=25`,
+    `/api/0/organizations/${org}/issues/?query=is%3Aunresolved&environment=production&statsPeriod=7d&sort=date&per_page=25`,
   );
   if (!Array.isArray(projects) || !Array.isArray(issues)) throw new Error('Invalid API result');
   const report = {
     collectedAt: new Date().toISOString(),
     window: '7d',
+    environment: 'production',
+    eventSelection:
+      'First returned production event in the 7-day window; bounded sample, not exhaustive.',
     countMeaning:
-      'Issue aggregate totals; do not interpret as event or user volume within the 7-day search window.',
+      'Issue lifetime aggregates and lastSeen may span environments; not production event or user volume within the 7-day search window.',
     limits: { issues: 25, events: 10, projects: 100 },
     projects: projects.slice(0, 100).map(projectSummary),
     issues: issues.slice(0, 25).map(issueSummary),
@@ -279,12 +302,34 @@ export async function collectSentry({ token, org, fetchImpl = fetch }) {
   for (const issue of report.issues.slice(0, 10)) {
     if (!issue.id || !/^\d+$/.test(issue.id)) continue;
     try {
-      issue.latestEvent = eventSummary(
-        await get(`/api/0/organizations/${org}/issues/${issue.id}/events/latest/`),
+      const events = await get(
+        `/api/0/organizations/${org}/issues/${issue.id}/events/?environment=production&statsPeriod=7d&full=true&per_page=1`,
       );
+      if (!Array.isArray(events)) throw new Error('Invalid event result');
+      if (events.length === 0) {
+        issue.productionEventUnavailable = true;
+        continue;
+      }
+      const event = eventSummary(events[0]);
+      // Do not fall back to another environment if the vendor ignores the filter.
+      const environments = new Set(
+        [
+          events[0]?.environment,
+          ...list(events[0]?.tags)
+            .filter((tag) => tag?.key === 'environment')
+            .map((tag) => tag.value),
+        ].filter((value) => value !== undefined && value !== null),
+      );
+      if (
+        environments.size !== 1 ||
+        !environments.has('production') ||
+        event.environment !== 'production'
+      )
+        throw new Error('Invalid event environment');
+      issue.productionEvent = event;
     } catch (error) {
-      issue.latestEventUnavailable = true;
-      if (Number.isInteger(error.httpStatus)) issue.latestEventHttpStatus = error.httpStatus;
+      issue.productionEventUnavailable = true;
+      if (Number.isInteger(error.httpStatus)) issue.productionEventHttpStatus = error.httpStatus;
     }
   }
   return report;
