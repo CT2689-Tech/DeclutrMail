@@ -50,6 +50,8 @@ export const color = {
   amberDeep: 'var(--dm-amber-deep)',
   amberBg: 'var(--dm-amber-bg)',
   emerald: 'var(--dm-emerald)',
+  /** Semantic green lettering on neutral fills; leaves success fills unchanged. */
+  emeraldText: 'var(--dm-emerald-text)',
   emeraldBg: 'var(--dm-emerald-bg)',
   red: 'var(--dm-red)',
   /** Hover/pressed step for red fills — brighter on dark (inverse text). */

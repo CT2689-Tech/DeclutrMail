@@ -268,7 +268,11 @@ describe('SnoozedScreen — wake now flow', () => {
     expect(screen.getByRole('button', { name: 'Bring back now' })).toBeDisabled();
     listUnavailable = true;
     await client.invalidateQueries({ queryKey: ['snoozed'] });
-    await screen.findByText(/couldn't load Later/i);
+    await screen.findByText(/couldn.t refresh Later/i);
+    expect(screen.getByText('Daily Digest')).toBeInTheDocument();
+    expect(screen.getByText('Bringing back…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Change return time' })).toBeDisabled();
     listUnavailable = false;
     row = { ...row, lastReturnAttemptAt: previousAttempt };
     await client.invalidateQueries({ queryKey: ['snoozed'] });

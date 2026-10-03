@@ -1052,7 +1052,7 @@ describe('SendersScreen — edge states', () => {
         target: { value: 'TechGig' },
       });
       await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
-      expect(screen.getByText(DORMANT_ROW.displayName!)).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: DORMANT_ROW.displayName! })).toBeInTheDocument();
       mockAuth.activeMailboxId = 'mb-2';
       failWide = true;
       view.rerender(
@@ -1068,7 +1068,7 @@ describe('SendersScreen — edge states', () => {
       expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
       failWide = false;
       fireEvent.click(screen.getByRole('button', { name: /try again/i }));
-      expect(await screen.findByText('New mailbox sender')).toBeInTheDocument();
+      expect(await screen.findByRole('link', { name: 'New mailbox sender' })).toBeInTheDocument();
       expect(screen.queryByText(DORMANT_ROW.displayName!)).not.toBeInTheDocument();
     });
 

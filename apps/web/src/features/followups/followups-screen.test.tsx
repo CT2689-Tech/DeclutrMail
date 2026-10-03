@@ -514,7 +514,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
   });
 });
 
-it('keeps the last loaded state with retry feedback if reconciliation after dismissal also fails', async () => {
+it('shows a retryable error rather than false absence when dismissal and reconciliation both fail', async () => {
   let dismissed = false;
   let readsFail = false;
   installFetchStub([
@@ -536,12 +536,16 @@ it('keeps the last loaded state with retry feedback if reconciliation after dism
   renderScreen();
   fireEvent.click(await screen.findByRole('button', { name: /mark resolved in declutrmail/i }));
   await waitFor(() => expect(dismissed).toBe(true));
-  const retry = await screen.findByRole('button', { name: /try again/i });
-  expect(retry.closest('[role="status"]')).toHaveTextContent(/couldn.t refresh/i);
-  expect(screen.getByRole('heading', { name: /^no follow-ups$/i })).toBeInTheDocument();
-  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  expect(
+    await screen.findByRole('heading', { name: /couldn[’']t load your follow-ups/i }),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /^no follow-ups$/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('No tracked conversation is waiting on a reply.'),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(/Marked resolved|Feedback saved/)).not.toBeInTheDocument();
   readsFail = false;
-  fireEvent.click(retry);
+  fireEvent.click(screen.getByRole('button', { name: /try again/i }));
   expect(await screen.findByText('Big Boss')).toBeInTheDocument();
   resetFetchStub();
 });

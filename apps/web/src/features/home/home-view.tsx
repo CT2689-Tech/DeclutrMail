@@ -190,7 +190,7 @@ function HomeBody({
               </h2>
               <p>
                 {state.action.href === '/triage'
-                  ? 'Your daily review is ready. Take a look at these senders and decide what still belongs.'
+                  ? 'Take a look at these senders and decide what still belongs.'
                   : state.action.href === '/screener'
                     ? 'Senders awaiting a first decision are ready for your attention. Their email keeps arriving until you choose what to do.'
                     : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}

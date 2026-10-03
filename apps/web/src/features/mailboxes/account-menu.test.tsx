@@ -230,8 +230,11 @@ describe('AccountMenu Gmail reconnect health', () => {
     act(() => callbacks?.onError?.(new Error('Network unavailable')));
 
     const alert = within(dialog).getByRole('alert');
-    expect(alert).toHaveTextContent(`Couldn't confirm ${MAILBOX_A.email} was disconnected.`);
-    expect(alert).not.toHaveTextContent(/nothing was deleted/i);
+    expect(alert).toHaveTextContent(/could not confirm disconnecting/i);
+    expect(alert).toHaveTextContent(MAILBOX_A.email);
+    expect(alert).toHaveTextContent(/check the account status/i);
+    expect(alert).not.toHaveTextContent(/nothing was deleted|nothing changed/i);
+    expect(toastSpy).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
   it('does not claim nothing was deleted when a saved-data deletion errors', async () => {
@@ -249,8 +252,11 @@ describe('AccountMenu Gmail reconnect health', () => {
     act(() => callbacks?.onError?.(new Error('Network unavailable')));
 
     const alert = within(dialog).getByRole('alert');
-    expect(alert).toHaveTextContent(`Couldn't confirm saved-data deletion for ${MAILBOX_A.email}.`);
-    expect(alert).not.toHaveTextContent(/nothing was deleted/i);
+    expect(alert).toHaveTextContent(/could not confirm saved-data deletion/i);
+    expect(alert).toHaveTextContent(MAILBOX_A.email);
+    expect(alert).toHaveTextContent(/check the account status/i);
+    expect(alert).not.toHaveTextContent(/nothing was deleted|nothing changed/i);
+    expect(toastSpy).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
   it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {

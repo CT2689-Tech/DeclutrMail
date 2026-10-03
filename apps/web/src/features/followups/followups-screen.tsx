@@ -72,7 +72,7 @@ export function FollowupsScreen() {
     loadedScope.current = { mailboxId, updatedAt: query.dataUpdatedAt };
   }
   const retainRows =
-    query.data !== undefined &&
+    (query.data?.length ?? 0) > 0 &&
     loadedScope.current.mailboxId === mailboxId &&
     !(query.error instanceof ApiError && query.error.status >= 400 && query.error.status < 500);
   const dismiss = useDismissFollowup();

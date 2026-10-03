@@ -64,6 +64,7 @@
   --dm-amber-deep: #92400e;
   --dm-amber-bg: rgba(245, 158, 11, 0.1);
   --dm-emerald: #047857;
+  --dm-emerald-text: #065f46;
   --dm-emerald-bg: rgba(5, 150, 105, 0.1);
   --dm-red: #b91c1c;
   --dm-red-deep: #7f1d1d;
@@ -172,6 +173,7 @@
   --dm-amber-deep: #eebe84;
   --dm-amber-bg: rgba(227, 167, 92, 0.12);
   --dm-emerald: #3fcf9d;
+  --dm-emerald-text: var(--dm-emerald);
   --dm-emerald-bg: rgba(63, 207, 157, 0.12);
   --dm-red: #f27d7d;
   --dm-red-deep: #f7a3a3;

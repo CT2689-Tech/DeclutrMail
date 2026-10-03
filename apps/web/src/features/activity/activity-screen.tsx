@@ -797,7 +797,7 @@ function LoadMoreRegion({
           style={{
             ...pill,
             fontWeight: 600,
-            color: color.amber,
+            color: color.amberDeep,
             cursor: 'pointer',
           }}
         >
