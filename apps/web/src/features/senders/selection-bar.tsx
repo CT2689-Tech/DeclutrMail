@@ -310,7 +310,7 @@ export function SelectionBar({
           style={{
             background: 'transparent',
             border: 'none',
-            color: color.fgInverseMuted,
+            color: color.fgInverseSoft,
             fontFamily: font.sans,
             fontSize: text.sm,
             cursor: 'pointer',
