@@ -1,5 +1,6 @@
 'use client';
 
+import './autopilot-dialog.css';
 import { useEffect, type ReactNode } from 'react';
 import { afterLead } from '@/lib/copy/after-lead';
 import {
@@ -35,6 +36,7 @@ export function ConfirmModalFrame({
   details,
   facts = [],
   trailing,
+  footer,
   confirmLabel,
   confirmBusyLabel,
   confirmTone,
@@ -59,6 +61,8 @@ export function ConfirmModalFrame({
   facts?: readonly SheetFactItem[];
   /** Collapsed, last: e.g. the sample of matching senders. */
   trailing?: ReactNode;
+  /** Persistent recovery UI, such as refreshing an expired preview. */
+  footer?: ReactNode;
   confirmLabel: string;
   confirmBusyLabel: string;
   confirmTone?: ButtonTone;
@@ -88,10 +92,32 @@ export function ConfirmModalFrame({
 
   return (
     <PreviewSheet
+      layout="review"
       onClose={onCancel}
       title={title}
       subtitle={subtitle}
+      context={
+        mailboxEmail ? (
+          <div className="dm-autopilot-account">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden="true"
+            >
+              <rect x="3" y="5" width="18" height="14" rx="3" />
+              <path d="m3 7 9 6 9-6" />
+            </svg>
+            <span>Gmail account</span>
+            <strong>{mailboxEmail}</strong>
+          </div>
+        ) : undefined
+      }
       note={note}
+      footer={footer}
       details={
         hasDetails ? (
           <>
@@ -117,7 +143,6 @@ export function ConfirmModalFrame({
       }
       {...(testId == null ? {} : { testId })}
     >
-      {mailboxEmail && <SheetFactList facts={[{ label: 'Gmail account', value: mailboxEmail }]} />}
       {children}
     </PreviewSheet>
   );

@@ -121,11 +121,26 @@ export const AutopilotPreviewSampleSchema = z
     senderName: z.string().nullable(),
     /** Sender email (D7 allowlist item #1); null in the same race window. */
     senderEmail: z.string().nullable(),
+    /** Current inbound INBOX messages. Optional for previews from an older API. */
+    inboxCount: z.number().int().nonnegative().optional(),
     /** Matcher's human-readable branch label ("Read rate 2%, last seen 120d ago"). */
     reason: z.string(),
   })
   .strict();
 export type AutopilotPreviewSample = z.infer<typeof AutopilotPreviewSampleSchema>;
+
+export const AUTOPILOT_PREVIEW_PAGE_SIZE = 25;
+export const AutopilotPreviewSenderPageSchema = z
+  .object({
+    previewId: UuidSchema,
+    expiresAt: z.iso.datetime(),
+    page: z.number().int().positive(),
+    pageSize: z.literal(AUTOPILOT_PREVIEW_PAGE_SIZE),
+    total: z.number().int().nonnegative(),
+    senders: z.array(AutopilotPreviewSampleSchema).max(AUTOPILOT_PREVIEW_PAGE_SIZE),
+  })
+  .strict();
+export type AutopilotPreviewSenderPage = z.infer<typeof AutopilotPreviewSenderPageSchema>;
 
 /** Evidence behind the pre-activation weekly-volume estimate. */
 export const AutopilotWeeklyVolumeSchema = z
@@ -165,6 +180,8 @@ export const AutopilotRulePreviewResultSchema = z
     weeklyVolume: AutopilotWeeklyVolumeSchema,
     /** Up to 10 sample matches, metadata only. */
     sample: z.array(AutopilotPreviewSampleSchema).max(10),
+    /** Complete actionable set, paged from one expiring preview when requested. */
+    senderPage: AutopilotPreviewSenderPageSchema.optional(),
     /**
      * Matches already `approved, intent_applied=false` for this rule
      * (`ruleMatchIsQueuedAction()`) — the action sweep will attempt

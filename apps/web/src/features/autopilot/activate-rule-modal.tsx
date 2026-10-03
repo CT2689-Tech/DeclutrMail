@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { SheetSegmented, tokens, type SheetFactItem } from '@declutrmail/shared';
+import { useEffect, useId, useState } from 'react';
+import { Button, tokens, type SheetFactItem } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
 import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
 import { RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
+import { RulePreviewSenders, type LoadPreviewPage } from './rule-preview-senders';
 import type { RulePreviewState } from './types';
 
 const { color, space, text } = tokens;
@@ -63,6 +64,7 @@ type ActivateRuleModalProps = {
   /** First-sweep dry-run state — fired by the opener when the modal opens. */
   preview: RulePreviewState;
   onRetryPreview: () => void;
+  loadPreviewPage?: LoadPreviewPage | undefined;
   /**
    * Turn the rule on in Observe instead of acting. Only meaningful for
    * `intent='enable'`; the second button is hidden without it.
@@ -118,6 +120,7 @@ function ActivateRuleSheet({
   preview,
   undoWindowDays,
   onRetryPreview,
+  loadPreviewPage,
   onWatchFirst,
   isActivating,
   error,
@@ -128,6 +131,7 @@ function ActivateRuleSheet({
   // because it is what the primary button did before the two commits
   // became one choice; the requests themselves are unchanged.
   const [choice, setChoice] = useState<'act' | 'watch'>('act');
+  const choiceId = useId();
   const name = presetDisplayName(rule.presetKey, rule.name);
   const reviewOnly = isReviewOnlyPreset(rule.presetKey);
 
@@ -147,6 +151,25 @@ function ActivateRuleSheet({
   const commitsActive = !reviewOnly && (!enabling || enablingToAct) && !watching;
   const presentation = rulePresentation(rule);
   const protectedCount = preview.status === 'ready' ? preview.result.protectedWouldMatchCount : 0;
+  const senderPage = preview.status === 'ready' ? preview.result.senderPage : undefined;
+  const [expiredPreviewId, setExpiredPreviewId] = useState<string | null>(null);
+  const [blockedPreviewId, setBlockedPreviewId] = useState<string | null>(null);
+  const expiresAt = senderPage ? Date.parse(senderPage.expiresAt) : null;
+  const previewExpired =
+    senderPage != null &&
+    (expiredPreviewId === senderPage.previewId ||
+      expiresAt == null ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= Date.now());
+  const pagingBlocked = senderPage != null && blockedPreviewId === senderPage.previewId;
+  useEffect(() => {
+    if (!senderPage) return;
+    const timer = setTimeout(
+      () => setExpiredPreviewId(senderPage.previewId),
+      Math.max(0, Date.parse(senderPage.expiresAt) - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [senderPage]);
 
   return (
     <ConfirmModalFrame
@@ -177,17 +200,29 @@ function ActivateRuleSheet({
       }
       // D226 — every commit waits for the dry-run, "Watch first" included:
       // it moves no mail, but it still commits a mode.
-      canConfirm={preview.status === 'ready'}
+      canConfirm={preview.status === 'ready' && !previewExpired && !pagingBlocked}
       mailboxEmail={mailboxEmail}
       isBusy={isActivating}
       error={error}
+      footer={
+        previewExpired ? (
+          <div role="alert" className="dm-autopilot-page-error">
+            <span>This preview expired. Refresh to see current matches.</span>
+            <Button tone="ghost" size="sm" disabled={isActivating} onClick={onRetryPreview}>
+              Refresh preview
+            </Button>
+          </div>
+        ) : undefined
+      }
       onCancel={onCancel}
       // ⌘⏎ and the button share this, so the shortcut can only ever run
       // the commit the user has selected and can see on the button.
       onConfirm={watching && onWatchFirst != null ? onWatchFirst : onConfirm}
       facts={[
         ...(preview.status === 'ready' ? activationFacts(rule, preview.result, reviewOnly) : []),
-        ...(reviewOnly ? [] : ruleEffectFacts(presentation.primary)),
+        ...(reviewOnly || rule.actionKind === 'unsubscribe'
+          ? []
+          : ruleEffectFacts(presentation.primary)),
         // Gated on the COUNT, not on the intent. A RE-enabled rule keeps
         // its pending matches in the buffer (`listPendingSuggestions`
         // filters on mode + resolution, never on `enabled`), and they
@@ -217,35 +252,91 @@ function ActivateRuleSheet({
       ]}
       trailing={
         preview.status === 'ready' ? (
-          <RulePreviewSample ruleName={name} result={preview.result} />
+          preview.result.senderPage ? (
+            <RulePreviewSenders
+              key={preview.result.senderPage.previewId}
+              ruleName={name}
+              result={preview.result}
+              initialPage={preview.result.senderPage}
+              loadPage={loadPreviewPage}
+              expired={previewExpired}
+              onExpired={() => setExpiredPreviewId(preview.result.senderPage!.previewId)}
+              onReadyChange={(ready) =>
+                setBlockedPreviewId(ready ? null : preview.result.senderPage!.previewId)
+              }
+            />
+          ) : (
+            <RulePreviewSample ruleName={name} result={preview.result} layout="table" />
+          )
         ) : undefined
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {/* D226 — what the FIRST active sweep would act on right now (same
             signal materializer as the apply worker). */}
-        <RulePreviewHero state={preview} onRetry={onRetryPreview} requiresApproval={reviewOnly} />
+        <div className="dm-autopilot-preview">
+          <span className="dm-autopilot-section-label">Current preview</span>
+          <RulePreviewHero
+            state={preview}
+            onRetry={onRetryPreview}
+            requiresApproval={reviewOnly}
+            align="start"
+          />
+        </div>
         {offersChoice ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
-            <SheetSegmented
-              label="How this rule runs"
-              value={choice}
-              onChange={setChoice}
-              options={[
-                { value: 'watch', label: 'Watch first', disabled: isActivating },
-                { value: 'act', label: 'Act now', disabled: isActivating },
-              ]}
-            />
-            <span style={{ fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
-              {watching
-                ? 'Nothing moves until you approve each match.'
-                : 'Acts on matching email now and as it arrives.'}
-            </span>
-          </div>
+          <fieldset className="dm-autopilot-modes">
+            <legend>How this rule runs</legend>
+            <div className="dm-autopilot-mode-options">
+              {(
+                [
+                  {
+                    value: 'watch',
+                    label: 'Watch first',
+                    description:
+                      rule.actionKind === 'unsubscribe'
+                        ? 'No unsubscribe requests until you approve each match.'
+                        : 'Nothing moves until you approve each match.',
+                  },
+                  {
+                    value: 'act',
+                    label: 'Act now',
+                    description:
+                      rule.actionKind === 'unsubscribe'
+                        ? 'Starts unsubscribe requests for matching senders automatically.'
+                        : 'Acts on matching email now and as it arrives.',
+                  },
+                ] as const
+              ).map((option) => (
+                <label key={option.value} className="dm-autopilot-mode">
+                  <span className="dm-autopilot-mode-title">
+                    {option.label}
+                    <input
+                      type="radio"
+                      name={choiceId}
+                      value={option.value}
+                      aria-label={option.label}
+                      aria-describedby={`${choiceId}-${option.value}-description`}
+                      checked={choice === option.value}
+                      disabled={isActivating}
+                      onChange={() => setChoice(option.value)}
+                    />
+                  </span>
+                  <span
+                    id={`${choiceId}-${option.value}-description`}
+                    className="dm-autopilot-mode-description"
+                  >
+                    {option.description}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         ) : (
           <span style={{ fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
             {reviewOnly || enabling
-              ? 'Nothing moves until you approve each match.'
+              ? rule.actionKind === 'unsubscribe'
+                ? 'No unsubscribe requests until you approve each match.'
+                : 'Nothing moves until you approve each match.'
               : 'Stops asking and starts acting.'}
           </span>
         )}
@@ -296,15 +387,20 @@ function activationFacts(
       label: reviewOnly ? 'If approved' : 'Actionable now',
       value:
         rule.actionKind === 'unsubscribe'
-          ? `${plural(result.actionableSenderCount, 'request')} · ${plural(
-              result.actionableMessageCount,
-              'inbox email',
-            )}`
+          ? plural(result.actionableSenderCount, 'unsubscribe request')
           : `${plural(result.actionableSenderCount, 'sender')} · ${plural(
               result.actionableMessageCount,
               'inbox email',
             )}`,
     },
+    ...(rule.actionKind === 'unsubscribe'
+      ? [
+          {
+            label: 'Existing email',
+            value: `Stays where it is, including ${plural(result.actionableMessageCount, 'inbox email')}`,
+          },
+        ]
+      : []),
     weekly,
     {
       label: 'Daily cap',
@@ -339,7 +435,9 @@ type RulePresentation = ReturnType<typeof rulePresentation>;
  */
 function matchEffectCopy(presentation: RulePresentation): string {
   const { primary } = presentation;
-  return primary.verb === 'unsubscribe' ? primary.futureMail.summary : primary.currentMail.summary;
+  return primary.verb === 'unsubscribe'
+    ? `${primary.futureMail.summary} Existing email stays where it is.`
+    : primary.currentMail.summary;
 }
 
 /** Verb-honest presentation of the rule's action (D227; D230 mailto stays manual). */

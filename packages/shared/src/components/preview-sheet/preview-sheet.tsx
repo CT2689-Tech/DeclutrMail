@@ -19,6 +19,8 @@ import { Button, type ButtonTone } from '../button';
  */
 export type PreviewSheetProps = {
   onClose: () => void;
+  /** Wider review dialog with a scrolling body and persistent actions. */
+  layout?: 'compact' | 'review';
   /** Sender logo / verb glyph — what the action is about. */
   icon?: ReactNode;
   /** Account identity, always visible before confirmation. */
@@ -52,6 +54,7 @@ export type PreviewSheetProps = {
 
 export function PreviewSheet({
   onClose,
+  layout = 'compact',
   icon,
   context,
   title,
@@ -69,6 +72,7 @@ export function PreviewSheet({
   const titleId = useId();
   const subtitleId = useId();
   const busy = primary.busyLabel != null;
+  const review = layout === 'review';
   // Focus lands on the action — except a destructive one, where Enter on
   // open must never be enough; there it lands on Cancel. A loading
   // primary falls back to Cancel without moving focus again when it loads.
@@ -113,180 +117,193 @@ export function PreviewSheet({
         aria-modal="true"
         aria-labelledby={titleId}
         {...(subtitle == null ? {} : { 'aria-describedby': subtitleId })}
-        className="dm-sheet dm-sheet-panel"
+        className={`dm-sheet dm-sheet-panel${review ? ' dm-sheet-review' : ''}`}
         style={{
           width: '100%',
-          maxWidth: 440,
+          maxWidth: review ? 680 : 440,
           background: color.card,
           boxShadow: shadow.modal,
           fontFamily: font.sans,
           color: color.fg,
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          padding: `${space[8]}px ${space[6]}px ${space[6]}px`,
+          alignItems: review ? 'stretch' : 'center',
+          textAlign: review ? 'left' : 'center',
+          padding: review ? 0 : `${space[8]}px ${space[6]}px ${space[6]}px`,
         }}
       >
-        {icon != null && <div style={{ marginBottom: space[4] }}>{icon}</div>}
+        <div className="dm-sheet-body" style={review ? undefined : { display: 'contents' }}>
+          {icon != null && <div style={{ marginBottom: space[4] }}>{icon}</div>}
 
-        {context != null && <div style={{ marginBottom: space[4], width: '100%' }}>{context}</div>}
+          {context != null && (
+            <div style={{ marginBottom: space[4], width: '100%' }}>{context}</div>
+          )}
 
-        <h2
-          id={titleId}
-          style={{
-            margin: 0,
-            fontSize: text['2xl'],
-            lineHeight: 1.2,
-            fontWeight: 650,
-            letterSpacing: '-0.022em',
-            textWrap: 'balance',
-          }}
-        >
-          {title}
-        </h2>
-
-        {subtitle != null && (
-          <p
-            id={subtitleId}
+          <h2
+            id={titleId}
             style={{
-              margin: `${space[2]}px 0 0`,
-              fontSize: text.md,
-              lineHeight: 1.45,
-              color: color.fgSoft,
-              maxWidth: '34ch',
-              textWrap: 'pretty',
+              margin: 0,
+              fontSize: text['2xl'],
+              lineHeight: 1.2,
+              fontWeight: 650,
+              letterSpacing: '-0.022em',
+              textWrap: 'balance',
             }}
           >
-            {subtitle}
-          </p>
-        )}
+            {title}
+          </h2>
 
-        {children != null && <div style={{ marginTop: space[5], width: '100%' }}>{children}</div>}
-
-        {note != null && (
-          <p
-            style={{
-              margin: `${space[4]}px 0 0`,
-              fontSize: text.sm,
-              lineHeight: 1.45,
-              color: color.fgMuted,
-              maxWidth: '40ch',
-            }}
-          >
-            {note}
-          </p>
-        )}
-
-        {details != null && (
-          <details className="dm-sheet-details" style={{ marginTop: space[4], width: '100%' }}>
-            <summary
+          {subtitle != null && (
+            <p
+              id={subtitleId}
               style={{
-                cursor: 'pointer',
-                listStyle: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 32,
-                padding: `0 ${space[3]}px`,
-                borderRadius: radius.pill,
-                fontSize: text.sm,
-                fontWeight: 550,
+                margin: `${space[2]}px 0 0`,
+                fontSize: text.md,
+                lineHeight: 1.45,
                 color: color.fgSoft,
+                maxWidth: review ? undefined : '34ch',
+                textWrap: 'pretty',
               }}
             >
-              {detailsLabel}
-              <svg
-                className="dm-sheet-details-chevron"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                style={{ transition: `transform ${motion.fast} ${motion.ease}` }}
-              >
-                <path d="m6 9 6 6 6-6" />
-              </svg>
-            </summary>
-            <div
-              style={{
-                marginTop: space[2],
-                padding: `${space[1]}px ${space[4]}px ${space[3]}px`,
-                borderRadius: radius.lg,
-                background: color.fill,
-                textAlign: 'left',
-                fontSize: text.sm,
-                lineHeight: 1.5,
-                // Values read in full contrast; `SheetFactList` mutes only
-                // its labels. Grey-on-grey was unreadable in dark mode.
-                color: color.fg,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: space[3],
-              }}
-            >
-              {details}
-            </div>
-          </details>
-        )}
-
-        <div
-          style={{
-            marginTop: space[6],
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: space[2],
-          }}
-        >
-          <span data-dm-sheet-primary="" style={{ display: 'contents' }}>
-            <Button
-              tone={primary.tone ?? 'primary'}
-              size="xl"
-              onClick={primary.onClick}
-              disabled={primary.disabled === true || busy}
-              style={{ width: '100%' }}
-            >
-              {primary.busyLabel ?? primary.label}
-            </Button>
-          </span>
-          <span data-dm-sheet-cancel="" style={{ display: 'contents' }}>
-            <Button
-              tone="ghost"
-              size="lg"
-              onClick={onClose}
-              disabled={busy}
-              style={{ width: '100%' }}
-            >
-              {cancelLabel}
-            </Button>
-          </span>
-        </div>
-
-        <div role="status" aria-live="polite" style={{ minHeight: status == null ? 0 : undefined }}>
-          {status != null && (
-            <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgSoft }}>
-              {status}
+              {subtitle}
             </p>
           )}
-        </div>
 
-        {footer != null && (
+          {children != null && <div style={{ marginTop: space[5], width: '100%' }}>{children}</div>}
+
+          {note != null && (
+            <p
+              className="dm-sheet-note"
+              style={{
+                margin: `${space[4]}px 0 0`,
+                fontSize: text.sm,
+                lineHeight: 1.45,
+                color: color.fgMuted,
+                maxWidth: review ? undefined : '40ch',
+              }}
+            >
+              {note}
+            </p>
+          )}
+
+          {details != null && (
+            <details className="dm-sheet-details" style={{ marginTop: space[4], width: '100%' }}>
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  listStyle: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  minHeight: 32,
+                  padding: `0 ${space[3]}px`,
+                  borderRadius: radius.pill,
+                  fontSize: text.sm,
+                  fontWeight: 550,
+                  color: color.fgSoft,
+                }}
+              >
+                {detailsLabel}
+                <svg
+                  className="dm-sheet-details-chevron"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  style={{ transition: `transform ${motion.fast} ${motion.ease}` }}
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </summary>
+              <div
+                className="dm-sheet-details-content"
+                style={{
+                  marginTop: space[2],
+                  padding: `${space[1]}px ${space[4]}px ${space[3]}px`,
+                  borderRadius: radius.lg,
+                  background: color.fill,
+                  textAlign: 'left',
+                  fontSize: text.sm,
+                  lineHeight: 1.5,
+                  // Values read in full contrast; `SheetFactList` mutes only
+                  // its labels. Grey-on-grey was unreadable in dark mode.
+                  color: color.fg,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: space[3],
+                }}
+              >
+                {details}
+              </div>
+            </details>
+          )}
+        </div>
+        <div className="dm-sheet-footer" style={review ? undefined : { display: 'contents' }}>
           <div
+            className="dm-sheet-actions"
             style={{
-              marginTop: space[3],
+              marginTop: review ? 0 : space[6],
               width: '100%',
-              fontSize: text.sm,
-              color: color.fgMuted,
+              display: 'flex',
+              flexDirection: review ? 'row-reverse' : 'column',
+              justifyContent: review ? 'flex-start' : undefined,
+              gap: space[2],
             }}
           >
-            {footer}
+            <span data-dm-sheet-primary="" style={{ display: 'contents' }}>
+              <Button
+                tone={primary.tone ?? 'primary'}
+                size={review ? 'lg' : 'xl'}
+                onClick={primary.onClick}
+                disabled={primary.disabled === true || busy}
+                style={{ width: review ? undefined : '100%' }}
+              >
+                {primary.busyLabel ?? primary.label}
+              </Button>
+            </span>
+            <span data-dm-sheet-cancel="" style={{ display: 'contents' }}>
+              <Button
+                tone="ghost"
+                size="lg"
+                onClick={onClose}
+                disabled={busy}
+                style={{ width: review ? undefined : '100%' }}
+              >
+                {cancelLabel}
+              </Button>
+            </span>
           </div>
-        )}
+
+          <div
+            role="status"
+            aria-live="polite"
+            style={{ minHeight: status == null ? 0 : undefined }}
+          >
+            {status != null && (
+              <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgSoft }}>
+                {status}
+              </p>
+            )}
+          </div>
+
+          {footer != null && (
+            <div
+              style={{
+                marginTop: space[3],
+                width: '100%',
+                fontSize: text.sm,
+                color: color.fgMuted,
+              }}
+            >
+              {footer}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

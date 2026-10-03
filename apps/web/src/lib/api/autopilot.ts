@@ -20,6 +20,7 @@ import type {
   AutopilotApproveMatchesRequest,
   AutopilotApproveResult,
   AutopilotPreviewSample,
+  AutopilotPreviewSenderPage,
   AutopilotRulePreviewResult,
   Envelope,
   AutopilotPendingMeta,
@@ -36,6 +37,7 @@ export type AutopilotApproveResultDto = AutopilotApproveResult;
 export type AutopilotApproveAllScopeDto = AutopilotApproveAllRequest;
 export type AutopilotRulePreviewResultDto = AutopilotRulePreviewResult;
 export type AutopilotPreviewSampleDto = AutopilotPreviewSample;
+export type AutopilotPreviewSenderPageDto = AutopilotPreviewSenderPage;
 
 /** Rule lifecycle (D10, D105). Mirrors `autopilot_rule_mode` pgEnum. */
 export type AutopilotRuleMode = 'observe' | 'active' | 'paused';
@@ -310,12 +312,27 @@ export function postApproveAllForRule(
 
 /**
  * POST /api/autopilot/rules/:id/preview — D103/D192 dry-run preview.
- * Read-only: would-match count + a 10-row metadata-only sample.
+ * Counts and a 10-row sample; includeSenders adds the first page of the
+ * complete actionable sender list and a short-lived preview id.
  */
 export function postRulePreview(
   ruleId: string,
+  includeSenders = false,
 ): Promise<Envelope<AutopilotRulePreviewResult, unknown>> {
   return apiPost<AutopilotRulePreviewResult>(
     `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview`,
+    includeSenders ? { includeSenders: true } : undefined,
+  );
+}
+
+export function getRulePreviewSenders(
+  ruleId: string,
+  previewId: string,
+  page: number,
+  signal?: AbortSignal,
+): Promise<Envelope<AutopilotPreviewSenderPage, unknown>> {
+  return apiGet(
+    `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview/${encodeURIComponent(previewId)}/senders`,
+    { query: { page }, ...(signal === undefined ? {} : { signal }) },
   );
 }

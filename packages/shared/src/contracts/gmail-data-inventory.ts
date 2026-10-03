@@ -441,6 +441,21 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     showInMessageStorageList: false,
   },
   {
+    id: 'autopilot-preview-snapshot',
+    category: 'derived',
+    label: 'Temporary Autopilot sender preview',
+    fetchedFrom: ['sender-identity', 'gmail-labels', 'read-state', 'received-date'],
+    storageRefs: ['redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}'],
+    derived: true,
+    purpose:
+      'Keep the actionable sender set and match facts consistent while paging through a rule preview. Cached rows contain hashed sender keys and match facts; names and addresses are read from the sender index per page.',
+    retention: 'Automatically removed within five minutes of creating the preview.',
+    removalTrigger: 'retention-policy',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
     id: 'initial-sync-job-status',
     category: 'derived',
     label: 'Sync status and result',

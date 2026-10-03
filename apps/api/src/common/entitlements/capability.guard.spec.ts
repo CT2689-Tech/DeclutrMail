@@ -171,7 +171,7 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
         'approveAllForRule',
       ],
       // Catalog and dry-run preview are read-only pre-upgrade value.
-      exempt: ['listRules', 'previewRule'],
+      exempt: ['listRules', 'previewRule', 'previewSenders'],
     },
     {
       surface: 'briefs',

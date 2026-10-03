@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
+import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 
 import { AUTOPILOT_ACTION_QUEUE, createRedisConnection } from '@declutrmail/workers';
@@ -9,6 +10,11 @@ import { EntitlementsModule } from '../common/entitlements/entitlements.module.j
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { AutopilotController } from './autopilot.controller.js';
 import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.read-service.js';
+import {
+  AUTOPILOT_PREVIEW_STORE,
+  MemoryAutopilotPreviewStore,
+  RedisAutopilotPreviewStore,
+} from './autopilot-preview.store.js';
 
 /**
  * AutopilotModule (D99-D105, D124, D196, D197, D234) — read + small
@@ -40,6 +46,20 @@ import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.
   imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
   controllers: [AutopilotController],
   providers: [
+    {
+      provide: AUTOPILOT_PREVIEW_STORE,
+      useFactory: () => {
+        const url = process.env.REDIS_URL;
+        if (!url) return new MemoryAutopilotPreviewStore();
+        const redis = new Redis(url, {
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          commandTimeout: 1500,
+        });
+        redis.on('error', () => new Logger('AutopilotPreview').warn('Preview cache unavailable'));
+        return new RedisAutopilotPreviewStore(redis);
+      },
+    },
     {
       provide: AUTOPILOT_ACTION_QUEUE_TOKEN,
       useFactory: (): Queue<AutopilotActionJobData> | null => {

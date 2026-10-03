@@ -117,6 +117,44 @@ describe('AutopilotController approve-all body validation', () => {
   });
 });
 
+describe('AutopilotController sender preview paging', () => {
+  it('returns the refreshable expiry code for an unavailable or out-of-scope preview', async () => {
+    const controller = new AutopilotController(
+      { previewSenders: vi.fn().mockResolvedValue(null) } as unknown as AutopilotReadService,
+      {} as EntitlementsService,
+    );
+    await expect(
+      controller.previewSenders(mailbox, RULE_ID, '11111111-1111-4111-8111-111111111111', '1'),
+    ).rejects.toMatchObject({
+      status: 410,
+      response: { code: 'AUTOPILOT_PREVIEW_EXPIRED' },
+    });
+  });
+
+  it('requests the complete sender list and validates page requests before reading the cache', async () => {
+    const previewRule = vi.fn().mockResolvedValue({ ruleId: RULE_ID });
+    const previewSenders = vi.fn().mockResolvedValue({ page: 2, total: 53 });
+    const controller = new AutopilotController(
+      { previewRule, previewSenders } as unknown as AutopilotReadService,
+      {} as EntitlementsService,
+    );
+    await controller.previewRule(mailbox, RULE_ID, { includeSenders: true });
+    expect(previewRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, true);
+    const previewId = '11111111-1111-4111-8111-111111111111';
+    await expect(
+      controller.previewSenders(mailbox, RULE_ID, previewId, '2'),
+    ).resolves.toMatchObject({ data: { page: 2 } });
+    expect(previewSenders).toHaveBeenCalledWith(mailbox.id, RULE_ID, previewId, 2);
+    await expect(
+      controller.previewSenders(mailbox, RULE_ID, previewId, '2oops'),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      controller.previewRule(mailbox, RULE_ID, { includeSenders: 'yes' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(previewSenders).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('Autopilot pending page contract', () => {
   const page = {
     data: [],

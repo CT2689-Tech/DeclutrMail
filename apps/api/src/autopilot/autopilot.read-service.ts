@@ -80,7 +80,16 @@ import type {
   AutopilotApproveAllRequest,
   AutopilotApproveResult,
   AutopilotRulePreviewResult,
+  AutopilotPreviewSenderPage,
 } from '@declutrmail/shared/contracts';
+
+import {
+  AUTOPILOT_PREVIEW_STORE,
+  MemoryAutopilotPreviewStore,
+  type AutopilotPreviewStore,
+  type PreviewTarget,
+  type StoredPreviewPage,
+} from './autopilot-preview.store.js';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
@@ -130,6 +139,7 @@ function claimKeySqlForms(): SQL {
 @Injectable()
 export class AutopilotReadService {
   private readonly outbox: OutboxPublisher;
+  private readonly previewStore: AutopilotPreviewStore;
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     @Optional()
@@ -142,8 +152,10 @@ export class AutopilotReadService {
     // fresh instance is safe and keeps the `new AutopilotReadService(db)`
     // test wiring working unchanged.
     @Optional() outbox?: OutboxPublisher,
+    @Optional() @Inject(AUTOPILOT_PREVIEW_STORE) previewStore?: AutopilotPreviewStore,
   ) {
     this.outbox = outbox ?? new OutboxPublisher();
+    this.previewStore = previewStore ?? new MemoryAutopilotPreviewStore();
   }
 
   /**
@@ -1302,6 +1314,7 @@ export class AutopilotReadService {
   async previewRule(
     mailboxAccountId: string,
     ruleId: string,
+    includeSenders = false,
   ): Promise<AutopilotRulePreviewResult | null> {
     const [rule] = await this.db
       .select()
@@ -1390,10 +1403,26 @@ export class AutopilotReadService {
       .where(and(eq(ruleMatchLog.ruleId, ruleId), ruleMatchIsQueuedAction()));
     const waitingApprovedCount = waiting?.n ?? 0;
 
+    const senderPage = includeSenders
+      ? await this.previewStore.create(
+          mailboxAccountId,
+          ruleId,
+          actionable
+            .map(({ senderKey, reason, inboxCount }) => ({ senderKey, reason, inboxCount }))
+            .sort((a, b) => a.senderKey.localeCompare(b.senderKey)),
+        )
+      : null;
+
     // Sample sender identities (D7 allowlist) for the first N matches.
     const sampleMatches = matched.slice(0, PREVIEW_SAMPLE_SIZE);
     const identityBy = new Map<string, { name: string | null; email: string | null }>();
-    if (sampleMatches.length > 0) {
+    const identityKeys = [
+      ...new Set([
+        ...sampleMatches.map((m) => m.senderKey),
+        ...(senderPage?.targets.map((m) => m.senderKey) ?? []),
+      ]),
+    ];
+    if (identityKeys.length > 0) {
       const rows = await this.db
         .select({
           senderKey: senders.senderKey,
@@ -1404,10 +1433,7 @@ export class AutopilotReadService {
         .where(
           and(
             eq(senders.mailboxAccountId, mailboxAccountId),
-            inArray(
-              senders.senderKey,
-              sampleMatches.map((m) => m.senderKey),
-            ),
+            inArray(senders.senderKey, identityKeys),
           ),
         );
       for (const r of rows) {
@@ -1436,9 +1462,63 @@ export class AutopilotReadService {
         senderKey: m.senderKey,
         senderName: identityBy.get(m.senderKey)?.name ?? null,
         senderEmail: identityBy.get(m.senderKey)?.email ?? null,
+        inboxCount: m.inboxCount,
         reason: m.reason,
       })),
+      ...(senderPage ? { senderPage: this.projectPreviewPage(senderPage, identityBy) } : {}),
       waitingApprovedCount,
+    };
+  }
+
+  /** Page an immutable actionable set; never rerun the matcher for pagination. */
+  async previewSenders(
+    mailboxAccountId: string,
+    ruleId: string,
+    previewId: string,
+    page: number,
+  ): Promise<AutopilotPreviewSenderPage | null> {
+    const stored = await this.previewStore.read(mailboxAccountId, ruleId, previewId, page);
+    if (!stored) return null;
+    const [rule] = await this.db
+      .select({ presetKey: automationRules.presetKey })
+      .from(automationRules)
+      .where(
+        and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
+      )
+      .limit(1);
+    if (!rule || !asPresetKey(rule.presetKey)) return null;
+    const identities = new Map<string, { name: string | null; email: string | null }>();
+    if (stored.targets.length > 0) {
+      const rows = await this.db
+        .select({ senderKey: senders.senderKey, name: senders.displayName, email: senders.email })
+        .from(senders)
+        .where(
+          and(
+            eq(senders.mailboxAccountId, mailboxAccountId),
+            inArray(
+              senders.senderKey,
+              stored.targets.map((target) => target.senderKey),
+            ),
+          ),
+        );
+      for (const row of rows)
+        identities.set(row.senderKey, { name: row.name || null, email: row.email || null });
+    }
+    return this.projectPreviewPage(stored, identities);
+  }
+
+  private projectPreviewPage(
+    stored: StoredPreviewPage,
+    identities: Map<string, { name: string | null; email: string | null }>,
+  ): AutopilotPreviewSenderPage {
+    const { targets, ...page } = stored;
+    return {
+      ...page,
+      senders: targets.map((target: PreviewTarget) => ({
+        ...target,
+        senderName: identities.get(target.senderKey)?.name ?? null,
+        senderEmail: identities.get(target.senderKey)?.email ?? null,
+      })),
     };
   }
 
