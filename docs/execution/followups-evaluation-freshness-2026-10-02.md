@@ -40,5 +40,8 @@ without reload. The unknown row said unavailable; browser error log was empty.
 No real recipient was contacted or mailbox changed.
 
 Local full API/browser testing remains blocked by the unavailable Docker database;
-required CI/build/browser gates must pass before queueing. This is component and
+The original candidate passed required CI/build/browser gates. The existing synthetic
+Followups HTTP/browser journey now also checks the persisted timestamp in the actual
+200 D202 envelope and expanded row before dismissal/reload; this delta must pass CI
+before queueing. This is component and
 isolated service evidence, not production freshness proof. Rollback: revert this PR.
