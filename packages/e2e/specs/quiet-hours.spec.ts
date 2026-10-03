@@ -4,6 +4,7 @@ import type { QuietHoursConfig, QuietHoursState } from '@declutrmail/shared/cont
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
+import { BILLING_SEED } from '../helpers/seed-billing';
 
 /** Synthetic real API/UI configuration flow; no Gmail credentials or worker. */
 const api = new ApiClient();
@@ -12,6 +13,7 @@ let sql: postgres.Sql;
 let mailboxId: string;
 let original: Record<string, unknown> = {};
 let prepared = false;
+let originalAttribution: { source: string | null; detail: string | null } | undefined;
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
@@ -19,6 +21,12 @@ test.beforeAll(async () => {
   mailboxId = live.mailboxId!;
   sql = dbConnect();
   await applyJourneySeed(sql);
+  const userRows = await sql<{ source: string | null; detail: string | null }[]>`
+    SELECT signup_attribution_heard_from AS source,
+           signup_attribution_heard_detail AS detail
+    FROM users WHERE id = ${BILLING_SEED.userId}
+  `;
+  originalAttribution = userRows[0];
   const rows = await sql<{ quiet_state: Record<string, unknown> }[]>`
     SELECT quiet_state FROM mailbox_accounts WHERE id = ${mailboxId}
   `;
@@ -50,6 +58,13 @@ test.afterAll(async () => {
       WHERE id = ${mailboxId}
     `;
   }
+  if (sql && originalAttribution) {
+    await sql`
+      UPDATE users SET signup_attribution_heard_from = ${originalAttribution.source},
+        signup_attribution_heard_detail = ${originalAttribution.detail}
+      WHERE id = ${BILLING_SEED.userId}
+    `;
+  }
   if (sql) await sql.end();
   await api.dispose();
 });
@@ -70,7 +85,18 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   const toggle = page.getByRole('switch', { name: 'Quiet hours', exact: true });
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   const consent = page.getByRole('button', { name: 'Essential only', exact: true });
-  if (await consent.isVisible()) await consent.click();
+  // Fresh browser storage has no consent; choose through the visible UI.
+  await expect(consent).toBeVisible();
+  await consent.click();
+  // The fixture may still have the optional self-report prompt. Its fixed
+  // card can cover Save; dismiss through Skip, never force-click underneath.
+  const me = await api.get<{ signupAttribution?: { promptNeeded?: boolean } }>('/api/auth/me');
+  if (me.signupAttribution?.promptNeeded) {
+    const prompt = page.getByTestId('heard-from-prompt');
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Skip', exact: true }).click();
+    await expect(prompt).toBeHidden();
+  }
   await toggle.click();
   await page.getByLabel('Quiet window start').fill(config.startLocal);
   await page.getByLabel('Quiet window end').fill(config.endLocal);

@@ -28,3 +28,10 @@ pending CI and must not be called passed before that exact candidate succeeds.
 Previously24 timezone/state tests passed, including spring/fall DST and co-tenancy;
 this new journey does not itself run clock-controlled DST or worker/Gmail deferral.
 Production account verification remains separate.
+
+The first actual CI journey exposed the optional self-report card covering Save
+after Essential only. The corrected fixture uses visible Skip when /api/auth/me
+says the prompt is needed, waits for its removal, and restores both attribution
+fields on the fixed synthetic user in cleanup. Fresh browser consent is awaited
+explicitly; no force click or hidden consent write. This is setup for a returning
+configuration journey, not an onboarding audit. New candidate execution pending.
