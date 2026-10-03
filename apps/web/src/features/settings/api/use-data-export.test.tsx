@@ -15,7 +15,9 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 
-import { useDataExport } from './use-data-export';
+import { ApiError } from '@/lib/api/client';
+import { track } from '@/lib/posthog';
+import { dataExportFailure, useDataExport } from './use-data-export';
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
 
@@ -43,6 +45,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 let clickSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
+  vi.mocked(track).mockClear();
   // jsdom has neither of these; the download path uses both.
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:stub');
   globalThis.URL.revokeObjectURL = vi.fn();
@@ -86,7 +89,7 @@ describe('useDataExport — expired session', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(refreshCalls).toBe(1);
     expect(exportCalls).toBe(2);
-    // The user sees their file, not the rate-limit banner.
+    // The completed blob reaches the browser download mechanism.
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -108,5 +111,104 @@ describe('useDataExport — expired session', () => {
     expect(String(assignSpy.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(clickSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('useDataExport — preparation and feedback', () => {
+  it('waits for the complete blob before browser handoff and one success event', async () => {
+    let finishBlob!: (blob: Blob) => void;
+    const response = csvOk();
+    vi.spyOn(response, 'blob').mockImplementation(
+      () =>
+        new Promise<Blob>((resolve) => {
+          finishBlob = resolve;
+        }),
+    );
+    installFetchStub([{ method: 'GET', path: '/api/account/export', respond: () => response }]);
+    const { result } = renderHook(() => useDataExport(), { wrapper });
+    result.current.mutate('senders-csv');
+    await waitFor(() => expect(response.blob).toHaveBeenCalledTimes(1));
+    expect(result.current.isPending).toBe(true);
+    expect(clickSpy).not.toHaveBeenCalled();
+    expect(track).not.toHaveBeenCalled();
+    finishBlob(new Blob(['sender,count\nexample.invalid,1\n']));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:stub');
+    expect(track).toHaveBeenCalledExactlyOnceWith('data_export_requested', {
+      format: 'senders-csv',
+      outcome: 'success',
+    });
+  });
+
+  it.each([
+    ['rate limit', () => new Response(null, { status: 429 }), 'rate_limited'],
+    ['server failure', () => new Response(null, { status: 500 }), 'unavailable'],
+    [
+      'network failure',
+      () => {
+        throw new TypeError('Failed to fetch');
+      },
+      'unavailable',
+    ],
+    [
+      'stream failure',
+      () => {
+        const response = csvOk();
+        vi.spyOn(response, 'blob').mockRejectedValue(new TypeError('Stream failed'));
+        return response;
+      },
+      'unavailable',
+    ],
+  ] as const)('reports %s without a download handoff', async (_name, respond, failure) => {
+    installFetchStub([{ method: 'GET', path: '/api/account/export', respond }]);
+    const { result } = renderHook(() => useDataExport(), { wrapper });
+    result.current.mutate('csv');
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(dataExportFailure(result.current.error)).toBe(failure);
+    expect(clickSpy).not.toHaveBeenCalled();
+    expect(track).toHaveBeenCalledExactlyOnceWith('data_export_requested', {
+      format: 'csv',
+      outcome: 'failed',
+    });
+  });
+
+  it.each([
+    ['senders-csv', 'senders'],
+    ['decisions-csv', 'decisions'],
+  ] as const)(
+    'names the %s dataset when the filename header is unavailable',
+    async (format, dataset) => {
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/account/export',
+          respond: () => new Response('synthetic', { status: 200 }),
+        },
+      ]);
+      const { result } = renderHook(() => useDataExport(), { wrapper });
+      result.current.mutate(format);
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      const anchor = clickSpy.mock.contexts[0] as HTMLAnchorElement;
+      expect(anchor.download).toMatch(
+        new RegExp(`^declutrmail-${dataset}-[0-9]{4}-[0-9]{2}-[0-9]{2}\\.csv$`),
+      );
+    },
+  );
+
+  it('preserves an available server filename instead of replacing it with a fallback', async () => {
+    installFetchStub([{ method: 'GET', path: '/api/account/export', respond: () => csvOk() }]);
+    const { result } = renderHook(() => useDataExport(), { wrapper });
+    result.current.mutate('senders-csv');
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect((clickSpy.mock.contexts[0] as HTMLAnchorElement).download).toBe(
+      'declutrmail-export.csv',
+    );
+  });
+
+  it('does not infer rate limits from arbitrary error messages or object fields', () => {
+    expect(dataExportFailure(new Error('429 rate limit'))).toBe('unavailable');
+    expect(dataExportFailure({ status: 429 })).toBe('unavailable');
+    expect(dataExportFailure(new ApiError(401, null, 'Unauthorized'))).toBe('unauthenticated');
   });
 });

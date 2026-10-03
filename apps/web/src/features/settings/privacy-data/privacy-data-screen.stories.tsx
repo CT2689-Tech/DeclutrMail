@@ -6,7 +6,7 @@
 //   • TwoMailboxes   — both accounts indexed, Pro undo window
 //   • TierUnknown    — billing unavailable; generic undo copy
 //   • Exporting      — JSON download in flight
-//   • ExportFailed   — export error alert (rate-limit / stream failure)
+//   • ExportFailed   — export error alert (unknown / stream failure)
 //   • NoMailboxes    — zero indexed mailboxes (empty state)
 
 import type { ComponentProps } from 'react';
@@ -48,7 +48,7 @@ const noop = () => undefined;
 
 const MAILBOX_A = {
   id: '11111111-1111-4111-8111-111111111111',
-  email: 'chintan.a.thakkar@gmail.com',
+  email: 'primary@example.invalid',
   status: 'active' as const,
   connectedAt: '2026-05-01T00:00:00.000Z',
   readiness: 'ready' as const,
@@ -56,7 +56,7 @@ const MAILBOX_A = {
 
 const MAILBOX_B = {
   id: '22222222-2222-4222-8222-222222222222',
-  email: 'chintan.a.thakkar.crypt@gmail.com',
+  email: 'secondary@example.invalid',
   status: 'active' as const,
   connectedAt: '2026-06-01T00:00:00.000Z',
   readiness: 'ready' as const,
@@ -88,4 +88,16 @@ export const ExportFailed: Story<typeof PrivacyDataView> = {
 
 export const NoMailboxes: Story<typeof PrivacyDataView> = {
   args: { ...baseArgs, mailboxes: [] },
+};
+
+export const ExportRateLimited: Story<typeof PrivacyDataView> = {
+  args: { ...baseArgs, exportFailed: true, exportFailure: 'rate_limited' },
+};
+
+export const ExportUnauthenticated: Story<typeof PrivacyDataView> = {
+  args: { ...baseArgs, exportFailed: true, exportFailure: 'unauthenticated' },
+};
+
+export const ExportPrepared: Story<typeof PrivacyDataView> = {
+  args: { ...baseArgs, exportPreparedFormat: 'senders-csv' },
 };

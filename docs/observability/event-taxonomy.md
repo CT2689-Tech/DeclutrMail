@@ -725,18 +725,20 @@ many power users opt into the skip-sheet path, and from which surface.
 ### `data_export_requested`
 
 **When fired.** When a Privacy & Data export download attempt reaches a
-terminal client-side state — the blob saved (`success`) or the fetch /
-stream failed (`failed`). One event per attempt.
+terminal client-side state — the complete blob handed to the browser download
+mechanism (`success`) or the fetch / stream / handoff failed (`failed`). One event
+per attempt. `success` does not establish that a file was saved on disk.
 
 **Payload.**
 
-| Field     | Type                    | Notes                        |
-| --------- | ----------------------- | ---------------------------- |
-| `format`  | `'json' \| 'csv'`       | Which export artifact        |
-| `outcome` | `'success' \| 'failed'` | Terminal client-side outcome |
+| Field     | Type                                                  | Notes                        |
+| --------- | ----------------------------------------------------- | ---------------------------- |
+| `format`  | `'json' \| 'csv' \| 'senders-csv' \| 'decisions-csv'` | Which export artifact        |
+| `outcome` | `'success' \| 'failed'`                               | Terminal client-side outcome |
 
 **Retention / aggregation.** PostHog default. DPDP-export usage +
-failure-rate alarm (a spike in `failed` flags a broken export stream).
+failure-rate monitoring. Investigate increases in `failed`; rate limits, auth
+failures, network errors and stream failures all share this outcome.
 
 ### `support_request_submitted`
 

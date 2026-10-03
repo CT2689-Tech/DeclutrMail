@@ -33,7 +33,7 @@ import type { MeMailbox } from '@/features/auth/api/use-me';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { track } from '@/lib/posthog';
 import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
-import { useDataExport } from '../api/use-data-export';
+import { dataExportFailure, useDataExport, type DataExportFailure } from '../api/use-data-export';
 import { DrillRow, PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 
 const { color, font, text, motion, radius, shadow } = tokens;
@@ -71,6 +71,8 @@ export function PrivacyDataRoute() {
       undoDays={undoDays}
       exportPendingFormat={exporter.isPending ? (exporter.variables ?? null) : null}
       exportFailed={exporter.isError}
+      exportFailure={exporter.isError ? dataExportFailure(exporter.error) : null}
+      exportPreparedFormat={exporter.isSuccess ? (exporter.variables ?? null) : null}
       onExport={(format) => exporter.mutate(format)}
     />
   );
@@ -82,6 +84,8 @@ export function PrivacyDataView({
   undoDays,
   exportPendingFormat,
   exportFailed,
+  exportFailure,
+  exportPreparedFormat = null,
   onExport,
 }: {
   mailboxes: MeMailbox[];
@@ -89,6 +93,9 @@ export function PrivacyDataView({
   undoDays: number | null;
   exportPendingFormat: DataExportFormat | null;
   exportFailed: boolean;
+  exportFailure?: DataExportFailure | null;
+  /** Browser download handoff, not proof that the user saved the file. */
+  exportPreparedFormat?: DataExportFormat | null;
   onExport: (format: DataExportFormat) => void;
 }) {
   useEffect(() => {
@@ -240,6 +247,7 @@ export function PrivacyDataView({
               <Button
                 key={format}
                 tone="default"
+                style={{ minHeight: 44 }}
                 disabled={exportPendingFormat !== null}
                 onClick={() => onExport(format)}
               >
@@ -249,12 +257,36 @@ export function PrivacyDataView({
               </Button>
             ))}
           </div>
-          {exportFailed && (
+          {exportFailed && exportPendingFormat === null && (
             <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '10px 0 0' }}>
-              The export could not be prepared. Exports are limited to a few every five minutes —
-              wait, then try again.
+              The export could not be prepared.{' '}
+              {exportFailure === 'rate_limited'
+                ? 'Exports are limited to a few every five minutes — wait, then try again.'
+                : exportFailure === 'unauthenticated'
+                  ? 'Sign in again to export your data.'
+                  : 'Try again, or contact support from Help & glossary if this continues.'}
             </p>
           )}
+          <p
+            role="status"
+            aria-atomic="true"
+            style={{
+              ...bodyTextStyle,
+              margin:
+                exportPreparedFormat !== null && !exportFailed && exportPendingFormat === null
+                  ? '10px 0 0'
+                  : 0,
+            }}
+          >
+            {exportPreparedFormat !== null && !exportFailed && exportPendingFormat === null && (
+              <>
+                {exportPreparedFormat === 'json'
+                  ? 'Selected data (JSON)'
+                  : DATA_EXPORT_FORMAT_MANIFEST[exportPreparedFormat].buttonLabel}{' '}
+                prepared. Check your browser&apos;s downloads for the file.
+              </>
+            )}
+          </p>
         </div>
       </Section>
 

@@ -206,6 +206,62 @@ describe('PrivacyDataView', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/export could not be prepared/i);
   });
 
+  it('does not diagnose an unknown export failure as a rate limit', () => {
+    renderView({ exportFailed: true });
+    expect(screen.getByRole('alert')).toHaveTextContent(/try again/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/limited|five minutes/i);
+  });
+
+  it('explains the wait only for a confirmed rate-limit response', () => {
+    renderView({ exportFailed: true, exportFailure: 'rate_limited' });
+    expect(screen.getByRole('alert')).toHaveTextContent(/five minutes/i);
+  });
+
+  it('offers reauthentication for a terminal unauthorized export', () => {
+    renderView({ exportFailed: true, exportFailure: 'unauthenticated' });
+    expect(screen.getByRole('alert')).toHaveTextContent(/sign in again/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/five minutes/i);
+  });
+
+  it('announces the prepared dataset without claiming the file was saved', () => {
+    renderView({ exportPreparedFormat: 'senders-csv' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /senders csv.*prepared.*browser.*downloads/i,
+    );
+    expect(screen.getByRole('status')).not.toHaveTextContent(/saved|complete account/i);
+  });
+
+  it('updates an existing live region when preparation finishes', () => {
+    const props = {
+      mailboxes: TWO_MAILBOXES,
+      undoDays: 30,
+      exportFailed: false,
+      exportPendingFormat: null,
+      onExport: () => undefined,
+    };
+    const { rerender } = render(<PrivacyDataView {...props} />);
+    const liveRegion = screen.getByRole('status');
+    expect(liveRegion).toBeEmptyDOMElement();
+    expect(liveRegion).toHaveAttribute('aria-atomic', 'true');
+    rerender(<PrivacyDataView {...props} exportPreparedFormat="json" />);
+    expect(screen.getByRole('status')).toBe(liveRegion);
+    expect(liveRegion).toHaveTextContent(/selected data \(JSON\).*prepared/i);
+    rerender(<PrivacyDataView {...props} exportPreparedFormat="json" exportPendingFormat="csv" />);
+    expect(screen.getByRole('status')).toBe(liveRegion);
+    expect(liveRegion).toBeEmptyDOMElement();
+  });
+
+  it('hides a previous prepared result during a new pending or failed attempt', () => {
+    const { unmount } = renderView({
+      exportPreparedFormat: 'json',
+      exportPendingFormat: 'csv',
+    });
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    unmount();
+    renderView({ exportPreparedFormat: 'json', exportFailed: true });
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+  });
+
   it('links the live Privacy Policy and Terms pages (both are published)', () => {
     renderView();
     // Anchored: the Brandfetch line also links "Brandfetch's privacy policy".
