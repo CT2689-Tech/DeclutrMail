@@ -17,7 +17,9 @@ with newest/previous/older controls and one page at a time. Rows remain limited 
 Current offerable queue total and page rows share one read-only repeatable-read
 snapshot with identical tenant, protection and current-evidence predicates.
 PostgreSQL microsecond timestamp precision is preserved in continuation keys.
-Malformed cursors fail HTTP400 before SQL; parameter binding retains ISO strings.
+CodeQL identified query-parameter type confusion; non-string/oversized values now
+fail before decoding, with array/object regressions and real repeated-query HTTP400
+coverage. Malformed cursors fail HTTP400 before SQL; parameter binding retains ISO strings.
 
 The UI says how many records are on this page and how many were waiting at the last
 check. Rows show the existing match date in UTC. Counts are observations, not live
@@ -33,7 +35,7 @@ available during loading or failure; Older requires a ready continuation.
 
 ## Verification
 
-100 API tests passed against PGlite with full migrations: 61 microsecond-tied records
+102 API tests passed against PGlite with full migrations: 61 microsecond-tied records
 cover 50+11 without duplicates/loss, totals after dismissal, Protected exclusion,
 cross-mailbox isolation and controller validation. 96 combined Autopilot/Home tests
 passed, including next/error/retry/newest/account cache and empty-page recovery.

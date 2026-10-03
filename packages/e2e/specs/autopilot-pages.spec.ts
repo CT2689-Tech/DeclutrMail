@@ -76,6 +76,10 @@ test('review pages cover the backlog and recover when the older page is exhauste
   expect(first.meta.total).toBe(61);
   expect(first.meta.pagination.hasMore).toBe(true);
   expect(first.meta.pagination.nextCursor).toBeTruthy();
+  const token = encodeURIComponent(first.meta.pagination.nextCursor!);
+  expect(
+    (await api.getRaw(`/api/autopilot/pending-suggestions?cursor=${token}&cursor=${token}`)).status,
+  ).toBe(400);
   const older = await pending(first.meta.pagination.nextCursor!);
   expect(older.data).toHaveLength(11);
   expect(older.meta.total).toBe(61);

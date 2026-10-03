@@ -241,18 +241,23 @@ export class AutopilotController {
   @RateLimit('triage-load')
   async listPendingSuggestions(
     @CurrentMailbox() mailbox: { id: string },
-    @Query('cursor') rawCursor?: string,
+    @Query('cursor') rawCursor?: unknown,
   ): Promise<Envelope<AutopilotMatch[], AutopilotPendingMeta>> {
-    const cursor = rawCursor === undefined ? undefined : decodeCursor(rawCursor);
+    if (rawCursor === undefined) return this.reads.listPendingSuggestionsPage(mailbox.id);
+    // HTTP query parameters may be arrays/objects. Bound and narrow BEFORE decoding.
     if (
-      rawCursor !== undefined &&
-      (rawCursor.length > 256 ||
-        !/^[A-Za-z0-9_-]+$/.test(rawCursor) ||
-        !cursor ||
-        !isUuid(cursor.id) ||
-        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/.test(cursor.key) ||
-        !Number.isFinite(Date.parse(cursor.key)) ||
-        new Date(cursor.key).toISOString() !== cursor.key.replace(/(\.\d{3})\d{3}Z$/, '$1Z'))
+      typeof rawCursor !== 'string' ||
+      rawCursor.length > 256 ||
+      !/^[A-Za-z0-9_-]+$/.test(rawCursor)
+    )
+      throw new BadRequestException('Invalid pending suggestions cursor.');
+    const cursor = decodeCursor(rawCursor);
+    if (
+      !cursor ||
+      !isUuid(cursor.id) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/.test(cursor.key) ||
+      !Number.isFinite(Date.parse(cursor.key)) ||
+      new Date(cursor.key).toISOString() !== cursor.key.replace(/(\.\d{3})\d{3}Z$/, '$1Z')
     )
       throw new BadRequestException('Invalid pending suggestions cursor.');
     return this.reads.listPendingSuggestionsPage(mailbox.id, cursor ?? undefined);

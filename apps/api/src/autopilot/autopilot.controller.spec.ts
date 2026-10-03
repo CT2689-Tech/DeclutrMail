@@ -135,7 +135,7 @@ describe('Autopilot pending page contract', () => {
   it('preserves the data array and adds authoritative pagination metadata', async () => {
     const { controller, listPendingSuggestionsPage } = reader();
     expect(await controller.listPendingSuggestions(mailbox)).toEqual(page);
-    expect(listPendingSuggestionsPage).toHaveBeenCalledWith(mailbox.id, undefined);
+    expect(listPendingSuggestionsPage).toHaveBeenCalledWith(mailbox.id);
   });
   it('accepts a microsecond cursor without reducing its precision', async () => {
     const { controller, listPendingSuggestionsPage } = reader();
@@ -157,6 +157,16 @@ describe('Autopilot pending page contract', () => {
   ])('rejects invalid cursor before a database read (%s)', async (cursor) => {
     const { controller, listPendingSuggestionsPage } = reader();
     await expect(controller.listPendingSuggestions(mailbox, cursor)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(listPendingSuggestionsPage).not.toHaveBeenCalled();
+  });
+  it.each([
+    { name: 'array', value: ['tampered-array'] },
+    { name: 'object', value: { tampered: 'object' } },
+  ])('rejects a tampered query parameter $name before decoding or DB', async ({ value }) => {
+    const { controller, listPendingSuggestionsPage } = reader();
+    await expect(controller.listPendingSuggestions(mailbox, value)).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(listPendingSuggestionsPage).not.toHaveBeenCalled();
