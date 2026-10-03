@@ -18,13 +18,15 @@ The title and summary use the same existing inclusion source. Protected exclusio
 are not double counted when an already Protected row remains in the selection.
 
 Required preview loading says Checking inclusion; failure says Inclusion unavailable.
-Neither reuses stale cached inclusion counts. A narrowed single pure Unsubscribe,
+Neither reuses stale cached inclusion counts. Sibling Senders assertions now
+verify that quota narrowing changes current preview inclusion without rewriting
+the original selection count. A narrowed single pure Unsubscribe,
 which does not need a live message preview, shows its selection without an endless
 check. Existing preview, quota, protection override and confirm guards are unchanged.
 
 ## Verification and limits
 
-126 confirm-component tests pass, including changed protection, exclusion deduplication,
+256 confirm-component and Senders-screen sibling tests pass, including changed protection, exclusion deduplication,
 stale/loading/error and the exempt Unsubscribe case. A negative control against the old
 component failed the authoritative inclusion expectation. Full typecheck and lint pass
 (six existing lint warnings). Independent reviewer found no remaining source blocker.
