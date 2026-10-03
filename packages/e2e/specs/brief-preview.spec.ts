@@ -33,12 +33,18 @@ test('Brief separates yesterday from current-inbox preview and cancel never enqu
   const banner = page.getByTestId('cookie-consent-banner');
   await expect(banner).toBeVisible();
   await banner.getByRole('button', { name: 'Essential only', exact: true }).click();
-  await expect(
-    page.getByRole('checkbox', {
-      name: `Include ${BILLING_SEED.archiveSenderName} in the archive`,
-    }),
-  ).toBeChecked();
-  await expect(page.getByText('1 message yesterday', { exact: true })).toBeVisible();
+  const senderSelection = page.getByRole('checkbox', {
+    name: `Include ${BILLING_SEED.archiveSenderName} in the archive`,
+    exact: true,
+  });
+  await expect(senderSelection).toBeChecked();
+  // Assert the frozen count on the selected sender's accessible Noise row.
+  const noiseRow = page
+    .getByRole('region', { name: /^Noise \(/ })
+    .getByRole('listitem')
+    .filter({ has: senderSelection });
+  await expect(noiseRow).toHaveCount(1);
+  await expect(noiseRow.getByText('1 message yesterday', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Archive 1 sender', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
