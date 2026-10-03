@@ -153,7 +153,10 @@ export function makeQueryClient(): QueryClient {
         // mailbox can't be resolved, which retrying only amplifies (the
         // 409 storm, logs 2026-05-27). Transient 5xx/network still back
         // off 3×. Tests override this with `retry: false`.
-        retry: retryTransientOnly,
+        // A streamed server result can reject during Client Component SSR.
+        // Browser readers have no forwarded cookie in Node, so recovery
+        // belongs to the browser, where the existing retry policy applies.
+        retry: typeof window === 'undefined' ? false : retryTransientOnly,
       },
     },
   });
