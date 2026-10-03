@@ -44,6 +44,7 @@ test.afterAll(async () => {
 
 test('Mark resolved dismisses the row, audits it, and survives reload', async ({ page }) => {
   testStart = new Date();
+  const evaluatedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   // ---- Seed: one awaiting followup in the 3-7d bucket.
   const workspaceRows = await sql<{ workspace_id: string }[]>`
@@ -54,16 +55,32 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   await sql`
     INSERT INTO followup_tracker
       (workspace_id, mailbox_account_id, provider_thread_id, recipient_email,
-       recipient_display_name, subject, sent_at, status)
+       recipient_display_name, subject, sent_at, status, last_check_at)
     VALUES
       (${workspaceId!}, ${mailboxId}, ${THREAD_ID}, ${'e2e-dismiss@example.com'},
-       ${RECIPIENT_NAME}, ${'E2E dismissal spec thread'}, ${new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()}, 'awaiting')
+       ${RECIPIENT_NAME}, ${'E2E dismissal spec thread'}, ${new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()}, 'awaiting', ${evaluatedAt})
   `;
   seeded = true;
+
+  // ---- Real HTTP response exposes the existing persisted evaluation time.
+  const response = await api.getRaw('/api/followups');
+  expect(response.status).toBe(200);
+  const body = response.body as {
+    data: { providerThreadId: string; lastEvaluatedAt: string | null }[];
+  };
+  expect(body.data.find((row) => row.providerThreadId === THREAD_ID)?.lastEvaluatedAt).toBe(
+    evaluatedAt,
+  );
 
   // ---- The seeded row renders in the awaiting list.
   await page.goto('/followups');
   await expect(page.getByText(RECIPIENT_NAME)).toBeVisible({ timeout: 30_000 });
+  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+  if (await essential.isVisible()) await essential.click();
+  const row = page.getByRole('listitem').filter({ hasText: RECIPIENT_NAME });
+  await row.getByText('Evaluation', { exact: true }).click();
+  await expect(row.locator(`time[datetime="${evaluatedAt}"]`)).toBeVisible();
+  await expect(row).toContainText('from indexed mail. New replies may still be syncing.');
 
   // ---- Dismiss via the D88 affordance. The label says WHERE it is
   // resolved (D88 / D245) — a dismissal here is not an observed reply.
