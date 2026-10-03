@@ -75,6 +75,8 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   // ---- The seeded row renders in the awaiting list.
   await page.goto('/followups');
   await expect(page.getByText(RECIPIENT_NAME)).toBeVisible({ timeout: 30_000 });
+  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+  if (await essential.isVisible()) await essential.click();
   const row = page.getByRole('listitem').filter({ hasText: RECIPIENT_NAME });
   await row.getByText('Evaluation', { exact: true }).click();
   await expect(row.locator(`time[datetime="${evaluatedAt}"]`)).toBeVisible();
