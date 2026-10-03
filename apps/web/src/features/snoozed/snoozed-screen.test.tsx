@@ -8,12 +8,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { installFetchStub, resetFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
+import { AuthProvider } from '@/features/auth/auth-provider';
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 
 import { formatLastAttempt, SnoozedScreen } from './snoozed-screen';
 
@@ -212,6 +214,198 @@ describe('SnoozedScreen — wake now flow', () => {
     await user.click(confirmButtons[confirmButtons.length - 1]!);
     await waitFor(() => expect(wakePosted).toBe(1));
     expect(await screen.findByText('Bringing back…')).toBeInTheDocument();
+  });
+
+  it('keeps stale failure pending, then restores controls after a newer failed attempt', async () => {
+    const previousAttempt = '2026-10-01T10:00:00.000Z';
+    let listUnavailable = false;
+    let row: SnoozedSenderRow = {
+      ...ROW_TODAY,
+      returnStatus: 'retrying',
+      lastReturnAttemptAt: previousAttempt,
+      returnFailureKind: 'temporary',
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/snoozed',
+        respond: () =>
+          listUnavailable
+            ? new Response('{}', { status: 500 })
+            : new Response(JSON.stringify({ data: [row] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+      },
+      {
+        method: 'POST',
+        path: `/api/snoozed/${ROW_TODAY.senderId}/wake`,
+        respond: () =>
+          new Response(
+            JSON.stringify({ data: { senderId: ROW_TODAY.senderId, status: 'queued' } }),
+            { status: 201, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const user = userEvent.setup();
+    render(
+      <QueryWrapper client={client}>
+        <SnoozedScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Return retrying');
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    const confirms = screen.getAllByRole('button', { name: 'Bring back now' });
+    await user.click(confirms[confirms.length - 1]!);
+    await screen.findByText('Bringing back…');
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeDisabled();
+    row = { ...row, lastReturnAttemptAt: '2026-09-30T10:00:00.000Z' };
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeDisabled();
+    listUnavailable = true;
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    await screen.findByText(/couldn't load Later/i);
+    listUnavailable = false;
+    row = { ...row, lastReturnAttemptAt: previousAttempt };
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    await screen.findByText('Bringing back…');
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeDisabled();
+    row = { ...row, lastReturnAttemptAt: '2026-10-02T10:00:00.000Z' };
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    await waitFor(() => expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument());
+    expect(screen.getByText('Return retrying')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    expect(screen.getByText(/12 emails return to your inbox/i)).toBeInTheDocument();
+  });
+
+  it('hands an unconfirmed return back to normal polling with usable controls', async () => {
+    installFetchStub([
+      listHandler([ROW_TODAY]),
+      {
+        method: 'POST',
+        path: `/api/snoozed/${ROW_TODAY.senderId}/wake`,
+        respond: () =>
+          new Response(
+            JSON.stringify({ data: { senderId: ROW_TODAY.senderId, status: 'queued' } }),
+            { status: 201, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const originalTimeout = globalThis.setTimeout;
+    let expire: (() => void) | undefined;
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((callback, delay, ...args) => {
+      if (delay && delay > 119_000 && delay <= 120_000) expire = callback as () => void;
+      return originalTimeout(callback, delay, ...args);
+    });
+    try {
+      const user = userEvent.setup();
+      renderScreen();
+      await screen.findByText('Daily Digest');
+      await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+      const confirms = screen.getAllByRole('button', { name: 'Bring back now' });
+      await user.click(confirms[confirms.length - 1]!);
+      await screen.findByText('Bringing back…');
+      expect(expire).toBeDefined();
+      const afterDeadline = Date.now() + 120_001;
+      vi.spyOn(Date, 'now').mockReturnValue(afterDeadline);
+      act(() => expire!());
+      expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent(/confirmation is taking longer/i);
+      expect(screen.getByRole('button', { name: 'Bring back now' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it('releases the pending request when another session changes the return timer', async () => {
+    let row = ROW_TODAY;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/snoozed',
+        respond: () =>
+          new Response(JSON.stringify({ data: [row] }), {
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      {
+        method: 'POST',
+        path: `/api/snoozed/${ROW_TODAY.senderId}/wake`,
+        respond: () =>
+          new Response(
+            JSON.stringify({ data: { senderId: ROW_TODAY.senderId, status: 'queued' } }),
+            { status: 201, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const user = userEvent.setup();
+    render(
+      <QueryWrapper client={client}>
+        <SnoozedScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Daily Digest');
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    await user.click(screen.getAllByRole('button', { name: 'Bring back now' }).at(-1)!);
+    await screen.findByText('Bringing back…');
+    row = { ...ROW_TODAY, snoozedUntil: IN_30_DAYS };
+    await client.invalidateQueries({ queryKey: ['snoozed'] });
+    await waitFor(() => expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
+    expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
+  });
+
+  it('drops the old mailbox pending request when the active account changes', async () => {
+    const me = {
+      user: { id: 'u1', email: 'u@synthetic.test', workspaceId: 'w1', timezone: 'UTC' },
+      mailboxes: [],
+      activeMailboxId: 'mailbox-a',
+      tier: 'pro',
+      cleanupRemaining: 42,
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/auth/me',
+        respond: () =>
+          new Response(JSON.stringify({ data: me }), {
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      listHandler([ROW_TODAY]),
+      {
+        method: 'POST',
+        path: `/api/snoozed/${ROW_TODAY.senderId}/wake`,
+        respond: () =>
+          new Response(
+            JSON.stringify({ data: { senderId: ROW_TODAY.senderId, status: 'queued' } }),
+            { status: 201, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const user = userEvent.setup();
+    render(
+      <QueryWrapper client={client}>
+        <AuthProvider>
+          <SnoozedScreen />
+        </AuthProvider>
+      </QueryWrapper>,
+    );
+    await screen.findByText('Daily Digest');
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    await user.click(screen.getAllByRole('button', { name: 'Bring back now' }).at(-1)!);
+    await screen.findByText('Bringing back…');
+    act(() => client.setQueryData(ME_QUERY_KEY, { ...me, activeMailboxId: 'mailbox-b' }));
+    await waitFor(() => expect(screen.queryByText('Bringing back…')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Bring back now' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Change return time' })).toBeEnabled();
   });
 
   it('surfaces a queue-unavailable failure inline', async () => {
