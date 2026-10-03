@@ -38,7 +38,9 @@ for (const viewport of [
   { width: 375, height: 812 },
   { width: 320, height: 568 },
 ]) {
-  test(`expanded reviews keep actions visible at ${viewport.width}px`, async ({ page }) => {
+  test(`expanded reviews keep actions visible at ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
     const server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(
@@ -77,11 +79,32 @@ for (const viewport of [
       const headingBox = (await heading.boundingBox())!;
       const bodyBox = (await body.boundingBox())!;
       expect(headingBox.y).toBeCloseTo(bodyBox.y, 0);
-      const firstPaint = await heading.screenshot();
+      // Use a fixed interior clip: sticky borders can rasterize differently
+      // as fractional scroll offsets change, even with an opaque heading.
+      const clip = {
+        x: Math.ceil(headingBox.x) + 2,
+        y: Math.ceil(headingBox.y) + 2,
+        width: Math.floor(headingBox.width) - 4,
+        height: Math.floor(headingBox.height) - 4,
+      };
+      const firstPaint = await page.screenshot({ clip });
       await body.evaluate((element) => {
         element.scrollTop += 31;
       });
-      expect(await heading.screenshot()).toEqual(firstPaint);
+      const secondPaint = await page.screenshot({ clip });
+      if (!secondPaint.equals(firstPaint)) {
+        await testInfo.attach('heading-before-scroll', {
+          body: firstPaint,
+          contentType: 'image/png',
+        });
+        await testInfo.attach('heading-after-scroll', {
+          body: secondPaint,
+          contentType: 'image/png',
+        });
+      }
+      expect(secondPaint.equals(firstPaint), 'Sender rows must not paint through the heading').toBe(
+        true,
+      );
       await expect(primary).toBeInViewport({ ratio: 1 });
       await body.evaluate((element) => {
         element.scrollTop = element.scrollHeight;

@@ -79,6 +79,15 @@ are introduced.
   regression. The overlap regression failed against the earlier layout before
   the fix and passes afterward.
 - Error filter/registry: 16 tests pass, including expiry-code propagation.
+- CI exposed missing exhaustive capability and Gmail-inventory test entries.
+  The expectations now include the read-only sender-page route and registered
+  five-minute snapshot; the store test also checks its written key against the
+  inventory pattern. All 36 affected API tests pass.
+- Whole-heading PNG equality caught fractional-scale perimeter rasterization.
+  The regression now compares an identical fixed interior clip with exact pixel
+  equality, retaining scrollport geometry and action visibility checks. This
+  passes at scales 1, 1.25 and 2; the translucent-background red control fails
+  at all three tested widths. The independent reviewer approved this test delta.
 - Authenticated synthetic browser/API smoke passes: 53 eligible senders across
   three pages, Protected exclusion, separate history/Inbox counts, real cache-read
   failure (503) and Retry, Redis expiry (410) and Refresh, then cancellation with

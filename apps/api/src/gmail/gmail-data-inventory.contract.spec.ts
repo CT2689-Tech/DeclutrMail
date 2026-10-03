@@ -48,6 +48,8 @@ describe('D245 Gmail data inventory contract', () => {
     expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY).not.toHaveLength(0);
     expect(GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.map((item) => item.id)).toEqual([
       'gmail-account-identity',
+      // Pseudonymous preview facts expire within five minutes, including after purge.
+      'autopilot-preview-snapshot',
       // Domain-keyed logo cache: shared across users, no mailbox link,
       // so a mailbox purge has nothing of the user's to remove from it.
       'sender-logo-lookup',
@@ -130,6 +132,7 @@ describe('D245 Gmail data inventory — Redis keys', () => {
 
     expect(redisRefs).toEqual([
       `redis:${scanProgressKey('{mailboxAccountId}')}`,
+      'redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}',
       `redis:bull:${INITIAL_SYNC_QUEUE}:{mailboxAccountId}`,
       `redis:bull:${INITIAL_SYNC_QUEUE}:events`,
     ]);

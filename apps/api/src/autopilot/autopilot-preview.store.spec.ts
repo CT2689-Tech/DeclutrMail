@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import type { Redis } from 'ioredis';
+import { GMAIL_DATA_INVENTORY } from '@declutrmail/shared/contracts';
 import {
   MemoryAutopilotPreviewStore,
   RedisAutopilotPreviewStore,
@@ -61,6 +62,16 @@ it('shares a paged preview across API instances through Redis', async () => {
     inboxCount: index,
   }));
   const first = await writer.create('mailbox-a', 'rule-a', targets);
+  const registeredKey = GMAIL_DATA_INVENTORY.find(
+    (item) => item.id === 'autopilot-preview-snapshot',
+  )!.storageRefs[0]!;
+  expect([...hashes.keys()]).toEqual([
+    registeredKey
+      .replace('redis:', '')
+      .replace('{mailboxAccountId}', 'mailbox-a')
+      .replace('{ruleId}', 'rule-a')
+      .replace('{previewId}', first.previewId),
+  ]);
   const last = await reader.read('mailbox-a', 'rule-a', first.previewId, 3);
   expect(last).toMatchObject({ page: 3, total: 53, targets: targets.slice(50) });
   expect(await reader.read('mailbox-b', 'rule-a', first.previewId, 3)).toBeNull();
