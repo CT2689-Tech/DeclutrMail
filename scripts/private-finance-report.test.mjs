@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -7,6 +9,8 @@ import {
   assertPrivateBucket,
   importInvoiceHistory,
   reportHtml,
+  runPrivateFinanceReport,
+  financeFailureMessage,
 } from './private-finance-report.mjs';
 const e = {
   vendor: 'Test',
@@ -124,4 +128,133 @@ test('source links are escaped HTTPS and unverified accounts remain readable', (
   assert.match(html, /Totals awaiting document\/account reconciliation/);
   assert.ok(!html.includes('**Coverage'));
   assert.ok(!reportHtml('| [Original document](javascript:alert(1)) |').includes('<a '));
+});
+
+function reporterFixture(
+  t,
+  { fail, publicBucket = false, invalidLedger = false, retry, cleanup } = {},
+) {
+  const dir = mkdtempSync(join(tmpdir(), 'finance-stage-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const observed = { ...snapshot, observedAt: new Date().toISOString() };
+  const input = join(dir, 'snapshot.json');
+  writeFileSync(input, JSON.stringify(observed));
+  const calls = [];
+  const gc = (...args) => {
+    calls.push(args);
+    if (fail?.(args)) {
+      const error = new Error('SECRET: private invoice and bucket path');
+      error.stderr = Buffer.from('SECRET: financial contents');
+      throw error;
+    }
+    if (args.includes('describe'))
+      return JSON.stringify({
+        public_access_prevention: 'enforced',
+        uniform_bucket_level_access: true,
+      });
+    if (args.includes('get-iam-policy'))
+      return JSON.stringify({ bindings: publicBucket ? [{ members: ['allUsers'] }] : [] });
+    const destination = args.at(-1);
+    if (args[1] === 'cat') {
+      if (destination.endsWith('invoices.json'))
+        return JSON.stringify(invalidLedger ? { version: 99 } : ledger([]));
+      if (destination.endsWith('subscriptions.json')) return JSON.stringify(registry);
+      return retry === 'conflict' ? 'different observation' : JSON.stringify(observed);
+    }
+    if (retry && args.includes('--if-generation-match=0')) throw new Error('SECRET: conflict');
+    return '';
+  };
+  return {
+    calls,
+    run: () =>
+      runPrivateFinanceReport({
+        env: { PRIVATE_FINANCE_BUCKET: 'synthetic-finance-test', INFRA_SNAPSHOT_PATH: input },
+        gc,
+        cleanup,
+      }),
+  };
+}
+for (const [name, fail] of [
+  ['bucket_metadata_read', (args) => args.includes('describe')],
+  ['bucket_iam_read', (args) => args.includes('get-iam-policy')],
+  ['invoices_read', (args) => args.at(-1).endsWith('invoices.json')],
+  ['subscriptions_read', (args) => args.at(-1).endsWith('subscriptions.json')],
+  ['latest_markdown_upload', (args) => args.at(-1).endsWith('/reports/latest.md')],
+  ['latest_html_upload', (args) => args.at(-1).endsWith('/reports/latest.html')],
+  [
+    'dated_markdown_upload',
+    (args) => args.at(-1).includes('/reports/') && !args.at(-1).includes('/latest.'),
+  ],
+]) {
+  test(`failed ${name} identifies only its safe stage`, (t) => {
+    const fixture = reporterFixture(t, { fail });
+    assert.throws(fixture.run, (error) => {
+      assert.match(financeFailureMessage(error), new RegExp(`stage=${name};`));
+      assert.doesNotMatch(financeFailureMessage(error), /SECRET|synthetic-finance-test/);
+      assert.equal(error.cause, undefined);
+      assert.equal(error.stderr, undefined);
+      return true;
+    });
+    for (const args of fixture.calls.filter((args) => args[1] === 'cp'))
+      assert.equal(existsSync(args.at(-2)), false, 'temporary report removed after failure');
+  });
+}
+test('privacy and schema failures stop before writes and retain safe labels', (t) => {
+  for (const [options, name] of [
+    [{ publicBucket: true }, 'bucket_privacy_validation'],
+    [{ invalidLedger: true }, 'report_validation'],
+  ]) {
+    const fixture = reporterFixture(t, options);
+    assert.throws(fixture.run, (error) => {
+      assert.match(financeFailureMessage(error), new RegExp(`stage=${name};`));
+      return true;
+    });
+    assert.equal(
+      fixture.calls.some((args) => args[1] === 'cp'),
+      false,
+    );
+  }
+});
+test('identical observation retry still publishes reports; conflicting retry cannot', (t) => {
+  const identical = reporterFixture(t, { retry: 'identical' });
+  identical.run();
+  assert.equal(identical.calls.filter((args) => args[1] === 'cp').length, 4);
+  const conflict = reporterFixture(t, { retry: 'conflict' });
+  assert.throws(conflict.run, (error) => {
+    assert.match(financeFailureMessage(error), /stage=observation_retry_validation;/);
+    return true;
+  });
+  assert.equal(conflict.calls.filter((args) => args[1] === 'cp').length, 1);
+});
+test('failed observation retry read and unknown errors cannot leak command output', (t) => {
+  const fixture = reporterFixture(t, {
+    retry: 'identical',
+    fail: (args) => args[1] === 'cat' && args.at(-1).includes('/observations/'),
+  });
+  assert.throws(fixture.run, (error) => {
+    assert.match(financeFailureMessage(error), /stage=observation_retry_read;/);
+    return true;
+  });
+  assert.match(financeFailureMessage(new Error('SECRET')), /stage=unknown;/);
+  assert.doesNotMatch(financeFailureMessage({ stage: 'SECRET' }), /SECRET/);
+});
+
+test('cleanup failure has a safe stage and cannot mask an upload failure', (t) => {
+  const cleanup = (dir) => {
+    rmSync(dir, { recursive: true, force: true });
+    throw new Error('SECRET: temporary file path');
+  };
+  const success = reporterFixture(t, { cleanup });
+  assert.throws(success.run, (error) => {
+    assert.match(financeFailureMessage(error), /stage=temporary_cleanup;/);
+    return true;
+  });
+  const failed = reporterFixture(t, {
+    cleanup,
+    fail: (args) => args.at(-1).endsWith('/reports/latest.md'),
+  });
+  assert.throws(failed.run, (error) => {
+    assert.match(financeFailureMessage(error), /stage=latest_markdown_upload;/);
+    return true;
+  });
 });
