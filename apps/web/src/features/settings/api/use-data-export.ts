@@ -9,7 +9,8 @@
  * isError per attempt.
  *
  * Observability: fires `data_export_requested` with the terminal
- * outcome — success after the blob saves, failed on any error
+ * outcome — success after the complete blob is handed to the browser,
+ * not confirmation of a saved file; failed on any error
  * (including 429 from the export rate limit).
  */
 
@@ -17,6 +18,16 @@ import { useMutation } from '@tanstack/react-query';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { track } from '@/lib/posthog';
+import { ApiError } from '@/lib/api/client';
+
+export type DataExportFailure = 'rate_limited' | 'unauthenticated' | 'unavailable';
+
+/** Only an HTTP response can establish a rate limit or auth failure. */
+export function dataExportFailure(error: unknown): DataExportFailure {
+  if (error instanceof ApiError && error.status === 429) return 'rate_limited';
+  if (error instanceof ApiError && error.status === 401) return 'unauthenticated';
+  return 'unavailable';
+}
 
 export function useDataExport() {
   return useMutation({

@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
 
+import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 
 import { expectNoBlockingAxeViolations, expectNoViewportOverflow } from '../helpers/a11y';
@@ -165,4 +166,74 @@ test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
+});
+
+// Intercepted export bytes only: no real mailbox data or account/export API write.
+test('Privacy export distinguishes failures, announces preparation and permits a retry', async ({
+  page,
+}) => {
+  await page.goto('/settings/privacy');
+  const section = page.locator('#privacy-export-my-data');
+  const alert = section.getByRole('alert');
+  const status = section.getByRole('status');
+  const pattern = '**/api/account/export?*';
+  await page.route(pattern, (route) => route.fulfill({ status: 500, body: '' }));
+  await section.getByRole('button', { name: 'Download selected data', exact: true }).press('Enter');
+  await expect(alert).toContainText('Try again');
+  await expect(alert).not.toContainText('five minutes');
+  await expect(status).toBeEmpty();
+
+  await page.unroute(pattern);
+  await page.route(pattern, (route) => route.fulfill({ status: 429, body: '' }));
+  await section.getByRole('button', { name: 'Messages CSV', exact: true }).click();
+  await expect(alert).toContainText('five minutes');
+
+  await page.unroute(pattern);
+  await page.route(pattern, (route) => route.abort('failed'));
+  await section.getByRole('button', { name: 'Decisions CSV', exact: true }).click();
+  await expect(alert).toContainText('Try again');
+  await expect(alert).not.toContainText('five minutes');
+
+  await page.unroute(pattern);
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const contents = 'sender,count\nexample.invalid,1\n';
+  await page.route(pattern, async (route) => {
+    await ready;
+    await route.fulfill({
+      status: 200,
+      headers: {
+        'content-type': 'text/csv',
+        'content-disposition': 'attachment; filename="synthetic-senders.csv"',
+      },
+      body: contents,
+    });
+  });
+  const downloadPromise = page.waitForEvent('download');
+  await section.getByRole('button', { name: 'Senders CSV', exact: true }).press('Enter');
+  for (const button of await section.getByRole('button').all()) await expect(button).toBeDisabled();
+  await expect(alert).toHaveCount(0);
+  await expect(status).toBeEmpty();
+  await expectNoViewportOverflow(page);
+  release();
+  const download = await downloadPromise;
+  // Cross-origin Content-Disposition is not exposed by the API.
+  expect(download.suggestedFilename()).toMatch(/^declutrmail-senders-\d{4}-\d{2}-\d{2}\.csv$/);
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  expect(await readFile(path!, 'utf8')).toBe(contents);
+  await expect(status).toHaveText(
+    "Senders CSV prepared. Check your browser's downloads for the file.",
+  );
+  for (const button of await section.getByRole('button').all()) await expect(button).toBeEnabled();
+  await expectNoBlockingAxeViolations(page);
+  await expectNoViewportOverflow(page);
+
+  await page.reload();
+  await expect(
+    page.getByRole('button', { name: 'Download selected data', exact: true }),
+  ).toBeVisible();
+  await expect(status).toBeEmpty(); // A past handoff is not a durable saved-file receipt.
 });

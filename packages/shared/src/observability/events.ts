@@ -669,9 +669,9 @@ export interface EventPayloads {
     hour: number;
   };
   data_export_requested: {
-    /** Which export artifact was downloaded. */
+    /** Which export artifact was requested. */
     format: 'json' | 'csv' | 'senders-csv' | 'decisions-csv';
-    /** Terminal client-side outcome of the download attempt. */
+    /** Success means complete blob handed to the browser, not proof of a saved file. */
     outcome: 'success' | 'failed';
   };
 }
