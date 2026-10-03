@@ -1,5 +1,3 @@
-'use client';
-
 import type { CSSProperties } from 'react';
 import { color, font, radius, shadow, text } from '../tokens/tokens';
 import {
