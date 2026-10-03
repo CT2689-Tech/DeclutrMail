@@ -89,7 +89,7 @@ test('runtime metric labels remain bounded and chart definitions reference the s
   const names = new Set(RUNTIME_LOG_METRICS.map((m) => m.name));
   for (const w of dashboard('test').gridLayout.widgets) {
     const filter = w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter?.filter;
-    const metric = filter?.match(/logging.googleapis.com\/user\/(ops_[a-z0-9_]+)/)?.[1];
+    const metric = filter?.match(/logging\.googleapis\.com\/user\/(ops_[a-z0-9_]+)/)?.[1];
     if (metric) assert.ok(names.has(metric), `${metric} lacks a provisioned definition`);
   }
 });
@@ -161,7 +161,7 @@ test('action panels preserve snapshot means rather than estimating counts from h
   assert.equal(charts.length, 8);
   for (const w of charts) {
     const series = w.xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter;
-    assert.match(series.filter, /logging.googleapis.com\/user\/ops_action_/);
+    assert.match(series.filter, /logging\.googleapis\.com\/user\/ops_action_/);
     assert.equal(series.aggregation.perSeriesAligner, 'ALIGN_MEAN');
     assert.equal(series.aggregation.crossSeriesReducer, 'REDUCE_MAX');
     assert.equal(series.aggregation.alignmentPeriod, '300s');
