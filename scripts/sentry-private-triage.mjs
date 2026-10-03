@@ -25,11 +25,15 @@ const timestamp = (value) =>
     ? new Date(value).toISOString()
     : null;
 const list = (value) => (Array.isArray(value) ? value : []);
+// Existing query tags, not query keys: never accept mailbox IDs, filter text
+// or an arbitrary token. Extend only for source-verified diagnostic scopes.
+const QUERY_REASON_ALLOWLIST = new Set(['undo', 'snoozed']);
 function sourceFile(value) {
   if (typeof value !== 'string') return null;
   const clean = value
     .split(/[?#]/)[0]
     .replace(/^https?:\/\/[^/]+/, '')
+    .replace(/^webpack:\/\/(?:_N_E\/)?(?:\.\/)?/, '')
     .replace(/^webpack-internal:\/\//, '')
     .replace(/^app:\/\/\//, '/');
   return /^\/?(?:[A-Za-z0-9._-]+\/|\([A-Za-z0-9_-]+\)\/|\[(?:\.\.\.)?[A-Za-z0-9_-]+\]\/|\[\[\.\.\.[A-Za-z0-9_-]+\]\]\/)*[A-Za-z0-9._-]+$/.test(
@@ -69,6 +73,25 @@ export function eventSummary(event) {
     .slice(0, 5)
     .map((exception) => ({
       type: identifier(exception?.type) ?? 'UnknownException',
+      stackFrameCount: Array.isArray(exception?.stacktrace?.frames)
+        ? exception.stacktrace.frames.length
+        : null,
+      inAppFrameCount: Array.isArray(exception?.stacktrace?.frames)
+        ? exception.stacktrace.frames.filter(
+            (frame) => frame?.inApp === true || frame?.in_app === true,
+          ).length
+        : null,
+      mechanism: {
+        type: [
+          'generic',
+          'auto.browser.global_handlers.onerror',
+          'auto.browser.global_handlers.onunhandledrejection',
+        ].includes(exception?.mechanism?.type)
+          ? exception.mechanism.type
+          : 'unknown',
+        handled:
+          typeof exception?.mechanism?.handled === 'boolean' ? exception.mechanism.handled : null,
+      },
       frames: list(exception?.stacktrace?.frames)
         .filter((frame) => frame?.inApp === true || frame?.in_app === true)
         .slice(-20)
@@ -84,8 +107,61 @@ export function eventSummary(event) {
         })),
     }));
   const tags = {};
-  for (const { key, value } of list(event?.tags)) {
+  const eventTags = list(event?.tags).filter(
+    (tag) => tag !== null && typeof tag === 'object' && !Array.isArray(tag),
+  );
+  // Conflicting duplicates are ambiguous regardless of order, including
+  // conflicts with a value that the allowlist would otherwise discard.
+  const uniqueValue = (key) => {
+    const values = new Set(eventTags.filter((tag) => tag.key === key).map((tag) => tag.value));
+    return values.size === 1 ? values.values().next().value : undefined;
+  };
+  const surface = uniqueValue('surface');
+  const reason = uniqueValue('reason');
+  for (const { key, value } of eventTags) {
     if ((key === 'environment' || key === 'release') && identifier(value)) tags[key] = value;
+    if (
+      key === 'reason' &&
+      value === reason &&
+      typeof value === 'string' &&
+      (/^react-error-[0-9]{1,4}$/.test(value) ||
+        (surface === 'query' && QUERY_REASON_ALLOWLIST.has(value)))
+    )
+      tags.reason = value;
+    if (
+      key === 'surface' &&
+      value === surface &&
+      [
+        'landing',
+        'home',
+        'sender-detail',
+        'activity',
+        'screener',
+        'cookies',
+        'sign-in',
+        'pricing',
+        'help',
+        'senders',
+        'triage',
+        'brief',
+        'autopilot',
+        'quiet',
+        'snoozed',
+        'followups',
+        'onboarding',
+        'billing',
+        'settings',
+        'query',
+      ].includes(value)
+    )
+      tags.surface = value;
+    if (['response_status', 'upstream_status'].includes(key) && /^[1-5][0-9]{2}$/.test(value))
+      tags[key] = value;
+    if (
+      key === 'method' &&
+      ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'].includes(value)
+    )
+      tags.method = value;
     if (
       key === 'worker' &&
       typeof value === 'string' &&
@@ -103,6 +179,14 @@ export function eventSummary(event) {
     release: identifier(event?.release?.version ?? event?.release) ?? tags.release ?? null,
     environment: identifier(event?.environment) ?? tags.environment ?? null,
     timestamp: timestamp(event?.dateCreated ?? event?.datetime ?? event?.timestamp),
+    sdk: [
+      'sentry.javascript.nextjs',
+      'sentry.javascript.node',
+      'sentry.javascript.react',
+      'sentry.javascript.browser',
+    ].includes(event?.sdk?.name)
+      ? event.sdk.name
+      : 'unknown',
     exceptions,
     tags,
   };

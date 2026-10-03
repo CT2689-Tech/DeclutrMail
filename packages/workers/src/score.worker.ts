@@ -1912,9 +1912,9 @@ export const SCORE_JOB = 'score';
  * NOT every producer's real jobId: the Gmail tab recount producer
  * (`onSendersRecategorized`, `apps/api/src/worker.ts`) sets its own
  * `rescoreJobId(mailboxAccountId, sweepTick)`, independent of this
- * function, so for that trigger the logged label and the real jobId use
- * the same SHAPE but different values — `producedAtMs` (this label)
- * versus `sweepTick` (the real id). Every other live producer's real
+ * function. That producer uses a colon-free rescore namespace and a
+ * scheduled minute tick; this telemetry label uses `producedAtMs`.
+ * Every other live producer's real
  * jobId does match this function's output exactly.
  *
  * New ids use hyphens (BullMQ throws "Custom Id cannot contain :"). This

@@ -142,6 +142,79 @@ test('projection removes message content, identities, request, breadcrumbs and s
   assert.equal(issueSummary({ title: sensitive }).title, '[Issue title withheld]');
 });
 
+test('diagnostic structure explains absent in-app frames without exposing exception messages or arbitrary tags', () => {
+  const event = eventSummary({
+    sdk: { name: 'sentry.javascript.nextjs', version: 'private-version' },
+    tags: [
+      { key: 'reason', value: 'react-error-418' },
+      { key: 'surface', value: 'senders' },
+      { key: 'response_status', value: '500' },
+      { key: 'method', value: 'GET' },
+      { key: 'boundary', value: 'private-boundary' },
+    ],
+    entries: [
+      {
+        type: 'exception',
+        data: {
+          values: [
+            {
+              type: 'Error',
+              value: 'PRIVATE_MESSAGE',
+              mechanism: {
+                type: 'auto.browser.global_handlers.onerror',
+                handled: false,
+                data: 'PRIVATE_MESSAGE',
+              },
+              stacktrace: {
+                frames: [
+                  { inApp: false, filename: 'vendor.js' },
+                  { inApp: true, filename: 'webpack://_N_E/./src/app/send.tsx?private-query' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal(event.sdk, 'sentry.javascript.nextjs');
+  assert.deepEqual(event.tags, {
+    reason: 'react-error-418',
+    surface: 'senders',
+    response_status: '500',
+    method: 'GET',
+  });
+  assert.equal(event.exceptions[0].stackFrameCount, 2);
+  assert.equal(event.exceptions[0].inAppFrameCount, 1);
+  assert.deepEqual(event.exceptions[0].mechanism, {
+    type: 'auto.browser.global_handlers.onerror',
+    handled: false,
+  });
+  assert.equal(event.exceptions[0].frames[0].filename, 'src/app/send.tsx');
+  assert.ok(!JSON.stringify(event).includes('PRIVATE_MESSAGE'));
+  assert.ok(!JSON.stringify(event).includes('private'));
+  const unknown = eventSummary({
+    sdk: { name: 'PRIVATE_ID' },
+    tags: [{ key: 'reason', value: 'PRIVATE_ID' }],
+    entries: [
+      {
+        type: 'exception',
+        data: { values: [{ mechanism: { type: 'PRIVATE_ID', handled: 'false' } }] },
+      },
+    ],
+  });
+  assert.equal(unknown.sdk, 'unknown');
+  assert.equal(unknown.exceptions[0].stackFrameCount, null);
+  assert.equal(unknown.exceptions[0].inAppFrameCount, null);
+  const empty = eventSummary({
+    entries: [{ type: 'exception', data: { values: [{ stacktrace: { frames: [] } }] } }],
+  });
+  assert.equal(empty.exceptions[0].stackFrameCount, 0);
+  assert.equal(empty.exceptions[0].inAppFrameCount, 0);
+  assert.deepEqual(unknown.tags, {});
+  assert.deepEqual(unknown.exceptions[0].mechanism, { type: 'unknown', handled: null });
+});
+
 test('collector fixes API origin, GET and redirects; caps issue/event reads', async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
@@ -214,4 +287,104 @@ test('canonical app source paths survive private triage without mailbox path dat
   assert.equal(out.exceptions[0].frames[2].filename, null);
   assert.equal(out.exceptions[0].frames[3].filename, null);
   assert.ok(!JSON.stringify(out).includes('private'));
+});
+
+test('capture-page labels remain finite through encrypted triage projection', () => {
+  for (const surface of [
+    'landing',
+    'home',
+    'sender-detail',
+    'activity',
+    'screener',
+    'cookies',
+    'sign-in',
+    'pricing',
+    'help',
+  ]) {
+    assert.equal(
+      eventSummary({ tags: [{ key: 'surface', value: surface }] }).tags.surface,
+      surface,
+    );
+  }
+  for (const surface of ['/senders/private-id', 'private@example.com', 'unknown-flow']) {
+    assert.equal(
+      eventSummary({ tags: [{ key: 'surface', value: surface }] }).tags.surface,
+      undefined,
+    );
+  }
+});
+
+test('query failure triage preserves known scopes without leaking mailbox keys or arbitrary reasons', () => {
+  for (const reason of ['undo', 'snoozed']) {
+    // Scope must survive either vendor tag order.
+    for (const tags of [
+      [
+        { key: 'reason', value: reason },
+        { key: 'surface', value: 'query' },
+      ],
+      [
+        { key: 'surface', value: 'query' },
+        { key: 'reason', value: reason },
+      ],
+    ])
+      assert.equal(eventSummary({ tags }).tags.reason, reason);
+  }
+  for (const reason of [
+    'PRIVATE_MAILBOX_CONTENT',
+    'private@example.invalid',
+    'private-id',
+    'undo/private-id',
+    'snoozed-private-id',
+    '["undo","in-flight","private-id"]',
+  ]) {
+    assert.equal(
+      eventSummary({
+        tags: [
+          { key: 'surface', value: 'query' },
+          { key: 'reason', value: reason },
+        ],
+      }).tags.reason,
+      undefined,
+    );
+  }
+  for (const surface of ['home', 'unknown', undefined]) {
+    assert.equal(
+      eventSummary({
+        tags: [
+          { key: 'surface', value: surface },
+          { key: 'reason', value: 'undo' },
+        ],
+      }).tags.reason,
+      undefined,
+    );
+  }
+});
+
+test('ambiguous query tags fail closed and malformed tag records do not abort triage', () => {
+  const surface = { key: 'surface', value: 'query' };
+  const reason = { key: 'reason', value: 'undo' };
+  for (const conflict of [
+    { key: 'surface', value: 'home' },
+    { key: 'surface', value: 'PRIVATE_VALUE' },
+  ]) {
+    for (const tags of [
+      [surface, conflict, reason],
+      [conflict, reason, surface],
+    ]) {
+      assert.equal(eventSummary({ tags }).tags.surface, undefined);
+      assert.equal(eventSummary({ tags }).tags.reason, undefined);
+    }
+  }
+  for (const conflict of [
+    { key: 'reason', value: 'snoozed' },
+    { key: 'reason', value: 'PRIVATE_VALUE' },
+  ]) {
+    assert.equal(eventSummary({ tags: [surface, reason, conflict] }).tags.reason, undefined);
+    assert.equal(eventSummary({ tags: [surface, conflict, reason] }).tags.reason, undefined);
+  }
+  assert.deepEqual(
+    eventSummary({ tags: [null, false, [], 'PRIVATE_VALUE', surface, reason, surface, reason] })
+      .tags,
+    { surface: 'query', reason: 'undo' },
+  );
 });

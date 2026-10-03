@@ -35,7 +35,41 @@ export const RECONNECT_EMAIL_OUTCOMES = [
   'skipped_delivery_disabled',
   'skipped_delivery_rejected',
 ];
+const ACTION_LABELS = ['direction', 'verb', 'outcome'];
 export const RUNTIME_LOG_METRICS = [
+  distribution('ops_action_operations', 'ops.action_outcome', 'operations', '1', ACTION_LABELS),
+  distribution(
+    'ops_action_messages',
+    'ops.action_outcome',
+    'confirmedMessages',
+    '1',
+    ACTION_LABELS,
+  ),
+  distribution(
+    'ops_action_terminal_p50',
+    'ops.action_outcome',
+    'terminalP50Seconds',
+    's',
+    ACTION_LABELS,
+  ),
+  distribution(
+    'ops_action_terminal_p95',
+    'ops.action_outcome',
+    'terminalP95Seconds',
+    's',
+    ACTION_LABELS,
+  ),
+  distribution('ops_action_pending', 'ops.action_pending', 'pending', '1', ['direction', 'verb']),
+  distribution('ops_action_overdue', 'ops.action_pending', 'overdue', '1', ['direction', 'verb']),
+  distribution('ops_action_pending_age', 'ops.action_pending', 'oldestPendingSeconds', 's', [
+    'direction',
+    'verb',
+  ]),
+  distribution('ops_action_failure', 'ops.action_failure', 'operations', '1', [
+    'direction',
+    'verb',
+    'reason',
+  ]),
   {
     name: 'ops_reconnect_email_outcome',
     description:
@@ -114,7 +148,7 @@ export const RUNTIME_LOG_METRICS = [
 ];
 
 export const EXPECTED_RUNTIME_COLLECTIONS = [
-  ...['mailbox', 'scheduler', 'database', 'reconnect'].map((source) => ({ source })),
+  ...['mailbox', 'scheduler', 'database', 'reconnect', 'actions'].map((source) => ({ source })),
   ...['initial-sync', 'incremental-sync', 'email-send', 'snooze-wake'].map((queue) => ({
     source: 'queue',
     queue,

@@ -30,6 +30,7 @@ it('keeps the lifetime evidence and full identity in structured sender columns',
   expect(table.getByRole('cell', { name: /1,586/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /^In inbox 12$/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /128d ago/ })).toBeInTheDocument();
+  expect(table.getByText(/does not prove whether you read an email/)).toBeInTheDocument();
 });
 
 it('preserves unmatched reason formats instead of assigning invented metrics', () => {
@@ -45,7 +46,23 @@ it('preserves unmatched reason formats instead of assigning invented metrics', (
   expect(screen.getByRole('columnheader', { name: 'Why it matches' })).toBeInTheDocument();
   expect(screen.getByRole('columnheader', { name: 'In inbox' })).toBeInTheDocument();
   expect(screen.getByText(dormant.reason)).toBeInTheDocument();
-  expect(screen.getByText('3 days old · 1 email')).toBeInTheDocument();
+  expect(
+    screen.getByText('At matching: first seen 3 days earlier · 1 indexed email'),
+  ).toBeInTheDocument();
+});
+
+it('keeps invalid recorded evidence inspectable without inventing table metrics', () => {
+  const reason = 'Read rate 101% across all 1586 messages, last seen 128d ago';
+  render(
+    <RulePreviewSample
+      ruleName="Synthetic rule"
+      result={{ ...RULE_PREVIEW_RESULT, sample: [{ ...dormant, reason }] }}
+      layout="table"
+    />,
+  );
+  expect(screen.queryByRole('columnheader', { name: 'Read rate' })).not.toBeInTheDocument();
+  expect(screen.getByText("Matches this rule's recorded conditions.")).toBeInTheDocument();
+  expect(screen.getByText(reason)).toBeInTheDocument();
 });
 
 it('distinguishes a confirmed empty inbox from an unavailable inbox count', () => {

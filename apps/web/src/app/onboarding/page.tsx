@@ -199,7 +199,7 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
 function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   const router = useRouter();
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
   const readyEmail = useSyncReadyEmail();
@@ -396,7 +396,7 @@ function SecondaryConnectGate({
 }) {
   const router = useRouter();
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
   const setActive = useSetActiveMailbox();
   const readyEmail = useSyncReadyEmail();
   const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/home';

@@ -37,6 +37,33 @@ function chart(
     },
   };
 }
+function distributionSnapshotChart(title, name, groups) {
+  // ALIGN_MEAN rejects log distributions. Merge each original series's samples,
+  // then extract its exact mean before taking the maximum across resources.
+  const widget = chart(
+    title,
+    'logging.googleapis.com/user/' + name,
+    'cloud_run_revision',
+    'resource.labels.service_name="declutrmail-worker"',
+    'ALIGN_SUM',
+    '300s',
+    'REDUCE_MEAN',
+    [
+      ...groups,
+      'metric.label.log',
+      ...['project_id', 'location', 'service_name', 'configuration_name', 'revision_name'].map(
+        (key) => 'resource.label.' + key,
+      ),
+    ],
+  );
+  widget.xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter.secondaryAggregation = {
+    alignmentPeriod: '300s',
+    perSeriesAligner: 'ALIGN_MEAN',
+    crossSeriesReducer: 'REDUCE_MAX',
+    groupByFields: groups,
+  };
+  return widget;
+}
 export function dashboard(project) {
   const custom = (title, metric, extra = '') => chart(title, PREFIX + metric, 'global', extra);
   const resource = (title, measure) => custom(title, 'usage', `metric.labels.measure="${measure}"`);
@@ -109,6 +136,56 @@ export function dashboard(project) {
         resource('Sentry accepted errors — prior 24 hours', 'accepted_errors_24h'),
         resource('PostHog events — MTD', 'events_mtd'),
         resource('GitHub Actions minutes — MTD', 'actions_minutes_mtd'),
+        {
+          title: 'Cleanup and Undo: durable results',
+          text: {
+            format: 'MARKDOWN',
+            content:
+              'Forward = Archive/Later/Delete; reverse = their label-action Undo requests. Counts are durable root jobs, not bulk clicks. The rolling 24-hour acceptance cohort uses the latest recovery attempt, so retries do not count as another accepted operation. Completed means the worker committed a confirmed result; zero-message no-ops are included. Protected exclusions are separate. Failed means completion is unconfirmed: Gmail may have changed partially. Partial completion cannot be inferred from requested minus affected counts. Latency includes queue, execution and recovery. Pending panels include unresolved attempts of any age; their age and 30-minute overdue threshold start at the current attempt, while terminal latency starts at root acceptance. Each point is the exact mean of snapshots within five minutes, with the maximum across resource/revision series; these are not additive event totals; check the actions collection freshness.',
+          },
+        },
+        ...[
+          [
+            'Cleanup / Undo outcomes — root jobs accepted in prior 24h, five-minute snapshot mean',
+            'ops_action_operations',
+            ['metric.label.direction', 'metric.label.verb', 'metric.label.outcome'],
+          ],
+          [
+            'Cleanup / Undo confirmed messages — prior 24h acceptance cohort, five-minute snapshot mean',
+            'ops_action_messages',
+            ['metric.label.direction', 'metric.label.verb', 'metric.label.outcome'],
+          ],
+          [
+            'Cleanup / Undo time to terminal — mean of cohort p50 seconds snapshots',
+            'ops_action_terminal_p50',
+            ['metric.label.direction', 'metric.label.verb', 'metric.label.outcome'],
+          ],
+          [
+            'Cleanup / Undo time to terminal — mean of cohort p95 seconds snapshots',
+            'ops_action_terminal_p95',
+            ['metric.label.direction', 'metric.label.verb', 'metric.label.outcome'],
+          ],
+          [
+            'Cleanup / Undo pending — all ages, five-minute snapshot mean',
+            'ops_action_pending',
+            ['metric.label.direction', 'metric.label.verb'],
+          ],
+          [
+            'Cleanup / Undo overdue — pending at least 30 minutes, five-minute snapshot mean',
+            'ops_action_overdue',
+            ['metric.label.direction', 'metric.label.verb'],
+          ],
+          [
+            'Cleanup / Undo oldest pending attempt age — seconds, all ages, snapshot mean',
+            'ops_action_pending_age',
+            ['metric.label.direction', 'metric.label.verb'],
+          ],
+          [
+            'Cleanup / Undo failed — prior 24h acceptance cohort, snapshot mean by bounded reason',
+            'ops_action_failure',
+            ['metric.label.direction', 'metric.label.verb', 'metric.label.reason'],
+          ],
+        ].map(([title, name, groups]) => distributionSnapshotChart(title, name, groups)),
         ...[
           [
             'Cloud Run billable instance time — daily seconds by service',
@@ -321,6 +398,7 @@ export function dashboard(project) {
   // Put customer-impact signals ahead of daily vendor accounting.
   const widgets = definition.gridLayout.widgets;
   const operational = (w) =>
+    w.title === 'Cleanup and Undo: durable results' ||
     Boolean(w.logsPanel) ||
     w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter?.filter.includes(PREFIX) === false;
   definition.gridLayout.widgets = [

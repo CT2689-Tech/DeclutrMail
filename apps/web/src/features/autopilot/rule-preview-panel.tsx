@@ -5,8 +5,17 @@ import type { ReactNode } from 'react';
 import type { AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from './types';
 import { resolveSenderIdentity } from './sender-label';
+import { MatchReasonCopy } from './match-reason-copy';
 
 const { color, font, space, text } = tokens;
+
+const SAMPLE_CSS = `.dm-rule-preview-match { align-items: center; }
+.dm-rule-preview-reason { text-align: right; flex-shrink: 0; max-width: 50%; }
+@media (max-width: 600px) {
+  .dm-rule-preview-match { flex-direction: column; align-items: flex-start; }
+  .dm-rule-preview-identity { width: 100%; }
+  .dm-rule-preview-reason { text-align: left; max-width: 100%; width: 100%; }
+}`;
 
 type Align = 'start' | 'center';
 
@@ -187,9 +196,7 @@ export function RulePreviewSample({
     const rows = result.sample.map((sender) => ({
       sender,
       identity: resolveSenderIdentity(sender),
-      evidence: /^Read rate (\d+(?:\.\d+)?)% across all (\d+) messages, last seen (\d+)d ago$/.exec(
-        sender.reason,
-      ),
+      evidence: readHistoryEvidence(sender.reason),
     }));
     const structured = rows.every((row) => row.evidence != null);
     return (
@@ -210,7 +217,9 @@ export function RulePreviewSample({
           {structured && (
             <caption className="dm-autopilot-sample-note">
               Matching uses synced email history, including inbox and archived mail. “In inbox”
-              counts only mail currently in your inbox.
+              counts only mail currently in your inbox. Read rate is the rule’s matching diagnostic;
+              it may exclude mail marked read by other tools and does not prove whether you read an
+              email.
             </caption>
           )}
           <thead>
@@ -218,7 +227,7 @@ export function RulePreviewSample({
               <th scope="col">Sender</th>
               {structured ? (
                 <>
-                  <th scope="col" title="Across this sender’s synced email history">
+                  <th scope="col" title="Adjusted read-rate diagnostic used by this rule">
                     Read rate
                   </th>
                   <th scope="col">Email history</th>
@@ -251,7 +260,9 @@ export function RulePreviewSample({
                     </td>
                   </>
                 ) : (
-                  <td className="dm-autopilot-sender-reason">{reasonLabel(sender.reason)}</td>
+                  <td className="dm-autopilot-sender-reason">
+                    <MatchReasonCopy reason={sender.reason} />
+                  </td>
                 )}
                 <td aria-label={sender.inboxCount == null ? 'Inbox count unavailable' : undefined}>
                   <span className="dm-autopilot-mobile-label">In inbox </span>
@@ -275,57 +286,63 @@ export function RulePreviewSample({
     );
   }
   return (
-    <ul
-      aria-label={`Sample matches for rule ${ruleName}`}
-      style={{
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: space[2],
-      }}
-    >
-      {/* No per-row separators: the gap is the rhythm, so a sample reads
+    <>
+      <style>{SAMPLE_CSS}</style>
+      <ul
+        aria-label={`Sample matches for rule ${ruleName}`}
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: space[2],
+        }}
+      >
+        {/* No per-row separators: the gap is the rhythm, so a sample reads
           as one list rather than a stack of boxes. */}
-      {result.sample.map((s) => {
-        const identity = resolveSenderIdentity(s);
-        return (
-          <li
-            key={s.senderKey}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: space[3],
-              minWidth: 0,
-            }}
-          >
-            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-              <span style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}>
-                {identity.label}
-              </span>
-              {identity.source === 'name' && s.senderEmail != null && (
-                <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
-                  {s.senderEmail}
-                </span>
-              )}
-            </span>
-            <span
+        {result.sample.map((s) => {
+          const identity = resolveSenderIdentity(s);
+          return (
+            <li
+              key={s.senderKey}
+              className="dm-rule-preview-match"
               style={{
-                fontSize: text.sm,
-                color: color.fgMuted,
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-                flexShrink: 0,
-                maxWidth: '50%',
+                display: 'flex',
+                gap: space[3],
+                minWidth: 0,
               }}
             >
-              {reasonLabel(s.reason)}
-            </span>
-          </li>
-        );
-      })}
-    </ul>
+              <span
+                className="dm-rule-preview-identity"
+                style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}
+              >
+                <span
+                  style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}
+                >
+                  {identity.label}
+                </span>
+                {identity.source === 'name' && s.senderEmail != null && (
+                  <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
+                    {s.senderEmail}
+                  </span>
+                )}
+              </span>
+              <div
+                className="dm-rule-preview-reason"
+                style={{
+                  fontSize: text.sm,
+                  color: color.fgMuted,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                <MatchReasonCopy reason={s.reason} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </>
   );
 }
 
@@ -335,19 +352,14 @@ const ellipsis = {
   whiteSpace: 'nowrap',
 } as const;
 
-/**
- * The matcher's reason arrives as one server-built string. The new-sender
- * preset writes "New sender (3d old, 1 msgs)" — every row in that list is
- * a new sender, so only the figures are worth the column: "3 days old ·
- * 1 email". Same numbers; any other reason passes through untouched.
- */
-export function reasonLabel(reason: string): string {
-  const m = /^New sender \((?:(\d+)d old)?(?:, )?(?:(\d+) msgs)?\)$/.exec(reason);
-  if (m == null) return reason;
-  const [, days, msgs] = m;
-  const parts = [
-    ...(days == null ? [] : [`${days} day${days === '1' ? '' : 's'} old`]),
-    ...(msgs == null ? [] : [`${msgs} email${msgs === '1' ? '' : 's'}`]),
-  ];
-  return parts.length === 0 ? reason : parts.join(' · ');
+/** Only expose metrics when the recorded preset evidence has known, valid units. */
+function readHistoryEvidence(reason: string): RegExpExecArray | null {
+  const evidence = /^Read rate (\d+)% across all (\d+) messages, last seen (\d+)d ago$/.exec(
+    reason,
+  );
+  if (!evidence) return null;
+  const [rate, messages, days] = evidence.slice(1).map(Number);
+  return rate! <= 100 && messages! > 0 && [rate, messages, days].every(Number.isSafeInteger)
+    ? evidence
+    : null;
 }

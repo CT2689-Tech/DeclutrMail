@@ -20,6 +20,7 @@ import {
 } from '@declutrmail/shared';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
+import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import { ApiError } from '@/lib/api/client';
@@ -74,29 +75,74 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  * Privacy (D7, D228): renders sender display metadata, counts, and
  * times only. No subjects, no snippets.
  */
+// Fast polling is a bounded UI wait, not evidence that Gmail completed a return.
+const WAKE_FAST_POLL_MS = 2 * 60 * 1_000;
+type WakeRequest = {
+  lastAttemptAt: string | null;
+  timer: string;
+  deadline: number;
+  delayed: boolean;
+};
+
 export function SnoozedScreen() {
-  // Senders with an in-flight wake — drives the poll window.
-  const [wakingIds, setWakingIds] = useState<ReadonlySet<string>>(new Set());
+  const auth = useOptionalAuth();
+  // Optimistic requests belong to one mailbox; switching accounts remounts them.
+  return <SnoozedScreenContents key={auth?.me.activeMailboxId ?? 'isolated'} />;
+}
+
+function SnoozedScreenContents() {
+  const [wakeRequests, setWakeRequests] = useState<ReadonlyMap<string, WakeRequest>>(new Map());
+  const wakingIds = useMemo(
+    () => new Set([...wakeRequests].filter(([, request]) => !request.delayed).map(([id]) => id)),
+    [wakeRequests],
+  );
   const query = useSnoozed({ refetchInterval: wakingIds.size > 0 ? 2_000 : 60_000 });
 
-  // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
-  // its Storybook stories (the D211 inventory's coverage evidence)
-  // mount without an auth shim; PostHog `identify` ties the event to
-  // the user regardless.
   useEffect(() => {
     void track('page_viewed', { page: 'snoozed', mailbox_id: null });
   }, []);
 
-  // A waking sender that left the list is DONE — stop tracking it.
   const rows = useMemo(() => query.data ?? [], [query.data]);
   useEffect(() => {
-    if (wakingIds.size === 0) return;
-    const present = new Set(rows.map((r) => r.senderId));
-    const still = new Set([...wakingIds].filter((id) => present.has(id)));
-    if (still.size !== wakingIds.size) {
-      setWakingIds(still);
-    }
-  }, [rows, wakingIds]);
+    // An unavailable list is not a completed restore. Unchanged cached failures
+    // immediately after enqueue are not the outcome of this new request either.
+    if (!query.isSuccess || wakeRequests.size === 0) return;
+    const byId = new Map(rows.map((row) => [row.senderId, row]));
+    const still = new Map(
+      [...wakeRequests].filter(([id, request]) => {
+        const row = byId.get(id);
+        if (!row || `${row.snoozedAt}/${row.snoozedUntil}` !== request.timer) return false;
+        const newFailure =
+          (row.returnStatus === 'retrying' || row.returnStatus === 'missed') &&
+          row.lastReturnAttemptAt !== null &&
+          (request.lastAttemptAt === null ||
+            Date.parse(row.lastReturnAttemptAt) > Date.parse(request.lastAttemptAt));
+        return !newFailure;
+      }),
+    );
+    if (still.size !== wakeRequests.size) setWakeRequests(still);
+  }, [rows, query.isSuccess, wakeRequests]);
+
+  useEffect(() => {
+    const active = [...wakeRequests.values()].filter((request) => !request.delayed);
+    if (active.length === 0) return;
+    const timer = setTimeout(
+      () => {
+        const now = Date.now();
+        setWakeRequests(
+          (previous) =>
+            new Map(
+              [...previous].map(([id, request]) => [
+                id,
+                request.deadline <= now ? { ...request, delayed: true } : request,
+              ]),
+            ),
+        );
+      },
+      Math.max(0, Math.min(...active.map((request) => request.deadline)) - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [wakeRequests]);
 
   // The zone comes from the hydration-safe `me` cache so the grouping
   // is identical on the server and in the first client render.
@@ -159,7 +205,23 @@ export function SnoozedScreen() {
               bucket={bucket}
               rows={grouped[bucket]}
               wakingIds={wakingIds}
-              onWakeStarted={(senderId) => setWakingIds((prev) => new Set([...prev, senderId]))}
+              delayedIds={
+                new Set(
+                  [...wakeRequests].filter(([, request]) => request.delayed).map(([id]) => id),
+                )
+              }
+              onWakeStarted={(senderId) => {
+                const row = rows.find((candidate) => candidate.senderId === senderId);
+                if (!row) return;
+                setWakeRequests((previous) =>
+                  new Map(previous).set(senderId, {
+                    lastAttemptAt: row.lastReturnAttemptAt,
+                    timer: `${row.snoozedAt}/${row.snoozedUntil}`,
+                    deadline: Date.now() + WAKE_FAST_POLL_MS,
+                    delayed: false,
+                  }),
+                );
+              }}
               isMobile={isMobile}
             />
           ) : null,
@@ -175,12 +237,14 @@ function BucketGroup({
   bucket,
   rows,
   wakingIds,
+  delayedIds,
   onWakeStarted,
   isMobile,
 }: {
   bucket: WakeBucket;
   rows: SnoozedSenderRow[];
   wakingIds: ReadonlySet<string>;
+  delayedIds: ReadonlySet<string>;
   onWakeStarted: (senderId: string) => void;
   isMobile: boolean;
 }) {
@@ -229,6 +293,7 @@ function BucketGroup({
             key={row.senderId}
             row={row}
             waking={wakingIds.has(row.senderId)}
+            confirmationDelayed={delayedIds.has(row.senderId)}
             onWakeStarted={onWakeStarted}
             isMobile={isMobile}
           />
@@ -245,11 +310,13 @@ type RowPanel = 'closed' | 'confirm-wake' | 'snooze-menu';
 export function SnoozedRow({
   row,
   waking,
+  confirmationDelayed = false,
   onWakeStarted,
   isMobile = false,
 }: {
   row: SnoozedSenderRow;
   waking: boolean;
+  confirmationDelayed?: boolean;
   onWakeStarted: (senderId: string) => void;
   /** Below `sm` the row restacks to a single column (D60). */
   isMobile?: boolean;
@@ -350,6 +417,12 @@ export function SnoozedRow({
                     ? 'Returning now…'
                     : `Returns ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
           </div>
+          {confirmationDelayed ? (
+            <div role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
+              Return requested; confirmation is taking longer than expected. Status refreshes
+              automatically.
+            </div>
+          ) : null}
           {returnIssue ? (
             <div style={{ fontSize: text.sm, color: color.danger }}>{returnIssue}</div>
           ) : null}

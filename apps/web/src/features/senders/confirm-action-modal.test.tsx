@@ -390,8 +390,9 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     ).toBeInTheDocument();
     // And the scope line keeps the real selection total intact.
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '5 selected, 4 eligible, 1 skipped',
+      '5 selected · 2 in this preview · 1 Protected excluded',
     );
+    expect(screen.getByLabelText('Senders included in this bulk action')).toBeVisible();
   });
 
   it('renders no quota line on an unlimited tier', () => {
@@ -2228,6 +2229,72 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
   });
 
+  it('keeps cached inclusion out of the scope disclosure while preview refreshes', () => {
+    const second = makeSender({ id: 'sender-refresh', displayName: 'Refresh Target' });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Archive', senders: [sender, second], selectedCount: 2 }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{
+          data: {
+            senders: [
+              { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+              { senderId: second.id, name: second.name, counts: buckets, protected: true },
+            ],
+            totals: buckets,
+            protectedCount: 1,
+          },
+          loading: true,
+          error: false,
+        }}
+      />,
+    );
+    const summary = screen.getByLabelText('Senders included in this bulk action');
+    expect(summary).toBeVisible();
+    expect(summary).toHaveTextContent('2 selected · Checking inclusion…');
+    expect(summary).not.toHaveTextContent('in this preview');
+    expect(summary).not.toHaveTextContent('Protected excluded');
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+  });
+
+  it('shows selection without an endless inclusion check for a narrowed pure unsubscribe', () => {
+    const oneClick = makeSender({ unsubscribeMethod: 'one_click' });
+    render(
+      <ConfirmActionModal
+        request={{
+          verb: 'Unsubscribe',
+          senders: [oneClick],
+          selectedCount: 2,
+          skipped: { peopleCount: 1, protectedCount: 0 },
+        }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    const summary = screen.getByLabelText('Senders included in this bulk action');
+    expect(summary).toBeVisible();
+    expect(summary).toHaveTextContent('2 selected');
+    expect(summary).not.toHaveTextContent('Checking inclusion');
+    expect(screen.getByRole('button', { name: /^Unsubscribe$/ })).toBeEnabled();
+  });
+
+  it('names unavailable inclusion without pretending a terminal preview failure is still loading', () => {
+    const second = makeSender({ id: 'sender-unavailable' });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Archive', senders: [sender, second] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: undefined, loading: false, error: true }}
+      />,
+    );
+    const summary = screen.getByLabelText('Senders included in this bulk action');
+    expect(summary).toHaveTextContent('2 selected · Inclusion unavailable');
+    expect(summary).not.toHaveTextContent('Checking inclusion');
+    expect(screen.getByRole('button', { name: /^Archive$/ })).toBeDisabled();
+  });
+
   it.each([
     { retained: true, skipped: 1 },
     { retained: false, skipped: 2 },
@@ -2282,6 +2349,10 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
           new RegExp(`${skipped} Protected sender${skipped === 1 ? ' is' : 's are'} skipped\\.`),
         ),
       ).toBeInTheDocument();
+      expect(screen.getByLabelText('Senders included in this bulk action')).toBeVisible();
+      expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
+        `${retained ? 2 : 3} selected · 1 in this preview · ${skipped} Protected excluded`,
+      );
     },
   );
 

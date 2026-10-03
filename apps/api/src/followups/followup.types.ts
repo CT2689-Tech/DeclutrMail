@@ -29,6 +29,8 @@ export interface Followup {
   subject: string;
   /** ISO-8601 — when the user's outbound message went out. */
   sentAt: string;
+  /** Last persisted evaluation of indexed Gmail data; not a live provider check. */
+  lastEvaluatedAt: string | null;
   /** D85 — computed at request time, NOT stored. */
   priority: FollowupPriority;
   status: FollowupStatus;
