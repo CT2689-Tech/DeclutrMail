@@ -58,6 +58,7 @@ test.use({
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    window.localStorage.setItem('dm-analytics-qa', '1');
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
     Object.defineProperty(navigator, 'userAgentData', { get: () => undefined });
   });
@@ -198,4 +199,34 @@ test('"Accept all" initializes PostHog and page_viewed reaches the wire', async 
       message: 'expected a PostHog capture containing page_viewed after Accept all',
     })
     .toBe(true);
+
+  // Assert real SDK transport, including its automatic pageview, rather than
+  // only the wrapper's capture call. The QA marker never overrides consent.
+  const captures = () =>
+    posthogRequests.flatMap((request) => {
+      try {
+        const parsed: unknown = JSON.parse(request.body);
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object' && 'batch' in parsed) {
+          return Array.isArray(parsed.batch) ? parsed.batch : [];
+        }
+        return [parsed];
+      } catch {
+        return [];
+      }
+    });
+  await expect.poll(() => captures().some((event) => event?.event === '$pageview')).toBe(true);
+  for (const event of captures().filter((event) =>
+    ['$pageview', 'page_viewed'].includes(event?.event),
+  )) {
+    expect(event.properties).toEqual(
+      expect.objectContaining({
+        telemetry_context_version: '1',
+        app_release: expect.stringMatching(/^(?:unknown|[a-f0-9]{40})$/i),
+        app_environment: expect.stringMatching(/^(?:production|preview|development|test|unknown)$/),
+        plan_tier: 'unknown',
+        traffic_class: 'internal_qa',
+      }),
+    );
+  }
 });

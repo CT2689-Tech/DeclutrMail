@@ -142,6 +142,79 @@ test('projection removes message content, identities, request, breadcrumbs and s
   assert.equal(issueSummary({ title: sensitive }).title, '[Issue title withheld]');
 });
 
+test('diagnostic structure explains absent in-app frames without exposing exception messages or arbitrary tags', () => {
+  const event = eventSummary({
+    sdk: { name: 'sentry.javascript.nextjs', version: 'private-version' },
+    tags: [
+      { key: 'reason', value: 'react-error-418' },
+      { key: 'surface', value: 'senders' },
+      { key: 'response_status', value: '500' },
+      { key: 'method', value: 'GET' },
+      { key: 'boundary', value: 'private-boundary' },
+    ],
+    entries: [
+      {
+        type: 'exception',
+        data: {
+          values: [
+            {
+              type: 'Error',
+              value: 'PRIVATE_MESSAGE',
+              mechanism: {
+                type: 'auto.browser.global_handlers.onerror',
+                handled: false,
+                data: 'PRIVATE_MESSAGE',
+              },
+              stacktrace: {
+                frames: [
+                  { inApp: false, filename: 'vendor.js' },
+                  { inApp: true, filename: 'webpack://_N_E/./src/app/send.tsx?private-query' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal(event.sdk, 'sentry.javascript.nextjs');
+  assert.deepEqual(event.tags, {
+    reason: 'react-error-418',
+    surface: 'senders',
+    response_status: '500',
+    method: 'GET',
+  });
+  assert.equal(event.exceptions[0].stackFrameCount, 2);
+  assert.equal(event.exceptions[0].inAppFrameCount, 1);
+  assert.deepEqual(event.exceptions[0].mechanism, {
+    type: 'auto.browser.global_handlers.onerror',
+    handled: false,
+  });
+  assert.equal(event.exceptions[0].frames[0].filename, 'src/app/send.tsx');
+  assert.ok(!JSON.stringify(event).includes('PRIVATE_MESSAGE'));
+  assert.ok(!JSON.stringify(event).includes('private'));
+  const unknown = eventSummary({
+    sdk: { name: 'PRIVATE_ID' },
+    tags: [{ key: 'reason', value: 'PRIVATE_ID' }],
+    entries: [
+      {
+        type: 'exception',
+        data: { values: [{ mechanism: { type: 'PRIVATE_ID', handled: 'false' } }] },
+      },
+    ],
+  });
+  assert.equal(unknown.sdk, 'unknown');
+  assert.equal(unknown.exceptions[0].stackFrameCount, null);
+  assert.equal(unknown.exceptions[0].inAppFrameCount, null);
+  const empty = eventSummary({
+    entries: [{ type: 'exception', data: { values: [{ stacktrace: { frames: [] } }] } }],
+  });
+  assert.equal(empty.exceptions[0].stackFrameCount, 0);
+  assert.equal(empty.exceptions[0].inAppFrameCount, 0);
+  assert.deepEqual(unknown.tags, {});
+  assert.deepEqual(unknown.exceptions[0].mechanism, { type: 'unknown', handled: null });
+});
+
 test('collector fixes API origin, GET and redirects; caps issue/event reads', async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {

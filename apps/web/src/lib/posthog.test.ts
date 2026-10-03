@@ -7,7 +7,9 @@ import {
   identifyUser,
   track,
   withdrawAnalyticsConsent,
+  resetIdentity,
 } from './posthog';
+import { ANALYTICS_QA_STORAGE_KEY, setAnalyticsPlan } from './analytics-context';
 
 /**
  * D147 consent gate — the contract under test: PostHog must not
@@ -35,6 +37,7 @@ function clearStoredConsent(): void {
 
 beforeEach(() => {
   clearStoredConsent();
+  window.localStorage.removeItem(ANALYTICS_QA_STORAGE_KEY);
   __resetForTests();
   posthogMock.init.mockClear();
   posthogMock.capture.mockClear();
@@ -52,6 +55,44 @@ afterEach(() => {
 });
 
 describe('track() consent gate (D147)', () => {
+  it('enriches the scrubbed wire boundary, including automatic events, with bounded current context', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_RELEASE', 'a'.repeat(40));
+    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'production');
+    storeConsent('all');
+    setAnalyticsPlan('plus');
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+    const sanitize = posthogMock.init.mock.calls[0]![1].sanitize_properties;
+    expect(sanitize({ app_release: 'spoofed', body: 'PRIVATE_MESSAGE_BODY' })).toEqual(
+      expect.objectContaining({
+        app_release: 'a'.repeat(40),
+        app_environment: 'production',
+        plan_tier: 'plus',
+        traffic_class: 'unclassified',
+        telemetry_context_version: '1',
+      }),
+    );
+    expect(JSON.stringify(sanitize({ body: 'PRIVATE_MESSAGE_BODY' }))).not.toContain(
+      'PRIVATE_MESSAGE_BODY',
+    );
+    window.localStorage.setItem(ANALYTICS_QA_STORAGE_KEY, '1');
+    expect(sanitize({}).traffic_class).toBe('internal_qa');
+    setAnalyticsPlan('pro');
+    expect(sanitize({}).plan_tier).toBe('pro');
+    await resetIdentity();
+    expect(sanitize({}).plan_tier).toBe('unknown');
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_RELEASE', 'bad@synthetic.test');
+    vi.stubEnv('NEXT_PUBLIC_TELEMETRY_ENVIRONMENT', 'arbitrary');
+    setAnalyticsPlan('arbitrary');
+    window.localStorage.setItem(ANALYTICS_QA_STORAGE_KEY, 'arbitrary');
+    expect(sanitize({})).toEqual(
+      expect.objectContaining({
+        app_release: 'unknown',
+        app_environment: 'unknown',
+        plan_tier: 'unknown',
+        traffic_class: 'unclassified',
+      }),
+    );
+  });
   it('does nothing while no consent choice is stored — decline by default', async () => {
     await track('page_viewed', { page: 'senders', mailbox_id: null });
     expect(posthogMock.init).not.toHaveBeenCalled();

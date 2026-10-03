@@ -7,6 +7,7 @@ import {
   type EventProps,
 } from '@declutrmail/shared/observability';
 import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
+import { setAnalyticsPlan } from './analytics-plan';
 
 /**
  * PostHog browser wrapper (D159).
@@ -70,7 +71,10 @@ async function loadSdk(): Promise<PosthogSdk | null> {
 
   if (!sdkPromise) {
     sdkPromise = (async () => {
-      const mod = await import('posthog-js');
+      const [mod, { analyticsContext }] = await Promise.all([
+        import('posthog-js'),
+        import('./analytics-context'),
+      ]);
       // Loading the chunk yields. Consent may have been withdrawn meanwhile;
       // init itself emits automatic pageviews, so the later capture gate is too late.
       if (!hasAnalyticsConsent()) {
@@ -124,8 +128,10 @@ async function loadSdk(): Promise<PosthogSdk | null> {
         // be left open by the next SDK upgrade.
         advanced_disable_flags: true,
         // Defense-in-depth scrub at the wire boundary.
-        sanitize_properties: (props: Record<string, unknown> | null | undefined) =>
-          (scrubTelemetryPayload(props) ?? {}) as Record<string, unknown>,
+        sanitize_properties: (props: Record<string, unknown> | null | undefined) => ({
+          ...((scrubTelemetryPayload(props) ?? {}) as Record<string, unknown>),
+          ...analyticsContext(),
+        }),
       });
       return posthog;
     })().catch(() => {
@@ -220,6 +226,7 @@ export async function identifyUser(
 
 /** Clear identity on logout. */
 export async function resetIdentity(): Promise<void> {
+  setAnalyticsPlan(undefined);
   const sdk = await loadSdk();
   if (!sdk) return;
   try {
@@ -289,6 +296,7 @@ export async function withdrawAnalyticsConsent(): Promise<void> {
 /** Test seam — drops the cached SDK promise so a fresh init happens. */
 export function __resetForTests(): void {
   sdkPromise = null;
+  setAnalyticsPlan(undefined);
 }
 
 /** Test seam for slow/rejected SDK-load withdrawal regressions. */

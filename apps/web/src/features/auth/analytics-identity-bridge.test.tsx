@@ -7,9 +7,28 @@ const { identifySpy } = vi.hoisted(() => ({ identifySpy: vi.fn() }));
 
 vi.mock('@/lib/posthog', () => ({ identifyUser: identifySpy }));
 
-import { AnalyticsIdentityBridge } from './analytics-identity-bridge';
+import { AnalyticsIdentityBridge, useAnalyticsIdentity } from './analytics-identity-bridge';
+import { analyticsContext } from '@/lib/analytics-context';
+import type { Tier } from './api/use-me';
+
+function CurrentIdentity({ id, tier }: { id: string; tier?: Tier }) {
+  useAnalyticsIdentity(id, null, tier);
+  return null;
+}
 
 describe('AnalyticsIdentityBridge', () => {
+  it('binds current tier changes and clears unavailable or unmounted account context', () => {
+    const { rerender, unmount } = render(<CurrentIdentity id="internal-a" tier="pro" />);
+    expect(analyticsContext().plan_tier).toBe('pro');
+    rerender(<CurrentIdentity id="internal-a" tier="free" />);
+    expect(analyticsContext().plan_tier).toBe('free');
+    rerender(<CurrentIdentity id="internal-b" />);
+    expect(analyticsContext().plan_tier).toBe('unknown');
+    rerender(<CurrentIdentity id="internal-b" tier="plus" />);
+    expect(analyticsContext().plan_tier).toBe('plus');
+    unmount();
+    expect(analyticsContext().plan_tier).toBe('unknown');
+  });
   it('identifies by internal UUID on mount and retries when consent changes', () => {
     const { unmount } = render(<AnalyticsIdentityBridge userId="user-internal-1" />);
 

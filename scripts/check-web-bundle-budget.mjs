@@ -147,6 +147,13 @@ export const AUTHED_DEFAULT_KB = 264;
  * number; dated notes quote the page-entry measure of their day.
  */
 export const OVERRIDES_KB = {
+  // PR #857: measured 151.2 kB after keeping capture enrichment consent-lazy.
+  // Cookies also imports the synchronous withdrawal wrapper; bounded plan
+  // reset state and lazy chunk references intentionally add a small initial cost.
+  // Preserve all other route budgets; this narrow override restores 0.8 kB
+  // headroom without putting the SDK/context payload on the initial path.
+  '/(marketing)/cookies/page': 152,
+
   '/(marketing)/page': 156, // 154.3 — hero + ledger demo + FAQ
   '/(marketing)/pricing/page': 166, // 165.4 — cycle toggle, tier cards, compare table
   // Raised 175 -> 177 on 2026-08-27. The comment said 169.8 (measured
