@@ -88,6 +88,17 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
 
   const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
   await page.locator('body').waitFor({ state: 'visible' });
+  if (route === '/autopilot') {
+    // A nonempty shell can precede the streamed sections and their diagnostics.
+    await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
+    for (const label of [
+      'Loading Autopilot rules',
+      'Loading Autopilot suggestions',
+      'Loading your preset rules…',
+      'Checking rule suggestions…',
+    ])
+      await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+  }
   await page.waitForTimeout(750);
 
   expect(response?.status(), `${route} response`).toBe(200);
