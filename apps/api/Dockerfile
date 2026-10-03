@@ -49,6 +49,7 @@ RUN apk add --no-cache libc6-compat \
 COPY --from=deps /app/node_modules ./node_modules
 COPY tsconfig.base.json package.json pnpm-workspace.yaml ./
 COPY apps/api/src ./apps/api/src
+COPY apps/api/certificates ./apps/api/certificates
 COPY apps/api/tsconfig.json apps/api/package.json apps/api/
 COPY packages/db ./packages/db
 COPY packages/shared ./packages/shared
