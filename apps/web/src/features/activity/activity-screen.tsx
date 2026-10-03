@@ -7,7 +7,7 @@ import {
 } from '@/features/editorial/page';
 
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { useNow } from '@/lib/use-now';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
@@ -136,8 +136,8 @@ export const activityUndoRecoveryHelp =
  *   - bulk Undo (B7) fans the same mutation across every selected
  *     `available` row in parallel.
  *
- * URL is the SINGLE source of truth for filter + grouping state — every
- * filter writes back via `router.replace` so deep links round-trip.
+ * URL is the SINGLE source of truth for filter + grouping state — filters
+ * write to native history so deep links round-trip.
  *
  * Cache effect on mailbox switch: query keys are partitioned by full
  * filter set but NOT mailbox; relies on `resetMailboxScopedCache`
@@ -147,7 +147,6 @@ export const activityUndoRecoveryHelp =
  * undo token only. No body, no snippet, no headers.
  */
 export function ActivityScreen() {
-  const router = useRouter();
   const params = useSearchParams();
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
@@ -198,17 +197,17 @@ export function ActivityScreen() {
     void track('page_viewed', { page: 'activity', mailbox_id: null });
   }, []);
 
-  const writeUrl = useCallback(
-    (updates: Record<string, string | null>) => {
-      const sp = new URLSearchParams(params.toString());
-      for (const [k, v] of Object.entries(updates)) {
-        if (v === null || v === '') sp.delete(k);
-        else sp.set(k, v);
-      }
-      router.replace(`/activity${sp.toString() ? `?${sp.toString()}` : ''}`);
-    },
-    [params, router],
-  );
+  const writeUrl = useCallback((updates: Record<string, string | null>) => {
+    // Client queries own filtering. Read the synchronous browser URL so a
+    // second edit preserves the first even before useSearchParams rerenders.
+    // Next synchronizes native history updates without a duplicate server read.
+    const url = new URL(window.location.href);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === '') url.searchParams.delete(key);
+      else url.searchParams.set(key, value);
+    }
+    window.history.replaceState(null, '', url);
+  }, []);
 
   const setWindow = useCallback(
     (next: ActivityWindowWire) => {
