@@ -38,8 +38,12 @@ unknown. Existing database statement and outer collection deadlines apply.
 
 Eight panels show outcomes, confirmed messages, terminal p50/p95, all-age pending,
 overdue, oldest pending attempt age and failure categories. Log distributions use
-ALIGN_MEAN so counts and SQL percentiles are not re-estimated from histogram
-buckets. Points represent five-minute snapshot means, with the maximum across
+ALIGN_SUM per original series, then REDUCE_MEAN with full resource, log and cohort
+identity preserved to extract numeric means. A secondary ALIGN_MEAN/REDUCE_MAX
+combines numeric means across resource/revision series. Applying ALIGN_MEAN directly
+to DELTA/DISTRIBUTION metrics is rejected by Google Cloud. This keeps counts and
+SQL percentiles from being re-estimated from histogram buckets. Points represent
+five-minute snapshot means, with the maximum across
 resource/revision series; they are never additive event totals. The explanatory
 text stays beside these panels, and collection freshness includes the new actions
 source. Runtime absence alerts must pass the existing freshness gate before
@@ -56,12 +60,16 @@ visible telemetry failure and must not be described as healthy zero coverage.
 - SQL tests cover recovery deduplication, completed no-ops, protected exclusions,
   queue/execution overdue states, reverse outcomes, old pending attempts, bounded
   unknown failures, ISO-string binds, empty results and failed reads.
-- Independent review found the histogram percentile dashboard bug; corrected
-  namespace/grouping/mean aggregation is protected by explicit chart tests.
+- Initial review found the histogram percentile dashboard bug, but missed that
+  direct mean alignment also rejects distributions. The authenticated dashboard
+  check caught that follow-up failure; descriptor-aware tests and live numeric
+  parity now protect the corrected two-stage aggregation. See the
+  [repair record](action-dashboard-distribution-repair-2026-10-03.md).
 - Optional collection tests retain independent queue readings on database failure.
-- Metrics/dashboard definitions are source changes only until deployed and
-  provisioned. Exact shared URL access, panel rendering and freshness require an
-  authenticated browser check before reporting the dashboard ready.
+- The action metrics are provisioned and the eight action charts were repaired
+  in the existing production dashboard on 2026-10-03. Seven render observations;
+  pending age is absent alongside zero pending counts. This establishes usability
+  for these panels, not complete coverage of every vendor or Sentry source maps.
 - Rollback is reverting this PR and removing only its new metric/panel definitions;
   no production schema rollback or mailbox mutation is involved.
 

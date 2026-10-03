@@ -37,6 +37,33 @@ function chart(
     },
   };
 }
+function distributionSnapshotChart(title, name, groups) {
+  // ALIGN_MEAN rejects log distributions. Merge each original series's samples,
+  // then extract its exact mean before taking the maximum across resources.
+  const widget = chart(
+    title,
+    'logging.googleapis.com/user/' + name,
+    'cloud_run_revision',
+    'resource.labels.service_name="declutrmail-worker"',
+    'ALIGN_SUM',
+    '300s',
+    'REDUCE_MEAN',
+    [
+      ...groups,
+      'metric.label.log',
+      ...['project_id', 'location', 'service_name', 'configuration_name', 'revision_name'].map(
+        (key) => 'resource.label.' + key,
+      ),
+    ],
+  );
+  widget.xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter.secondaryAggregation = {
+    alignmentPeriod: '300s',
+    perSeriesAligner: 'ALIGN_MEAN',
+    crossSeriesReducer: 'REDUCE_MAX',
+    groupByFields: groups,
+  };
+  return widget;
+}
 export function dashboard(project) {
   const custom = (title, metric, extra = '') => chart(title, PREFIX + metric, 'global', extra);
   const resource = (title, measure) => custom(title, 'usage', `metric.labels.measure="${measure}"`);
@@ -158,18 +185,7 @@ export function dashboard(project) {
             'ops_action_failure',
             ['metric.label.direction', 'metric.label.verb', 'metric.label.reason'],
           ],
-        ].map(([title, name, groups]) =>
-          chart(
-            title,
-            'logging.googleapis.com/user/' + name,
-            'cloud_run_revision',
-            'resource.labels.service_name="declutrmail-worker"',
-            'ALIGN_MEAN',
-            '300s',
-            'REDUCE_MAX',
-            groups,
-          ),
-        ),
+        ].map(([title, name, groups]) => distributionSnapshotChart(title, name, groups)),
         ...[
           [
             'Cloud Run billable instance time — daily seconds by service',
