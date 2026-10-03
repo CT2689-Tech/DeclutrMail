@@ -25,6 +25,9 @@ const timestamp = (value) =>
     ? new Date(value).toISOString()
     : null;
 const list = (value) => (Array.isArray(value) ? value : []);
+// Existing query tags, not query keys: never accept mailbox IDs, filter text
+// or an arbitrary token. Extend only for source-verified diagnostic scopes.
+const QUERY_REASON_ALLOWLIST = new Set(['undo', 'snoozed']);
 function sourceFile(value) {
   if (typeof value !== 'string') return null;
   const clean = value
@@ -104,12 +107,30 @@ export function eventSummary(event) {
         })),
     }));
   const tags = {};
-  for (const { key, value } of list(event?.tags)) {
+  const eventTags = list(event?.tags).filter(
+    (tag) => tag !== null && typeof tag === 'object' && !Array.isArray(tag),
+  );
+  // Conflicting duplicates are ambiguous regardless of order, including
+  // conflicts with a value that the allowlist would otherwise discard.
+  const uniqueValue = (key) => {
+    const values = new Set(eventTags.filter((tag) => tag.key === key).map((tag) => tag.value));
+    return values.size === 1 ? values.values().next().value : undefined;
+  };
+  const surface = uniqueValue('surface');
+  const reason = uniqueValue('reason');
+  for (const { key, value } of eventTags) {
     if ((key === 'environment' || key === 'release') && identifier(value)) tags[key] = value;
-    if (key === 'reason' && typeof value === 'string' && /^react-error-[0-9]{1,4}$/.test(value))
+    if (
+      key === 'reason' &&
+      value === reason &&
+      typeof value === 'string' &&
+      (/^react-error-[0-9]{1,4}$/.test(value) ||
+        (surface === 'query' && QUERY_REASON_ALLOWLIST.has(value)))
+    )
       tags.reason = value;
     if (
       key === 'surface' &&
+      value === surface &&
       [
         'landing',
         'home',
