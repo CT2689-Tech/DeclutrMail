@@ -69,6 +69,7 @@ export function TriageFocusCard({
   unprotectSlot?: ReactNode;
 }) {
   const isNarrow = useIsAtMost('xs');
+  const logoSize = isNarrow ? 48 : LOGO;
   const actionsDisabled = busy || inlinePreviewGates(inlinePreview).blocked;
   const facts = focusFacts(row);
 
@@ -101,9 +102,7 @@ export function TriageFocusCard({
           flexDirection: 'column',
           alignItems: 'center',
           textAlign: 'center',
-          padding: isNarrow
-            ? `${space[8]}px ${space[5]}px ${space[6]}px`
-            : `${space[10]}px ${space[8]}px`,
+          padding: isNarrow ? `${space[4]}px ${space[5]}px` : `${space[10]}px ${space[8]}px`,
           background: color.card,
           borderRadius: radius.lg,
           border: `1px solid ${color.border}`,
@@ -112,52 +111,67 @@ export function TriageFocusCard({
           ...(isNarrow ? { touchAction: 'pan-y' as const } : null),
         }}
       >
-        <span
+        <div
           style={{
-            display: 'inline-flex',
-            borderRadius: Math.round(LOGO * 0.28),
-            boxShadow: shadow.card,
+            display: 'flex',
+            flexDirection: isNarrow ? 'row' : 'column',
+            alignItems: 'center',
+            gap: isNarrow ? space[3] : 0,
+            width: '100%',
+            minWidth: 0,
           }}
         >
-          <Avatar
-            name={row.senderName}
-            domain={row.senderDomain}
-            size={LOGO}
-            hasMark={row.brandMark}
-          />
-        </span>
-        <h2
-          title={row.senderName}
-          style={{
-            margin: `${space[5]}px 0 0`,
-            maxWidth: '100%',
-            fontFamily: font.display,
-            fontSize: 'clamp(26px, 3vw, 34px)',
-            fontWeight: 400,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.2,
-            color: color.fg,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {row.senderName}
-        </h2>
-        <span
-          title={row.senderEmail}
-          style={{
-            marginTop: space[1],
-            maxWidth: '100%',
-            fontSize: text.sm,
-            color: color.fgMuted,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {row.senderEmail}
-        </span>
+          <span
+            style={{
+              display: 'inline-flex',
+              flexShrink: 0,
+              borderRadius: Math.round(logoSize * 0.28),
+              boxShadow: shadow.card,
+            }}
+          >
+            <Avatar
+              name={row.senderName}
+              domain={row.senderDomain}
+              size={logoSize}
+              hasMark={row.brandMark}
+            />
+          </span>
+          <div style={{ minWidth: 0, maxWidth: '100%', textAlign: isNarrow ? 'left' : 'center' }}>
+            <h2
+              title={row.senderName}
+              style={{
+                margin: isNarrow ? 0 : `${space[5]}px 0 0`,
+                maxWidth: '100%',
+                fontFamily: font.display,
+                fontSize: 'clamp(26px, 3vw, 34px)',
+                fontWeight: 400,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2,
+                color: color.fg,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {row.senderName}
+            </h2>
+            <span
+              title={row.senderEmail}
+              style={{
+                display: 'block',
+                marginTop: space[1],
+                maxWidth: '100%',
+                fontSize: text.sm,
+                color: color.fgMuted,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {row.senderEmail}
+            </span>
+          </div>
+        </div>
         {row.protectionReason !== null && (
           <span style={{ marginTop: space[3] }}>
             <ProtectedMark />
@@ -167,9 +181,9 @@ export function TriageFocusCard({
         <span
           data-dm-focus-count
           style={{
-            marginTop: space[8],
+            marginTop: isNarrow ? space[4] : space[8],
             fontFamily: font.display,
-            fontSize: 'clamp(52px, 6vw, 70px)',
+            fontSize: isNarrow ? 'clamp(36px, 8vw, 42px)' : 'clamp(52px, 6vw, 70px)',
             fontWeight: 400,
             lineHeight: 1,
             letterSpacing: '-0.03em',
@@ -186,7 +200,7 @@ export function TriageFocusCard({
         {facts.why !== null && (
           <p
             style={{
-              margin: `${space[5]}px 0 0`,
+              margin: `${isNarrow ? space[3] : space[5]}px 0 0`,
               maxWidth: '36ch',
               fontSize: text.md,
               color: color.fgSoft,
@@ -213,7 +227,7 @@ export function TriageFocusCard({
           style={{
             // Explicit resets, not `all: unset` — that also unsets the
             // global :focus-visible ring.
-            marginTop: space[3],
+            marginTop: isNarrow ? space[2] : space[3],
             height: isNarrow ? 44 : 30,
             padding: `0 ${space[4]}px`,
             display: 'inline-flex',
@@ -279,7 +293,7 @@ export function TriageFocusCard({
           </div>
         )}
 
-        <div style={{ width: '100%', marginTop: space[8] }}>
+        <div style={{ width: '100%', marginTop: isNarrow ? space[4] : space[8] }}>
           <ActionToolbar
             row={row}
             onAction={onAction}
