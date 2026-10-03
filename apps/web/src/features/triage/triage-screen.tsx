@@ -1662,7 +1662,7 @@ export function TriageScreen({
               <SessionProgress
                 decided={sessionMailboxId === actionMailboxId ? sessionDecidedCount : 0}
                 queued={readyRows.length}
-                {...(mode === 'focus' && focusItem != null
+                {...(modeReady && mode === 'focus' && focusItem != null
                   ? { focusPosition: focusPosition(readyRows, focusItem) }
                   : {})}
               />

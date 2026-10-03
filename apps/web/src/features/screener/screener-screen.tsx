@@ -19,6 +19,7 @@ import { useOptionalAuth } from '@/features/auth/auth-provider';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
+import { useHydrated } from '@/lib/use-hydrated';
 import { undoKeys } from '@/features/undo/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
@@ -534,6 +535,7 @@ export function ScreenerScreen({
   // `parkedRowId` are unchanged; this only adds the cross-surface case
   // local state structurally cannot see.
   const sharedLock = useSenderInFlightLock(activeMailbox?.id);
+  const hydrated = useHydrated();
   /** Rows that may not take another decision yet: parked, or unconfirmed. */
   const isHeld = useCallback(
     (rowId: string) => rowId === parkedRowId || holds.held.has(rowId),
@@ -907,7 +909,9 @@ export function ScreenerScreen({
                   row={row}
                   expanded={expandedRowId === row.id}
                   busy={
-                    busyRowId === row.id || isHeld(row.id) || sharedLock.senderIds.has(row.senderId)
+                    busyRowId === row.id ||
+                    isHeld(row.id) ||
+                    (hydrated && sharedLock.senderIds.has(row.senderId))
                   }
                   unknownVerb={holds.held.get(row.id)?.verb ?? null}
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
