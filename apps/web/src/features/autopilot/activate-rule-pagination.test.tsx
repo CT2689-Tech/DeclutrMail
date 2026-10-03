@@ -1,10 +1,20 @@
-import { act, render, screen, within, waitFor } from '@testing-library/react';
+import { act, render as testingRender, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { NEWSLETTER_GRAVEYARD, RULE_PREVIEW_RESULT } from './fixtures';
 import type { AutopilotPreviewSenderPageDto } from '@/lib/api/autopilot';
 import { ApiError } from '@/lib/api/client';
+
+import type { ReactNode } from 'react';
+import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+
+function render(ui: ReactNode) {
+  const client = createTestQueryClient();
+  return testingRender(ui, {
+    wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+  });
+}
 
 function senderPage(total: number, page = 1): AutopilotPreviewSenderPageDto {
   const offset = (page - 1) * 25;
@@ -140,4 +150,53 @@ it('loads the next and previous pages without accumulating hundreds of rows', as
   await userEvent.click(screen.getByRole('button', { name: 'Previous' }));
   await waitFor(() => expect(screen.getByText('26–50 of 53')).toBeInTheDocument());
   expect(loadPreviewPage.mock.calls.map((call) => call[2])).toEqual([2, 3, 2]);
+});
+
+it('retains page two during a slow or failed page-three request', async () => {
+  let rejectPage!: (error: Error) => void;
+  const loadPreviewPage = vi
+    .fn()
+    .mockResolvedValueOnce(senderPage(53, 2))
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectPage = reject;
+        }),
+    )
+    .mockResolvedValueOnce(senderPage(53, 3));
+  render(<ActivateRuleModal {...modalProps(senderPage(53))} loadPreviewPage={loadPreviewPage} />);
+  await userEvent.click(screen.getByText('Details', { exact: true }));
+  await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await screen.findByText('26–50 of 53');
+  await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByText('26–50 of 53')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+  await act(async () => rejectPage(new Error('Synthetic slow failure')));
+  await screen.findByText('Could not load senders. Please retry.');
+  expect(screen.getByText('Sender 26', { exact: true })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Retry page' }));
+  await screen.findByText('51–53 of 53');
+  expect(screen.getByRole('button', { name: 'Turn on' })).toBeEnabled();
+});
+
+it('ignores an old page response after a fresh preview replaces it', async () => {
+  let resolvePage!: (page: AutopilotPreviewSenderPageDto) => void;
+  const loadPreviewPage = vi.fn(
+    () =>
+      new Promise<AutopilotPreviewSenderPageDto>((resolve) => {
+        resolvePage = resolve;
+      }),
+  );
+  const view = render(
+    <ActivateRuleModal {...modalProps(senderPage(53))} loadPreviewPage={loadPreviewPage} />,
+  );
+  await userEvent.click(screen.getByText('Details', { exact: true }));
+  await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+  const fresh = { ...senderPage(23), previewId: '22222222-2222-4222-8222-222222222222' };
+  view.rerender(<ActivateRuleModal {...modalProps(fresh)} loadPreviewPage={loadPreviewPage} />);
+  expect(screen.getByText('1–23 of 23')).toBeInTheDocument();
+  await act(async () => resolvePage(senderPage(53, 2)));
+  expect(screen.getByText('1–23 of 23')).toBeInTheDocument();
+  expect(screen.queryByText('26–50 of 53')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Turn on' })).toBeEnabled();
 });

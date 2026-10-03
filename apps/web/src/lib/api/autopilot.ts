@@ -329,9 +329,10 @@ export function getRulePreviewSenders(
   ruleId: string,
   previewId: string,
   page: number,
+  signal?: AbortSignal,
 ): Promise<Envelope<AutopilotPreviewSenderPage, unknown>> {
   return apiGet(
     `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview/${encodeURIComponent(previewId)}/senders`,
-    { query: { page } },
+    { query: { page }, ...(signal === undefined ? {} : { signal }) },
   );
 }

@@ -85,6 +85,26 @@ const REQ_WITH_CORRELATION = {
 };
 
 describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
+  it('preserves the Autopilot preview expiry code for client refresh recovery', () => {
+    const { status, body } = invoke(
+      new AllExceptionsFilter(),
+      new HttpException(
+        {
+          code: 'AUTOPILOT_PREVIEW_EXPIRED',
+          message: 'This preview expired. Refresh to see current matches.',
+        },
+        HttpStatus.GONE,
+      ),
+      REQ_WITH_CORRELATION,
+    );
+    expect(status).toBe(410);
+    expect(body.error).toMatchObject({
+      code: 'AUTOPILOT_PREVIEW_EXPIRED',
+      retryable: false,
+      severityTier: 'inline_recoverable',
+    });
+  });
+
   it('maps HTTP 429 to RATE_LIMITED, retryable, inline_recoverable', () => {
     const { status, body } = invoke(
       new AllExceptionsFilter(),

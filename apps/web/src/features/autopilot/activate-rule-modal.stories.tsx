@@ -9,6 +9,7 @@
 // only (D227).
 
 import { useMemo, useRef, useState, type ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AutopilotPreviewSenderPageDto } from '@/lib/api/autopilot';
 import { tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -65,7 +66,16 @@ const baseArgs: ModalArgs = {
 };
 
 function frame(children: React.ReactNode) {
-  return <div style={{ minHeight: 480, background: color.bg }}>{children}</div>;
+  return <StoryQueryFrame>{children}</StoryQueryFrame>;
+}
+
+function StoryQueryFrame({ children }: { children: React.ReactNode }) {
+  const [client] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={client}>
+      <div style={{ minHeight: 480, background: color.bg }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 /**

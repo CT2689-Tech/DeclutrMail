@@ -538,6 +538,13 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This recovery key was already used for a different confirmation.',
   },
+  // Autopilot review snapshots; retrying the same preview cannot revive it.
+  AUTOPILOT_PREVIEW_EXPIRED: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This preview expired. Refresh to see current matches.',
+  },
   // Later (D82, D232)
   LATER_TIMER_NOT_FOUND: {
     status: 409,

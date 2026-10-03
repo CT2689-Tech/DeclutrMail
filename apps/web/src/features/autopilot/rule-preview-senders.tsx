@@ -1,29 +1,21 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { Button } from '@declutrmail/shared';
 import {
-  getRulePreviewSenders,
   type AutopilotPreviewSenderPageDto,
   type AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
 import { RulePreviewSample } from './rule-preview-panel';
-import { apiErrorCode } from '@/lib/api/client';
-
-export type LoadPreviewPage = (
-  ruleId: string,
-  previewId: string,
-  page: number,
-) => Promise<AutopilotPreviewSenderPageDto>;
-const loadDefaultPage: LoadPreviewPage = (ruleId, previewId, page) =>
-  getRulePreviewSenders(ruleId, previewId, page).then((env) => env.data);
+import { usePreviewSenderPage, type LoadPreviewPage } from './api/use-preview-sender-page';
+export type { LoadPreviewPage } from './api/use-preview-sender-page';
 
 /** Mounted anew for each preview id. Only the current 25-row page is rendered. */
 export function RulePreviewSenders({
   ruleName,
   result,
   initialPage,
-  loadPage = loadDefaultPage,
+  loadPage,
   expired,
   onExpired,
   onReadyChange,
@@ -36,39 +28,17 @@ export function RulePreviewSenders({
   onExpired: () => void;
   onReadyChange: (ready: boolean) => void;
 }) {
-  const [page, setPage] = useState(initialPage);
-  const [busy, setBusy] = useState(false);
-  const [failedPage, setFailedPage] = useState<number | null>(null);
-  const request = useRef(0);
   const heading = useRef<HTMLDivElement>(null);
-  useEffect(
-    () => () => {
-      request.current++;
-    },
-    [],
-  );
+  const { page, busy, failedPage, goToPage } = usePreviewSenderPage({
+    ruleId: result.ruleId,
+    initialPage,
+    loadPage,
+    expired,
+    onExpired,
+    onReadyChange,
+    onPageSettled: () => heading.current?.scrollIntoView({ block: 'start' }),
+  });
   const lastPage = Math.max(1, Math.ceil(page.total / page.pageSize));
-  const goToPage = async (next: number) => {
-    if (busy || expired) return;
-    onReadyChange(false);
-    setBusy(true);
-    setFailedPage(null);
-    const currentRequest = ++request.current;
-    try {
-      const nextPage = await loadPage(result.ruleId, initialPage.previewId, next);
-      if (currentRequest !== request.current) return;
-      setPage(nextPage);
-      onReadyChange(true);
-      heading.current?.scrollIntoView({ block: 'start' });
-    } catch (error) {
-      if (currentRequest !== request.current) return;
-      if (apiErrorCode(error) === 'AUTOPILOT_PREVIEW_EXPIRED') onExpired();
-      else setFailedPage(next);
-      heading.current?.scrollIntoView({ block: 'start' });
-    } finally {
-      if (currentRequest === request.current) setBusy(false);
-    }
-  };
   return (
     <div aria-busy={busy} ref={heading}>
       {busy && <span role="status">Loading senders…</span>}
