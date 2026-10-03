@@ -87,7 +87,7 @@ export function SuggestionGroup({
         <span
           style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
         >
-          {matches.length} waiting
+          {matches.length} {pendingApproximate ? 'on this page' : 'waiting'}
         </span>
       </div>
 

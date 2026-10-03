@@ -7,6 +7,7 @@ const expected = new Map([
   ['sender-policy.spec.ts', 1],
   ['protection-review.spec.ts', 1],
   ['followups-dismiss.spec.ts', 1],
+  ['autopilot-pages.spec.ts', 1],
   ['later-recovery.spec.ts', 1],
   ['brief-preview.spec.ts', 1],
   ['senders-search-typing.spec.ts', 3],

@@ -19,6 +19,7 @@
  */
 
 import { z } from 'zod';
+import type { PaginationMeta } from './envelope';
 
 /** UUID v4 — match / rule ids. */
 const UuidSchema = z.string().uuid();
@@ -180,3 +181,10 @@ export const AutopilotRulePreviewResultSchema = z
   })
   .strict();
 export type AutopilotRulePreviewResult = z.infer<typeof AutopilotRulePreviewResultSchema>;
+
+/** D104 pending list metadata: current offerable queue, not approved work. */
+export interface AutopilotPendingMeta {
+  pagination: PaginationMeta;
+  /** Live count at this read; it may change between page requests. */
+  total: number;
+}

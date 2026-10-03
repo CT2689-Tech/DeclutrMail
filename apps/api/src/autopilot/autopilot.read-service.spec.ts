@@ -17,7 +17,8 @@ import {
 } from '@declutrmail/db';
 import { AUTOPILOT_PRESETS } from '@declutrmail/workers';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { decodeCursor } from '@declutrmail/shared/contracts';
 import { drizzle } from 'drizzle-orm/pglite';
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -923,6 +924,49 @@ describe('AutopilotReadService', () => {
 
       const pending = await service.listPendingSuggestions(mailboxA);
       expect(pending.map((p) => p.reason)).toEqual(['unprotected']);
+      expect((await service.listPendingSuggestionsPage(mailboxA)).meta!.total).toBe(1);
+    });
+
+    it('pages past 50 without losing PostgreSQL microsecond boundaries and excludes other tenants', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const keys = Array.from({ length: 61 }, (_, i) => (i + 1).toString(16).padStart(64, '0'));
+      await indexSenders(db, mailboxA, keys);
+      await db.insert(ruleMatchLog).values(
+        keys.map((senderKey) => ({
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey,
+          modeAtMatch: 'observe' as const,
+          confidence: '0.92',
+          reason: 'pagination fixture',
+        })),
+      );
+      // Different database microseconds within a single JS millisecond.
+      await db
+        .update(ruleMatchLog)
+        .set({ matchedAt: sql`date_trunc('second', now()) + interval '0.000123 seconds'` })
+        .where(eq(ruleMatchLog.mailboxAccountId, mailboxA));
+      const first = await service.listPendingSuggestionsPage(mailboxA);
+      expect(first.data).toHaveLength(50);
+      expect(first.meta).toMatchObject({ total: 61, pagination: { hasMore: true, limit: 50 } });
+      const cursor = decodeCursor(first.meta!.pagination.nextCursor)!;
+      expect(cursor.key).toMatch(/\.000123Z$/);
+      const next = await service.listPendingSuggestionsPage(mailboxA, cursor);
+      expect(next.data).toHaveLength(11);
+      expect(next.meta).toMatchObject({
+        total: 61,
+        pagination: { hasMore: false, nextCursor: null },
+      });
+      expect(new Set([...first.data, ...next.data].map((m) => m.id)).size).toBe(61);
+      expect((await service.listPendingSuggestionsPage(mailboxB, cursor)).data).toEqual([]);
+      // Boundary row disappearing does not invalidate a keyset continuation.
+      await db
+        .update(ruleMatchLog)
+        .set({ resolution: 'dismissed', dismissReason: 'user' })
+        .where(eq(ruleMatchLog.id, cursor.id));
+      const afterDismiss = await service.listPendingSuggestionsPage(mailboxA, cursor);
+      expect(afterDismiss.data.map((m) => m.id)).toEqual(next.data.map((m) => m.id));
+      expect(afterDismiss.meta!.total).toBe(60);
     });
 
     it('returns observe+pending matches newest first', async () => {
