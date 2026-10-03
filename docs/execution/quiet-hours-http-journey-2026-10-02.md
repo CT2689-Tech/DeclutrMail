@@ -48,3 +48,12 @@ A separate negative control used the installed raw postgres-js JSON serializer
 and PGlite jsonb merge: the original produced an array; text-first parse preserved
 the object and baseline20:00 value. E2E typecheck/lint and21 harness contracts pass.
 This proves the fixture encoding correction, not the real HTTP journey.
+
+The third CI candidate proved baseline API roundtrip, initial PUT/readback and
+reload. Its second temporal fill displayed08:00 while the controlled form copy
+remained07:00 and Save stayed disabled. In local Chromium, native ArrowUp updated
+the form copy and enabled Save immediately; fill followed by Tab did not. The
+retry edits now use an actual keyboard hour increment and require the input08:00,
+reactive cross-midnight copy and enabled Save before writing. This corrects the
+automation path; it does not establish a production input-handler defect or relax
+the failed-write, independent API/DB or reload assertions. Full CI remains pending.

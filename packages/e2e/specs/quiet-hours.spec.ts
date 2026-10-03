@@ -117,6 +117,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   const firstWrite = page.waitForResponse(
     (response) => response.url().endsWith(path) && response.request().method() === 'PUT',
   );
+  await expect(save).toBeEnabled();
   await save.click();
   expect((await firstWrite).status()).toBe(200);
   expect((await api.get<QuietHoursState>(path)).config).toEqual(config);
@@ -142,7 +143,14 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     });
   };
   await page.route(pattern, rejectWrite);
-  await page.getByLabel('Quiet window end').fill('08:00');
+  // Exercise the native time control with a real hour increment. Direct
+  // temporal fill can leave the DOM value ahead of the controlled form draft.
+  const end = page.getByLabel('Quiet window end');
+  await end.focus();
+  await end.press('ArrowUp');
+  await expect(end).toHaveValue('08:00');
+  await expect(page.getByText('Ends at 08:00 the next day.')).toBeVisible();
+  await expect(save).toBeEnabled();
   await save.click();
   await expect(
     page.getByText("Couldn't save quiet hours. Try again.", { exact: true }),
@@ -155,7 +163,11 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await page.unroute(pattern, rejectWrite);
   await page.reload();
   await expect(page.getByLabel('Quiet window end')).toHaveValue('07:00');
-  await page.getByLabel('Quiet window end').fill('08:00');
+  await end.focus();
+  await end.press('ArrowUp');
+  await expect(end).toHaveValue('08:00');
+  await expect(page.getByText('Ends at 08:00 the next day.')).toBeVisible();
+  await expect(save).toBeEnabled();
   const retry = page.waitForResponse(
     (response) => response.url().endsWith(path) && response.request().method() === 'PUT',
   );
