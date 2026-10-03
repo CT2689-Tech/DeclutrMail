@@ -68,7 +68,10 @@ the assertion failed because the current SDK uses a `{batch: [...]}` transport
 envelope. The decoder now reads that envelope in addition to arrays/single events.
 Capture context loads lazily with the consented SDK; only bounded plan state stays
 synchronous for logout. This avoids putting optional wire enrichment on the
-Cookies page’s initial JavaScript path without changing its bundle budget. Public
+Cookies page’s initial JavaScript path. CI measured Cookies at 151.2 kB: it
+also consumes the synchronous withdrawal wrapper and its bounded plan-reset seam.
+A deliberate Cookies-only budget change from 151 to 152 kB records this small
+intentional cost and keeps 0.8 kB of headroom. Other route budgets are unchanged. Public
 transport verifies unknown plan; authenticated plan binding has focused unit
 coverage rather than a claimed browser-tier proof.
 
