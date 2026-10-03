@@ -319,3 +319,19 @@ export const EqualCountChoices: Story<typeof ConfirmActionModal> = {
     },
   } satisfies Args,
 };
+
+/** The selection is visible while live inclusion is still being checked. */
+export const BulkCheckingInclusion: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...BulkDelete.args!,
+    bulkPreview: { data: undefined, loading: true, error: false },
+  },
+};
+
+/** A failed required preview is unavailable, not a zero or an endless check. */
+export const BulkInclusionUnavailable: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...BulkDelete.args!,
+    bulkPreview: { data: undefined, loading: false, error: true },
+  },
+};

@@ -1225,21 +1225,28 @@ export function ConfirmActionModal({
   if (isUnsubVerb) {
     facts.push({ label: 'Cleanup actions', value: 'Acting on past email uses a second one' });
   }
-  // D226 honesty — when the eligibility gate narrowed the selection
-  // before this sheet opened, say by how much and why.
-  if (request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0)) {
-    facts.push({
-      label: 'Senders',
-      value: (
-        <span aria-label="Senders included in this bulk action">
-          {/* The quota segment is what reconciles "eligible" with the
-              title once a cap is in play. */}
-          {selectedCount} selected, {eligibleCount} eligible, {skippedCount} skipped
-          {quotaCappedFrom ? `, ${requestedSenderCount} within this month's actions` : ''}
-        </span>
-      ),
-    });
-  }
+  // Decision-point scope disclosure. The live preview's count replaces the
+  // selection-time arithmetic; new protection/deletion can narrow it further.
+  const showSelectionSummary = selectedCount > 1 || skippedCount > 0;
+  const selectionSummary = showSelectionSummary ? (
+    <div
+      aria-label="Senders included in this bulk action"
+      style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5, overflowWrap: 'anywhere' }}
+    >
+      {fmt(selectedCount)} selected
+      {requiresLivePreview
+        ? livePreviewReady
+          ? ` · ${fmt(n)} in this preview`
+          : livePreviewLoading
+            ? ' · Checking inclusion…'
+            : ' · Inclusion unavailable'
+        : ''}
+      {livePreviewReady && protectedSkipped > 0
+        ? ` · ${fmt(protectedSkipped)} Protected excluded`
+        : ''}
+      {livePreviewReady && peopleSkipped > 0 ? ` · ${peopleLabel(peopleSkipped)} excluded` : ''}
+    </div>
+  ) : null;
   if (protectedSkipped > 0) {
     facts.push({ label: 'Protected', value: 'Unprotect a sender to include it' });
   }
@@ -1438,8 +1445,11 @@ export function ConfirmActionModal({
         status={status ?? undefined}
         footer={quotaLine === null ? undefined : <span>{quotaLine}</span>}
       >
-        {controls.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>{controls}</div>
+        {selectionSummary || controls.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+            {selectionSummary}
+            {controls}
+          </div>
         ) : undefined}
       </PreviewSheet>
     </div>
