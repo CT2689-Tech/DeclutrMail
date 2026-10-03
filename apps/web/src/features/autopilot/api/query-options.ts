@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import type { AutopilotPendingMeta, Envelope } from '@declutrmail/shared/contracts';
 
 import type {
   AutopilotMatchDto,
@@ -19,6 +20,17 @@ export function autopilotRulesQueryOptions(reader: AutopilotReader<AutopilotRule
 export function pendingSuggestionsQueryOptions(reader: AutopilotReader<AutopilotMatchDto[]>) {
   return queryOptions({
     queryKey: autopilotKeys.pendingSuggestions(),
+    queryFn: ({ signal }) => reader(signal),
+  });
+}
+
+export function pendingSuggestionsPageQueryOptions(
+  mailboxId: string | null,
+  reader: AutopilotReader<Envelope<AutopilotMatchDto[], AutopilotPendingMeta>>,
+  cursor?: string,
+) {
+  return queryOptions({
+    queryKey: [...autopilotKeys.pendingSuggestions(), 'page', mailboxId, cursor ?? null],
     queryFn: ({ signal }) => reader(signal),
   });
 }

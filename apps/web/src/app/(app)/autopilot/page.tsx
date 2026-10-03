@@ -6,12 +6,22 @@
 // read; suggestions and every mutation stay unmounted and server-gated.
 
 import { headers } from 'next/headers';
+import { hasCapability } from '@declutrmail/shared/entitlements';
+import type { AutopilotPendingMeta } from '@declutrmail/shared/contracts';
 
 import { AutopilotEntitlementSurface } from '@/features/autopilot/autopilot-entitlement-surface';
-import { autopilotRulesQueryOptions } from '@/features/autopilot/api/query-options';
+import {
+  autopilotRulesQueryOptions,
+  pendingSuggestionsPageQueryOptions,
+  patternSuggestionQueryOptions,
+} from '@/features/autopilot/api/query-options';
 import { getServerMe } from '@/features/auth/api/server-me';
-import type { AutopilotRuleDto } from '@/lib/api/autopilot';
-import { serverGet } from '@/lib/api/server';
+import type {
+  AutopilotMatchDto,
+  AutopilotPatternSuggestionDto,
+  AutopilotRuleDto,
+} from '@/lib/api/autopilot';
+import { serverGet, serverGetEnvelope } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
@@ -41,6 +51,30 @@ export default async function AutopilotPage() {
             ),
           ),
         ];
+        if (me !== null && hasCapability(me.tier, 'autopilot')) {
+          queries.push(
+            queryClient.fetchQuery(
+              pendingSuggestionsPageQueryOptions(mailboxId, (signal) =>
+                serverGetEnvelope<AutopilotMatchDto[], AutopilotPendingMeta>(
+                  '/api/autopilot/pending-suggestions',
+                  cookieHeader,
+                  signal,
+                  mailboxOptions,
+                ),
+              ),
+            ),
+            queryClient.fetchQuery(
+              patternSuggestionQueryOptions((signal) =>
+                serverGet<AutopilotPatternSuggestionDto | null>(
+                  '/api/autopilot/pattern-suggestion',
+                  cookieHeader,
+                  signal,
+                  mailboxOptions,
+                ),
+              ),
+            ),
+          );
+        }
         return queries;
       }}
     >
