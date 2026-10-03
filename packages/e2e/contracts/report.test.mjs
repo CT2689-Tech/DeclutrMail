@@ -12,6 +12,7 @@ const files = [
   ['followups-dismiss', 1],
   ['autopilot-pages', 1],
   ['later-recovery', 1],
+  ['quiet-hours', 1],
   ['brief-preview', 1],
   ['senders-search-typing', 3],
   ['public-journeys', 2],
