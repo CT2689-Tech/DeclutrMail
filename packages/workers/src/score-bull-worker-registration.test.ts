@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { DeadLetterEntry, DeadLetterRecorder } from './dead-letter.recorder.js';
 import { createRedisConnection, workerTuningOptions } from './queue.js';
+import { rescoreJobId } from './sender-index-sweep.worker.js';
 import {
   scoreBullWorkerOptions,
   scoreJobId,
@@ -157,6 +158,43 @@ describe('scoreBullWorker registration (real Redis + real BullMQ, PR #827 BLOCKI
   it('reaches Redis whenever TEST_REDIS_URL is set', () => {
     if (process.env['TEST_REDIS_URL']) expect(reason).toBe('reachable');
   });
+
+  it.runIf(live)(
+    'enqueues a sweep rescore and deduplicates retries by mailbox and tick',
+    async () => {
+      const queue = new Queue<ScoreJobData>(`rescore-id-test-${randomUUID()}`, {
+        connection: connection!,
+      });
+      const mailbox = randomUUID();
+      const otherMailbox = randomUUID();
+      const enqueue = (mailboxAccountId: string, tick: string) =>
+        queue.add(
+          'score',
+          {
+            mailboxAccountId,
+            senderKeys: ['a'.repeat(64)],
+            trigger: 'signal_change',
+            producedAtMs: Date.now(),
+          },
+          scoreJobOptions(rescoreJobId(mailboxAccountId, tick)),
+        );
+      try {
+        const first = await enqueue(mailbox, '2026-10-02T03:00');
+        const retry = await enqueue(mailbox, '2026-10-02T03:00');
+        const nextTick = await enqueue(mailbox, '2026-10-02T03:01');
+        const other = await enqueue(otherMailbox, '2026-10-02T03:00');
+
+        expect(retry.id).toBe(first.id);
+        expect(new Set([first.id, nextTick.id, other.id]).size).toBe(3);
+        expect((await queue.getWaiting()).map((job) => job.id).sort()).toEqual(
+          [first.id, nextTick.id, other.id].sort(),
+        );
+      } finally {
+        await queue.obliterate({ force: true });
+        await queue.close();
+      }
+    },
+  );
 
   it.runIf(live)(
     'a job that fails once retries with perMailboxPolicy backoff and completes',

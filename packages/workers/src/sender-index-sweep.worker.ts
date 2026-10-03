@@ -59,7 +59,7 @@ export const MAX_RESCORE_SET = 2_000;
  * again under a new id for any sender still marked.
  */
 export function rescoreJobId(mailboxAccountId: string, sweepTick: string): string {
-  return `${mailboxAccountId}:subset:${sweepTick}`;
+  return `rescore__${mailboxAccountId}__${sweepTick.replaceAll(':', '-')}`;
 }
 
 /**
