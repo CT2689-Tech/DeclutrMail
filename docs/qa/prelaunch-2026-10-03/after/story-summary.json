@@ -1,0 +1,1230 @@
+{
+  "summary": "Scoped fixes PR design/source/rendered/runtime gate PASS: all 39 original audit findings addressed; production builds, product journeys/contracts, accessibility/responsive 70/70, public 48-route sweep and two exact full hydration 43/43 runs pass. Initial 40/43 hydration signal remains preserved and unreproduced; no source patch or cause established, and it is not claimed fixed. Public-launch signoff remains false pending this residual and provider rehearsal.",
+  "freeze": {
+    "capturedAtUtc": "2026-10-03T22:52:16.419911+00:00",
+    "freezeCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "sourceDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "diffBytes": 0,
+    "browserSessions": [
+      "prelaunch-final-stories",
+      "prelaunch-final-focus",
+      "prelaunch-final-popover",
+      "prelaunch-final-clear"
+    ],
+    "allTheseSessionsClosed": true,
+    "method": "Read-only isolated Storybook fixtures and targeted source review; final Clear recheck captured after freeze"
+  },
+  "gate": {
+    "designSource": "PASS",
+    "renderedScope": "PASS",
+    "prerequisites": {
+      "workspaceTypecheck": "PASS; root reported",
+      "finalWebTypecheck": "PASS; root reported",
+      "lint": "PASS,0 errors / 6 existing warnings; root reported",
+      "sharedTests": "726 passing; root reported",
+      "affectedWebChecks": "1089 assertions across 41 suites plus 3 serial reruns / 89 tests; root reported",
+      "productionBuilds": "PASS; production web and Storybook",
+      "syntheticEndToEnd": "PASS: journeys-5 and journeys-6 each 15/15, contracts pass; no skips",
+      "productionWebBuild": "PASS; root reported at 1b5c9f93",
+      "productionStorybookBuild": "PASS; root reported at 1b5c9f93",
+      "publicPrerender": "PASS:45 static routes; root reported",
+      "bundleCheck": "PASS:51 templates; root reported",
+      "publicDemoInteractions": "PASS; independent production browser review",
+      "accessibilityResponsive": "PASS: 70/70, including Home",
+      "fullPublicSweep": "PASS: 48/48 public routes; zero overlays, overflow, broken images, invalid anchors or axe violations",
+      "hydration": "PASS: two exact full production runs each 43/43, 0 skips/retries; initial 40/43 signal preserved as unreproduced residual",
+      "providerRehearsal": "Outstanding public-launch prerequisite; not verified by this UI fixes PR",
+      "hydrationCoverageContracts": "PASS; root reported, 0 skips"
+    },
+    "release": "PUBLIC LAUNCH HELD: unresolved initial hydration signal and required provider rehearsal",
+    "integration": "PASS for scoped fixes PR; HYDRATION-01 retained as nonblocking residual",
+    "runtimeScope": "PASS for current scoped fixes PR verification",
+    "fixesPrSignoff": true,
+    "launchSignoff": false,
+    "originalAuditFindings": {
+      "total": 39,
+      "addressed": 39,
+      "result": "PASS",
+      "method": "All original findings implemented and cross-reviewed per root/owner confirmation"
+    }
+  },
+  "selection": {
+    "availableAppStories": 474,
+    "availableAppGroups": 68,
+    "baselineStatesCaptured": 121,
+    "appGroupsCaptured": 68,
+    "focusedEffectiveCaptures": 50,
+    "finalClearAdditionalRecaptures": 3,
+    "distinctStoryIdsAcrossBaselineAndFocus": 130,
+    "baselineViewport": {
+      "width": 320,
+      "height": 844,
+      "theme": "light"
+    },
+    "focusedConfigurations": {
+      "320x844 dark": 23,
+      "320x844 light": 11,
+      "1440x900 light": 10,
+      "1440x900 dark": 6
+    }
+  },
+  "automatedResults": {
+    "baselineRuntimeErrors": 0,
+    "baselineAccessibilityViolationStatesBeforeSiblingFixes": 3,
+    "focusedRuntimeErrors": 0,
+    "focusedAccessibilityViolationStatesAfterFinalRechecks": 0,
+    "finalProductOverflowFindings": []
+  },
+  "postAuditFindings": [
+    {
+      "id": "POST-UI-01",
+      "title": "Light phone bulk-action buttons used inverse lettering on paper",
+      "before": "Keep / Archive / Later: 1.09:1",
+      "source": "apps/web/src/features/senders/selection-bar.tsx",
+      "status": "FIXED and rendered PASS in both themes",
+      "after": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/010-senders-selectionbar--mobile-sheet-320-dark.png"
+        },
+        {
+          "width": 320,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/035-senders-selectionbar--mobile-sheet-320-light.png"
+        },
+        {
+          "width": 320,
+          "theme": "light",
+          "args": "tier:free",
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-senders-selectionbar--mobile-sheet-320-light.png"
+        },
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": "tier:free",
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/050-senders-selectionbar--mobile-sheet-320-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "POST-UI-02",
+      "title": "Small sender action pills had low foreground contrast",
+      "before": "Unsubscribe: 4.06:1; Keep: 4.44:1. The desktop resting row at 1440px reproduces it.",
+      "source": "apps/web/src/features/senders/action-row.tsx",
+      "status": "FIXED and rendered PASS on intended desktop variants in both themes; compact phone variants also PASS",
+      "after": [
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": null,
+          "localScreenshotFile": "030-senders-senderlist--default-1440-light.png",
+          "screenshotArchived": false
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": null,
+          "localScreenshotFile": "037-senders-senderlist--default-1440-dark.png",
+          "screenshotArchived": false
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": null,
+          "localScreenshotFile": "031-senders-senderrow--rest-1440-light.png",
+          "screenshotArchived": false
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": null,
+          "localScreenshotFile": "038-senders-senderrow--rest-1440-dark.png",
+          "screenshotArchived": false
+        }
+      ]
+    },
+    {
+      "id": "POST-UI-03",
+      "title": "Enabled ActionPopover hover and already-primary lettering lacked contrast",
+      "before": "Hovered Unsubscribe: 4.42:1; enabled DimmedPrimary Unsubscribe: 2.26:1",
+      "source": "packages/shared/src/components/action-popover.tsx",
+      "status": "FIXED and rendered PASS for actual hover and enabled primary in both themes",
+      "after": [
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/043-primitives-actionpopover--default-1440-light.png"
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/046-primitives-actionpopover--default-1440-dark.png"
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/044-primitives-actionpopover--dimmed-primary-1440-light.png"
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/047-primitives-actionpopover--dimmed-primary-1440-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "POST-UI-04",
+      "title": "Desktop Clear label used faint inverse-muted foreground in dark theme",
+      "before": "3.65:1 for an enabled 13px label on #f4edf1; confirmed at 1440px",
+      "source": "apps/web/src/features/senders/selection-bar.tsx:313",
+      "status": "FIXED and final freeze recapture PASS both themes",
+      "after": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "POST-COPY-01",
+      "title": "Home review card repeated its heading in first body sentence",
+      "source": "apps/web/src/features/home/home-view.tsx:193",
+      "status": "FIXED; final light/dark Home captures show one occurrence of daily-review heading"
+    },
+    {
+      "id": "POST-UI-SIBLING",
+      "title": "Activity next-page retry used same amber-on-fill pair",
+      "source": "apps/web/src/features/activity/activity-screen.tsx",
+      "before": "Source-derived sibling of confirmed amber pair; no separate pre-fix browser claim",
+      "status": "FIXED and rendered PASS for retry state both themes",
+      "after": [
+        {
+          "width": 320,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-features-activity-activityscreen--next-page-error-320-light.png"
+        },
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/048-features-activity-activityscreen--next-page-error-320-dark.png"
+        }
+      ]
+    }
+  ],
+  "qaFixtureVerification": [
+    {
+      "id": "account-accountdeletion--modal-step-1",
+      "screen": "Account deletion first confirmation",
+      "result": "PASS",
+      "evidence": "Gmail retained boundary, consent gate and cancel render.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/011-account-accountdeletion--modal-step-1-320-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "onboarding-stepprotectionreview--reassurance-leads",
+      "screen": "Protection review",
+      "result": "PASS",
+      "evidence": "Protected sender list and Finish for today render; no unintended cold Undo error chip.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/012-onboarding-stepprotectionreview--reassurance-leads-320-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "onboarding-syncgate--failed",
+      "screen": "Sync recovery gate",
+      "result": "PASS",
+      "evidence": "Partly ready explanation and Finish sync render.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/013-onboarding-syncgate--failed-320-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "senders-selectionbar--mixed-selection",
+      "screen": "Bulk selection desktop",
+      "result": "PASS",
+      "evidence": "Seeded tier and eligible counts render without undefined-tier exception; evaluated at desktop size.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+        },
+        {
+          "width": 1440,
+          "theme": "light",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+        },
+        {
+          "width": 1440,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "appshell-errors-globalerror--default",
+      "screen": "Global error boundary",
+      "result": "PASS",
+      "evidence": "Heading, support reference disclosure and retry render.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/015-appshell-errors-globalerror--default-320-dark.png"
+        }
+      ]
+    },
+    {
+      "id": "features-activity-activityscreen--empty",
+      "screen": "Activity empty window",
+      "result": "PASS",
+      "evidence": "Intended No activity in last 7 days state renders, not fetch failure.",
+      "states": [
+        {
+          "width": 320,
+          "theme": "dark",
+          "args": null,
+          "axeViolations": 0,
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/016-features-activity-activityscreen--empty-320-dark.png"
+        }
+      ]
+    }
+  ],
+  "ui06Verification": {
+    "result": "PASS",
+    "method": "320px dark DOM + axe + targeted visual inspection; intended desktop toolbar also at 1440px dark",
+    "states": [
+      "triage-triagescreen--default",
+      "triage-actiontoolbar--highlighted-recommendation",
+      "senders-senderdetailpage--default",
+      "screener-screenerscreen--default",
+      "screener-screenerscreen--delete-preview",
+      "screener-screenerscreen--protected-override-preview",
+      "features-activity-activityscreen--populated"
+    ],
+    "observed": "Delete/Protected warning/Activity Review and Screener unsure are present in relevant states; all focused runs have 0 axe violations. Triage Delete rgb(255,154,159) on dark neutral fill; Activity Review same foreground on card."
+  },
+  "homeHierarchy": {
+    "result": "PASS",
+    "statesReviewed": ["New User", "First Review Ready", "Cleared", "Sync Failed", "Load Error"],
+    "themes": ["light", "dark"],
+    "viewport": 320,
+    "observed": "Review-ready cards dominate the task with a clear CTA, sender samples and scope guidance. Cleared page separates progress, follow-on tasks, Activity and workspace groups; no overflow, h1-to-h2 order intact."
+  },
+  "desktopFixtureApplicability": [
+    {
+      "id": "features-activity-filterdialog--desktop",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/activity/activity-filter-dialog.stories.tsx"
+    },
+    {
+      "id": "senders-selectionbar--mixed-selection",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/senders/selection-bar.stories.tsx"
+    },
+    {
+      "id": "triage-actiontoolbar--highlighted-recommendation",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/triage/action-toolbar.stories.tsx"
+    },
+    {
+      "id": "triage-inlinepreview--archive",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/triage/inline-preview.stories.tsx"
+    },
+    {
+      "id": "triage-protectedactionnotice--on-archive",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/triage/protected-notice.stories.tsx"
+    },
+    {
+      "id": "triage-sessionprogress--focus-position",
+      "baselineFlag": "320px overflow",
+      "classification": "Explicit desktop/helper wrapper; not a product phone overflow",
+      "finalDesktop": "PASS at 1440px light; no overflow or axe violations",
+      "source": "./src/features/triage/session-progress.stories.tsx"
+    }
+  ],
+  "readinessFlagResolutions": [
+    {
+      "id": "settings-switch--off",
+      "classification": "Intentional textless control",
+      "evidence": "Screenshot shows visible switch; switch.stories.tsx26-27 supplies ariaLabel Daily Brief email; axe reports no violations."
+    },
+    {
+      "id": "shell-bannerslot--empty",
+      "classification": "Intentional empty slot",
+      "evidence": "banner-slot.stories.tsx48-55 deliberately mounts Quiet children returning null; screenshot empty; axe reports no violations."
+    }
+  ],
+  "planNoteApplicability": {
+    "freeMobileCaptures": "PASS: controls remain eligible in both themes, consistent with current manifest",
+    "lockedNote": "Source reviewed only; branch unreachable for current tiers because pricing.config.ts104 multi-sender = free. No rendered visible locked-note claim."
+  },
+  "sourceReview": {
+    "result": "PASS",
+    "scope": "Final public/shared structural and copy review against currentmain plus integrated changes",
+    "checks": [
+      "Heading hierarchy and page-level shared empty/error/privacy badge heading props",
+      "Foreground token use and filled/destructive surfaces preserved",
+      "Public action claims distinguish mail-moving preview from Unsubscribe method review",
+      "CTA destinations, structured product-story consistency and repeated copy",
+      "Mandatory preview/confirmation and scoped Undo boundaries preserved",
+      "No new promotion layer, state library or unsupported guarantees introduced"
+    ]
+  },
+  "coverage": [
+    {
+      "group": "Account/AccountDeletion",
+      "baselineStates": ["account-accountdeletion--modal-step-1"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Activity/ActionRecoveryDialog",
+      "baselineStates": ["activity-actionrecoverydialog--ready"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Admin / Security events",
+      "baselineStates": [
+        "admin-security-events--populated",
+        "admin-security-events--empty",
+        "admin-security-events--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "AppShell/Errors/AppError",
+      "baselineStates": ["appshell-errors-apperror--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "AppShell/Errors/GlobalError",
+      "baselineStates": ["appshell-errors-globalerror--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "AppShell/Errors/NotFound",
+      "baselineStates": ["appshell-errors-notfound--authed"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Auth/HeardFromPrompt",
+      "baselineStates": ["auth-heardfromprompt--idle", "auth-heardfromprompt--failed"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Autopilot/ActivateRuleModal",
+      "baselineStates": [
+        "autopilot-activaterulemodal--enable-with-watch-first",
+        "autopilot-activaterulemodal--enable-review-only"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Autopilot/AutopilotScreen",
+      "baselineStates": [
+        "autopilot-autopilotscreen--default",
+        "autopilot-autopilotscreen--empty",
+        "autopilot-autopilotscreen--activate-confirm-open",
+        "autopilot-autopilotscreen--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Autopilot/MatchReasonCopy",
+      "baselineStates": ["autopilot-matchreasoncopy--archive"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Autopilot/ObserveWindowBanner",
+      "baselineStates": ["autopilot-observewindowbanner--one-rule"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Autopilot/RuleCard",
+      "baselineStates": ["autopilot-rulecard--observe-window-complete"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Billing/Invoices & payment method",
+      "baselineStates": [
+        "billing-invoices-payment-method--with-invoices",
+        "billing-invoices-payment-method--loading",
+        "billing-invoices-payment-method--read-failed"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Consent/CookieConsentBanner",
+      "baselineStates": ["consent-cookieconsentbanner--first-visit"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Consent/CookiePreferences",
+      "baselineStates": ["consent-cookiepreferences--no-choice-yet"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Activity/ActivityScreen",
+      "baselineStates": [
+        "features-activity-activityscreen--populated",
+        "features-activity-activityscreen--empty"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Activity/FilterDialog",
+      "baselineStates": ["features-activity-filterdialog--desktop"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["features-activity-filterdialog--desktop"]
+    },
+    {
+      "group": "Features/Billing/BillingScreen",
+      "baselineStates": [
+        "features-billing-billingscreen--free-tier",
+        "features-billing-billingscreen--billing-disabled",
+        "features-billing-billingscreen--payment-unconfirmed",
+        "features-billing-billingscreen--past-due"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Billing/TierGate",
+      "baselineStates": ["features-billing-tiergate--under-tier"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Billing/UpgradeModal",
+      "baselineStates": ["features-billing-upgrademodal--closed"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Brief/BriefScreen",
+      "baselineStates": ["features-brief-briefscreen--populated"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Brief/NoiseArchiveBar",
+      "baselineStates": [
+        "features-brief-noisearchivebar--ready",
+        "features-brief-noisearchivebar--failed"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Brief/NoiseArchiveSheet",
+      "baselineStates": ["features-brief-noisearchivesheet--counting-inbox"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Followups/FollowupsScreen",
+      "baselineStates": [
+        "features-followups-followupsscreen--populated",
+        "features-followups-followupsscreen--empty"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Later/LaterScreen",
+      "baselineStates": [
+        "features-later-laterscreen--populated",
+        "features-later-laterscreen--error-state",
+        "features-later-laterscreen--empty",
+        "features-later-laterscreen--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/RoutePlaceholder",
+      "baselineStates": ["features-routeplaceholder--brief"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Features/Senders/KeyboardCheatsheet",
+      "baselineStates": ["features-senders-keyboardcheatsheet--open"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Home/HomeView",
+      "baselineStates": [
+        "home-homeview--cleared",
+        "home-homeview--load-error",
+        "home-homeview--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Mailboxes/MailboxReconnectBanner",
+      "baselineStates": ["mailboxes-mailboxreconnectbanner--visible"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Mailboxes/NoActiveMailbox",
+      "baselineStates": ["mailboxes-noactivemailbox--reconnect"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Onboarding/StepProtectionReview",
+      "baselineStates": [
+        "onboarding-stepprotectionreview--reassurance-leads",
+        "onboarding-stepprotectionreview--load-failed",
+        "onboarding-stepprotectionreview--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Onboarding/SyncGate",
+      "baselineStates": ["onboarding-syncgate--queued", "onboarding-syncgate--failed"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Onboarding/VerbTour",
+      "baselineStates": ["onboarding-verbtour--first-run"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Quiet/QuietHoursCard",
+      "baselineStates": [
+        "quiet-quiethourscard--unconfigured",
+        "quiet-quiethourscard--error-state",
+        "quiet-quiethourscard--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Screener/ScreenerScreen",
+      "baselineStates": [
+        "screener-screenerscreen--default",
+        "screener-screenerscreen--error-state",
+        "screener-screenerscreen--empty",
+        "screener-screenerscreen--protected-override-preview",
+        "screener-screenerscreen--preview-pending",
+        "screener-screenerscreen--delete-preview",
+        "screener-screenerscreen--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/ConfirmActionModal",
+      "baselineStates": ["senders-confirmactionmodal--archive-one-sender"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/Detail/ActionToolbar",
+      "baselineStates": [
+        "senders-detail-actiontoolbar--idle",
+        "senders-detail-actiontoolbar--failed"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/Filters",
+      "baselineStates": ["senders-filters--default-header"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/FirstCleanupNudge",
+      "baselineStates": ["senders-firstcleanupnudge--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/SelectionBar",
+      "baselineStates": [
+        "senders-selectionbar--mixed-selection",
+        "senders-selectionbar--mobile-sheet"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["senders-selectionbar--mixed-selection"]
+    },
+    {
+      "group": "Senders/SenderDetailPage",
+      "baselineStates": [
+        "senders-senderdetailpage--default",
+        "senders-senderdetailpage--error-state",
+        "senders-senderdetailpage--empty",
+        "senders-senderdetailpage--mobile-narrow",
+        "senders-senderdetailpage--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/SenderList",
+      "baselineStates": ["senders-senderlist--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/SenderRow",
+      "baselineStates": ["senders-senderrow--rest"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Senders/UnsubBatchReceipt",
+      "baselineStates": ["senders-unsubbatchreceipt--mixed-selection"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/ActionSheetPrefsCard",
+      "baselineStates": [
+        "settings-actionsheetprefscard--defaults",
+        "settings-actionsheetprefscard--error-state",
+        "settings-actionsheetprefscard--save-failed",
+        "settings-actionsheetprefscard--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/BriefPrefsCard",
+      "baselineStates": [
+        "settings-briefprefscard--default",
+        "settings-briefprefscard--save-failed",
+        "settings-briefprefscard--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/EmailPrefsCard",
+      "baselineStates": [
+        "settings-emailprefscard--defaults",
+        "settings-emailprefscard--save-failed",
+        "settings-emailprefscard--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/MailboxesCard",
+      "baselineStates": ["settings-mailboxescard--two-connected", "settings-mailboxescard--empty"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/PrivacyData",
+      "baselineStates": ["settings-privacydata--two-mailboxes"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/SelectWell",
+      "baselineStates": ["settings-selectwell--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/SendersPoliciesScreen",
+      "baselineStates": [
+        "settings-senderspoliciesscreen--protected-list",
+        "settings-senderspoliciesscreen--load-failed",
+        "settings-senderspoliciesscreen--empty",
+        "settings-senderspoliciesscreen--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/Switch",
+      "baselineStates": ["settings-switch--off"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Settings/VerbTourCard",
+      "baselineStates": ["settings-verbtourcard--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Shell/BannerSlot",
+      "baselineStates": ["shell-bannerslot--empty"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Sync/SyncErrorBanner",
+      "baselineStates": [
+        "sync-syncerrorbanner--visible",
+        "sync-syncerrorbanner--unresolved-failure"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Sync/SyncNowButton",
+      "baselineStates": ["sync-syncnowbutton--idle"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/ActionToolbar",
+      "baselineStates": ["triage-actiontoolbar--highlighted-recommendation"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["triage-actiontoolbar--highlighted-recommendation"]
+    },
+    {
+      "group": "Triage/BatchActionSheet",
+      "baselineStates": [
+        "triage-batchactionsheet--archive-loaded",
+        "triage-batchactionsheet--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/DomainBatchCard",
+      "baselineStates": ["triage-domainbatchcard--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/FocusCard",
+      "baselineStates": ["triage-focuscard--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/InlinePreview",
+      "baselineStates": ["triage-inlinepreview--archive"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["triage-inlinepreview--archive"]
+    },
+    {
+      "group": "Triage/KeyboardHelp",
+      "baselineStates": ["triage-keyboardhelp--open"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/ProtectedActionNotice",
+      "baselineStates": ["triage-protectedactionnotice--on-archive"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["triage-protectedactionnotice--on-archive"]
+    },
+    {
+      "group": "Triage/Row",
+      "baselineStates": ["triage-row--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "Triage/SessionProgress",
+      "baselineStates": ["triage-sessionprogress--focus-position"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": ["triage-sessionprogress--focus-position"]
+    },
+    {
+      "group": "Triage/TriageScreen",
+      "baselineStates": [
+        "triage-triagescreen--default",
+        "triage-triagescreen--error-state",
+        "triage-triagescreen--empty",
+        "triage-triagescreen--loading"
+      ],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "senders/detail/RecommendationBanner",
+      "baselineStates": ["senders-detail-recommendationbanner--recent"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    },
+    {
+      "group": "senders/uplift-d/DecisionTimeline",
+      "baselineStates": ["senders-uplift-d-decisiontimeline--default"],
+      "method": "DOM + axe at320light; targeted screenshot review",
+      "applicabilityOverrides": []
+    }
+  ],
+  "artifacts": {
+    "baseline": "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+    "focusedAfter": "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+    "focusedInitialBeforeClear": "local run artifact (not archived): final-story-review/focused-initial.json",
+    "finalClearRechecks": "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json",
+    "desktopBefore": "local run artifact (not archived): final-story-review/desktop-before.json",
+    "popoverBefore": "local run artifact (not archived): final-story-review/popover-before.json",
+    "baselineScreenshots": "local run artifact (not archived): final-story-review/story-shots",
+    "focusedScreenshots": "local run artifact (not archived): final-story-review/focused-shots",
+    "selection": "local run artifact (not archived): final-story-review/selected-stories.json",
+    "focusedSelection": "local run artifact (not archived): final-story-review/focused-selection.json"
+  },
+  "limitations": [
+    "121 selected states cover all 68 app groups, not every one of the 474 app stories. Focus adds targeted dark, desktop, phone and shared primitive variants.",
+    "DOM/axe and targeted visual inspection verify isolated seeded rendering. They do not verify live Gmail/payment/account behavior or full WCAG compliance.",
+    "Free-tier lock note is currently unreachable and has source-only coverage.",
+    "Production builds and synthetic end-to-end outcomes remain root-owned prerequisites."
+  ],
+  "remainingActionableFindings": [
+    {
+      "id": "HYDRATION-01",
+      "status": "UNREPRODUCED_INITIAL_SIGNAL",
+      "classification": "Initial production HTML hydration diagnostics preserved; no cause or source fix established",
+      "productSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "testVerificationCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+      "routes": ["/", "/compare", "/faq"],
+      "visitorState": {
+        "returningVisitor": true,
+        "analyticsConsent": "accepted",
+        "theme": "dark"
+      },
+      "initialDiagnostic": "Minified React error #418 with HTML argument during hydration",
+      "initialSuiteResult": {
+        "passed": 40,
+        "failed": 3,
+        "skipped": 0,
+        "flaky": 0
+      },
+      "preservedInitialEvidence": ["hydration-initial.json", "hydration-initial.log"],
+      "subsequentExactFullProductionRechecks": [
+        {
+          "result": "PASS",
+          "label": "Exact full suite with normal global setup",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-1.json",
+          "log": "hydration-rerun-1.log"
+        },
+        {
+          "result": "PASS",
+          "label": "Exact full suite after cold production-process restart",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-2.json",
+          "log": "hydration-rerun-2.log"
+        }
+      ],
+      "boundedInvestigation": {
+        "navigations": 79,
+        "observedReproductions": 0,
+        "controlledSlowCpuNetworkLoadsIncluded": true,
+        "scope": "Bounded controlled production/dev diagnostics; some lanes used dummy telemetry interception. These are separate from exact unchanged full-suite reruns.",
+        "evidence": "core-hydration-investigation.json"
+      },
+      "resolution": "No root cause found and no product patch made. Subsequent clean runs do not establish that the initial signal is fixed.",
+      "sourcePatch": false,
+      "blanketHydrationSuppressionAdded": false,
+      "finalRecheckRetries": 0,
+      "nonblockingForScopedFixesPr": true,
+      "publicLaunchSignoffWithheld": true,
+      "followUp": "Preserve and investigate the initial signal before public-launch signoff; retain the production hydration coverage contracts."
+    }
+  ],
+  "publicDemoVerification": {
+    "result": "PASS",
+    "report": "final-demo-review/public-demo-verification.json",
+    "checks": 7,
+    "browserSessionClosed": true
+  },
+  "updatedAtUtc": "2026-10-03T23:22:27.937504+00:00",
+  "runtimeProofs": {
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "journeys": {
+      "journeys-5": {
+        "result": "PASS",
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "evidence": "journeys-5.json"
+      },
+      "journeys-6": {
+        "result": "PASS",
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "evidence": "journeys-6.json"
+      }
+    },
+    "journeyContracts": {
+      "result": "PASS",
+      "runs": 2,
+      "skipped": 0,
+      "method": "Root reported both assert-journeys contracts passing"
+    },
+    "accessibilityResponsive": {
+      "result": "PASS",
+      "passed": 70,
+      "failed": 0,
+      "includesHome": true,
+      "method": "Playwright JSON stats inspected; Home included per root scope",
+      "skipped": 0,
+      "flaky": 0,
+      "evidence": "a11y-responsive.json"
+    },
+    "publicSweep": {
+      "result": "PASS",
+      "routes": 48,
+      "desktopLight": "1440x1000",
+      "mobileLightAndDark": "320x844",
+      "mainAxeLightScans": 48,
+      "mainAxeDarkScans": 10,
+      "frameworkOverlays": 0,
+      "missingMain": 0,
+      "pageOverflows": 0,
+      "brokenVisibleImages": 0,
+      "invalidLocalAnchors": 0,
+      "axeViolations": 0,
+      "evidence": ["public-verification-summary.json", "public-browser-final.json"],
+      "limitations": [
+        "Main-content automated axe checks are bounded; incomplete color checks for decorative pseudo-element backgrounds remain in the raw records.",
+        "All 48 dark DOM checks and screenshots were captured; only 10 representative dark pages received axe checks.",
+        "Selected viewport captures are not exhaustive interactions or complete WCAG certification."
+      ]
+    },
+    "hydration": {
+      "currentResult": "PASS",
+      "exactFullRuns": [
+        {
+          "result": "PASS",
+          "label": "Exact full suite with normal global setup",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-1.json",
+          "log": "hydration-rerun-1.log"
+        },
+        {
+          "result": "PASS",
+          "label": "Exact full suite after cold production-process restart",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-2.json",
+          "log": "hydration-rerun-2.log"
+        }
+      ],
+      "initialSignal": {
+        "passed": 40,
+        "failed": 3,
+        "evidence": ["hydration-initial.json", "hydration-initial.log"]
+      },
+      "coverageContracts": "PASS; no skips",
+      "residualId": "HYDRATION-01"
+    }
+  },
+  "integrationBlockers": [],
+  "remainingDesignFindings": [],
+  "verificationCommits": {
+    "productSource": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCoverageAndVerification": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "productSourceDiffPathsSinceFreeze": []
+  },
+  "nonblockingResiduals": [
+    {
+      "id": "HYDRATION-01",
+      "status": "UNREPRODUCED_INITIAL_SIGNAL",
+      "classification": "Initial production HTML hydration diagnostics preserved; no cause or source fix established",
+      "productSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "testVerificationCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+      "routes": ["/", "/compare", "/faq"],
+      "visitorState": {
+        "returningVisitor": true,
+        "analyticsConsent": "accepted",
+        "theme": "dark"
+      },
+      "initialDiagnostic": "Minified React error #418 with HTML argument during hydration",
+      "initialSuiteResult": {
+        "passed": 40,
+        "failed": 3,
+        "skipped": 0,
+        "flaky": 0
+      },
+      "preservedInitialEvidence": ["hydration-initial.json", "hydration-initial.log"],
+      "subsequentExactFullProductionRechecks": [
+        {
+          "result": "PASS",
+          "label": "Exact full suite with normal global setup",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-1.json",
+          "log": "hydration-rerun-1.log"
+        },
+        {
+          "result": "PASS",
+          "label": "Exact full suite after cold production-process restart",
+          "passed": 43,
+          "failed": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "retries": 0,
+          "normalGlobalSetup": true,
+          "productionSourceUnchanged": true,
+          "evidence": "hydration-rerun-2.json",
+          "log": "hydration-rerun-2.log"
+        }
+      ],
+      "boundedInvestigation": {
+        "navigations": 79,
+        "observedReproductions": 0,
+        "controlledSlowCpuNetworkLoadsIncluded": true,
+        "scope": "Bounded controlled production/dev diagnostics; some lanes used dummy telemetry interception. These are separate from exact unchanged full-suite reruns.",
+        "evidence": "core-hydration-investigation.json"
+      },
+      "resolution": "No root cause found and no product patch made. Subsequent clean runs do not establish that the initial signal is fixed.",
+      "sourcePatch": false,
+      "blanketHydrationSuppressionAdded": false,
+      "finalRecheckRetries": 0,
+      "nonblockingForScopedFixesPr": true,
+      "publicLaunchSignoffWithheld": true,
+      "followUp": "Preserve and investigate the initial signal before public-launch signoff; retain the production hydration coverage contracts."
+    }
+  ],
+  "publicLaunchHoldReasons": [
+    {
+      "id": "HYDRATION-01",
+      "reason": "Initial production HTML hydration mismatch remains unexplained and is not claimed fixed."
+    },
+    {
+      "id": "PROVIDER-REHEARSAL",
+      "reason": "Required provider purchase/webhook/refund rehearsal and applicable cutover verification remain outstanding."
+    }
+  ]
+}

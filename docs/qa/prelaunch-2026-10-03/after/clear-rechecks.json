@@ -1,0 +1,136 @@
+[
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "clearForeground": {
+      "barBackground": "rgb(244, 237, 241)",
+      "color": "rgba(38, 29, 41, 0.72)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:52.685979+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "clearForeground": {
+      "barBackground": "rgb(45, 38, 48)",
+      "color": "rgba(255, 255, 255, 0.7)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:54.684784+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "clearForeground": {
+      "barBackground": "rgb(244, 237, 241)",
+      "color": "rgba(38, 29, 41, 0.72)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:56.772222+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+  }
+]

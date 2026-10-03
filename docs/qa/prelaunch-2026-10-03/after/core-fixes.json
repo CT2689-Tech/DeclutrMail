@@ -1,0 +1,470 @@
+{
+  "summary": "Implemented core launch audit fixes, resolved19 owned source conflicts onto current main, broadened keyboard ownership across core screens, and implemented Home mobile task hierarchy. Source edits are stopped for parent staging/rebase and final whole-diff/browser checks. No index/commit/branch/provider writes or duplicate servers.",
+  "findings": [
+    {
+      "id": "CORE-01",
+      "status": "implemented",
+      "summary": "Global decision/navigation/help shortcuts yield to nonmodal AccountMenu as well as modal dialogs. Screener inline confirmation/recovery keys and Triage Skip/inline Escape also defer; AccountMenu owns Escape before its dialog unmounts.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/triage/action-toolbar.tsx",
+          "line": 101,
+          "detail": "Window listener checks dialog ownership before resolving verbs."
+        },
+        {
+          "file": "apps/web/src/features/senders/detail/action-toolbar.tsx",
+          "line": 141,
+          "detail": "SenderDetail actions defer to nonmodal account dialog."
+        },
+        {
+          "file": "apps/web/src/features/screener/screener-screen.tsx",
+          "line": 727,
+          "detail": "Screener guards all verbs and inline Enter/Escape before preview handlers."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/account-menu.tsx",
+          "line": 86,
+          "detail": "AccountMenu marks Escape consumed before downstream handlers see a removed dialog."
+        }
+      ],
+      "tests": [
+        "action-toolbar.test.tsx: modal and nonmodal dialog ownership regression; all K/A/U/L/D suppressed, Keep restored after close.",
+        "Real AccountMenu integration prevents all5verb callbacks and stacked Help; no account mutations; Escape restores Keep.",
+        "Senders selection makes zeroPOSTs; row navigation pauses. Screener preview keys produce noPOST and preserve pending decision; Triage Skip and inline Escape pause."
+      ],
+      "verification": "DOM unit tests; Storybook320 Help + A leaves one dialog; no confirmation or write. Current-main integration new regressions passed in final9-file/20-test focused run; final production/synthetic browser proof belongs to root.",
+      "residuals": [],
+      "keyboardOwnerCoverage": "Current-main sweep found reachable Senders filter sort menus plus dialogs in AccountMenu/help/preview/mobile navigation. Sender guards retain role=menu coverage. Triage/shell owners expose role=dialog; no speculative new Triage menu behavior."
+    },
+    {
+      "id": "CORE-02",
+      "status": "implemented",
+      "summary": "Custom Later wall times use the account IANA zone; invalid, past, missing DST and ambiguous DST times cannot submit.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/snoozed/snooze-times.ts",
+          "line": 87,
+          "detail": "Resolves possible timezone offsets and rejects zero or multiple matching instants."
+        },
+        {
+          "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 544,
+          "detail": "Custom input uses the same account zone as displayed return times and presets."
+        }
+      ],
+      "tests": [
+        "snooze-times.test.ts: exact Kolkata/Los Angeles instants, DST spring gap/autumn repeat, invalid dates.",
+        "snoozed-screen.test.tsx:09:00 Kolkata posts03:30Z even when device zone differs."
+      ],
+      "verification": "Pure conversion tests plus mocked HTTP/UI submit; no real timer write.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-03",
+      "status": "implemented",
+      "summary": "Earlier-filter Activity rows become inert while placeholders; selection, per-row/bulk Undo and recovery confirmation handlers reject stale interactions. Recovery verification retry also rejects stale displayed scope.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 121,
+          "detail": "Interaction state shared through context including recovery portals."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 488,
+          "detail": "Browser removes stale row controls from keyboard interaction."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 331,
+          "detail": "Programmatic/keyboard selection guarded as well as pointer events."
+        }
+      ],
+      "tests": [
+        "activity-screen.test.tsx: filter transition preserves earlier rows but disables Undo, forbids selection and posts zero writes on click/Enter.",
+        "activity-screen.test.tsx: opening recovery then changing filter sends no extra verification POST from retained portal."
+      ],
+      "verification": "DOM unit regression uses a pending new-filter HTTP read; no provider writes. Current-main stale recovery verification portal regression passed.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-04",
+      "status": "implemented",
+      "summary": "Zero-match Screener previews keep confirmation disabled and direct the user to Keep for a non-moving decision.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/screener/decide-preview.tsx",
+          "line": 202,
+          "detail": "Corrects contradicted zero-match confirmation explanation."
+        }
+      ],
+      "tests": [
+        "decide-preview.test.tsx: Archive/Later/Delete zero-match previews all show Keep guidance and disabled confirmation."
+      ],
+      "verification": "Rendered component assertions; fresh-preview safety guards retained.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-05",
+      "status": "implemented",
+      "summary": "Unresolved sync failure remains visible until a newer successful outcome proves recovery, including after60minutes.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/sync/sync-error-banner.tsx",
+          "line": 130,
+          "detail": "Age-only expiry removed; successful stamp remains the recovery authority."
+        },
+        {
+          "file": "apps/web/src/features/sync/sync-error-banner.stories.tsx",
+          "line": 136,
+          "detail": "Fixture represents persistent older unresolved error."
+        }
+      ],
+      "tests": [
+        "sync-error-banner.test.tsx: old failure with no success remains actionable; newer success clears it and ties remain visible."
+      ],
+      "verification": "DOM component regression with mocked health hook; no sync started against Gmail.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-06",
+      "status": "implemented",
+      "summary": "Triage empty state prioritizes queued/syncing/failed/unknown readiness before completion and retains true earlier-decision tally.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/triage/triage-screen.tsx",
+          "line": 234,
+          "detail": "Passes full active-mailbox readiness to empty state."
+        },
+        {
+          "file": "apps/web/src/features/triage/empty-state.tsx",
+          "line": 65,
+          "detail": "Incomplete readiness blocks done/no-work claims, failed/unknown status has Settings recovery."
+        }
+      ],
+      "tests": [
+        "empty-state.test.tsx: readiness failures at0/3 decisions; queued/syncing at3; unknown status recovery; ready resting state."
+      ],
+      "verification": "DOM component tests and existing Triage SSR tests; live mailbox readiness not exercised.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-07",
+      "status": "implemented",
+      "summary": "Root/global/core-route errors promise only manual recovery; uncertain Keep/disconnect/deletion outcomes refresh authoritative state instead of asserting no change.",
+      "evidence": [
+        {
+          "file": "apps/web/src/app/error.tsx",
+          "line": 52,
+          "detail": "Removed automatic background recovery and untouched-state guarantees."
+        },
+        {
+          "file": "apps/web/src/app/global-error.tsx",
+          "line": 30,
+          "detail": "Token variables include literal fallbacks for initial root-layout failure;44px retry target."
+        },
+        {
+          "file": "apps/web/src/features/triage/triage-screen.tsx",
+          "line": 1,
+          "detail": "Keep error invalidates related authoritative reads."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/api/use-delete-mailbox-indexed-data.ts",
+          "line": 29,
+          "detail": "Both successful and ambiguous failed responses reset mailbox-scoped cache."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/api/use-disconnect-mailbox.ts",
+          "line": 26,
+          "detail": "Disconnect errors also reconcile account state."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/account-menu.tsx",
+          "line": 1,
+          "detail": "Menu does not claim an uncertain request left data untouched."
+        }
+      ],
+      "tests": [
+        "use-delete-mailbox-indexed-data.test.tsx + use-disconnect-mailbox.test.tsx: error response still drops stale scoped cache.",
+        "error.test.tsx + global-error.test.tsx: manual reset, digest privacy, no outcome/automatic retry promises.",
+        "global-error.test.tsx: readable literal color fallbacks and44px button."
+      ],
+      "verification": "15 root/global tests passed; latest global + indicator run7 passed. Storybook CSS-removal test verified missing --dm-fg token still renders main rgb(45,38,48) on rgb(246,242,235), white retry on rgb(89,65,95),44px target. This is a CSS-less fixture proof, not an induced Next.js root-layout crash.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-08",
+      "status": "implemented",
+      "summary": "Screener and Later retain same-scope cached rows on background failure, expose compact retry feedback, and reserve cold errors for absent data.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/screener/compose-state.ts",
+          "line": 22,
+          "detail": "Cached rows and cached emptiness survive read failure."
+        },
+        {
+          "file": "apps/web/src/features/screener/screener-route.tsx",
+          "line": 55,
+          "detail": "Route carries compact refresh failure state to presentation."
+        },
+        {
+          "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 145,
+          "detail": "Later separates cold error from retained rows."
+        }
+      ],
+      "tests": [
+        "compose-state.test.ts: missing data/cached rows/cached empty queue.",
+        "snoozed-screen.test.tsx: loaded row remains after failing refetch and retry appears."
+      ],
+      "verification": "Pure composer and mocked HTTP DOM tests; mutation previews continue requiring fresh proof.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-09",
+      "status": "implemented",
+      "summary": "Read/unread and attachment indicators use nameable image roles.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/detail/recent-messages.tsx",
+          "line": 226,
+          "detail": "Empty status spans now expose their accessible names semantically."
+        }
+      ],
+      "tests": [
+        "recent-messages.test.tsx: Unread and Has attachment are discoverable by named image role."
+      ],
+      "verification": "DOM component test; full parent axe rerun planned after current-main integration. Attachment is currently fixture-only; production adapter does not infer attachments from forbidden MIME content.",
+      "residuals": []
+    },
+    {
+      "id": "CORE-10",
+      "status": "implemented",
+      "summary": "Feature errors use a labelled section within AppShell; standalone errors retain their own main landmark.",
+      "evidence": [
+        {
+          "file": "apps/web/src/components/route-error-screen.tsx",
+          "line": 75,
+          "detail": "Uses route title identity to select named section versus standalone main."
+        }
+      ],
+      "tests": [
+        "route-error-screen.test.tsx: nested production composition has one main plus named Later region; standalone fallback has one main; recovery and geometry checks."
+      ],
+      "verification": "DOM composition tests; parent authenticated shell smoke follows integration.",
+      "residuals": []
+    },
+    {
+      "id": "UI-01",
+      "status": "implemented",
+      "summary": "Mobile Screener expansion drops the desktop avatar indent, and confirmation actions wrap inside the available width.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/screener/screener-row.css",
+          "line": 48,
+          "detail": "Mobile expansion uses full row width."
+        },
+        {
+          "file": "apps/web/src/features/screener/decide-preview.tsx",
+          "line": 455,
+          "detail": "Confirm/Cancel action rail can wrap."
+        },
+        {
+          "file": "apps/web/src/features/screener/screener-screen.stories.tsx",
+          "line": 128,
+          "detail": "Isolated row fixtures supply the same gutter needed by negative row margins."
+        }
+      ],
+      "tests": [
+        "Storybook protected-override-preview at320px: scrollWidth320, Cancel bounds28\u2013106."
+      ],
+      "verification": "Browser fixture verification; parent full state sweep follows integration.",
+      "residuals": []
+    },
+    {
+      "id": "UI-02",
+      "status": "implemented",
+      "summary": "Triage progress and layout controls wrap before they can push outside a phone viewport.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/triage/triage-screen.tsx",
+          "line": 1492,
+          "detail": "Header control group can wrap with bounded width."
+        }
+      ],
+      "tests": [
+        "Storybook default Triage at320px: scrollWidth320, Focus right102.5 and List right176.3."
+      ],
+      "verification": "Browser fixture verification.",
+      "residuals": []
+    },
+    {
+      "id": "UI-06",
+      "status": "implemented",
+      "summary": "Core danger foregrounds use accessible dangerText; Screener confidence no longer reduces foreground opacity; error badges use amberDeep.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/screener/screener-row.tsx",
+          "line": 1,
+          "detail": "Confidence text no longer has0.85 opacity."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 838,
+          "detail": "Danger foreground mapping updated."
+        },
+        {
+          "file": "apps/web/src/app/global-error.tsx",
+          "line": 39,
+          "detail": "Error badge text uses darker amber with a literal fallback."
+        }
+      ],
+      "tests": [
+        "Activity color assertions updated to dangerText; all109 Activity/Later rerun cases passed."
+      ],
+      "verification": "Source mechanism sweep across core screens and mailbox/sync controls. Parent owns shared-button/registry tokens and final contrast sweep. Remaining color.danger usages are the Screener selected Delete inset border and filled destructive SelectionBar background; both intentionally preserved.",
+      "residuals": []
+    },
+    {
+      "id": "QA-01",
+      "status": "implemented",
+      "summary": "SelectionBar fixtures seed a valid tier/channel, separate desktop and mobile presentation, and Activity Empty uses aligned7d URL/cache plus zero current/weekly counts.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/selection-bar.stories.tsx",
+          "line": 79,
+          "detail": "Default valid entitlement supplied; desktop frame has760px minWidth; MobileSheet variant added."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.stories.tsx",
+          "line": 328,
+          "detail": "Empty fixture URL/cache/window totals are coherent; older all-time totals intentionally retained."
+        }
+      ],
+      "tests": [
+        "Storybook MobileSheet320: scrollWidth320 and controls in viewport.",
+        "Desktop MixedSelection1440: scrollWidth1440, bar x24\u20131156, all five verbs enabled and contained.",
+        "Activity Empty320: scrollWidth320, correct7d empty heading, five current-window counts zero, weekly outcomes zero."
+      ],
+      "verification": "Browser fixture checks; no live API or provider use.",
+      "residuals": []
+    }
+  ],
+  "verification": {
+    "negativeControls": {
+      "temporarilyRemovedFixes": "11files failed,15 selected assertions failed,20passed; all11 owned sources restored in finally.",
+      "restoredFixes": "11files passed,35 selected tests passed,196 unrelated tests skipped.",
+      "logs": [
+        "local run artifact (not archived): core-negative-controls-red.log",
+        "local run artifact (not archived): core-negative-controls-green.log",
+        "local run artifact (not archived): core-negative-controls-result.json"
+      ]
+    },
+    "focusedTests": "Initial11-file run passed237 and failed7 old copy/color expectations; corrected expectations and reran the two changed suites:109passed. The other9files had passed135 cases. Related sender-detail/Triage run passed161 and failed one obsolete Senders assurance assertion; that case passed on focused rerun. Root/global15passed; final global fallback plus indicators7passed. No known core test failure remains. Parent will run combined whole-diff checks after main integration.",
+    "typecheck": "Earlier web typecheck caught boundary union plus SYS dangerTextBg; boundary fixed. SYS later typecheck caught only new indicator fixture missing providerMessageId; now fixed. Final combined typecheck delegated to parent after integration.",
+    "format": "64 owned modified/new files formatted; later touched global fallback/tests/selection stories formatted again. git diff --check passed.",
+    "browser": "Dedicated core-prelaunch-fixes agent-browser session, Storybook fixtures only.320mobile/1440desktop. No app auth session or provider mutation.",
+    "integrationTests": "Final one-worker focused integration run:9files passed,20tests passed,397skipped. Includes all newly added keyboard/stale recovery tests and all corrected fallback/zero-match assertions. Earlier7-file run also proved77other cases including all4Home hierarchy regressions. Test stderr contained a socket hang up message, but no failed assertions/unhandled-error summary and exit0."
+  },
+  "designRecommendation": {
+    "id": "HOME-MOBILE-HIERARCHY",
+    "status": "implemented",
+    "route": "/home",
+    "problem": "At320px, the editorial headline, subtitle and progress stamp precede the primary next task even when review work is waiting.",
+    "recommendation": "Keep the brand typography, but use a compact mobile intro when queued work exists. Put the next task, its honest count and primary CTA directly after the route title, before the progress stamp/history. Keep calm introductory framing for genuine no-work and scan-in-progress states.",
+    "evidence": [
+      {
+        "file": "apps/web/src/features/home/home-view.tsx",
+        "line": 30,
+        "detail": "Actual waiting/first-review work selects compact mobile hierarchy."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.tsx",
+        "line": 222,
+        "detail": "Cleanup stamp follows the primary review/task section in reading order."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.module.css",
+        "line": 546,
+        "detail": "At480px and below, preserves brand heading with smaller size and less spacing."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.test.tsx",
+        "line": 262,
+        "detail": "Four cases preserve Triage/Screener task-before-history order, calm no-work state and honest sync state."
+      }
+    ],
+    "implementation": "Implemented compact mobile Home intro when review work awaits; real task/CTA precedes recorded-progress stamp in reading order. Genuine no-work and syncing states retain calm framing; brand typography and desktop stamp position remain.",
+    "summary": "When a real review task awaits, mobile Home compresses the brand intro and puts the next task/CTA before the cleanup stamp in DOM reading order. Quiet and scan-in-progress states retain calm framing; desktop stamp position is preserved.",
+    "tests": ["home-view.test.tsx: 4 new hierarchy cases passed in first integration run."],
+    "verification": "DOM regression verified after main integration. Browser320px proof delegated to root because servers intentionally stopped for dependency update; no duplicate server started.",
+    "residuals": []
+  },
+  "residuals": [
+    "Final full browser/axe/authenticated synthetic DB smoke and whole-diff typecheck follow current-main integration by parent.",
+    "No end-to-end initial Next.js root-layout crash was induced; CSS-less GlobalErrorContent fixture verifies standalone readability instead.",
+    "Activity recovery Check Gmail again was retained: packages/workers/src/action-recovery.worker.ts:96\u2013113 actually reads provider message label metadata; general bulk worker comment was aligned to index-based resolution."
+  ],
+  "integration": {
+    "base": "origin/main c1b61eea",
+    "combinedCommitBeingApplied": "9e82bce0",
+    "indexActions": "No git add/commit/rebase/branch calls. Parent owns staging all resolved files.",
+    "sourceConflictsResolved": 19,
+    "preservedMainBehavior": [
+      "Activity emailCounts/senderCounts units and accurate Moved to Trash/Unsubscribe requests labels.",
+      "Activity recovery senderProtected consent object and wire propagation; mailbox context.",
+      "Global root-layout headline and narrower root error scope; manual recovery rather than reload promises.",
+      "AccountMenu managed-mailbox conditional rendering and lazy data-control behavior.",
+      "RecentMessages Gmail entity-decoding/no HTML execution regression alongside accessible unread/attachment indicators.",
+      "Screener real queue fixtures/cold-read assertions alongside retained-empty identity.",
+      "Senders/Triage reconnect-specific failed-scan Settings step. Incomplete readiness still precedes completion even after recorded decisions.",
+      "Later current-main refetch/async tests alongside account-zone custom-time regression.",
+      "Main concise Protected copy; accessible dangerText foreground preserved without redundant consent sentences."
+    ],
+    "homeTestsAddedBeforeRootFullRun": 4,
+    "newTestFilesAfterRootFullRunBegan": [
+      "apps/web/src/features/mailboxes/account-menu.test.tsx",
+      "apps/web/src/features/senders/sender-list.test.tsx",
+      "apps/web/src/features/senders/senders-screen.test.tsx",
+      "apps/web/src/features/screener/screener-keyboard.test.tsx",
+      "apps/web/src/features/triage/triage-focus.test.tsx",
+      "apps/web/src/features/triage/triage-screen.actions.test.tsx",
+      "apps/web/src/features/activity/activity-screen.test.tsx"
+    ],
+    "adaptedExistingTestFiles": [
+      "apps/web/src/app/global-error.test.tsx (resolved color fallback matcher with upgraded HappyDOM)",
+      "apps/web/src/features/screener/decide-preview.test.tsx (main accessible verb label, no Confirm prefix)"
+    ],
+    "focusedStatus": "Final one-worker focused integration run:9files passed,20tests passed,397skipped. Includes all newly added keyboard/stale recovery tests and all corrected fallback/zero-match assertions. Earlier7-file run also proved77other cases including all4Home hierarchy regressions. Test stderr contained a socket hang up message, but no failed assertions/unhandled-error summary and exit0.",
+    "logs": [
+      "local run artifact (not archived): core-integration-tests.log",
+      "local run artifact (not archived): core-integration-keyboard-tests.log",
+      "local run artifact (not archived): core-integration-format.log",
+      "local run artifact (not archived): core-integration-keyboard-format.log",
+      "local run artifact (not archived): core-integration-activity-format.log"
+    ],
+    "sourceEditsStopped": true,
+    "sourceConflictFiles": [
+      "apps/web/src/app/(app)/activity/error.tsx",
+      "apps/web/src/app/(app)/senders/[id]/error.tsx",
+      "apps/web/src/app/(app)/senders/error.tsx",
+      "apps/web/src/app/error.tsx",
+      "apps/web/src/app/global-error.tsx",
+      "apps/web/src/app/global-error.test.tsx",
+      "apps/web/src/features/activity/activity-screen.stories.tsx",
+      "apps/web/src/features/activity/activity-screen.tsx",
+      "apps/web/src/features/mailboxes/account-menu.tsx",
+      "apps/web/src/features/screener/compose-state.ts",
+      "apps/web/src/features/screener/compose-state.test.ts",
+      "apps/web/src/features/screener/decide-preview.tsx",
+      "apps/web/src/features/senders/confirm-action-modal.tsx",
+      "apps/web/src/features/senders/detail/recent-messages.test.tsx",
+      "apps/web/src/features/senders/senders-screen.tsx",
+      "apps/web/src/features/snoozed/snoozed-screen.test.tsx",
+      "apps/web/src/features/triage/empty-state.test.tsx",
+      "apps/web/src/features/triage/empty-state.tsx",
+      "apps/web/src/features/triage/triage-screen.tsx"
+    ],
+    "sourceChecks": "Owned sources have no conflict markers; modified core scope git diff --check passed.19 original owned conflict source files remain unmerged in index intentionally until parent stages them."
+  }
+}

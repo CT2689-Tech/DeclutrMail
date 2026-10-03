@@ -1,0 +1,291 @@
+{
+  "summary": {
+    "status": "implemented",
+    "findingsResolved": 13,
+    "scope": "settings, onboarding, billing, Autopilot, Quiet, Brief, Follow-ups, feedback, deletion fixtures",
+    "tests": {
+      "ownedFeatureSuites": 42,
+      "ownedFeatureTests": 602,
+      "requiredInitialRegressionTests": 8,
+      "additionalRegressionTests": 4,
+      "negativeControls": "All 12 fail for original behavior; corrected behavior passes.",
+      "broadRun": "599/602 initially passed; 3 old copy assertions corrected; 3 affected suites rerun 142/142 passing."
+    },
+    "lint": "ESLint clean for all owned touched feature files.",
+    "format": "All matched owned files pass Prettier; final one-line StepPromise heading prop also checked.",
+    "typecheck": "Final whole-web check has no owned-scope errors; only concurrent CORE recent-messages.test.tsx:7 fixture missing providerMessageId remains. Parent performs final integrated check."
+  },
+  "fixes": [
+    {
+      "id": "SYS-01",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/settings/settings-index/settings-screen.tsx",
+        "apps/web/src/features/settings/settings-index/settings-screen.test.tsx"
+      ],
+      "change": "Connected inbox capacity derives from authenticated entitlements, including unavailable/disabled billing.",
+      "verification": "Both BILLING_DISABLED and SERVICE_UNAVAILABLE regression cases fail on old code and pass on fixed code.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-02",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/billing/cancel-modal.tsx",
+        "apps/web/src/features/billing/cancel-modal.test.tsx"
+      ],
+      "change": "Cancellation, dismissal and reason input are locked during an unresolved pause as well as cancellation.",
+      "verification": "Deferred pause regression verifies disabled cancellation, Keep current plan, Escape and scrim; restored after settle.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-03",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/feedback/inline-feedback.tsx",
+        "apps/web/src/features/feedback/inline-feedback.test.tsx"
+      ],
+      "change": "Feedback state remounts for each canonical surface/reference identity.",
+      "verification": "Saved selection and receipt reset; a late prior-reference response cannot affect the next observation. Both negative controls confirmed.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-04",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.test.tsx"
+      ],
+      "change": "Mailbox-scope conflicts offer connection-state reconciliation instead of re-reading the failed scope.",
+      "verification": "SELECT_MAILBOX and NO_ACTIVE_MAILBOX reset cache rather than retry or complete; old-code failures confirmed.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-05",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/brief/brief-screen.test.tsx",
+        "apps/web/src/features/brief/noise-archive-sheet.tsx",
+        "apps/web/src/features/brief/noise-archive.test.tsx"
+      ],
+      "change": "Noise counts use the viewed edition date, and Archive scope is expressed independently of yesterday.",
+      "verification": "Historical edition row date regression fails on old code; preview integration checks live inbox count and email outside this Brief.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-06",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/billing-screen.test.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx"
+      ],
+      "change": "Billing read errors ask for confirmation/retry without claiming that no charge or plan change occurred.",
+      "verification": "500 recovery assertion checks the next step and absence of the unsupported assurance; billing and invoice suites pass.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-07",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx",
+        "apps/web/src/features/autopilot/autopilot-entitlement-surface.test.tsx"
+      ],
+      "change": "Free catalog errors expose an explicit retry through ErrorState.",
+      "verification": "Failure then successful catalog refetch regression fails on old code and passes after the fix.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-08",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/billing/payment-method-card.tsx",
+        "apps/web/src/features/billing/invoice-history.test.tsx"
+      ],
+      "change": "Past-due support path asks the customer to update the payment method without an indefinite active-plan promise.",
+      "verification": "Razorpay test checks support next step and absence of the old indefinite assurance; no provider/state mutation behavior changed.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-09",
+      "status": "implemented",
+      "files": ["apps/web/src/features/account-deletion/delete-account-modal.tsx"],
+      "change": "Typed confirmation input retains the shared visible focus outline.",
+      "verification": "Source confirmation plus existing account deletion suite; final rendered keyboard/a11y check belongs to parent.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-10",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.test.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.test.tsx"
+      ],
+      "change": "Completion buttons say Open workspace to match default home and requested return routes.",
+      "verification": "Both completion suites use accurate labels and preserve completion retry/skip behavior.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-11",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/quiet/quiet-hours-card.tsx",
+        "apps/web/src/features/quiet/quiet-hours-card.test.tsx"
+      ],
+      "change": "Unpersisted browser defaults do not display Saved.",
+      "verification": "Unconfigured and persisted-config assertions; negative control confirmed.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-12",
+      "status": "implemented",
+      "files": ["apps/web/src/features/onboarding/step-preset-pick.tsx"],
+      "change": "Absent preset catalogs say none are available; failures say the read failed and offer retry or connection refresh while preserving saved-pick flow.",
+      "verification": "Source read verifies error/empty separation, scope-aware refresh and existing finite polling cap; broader onboarding tests pass. No new unit fixture for this copy-only empty branch.",
+      "residuals": []
+    },
+    {
+      "id": "SYS-13",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/autopilot/activate-rule-modal.tsx",
+        "apps/web/src/features/autopilot/activate-rule-modal.test.tsx",
+        "apps/web/src/features/autopilot/activate-rule-modal.stories.tsx"
+      ],
+      "change": "Review-only presets never offer Act now; execution-capable story uses a truthful preset and review-only gets its own story.",
+      "verification": "Both review-only presets tested with true unattended capability; execution-capable preset retains both choices. Negative controls confirmed.",
+      "residuals": []
+    },
+    {
+      "id": "UI-03",
+      "status": "implemented",
+      "files": ["apps/web/src/features/brief/brief-screen.tsx"],
+      "change": "See what changed has an underline and text underline offset.",
+      "verification": "Source checks plus Brief test suite; final rendered axe/visual verification belongs to parent.",
+      "residuals": []
+    },
+    {
+      "id": "QA-01",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/account-deletion/account-deletion.stories.tsx",
+        "apps/web/src/features/onboarding/sync-gate.stories.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.stories.tsx"
+      ],
+      "change": "Deletion and sync fixtures have query providers, sync has a scoped mailbox ID, protection has App Router/seeded auth and successful empty Undo cache without background reads.",
+      "verification": "Stories use real Meta/StoryObj types. Parent confirmed repaired protection rendering; all final fixture rendering/interaction checks belong to parent.",
+      "residuals": []
+    },
+    {
+      "id": "DESIGN-FOLLOWUPS",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.test.tsx"
+      ],
+      "change": "Introduction separates task, observation cadence/reply caveat and resolution effect into short paragraphs; help describes possible observed follow-ups accurately.",
+      "verification": "Followups suite preserves observation window, recent-reply caveat, cadence and resolution semantics.",
+      "residuals": []
+    },
+    {
+      "id": "UI-01-OWNED",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx",
+        "apps/web/src/features/quiet/quiet-screen.tsx",
+        "apps/web/src/features/autopilot/autopilot-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.tsx",
+        "apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+        "apps/web/src/features/onboarding/step-promise.tsx"
+      ],
+      "change": "Owned page-level empty/error states and first privacy card use h2.",
+      "verification": "New shared headingLevel API applied; final rendered heading audit belongs to parent.",
+      "residuals": []
+    },
+    {
+      "id": "UI-06-OWNED",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/account-deletion/account-deletion-section.tsx",
+        "apps/web/src/features/account-deletion/delete-account-modal.tsx",
+        "apps/web/src/features/account-deletion/grace-period-banner.tsx",
+        "apps/web/src/features/auth/heard-from-prompt.tsx",
+        "apps/web/src/features/autopilot/confirm-modal-frame.tsx",
+        "apps/web/src/features/autopilot/rule-preview-panel.tsx",
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/cancel-modal.tsx",
+        "apps/web/src/features/billing/change-plan-panel.tsx",
+        "apps/web/src/features/billing/checkout-confirm-panel.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx",
+        "apps/web/src/features/billing/payment-method-card.tsx",
+        "apps/web/src/features/quiet/quiet-hours-card.tsx",
+        "apps/web/src/features/settings/settings-list.tsx",
+        "apps/web/src/features/settings/settings-index/mailboxes-card.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx"
+      ],
+      "change": "Owned danger foregrounds use dangerText while surfaces/fills/borders retain the existing danger color.",
+      "verification": "Foreground source sweep clean; final contrast measurements belong to parent.",
+      "residuals": []
+    }
+  ],
+  "verificationLogs": [
+    "local run artifact (not archived): declutrmail-settings-negative-control.log",
+    "local run artifact (not archived): declutrmail-settings-additional-negative-control.log",
+    "local run artifact (not archived): declutrmail-settings-first-fixes.log",
+    "local run artifact (not archived): declutrmail-settings-verification.log",
+    "local run artifact (not archived): declutrmail-settings-final-focused.log",
+    "local run artifact (not archived): declutrmail-settings-lint.log",
+    "local run artifact (not archived): declutrmail-settings-all-format-check.log",
+    "local run artifact (not archived): declutrmail-settings-typecheck-final.log",
+    "local run artifact (not archived): declutrmail-settings-promise-format.log",
+    "local run artifact (not archived): declutrmail-settings-integration-lint.log",
+    "local run artifact (not archived): declutrmail-settings-integration-format.log"
+  ],
+  "limitations": [
+    "Read/source and isolated feature tests only for this subagent; final browser and authenticated disposable-harness verification is performed by parent.",
+    "No live Gmail, provider billing, payment, account deletion or external account writes were performed.",
+    "No branch changes or commits were made by this subagent."
+  ],
+  "integration": {
+    "base": "c1b61eea",
+    "applyingCommit": "9e82bce0",
+    "status": "owned conflicts resolved; source edits stopped",
+    "conflictFiles": [
+      "apps/web/src/features/autopilot/activate-rule-modal.stories.tsx",
+      "apps/web/src/features/billing/invoice-history.tsx",
+      "apps/web/src/features/brief/brief-screen.tsx",
+      "apps/web/src/features/followups/followups-screen.tsx",
+      "apps/web/src/features/onboarding/step-first-triage.test.tsx",
+      "apps/web/src/features/onboarding/sync-gate.stories.tsx",
+      "apps/web/src/features/quiet/quiet-hours-card.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx"
+    ],
+    "preservedMainBehavior": [
+      "Autopilot paged sender evidence, expiry/error fixtures and query wrapper; execution-capable Newsletter fixture kept with enabled=false; review-only fixture added.",
+      "Sync first-scan/email opt-out/rescan/live counts/time-left/stuck/authorization/quota/partial-ready/secondary variants retained; stable query provider and default scoped mailbox retained.",
+      "Brief unconfirmed archive keys, disabled repeat-archive behavior and outcome statuses retained together with edition-specific row dates.",
+      "Follow-ups shown-conversation cap (up to100) retained in the structured introduction.",
+      "Quiet-hours save status announcements and duplicate-announcement suppression retained; unconfigured defaults remain unsaved.",
+      "Privacy export pending suppression, classified rate-limit/unauthenticated/generic recovery and prepared-file announcement retained.",
+      "First-triage tests use current-main split fixtures import plus QueryWrapper for scope conflict regression.",
+      "Invoice error uses cause in title and retry next step; no guessed provider cause or billing reassurance."
+    ],
+    "automaticMergeReview": "Owned auto-merges reviewed against main: cancellation money-action lock, feedback identity, first-triage 409 recovery, settings auth-derived capacity and tests, preset recovery, completion labels, heading levels and foreground tokens remain intact.",
+    "verification": [
+      "No conflict markers remain in owned files.",
+      "Prettier ran on all eight conflict resolutions.",
+      "ESLint ran on all eight conflict resolutions.",
+      "git diff --check passed for owned conflict resolutions."
+    ],
+    "tests": "No broad tests rerun while other conflict files remain unresolved; final integrated whole-diff checks owned by parent. Pre-integration 42 suites/602 tests remain the recorded baseline.",
+    "noGitWrites": "No staging, commit, rebase or branch commands were run by this subagent."
+  }
+}

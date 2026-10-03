@@ -1,5 +1,7 @@
 # DeclutrMail pre-launch product review — 2026-10-03
 
+> Historical audit: findings and statuses below describe the initial review. See the [closure report](prelaunch-product-review-closure-2026-10-03.md) and [resolution ledger](prelaunch-2026-10-03/resolutions.json) for corrections, current proof and remaining launch risks.
+
 **Recommendation:** address the 25 P2 findings before broad public marketing, then complete an authenticated release rehearsal. The audit also flags 14 P3 improvements and one verification-fixture gap. No P1 defect was established in the reviewed scope; that is not a launch sign-off.
 
 This is a new read-only audit of the current working tree at base commit `f4843f07`, including the prior homepage/copy work. No product code, mailbox data, subscriptions, or account settings were changed during this audit. All findings below remain open.

@@ -1,0 +1,3200 @@
+{
+  "schemaVersion": 1,
+  "reportKind": "prelaunch-audit-resolution",
+  "reviewDate": "2026-10-03",
+  "preparedAtUtc": "2026-10-03T23:23:25.844096+00:00",
+  "reviewedCommit": "c86557eb",
+  "publication": {
+    "draftOnly": false,
+    "reportPath": "docs/qa/prelaunch-product-review-closure-2026-10-03.md",
+    "resolutionPath": "docs/qa/prelaunch-2026-10-03/resolutions.json",
+    "baselineMustRemainHistorical": true,
+    "portableEvidenceArchivalPending": false,
+    "evidenceManifest": "docs/qa/prelaunch-2026-10-03/after/evidence-manifest.json",
+    "ownerSnapshotsHistorical": true
+  },
+  "baseline": {
+    "reportPath": "docs/qa/prelaunch-product-review-2026-10-03.md",
+    "jsonPath": "docs/qa/prelaunch-2026-10-03/review.json",
+    "baseCommit": "f4843f07",
+    "sha256": "77092aba0b079774d05932769eafd039d867a7cdb1bce7f056011503961a85fc",
+    "originalFindings": 39,
+    "priorityCounts": {
+      "P2": 25,
+      "P3": 14
+    },
+    "originalVerifiedP1": 0,
+    "auditLaunchSignoff": false,
+    "preserved": true
+  },
+  "summary": {
+    "originalFindingIdsMapped": 39,
+    "originalSourceCorrectionsComplete": 39,
+    "verificationGapParent": "QA-01",
+    "repairedNamedFixtures": 6,
+    "designRecommendationsImplemented": 2,
+    "postReviewEntries": 16,
+    "launchSignoff": false,
+    "status": "39 original findings resolved; six fixtures repaired; two design recommendations implemented; scoped fix-PR gates pass with unreproduced hydration residual; public launch withheld",
+    "openFinalProof": [
+      "HYDRATION-01 initial intermittent HTML recovery signal remains untraced; unchanged full gate subsequently passed twice",
+      "Authenticated provider release rehearsal: OAuth/Gmail action/Undo/worker, billing purchase/webhook/refund and account lifecycle outcomes"
+    ]
+  },
+  "resolutions": [
+    {
+      "id": "PUB-01",
+      "priority": "P2",
+      "route": "/terms; /pricing.md; /llms.txt; public uses of ACTION_PREVIEW_CLAIM",
+      "baselineTitle": "Published Gmail recheck guarantee is stronger than the worker implementation",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Removed the unsupported provider recheck guarantee. Canonical copy now says the final count can change; Terms describes re-resolving matching mail without implying a provider read.",
+      "files": [
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/action-safety.test.ts",
+        "apps/web/src/app/(marketing)/terms/page.tsx",
+        "apps/web/src/app/(marketing)/pricing.md/route.ts",
+        "apps/web/public/llms.txt"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Canonical truth test failed before and passed after the fix; full public source sweep finds no remaining rendered Gmail-recheck claim. ACTION_PREVIEW_CLAIM consumers are auth-entry (first sentence unchanged) and package exports.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Provider worker semantics unchanged; production provider freshness is not claimed."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-01",
+        "statusAtAudit": "open"
+      },
+      "supplementalEvidence": ["docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json"],
+      "closureProofSummary": "Canonical regression and complete public consumer sweep reject the unsupported Gmail recheck guarantee; final five canonical assertions pass."
+    },
+    {
+      "id": "PUB-02",
+      "priority": "P2",
+      "route": "All public routes via SoftwareApplication JSON-LD; /pricing.md",
+      "baselineTitle": "Public machine-readable copy promises a preview for every action",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Structured/markdown copy separates inline Keep, unsubscribe-method confirmation, and affected-email previews for mail-moving actions; includes Delete Activity Undo. Canonical manual scope now also states explicitly selected archived Delete scope.",
+      "files": [
+        "apps/web/src/app/(marketing)/site-json-ld-description.ts",
+        "apps/web/src/app/(marketing)/layout.test.tsx",
+        "apps/web/src/app/(marketing)/pricing.md/route.ts",
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/action-safety.test.ts"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "JSON-LD regression failed against universal-preview wording and passes on actual emitted graph. Canonical archived-scope assertion failed before and passes after. Existing pricing markdown truth/recovery tests pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Parent to verify final rendered/served graph; no provider behavior or recovery windows changed."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-02",
+        "statusAtAudit": "open"
+      },
+      "supplementalEvidence": ["docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json"],
+      "closureProofSummary": "Emitted JSON-LD and selected archived-scope negative controls pass; public/pricing truth tests pass."
+    },
+    {
+      "id": "PUB-03",
+      "priority": "P2",
+      "route": "/inbox-simulator?workspace=triage; /inbox-simulator?step=4",
+      "baselineTitle": "Demo outcome counts archived mail as cleared from Inbox",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Inbox-cleared outcome counts only each synthetic fixture\u2019s Inbox portion, retaining total affected count and the current v4 stored shape.",
+      "files": [
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Full guide with Inbox + archived Delete reproduced 1,100 instead of 576 before fix; regression now verifies 576 and full stored Delete count, including after reload. Existing Archive/Later/unsubscribe and Undo tests pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Parent browser smoke pending; no persisted-state migration needed."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-03",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Complete guide and reload verify 576 Inbox removals while preserving 1100 total affected emails in synthetic state."
+    },
+    {
+      "id": "PUB-04",
+      "priority": "P3",
+      "route": "/inbox-simulator?tour=1",
+      "baselineTitle": "Guided-tour query does not select the workspace that renders the tour",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "tour=1 now selects Daily Triage plus guided mode, including when workspace=senders is also supplied.",
+      "files": [
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Two direct-query regression cases failed on aria-pressed=false before the fix and now verify Daily Triage selected and visible guided progress. Existing step/deep-link/restoration tests pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Parent browser smoke pending."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-04",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Both direct tour-query cases failed before the fix and now select Daily Triage with visible guided progress."
+    },
+    {
+      "id": "PUB-05",
+      "priority": "P2",
+      "route": "/how-to/unsubscribe-from-emails-gmail; /how-it-works",
+      "baselineTitle": "Recovery explanation omits Activity Undo for a paired Delete",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Unsubscribe recovery explanation includes both paired Archive and Delete Activity Undo; the sent request remains irreversible and Trash remains a separate Delete fallback. Updated modified date of the changed guide.",
+      "files": [
+        "apps/web/src/features/marketing/learn/how-to-content.ts",
+        "apps/web/src/features/marketing/product-story/diagrams.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Manual final copy review and passing learning-content, product-guide and recovery truth tests.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "No live unsubscribe or Gmail recovery performed; this is copy alignment."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-05",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Learning-content, guide and recovery truth tests pass; paired Delete Undo remains separate from recalling an unsubscribe request."
+    },
+    {
+      "id": "PUB-06",
+      "priority": "P3",
+      "route": "/beta",
+      "baselineTitle": "Daily-review CTA lands in the default Senders demo",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Try Daily Triage uses /inbox-simulator?workspace=triage, matching its named destination.",
+      "files": [
+        "apps/web/src/app/(marketing)/beta/page.tsx",
+        "apps/web/src/app/(marketing)/beta/page.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Existing beta journey test verifies the new destination and all beta state/event tests pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Parent browser navigation smoke pending."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-06",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Beta journey tests verify the Daily Triage destination; permission/state tests remain green."
+    },
+    {
+      "id": "PUB-07",
+      "priority": "P3",
+      "route": "/how-to/auto-archive-future-emails-in-gmail",
+      "baselineTitle": "Autopilot guide asks readers to enable the same rule twice",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Activation preview is reviewed in the first enable step; the later review step inspects collected suggestions without enabling the same rule again. Updated guide modified date.",
+      "files": ["apps/web/src/features/marketing/learn/how-to-content.ts"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Read complete ordered sequence against the always-Observe preset; learning-content and all public journey tests pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "No actual automation activated."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-07",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Ordered guide reviewed against the review-only preset; learning-content and journey tests pass."
+    },
+    {
+      "id": "PUB-08",
+      "priority": "P3",
+      "route": "/",
+      "baselineTitle": "Homepage privacy summary repeats the same data boundary",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Privacy section states the canonical boundary once in its lede. Distinct summary items cover stored fields, revocable access and decision controls. Collapsed inventory renders generated full lists without repeating a trust-card introduction, preserving existing layout and theme styles.",
+      "files": [
+        "apps/web/src/features/marketing/landing/sections.tsx",
+        "apps/web/src/features/marketing/landing/landing.css",
+        "apps/web/src/features/marketing/landing/homepage-sections.css",
+        "apps/web/src/app/(marketing)/page.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Homepage test verifies one visible canonical boundary, complete registry fields and initially collapsed inventory; homepage/public journey tests pass. CSS no longer leaves unused badge-heading overrides.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Parent visual smoke of expanded inventory pending. Shared primitive and homepage hero/design preserved."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-08",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Homepage test verifies one canonical boundary, complete inventory and initially collapsed disclosure; public journey tests pass."
+    },
+    {
+      "id": "PUB-09",
+      "priority": "P3",
+      "route": "Public article/comparison topic CTAs; /inbox-simulator",
+      "baselineTitle": "Several button labels exceed the repository copy budget",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Shortened targeted topic CTAs and demo controls to at most three words, including analogous dynamic Explore N senders. Destinations and actions are unchanged; useful conversion CTA repetition remains.",
+      "files": [
+        "apps/web/src/features/marketing/learn/journey-links.ts",
+        "apps/web/src/features/marketing/comparison/comparison-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/production-parity.test.tsx",
+        "apps/web/src/features/marketing/landing/sections.tsx",
+        "apps/web/src/app/(marketing)/beta/page.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "All public journey/learning/comparison tests and final simulator behavior/parity tests pass. Manually counted specified visible labels against repository budget.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "Long descriptive accessibility names remain where they identify sender/domain/count; article titles remain descriptive."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-09",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Public article/comparison and simulator parity tests pass; visible labels checked against the copy budget."
+    },
+    {
+      "id": "PUB-10",
+      "priority": "P3",
+      "route": "/pricing and public disabled-billing waitlist surfaces",
+      "baselineTitle": "Waitlist error claims a network failure for every failed request",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Generic waitlist failure offers retry without inventing a network cause.",
+      "files": [
+        "apps/web/src/features/marketing/pricing/waitlist-form.tsx",
+        "apps/web/src/features/marketing/pricing/pricing-screen.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/public-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Existing retry-and-clear-on-edit test now covers both TypeError network failure and ApiError server rejection, with no waitlist-success telemetry on either rejection. Both cases pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": "No live waitlist submission or external message sent."
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "PUB-10",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Network and server rejection cases both offer retry, clear on edit and emit no waitlist-success telemetry."
+    },
+    {
+      "id": "CORE-01",
+      "priority": "P2",
+      "route": "/triage",
+      "baselineTitle": "Triage decision shortcuts remain active behind modal dialogs",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Global decision/navigation/help shortcuts yield to nonmodal AccountMenu as well as modal dialogs. Screener inline confirmation/recovery keys and Triage Skip/inline Escape also defer; AccountMenu owns Escape before its dialog unmounts.",
+      "files": [
+        "apps/web/src/features/triage/action-toolbar.tsx",
+        "apps/web/src/features/senders/detail/action-toolbar.tsx",
+        "apps/web/src/features/screener/screener-screen.tsx",
+        "apps/web/src/features/mailboxes/account-menu.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM unit tests; Storybook 320 Help + A leaves one dialog; no confirmation or write. Current-main integration new regressions passed in final 9-file/20-test focused run; final production/synthetic browser proof belongs to root.",
+          "tests": [
+            "action-toolbar.test.tsx: modal and nonmodal dialog ownership regression; all K/A/U/L/D suppressed, Keep restored after close.",
+            "Real AccountMenu integration prevents all 5 verb callbacks and stacked Help; no account mutations; Escape restores Keep.",
+            "Senders selection makes zeroPOSTs; row navigation pauses. Screener preview keys produce no POST and preserve pending decision; Triage Skip and inline Escape pause."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/triage/action-toolbar.tsx",
+              "line": 101,
+              "detail": "Window listener checks dialog ownership before resolving verbs.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/senders/detail/action-toolbar.tsx",
+              "line": 141,
+              "detail": "SenderDetail actions defer to nonmodal account dialog.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/screener/screener-screen.tsx",
+              "line": 727,
+              "detail": "Screener guards all verbs and inline Enter/Escape before preview handlers.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/mailboxes/account-menu.tsx",
+              "line": 86,
+              "detail": "AccountMenu marks Escape consumed before downstream handlers see a removed dialog.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-01",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Dialog/nonmodal/no-write regressions pass; shortcuts resume after close and cannot stack Help or dispatch decisions behind the owner."
+    },
+    {
+      "id": "CORE-02",
+      "priority": "P2",
+      "route": "/later",
+      "baselineTitle": "Custom Later time uses device timezone while the screen and presets use account timezone",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Custom Later wall times use the account IANA zone; invalid, past, missing DST and ambiguous DST times cannot submit.",
+      "files": [
+        "apps/web/src/features/snoozed/snooze-times.ts",
+        "apps/web/src/features/snoozed/snoozed-screen.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Pure conversion tests plus mocked HTTP/UI submit; no real timer write.",
+          "tests": [
+            "snooze-times.test.ts: exact Kolkata/Los Angeles instants, DST spring gap/autumn repeat, invalid dates.",
+            "snoozed-screen.test.tsx:09:00 Kolkata posts 03:30 Z even when device zone differs."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/snoozed/snooze-times.ts",
+              "line": 87,
+              "detail": "Resolves possible timezone offsets and rejects zero or multiple matching instants.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
+              "line": 544,
+              "detail": "Custom input uses the same account zone as displayed return times and presets.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-02",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Account/device-zone UI submit and exact Kolkata/Los Angeles conversion tests pass; invalid, past and DST gap/repeat times are refused."
+    },
+    {
+      "id": "CORE-03",
+      "priority": "P2",
+      "route": "/activity",
+      "baselineTitle": "Stale Activity rows are blocked for pointer users but remain actionable from the keyboard",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Earlier-filter Activity rows become inert while placeholders; selection, per-row/bulk Undo and recovery confirmation handlers reject stale interactions. Recovery verification retry also rejects stale displayed scope.",
+      "files": ["apps/web/src/features/activity/activity-screen.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM unit regression uses a pending new-filter HTTP read; no provider writes. Current-main stale recovery verification portal regression passed.",
+          "tests": [
+            "activity-screen.test.tsx: filter transition preserves earlier rows but disables Undo, forbids selection and posts zero writes on click/Enter.",
+            "activity-screen.test.tsx: opening recovery then changing filter sends no extra verification POST from retained portal."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/activity/activity-screen.tsx",
+              "line": 121,
+              "detail": "Interaction state shared through context including recovery portals.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/activity/activity-screen.tsx",
+              "line": 488,
+              "detail": "Browser removes stale row controls from keyboard interaction.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/activity/activity-screen.tsx",
+              "line": 331,
+              "detail": "Programmatic/keyboard selection guarded as well as pointer events.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-03",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Pending filter and retained recovery-portal regressions send zero stale selection/Undo/recovery writes."
+    },
+    {
+      "id": "CORE-04",
+      "priority": "P2",
+      "route": "/screener",
+      "baselineTitle": "Zero-match preview promises a confirmation result while disabling confirmation",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Zero-match Screener previews keep confirmation disabled and direct the user to Keep for a non-moving decision.",
+      "files": ["apps/web/src/features/screener/decide-preview.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Rendered component assertions; fresh-preview safety guards retained.",
+          "tests": [
+            "decide-preview.test.tsx: Archive/Later/Delete zero-match previews all show Keep guidance and disabled confirmation."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/screener/decide-preview.tsx",
+              "line": 202,
+              "detail": "Corrects contradicted zero-match confirmation explanation.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-04",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Archive/Later/Delete zero-match previews show Keep guidance and disabled confirmation in rendered component tests."
+    },
+    {
+      "id": "CORE-05",
+      "priority": "P2",
+      "route": "shared shell",
+      "baselineTitle": "Unresolved sync failure disappears from primary chrome merely because it aged",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Unresolved sync failure remains visible until a newer successful outcome proves recovery, including after 60 minutes.",
+      "files": [
+        "apps/web/src/features/sync/sync-error-banner.tsx",
+        "apps/web/src/features/sync/sync-error-banner.stories.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM component regression with mocked health hook; no sync started against Gmail.",
+          "tests": [
+            "sync-error-banner.test.tsx: old failure with no success remains actionable; newer success clears it and ties remain visible."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/sync/sync-error-banner.tsx",
+              "line": 130,
+              "detail": "Age-only expiry removed; successful stamp remains the recovery authority.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/sync/sync-error-banner.stories.tsx",
+              "line": 136,
+              "detail": "Fixture represents persistent older unresolved error.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-05",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Old unresolved failure remains visible; newer success clears it and tied stamps do not invent recovery."
+    },
+    {
+      "id": "CORE-06",
+      "priority": "P2",
+      "route": "/triage",
+      "baselineTitle": "Triage empty completion language can claim the user is done before the mailbox is ready",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Triage empty state prioritizes queued/syncing/failed/unknown readiness before completion and retains true earlier-decision tally.",
+      "files": [
+        "apps/web/src/features/triage/triage-screen.tsx",
+        "apps/web/src/features/triage/empty-state.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM component tests and existing Triage SSR tests; live mailbox readiness not exercised.",
+          "tests": [
+            "empty-state.test.tsx: readiness failures at 0/3 decisions; queued/syncing at 3; unknown status recovery; ready resting state."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/triage/triage-screen.tsx",
+              "line": 234,
+              "detail": "Passes full active-mailbox readiness to empty state.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/triage/empty-state.tsx",
+              "line": 65,
+              "detail": "Incomplete readiness blocks done/no-work claims, failed/unknown status has Settings recovery.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-06",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Queued, syncing, failed and unknown readiness prevent completion claims even after recorded decisions; ready resting state remains valid."
+    },
+    {
+      "id": "CORE-07",
+      "priority": "P2",
+      "route": "root/global errors, core route errors and account menu",
+      "baselineTitle": "Error copy asserts untouched state and automatic background recovery without outcome evidence",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Root/global/core-route errors promise only manual recovery; uncertain Keep/disconnect/deletion outcomes refresh authoritative state instead of asserting no change.",
+      "files": [
+        "apps/web/src/app/error.tsx",
+        "apps/web/src/app/global-error.tsx",
+        "apps/web/src/features/triage/triage-screen.tsx",
+        "apps/web/src/features/mailboxes/api/use-delete-mailbox-indexed-data.ts",
+        "apps/web/src/features/mailboxes/api/use-disconnect-mailbox.ts",
+        "apps/web/src/features/mailboxes/account-menu.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "15 root/global tests passed; latest global + indicator run 7 passed. Storybook CSS-removal test verified missing --dm-fg token still renders main rgb(45, 38, 48) on rgb(246,242, 235), white retry on rgb(89, 65, 95), 44 px target. This is a CSS-less fixture proof, not an induced Next.js root-layout crash.",
+          "tests": [
+            "use-delete-mailbox-indexed-data.test.tsx + use-disconnect-mailbox.test.tsx: error response still drops stale scoped cache.",
+            "error.test.tsx + global-error.test.tsx: manual reset, digest privacy, no outcome/automatic retry promises.",
+            "global-error.test.tsx: readable literal color fallbacks and 44 px button."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/app/error.tsx",
+              "line": 52,
+              "detail": "Removed automatic background recovery and untouched-state guarantees.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/app/global-error.tsx",
+              "line": 30,
+              "detail": "Token variables include literal fallbacks for initial root-layout failure; 44 px retry target.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/triage/triage-screen.tsx",
+              "line": 1,
+              "detail": "Keep error invalidates related authoritative reads.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/mailboxes/api/use-delete-mailbox-indexed-data.ts",
+              "line": 29,
+              "detail": "Both successful and ambiguous failed responses reset mailbox-scoped cache.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/mailboxes/api/use-disconnect-mailbox.ts",
+              "line": 26,
+              "detail": "Disconnect errors also reconcile account state.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/mailboxes/account-menu.tsx",
+              "line": 1,
+              "detail": "Menu does not claim an uncertain request left data untouched.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-07",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Root/global recovery tests, CSS-less fallback rendering and uncertain-intent cache/receipt regressions pass; no provider outcome is inferred."
+    },
+    {
+      "id": "CORE-08",
+      "priority": "P2",
+      "route": "/screener and /later",
+      "baselineTitle": "A background read failure replaces the entire useful queue with a cold-error screen",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Screener and Later retain same-scope cached rows on background failure, expose compact retry feedback, and reserve cold errors for absent data. Class siblings now retain same-mailbox Senders, Brief and Follow-ups content with compact retry, fresh-read action guards and no optimistic-empty success claim.",
+      "files": [
+        "apps/web/src/features/screener/compose-state.ts",
+        "apps/web/src/features/screener/screener-route.tsx",
+        "apps/web/src/features/snoozed/snoozed-screen.tsx",
+        "apps/web/src/features/senders/senders-screen.tsx",
+        "apps/web/src/features/senders/senders-screen.test.tsx",
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/brief/brief-screen.test.tsx",
+        "apps/web/src/features/brief/noise-archive.test.tsx",
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Pure composer and mocked HTTP DOM tests; mutation previews continue requiring fresh proof.",
+          "tests": [
+            "compose-state.test.ts: missing data/cached rows/cached empty queue.",
+            "snoozed-screen.test.tsx: loaded row remains after failing refetch and retry appears."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/screener/compose-state.ts",
+              "line": 22,
+              "detail": "Cached rows and cached emptiness survive read failure.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/screener/screener-route.tsx",
+              "line": 55,
+              "detail": "Route carries compact refresh failure state to presentation.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
+              "line": 145,
+              "detail": "Later separates cold error from retained rows.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-08",
+        "statusAtAudit": "open"
+      },
+      "supplementalEvidence": [
+        "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/independent-gate.json"
+      ],
+      "closureProofSummary": "Composer and background-error tests pass; six sibling negative controls and 21 focused corrected cases pass. Full relevant suites passed in the root run."
+    },
+    {
+      "id": "CORE-09",
+      "priority": "P3",
+      "route": "/senders/[id] and sender inspector",
+      "baselineTitle": "Recent-message status icons are named generic spans, so their accessible meaning can be ignored",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Read/unread and attachment indicators use nameable image roles.",
+      "files": ["apps/web/src/features/senders/detail/recent-messages.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM component test; full parent axe rerun planned after current-main integration. Attachment is currently fixture-only; production adapter does not infer attachments from forbidden MIME content.",
+          "tests": [
+            "recent-messages.test.tsx: Unread and Has attachment are discoverable by named image role."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/senders/detail/recent-messages.tsx",
+              "line": 226,
+              "detail": "Empty status spans now expose their accessible names semantically.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-09",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Named Unread and Has attachment image-role assertions pass; attachment production detection remains outside this proof."
+    },
+    {
+      "id": "CORE-10",
+      "priority": "P3",
+      "route": "authenticated route error boundaries",
+      "baselineTitle": "Shared route error introduces a second nested main landmark",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Feature errors use a labelled section within AppShell; standalone errors retain their own main landmark.",
+      "files": ["apps/web/src/components/route-error-screen.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "DOM composition tests; parent authenticated shell smoke follows integration.",
+          "tests": [
+            "route-error-screen.test.tsx: nested production composition has one main plus named Later region; standalone fallback has one main; recovery and geometry checks."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/components/route-error-screen.tsx",
+              "line": 75,
+              "detail": "Uses route title identity to select named section versus standalone main.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "CORE-10",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Nested shell composition has one main and a named route region; standalone fallback retains one main."
+    },
+    {
+      "id": "SYS-01",
+      "priority": "P2",
+      "route": "/settings",
+      "baselineTitle": "Mailbox limit disappears when the optional billing read fails",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Connected inbox capacity derives from authenticated entitlements, including unavailable/disabled billing.",
+      "files": [
+        "apps/web/src/features/settings/settings-index/settings-screen.tsx",
+        "apps/web/src/features/settings/settings-index/settings-screen.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Both BILLING_DISABLED and SERVICE_UNAVAILABLE regression cases fail on old code and pass on fixed code.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-01",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Billing-disabled and unavailable-read regressions preserve the entitlement-derived inbox limit; both fail on old code."
+    },
+    {
+      "id": "SYS-02",
+      "priority": "P2",
+      "route": "/billing",
+      "baselineTitle": "Pause and cancellation can be submitted concurrently",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Cancellation, dismissal and reason input are locked during an unresolved pause as well as cancellation.",
+      "files": [
+        "apps/web/src/features/billing/cancel-modal.tsx",
+        "apps/web/src/features/billing/cancel-modal.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Deferred pause regression verifies disabled cancellation, Keep current plan, Escape and scrim; restored after settle.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-02",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Unresolved pause disables cancellation, inputs and every dismissal path; controls recover after settlement."
+    },
+    {
+      "id": "SYS-03",
+      "priority": "P2",
+      "route": "/brief",
+      "baselineTitle": "Feedback selection and success receipt carry across Brief editions",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Feedback state remounts for each canonical surface/reference identity.",
+      "files": [
+        "apps/web/src/features/feedback/inline-feedback.tsx",
+        "apps/web/src/features/feedback/inline-feedback.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Saved selection and receipt reset; a late prior-reference response cannot affect the next observation. Both negative controls confirmed.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-03",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Identity change clears selected/saved state; late prior-reference completion cannot paint a new observation. Both negative controls pass."
+    },
+    {
+      "id": "SYS-04",
+      "priority": "P2",
+      "route": "/onboarding",
+      "baselineTitle": "Cleanup onboarding retries a connection conflict instead of reconciling it",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Mailbox-scope conflicts offer connection-state reconciliation instead of re-reading the failed scope.",
+      "files": [
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "SELECT_MAILBOX and NO_ACTIVE_MAILBOX reset cache rather than retry or complete; old code failures confirmed.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-04",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "SELECT_MAILBOX and NO_ACTIVE_MAILBOX reset/rederive scope instead of retrying or completing; old-code failures confirmed."
+    },
+    {
+      "id": "SYS-05",
+      "priority": "P2",
+      "route": "/brief",
+      "baselineTitle": "Historical Noise rows and archive preview still say yesterday",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Noise counts use the viewed edition date, and Archive scope is expressed independently of yesterday.",
+      "files": [
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/brief/brief-screen.test.tsx",
+        "apps/web/src/features/brief/noise-archive-sheet.tsx",
+        "apps/web/src/features/brief/noise-archive.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Historical edition row date regression fails on old code; preview integration checks live inbox count and email outside this Brief.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-05",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Historical Noise rows use the covered date; archive preview compares current Inbox against the selected Brief without yesterday drift."
+    },
+    {
+      "id": "SYS-06",
+      "priority": "P2",
+      "route": "/billing",
+      "baselineTitle": "A failed billing read asserts that no charge or plan change occurred",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Billing read errors ask for confirmation/retry without claiming that no charge or plan change occurred.",
+      "files": [
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/billing-screen.test.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "500 recovery assertion checks the next step and absence of the unsupported assurance; billing and invoice suites pass.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-06",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Billing/invoice read-failure tests require recovery guidance and reject an account-wide no-charge assurance."
+    },
+    {
+      "id": "SYS-07",
+      "priority": "P2",
+      "route": "/autopilot",
+      "baselineTitle": "Read-only Autopilot tells users to retry but offers no retry control",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Free catalog errors expose an explicit retry through ErrorState.",
+      "files": [
+        "apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx",
+        "apps/web/src/features/autopilot/autopilot-entitlement-surface.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Failure then successful catalog refetch regression fails on old code and passes after the fix.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-07",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Failed catalog read exposes Retry and successful refetch restores the Free rule catalog; negative control confirmed."
+    },
+    {
+      "id": "SYS-08",
+      "priority": "P2",
+      "route": "/billing",
+      "baselineTitle": "Support-assisted payment copy promises access beyond the enforced dunning deadline",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Past-due support path asks the customer to update the payment method without an indefinite active-plan promise.",
+      "files": [
+        "apps/web/src/features/billing/payment-method-card.tsx",
+        "apps/web/src/features/billing/invoice-history.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Razorpay test checks support next step and absence of the old indefinite assurance; no provider/state mutation behavior changed.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-08",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Unsupported past-due provider path offers the support next step and no indefinite active-plan promise."
+    },
+    {
+      "id": "SYS-09",
+      "priority": "P2",
+      "route": "/settings#account",
+      "baselineTitle": "Account deletion removes the visible keyboard focus ring",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Typed confirmation input retains the shared visible focus outline.",
+      "files": ["apps/web/src/features/account-deletion/delete-account-modal.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Source confirmation plus existing account deletion suite; final rendered keyboard/a11y check belongs to parent.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-09",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Inline focus suppression removed; account deletion suite and repaired fixture render pass. Typed confirmation/grace semantics are preserved."
+    },
+    {
+      "id": "SYS-10",
+      "priority": "P3",
+      "route": "/onboarding",
+      "baselineTitle": "Continue to Senders actually opens Overview or the retained billing destination",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Completion buttons say Open workspace to match default home and requested return routes.",
+      "files": [
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.test.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Both completion suites use accurate labels and preserve completion retry/skip behavior.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-10",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Both completion suites use Open workspace and retain retry/skip behavior; label matches default or requested destination."
+    },
+    {
+      "id": "SYS-11",
+      "priority": "P3",
+      "route": "/quiet",
+      "baselineTitle": "Default quiet-hours draft is labelled Saved before any save exists",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Unpersisted browser defaults do not display Saved.",
+      "files": [
+        "apps/web/src/features/quiet/quiet-hours-card.tsx",
+        "apps/web/src/features/quiet/quiet-hours-card.test.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Unconfigured and persisted-config assertions; negative control confirmed.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-11",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Unconfigured defaults show no Saved receipt; persisted configuration does. Negative control confirmed."
+    },
+    {
+      "id": "SYS-12",
+      "priority": "P3",
+      "route": "/onboarding",
+      "baselineTitle": "Preset selection still claims preparation after the status read has stopped",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Absent preset catalogs say none are available; failures say the read failed and offer retry or connection refresh while preserving saved-pick flow.",
+      "files": ["apps/web/src/features/onboarding/step-preset-pick.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Source read verifies error/empty separation, scope-aware refresh and existing finite polling cap; broader onboarding tests pass. No new unit fixture for this copy-only empty branch.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-12",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Source separates failed/empty catalogs and scope recovery while preserving finite polling and saved choices; broader onboarding tests pass."
+    },
+    {
+      "id": "SYS-13",
+      "priority": "P3",
+      "route": "/autopilot; isolated ActivateRuleModal story",
+      "baselineTitle": "Review-only activation component can display an automatic-action choice",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Review-only presets never offer Act now; execution-capable story uses a truthful preset and review-only gets its own story.",
+      "files": [
+        "apps/web/src/features/autopilot/activate-rule-modal.tsx",
+        "apps/web/src/features/autopilot/activate-rule-modal.test.tsx",
+        "apps/web/src/features/autopilot/activate-rule-modal.stories.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Both review-only presets tested with true unattended capability; execution-capable preset retains both choices. Negative controls confirmed.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "SYS-13",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Both review-only presets reject Act now even with unattended capability; execution-capable presets retain truthful choices."
+    },
+    {
+      "id": "UI-01",
+      "priority": "P2",
+      "route": "/screener",
+      "baselineTitle": "Protected confirmation clips Cancel on a narrow phone",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Mobile Screener expansion drops the desktop avatar indent, and confirmation actions wrap inside the available width.",
+      "files": [
+        "apps/web/src/features/screener/screener-row.css",
+        "apps/web/src/features/screener/decide-preview.tsx",
+        "apps/web/src/features/screener/screener-screen.stories.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Browser fixture verification; parent full state sweep follows integration.",
+          "tests": [
+            "Storybook protected-override-preview at 320 px: scrollWidth 320, Cancel bounds 28\u2013106."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/screener/screener-row.css",
+              "line": 48,
+              "detail": "Mobile expansion uses full row width.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/screener/decide-preview.tsx",
+              "line": 455,
+              "detail": "Confirm/Cancel action rail can wrap.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/screener/screener-screen.stories.tsx",
+              "line": 128,
+              "detail": "Isolated row fixtures supply the same gutter needed by negative row margins.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-01",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Protected preview fits 320 px with contained Cancel/confirmation controls; targeted light/dark fixture checks pass."
+    },
+    {
+      "id": "UI-02",
+      "priority": "P2",
+      "route": "/triage",
+      "baselineTitle": "Triage clips the List switch on a narrow phone",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Triage progress and layout controls wrap before they can push outside a phone viewport.",
+      "files": ["apps/web/src/features/triage/triage-screen.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/core-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Browser fixture verification.",
+          "tests": [
+            "Storybook default Triage at 320 px: scrollWidth 320, Focus right 102.5 and List right 176.3."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/triage/triage-screen.tsx",
+              "line": 1492,
+              "detail": "Header control group can wrap with bounded width.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-02",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Triage layout controls wrap within 320 px; focused light/dark captures have no product overflow."
+    },
+    {
+      "id": "UI-03",
+      "priority": "P2",
+      "route": "/brief",
+      "baselineTitle": "Activity link is visually indistinguishable from surrounding text",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "See what changed has an underline and text underline offset.",
+      "files": ["apps/web/src/features/brief/brief-screen.tsx"],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Source checks plus Brief test suite; final rendered axe/visual verification belongs to parent.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-03",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Activity link is underlined; Brief feature tests and scoped render/axe checks pass."
+    },
+    {
+      "id": "UI-04",
+      "priority": "P3",
+      "route": "/home; /triage; /screener; /later; /followups; /settings/privacy; /settings/senders; /admin/security",
+      "baselineTitle": "Shared state components skip heading levels",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Shared states accept explicit heading levels; route-level states and the first privacy card use h2.",
+      "files": [
+        "packages/shared/src/components/empty-state/empty-state.tsx",
+        "packages/shared/src/components/error-state/error-state.tsx",
+        "packages/shared/src/components/privacy-badge.tsx",
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx",
+        "apps/web/src/features/quiet/quiet-screen.tsx",
+        "apps/web/src/features/autopilot/autopilot-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/onboarding/step-first-triage.tsx",
+        "apps/web/src/features/onboarding/step-protection-review.tsx",
+        "apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+        "apps/web/src/features/onboarding/step-promise.tsx"
+      ],
+      "ownerMaps": [
+        "docs/qa/prelaunch-2026-10-03/after/root-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"
+      ],
+      "localVerification": [
+        {
+          "summary": "Shared heading-level SSR regressions fail against baseline, pass against implementation; all page consumers reviewed by their owners.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        },
+        {
+          "summary": "New shared headingLevel API applied; final rendered heading audit belongs to parent.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-04",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Shared heading negative controls pass; route consumers use explicit hierarchy and selected fixture headings are reviewed."
+    },
+    {
+      "id": "UI-05",
+      "priority": "P3",
+      "route": "/admin/security",
+      "baselineTitle": "Security table has an inaccessible scroll region and low-contrast warning pills",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Security log scroll region is keyboard-focusable and warning pills use a readable foreground.",
+      "files": [
+        "apps/web/src/features/admin-security/security-events-screen.tsx",
+        "packages/shared/src/components/pill.tsx"
+      ],
+      "ownerMaps": ["docs/qa/prelaunch-2026-10-03/after/root-fixes.json"],
+      "localVerification": [
+        {
+          "summary": "Admin keyboard-focus regression fails against baseline, passes against implementation; 320 px light browser axe reports zero violations.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-05",
+        "statusAtAudit": "open"
+      },
+      "closureProofSummary": "Admin focus negative control passes; narrow fixture axe confirms scroll-region accessibility and readable warning pills."
+    },
+    {
+      "id": "UI-06",
+      "priority": "P2",
+      "route": "/triage; /senders/[id]; /screener; /activity",
+      "baselineTitle": "Dark danger text loses contrast on tinted surfaces",
+      "implementationStatus": "implemented",
+      "resolutionStatus": "resolved in scoped prelaunch review; source correction and corroborating proof recorded; provider/release limits remain",
+      "change": "Core danger foregrounds use accessible dangerText; Screener confidence no longer reduces foreground opacity; error badges use amberDeep.",
+      "files": [
+        "apps/web/src/features/screener/screener-row.tsx",
+        "apps/web/src/features/activity/activity-screen.tsx",
+        "apps/web/src/app/global-error.tsx",
+        "packages/shared/src/styles/tokens.css",
+        "packages/shared/src/tokens/tokens.ts",
+        "packages/shared/src/components/action-popover.tsx",
+        "apps/web/src/features/account-deletion/account-deletion-section.tsx",
+        "apps/web/src/features/account-deletion/delete-account-modal.tsx",
+        "apps/web/src/features/account-deletion/grace-period-banner.tsx",
+        "apps/web/src/features/auth/heard-from-prompt.tsx",
+        "apps/web/src/features/autopilot/confirm-modal-frame.tsx",
+        "apps/web/src/features/autopilot/rule-preview-panel.tsx",
+        "apps/web/src/features/billing/billing-screen.tsx",
+        "apps/web/src/features/billing/cancel-modal.tsx",
+        "apps/web/src/features/billing/change-plan-panel.tsx",
+        "apps/web/src/features/billing/checkout-confirm-panel.tsx",
+        "apps/web/src/features/billing/invoice-history.tsx",
+        "apps/web/src/features/billing/payment-method-card.tsx",
+        "apps/web/src/features/quiet/quiet-hours-card.tsx",
+        "apps/web/src/features/settings/settings-list.tsx",
+        "apps/web/src/features/settings/settings-index/mailboxes-card.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx"
+      ],
+      "ownerMaps": [
+        "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/root-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json"
+      ],
+      "localVerification": [
+        {
+          "summary": "Source mechanism sweep across core screens and mailbox/sync controls. Parent owns shared-button/registry tokens and final contrast sweep. Remaining color.danger usages are the Screener selected Delete inset border and filled destructive SelectionBar background; both intentionally preserved.",
+          "tests": [
+            "Activity color assertions updated to dangerText; all 109 Activity/Later rerun cases passed."
+          ],
+          "evidence": [
+            {
+              "file": "apps/web/src/features/screener/screener-row.tsx",
+              "line": 1,
+              "detail": "Confidence text no longer has 0.85 opacity.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/features/activity/activity-screen.tsx",
+              "line": 838,
+              "detail": "Danger foreground mapping updated.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            },
+            {
+              "file": "apps/web/src/app/global-error.tsx",
+              "line": 39,
+              "detail": "Error badge text uses darker amber with a literal fallback.",
+              "lineScope": "Recorded at owner review; source line may move after integration"
+            }
+          ],
+          "residualConcerns": []
+        },
+        {
+          "summary": "Dedicated foreground token preserves filled danger button palette; browser contrast recheck pending.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        },
+        {
+          "summary": "Foreground source sweep clean; final contrast measurements belong to parent.",
+          "tests": [],
+          "evidence": [],
+          "residualConcerns": []
+        }
+      ],
+      "verificationScope": "Source and isolated/unit evidence; see check ledger for actual combined results. No live provider guarantee.",
+      "baselineReference": {
+        "path": "docs/qa/prelaunch-2026-10-03/review.json",
+        "id": "UI-06",
+        "statusAtAudit": "open"
+      },
+      "supplementalEvidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "remainingClassProof": "No confirmed targeted contrast sibling remains open. Final Clear 1440 px light/dark recaptures pass; root aggregate runtime/public gates remain separate.",
+      "closureProofSummary": "Foreground class source sweep and applicable light/dark rechecks pass, including final 1440 pxClear recaptures."
+    }
+  ],
+  "verificationGaps": [
+    {
+      "id": "QA-01",
+      "status": "all six intended fixtures repaired and rendered; production/synthetic flow proof recorded separately",
+      "baselineReference": "docs/qa/prelaunch-2026-10-03/review.json verificationGaps[QA-01]",
+      "fixtures": [
+        {
+          "id": "QA-01-account-deletion",
+          "parentId": "QA-01",
+          "screen": "AccountDeletion ModalStep 1",
+          "baselineFailure": "No QueryClient set",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "Account deletion stories have a stable QueryClient provider.",
+          "files": ["apps/web/src/features/account-deletion/account-deletion.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+          ],
+          "captures": [
+            {
+              "storyId": "account-accountdeletion--modal-step-1",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 2",
+                  "text": "Delete your DeclutrMail account?"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/004-account-accountdeletion--modal-step-1.png"
+            },
+            {
+              "storyId": "account-accountdeletion--modal-step-1",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 2",
+                  "text": "Delete your DeclutrMail account?"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/011-account-accountdeletion--modal-step-1-320-dark.png"
+            }
+          ],
+          "limits": "Fixture provider/render recovery is not authenticated production journey or provider proof."
+        },
+        {
+          "id": "QA-01-protection-review",
+          "parentId": "QA-01",
+          "screen": "StepProtectionReview ReassuranceLeads",
+          "baselineFailure": "App Router invariant",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "Story supplies App Router, seeded auth and successful empty Undo cache without background reads.",
+          "files": ["apps/web/src/features/onboarding/step-protection-review.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+          ],
+          "captures": [
+            {
+              "storyId": "onboarding-stepprotectionreview--reassurance-leads",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "We protected 460 senders you write back to."
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-onboarding-stepprotectionreview--reassurance-leads.png"
+            },
+            {
+              "storyId": "onboarding-stepprotectionreview--reassurance-leads",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "We protected 460 senders you write back to."
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/012-onboarding-stepprotectionreview--reassurance-leads-320-dark.png"
+            }
+          ],
+          "limits": "Fixture provider/render recovery is not authenticated production journey or provider proof."
+        },
+        {
+          "id": "QA-01-sync-gate",
+          "parentId": "QA-01",
+          "screen": "SyncGate Failed",
+          "baselineFailure": "No QueryClient set",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "Story supplies QueryClient and current scoped mailbox identity; partial-ready failure content renders.",
+          "files": ["apps/web/src/features/onboarding/sync-gate.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+          ],
+          "captures": [
+            {
+              "storyId": "onboarding-syncgate--failed",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "Your inbox is partly ready"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-onboarding-syncgate--failed.png"
+            },
+            {
+              "storyId": "onboarding-syncgate--failed",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "Your inbox is partly ready"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/013-onboarding-syncgate--failed-320-dark.png"
+            }
+          ],
+          "limits": "Fixture provider/render recovery is not authenticated production journey or provider proof."
+        },
+        {
+          "id": "QA-01-selection-bar",
+          "parentId": "QA-01",
+          "screen": "SelectionBar MixedSelection",
+          "baselineFailure": "Unhandled tier undefined",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "Story seeds valid entitlements/channel and separates intended desktop frame from a dedicated MobileSheet fixture.",
+          "files": ["apps/web/src/features/senders/selection-bar.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+          ],
+          "captures": [
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": true,
+              "axeViolations": 0,
+              "headings": [],
+              "screenshot": null,
+              "localScreenshotFile": "073-senders-selectionbar--mixed-selection.png",
+              "screenshotArchived": false
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": true,
+              "axeViolations": 0,
+              "headings": [],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "light",
+              "width": 1440,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "dark",
+              "width": 1440,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "dark",
+              "width": 1440,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "verificationNote": "Recaptured after final Clear foreground correction",
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "light",
+              "width": 1440,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "verificationNote": "Recaptured after final Clear foreground correction",
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+            },
+            {
+              "storyId": "senders-selectionbar--mixed-selection",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": true,
+              "axeViolations": 0,
+              "verificationNote": "Recaptured after final Clear foreground correction",
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+            }
+          ],
+          "limits": "Fixed desktop wrapper is intentionally outside 320 pxphone applicability. MixedSelection 1440 px light/dark and dedicated MobileSheet 320 px light/dark render correctly. Fixture proof remains separate from authenticated/provider journeys."
+        },
+        {
+          "id": "QA-01-global-error",
+          "parentId": "QA-01",
+          "screen": "GlobalError Default",
+          "baselineFailure": "Blank render",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "Fixture renders production pure fallback content; literal token fallbacks preserve readability without root CSS.",
+          "files": ["apps/web/src/app/global-error.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+          ],
+          "captures": [
+            {
+              "storyId": "appshell-errors-globalerror--default",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "We couldn\u2019t load DeclutrMail."
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/002-appshell-errors-globalerror--default.png"
+            },
+            {
+              "storyId": "appshell-errors-globalerror--default",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "We couldn\u2019t load DeclutrMail."
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/015-appshell-errors-globalerror--default-320-dark.png"
+            }
+          ],
+          "limits": "Fixture provider/render recovery is not authenticated production journey or provider proof."
+        },
+        {
+          "id": "QA-01-activity-empty",
+          "parentId": "QA-01",
+          "screen": "Activity Empty",
+          "baselineFailure": "Cold error rather than intended empty state",
+          "implementationStatus": "repaired",
+          "verificationStatus": "intended state rendered in isolated fixture",
+          "change": "URL/cache agree on 7d; current-window and weekly totals are zero while historical all-time totals remain.",
+          "files": ["apps/web/src/features/activity/activity-screen.stories.tsx"],
+          "evidenceArtifacts": [
+            "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+            "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+          ],
+          "captures": [
+            {
+              "storyId": "features-activity-activityscreen--empty",
+              "theme": "light",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "Activity"
+                },
+                {
+                  "tag": "H 2",
+                  "text": "No activity in the last 7 days."
+                },
+                {
+                  "tag": "H 2",
+                  "text": "Last 7 days"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/008-features-activity-activityscreen--empty.png"
+            },
+            {
+              "storyId": "features-activity-activityscreen--empty",
+              "theme": "dark",
+              "width": 320,
+              "renderedContent": true,
+              "runtimeStoryError": false,
+              "overflow": false,
+              "axeViolations": 0,
+              "headings": [
+                {
+                  "tag": "H 1",
+                  "text": "Activity"
+                },
+                {
+                  "tag": "H 2",
+                  "text": "No activity in the last 7 days."
+                },
+                {
+                  "tag": "H 2",
+                  "text": "Last 7 days"
+                }
+              ],
+              "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/016-features-activity-activityscreen--empty-320-dark.png"
+            }
+          ],
+          "limits": "Fixture provider/render recovery is not authenticated production journey or provider proof."
+        }
+      ]
+    }
+  ],
+  "designRecommendations": [
+    {
+      "id": "HOME-MOBILE-HIERARCHY",
+      "route": "/home",
+      "baselineType": "design recommendation, not a broken route",
+      "implementationStatus": "implemented",
+      "change": "Implemented compact mobile Home intro when review work awaits; real task/CTA precedes recorded-progress stamp in reading order. Genuine no-work and syncing states retain calm framing; brand typography and desktop stamp position remain.",
+      "files": [
+        "apps/web/src/features/home/home-view.tsx",
+        "apps/web/src/features/home/home-view.module.css",
+        "apps/web/src/features/home/home-view.test.tsx"
+      ],
+      "localVerification": {
+        "summary": "DOM regression verified after main integration. Browser 320 px proof delegated to root because servers intentionally stopped for dependency update; no duplicate server started.",
+        "tests": ["home-view.test.tsx: 4 new hierarchy cases passed in first integration run."],
+        "evidence": [
+          {
+            "file": "apps/web/src/features/home/home-view.tsx",
+            "line": 30,
+            "detail": "Actual waiting/first-review work selects compact mobile hierarchy.",
+            "lineScope": "Recorded at owner review; source line may move after integration"
+          },
+          {
+            "file": "apps/web/src/features/home/home-view.tsx",
+            "line": 222,
+            "detail": "Cleanup stamp follows the primary review/task section in reading order.",
+            "lineScope": "Recorded at owner review; source line may move after integration"
+          },
+          {
+            "file": "apps/web/src/features/home/home-view.module.css",
+            "line": 546,
+            "detail": "At 480 px and below, preserves brand heading with smaller size and less spacing.",
+            "lineScope": "Recorded at owner review; source line may move after integration"
+          },
+          {
+            "file": "apps/web/src/features/home/home-view.test.tsx",
+            "line": 262,
+            "detail": "Four cases preserve Triage/Screener task-before-history order, calm no-work state and honest sync state.",
+            "lineScope": "Recorded at owner review; source line may move after integration"
+          }
+        ],
+        "residualConcerns": []
+      },
+      "renderedEvidence": [
+        {
+          "storyId": "home-homeview--new-user",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Nothing cleared yet"
+            }
+          ],
+          "screenshot": null,
+          "localScreenshotFile": "017-home-homeview--new-user-320-dark.png",
+          "screenshotArchived": false
+        },
+        {
+          "storyId": "home-homeview--first-review-ready",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Your first review is ready"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/018-home-homeview--first-review-ready-320-dark.png"
+        },
+        {
+          "storyId": "home-homeview--cleared",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Your daily review is ready."
+            },
+            {
+              "tag": "H 2",
+              "text": "A little attention."
+            },
+            {
+              "tag": "H 2",
+              "text": "More space.Less second-guessing."
+            },
+            {
+              "tag": "H 2",
+              "text": "The rest of your day, in view."
+            },
+            {
+              "tag": "H 3",
+              "text": "Catch up"
+            },
+            {
+              "tag": "H 3",
+              "text": "Keep it clear"
+            }
+          ],
+          "screenshot": null,
+          "localScreenshotFile": "019-home-homeview--cleared-320-dark.png",
+          "screenshotArchived": false
+        },
+        {
+          "storyId": "home-homeview--sync-failed",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Gmail scan failed"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/020-home-homeview--sync-failed-320-dark.png"
+        },
+        {
+          "storyId": "home-homeview--load-error",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "We couldn't load Home"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/021-home-homeview--load-error-320-dark.png"
+        },
+        {
+          "storyId": "home-homeview--new-user",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Nothing cleared yet"
+            }
+          ],
+          "screenshot": null,
+          "localScreenshotFile": "022-home-homeview--new-user-320-light.png",
+          "screenshotArchived": false
+        },
+        {
+          "storyId": "home-homeview--first-review-ready",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Your first review is ready"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/023-home-homeview--first-review-ready-320-light.png"
+        },
+        {
+          "storyId": "home-homeview--cleared",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Your daily review is ready."
+            },
+            {
+              "tag": "H 2",
+              "text": "A little attention."
+            },
+            {
+              "tag": "H 2",
+              "text": "More space.Less second-guessing."
+            },
+            {
+              "tag": "H 2",
+              "text": "The rest of your day, in view."
+            },
+            {
+              "tag": "H 3",
+              "text": "Catch up"
+            },
+            {
+              "tag": "H 3",
+              "text": "Keep it clear"
+            }
+          ],
+          "screenshot": null,
+          "localScreenshotFile": "024-home-homeview--cleared-320-light.png",
+          "screenshotArchived": false
+        },
+        {
+          "storyId": "home-homeview--sync-failed",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "Gmail scan failed"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/025-home-homeview--sync-failed-320-light.png"
+        },
+        {
+          "storyId": "home-homeview--load-error",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "A little roomfor a clearer day."
+            },
+            {
+              "tag": "H 2",
+              "text": "We couldn't load Home"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/026-home-homeview--load-error-320-light.png"
+        }
+      ],
+      "evidenceArtifacts": [
+        "docs/qa/prelaunch-2026-10-03/after/core-integration.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+      ],
+      "limits": "Seeded Home states and DOM hierarchy only; real mailbox counts and task preparation remain outside this proof."
+    },
+    {
+      "id": "DESIGN-FOLLOWUPS",
+      "route": "/followups",
+      "baselineType": "design recommendation, not a broken route",
+      "implementationStatus": "implemented",
+      "change": "Introduction separates task, observation cadence/reply caveat and resolution effect into short paragraphs; help describes possible observed follow-ups accurately.",
+      "files": [
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.test.tsx"
+      ],
+      "localVerification": {
+        "summary": "Followups suite preserves observation window, recent-reply caveat, cadence and resolution semantics.",
+        "tests": [],
+        "evidence": [],
+        "residualConcerns": []
+      },
+      "renderedEvidence": [
+        {
+          "storyId": "features-followups-followupsscreen--populated",
+          "theme": "light",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "headings": [
+            {
+              "tag": "H 1",
+              "text": "Follow-ups"
+            },
+            {
+              "tag": "H 2",
+              "text": "Over a week\u00b7 2"
+            },
+            {
+              "tag": "H 2",
+              "text": "3\u20137 days\u00b7 1"
+            },
+            {
+              "tag": "H 2",
+              "text": "1\u20133 days\u00b7 1"
+            }
+          ],
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/038-features-followups-followupsscreen--populated.png"
+        }
+      ],
+      "evidenceArtifacts": [
+        "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/story-browser.json"
+      ],
+      "limits": "Source content and seeded populated rendering; no live conversation/reply observation proof."
+    }
+  ],
+  "postReviewResolutions": [
+    {
+      "id": "CORE-01-SIBLINGS",
+      "parentId": "CORE-01",
+      "title": "Keyboard ownership across reachable dialogs and menus",
+      "status": "implemented and locally verified",
+      "change": "Sender detail toolbar, Senders list/bulk shortcuts, Screener inline Enter/Escape, Triage Skip/inline Escape and AccountMenu Escape yield to current dialog/menu ownership. Closing the owner restores shortcuts.",
+      "files": [
+        "apps/web/src/features/senders/detail/action-toolbar.tsx",
+        "apps/web/src/features/senders/sender-list.tsx",
+        "apps/web/src/features/senders/senders-screen.tsx",
+        "apps/web/src/features/screener/screener-screen.tsx",
+        "apps/web/src/features/triage/triage-screen.tsx",
+        "apps/web/src/features/mailboxes/account-menu.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+        "local run artifact (not archived): core-integration-keyboard-tests.log"
+      ],
+      "verification": "No-write/nonmodal/pending-preview regressions; final root affected web suite coverage."
+    },
+    {
+      "id": "CORE-03-PORTAL",
+      "parentId": "CORE-03",
+      "title": "Stale Activity recovery verification retry",
+      "status": "implemented and locally verified",
+      "change": "The retained recovery portal callback also checks interactionBlocked; changing filters cannot send another recovery verification POST from stale rows.",
+      "files": [
+        "apps/web/src/features/activity/activity-screen.tsx",
+        "apps/web/src/features/activity/activity-screen.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+        "local run artifact (not archived): core-integration-keyboard-tests.log"
+      ],
+      "verification": "Filter changes during an open portal; no additional verification dispatch."
+    },
+    {
+      "id": "CORE-07-UNCERTAIN-INTENT",
+      "parentId": "CORE-07",
+      "title": "Uncertain Keep and account intent outcomes reconcile",
+      "status": "implemented and locally verified",
+      "change": "Ambiguous Keep/disconnect/saved-data deletion responses use neutral confirmation language and reconcile authoritative queries; no untouched-state assurance or success receipt.",
+      "files": [
+        "apps/web/src/features/triage/triage-screen.tsx",
+        "apps/web/src/features/mailboxes/account-menu.tsx",
+        "apps/web/src/features/mailboxes/api/use-disconnect-mailbox.ts",
+        "apps/web/src/features/mailboxes/api/use-delete-mailbox-indexed-data.ts"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/final-unit-corrections.json"
+      ],
+      "verification": "Hooks reset scope on settled uncertain responses; final 89-test rerun asserts neutral warning, invalidation, retained row and no success."
+    },
+    {
+      "id": "SYS-03-UNCERTAIN-FEEDBACK",
+      "parentId": "SYS-03",
+      "title": "Feedback error does not claim no write",
+      "status": "implemented and locally verified",
+      "change": "Generic failed feedback save says its outcome could not be confirmed, keeps the existing choice and avoids a false nothing-changed receipt. Identity-keyed remounts prevent late prior-observation success from painting the next edition.",
+      "files": [
+        "apps/web/src/features/feedback/inline-feedback.tsx",
+        "apps/web/src/features/feedback/inline-feedback.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log"
+      ],
+      "verification": "Feedback suite passed in root 41 green set; identity and late-response negative controls recorded by owner."
+    },
+    {
+      "id": "CORE-07-BRIEF-FAILED-RECEIPT",
+      "parentId": "CORE-07",
+      "title": "Terminal failed Noise archive remains uncertain",
+      "status": "implemented and locally verified",
+      "change": "Failed jobs advise checking Activity instead of saying nothing was archived. A pre-provider enqueue refusal can retain truthful zero-change wording.",
+      "files": [
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/brief/noise-archive.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json",
+        "local run artifact (not archived): declutrmail-retained-latest.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log"
+      ],
+      "verification": "Failed job with affectedCount 17 rejects zero/success claim. Refused traced to onEnqueueError when enqueueMayHaveStarted=false; network/no response/5xx use unconfirmed, terminal failures use failed."
+    },
+    {
+      "id": "CORE-08-SIBLINGS",
+      "parentId": "CORE-08",
+      "title": "Retained Senders, Brief and Follow-ups content",
+      "status": "implemented and locally verified",
+      "change": "Current-mailbox loaded content survives transient failures with a compact retry; Senders retries the failed cursor, while action previews remain blocked until the read recovers.",
+      "files": [
+        "apps/web/src/features/senders/senders-screen.tsx",
+        "apps/web/src/features/senders/senders-screen.test.tsx",
+        "apps/web/src/features/brief/brief-screen.tsx",
+        "apps/web/src/features/brief/brief-screen.test.tsx",
+        "apps/web/src/features/brief/noise-archive.test.tsx",
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+        "local run artifact (not archived): declutrmail-retained-negative.log",
+        "local run artifact (not archived): declutrmail-retained-latest.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log"
+      ],
+      "verification": "6 old code negatives; 21 focused green after corrections; entire Senders/Brief/Follow-ups suites green in root affected run. Same-scope transient failures preserve reading/selection state and retry the actual failed read; freshness-dependent previews fail closed."
+    },
+    {
+      "id": "INTEGRATION-RETRY-01",
+      "parentId": "CORE-08",
+      "title": "Failed widened-query retry after mailbox switch",
+      "status": "resolved and regression passed",
+      "change": "Narrow/wide payload ownership tracked independently. Full error Retry calls failedQuery.refetch so a successful narrow read cannot strand the failed widened read.",
+      "files": [
+        "apps/web/src/features/senders/senders-screen.tsx",
+        "apps/web/src/features/senders/senders-screen.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+        "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json"
+      ],
+      "verification": "MailboxA-wide cache, mailboxB narrow success/wide failure: noArows; Retry loadsBrows."
+    },
+    {
+      "id": "INTEGRATION-EMPTY-01",
+      "parentId": "CORE-08",
+      "title": "Optimistic empty cannot establish Follow-ups completion",
+      "status": "resolved and regression passed",
+      "change": "Retention requires nonempty actual cached conversations. Failed sole-row dismissal plus failed reconciliation shows a retryable error instead of an authoritative empty/success state; retry restores the conversation.",
+      "files": [
+        "apps/web/src/features/followups/followups-screen.tsx",
+        "apps/web/src/features/followups/followups-screen.test.tsx"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+        "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json"
+      ],
+      "verification": "No stale mailbox snapshot rollback; no No follow-ups/No tracked conversation/success claim on the uncertain branch."
+    },
+    {
+      "id": "PUB-SUP-01",
+      "parentId": "PUB-01",
+      "title": "Describe execution-time approved scope without promising new matching mail is untouched",
+      "status": "implemented and locally verified",
+      "change": "Approved scope applies when action runs; selected archived Delete retained; future deliveries use separate Autopilot rules.",
+      "files": [
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/action-safety.test.ts"
+      ],
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json"],
+      "verification": "Original canonical failed new truth expectation; corrected canonical suite passed 5/5. Worker reviewed read-only.",
+      "limits": "Worker reviewed read-only. No execution semantics changed.",
+      "reviewedReferenceFiles": ["packages/workers/src/label-action.worker.ts"]
+    },
+    {
+      "id": "PUB-SUP-02",
+      "parentId": "PUB-02",
+      "title": "Homepage describes matching count and planned Gmail changes",
+      "status": "implemented and locally verified",
+      "change": "Count/planned change wording replaces which-email implication.; Rendered tour assertion expects count/planned change and rejects which-email wording.",
+      "files": [
+        "apps/web/src/features/marketing/landing/product-journey.tsx",
+        "apps/web/src/app/(marketing)/page.test.tsx"
+      ],
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json"],
+      "verification": "Selected rendered homepage tour wording regression passed.",
+      "limits": "Worker reviewed read-only. No execution semantics changed."
+    },
+    {
+      "id": "UI-07",
+      "parentId": "QA-01",
+      "title": "Undo error live region has a valid semantic host",
+      "status": "implemented and locally verified",
+      "change": "The recovered protection-review fixture exposed an invalid aside alert role; error-only Undo tray now uses a div live region.",
+      "files": ["packages/shared/src/components/undo-tray/undo-tray.tsx"],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/root-fixes.json",
+        "local run artifact (not archived): undo-alert-negative.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/shared-tests.log",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json"
+      ],
+      "verification": "Old-code negative control; shared tests and repaired protection fixture render without invalid aside alert-role finding."
+    },
+    {
+      "id": "UI-FOREGROUND-SHEET",
+      "parentId": "UI-06",
+      "title": "Sheet foreground contrast sibling",
+      "status": "implemented and verified in applicable light/dark renders",
+      "before": "320 light mobile sheet Keep/Archive/Later used inverse white ink on light surface, 1.09:1. Sheet multi-sender locked note reused inverse ink too.",
+      "change": "Sheet neutral verbs use color.fill/color.fg; sheet tier note uses fgSoft/linkfg. Desktop inverse bar colors and semantic Amber/Delete fills unchanged. Amber filled counts no longer attenuated by opacity.",
+      "files": ["apps/web/src/features/senders/selection-bar.tsx"],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "verification": "19 SelectionBar/ActionRow tests plus 1 ActionPopover test passed. Applicable targeted light/dark after captures have zero axe violations for these labels. The locked phone tier-note branch is source-reviewed only because the current manifest permits multi-sender actions on Free."
+    },
+    {
+      "id": "UI-FOREGROUND-ROWS",
+      "parentId": "UI-06",
+      "title": "Rows foreground contrast sibling",
+      "status": "implemented and verified in applicable light/dark renders",
+      "before": "1440 light SenderRow resting Unsubscribe amber#b45309 on fill#eae7e0 4.06:1; Keep emerald#047857 on same fill 4.44:1.",
+      "change": "Lead pill text uses existing amberDeep and new foreground-only emeraldText. Light emeraldText#065f46; dark aliases existing emerald. Semantic fills unchanged. Shared SenderActionRow fixes both SenderList/SenderRow uses.",
+      "files": [
+        "apps/web/src/features/senders/action-row.tsx",
+        "packages/shared/src/tokens/tokens.ts",
+        "packages/shared/src/styles/tokens.css"
+      ],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "verification": "19 SelectionBar/ActionRow tests plus 1 ActionPopover test passed. Applicable targeted light/dark after captures have zero axe violations for these labels. The locked phone tier-note branch is source-reviewed only because the current manifest permits multi-sender actions on Free."
+    },
+    {
+      "id": "UI-FOREGROUND-ACTIVITY-RETRY",
+      "parentId": "UI-06",
+      "title": "Activity Retry foreground contrast sibling",
+      "status": "implemented and verified in applicable light/dark renders",
+      "before": "Next-page failure retry pill used raw amber lettering on neutral fill, exact same pair mechanism.",
+      "change": "AmberDeep foreground; loading, retry dispatch and cached page state unchanged.",
+      "files": ["apps/web/src/features/activity/activity-screen.tsx"],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "verification": "19 SelectionBar/ActionRow tests plus 1 ActionPopover test passed. Applicable targeted light/dark after captures have zero axe violations for these labels. The locked phone tier-note branch is source-reviewed only because the current manifest permits multi-sender actions on Free."
+    },
+    {
+      "id": "UI-FOREGROUND-MENU",
+      "parentId": "UI-06",
+      "title": "Menu foreground contrast sibling",
+      "status": "implemented and verified in applicable light/dark renders",
+      "before": "Rendered 1440 light Default Unsubscribe hover 4.42:1; enabled DimmedPrimary Unsubscribe 2.26:1 due parent opacity 0.55.",
+      "change": "Menu amber foreground uses amberDeep; dimmed enabled item uses fgMuted without parent opacity. Disabled treatment, decorative verb dots, fill behavior and action eligibility untouched. Story export stays DimmedPrimary.",
+      "files": ["packages/shared/src/components/action-popover.tsx"],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "verification": "19 SelectionBar/ActionRow tests plus 1 ActionPopover test passed. Applicable targeted light/dark after captures have zero axe violations for these labels. The locked phone tier-note branch is source-reviewed only because the current manifest permits multi-sender actions on Free."
+    },
+    {
+      "id": "UI-FOREGROUND-DESKTOP-CLEAR",
+      "parentId": "UI-06",
+      "title": "Desktop Clear foreground contrast sibling",
+      "status": "implemented and verified in applicable light/dark renders",
+      "before": "Rendered 1440 dark enabled 13 px Clear label used fgInverseMuted,3.65:1 on inverse white bar.",
+      "change": "Enabled label uses fgInverseSoft, preserving inverse palette and transparent background; no action behavior changes.",
+      "files": ["apps/web/src/features/senders/selection-bar.tsx"],
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+      ],
+      "verification": "SelectionBar focused suite:5/5 passed. Final 1440 px light/dark Clear recaptures have zero axe violations and no overflow; the 320 pxdesktop-wrapper capture is nonapplicable to phone layout.",
+      "renderedEvidence": [
+        {
+          "storyId": "senders-selectionbar--mixed-selection",
+          "theme": "dark",
+          "width": 1440,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "verificationNote": "Recaptured after final Clear foreground correction",
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+        },
+        {
+          "storyId": "senders-selectionbar--mixed-selection",
+          "theme": "light",
+          "width": 1440,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": false,
+          "axeViolations": 0,
+          "verificationNote": "Recaptured after final Clear foreground correction",
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+        },
+        {
+          "storyId": "senders-selectionbar--mixed-selection",
+          "theme": "dark",
+          "width": 320,
+          "renderedContent": true,
+          "runtimeStoryError": false,
+          "overflow": true,
+          "axeViolations": 0,
+          "verificationNote": "Recaptured after final Clear foreground correction",
+          "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+        }
+      ]
+    }
+  ],
+  "checkLedger": [
+    {
+      "id": "CHECK-WORKSPACE-TYPES",
+      "status": "passed",
+      "scope": "Workspace pnpm typecheck",
+      "result": "API, web, config, db, e2e, events, shared and workers TypeScript checks completed.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/logs/typecheck.log"],
+      "reportedBy": "root"
+    },
+    {
+      "id": "CHECK-FROZEN-WEB-TYPES",
+      "status": "passed",
+      "scope": "Frozen final web source",
+      "result": "Final frozen web tsc --noEmit passed.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/logs/typecheck-web-frozen.log"],
+      "reportedBy": "root"
+    },
+    {
+      "id": "CHECK-LINT",
+      "status": "passed with existing warnings",
+      "scope": "Root lint",
+      "result": "0 errors; 6 pre-existing unused-disable warnings. No clean-zero-warning claim.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/logs/lint-final.log"],
+      "reportedBy": "root"
+    },
+    {
+      "id": "CHECK-SHARED",
+      "status": "passed",
+      "scope": "Shared package full run",
+      "result": "63 files; 726 tests passed in one run.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/logs/shared-tests.log"]
+    },
+    {
+      "id": "CHECK-CANONICAL",
+      "status": "passed",
+      "scope": "Final canonical action safety",
+      "result": "5 canonical tests passed after supplemental execution-scope truth change.",
+      "evidence": ["local run artifact (not archived): core-public-supplement-shared.log"],
+      "reportedBy": "CORE owner"
+    },
+    {
+      "id": "CHECK-FOREGROUND",
+      "status": "passed",
+      "scope": "Focused foreground consumers",
+      "result": "19 SelectionBar/ActionRow tests plus 1 ActionPopover test passed (20 total across separate focused runs).",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json"],
+      "reportedBy": "CORE owner"
+    },
+    {
+      "id": "CHECK-WEB-44",
+      "status": "verified across initial run and corrected rerun",
+      "scope": "44 affected web suites; 1089 distinct assertions",
+      "result": "Initial 44-suite run:41 suites passed; 1085 assertions passed and 4 failed. Corrected obsolete expectations only, then all 3 affected suites reran green with 89 tests. All 1089 distinct assertions are now verified across those runs; no single full-green 44-suite run is claimed. The 89 includes 85 assertions that already passed, so do not sum 1085+89 as a distinct total.",
+      "evidence": [
+        "local run artifact (not archived): affected-test-command.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log",
+        "docs/qa/prelaunch-2026-10-03/after/final-unit-corrections.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/final-unit-corrections.log"
+      ],
+      "metrics": {
+        "distinctSuites": 44,
+        "distinctAssertions": 1089,
+        "initialPassingSuites": 41,
+        "initialPassingAssertions": 1085,
+        "initialFailures": 4,
+        "rerunSuites": 3,
+        "rerunPassingAssertions": 89,
+        "singleFullGreenRun": false
+      }
+    },
+    {
+      "id": "CHECK-INDEPENDENT-SOURCE",
+      "status": "passed",
+      "scope": "Independent CORE/SYS flow completeness and mechanism-class review",
+      "result": "Confirmed ownership/retry/uncertainty regressions resolved. Bounded source gate reviews scope, cache, keyboard, Later/DST, onboarding 409, pause/cancel and identity transitions.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/independent-gate.json"],
+      "limits": "Read-only source/test-artifact review; provider/runtime evidence belongs to root."
+    },
+    {
+      "id": "CHECK-FIXTURE-VISUAL",
+      "status": "passed in reviewed scope",
+      "scope": "121 broad states across 68 app groups +50 focused captures",
+      "result": "121 broad captures across 68 app groups and 50 focused captures, with 3 additional final Clear recaptures. Before contrast failures remain historical. Final applicable rechecks report zero runtime errors, zero axe violations and no product overflow findings. Fixed desktop/helper wrappers at 320 px remain outside phone applicability and are checked at 1440 px; intentional empty/textless states are explained.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+        "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json",
+        "docs/qa/prelaunch-2026-10-03/after/story-summary.json"
+      ],
+      "metrics": {
+        "broadStates": 121,
+        "appGroups": 68,
+        "availableAppStories": 474,
+        "focusedCaptures": 50,
+        "remainingApplicableProof": null,
+        "finalClearRecaptures": 3
+      },
+      "limits": "Selected fixture renders and automated axe are not all 474 states, all-interaction verification, completeWCAG certification or authenticated journeys."
+    },
+    {
+      "id": "CHECK-HARNESS-UNIT",
+      "status": "passed",
+      "scope": "Isolated test harness tooling tests",
+      "result": "21 harness tests passed; this is harness tool validation, not application E2E completion.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/logs/harness-tests.log"]
+    },
+    {
+      "id": "CHECK-PRODUCTION-BUILDS",
+      "status": "passed",
+      "scope": "Frozen production builds and prerender route gate",
+      "result": "Frozen production web and Storybook builds passed. Static prerender gate passed 45 public routes; bundle gate passed 51 templates within budget (34 public +17 authenticated, signed-out served gzip) and verified 1 declared redirect.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/logs/production-build.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/storybook-build-final.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/prerender.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/bundle-build-final.log"
+      ]
+    },
+    {
+      "id": "CHECK-ISOLATED-E2E",
+      "status": "passed two consecutive complete current-readiness-class runs",
+      "scope": "15 required isolated synthetic API/UI journeys on frozen production source",
+      "result": "journeys-5 and journeys-6 each passed all 15 tests, with no skipped, unexpected or flaky tests; the required-journey coverage contract passed for both. These are two consecutive whole-green runs of the current mounted-readiness class at product source 1b5c9f93 and test commit c86557eb. Earlier readiness failures remain historical.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/journeys-5.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/journeys-6.log",
+        "docs/qa/prelaunch-2026-10-03/after/e2e-readiness-fixes.json"
+      ],
+      "metrics": {
+        "completeRuns": [
+          {
+            "log": "journeys-1.log",
+            "total": 15,
+            "passed": 14,
+            "failed": 1,
+            "failedSpec": "followups-dismiss"
+          },
+          {
+            "log": "journeys-2.log",
+            "total": 15,
+            "passed": 14,
+            "failed": 1,
+            "failedSpec": "quiet-hours"
+          },
+          {
+            "log": "journeys-3.log",
+            "total": 15,
+            "passed": 15,
+            "failed": 0,
+            "readinessClass": "before extracted common gate",
+            "reportedBy": "root"
+          },
+          {
+            "log": "journeys-4.log",
+            "total": 15,
+            "passed": 14,
+            "failed": 1,
+            "failedSpec": "later-recovery",
+            "readinessClass": "before extracted common gate",
+            "reportedBy": "root"
+          },
+          {
+            "log": "journeys-5.log",
+            "json": "journeys-5.json",
+            "total": 15,
+            "passed": 15,
+            "failed": 0,
+            "skipped": 0,
+            "flaky": 0,
+            "readinessClass": "current extracted common gate"
+          },
+          {
+            "log": "journeys-6.log",
+            "json": "journeys-6.json",
+            "total": 15,
+            "passed": 15,
+            "failed": 0,
+            "skipped": 0,
+            "flaky": 0,
+            "readinessClass": "current extracted common gate"
+          }
+        ],
+        "followupsOriginalFocusedPasses": 1,
+        "followupsStrengthenedConsecutivePasses": 2,
+        "quietOriginalFocusedFailures": 1,
+        "quietStrengthenedConsecutivePasses": 2,
+        "singleFullGreenRun": true,
+        "currentReadinessCompleteGreenRuns": 2,
+        "secondConsecutiveCurrentClassGreen": true,
+        "requiredJourneyCoverageContract": {
+          "status": "passed for journeys-5 and journeys-6",
+          "evidence": "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json"
+        }
+      },
+      "reportedBy": "root; journeys-5 JSON/log stats inspected",
+      "limits": "Local synthetic API/UI receipts, not provider/worker completion. Provider contract sibling specs touched by the readiness sweep were statically checked only and are not covered by this 15-journey execution.",
+      "rawLocalEvidence": [
+        "local run artifact (not archived): journeys-1.log",
+        "local run artifact (not archived): journeys-1.json",
+        "local run artifact (not archived): followups-original-focused.log",
+        "local run artifact (not archived): followups-original-focused.json",
+        "local run artifact (not archived): followups-readiness-focused.log",
+        "local run artifact (not archived): followups-readiness-focused.json",
+        "local run artifact (not archived): journeys-2.log",
+        "local run artifact (not archived): journeys-2.json",
+        "local run artifact (not archived): quiet-original-focused.log",
+        "local run artifact (not archived): quiet-original-focused.json",
+        "local run artifact (not archived): quiet-readiness-focused.log",
+        "local run artifact (not archived): quiet-readiness-focused.json",
+        "docs/qa/prelaunch-2026-10-03/after/e2e-readiness-fixes.json",
+        "local run artifact (not archived): journeys-3.log",
+        "local run artifact (not archived): journeys-4.log",
+        "local run artifact (not archived): journeys-5.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/journeys-5.log",
+        "local run artifact (not archived): journeys-6.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/journeys-6.log"
+      ],
+      "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "testCommit": "c86557eb"
+    },
+    {
+      "id": "CHECK-PUBLIC-48",
+      "status": "passed in recorded production scope",
+      "scope": "48 public routes on 1b5c9f93; desktop light 1440x1000 and phone light/dark 320x844",
+      "result": "All 48 public routes have desktop-light plus mobile-light/dark DOM checks and screenshots. All 48 light main-content axe scans and 10 representative dark scans passed with zero recorded violations. No framework overlays, missing main landmarks, page overflow, broken visible images or invalid local anchors were recorded. This bounded public sweep does not clear the separately failing returning-consent/dark hydration states.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/public-summary.json",
+        "docs/qa/prelaunch-2026-10-03/after/public-browser.json"
+      ],
+      "limits": [
+        "Main-content automated axe checks are bounded; incomplete color checks for decorative pseudo-element backgrounds remain in the raw records.",
+        "All 48 dark DOM checks and screenshots were captured; only 10 representative dark pages received axe checks.",
+        "Selected viewport captures are not exhaustive interactions or complete WCAG certification.",
+        "Returning all-consent/dark hydration on /, /compare and /faq fails a separate gate; a complete public route capture pass is not a hydration sign-off."
+      ],
+      "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "completedAtUtc": "2026-10-03T22:56:45.357200+00:00",
+      "metrics": {
+        "publicRoutes": 48,
+        "desktopLight": "1440x1000",
+        "mobileLightAndDark": "320x844",
+        "lightMainAxeScans": 48,
+        "darkMainAxeScans": 10,
+        "frameworkOverlays": 0,
+        "missingMain": 0,
+        "pageOverflows": 0,
+        "brokenVisibleImages": 0,
+        "invalidLocalAnchors": 0,
+        "axeViolations": 0
+      }
+    },
+    {
+      "id": "CHECK-A11Y-RESPONSIVE",
+      "status": "passed in recorded scope",
+      "scope": "70 accessibility/responsive tests including Home; desktop, mobile reduced-motion and responsive phone projects",
+      "result": "All 70 tests passed, with zero skips, unexpected failures or flaky tests. This is automated coverage at selected viewports and states, not complete WCAG certification or all interactions.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/runtime-summary.json"],
+      "metrics": {
+        "startTime": "2026-10-03T23:02:52.575Z",
+        "duration": 157447.568,
+        "expected": 70,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "reportedBy": "root; JSON stats inspected",
+      "rawLocalEvidence": [
+        "local run artifact (not archived): a11y-responsive.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/a11y-responsive.log"
+      ],
+      "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "testCommit": "c86557eb"
+    },
+    {
+      "id": "CHECK-HYDRATION",
+      "status": "latest full gate passed twice; initial intermittent signal unresolved",
+      "scope": "43 production hydration tests including Home and returning public visitor states",
+      "result": "Initial run40/43PASS with3React#418HTML errors for all-consent/dark returning visitors on/,/compare,/faq. Exact unchanged full43+normalsetup subsequently passed43/43 twice, the second after process restart. Originalpublic27 and79controlled/slow-load navigations were clean. No source correction, test retry, route override or diagnostic suppression is claimed.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
+        "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/hydration-initial.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/hydration-rerun-1.log",
+        "docs/qa/prelaunch-2026-10-03/after/logs/hydration-rerun-2.log"
+      ],
+      "metrics": {
+        "initial": {
+          "passed": 40,
+          "failed": 3,
+          "skipped": 0
+        },
+        "wholeUnchangedReruns": [
+          {
+            "passed": 43,
+            "failed": 0,
+            "skipped": 0
+          },
+          {
+            "passed": 43,
+            "failed": 0,
+            "skipped": 0,
+            "coldProcessRestart": true
+          }
+        ],
+        "controlledReviewerNavigations": 79,
+        "sourceCorrectionEstablished": false
+      },
+      "failures": [
+        {
+          "route": "/",
+          "state": "returning visitor; accepted analytics/all consent; dark theme",
+          "testFile": "hydration-smoke-public.spec.ts",
+          "testTitle": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+          "diagnostic": "Minified React error #418 (HTML hydration mismatch)",
+          "assertion": "hydration diagnostic list must be empty",
+          "status": "failed; root cause and correction pending CORE/root"
+        },
+        {
+          "route": "/compare",
+          "state": "returning visitor; accepted analytics/all consent; dark theme",
+          "testFile": "hydration-smoke-public.spec.ts",
+          "testTitle": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+          "diagnostic": "Minified React error #418 (HTML hydration mismatch)",
+          "assertion": "hydration diagnostic list must be empty",
+          "status": "failed; root cause and correction pending CORE/root"
+        },
+        {
+          "route": "/faq",
+          "state": "returning visitor; accepted analytics/all consent; dark theme",
+          "testFile": "hydration-smoke-public.spec.ts",
+          "testTitle": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+          "diagnostic": "Minified React error #418 (HTML hydration mismatch)",
+          "assertion": "hydration diagnostic list must be empty",
+          "status": "failed; root cause and correction pending CORE/root"
+        }
+      ],
+      "reportedBy": "root; failing JSON assertions inspected",
+      "launchImpact": "Launch sign-off remains false pending correction/reverification and final root reviewed revision.",
+      "rawLocalEvidence": [
+        "local run artifact (not archived): hydration.json",
+        "local run artifact (not archived): hydration.log"
+      ],
+      "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "testCommit": "c86557eb",
+      "limits": "Current scoped PR verification is not public-launch signoff. Initial failures remain real, unreproduced and untraced."
+    },
+    {
+      "id": "CHECK-CLEAR-DARK",
+      "status": "passed",
+      "scope": "SelectionBar 1440 dark Clear foreground",
+      "result": "Final SelectionBar 1440 px light and dark Clear recaptures have zero axe violations and no overflow. One extra 320 px fixed-desktop capture has zero axe violations; its intentional wrapper overflow is outside phone applicability.",
+      "evidence": ["docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"]
+    }
+  ],
+  "negativeControls": {
+    "public": "Demo query/count/storage and structured/canonical truth regressions failed original behavior and passed fixed behavior.",
+    "core": "15 selected assertions across 11 old source files failed; 35 selected restored tests passed.",
+    "settings": "12 required/additional source-negative regressions failed original behavior.",
+    "retainedData": "6 new retention cases failed old branches; 21 final focused cases pass after integration corrections.",
+    "shared": "Heading/focus/Undo-role negative controls recorded by root.",
+    "logs": [
+      "local run artifact (not archived): shared-negative.log",
+      "local run artifact (not archived): admin-negative.log",
+      "local run artifact (not archived): undo-alert-negative.log",
+      "local run artifact (not archived): core-negative-controls-result.json",
+      "local run artifact (not archived): declutrmail-settings-negative-control.log",
+      "local run artifact (not archived): declutrmail-settings-additional-negative-control.log",
+      "local run artifact (not archived): declutrmail-retained-negative.log"
+    ],
+    "limits": "These are meaningful selected regressions, not all original low-impact wording changes mirrored by tests."
+  },
+  "limitations": [
+    "All original source corrections and scoped proof are complete. Latest hydration gate passed twice on unchanged source; initial three HTML recovery errors remain untraced. Public launch signoff remains false, including provider-release rehearsal limits.",
+    "No live OAuth grant/revoke, Gmail mail-changing action/Undo, worker completion, account deletion, billing purchase/webhook/refund, or production configuration/deployment was performed as closure proof.",
+    "UI guards, neutral error receipts and cache reconciliation do not prove provider transaction outcomes. Billing webhooks remain authoritative; queued jobs and mockedHTTP are not Gmail execution proof.",
+    "Generic label-action worker matching is resolved from the current synced index when execution starts. No new live Gmail recheck guarantee was added. Activity recovery Check Gmail again remains truthful because its existing recovery worker reads provider label metadata.",
+    "Automatic rules/preset authority, delivery timing and provider availability remain backend contracts; no worker/provider semantics, payments architecture, database schema or runtime catalog was altered by these fixes.",
+    "Root/global fallback was verified with isolated content and removedCSS/token conditions, not an induced initial Next.js root-layout crash.",
+    "Recent-message attachment accessible-name fixture does not establish production attachment detection; forbidden MIME/body reads were not added.",
+    "Selected Storybook states do not cover all 474 app stories or every interaction. Axe silence and screenshots do not certify fullWCAG compliance.",
+    "Competitor/external content source links were inspected during the audit, but vendor claims were not reverified today; dated source disclosures remain.",
+    "Baseline audit was source/fixture-heavy and recorded its own unavailableDocker/raw-result loss limitations. Those remain historical. New evidence supplements the audit without rewriting its findings or status-at-audit.",
+    "Main-content automated axe checks are bounded; incomplete color checks for decorative pseudo-element backgrounds remain in the raw records.",
+    "All 48 dark DOM checks and screenshots were captured; only 10 representative dark pages received axe checks.",
+    "Selected viewport captures are not exhaustive interactions or complete WCAG certification.",
+    "Archived owner maps preserve historical pending notes and failures; the latest check ledger/gates supersede them. Unarchived run artifacts are named explicitly; only representative screenshots are included."
+  ],
+  "ownerEvidenceMaps": [
+    "docs/qa/prelaunch-2026-10-03/after/public-fixes.json",
+    "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+    "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json",
+    "docs/qa/prelaunch-2026-10-03/after/root-fixes.json",
+    "docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json",
+    "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+    "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json",
+    "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+    "docs/qa/prelaunch-2026-10-03/after/final-unit-corrections.json"
+  ],
+  "testReadinessChanges": [
+    {
+      "id": "E2E-FOLLOWUPS-READY",
+      "file": "packages/e2e/specs/followups-dismiss.spec.ts",
+      "diagnosis": "Initial full run failed at 271 ms because generic text visibility encountered a hidden streamed occurrence followed by two exact-name matches. The original focused spec then passed; a persistent product duplicate was not established.",
+      "change": "After full navigation/reload, require one visible About this screen from ScreenIntro useEffect. Before initial interaction require exactly one accessible listitem and one exact recipient name, then visibility. Reuse the exact locator for absence assertions. No .first() or duplicate masking.",
+      "retainedAssertions": [
+        "evaluation timestamp",
+        "native Mark resolved action",
+        "tracker dismissed state and timestamp",
+        "exactly one activity audit receipt",
+        "absence after reload"
+      ],
+      "negativeControl": "Reported initial run failed; original focused rerun passed 1/1. Not a deterministic negative control.",
+      "positiveVerification": "Strengthened spec passed twice consecutively (2/2,16.3 s). This proof predates extraction of the common mounted helper; runtime verification of the current class patch is pending root.",
+      "logs": [
+        "local run artifact (not archived): journeys-1.log",
+        "local run artifact (not archived): followups-original-focused.log",
+        "local run artifact (not archived): followups-readiness-focused.log"
+      ],
+      "productSourceChanged": false,
+      "runtimeEvidenceUpdate": "Current common-gate complete journeys-5 and journeys-6 each pass 15/15 with required-journey coverage contract PASS and no skips/flaky results. Older focused runs remain historical proof of earlier local corrections."
+    },
+    {
+      "id": "E2E-QUIET-MOUNTED",
+      "file": "packages/e2e/specs/quiet-hours.spec.ts",
+      "diagnosis": "Second full run and original focused run both reproduced a native ArrowUp before mounted form readiness: end time remained 07:00 after second reload. SSR value/heading alone was insufficient readiness evidence.",
+      "change": "After initial navigation and every reload, use the shared mounted-screen gate (one visible About this screen registered by ScreenIntro useEffect), then the existing heading and enabled Quiet switch assertions. No force click, DOM mutation, arbitrary sleep or native control bypass.",
+      "retainedAssertions": [
+        "native ArrowUp at both end-time changes",
+        "visible Ends at 08:00 next-day text",
+        "PUT status and real API readback",
+        "rejected save leaves durable config unchanged",
+        "retry saves 08:00",
+        "disabled config survives reload",
+        "synthetic co-tenancy evidence unchanged"
+      ],
+      "negativeControl": "Original focused spec reproduced the same 07:00 failure (exit 1).",
+      "positiveVerification": "Only mounted readiness added; strengthened spec passed twice consecutively (2/2,7.6 s). This proof predates extraction of the common helper; runtime verification of the current class patch is pending root.",
+      "logs": [
+        "local run artifact (not archived): journeys-2.log",
+        "local run artifact (not archived): quiet-original-focused.log",
+        "local run artifact (not archived): quiet-original-error-context.md",
+        "local run artifact (not archived): quiet-readiness-focused.log"
+      ],
+      "productSourceChanged": false,
+      "runtimeEvidenceUpdate": "Current common-gate complete journeys-5 and journeys-6 each pass 15/15 with required-journey coverage contract PASS and no skips/flaky results. Older focused runs remain historical proof of earlier local corrections."
+    },
+    {
+      "id": "E2E-LATER-READY",
+      "file": "packages/e2e/specs/later-recovery.spec.ts",
+      "diagnosis": "journeys-4 failed at 533 ms: exact Fresh Finds Weekly text resolved to two streamed elements before mounted readiness. Other 14 tests passed. The source has one list item per snoozed row; a persistent product duplicate was not established.",
+      "change": "After goto and reload, require shared mounted readiness, exactly one accessible listitem containing the exact sender name, exactly one sender name, and visible sender before the existing status/control assertions.",
+      "retainedAssertions": [
+        "cancel sends zero wake requests",
+        "confirm receives queue acceptance 201 and sends exactly one wake request",
+        "pending recovery disables Change return time",
+        "durable synthetic newer worker failure is observed through polling",
+        "failure releases Bring back now and Change return time controls",
+        "Return retrying and enabled recovery survive reload"
+      ],
+      "negativeControl": "Root complete journeys-4 log records the original strict-name failure. No new DB-backed reproduction was run during root a11y/hydration gates.",
+      "positiveVerification": "Source and static checks only for this patch; complete browser journey rerun pending root.",
+      "logs": ["local run artifact (not archived): journeys-4.log"],
+      "productSourceChanged": false,
+      "runtimeEvidenceUpdate": "Current common-gate complete journeys-5 and journeys-6 each pass 15/15 with required-journey coverage contract PASS and no skips/flaky results. Older focused runs remain historical proof of earlier local corrections."
+    }
+  ],
+  "testReadinessClassSweep": {
+    "id": "E2E-MOUNTED-CLASS",
+    "helper": "packages/e2e/helpers/screen-ready.ts",
+    "mechanism": "ScreenIntro publishes screenHelp only from useEffect. HelpButton returns null while no help is registered. A unique visible About this screen after a full navigation/reload proves the screen committed on the client; SSR headings/input values alone do not.",
+    "sourceEvidence": [
+      {
+        "file": "packages/shared/src/components/screen-intro.tsx",
+        "line": 35,
+        "detail": "useEffect registers help after client commit"
+      },
+      {
+        "file": "packages/shared/src/shell/help-button.tsx",
+        "line": 28,
+        "detail": "no registered help renders no button; mounted help gives About this screen"
+      }
+    ],
+    "reviewMethod": "Scoped search of every journey spec full goto/reload, then source inspection of screen help registration. No product edits or browser/DB test runs.",
+    "files": [
+      {
+        "file": "packages/e2e/specs/triage-keep.spec.ts",
+        "routes": ["/triage"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/sender-policy.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 1,
+        "scope": "synthetic core journey; sender detail excluded"
+      },
+      {
+        "file": "packages/e2e/specs/autopilot-pages.spec.ts",
+        "routes": ["/autopilot"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/brief-preview.spec.ts",
+        "routes": ["/brief"],
+        "fullNavigationsGated": 1,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/followups-dismiss.spec.ts",
+        "routes": ["/followups"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/later-recovery.spec.ts",
+        "routes": ["/later"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/quiet-hours.spec.ts",
+        "routes": ["/quiet"],
+        "fullNavigationsGated": 4,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/senders-search-typing.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 3,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/triage-explain.spec.ts",
+        "routes": ["/triage"],
+        "fullNavigationsGated": 1,
+        "scope": "API queue contract sibling; no worker run"
+      },
+      {
+        "file": "packages/e2e/specs/undo.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 1,
+        "scope": "provider contract fixture sibling; source-only, not run"
+      },
+      {
+        "file": "packages/e2e/specs/brief-noise-archive.spec.ts",
+        "routes": ["/brief"],
+        "fullNavigationsGated": 1,
+        "scope": "provider contract fixture sibling; source-only, not run"
+      },
+      {
+        "file": "packages/e2e/specs/billing-upgrade.spec.ts",
+        "routes": ["/senders", "/screener paid screen", "/billing"],
+        "fullNavigationsGated": 3,
+        "scope": "signed synthetic webhook contract sibling; source-only, not run"
+      }
+    ],
+    "gatedNavigations": 23,
+    "exclusions": [
+      {
+        "file": "packages/e2e/specs/sender-policy.spec.ts",
+        "route": "/senders/[id]",
+        "reason": "Sender detail has no ScreenIntro; its existing switch/UI and durable reload assertions remain."
+      },
+      {
+        "file": "packages/e2e/specs/protection-review.spec.ts",
+        "route": "/settings/senders",
+        "reason": "Protected senders has no ScreenIntro; per-row explanation/unprotect and durable policy checks remain."
+      },
+      {
+        "file": "packages/e2e/specs/billing-upgrade.spec.ts",
+        "route": "/screener Free tier gate",
+        "reason": "The tier placeholder does not register ScreenIntro; existing unique gate and API 402 assertions remain."
+      },
+      {
+        "scope": "Public/cookie-consent, render-only fixtures, a11y, responsive and hydration specs",
+        "reason": "Public/render fixtures do not use authenticated screen help. Root owns a11y/responsive/hydration gate sources; these were not edited."
+      }
+    ],
+    "preservedAssertions": "No request status, zero/one-write, native keyboard, receipt, pagination, rejection, recovery, exact row/name uniqueness or durable DB/reload assertion was removed or relaxed. No generic .first(), forced action or delay was added.",
+    "limitations": [
+      "Mounted readiness is not query freshness; each spec retains its own state/data/action assertions.",
+      "A route that lacks ScreenIntro cannot use this helper without a product change; no such product change was made.",
+      "No runtime pass is claimed for the extracted class patch before root complete journey rerun."
+    ],
+    "runtimeEvidenceUpdate": "journeys-5 and journeys-6 execute the required 15 synthetic journeys with the common helper and each pass 15/15. triage-explain, undo, brief-noise-archive and billing-upgrade siblings remain source/static-only in this class sweep; no provider execution is claimed."
+  },
+  "testReadinessStaticChecks": {
+    "formatLog": "local run artifact (not archived): e2e-readiness-class-format.log",
+    "lintLog": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-lint.log",
+    "typecheckLog": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-typecheck.log",
+    "formatResult": "PASS: helper and all 12 changed specs formatted; no additional source changes needed.",
+    "lintResult": "PASS: targeted ESLint exited 0, no output/errors.",
+    "typecheckResult": "PASS: pnpm --filter @declutrmail/e2e typecheck exited 0.",
+    "runtimeRunsThisClassPatch": "Root complete journeys-5 and journeys-6 each passed 15/15 with required-journey contract PASS; two consecutive complete current-class green runs."
+  },
+  "openRuntimeGates": [
+    {
+      "id": "HYDRATION-RETURNING-DARK",
+      "status": "open confirmed failure; root cause pending",
+      "routes": ["/", "/compare", "/faq"],
+      "state": "returning visitor; accepted analytics/all consent; dark theme",
+      "diagnostic": "React #418 HTML hydration mismatch",
+      "evidence": "local run artifact (not archived): hydration.json",
+      "sourceCorrection": null,
+      "finalReviewedRevision": null
+    }
+  ],
+  "testCommit": "c86557eb",
+  "runtimeVerificationSnapshot": {
+    "primaryEvidence": "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
+    "recommendedPortableEvidencePath": "docs/qa/prelaunch-2026-10-03/runtime-verification-summary.json",
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb",
+    "environment": "Disposable loopback production web + synthetic API/PostgreSQL/Redis; no provider worker or live Gmail/payment/account operations.",
+    "executionCount": 143,
+    "passedExecutions": 140,
+    "failedExecutions": 3,
+    "skippedExecutions": 0,
+    "flakyExecutions": 0,
+    "runs": [
+      {
+        "id": "journeys-5",
+        "stats": {
+          "startTime": "2026-10-03T23:10:19.670Z",
+          "duration": 26987.93,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-journeys passed"
+      },
+      {
+        "id": "journeys-6",
+        "stats": {
+          "startTime": "2026-10-03T23:13:58.896Z",
+          "duration": 24990.396,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-journeys passed"
+      },
+      {
+        "id": "a11y-responsive",
+        "stats": {
+          "startTime": "2026-10-03T23:02:52.575Z",
+          "duration": 157447.568,
+          "expected": 70,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-e2e-ran passed"
+      },
+      {
+        "id": "hydration",
+        "stats": {
+          "startTime": "2026-10-03T23:05:39.381Z",
+          "duration": 208830.80500000002,
+          "expected": 40,
+          "skipped": 0,
+          "unexpected": 3,
+          "flaky": 0
+        },
+        "coverageContract": "failed, unresolved hydration diagnostics"
+      }
+    ],
+    "limits": "143 executions includes repeating the same 15 journeys twice; it is neither 143 distinct tests nor 143 passes. 140 passed and 3 hydration failures remain open. Sanitized thin summary is prepared locally; repository archival is pending root."
+  },
+  "productSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "residualSignals": [
+    {
+      "id": "HYDRATION-01",
+      "status": "unreproduced and untraced; no source fix claimed",
+      "initialEvidence": "Three returning all-consent/dark React#418HTML recovery errors on/,/compare,/faq at frozen1b source",
+      "latestEvidence": "Two exact full43/43passes on unchanged source, including a process restart;79controlled diagnostics clean",
+      "releaseDisposition": "Public launch signoff withheld; preserve/regress the initial signal in release rehearsal",
+      "artifacts": [
+        "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json",
+        "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json"
+      ]
+    }
+  ]
+}

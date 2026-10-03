@@ -1,0 +1,108 @@
+{
+  "summary": {
+    "status": "implemented; source edits stopped",
+    "sourceFiles": [
+      "packages/shared/src/copy/action-safety.ts",
+      "packages/shared/src/copy/action-safety.test.ts",
+      "apps/web/src/features/marketing/landing/product-journey.tsx",
+      "apps/web/src/app/(marketing)/page.test.tsx"
+    ],
+    "scope": "Supplemental public copy accuracy only; no API/worker scope, provider, request, metadata or index changes."
+  },
+  "fixes": [
+    {
+      "id": "PUB-SUP-01",
+      "title": "Describe execution-time approved scope without promising new matching mail is untouched",
+      "evidence": [
+        {
+          "file": "packages/shared/src/copy/action-safety.ts",
+          "line": 32,
+          "detail": "Approved scope applies when action runs; selected archived Delete retained; future deliveries use separate Autopilot rules."
+        },
+        {
+          "file": "packages/workers/src/label-action.worker.ts",
+          "line": 389,
+          "detail": "Existing worker resolves initial sender execution set at run time."
+        },
+        {
+          "file": "packages/workers/src/label-action.worker.ts",
+          "line": 1009,
+          "detail": "Resolver queries current indexed sender/window/reach; no preview or action-created timestamp cutoff."
+        }
+      ],
+      "verification": "Original canonical failed new truth expectation; corrected canonical suite passed5/5. Worker reviewed read-only."
+    },
+    {
+      "id": "PUB-SUP-02",
+      "title": "Homepage describes matching count and planned Gmail changes",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/marketing/landing/product-journey.tsx",
+          "line": 17,
+          "detail": "Count/planned change wording replaces which-email implication."
+        },
+        {
+          "file": "apps/web/src/app/(marketing)/page.test.tsx",
+          "line": 96,
+          "detail": "Rendered tour assertion expects count/planned change and rejects which-email wording."
+        }
+      ],
+      "verification": "Selected rendered homepage tour wording regression passed."
+    }
+  ],
+  "verification": {
+    "negativeControl": "1 focused canonical test failed original behavior;4unrelated skipped. /tmp/core-public-supplement-negative.log",
+    "focusedTests": "Passed:5canonical tests;1selected rendered homepage test (17unrelated skipped). Both maxWorkers=1. Negative control had failed original canonical.",
+    "format": "All4files formatted (unchanged Prettier result); scoped git diff --check passed.",
+    "logs": [
+      "local run artifact (not archived): core-public-supplement-negative.log",
+      "local run artifact (not archived): core-public-supplement-shared.log",
+      "local run artifact (not archived): core-public-supplement-web.log",
+      "local run artifact (not archived): core-public-supplement-format.log"
+    ]
+  },
+  "independentIntegrationGate": {
+    "status": "PASS: scoped PR source, rendered and runtime gate at production source1b5c9f93/testc86557eb. Public launch signoff withheld for unresolved initial HYDRATION-01; no hydration source fix claimed.",
+    "areasReviewed": [
+      "SYS billing/deletion request and provider preservation",
+      "Cancellation/pause money-action locks",
+      "Feedback observation identity and late response behavior",
+      "Onboarding mailbox conflict/cache reconciliation",
+      "Review-only Autopilot mode authority and preview readiness/expiry/page-error guards",
+      "Public canonical preview/sample/scope/Undo truth and demo storage/metric parity",
+      "Retained Senders/Brief/Follow-ups data ownership and mutation guards"
+    ],
+    "noAlteredProviderSemantics": "Current diff touches no API, workers, database or provider adapter files. Production deletion differences are focus outline/foreground only; request paths/typed confirmation/grace semantics preserved. Billing diff adds pause/cancel UI lock without provider changes.",
+    "acceptedSourceFixes": [
+      "Senders widened-data ownership independently tracked; mailbox-switch regression added by owner.",
+      "Brief retained read error closes/withholds Archive preview and does not label idle action Archiving.",
+      "Cold 4xx/changed mailbox data is rejected rather than retained; 5xx same-scope data retains bounded retry feedback."
+    ],
+    "finalEvidenceRequired": [],
+    "resolvedFindings": [
+      {
+        "id": "INTEGRATION-RETRY-01",
+        "priority": "P2",
+        "file": "apps/web/src/features/senders/senders-screen.tsx",
+        "line": 432,
+        "detail": "Blocking failed widened query now retries failedQuery.refetch(), not the successful narrow query. New mailbox-switch regression verifies retry displays new-mailbox sender without old-mailbox rows. Final owner focused regression passed."
+      },
+      {
+        "id": "INTEGRATION-EMPTY-01",
+        "priority": "P2",
+        "file": "apps/web/src/features/followups/followups-screen.tsx",
+        "line": 75,
+        "detail": "Retention now requires nonempty cached rows. Failed dismissal plus failed reconciliation cannot assert an authoritative empty list. Regression rejects No follow-ups/No tracked/success claims and verifies retry restores the row; final owner focused regression passed."
+      }
+    ],
+    "retainedVerification": "Final latest serial focus4files/21tests passed210skipped; all8priorfailed cases covered. /tmp/declutrmail-retained-latest.log",
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "scopedPrGate": "PASS",
+    "publicLaunchSignoff": false,
+    "finalEvidenceMap": "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+    "releaseEvidenceRequired": [
+      "Public launch signoff remains withheld. Rehearse the exact prospective deployment, including accepted analytics plus persisted dark theme, fresh/essential-only states and authenticated hydration. Preserve initial evidence and investigate any recurrence with a concrete DOM diff before release."
+    ]
+  }
+}

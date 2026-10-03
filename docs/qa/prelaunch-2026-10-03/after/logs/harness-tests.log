@@ -1,0 +1,33 @@
+
+> @declutrmail/e2e@0.0.0 test:harness [workspace]/packages/e2e
+> node --experimental-strip-types --test contracts/*.test.mjs
+
+✔ accepts an explicit disposable local stack (489.375833ms)
+✔ rejects unsafe E2E_ISOLATED: undefined (0.585541ms)
+✔ rejects unsafe DATABASE_URL: postgresql://u:p@localhost:5432/declutrmail (0.446125ms)
+✔ rejects unsafe DATABASE_URL: postgresql://u:p@remote.example:5432/declutrmail_e2e (1.207542ms)
+✔ rejects unsafe DATABASE_URL: postgresql://u:p@localhost:5432/declutrmail_e2e?database=declutrmail (0.281ms)
+✔ rejects unsafe DATABASE_URL: postgresql://u:p@localhost:5432/declutrmail_e2e#override (0.156791ms)
+✔ rejects unsafe REDIS_URL: redis://localhost:6379/0 (0.193ms)
+✔ rejects unsafe REDIS_URL: redis://localhost:6379/12?path=/tmp/another-redis.sock (0.186625ms)
+✔ rejects unsafe REDIS_URL: redis://localhost:6379/12?db=0 (634.682083ms)
+✔ rejects unsafe REDIS_URL: redis://localhost:6379/12#override (48.115ms)
+✔ rejects unsafe E2E_API_URL: https://declutrmail.com (1.37075ms)
+✔ rejects unsafe E2E_WEB_URL: http://remote.example:3104 (0.22675ms)
+✔ rejects unsafe E2E_LOGIN_EMAIL: person@gmail.com (0.170708ms)
+✔ rejects unsafe E2E_BILLING_LOGIN_EMAIL: person@gmail.com (0.176042ms)
+✔ launcher cannot carry real credentials or Node/env preloads into either server (384.472666ms)
+✔ unsafe targets and mismatched cookie hosts fail before startup (0.965666ms)
+✔ app copies exclude all dotenv files and keep Next output away from the working app (51.28075ms)
+✔ complete journey report passes (4022.219542ms)
+✔ one missing required journey fails despite eleven passing tests (1737.388333ms)
+✔ skipped journey cannot make a green report (1447.888875ms)
+✔ flaky retry cannot hide a failed journey (932.698916ms)
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10142.127833

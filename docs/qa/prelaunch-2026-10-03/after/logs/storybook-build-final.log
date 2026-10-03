@@ -1,0 +1,3741 @@
+
+> @declutrmail/web@0.0.0 storybook:build [frozen-workspace]/apps/web
+> storybook build --output-dir /tmp/declutrmail-prelaunch-fixes/storybook-static-final
+
+
+┌  Building storybook v10.6.0
+│
+◇  Cleaning outputDir:
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final
+│
+◇  Loading presets
+│
+◇  Building manager..
+│
+●  Building open services..
+│
+●  Building preview..
+│  Vite vite v8.3.1 building client environment for production...
+transforming...
+✓ 1207 modules transformed.
+rendering chunks...
+computing gzip size...
+│  Vite
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/iframe.html
+│  18.94 kB │ gzip:   5.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/error-CPArudNc.css
+│  0.21 kB │ gzip:   0.14 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/payment-method-card-BSe4s_LN.css
+│  0.29 kB │ gzip:   0.17 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/observe-window-banner-BwuPuKAa.css
+│  0.51 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/screener-screen-D7wYXZOV.css
+│  1.02 kB │ gzip:   0.39 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/page-C1kc7fVg.css
+│  1.40 kB │ gzip:   0.58 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activate-rule-modal-BDbhOPoc.css
+│  3.72 kB │ gzip:   1.06 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-workspace-Dedc9SMT.css
+│  8.90 kB │ gzip:   2.26 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/home-view-DLvuPAF8.css
+│  9.61 kB │ gzip:   2.32 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/iframe-D3vMQD7S.css
+│  11.85 kB │ gzip:   3.66 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/iframe-BE2nq0By.js
+│  0.04 kB │ gzip:   0.06 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-keys-Dk6vNMdr.js
+│  0.12 kB │ gzip:   0.13 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/queryOptions-BKV90WAG.js
+│  0.13 kB │ gzip:   0.12 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-keys-DqGe-dEH.js
+│  0.15 kB │ gzip:   0.14 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/undo-window-Bh-_UAGz.js
+│  0.19 kB │ gzip:   0.16 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/types-CEixgNsR.js
+│  0.19 kB │ gzip:   0.17 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/useQuery-DaL8AIzJ.js
+│  0.21 kB │ gzip:   0.18 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/floating-surface-layout-YXUVAktM.js
+│  0.21 kB │ gzip:   0.18 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-intent-BoLVyJL7.js
+│  0.23 kB │ gzip:   0.20 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/after-lead-DVLt4DzG.js
+│  0.23 kB │ gzip:   0.20 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-currency-DM9oiQhg.js
+│  0.24 kB │ gzip:   0.18 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/keyboard-DhdzET4i.js
+│  0.25 kB │ gzip:   0.21 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-payload-error-BYVlfCFG.js
+│  0.26 kB │ gzip:   0.22 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unsub-send-disabled-GXA_gPrw.js
+│  0.29 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/engine-confidence-DSI_6JCK.js
+│  0.30 kB │ gzip:   0.23 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/upgrade-gate-CFHl5l-N.js
+│  0.31 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/index.esm-CmN-VM6f.js
+│  0.33 kB │ gzip:   0.21 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-now-B4dtryIU.js
+│  0.35 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/load-error-copy-B2l04aeg.js
+│  0.35 kB │ gzip:   0.26 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/preset-labels-Dd_CP04H.js
+│  0.38 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-is-at-most-CrvSPrB4.js
+│  0.44 kB │ gzip:   0.30 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-action-preview-analytics-DBzcmOm5.js
+│  0.44 kB │ gzip:   0.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-keys-DAXp7zh2.js
+│  0.44 kB │ gzip:   0.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/toast-PzyLj7cX.js
+│  0.45 kB │ gzip:   0.33 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/flags-2Ar82FqR.js
+│  0.45 kB │ gzip:   0.27 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-lessons-BEvRrVnv.js
+│  0.46 kB │ gzip:   0.30 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-tier-DORK0sCB.js
+│  0.46 kB │ gzip:   0.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-logout-DtgWOfHo.js
+│  0.48 kB │ gzip:   0.32 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-keys-Cqt7GdTu.js
+│  0.48 kB │ gzip:   0.30 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/types-BH_EHoe6.js
+│  0.49 kB │ gzip:   0.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/connect-mailbox-url-BxwA60ZL.js
+│  0.52 kB │ gzip:   0.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/switch.stories-5yrDV8Ay.js
+│  0.53 kB │ gzip:   0.32 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/analytics-context-BWqr308p.js
+│  0.55 kB │ gzip:   0.39 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/theme-fallback-DHlkx_vQ.js
+│  0.57 kB │ gzip:   0.37 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-safety-BjS6PHVz.js
+│  0.57 kB │ gzip:   0.36 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/flat-list-DEvnWWbG.js
+│  0.61 kB │ gzip:   0.37 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/engine-read-age-CjKdvn91.js
+│  0.62 kB │ gzip:   0.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/reset-mailbox-cache-Di1X0CfJ.js
+│  0.63 kB │ gzip:   0.43 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/select-well.stories-8YyO-RZ4.js
+│  0.65 kB │ gzip:   0.40 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/protection-DeaUVCX-.js
+│  0.67 kB │ gzip:   0.32 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-billing-subscription-D6UkR8Js.js
+│  0.72 kB │ gzip:   0.42 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/cookie-consent-CtETiCNB.js
+│  0.74 kB │ gzip:   0.43 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/error-capture-T31xVgEJ.js
+│  0.79 kB │ gzip:   0.50 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/react-mMt0PhAN.js
+│  0.79 kB │ gzip:   0.46 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/observe-digest-C9jTnsO-.js
+│  0.80 kB │ gzip:   0.43 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/mailbox-action-context-CqKg0Kww.js
+│  0.83 kB │ gzip:   0.52 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/screen-intro-ZLcY4pH4.js
+│  0.83 kB │ gzip:   0.40 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-sync-status-D7Okj8DK.js
+│  0.84 kB │ gzip:   0.52 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/make-sender-C-gSWTwU.js
+│  0.86 kB │ gzip:   0.52 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/kbd-DPEt_VYx.js
+│  0.89 kB │ gzip:   0.57 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/keyboard-help.stories-Dpms5eAE.js
+│  0.93 kB │ gzip:   0.63 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/data-export-download-Dw3r0GQe.js
+│  0.96 kB │ gzip:   0.62 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/resolve-Dv8f-FlA.js
+│  0.97 kB │ gzip:   0.54 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activity-filter-dialog.stories-CL1BhjEf.js
+│  0.97 kB │ gzip:   0.57 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-toolbar.stories-DvzBqD1y.js
+│  0.98 kB │ gzip:   0.55 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-sender-policy-DGsncJNe.js
+│  1.05 kB │ gzip:   0.49 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/initial-sync-recovery-C4_X0TmP.js
+│  1.06 kB │ gzip:   0.51 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-registry-5bMkc48b.js
+│  1.09 kB │ gzip:   0.51 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-registry-wgbNkUWR.js
+│  1.09 kB │ gzip:   0.51 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-focus-trap-CE-Xuegt.js
+│  1.11 kB │ gzip:   0.60 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-focus-trap-DoZttsd_.js
+│  1.11 kB │ gzip:   0.60 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unconfirmed-holds-BLH2S7vg.js
+│  1.15 kB │ gzip:   0.64 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/onboarding-phase-CYfWpEbi.js
+│  1.17 kB │ gzip:   0.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/triage-row.stories-IO7ogsR_.js
+│  1.19 kB │ gzip:   0.74 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activity-record-copy-DnnJDA57.js
+│  1.20 kB │ gzip:   0.55 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/cookie-preferences.stories-Bpq7-kdW.js
+│  1.24 kB │ gzip:   0.70 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/rolldown-runtime-CsOFd3vK.js
+│  1.25 kB │ gzip:   0.69 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/session-progress.stories-C-2iPxmP.js
+│  1.26 kB │ gzip:   0.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/session-progress-CDPn4wr2.js
+│  1.27 kB │ gzip:   0.71 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/preload-helper-BC2WaYri.js
+│  1.33 kB │ gzip:   0.75 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/bulk-action-copy-YuozTQDW.js
+│  1.35 kB │ gzip:   0.73 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/useInfiniteQuery-OOFyJEhX.js
+│  1.39 kB │ gzip:   0.59 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/pill-DpohlS1C.js
+│  1.40 kB │ gzip:   0.72 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/technical-details-BUfBYeic.js
+│  1.41 kB │ gzip:   0.78 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-retry-initial-sync-F3EvPr1a.js
+│  1.41 kB │ gzip:   0.76 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/link-Iw4UCxge.js
+│  1.41 kB │ gzip:   0.81 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/mailbox-action-context-view-UllZb35L.js
+│  1.42 kB │ gzip:   0.87 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-me-C_-Wqz4x.js
+│  1.44 kB │ gzip:   0.79 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unsubscribe-capability-LPc2ZkxG.js
+│  1.45 kB │ gzip:   0.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-tour-card.stories-DOYaLtyn.js
+│  1.57 kB │ gzip:   0.86 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-toolbar.stories-Tlv7eonY.js
+│  1.60 kB │ gzip:   0.80 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inline-progress.stories-CcHprJrP.js
+│  1.60 kB │ gzip:   0.82 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/senders-C1kmsKXY.js
+│  1.61 kB │ gzip:   0.65 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-comparison-DP9iC9MR.js
+│  1.63 kB │ gzip:   0.70 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-error-copy-BpzSkaW2.js
+│  1.75 kB │ gzip:   0.89 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/observe-window-banner.stories-D4BPLylB.js
+│  1.75 kB │ gzip:   0.86 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/error-state-CXSUpKNs.js
+│  1.81 kB │ gzip:   0.90 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/match-reason-copy.stories-Bnv7z1pn.js
+│  1.82 kB │ gzip:   0.98 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/posthog-ziLWt6om.js
+│  1.83 kB │ gzip:   0.89 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-options-B9NAeLnu.js
+│  1.84 kB │ gzip:   0.73 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/recommendation-banner.stories-DlwRz54h.js
+│  1.84 kB │ gzip:   0.85 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inline-preview.stories-DseXI275.js
+│  1.89 kB │ gzip:   0.92 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/technical-details.stories-Li1Euus4.js
+│  1.92 kB │ gzip:   0.98 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/page-DEYnbB-A.js
+│  1.94 kB │ gzip:   0.91 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/first-cleanup-nudge.stories-CKHAYnxq.js
+│  1.99 kB │ gzip:   1.06 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/resolve-C5Da280J.js
+│  2.02 kB │ gzip:   1.16 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/pricing.config-BLUYCvUV.js
+│  2.05 kB │ gzip:   0.83 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-row.stories-ncb2ld_J.js
+│  2.06 kB │ gzip:   1.00 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-onboarding-BbNpwpIH.js
+│  2.06 kB │ gzip:   0.97 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/tokens-Bd6msdso.js
+│  2.09 kB │ gzip:   0.84 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/tokens-wJ5N0ijW.js
+│  2.09 kB │ gzip:   0.84 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inbox-scope-zlgLO4KD.js
+│  2.10 kB │ gzip:   0.98 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inline-progress-BfAFkq__.js
+│  2.15 kB │ gzip:   0.96 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/skeleton-DnxNVDlb.js
+│  2.17 kB │ gzip:   0.97 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/open-link-DSnP0hQZ.js
+│  2.17 kB │ gzip:   0.99 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/scrubber-BnmbWEyB.js
+│  2.33 kB │ gzip:   1.04 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/switch-rULwAjmj.js
+│  2.37 kB │ gzip:   1.03 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/protected-notice.stories-zJvuaFmy.js
+│  2.39 kB │ gzip:   1.09 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/error-state.stories-DpWarw8J.js
+│  2.46 kB │ gzip:   1.22 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/noise-archive-bar.stories-tTBXlnuI.js
+│  2.46 kB │ gzip:   1.03 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/empty-state-BW4fx0tG.js
+│  2.47 kB │ gzip:   1.08 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/decision-timeline-Ckkn5cb1.js
+│  2.50 kB │ gzip:   1.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/focus-card.stories-CmSDrJtK.js
+│  2.53 kB │ gzip:   1.15 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/useMutation-CO_tPDtx.js
+│  2.57 kB │ gzip:   1.08 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/client-B8FRkDKu.js
+│  2.67 kB │ gzip:   1.27 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/manifest-entries-CwqiUTHN.js
+│  2.67 kB │ gzip:   0.85 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/noise-archive-sheet.stories-BSzbXZkW.js
+│  2.67 kB │ gzip:   1.04 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/domain-batch-card.stories-BmtnVR0b.js
+│  2.69 kB │ gzip:   1.28 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/data-UXyDFOOf.js
+│  2.75 kB │ gzip:   1.33 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/logo-mu6AFJc5.js
+│  2.82 kB │ gzip:   1.30 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unprotect-button-D2f_qMKY.js
+│  2.82 kB │ gzip:   1.51 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/avatar.stories-bW-5IXQl.js
+│  2.87 kB │ gzip:   1.20 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inline-feedback-CoTF5zwo.js
+│  2.93 kB │ gzip:   1.39 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/rule-card.stories-CQXcKXlk.js
+│  2.95 kB │ gzip:   1.21 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/decision-timeline.stories-BZY1H8C3.js
+│  2.97 kB │ gzip:   1.04 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/tooltip-0FSvXQYx.js
+│  2.97 kB │ gzip:   1.58 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-preview-detail-DXUUoNAz.js
+│  2.98 kB │ gzip:   1.53 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/recommendation-banner-DOsrmXnn.js
+│  3.15 kB │ gzip:   1.57 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/avatar-DXBLGp-I.js
+│  3.17 kB │ gzip:   1.70 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-explain-reasons-BhLkMtY0.js
+│  3.21 kB │ gzip:   1.60 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/auth-provider-C7rz5tOE.js
+│  3.28 kB │ gzip:   1.43 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/batch-action-sheet.stories-CuxNNgui.js
+│  3.28 kB │ gzip:   1.41 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/not-found.stories-DLyLcwBX.js
+│  3.34 kB │ gzip:   1.54 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/logo.stories-BHspAK9f.js
+│  3.38 kB │ gzip:   1.16 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-workspace.module-Cey1bMmn.js
+│  3.40 kB │ gzip:   1.55 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/global-error.stories-Boupv4al.js
+│  3.41 kB │ gzip:   1.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/invoice-history.stories-DyN1l-M8.js
+│  3.47 kB │ gzip:   1.23 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/parse-payload-DkP5wpLx.js
+│  3.53 kB │ gzip:   1.56 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/brief-screen.stories-BRCkZSmy.js
+│  3.56 kB │ gzip:   1.59 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/mutation-DxaMUDqe.js
+│  3.57 kB │ gzip:   1.22 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/dynamic-CAdUs51F.js
+│  3.79 kB │ gzip:   1.53 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-recovery-dialog.stories-DV2rqfnu.js
+│  3.81 kB │ gzip:   1.46 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/triage-screen.stories-DbA83m_S.js
+│  3.87 kB │ gzip:   1.50 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-registry.stories-DY4NAa_k.js
+│  3.88 kB │ gzip:   1.49 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/cookie-consent-banner.stories-RE92Q-7o.js
+│  3.92 kB │ gzip:   1.97 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sentry-B-yDat74.js
+│  3.95 kB │ gzip:   1.81 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/keyboard-cheatsheet.stories-BEWpQHAb.js
+│  4.13 kB │ gzip:   1.92 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-sheet-prefs-card.stories-4046LQy9.js
+│  4.25 kB │ gzip:   1.73 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/button-B040bcV6.js
+│  4.25 kB │ gzip:   1.62 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/button-BUBpOpOF.js
+│  4.25 kB │ gzip:   1.61 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-keys-DOaDKLGe.js
+│  4.26 kB │ gzip:   1.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/use-sync-now-D6vKfCOV.js
+│  4.27 kB │ gzip:   1.93 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/upgrade-modal.stories-DvqJgrP4.js
+│  4.27 kB │ gzip:   2.12 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/banner-slot.stories-DoCTY0Tp.js
+│  4.29 kB │ gzip:   2.18 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/cookie-preferences-DuIeXZ7D.js
+│  4.47 kB │ gzip:   2.03 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/route-placeholder.stories-BqaNVKu1.js
+│  4.63 kB │ gzip:   2.02 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/email-prefs-card.stories-CpJFbwOp.js
+│  4.63 kB │ gzip:   1.92 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/empty-state.stories-CpP6Mx58.js
+│  4.63 kB │ gzip:   2.01 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/fixtures-BP_hYk1B.js
+│  4.67 kB │ gzip:   1.23 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/protected-notice-BaKXrnK0.js
+│  4.68 kB │ gzip:   2.27 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-toolbar-CR6Kp-M4.js
+│  4.70 kB │ gzip:   2.32 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/brief-prefs-card.stories-C-foQU2s.js
+│  4.72 kB │ gzip:   1.99 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-semantics-CvszpHId.js
+│  4.73 kB │ gzip:   1.27 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/confirm-action-modal.stories-DvDhIhqd.js
+│  4.76 kB │ gzip:   1.70 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sync-error-banner.stories-Ds0mrsvb.js
+│  4.80 kB │ gzip:   2.23 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activate-rule-modal.stories-CXHw7Xy9.js
+│  4.82 kB │ gzip:   2.20 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unsub-mailto-callout-DebxRuqY.js
+│  4.86 kB │ gzip:   2.22 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/tooltip.stories-CQxDhDtV.js
+│  4.87 kB │ gzip:   2.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/avatar-CHM2rucx.js
+│  4.92 kB │ gzip:   2.55 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/numeric-display.stories-C_ND7z4P.js
+│  4.93 kB │ gzip:   1.96 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/heard-from-prompt.stories-DwUDPBeA.js
+│  4.97 kB │ gzip:   2.14 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/mailbox-reconnect-banner.stories-3fBa2djS.js
+│  5.10 kB │ gzip:   2.36 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sheet-parts-D4dRapzT.js
+│  5.12 kB │ gzip:   2.04 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/keyboard-help-CA4CrOw4.js
+│  5.24 kB │ gzip:   2.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/checkout-confirm-panel-DwO06T-F.js
+│  5.47 kB │ gzip:   2.10 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activity-filter-dialog-CQOU90KI.js
+│  5.87 kB │ gzip:   1.88 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/pending-suggestion-row-CcRFcxGX.js
+│  6.01 kB │ gzip:   2.38 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/no-active-mailbox.stories-C9sWuEG-.js
+│  6.01 kB │ gzip:   2.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-analytics-CXQTLz0L.js
+│  6.05 kB │ gzip:   2.19 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/unsub-batch-receipt.stories-CBJsQwLp.js
+│  6.09 kB │ gzip:   2.38 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/tier-gate.stories-CGNewXu-.js
+│  6.14 kB │ gzip:   2.77 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/upgrade-modal-oTANjIoN.js
+│  6.16 kB │ gzip:   2.84 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-model-BAN48LQ1.js
+│  6.22 kB │ gzip:   2.72 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-toolbar-BVvVQwwX.js
+│  6.38 kB │ gzip:   2.93 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/change-plan-panel-CzCGpyst.js
+│  6.40 kB │ gzip:   2.64 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/error.stories-BTa8GTlN.js
+│  6.55 kB │ gzip:   2.55 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/observe-window-banner-B4j1WT0N.js
+│  6.55 kB │ gzip:   2.93 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/domain-batch-card-BtR75FoJ.js
+│  6.56 kB │ gzip:   2.76 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/queryClient-C54ZyBiB.js
+│  7.17 kB │ gzip:   2.27 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/preview-sheet-KT0_qe_-.js
+│  7.35 kB │ gzip:   2.66 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/cancel-modal-DFvd42aE.js
+│  7.36 kB │ gzip:   3.02 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sync-now-button.stories-DOVFw6ey.js
+│  7.52 kB │ gzip:   3.29 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/undo-tray.stories-uVrlXwOd.js
+│  7.58 kB │ gzip:   2.06 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/focus-card-zQ_NHBjA.js
+│  7.96 kB │ gzip:   3.29 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/inline-preview-39dGFSsP.js
+│  8.25 kB │ gzip:   3.54 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/useBaseQuery-BLQU6YHM.js
+│  8.40 kB │ gzip:   3.15 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/batch-action-sheet-DAjGgisI.js
+│  8.48 kB │ gzip:   3.72 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/verb-tour.stories-BRG9Ggut.js
+│  8.48 kB │ gzip:   3.69 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/noise-archive-sheet-BFD2Ig2t.js
+│  8.59 kB │ gzip:   3.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/support-bundle-dialog-hiKpqCVI.js
+│  8.61 kB │ gzip:   3.34 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activity-filter-fields-CEp9aohA.js
+│  8.88 kB │ gzip:   2.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/selection-bar.stories-TJHqdNZR.js
+│  9.54 kB │ gzip:   3.52 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/rule-card-CjvsfiHZ.js
+│  9.90 kB │ gzip:   3.84 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/quiet-hours-card.stories-YA0QdNZ5.js
+│  10.27 kB │ gzip:   3.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/settings-list-CzcSiDgf.js
+│  10.33 kB │ gzip:   3.25 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/mailboxes-card.stories-pgziAqcm.js
+│  11.22 kB │ gzip:   3.99 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-semantics-BPPRrCB9.js
+│  11.39 kB │ gzip:   3.31 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-recovery-dialog-bcdGDvUQ.js
+│  11.40 kB │ gzip:   4.02 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-row-8o-hnTkg.js
+│  11.44 kB │ gzip:   4.07 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-list.stories-CwtOnVBH.js
+│  11.45 kB │ gzip:   4.30 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/security-events-screen.stories-s0XKoOwu.js
+│  11.63 kB │ gzip:   4.36 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-sheet-D46XUZ_Z.js
+│  11.78 kB │ gzip:   4.63 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/undo-tray-CVWp5kvg.js
+│  11.96 kB │ gzip:   4.14 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/skeleton.stories-BHsJIEmw.js
+│  12.02 kB │ gzip:   3.44 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/payment-method-card-7XhjEmI9.js
+│  12.05 kB │ gzip:   4.08 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/senders-policies-screen.stories-RcMjz3zX.js
+│  12.65 kB │ gzip:   5.12 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-popover.stories-Vf4zzNgq.js
+│  12.97 kB │ gzip:   4.60 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/rule-preview-panel-DFDr8eXq.js
+│  14.00 kB │ gzip:   4.28 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/account-deletion.stories-RTEUrFw-.js
+│  14.26 kB │ gzip:   5.41 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/query-BssBnLPm.js
+│  15.86 kB │ gzip:   5.52 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/preview-sheet.stories-zPduE11g.js
+│  16.66 kB │ gzip:   5.26 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/triage-row-DD-QI2mL.js
+│  16.70 kB │ gzip:   6.49 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sync-gate.stories-CnsMZDGu.js
+│  17.15 kB │ gzip:   6.28 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/followups-screen.stories-DZEF2yyv.js
+│  17.22 kB │ gzip:   6.63 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/fixtures-BH0IrA6k.js
+│  17.89 kB │ gzip:   3.83 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/home-view.stories-Cm0Jx_Kj.js
+│  18.16 kB │ gzip:   5.46 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/snoozed-screen.stories-CDmSQTEK.js
+│  19.35 kB │ gzip:   6.90 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/action-row-C--lczSe.js
+│  20.11 kB │ gzip:   6.19 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/privacy-badge.stories-CKjr0frP.js
+│  21.38 kB │ gzip:   6.25 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activate-rule-modal-rhSH8tth.js
+│  21.46 kB │ gzip:   7.25 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/filters.stories-DKS1LRyA.js
+│  21.95 kB │ gzip:   6.77 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/confirm-action-modal-DKmttve0.js
+│  22.80 kB │ gzip:   9.03 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/app-shell.stories-_77e9rcG.js
+│  23.61 kB │ gzip:   7.26 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/vite-inject-mocker-entry.js
+│  27.83 kB │ gzip:   9.66 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/decode-DRjyC4EM.js
+│  32.42 kB │ gzip:  20.71 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/privacy-data-screen.stories-DsXLMSul.js
+│  34.01 kB │ gzip:  10.51 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/step-protection-review.stories-CVw39GHa.js
+│  34.94 kB │ gzip:  12.39 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/brief-screen-3IL5A6WN.js
+│  41.32 kB │ gzip:  13.65 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/screener-screen.stories-DVC7OIsE.js
+│  48.81 kB │ gzip:  15.61 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sender-detail-page.stories-CLY1UhSY.js
+│  49.20 kB │ gzip:  16.84 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/triage-screen-B2QsmAVZ.js
+│  50.28 kB │ gzip:  16.68 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/autopilot-screen.stories-ItlOp5RY.js
+│  51.31 kB │ gzip:  14.45 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/activity-screen.stories-asfQ3J6T.js
+│  58.63 kB │ gzip:  19.24 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/schemas-D5JUolxD.js
+│  88.31 kB │ gzip:  25.50 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/billing-screen.stories-CaDta-yN.js
+│  100.78 kB │ gzip:  29.38 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/react-18-CeisO_WN.js
+│  177.23 kB │ gzip:  55.86 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/sentry-browser-runtime-DaD6Ueuv.js
+│  189.96 kB │ gzip:  65.09 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/module-Bry8_6I7.js
+│  291.64 kB │ gzip:  98.04 kB
+│  ../../../../../../../../../tmp/declutrmail-prelaunch-fixes/storybook-static-final/assets/iframe-C8tGc4w8.js
+│  1,305.12 kB │ gzip: 367.29 kB
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/hooks-client-context.shared-runtime.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [plugin builtin:vite-reporter]
+│  (!) Some chunks are larger than 500 kB after minification. Consider:
+│  - Using dynamic import() to code-split the application
+│  - Use build.rolldownOptions.output.codeSplitting to improve chunking:
+│  ]8;;https://rolldown.rs/reference/OutputOptions.codeSplittinghttps://rolldown.rs/reference/OutputOptions.codeSplitting]8;;
+│  - Adjust chunk size limit for this warning via
+│  build.chunkSizeWarningLimit.
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/app-router-context.shared-runtime.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/app-router-context.shared-runtime.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/client/components/redirect-boundary.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/client/components/redirect-boundary.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/app/error.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/app/error.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/quiet/quiet-hours-card.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/quiet/quiet-hours-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/pending-suggestion-row.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/autopilot/pending-suggestion-row.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/consent/cookie-consent-banner.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/consent/cookie-consent-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/activity/activity-filter-dialog.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/activity/activity-filter-dialog.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/upgrade-modal-host.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/upgrade-modal-host.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/mailboxes/no-active-mailbox.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/mailboxes/no-active-mailbox.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/detail/recommendation-banner.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/senders/detail/recommendation-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/auth/auth-provider.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/auth/auth-provider.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/tier-gate.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/billing/tier-gate.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/rule-preview-panel.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/rule-preview-panel.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/lib/entitlements/upgrade-gate.ts" may
+│  not be preserved when bundling.
+│  ╭─[ src/lib/entitlements/upgrade-gate.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/autopilot/rule-card.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/autopilot/rule-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/brief/noise-archive-sheet.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/brief/noise-archive-sheet.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/activate-rule-modal.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/activate-rule-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/settings-index/brief-prefs-card.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/settings/settings-index/brief-prefs-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/auth/heard-from-prompt.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/auth/heard-from-prompt.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/payment-method-card.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/payment-method-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/onboarding/step-protection-review.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/onboarding/step-protection-review.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/invoice-history.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/invoice-history.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/unsub-batch-receipt.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/unsub-batch-receipt.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/followups/followups-screen.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/followups/followups-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/selection-bar.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/selection-bar.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/home/home-view.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/home/home-view.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/sender-row.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/sender-row.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/brief/brief-screen.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/brief/brief-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/filters.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/senders/filters.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/keyboard-cheatsheet.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/keyboard-cheatsheet.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/screener/screener-screen.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/screener/screener-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/row-activity.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/row-activity.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/pending-checkout.ts"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/pending-checkout.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/account-deletion/grace-period-banner.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/account-deletion/grace-period-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/detail/action-toolbar.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/detail/action-toolbar.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/mailboxes/mailbox-reconnect-banner.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/mailboxes/mailbox-reconnect-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/route-placeholder/route-placeholder.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/route-placeholder/route-placeholder.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/app/global-error.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/app/global-error.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/first-cleanup-nudge.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/first-cleanup-nudge.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/onboarding/sync-gate.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/onboarding/sync-gate.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/observe-window-banner.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/autopilot/observe-window-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/settings-index/verb-tour-card.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/settings/settings-index/verb-tour-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/settings-index/email-prefs-card.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/settings/settings-index/email-prefs-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/settings-index/action-sheet-prefs-card.tsx" may
+│  not be preserved when bundling.
+│  ╭─[
+│  src/features/settings/settings-index/action-sheet-prefs-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/account-deletion/delete-account-modal.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/account-deletion/delete-account-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/activity/action-recovery-dialog.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/activity/action-recovery-dialog.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/approve-confirm-modal.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/autopilot/approve-confirm-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/shell/banner-slot.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/shell/banner-slot.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/screener/screener-row.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/screener/screener-row.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/admin-security/security-events-screen.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/admin-security/security-events-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/keyboard-help.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/keyboard-help.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/action-toolbar.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/action-toolbar.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/sync/sync-error-banner.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/sync/sync-error-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/focus-card.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/triage/focus-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/settings/switch.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/settings/switch.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/tour/verb-tour.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/tour/verb-tour.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/autopilot-entitlement-surface.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/autopilot/autopilot-entitlement-surface.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/domain-batch-card.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/domain-batch-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/senders-policies/senders-policies-screen.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  src/features/settings/senders-policies/senders-policies-screen.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/session-progress.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/session-progress.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/inline-preview.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/inline-preview.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/unprotect-button.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/unprotect-button.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/settings-index/mailboxes-card.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/settings/settings-index/mailboxes-card.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/protected-notice.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/protected-notice.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/detail/sender-detail-page.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/senders/detail/sender-detail-page.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/pause-confirm-modal.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/pause-confirm-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/autopilot-screen.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/autopilot-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/sync/sync-now-button.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/sync/sync-now-button.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/triage-row.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/triage/triage-row.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/uplift-d/decision-timeline/decision-timeline.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  src/features/senders/uplift-d/decision-timeline/decision-timeline.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/settings/privacy-data/privacy-data-screen.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/settings/privacy-data/privacy-data-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/tooltip.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/tooltip.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/skeleton/triage-queue-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/skeleton/triage-queue-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/snoozed/snoozed-screen.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/snoozed/snoozed-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/screen-intro.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/screen-intro.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/skeleton/sender-detail-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/skeleton/sender-detail-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/batch-action-sheet.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/batch-action-sheet.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/sender-list.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/sender-list.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/inline-progress/inline-progress.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/inline-progress/inline-progress.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/settings/settings-list.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/settings/settings-list.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/error-state/error-state.tsx" may
+│  not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/error-state/error-state.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/empty-state/empty-state.tsx" may
+│  not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/empty-state/empty-state.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/button.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/components/button.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/skeleton/sender-row-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/skeleton/sender-row-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/preview-sheet/preview-sheet.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/preview-sheet/preview-sheet.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/confirm-action-modal.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/confirm-action-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/action-popover.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/action-popover.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/preview-sheet/sheet-parts.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../packages/shared/src/components/preview-sheet/sheet-parts.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/store.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/triage/store.ts:38:4 ]
+│  │
+│  38 │ */ "use client";
+│  │    ──────┬──────
+│  │          ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/...]8;;
+│  ────╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/shell/sidebar.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/shell/sidebar.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/shell/app-shell.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/shell/app-shell.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/privacy-badge.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/privacy-badge.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/skeleton/skeleton.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/skeleton/skeleton.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/undo-tray/undo-tray.tsx" may not
+│  be preserved when bundling.
+│  ╭─[ ../../packages/shared/src/components/undo-tray/undo-tray.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/billing-screen.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/billing-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/triage-screen.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/triage-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/QueryClientProvider.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/QueryClientProvider.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/HydrationBoundary.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/HydrationBoundary.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useQuery.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useQuery.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/IsRestoringProvider.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/IsRestoringProvider.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/QueryErrorResetBoundary.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/QueryErrorResetBoundary.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseQuery.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseQuery.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseInfiniteQuery.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseInfiniteQuery.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseQueries.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useSuspenseQueries.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useInfiniteQuery.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useInfiniteQuery.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useQueries.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useQueries.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useIsFetching.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useIsFetching.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useMutationState.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useMutationState.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useMutation.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useMutation.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/activity/activity-screen.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/activity/activity-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/server-inserted-html.shared-runtime.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/lib/use-now.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/lib/use-now.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/theme/theme-fallback.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/theme/theme-fallback.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/components/route-error-screen.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/components/route-error-screen.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/consent/cookie-preference-controls.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/consent/cookie-preference-controls.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-focus-trap.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-focus-trap.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/billing-currency.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/billing-currency.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/auth/api/use-tier.ts" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/auth/api/use-tier.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/upgrade-modal.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/billing/upgrade-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/rule-preview-senders.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/rule-preview-senders.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-payment-method.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/api/use-payment-method.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/lib/posthog.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/lib/posthog.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/tooltip.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/tooltip.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/unsub-mailto-callout.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/unsub-mailto-callout.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/activity/activity-filter-fields.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/activity/activity-filter-fields.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/auth/mailbox-action-context-view.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/auth/mailbox-action-context-view.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/confirm-modal-frame.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/confirm-modal-frame.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/api/use-invoices.ts"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/api/use-invoices.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-labels.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-labels.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/kbd.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/kbd.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/feedback/inline-feedback.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/feedback/inline-feedback.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/row-checkbox.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/row-checkbox.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-local-state.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-local-state.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/fact-language.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/fact-language.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-long-press.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-long-press.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/lib/sentry.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/lib/sentry.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-expandable-row.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-expandable-row.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/preview-sheet/preview-sheet.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/preview-sheet/preview-sheet.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/preview-sheet/sheet-parts.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/preview-sheet/sheet-parts.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/triage-undo-tray.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/triage-undo-tray.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useBaseQuery.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/useBaseQuery.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/errorBoundaryUtils.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/errorBoundaryUtils.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/brief/api/use-noise-archive.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/brief/api/use-noise-archive.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/hooks/use-is-at-most.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/hooks/use-is-at-most.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/bottom-sheet.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/bottom-sheet.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/senders/action-row.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/senders/action-row.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/pill.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/pill.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/spark.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/spark.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/state/ui-store.ts"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/state/ui-store.ts:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/card.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/card.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/screen-intro.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/screen-intro.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/toast.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/toast.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/eyebrow.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/eyebrow.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/privacy-badge.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/privacy-badge.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/button.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/button.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/screener/empty-state.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/screener/empty-state.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/api/use-explain-reasons.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/api/use-explain-reasons.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/shell/app-shell.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/shell/app-shell.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/app/not-found-audience.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/app/not-found-audience.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/api/use-refresh-stale-read.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/senders/api/use-refresh-stale-read.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/autopilot-banner-stack.tsx" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/autopilot/autopilot-banner-stack.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/sync/api/use-retry-initial-sync.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/sync/api/use-retry-initial-sync.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/action-popover.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/action-popover.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/onboarding/scan-time-left.ts"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/onboarding/scan-time-left.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/swipe-overlay.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/swipe-overlay.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/triage/triage-row-expanded.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/triage/triage-row-expanded.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/screener/decide-preview.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/screener/decide-preview.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/mailboxes/use-mailbox-scope-reset.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/mailboxes/use-mailbox-scope-reset.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/sync/api/use-sync-now.ts" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/sync/api/use-sync-now.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/shell/sidebar.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/shell/sidebar.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/tour/verb-tour-panel.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/tour/verb-tour-panel.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/use-swipe-verb.ts" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/use-swipe-verb.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/autopilot/paused-banner.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/autopilot/paused-banner.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/resume-confirm-modal.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/resume-confirm-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-billing-subscription.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-billing-subscription.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/auth/mailbox-action-context.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/auth/mailbox-action-context.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/hooks/use-focus-trap.ts" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/hooks/use-focus-trap.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/senders/detail/recent-messages.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/senders/detail/recent-messages.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/autopilot/suggestion-group.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/autopilot/suggestion-group.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/triage/action-preview-detail.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/triage/action-preview-detail.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/components/kbd.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/components/kbd.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-reconcile-checkout.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-reconcile-checkout.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-cancel-subscription.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-cancel-subscription.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-change-plan.ts" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/api/use-change-plan.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-resume-cancellation.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-resume-cancellation.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/hooks/use-labels.ts" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/hooks/use-labels.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-pause-subscription.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-pause-subscription.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-resume-subscription.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-resume-subscription.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/plan-coverage.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/billing/plan-coverage.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/shell/help-button.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/shell/help-button.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/today-handled-line.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/triage/today-handled-line.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/empty-state.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/empty-state.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/cancel-modal.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/billing/cancel-modal.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/triage-queue.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/triage-queue.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/focus-stack.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/focus-stack.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/triage/action-sheet.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/triage/action-sheet.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/client/script.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/client/script.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/plan-picker.tsx" may
+│  not be preserved when bundling.
+│  ╭─[ src/features/billing/plan-picker.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/state/ui-store.ts" may not be preserved
+│  when bundling.
+│  ╭─[ ../../packages/shared/src/state/ui-store.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/activity/support-bundle-dialog.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/activity/support-bundle-dialog.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/loadable-context.shared-runtime.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@types+node@26.6.3_react-_5af0f4b779c89d27866fadadbaa4e027/node_modules/next/dist/shared/lib/loadable-context.shared-runtime.js:1:1
+│  ]
+│  │
+│  1 │ 'use client';
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/triage-queue-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/triage-queue-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/empty-state/empty-state.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/empty-state/empty-state.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/error-state/error-state.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/error-state/error-state.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/sender-detail-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/sender-detail-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/inline-progress/inline-progress.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/inline-progress/inline-progress.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/sender-row-skeleton.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/skeleton/sender-row-skeleton.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/lib/sentry-browser-runtime.ts" may not
+│  be preserved when bundling.
+│  ╭─[ src/lib/sentry-browser-runtime.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/components/undo-tray/undo-tray.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/components/undo-tray/undo-tray.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../packages/shared/src/hooks/use-local-state.ts" may not be
+│  preserved when bundling.
+│  ╭─[ ../../packages/shared/src/hooks/use-local-state.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/api/use-checkout.ts"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/api/use-checkout.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-founding-remaining.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-founding-remaining.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/billing-comparison.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/billing-comparison.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/packages/shared/src/shell/help-button.tsx"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/packages/shared/src/shell/help-button.tsx:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/checkout-confirm-panel.tsx" may not be preserved
+│  when bundling.
+│  ╭─[ src/features/billing/checkout-confirm-panel.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/change-plan-panel.tsx"
+│  may not be preserved when bundling.
+│  ╭─[ src/features/billing/change-plan-panel.tsx:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in "src/features/billing/checkout.ts" may not
+│  be preserved when bundling.
+│  ╭─[ src/features/billing/checkout.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@sentry+nextjs@11.0.0_next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@ty_a03153da3d949e272566889755b53a03/node_modules/@sentry/nextjs/build/esm/index.client.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@sentry+nextjs@11.0.0_next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@ty_a03153da3d949e272566889755b53a03/node_modules/@sentry/nextjs/build/esm/index.client.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "src/features/billing/api/use-plan-change-preview.ts" may not be
+│  preserved when bundling.
+│  ╭─[ src/features/billing/api/use-plan-change-preview.ts:1:1 ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [MODULE_LEVEL_DIRECTIVE] The semantics of the module level
+│  directive "use client" in
+│  "../../../../../../../../..[workspace]/node_modules/.pnpm/@sentry+nextjs@11.0.0_next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@ty_a03153da3d949e272566889755b53a03/node_modules/@sentry/nextjs/build/esm/client/index.js"
+│  may not be preserved when bundling.
+│  ╭─[
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@sentry+nextjs@11.0.0_next@15.5.26_@opentelemetry+api@1.9.1_@playwright+test@1.63.0_@ty_a03153da3d949e272566889755b53a03/node_modules/@sentry/nextjs/build/esm/client/index.js:1:1
+│  ]
+│  │
+│  1 │ "use client";
+│  │ ──────┬──────
+│  │       ╰──────── module level directive may not be preserved
+│  │
+│  │ Help: For more information, see ]8;;https://rolldown.rs/in-depth/directives#other-directiveshttps://rolldown.rs/in-depth/d...]8;;
+│  ───╯
+
+│
+▲  Vite [INEFFECTIVE_DYNAMIC_IMPORT]
+│  ../../../../../../../../..[workspace]/node_modules/.pnpm/@paddle+paddle-js@1.6.5/node_modules/@paddle/paddle-js/dist/index.esm.js
+│  is dynamically imported by src/features/billing/checkout.ts but also
+│  statically imported by src/features/billing/checkout.ts, dynamic
+│  import will not move module into another chunk.
+
+│  Vite ✓ built in 9.36s
+│
+▲  Vite [PLUGIN_TIMINGS] JavaScript callbacks ran for 8.2s of this 9.1s
+│  build (90%).
+│  The slowest callbacks, timed inside each callback (the wait before a
+│  callback starts is excluded, the time it awaits is included):
+│  - plugin storybook:react-docgen-plugin transform (64%, 5.8s, 1207
+│  calls)
+│  - plugin vite:css-post transform (35%, 3.2s, 10 calls)
+│  These rows add up to more than the total. Callbacks can overlap, so
+│  the same time counts for more than one row.
+│  2 callbacks are listed without a time. Their calls overlapped, so the
+│  time inside one call includes work from other calls. To find their
+│  cost, profile the build with `node --cpu-prof`:
+│  - plugin vite-plugin-storybook-nextjs-swc transform (1207 calls)
+│  - plugin vite:css transform (10 calls)
+│  See ]8;;https://rolldown.rs/reference/InputOptions.checks#bundlertimingshttps://rolldown.rs/reference/InputOptions.checks#bundlertimings]8;;
+│  for more details.
+
+│
+◇  Output directory:
+│  /tmp/declutrmail-prelaunch-fixes/storybook-static-final
+│
+└  Storybook build completed successfully

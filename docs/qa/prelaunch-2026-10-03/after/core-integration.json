@@ -1,0 +1,98 @@
+{
+  "designRecommendation": {
+    "id": "HOME-MOBILE-HIERARCHY",
+    "status": "implemented",
+    "route": "/home",
+    "problem": "At320px, the editorial headline, subtitle and progress stamp precede the primary next task even when review work is waiting.",
+    "recommendation": "Keep the brand typography, but use a compact mobile intro when queued work exists. Put the next task, its honest count and primary CTA directly after the route title, before the progress stamp/history. Keep calm introductory framing for genuine no-work and scan-in-progress states.",
+    "evidence": [
+      {
+        "file": "apps/web/src/features/home/home-view.tsx",
+        "line": 30,
+        "detail": "Actual waiting/first-review work selects compact mobile hierarchy."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.tsx",
+        "line": 222,
+        "detail": "Cleanup stamp follows the primary review/task section in reading order."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.module.css",
+        "line": 546,
+        "detail": "At480px and below, preserves brand heading with smaller size and less spacing."
+      },
+      {
+        "file": "apps/web/src/features/home/home-view.test.tsx",
+        "line": 262,
+        "detail": "Four cases preserve Triage/Screener task-before-history order, calm no-work state and honest sync state."
+      }
+    ],
+    "implementation": "Implemented compact mobile Home intro when review work awaits; real task/CTA precedes recorded-progress stamp in reading order. Genuine no-work and syncing states retain calm framing; brand typography and desktop stamp position remain.",
+    "summary": "When a real review task awaits, mobile Home compresses the brand intro and puts the next task/CTA before the cleanup stamp in DOM reading order. Quiet and scan-in-progress states retain calm framing; desktop stamp position is preserved.",
+    "tests": ["home-view.test.tsx: 4 new hierarchy cases passed in first integration run."],
+    "verification": "DOM regression verified after main integration. Browser320px proof delegated to root because servers intentionally stopped for dependency update; no duplicate server started.",
+    "residuals": []
+  },
+  "integration": {
+    "base": "origin/main c1b61eea",
+    "combinedCommitBeingApplied": "9e82bce0",
+    "indexActions": "No git add/commit/rebase/branch calls. Parent owns staging all resolved files.",
+    "sourceConflictsResolved": 19,
+    "preservedMainBehavior": [
+      "Activity emailCounts/senderCounts units and accurate Moved to Trash/Unsubscribe requests labels.",
+      "Activity recovery senderProtected consent object and wire propagation; mailbox context.",
+      "Global root-layout headline and narrower root error scope; manual recovery rather than reload promises.",
+      "AccountMenu managed-mailbox conditional rendering and lazy data-control behavior.",
+      "RecentMessages Gmail entity-decoding/no HTML execution regression alongside accessible unread/attachment indicators.",
+      "Screener real queue fixtures/cold-read assertions alongside retained-empty identity.",
+      "Senders/Triage reconnect-specific failed-scan Settings step. Incomplete readiness still precedes completion even after recorded decisions.",
+      "Later current-main refetch/async tests alongside account-zone custom-time regression.",
+      "Main concise Protected copy; accessible dangerText foreground preserved without redundant consent sentences."
+    ],
+    "homeTestsAddedBeforeRootFullRun": 4,
+    "newTestFilesAfterRootFullRunBegan": [
+      "apps/web/src/features/mailboxes/account-menu.test.tsx",
+      "apps/web/src/features/senders/sender-list.test.tsx",
+      "apps/web/src/features/senders/senders-screen.test.tsx",
+      "apps/web/src/features/screener/screener-keyboard.test.tsx",
+      "apps/web/src/features/triage/triage-focus.test.tsx",
+      "apps/web/src/features/triage/triage-screen.actions.test.tsx",
+      "apps/web/src/features/activity/activity-screen.test.tsx"
+    ],
+    "adaptedExistingTestFiles": [
+      "apps/web/src/app/global-error.test.tsx (resolved color fallback matcher with upgraded HappyDOM)",
+      "apps/web/src/features/screener/decide-preview.test.tsx (main accessible verb label, no Confirm prefix)"
+    ],
+    "focusedStatus": "Final one-worker focused integration run:9files passed,20tests passed,397skipped. Includes all newly added keyboard/stale recovery tests and all corrected fallback/zero-match assertions. Earlier7-file run also proved77other cases including all4Home hierarchy regressions. Test stderr contained a socket hang up message, but no failed assertions/unhandled-error summary and exit0.",
+    "logs": [
+      "local run artifact (not archived): core-integration-tests.log",
+      "local run artifact (not archived): core-integration-keyboard-tests.log",
+      "local run artifact (not archived): core-integration-format.log",
+      "local run artifact (not archived): core-integration-keyboard-format.log",
+      "local run artifact (not archived): core-integration-activity-format.log"
+    ],
+    "sourceEditsStopped": true,
+    "sourceConflictFiles": [
+      "apps/web/src/app/(app)/activity/error.tsx",
+      "apps/web/src/app/(app)/senders/[id]/error.tsx",
+      "apps/web/src/app/(app)/senders/error.tsx",
+      "apps/web/src/app/error.tsx",
+      "apps/web/src/app/global-error.tsx",
+      "apps/web/src/app/global-error.test.tsx",
+      "apps/web/src/features/activity/activity-screen.stories.tsx",
+      "apps/web/src/features/activity/activity-screen.tsx",
+      "apps/web/src/features/mailboxes/account-menu.tsx",
+      "apps/web/src/features/screener/compose-state.ts",
+      "apps/web/src/features/screener/compose-state.test.ts",
+      "apps/web/src/features/screener/decide-preview.tsx",
+      "apps/web/src/features/senders/confirm-action-modal.tsx",
+      "apps/web/src/features/senders/detail/recent-messages.test.tsx",
+      "apps/web/src/features/senders/senders-screen.tsx",
+      "apps/web/src/features/snoozed/snoozed-screen.test.tsx",
+      "apps/web/src/features/triage/empty-state.test.tsx",
+      "apps/web/src/features/triage/empty-state.tsx",
+      "apps/web/src/features/triage/triage-screen.tsx"
+    ],
+    "sourceChecks": "Owned sources have no conflict markers; modified core scope git diff --check passed.19 original owned conflict source files remain unmerged in index intentionally until parent stages them."
+  }
+}

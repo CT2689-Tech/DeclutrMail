@@ -1,0 +1,163 @@
+{
+  "summary": {
+    "status": "Initial transient remains unresolved;79 diagnostic navigations clean; unchanged-source exact full43 passes both warm and cold restart. Scoped PR gate passes; public launch signoff withheld.",
+    "sourceChanges": false,
+    "productOrGitWrites": false,
+    "databaseWrites": false,
+    "diagnosticServerStopped": true,
+    "diagnosticBrowsersClosed": true,
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "scopedPrGate": "PASS",
+    "publicLaunchSignoff": false
+  },
+  "initialEvidence": {
+    "commit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "runtime": "production Web3104/API4104 fresh isolated archive",
+    "suite": "hydration-smoke public+authenticated",
+    "outcome": "40/43passed; all/dark returning public /, /compare, /faq React#418 argsHTML; after recovery theme header shows Dark mode",
+    "log": "docs/qa/prelaunch-2026-10-03/after/logs/hydration-initial.log",
+    "errorContexts": [
+      "historical local context (not archived; later runs replace test-results): packages/e2e/test-results/hydration-smoke-public-ret-1d8be-without-hydration-recovery--default/error-context.md",
+      "historical local context (not archived; later runs replace test-results): packages/e2e/test-results/hydration-smoke-public-ret-46912--hydration-recovery-compare-default/error-context.md",
+      "historical local context (not archived; later runs replace test-results): packages/e2e/test-results/hydration-smoke-public-ret-1ccb8-hout-hydration-recovery-faq-default/error-context.md"
+    ],
+    "report": "local run artifact (not archived): hydration-initial.json"
+  },
+  "sourceReview": [
+    {
+      "file": "apps/web/src/app/layout.tsx",
+      "line": 66,
+      "detail": "Root html suppresses known theme attribute mismatch only; no storage-dependent output or request reads."
+    },
+    {
+      "file": "apps/web/src/features/consent/cookie-consent-banner.tsx",
+      "line": 37,
+      "detail": "visible startsfalse for SSR/firstclient; stored consent read only in mount effect."
+    },
+    {
+      "file": "apps/web/src/features/theme/theme-toggle.tsx",
+      "line": 31,
+      "detail": "theme startsnull for SSR/firstclient; resolved theme filled in effect."
+    },
+    {
+      "file": "apps/web/src/features/marketing/site-analytics.tsx",
+      "line": 75,
+      "detail": "counted startsfalse; localhost rejected after mount; no SSR counted-host branch."
+    },
+    {
+      "file": "apps/web/src/features/marketing/use-consented-page-view.ts",
+      "line": 18,
+      "detail": "Consent analytics import/emit begins in effect; no markup."
+    },
+    {
+      "file": "apps/web/src/features/theme/theme-script.tsx",
+      "line": 31,
+      "detail": "Server theme script is first marketing layout sibling; no source change recommended absent reproduced diff."
+    }
+  ],
+  "diagnostics": [
+    {
+      "case": "Production fresh controlled consent/theme and candidateSDKchunk-suppression split",
+      "result": "4loads0errors; expected theme retained",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-diagnostic-lanes.json",
+      "limitation": "Playwright route interception disables browser HTTP cache."
+    },
+    {
+      "case": "Safe dev non-minified diagnostics /,/compare,/faq all/dark three cold loads each",
+      "result": "9loads0errors; no dev hydration diff",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-dev-lanes.json",
+      "isolation": "prepareStackWorkspace+stackEnvironment; port3106; onlyWeb process, no API/worker; no dotenv/inherited credentials; dummy analytics intercepted."
+    },
+    {
+      "case": "Theme script delayed0/500/2000ms on production+dev /compare",
+      "result": "6loads0errors; theme retained",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-delay-theme.json",
+      "conclusion": "Did not support script-delay hypothesis under these controlled conditions."
+    },
+    {
+      "case": "CDP-only dummy telemetry interception keeping browser cache enabled; saved synthetic session state; nine public routes production+dev",
+      "result": "18loads0errors; theme retained",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-cdp-lanes.json"
+    },
+    {
+      "case": "Original unchanged Playwright accepted-analytics returning lane on production",
+      "result": "9/9PASS; same saved synthetic storage/de-DE/Asia-Kolkata/default viewport; no route interception or retries",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-original.log",
+      "report": "local run artifact (not archived): declutrmail-hydration-original-report.json",
+      "limitation": "Globalsetup DBseed/login skipped to avoid writes; existing saved synthetic session used."
+    },
+    {
+      "case": "Original unchanged full public27 original order on production",
+      "result": "27/27PASS (27.7s), fresh/all-dark/essential; no route interception or retries",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-full-public.log",
+      "report": "local run artifact (not archived): declutrmail-hydration-full-public-report.json",
+      "limitation": "Globalsetup DBseed/login skipped to avoid writes; existing saved synthetic session used."
+    },
+    {
+      "case": "Bounded final dev all/dark cold /,/compare,/faq with saved synthetic session and CDP-only dummy telemetry interception; no Playwright route/cacheoverride",
+      "profiles": [
+        {
+          "CPU": 6,
+          "latencyMs": 100,
+          "downloadBytesPerSec": 2097152,
+          "uploadBytesPerSec": 524288
+        },
+        {
+          "CPU": 10,
+          "latencyMs": 200,
+          "downloadBytesPerSec": 1048576,
+          "uploadBytesPerSec": 262144
+        }
+      ],
+      "result": "6loads0pageerrors/0consoleerrors/0navigationerrors; meaningful headings/body and darktheme retained; no expanded devDOMdiff",
+      "elapsedMs": [5810, 4197, 4927, 4873, 4483, 4380],
+      "wait": "domcontentloaded timeout90000ms;3500ms post-navigation settle",
+      "artifact": "local run artifact (not archived): declutrmail-hydration-throttled-lanes.json",
+      "baseline": "CLI meaningful-content6322chars/overlayfalse/screenshot before seeded throttled loads"
+    }
+  ],
+  "baselineBrowserVerification": {
+    "tool": "Installed absolute agent-browser CLI",
+    "route": "http://127.0.0.1:3106/compare",
+    "result": "Meaningful content6322characters, expected heading/navigation/controls, no framework overlay",
+    "screenshot": null,
+    "localScreenshotFile": "declutrmail-hydration-dev-baseline.png",
+    "screenshotArchived": false
+  },
+  "causeAssessment": "No concrete mismatch source or localized true SSR correction established. Initial failure remains real evidence. Subsequent79diagnostic navigations (including6throttleddev) were clean; stored-state initializer, simple parser-script delay and bounded CPU/network ordering checks did not reproduce. No speculative patch, blanket suppression or spec weakening. Root exact43withnormalglobalsetup passed43/43 on unchanged production source, then passed43/43 after a cold process restart; neither clean run establishes that the initial cause was fixed.",
+  "cleanup": "Own port3106 launcher terminated (exit0); lsof confirmed no listener; own CLI and Playwright browsers closed. Originalproduction3104 retained for root.",
+  "remainingGate": "No remaining scoped PR check is pending. Public launch signoff remains withheld; exact prospective deployment release rehearsal required for the unresolved initial HYDRATION-01 signal.",
+  "rootExactFullReruns": [
+    {
+      "case": "Warm unchanged-source full43; normal globalsetup",
+      "result": "43PASS;0skips/0unexpected/0flaky",
+      "durationSeconds": 42.2,
+      "report": "local run artifact (not archived): hydration-rerun-1.json",
+      "log": "docs/qa/prelaunch-2026-10-03/after/logs/hydration-rerun-1.log",
+      "coverageContracts": "PASS; root reported"
+    },
+    {
+      "case": "Cold process restart unchanged-source full43; normal globalsetup",
+      "result": "43PASS;0skips/0unexpected/0flaky",
+      "durationSeconds": 41.4,
+      "report": "local run artifact (not archived): hydration.json",
+      "log": "local run artifact (not archived): hydration.log",
+      "coverageContracts": "PASS; root reported"
+    }
+  ],
+  "residualRisk": {
+    "id": "HYDRATION-01",
+    "status": "unresolved; initially reproduced, subsequently unreproduced; no source fix claimed",
+    "priority": "P1 release risk",
+    "initial": "Initial unchanged-source suite passed40/43; returning accepted-analytics dark visits to /, /compare and /faq emitted React#418 HTML mismatches and lost the seeded theme after recovery.",
+    "preservedEvidence": [
+      "local run artifact (not archived): hydration-initial.json",
+      "docs/qa/prelaunch-2026-10-03/after/logs/hydration-initial.log"
+    ],
+    "currentEvidence": "79 bounded diagnostic navigations were clean. Exact full43 with normal globalsetup passed43/43 on unchanged source, then passed43/43 again after a cold process restart; zero skips, unexpected or flaky cases in either full rerun.",
+    "cause": "No concrete mismatch source or non-minified development DOM diff established. No product/spec changes, retries, diagnostic suppression or speculative patch explain the later passes.",
+    "releaseRequirement": "Public launch signoff remains withheld. Rehearse the exact prospective deployment, including accepted analytics plus persisted dark theme, fresh/essential-only states and authenticated hydration. Preserve initial evidence and investigate any recurrence with a concrete DOM diff before release.",
+    "publicLaunchSignoff": false
+  }
+}

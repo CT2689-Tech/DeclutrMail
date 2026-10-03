@@ -1,0 +1,4475 @@
+[
+  {
+    "id": "triage-triagescreen--default",
+    "title": "Triage/TriageScreen",
+    "name": "Default",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n0 decided\n\u00b7\nReviewing 1 of 3\nFocus\nList\nG\nGroupon\nnoreply@groupon.com\nSender details\n156\nemails in 90 days\n\n30% marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.\nSkip\nNow deciding Groupon",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Now deciding Groupon"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "Groupon"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "15px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(209, 184, 214)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(38, 29, 41)",
+        "fontSize": "15px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "15px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "15px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 154, 159)",
+        "fontSize": "15px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Delete"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "001-triage-triagescreen--default-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-actiontoolbar--highlighted-recommendation",
+    "title": "Triage/ActionToolbar",
+    "name": "Highlighted Recommendation",
+    "source": "./src/features/triage/action-toolbar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Keep\nK\nKeep\nThis sender stops coming up in Triage.\nArchive\nA\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nU\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nL\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nD\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "UnsubscribeU"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "U"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Unsubscribe"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "LaterL"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "L"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "002-triage-actiontoolbar--highlighted-recommendation-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--default",
+    "title": "Senders/SenderDetailPage",
+    "name": "Default",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "L\nLinkedIn\nnoreply@linkedin.com\nProtected\nNOW \u00b7 CURRENT MAIL\n\u2014\n\nCurrently in your inbox\n\n\u2014\n\nCurrently archived\n\nYOUR NEXT DECISION\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nSuggestion \u00b7 Archive \u2014 highlighted button is Keep\nPATTERN \u00b7 YOUR HISTORY\n64\n\nemails in the last 90 days \u00b7 2,432 received \u00b7 all time\n\nMarked read\n0% \u00b7 90 days\n12-month trend\nMonthly values\nLast seen\ntoday\nYou wrote\n0\u00d7\nRecent messages\nInbox + archived\nInbox\nArchived\n3 people viewed your profile\nTop posts in your network, hand-picked based on what people like you are reading.\ntoday\n36KB\nTrending in your network\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\nyesterday\n10KB\nNew connection request\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n2d ago\n19KB\nWeekly digest\nTop posts in your network, hand-picked based on what people like you are reading.\n3d ago\n32KB\nYou have 5 new notifications\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n4d ago\n9KB\n3 people viewed your profile\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n5d ago\n11KB\nTrending in your network\nTop posts in your network, hand-picked based on what people like you are reading.\n6d ago\n5KB\nNew connection request\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n1w ago\n16KB\nDecision timeline\nView in Activity \u2192\nTriage \u00b7 Archived \u00b7 384 messages\n2d ago\nTriage \u00b7 Keep decision saved\n1w ago\nAutopilot \u00b7 Moved to Later \u00b7 64 messages\n3w ago\nScreener \u00b7 Keep decision saved\n3w ago\nYou \u00b7 Restored\n4w ago\nYou \u00b7 Protected\n1mo ago\nYou \u00b7 Unprotected\n2mo ago\nTriage \u00b7 Archived \u00b7 192 messages\n2mo ago",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "LinkedIn"
+        },
+        {
+          "tag": "H2",
+          "text": "Recent messages"
+        },
+        {
+          "tag": "H2",
+          "text": "Decision timeline"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--default&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(200, 187, 197)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "003-senders-senderdetailpage--default-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--default",
+    "title": "Screener/ScreenerScreen",
+    "name": "Default",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "CLEAN UP / FIRST DECISIONS\n\nScreener\n\nThese senders are waiting for your first decision. Some may have been in your inbox for a while; their email keeps arriving in Gmail until you decide.\n\nShow\nAll loaded\nMore than one email\nCan unsubscribe\nProtected\nSort\nRecently queued\nMost email received\nFirst seen longest ago\nShowing 3 of 3 loaded senders\nL\nLumen Field Updates\nlumenfield.example\nFirst seen 8 min ago\nWelcome \u2014 confirm your seat preferences\nArchive\n\u00b7 likely\n\u203a\nD\nDr. Mehta Clinic\nmehtaclinic.example\nFirst seen Yesterday\nYour appointment on Friday, 10:30\nKeep\n\u00b7 unsure\n\u203a\nN\nNimbus Deals\nnimbus.example\nFirst seen 3 days ago\n48 hours only: everything 40% off\nNew\n\u203a",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Screener"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--default&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 66,
+        "incomplete": 1,
+        "passes": 22,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "004-screener-screenerscreen--default-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--delete-preview",
+    "title": "Screener/ScreenerScreen",
+    "name": "Delete Preview",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "L\nLumen Field Updates\nlumenfield.example\nFirst seen 8 min ago\nWelcome \u2014 confirm your seat preferences\nArchive\n\u00b7 likely\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: 8 min ago \u00b7 Messages received: 1 \u00b7 1 in inbox\nWhy this is suggested: Brand-new sender with a marketing footprint \u2014 archive keeps it reversible.\nOpen sender\n\n2 emails from Lumen Field Updates. They move to Gmail Trash.\n\nUndo from Activity for 30 days. Future email is unchanged.\n\nDetails\nDelete 2\nCancel",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--delete-preview&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "005-screener-screenerscreen--delete-preview-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--protected-override-preview",
+    "title": "Screener/ScreenerScreen",
+    "name": "Protected Override Preview",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "D\nDr. Mehta Clinic\nmehtaclinic.example\nFirst seen Yesterday\nYour appointment on Friday, 10:30\nKeep\n\u00b7 unsure\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: Yesterday \u00b7 Messages received: 2 \u00b7 2 in inbox\nWhy this is suggested: Too new to judge \u2014 looks personal, so keeping is the safe call.\nOpen sender\n\n3 emails from Dr. Mehta Clinic. They move to Gmail Trash.\n\nUndo from Activity for 30 days. Future email is unchanged.\n\nThis sender is Protected because you starred a message. It stays Protected.\n\nDetails\nDelete anyway\nCancel",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--protected-override-preview&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "006-screener-screenerscreen--protected-override-preview-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-activity-activityscreen--populated",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Populated",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n\nHistory \u00b7 Last 30 days \u00b7 Active mailbox\n\nLast 30 days\nArchived\n8,420\nemails\nfrom 47 senders\nIn the last 30 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 30 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n10\nsenders\nIn the last 30 days\nAll time: 74 senders\nLater\n96\nemails\nfrom 3 senders\nIn the last 30 days\nAll time: 731 emails\nfrom 19 senders\nKept\n7\nsenders\nIn the last 30 days\nAll time: 35 senders\n\nTotals from every source. Undone actions aren\u2019t counted.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nSun, May 24\nN\nNewsletter Daily\ndaily.example\n11:00 PM\nArchived12 emails\nBy Autopilot \u00b7 Newsletter graveyard\nUndo\n\u21ba\nO\nOld Navy\noldnavy.example\n5:00 PM\nUnsubscribe request recorded1 email\nBy you\nO\nOld Navy\noldnavy.example\n6:00 PM\nUnsubscribe request accepted\nBy you\nSat, May 23\nB\nBig Boss\nexample.com\n1:00 PM\nKeep decision saved\nVia Triage\nFri, May 22\nV\nVendor Co\nvendor.example\n1:00 AM\nArchived7 emails\nBy Autopilot\nUndone\nWed, May 13\nO\nOlder Sender\nexample.com\n1:00 AM\nArchived3 emails\nBy you\nExpired\nEnd of activity \u00b7 6 actions shown\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n23\nCompleted\n0\nDismissed by you\n1\nFailed\nReview\n2\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "Sun, May 24"
+        },
+        {
+          "tag": "H2",
+          "text": "Sat, May 23"
+        },
+        {
+          "tag": "H2",
+          "text": "Fri, May 22"
+        },
+        {
+          "tag": "H2",
+          "text": "Wed, May 13"
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--populated&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 154, 159)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Review"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(158, 158, 255)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "0\nSkipped for Protected"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 60,
+        "incomplete": 1,
+        "passes": 28,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "007-features-activity-activityscreen--populated-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-activaterulemodal--enable-review-only",
+    "title": "Autopilot/ActivateRuleModal",
+    "name": "Enable Review Only",
+    "source": "./src/features/autopilot/activate-rule-modal.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Turn on Review low-engagement senders for Archive?\n\nMatches become suggestions. You decide which email to act on.\n\nCurrent preview\n10\nsenders ready for review\nNothing moves until you approve each match.\n\n3 Protected senders are skipped. No mail moves until you approve a suggestion.\n\nDetails\nTurn on\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Turn on Review low-engagement senders for Archive?"
+        },
+        {
+          "tag": "H3",
+          "text": "Matching senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-activaterulemodal--enable-review-only&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "P"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgba(0, 0, 0, 0.55)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(200, 187, 197)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "P",
+        "text": "3 Protected senders are skipped. No mail moves until you approve a suggestion."
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 0,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "008-autopilot-activaterulemodal--enable-review-only-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "sync-syncerrorbanner--unresolved-failure",
+    "title": "Sync/SyncErrorBanner",
+    "name": "Unresolved Failure",
+    "source": "./src/features/sync/sync-error-banner.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "New email isn't syncing \u2014 the last attempt failed.\nTry again\n\nError stamped 90 minutes ago \u2014 no successful sync has proved recovery.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncerrorbanner--unresolved-failure&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "009-sync-syncerrorbanner--unresolved-failure-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-selectionbar--mobile-sheet",
+    "title": "Senders/SelectionBar",
+    "name": "Mobile Sheet",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear selection\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mobile-sheet&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/010-senders-selectionbar--mobile-sheet-320-dark.png"
+  },
+  {
+    "id": "account-accountdeletion--modal-step-1",
+    "title": "Account/AccountDeletion",
+    "name": "Modal Step 1",
+    "source": "./src/features/account-deletion/account-deletion.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Delete your DeclutrMail account?\n\nDeleting your DeclutrMail account does not delete emails in Gmail.\n\nWhat gets permanently deleted\nSaved Gmail details (senders, subjects, snippets, labels, dates)\nSender decisions and Screener history\nAutomation rules\nUndo history\nYour DeclutrMail account and workspace\nWhat is retained under policy\nNarrowly scoped pseudonymous security and deletion evidence, without message bodies or attachments\nI understand this permanently deletes my DeclutrMail account, does not delete my Gmail email, and retains the security and deletion evidence listed above.\n\nNothing is deleted yet.\n\nReview deletion timing\nKeep my account\nStep 1 of 2",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Delete your DeclutrMail account?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=account-accountdeletion--modal-step-1&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/011-account-accountdeletion--modal-step-1-320-dark.png"
+  },
+  {
+    "id": "onboarding-stepprotectionreview--reassurance-leads",
+    "title": "Onboarding/StepProtectionReview",
+    "name": "Reassurance Leads",
+    "source": "./src/features/onboarding/step-protection-review.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Connect\nScan\nFirst decision\nWe protected 460 senders you write back to.\n\nSenders you write back to stay out of bulk and automatic cleanup. 55 senders are protected by one star or a Gmail importance flag \u2014 one-way signals, and worth a look. Here are the 2 shielding the most unread email.\n\nFinish for today\nR\nRobert from God of Prompt\ngroupon.com\nProtected\nProtected \u00b7 you starred a message \u00b7 shielding 145 unread\nKeep\n\u203a\nBulk and automatic cleanup skip this sender.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.\nG\nGetYourGuide\nlinkedin.com\nProtected\nProtected \u00b7 you starred a message \u00b7 shielding 33 unread\nKeep\n\u203a\nBulk and automatic cleanup skip this sender.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We protected 460 senders you write back to."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-stepprotectionreview--reassurance-leads&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(209, 184, 214, 0.13)",
+            "opacity": "1",
+            "tag": "SPAN"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(209, 184, 214)",
+        "fontSize": "12px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(209, 184, 214, 0.13)",
+            "opacity": "1",
+            "tag": "SPAN"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(209, 184, 214)",
+        "fontSize": "12px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/012-onboarding-stepprotectionreview--reassurance-leads-320-dark.png"
+  },
+  {
+    "id": "onboarding-syncgate--failed",
+    "title": "Onboarding/SyncGate",
+    "name": "Failed",
+    "source": "./src/features/onboarding/sync-gate.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Connect\nScan\nFirst decision\nYour inbox is partly ready\n\nWe already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what\u2019s ready if that control is shown.\n\nFinish sync\nDisconnect Gmail\nSign out",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Your inbox is partly ready"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-syncgate--failed&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/013-onboarding-syncgate--failed-320-dark.png"
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "clearForeground": {
+      "barBackground": "rgb(244, 237, 241)",
+      "color": "rgba(38, 29, 41, 0.72)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:56.772222+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png"
+  },
+  {
+    "id": "appshell-errors-globalerror--default",
+    "title": "AppShell/Errors/GlobalError",
+    "name": "Default",
+    "source": "./src/app/global-error.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "SOMETHING INTERRUPTED\nWe couldn\u2019t load DeclutrMail.\n\nTry again to continue.\n\nShow support reference\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We couldn\u2019t load DeclutrMail."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=appshell-errors-globalerror--default&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 78,
+        "incomplete": 0,
+        "passes": 10,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/015-appshell-errors-globalerror--default-320-dark.png"
+  },
+  {
+    "id": "features-activity-activityscreen--empty",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Empty",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n1\n\nHistory \u00b7 Last 7 days \u00b7 Active mailbox\n\nLast 7 days\n\u2715\nClear\nLast 7 days\nArchived\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n0\nsenders\nIn the last 7 days\nAll time: 74 senders\nLater\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 731 emails\nfrom 19 senders\nKept\n0\nsenders\nIn the last 7 days\nAll time: 35 senders\n\nTotals from every source.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nNo activity in the last 7 days.\n\nOlder activity, if there is any, is one step away.\n\nShow all activity\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n0\nCompleted\n0\nDismissed by you\n0\nFailed\n0\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "No activity in the last 7 days."
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--empty&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(158, 158, 255)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "0\nSkipped for Protected"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/016-features-activity-activityscreen--empty-320-dark.png"
+  },
+  {
+    "id": "home-homeview--new-user",
+    "title": "Home/HomeView",
+    "name": "New User",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\nA FRESH START\nNothing cleared yet\n\nStart with the senders in your inbox. See their activity, then decide what deserves a place.\n\nReview senders\n\u2197\nYou\u2019ll see a preview before email is moved.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Nothing cleared yet"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--new-user&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(209, 184, 214)",
+            "opacity": "1",
+            "tag": "A"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(38, 29, 41)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "Review senders\n\u2197"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "017-home-homeview--new-user-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--first-review-ready",
+    "title": "Home/HomeView",
+    "name": "First Review Ready",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\nA FRESH START\nYour first review is ready\n\nStart with the senders in your inbox. See their activity, then decide what deserves a place.\n\nReview 2 today\n\u2197\nYou\u2019ll see a preview before email is moved.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Your first review is ready"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--first-review-ready&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/018-home-homeview--first-review-ready-320-dark.png"
+  },
+  {
+    "id": "home-homeview--cleared",
+    "title": "Home/HomeView",
+    "name": "Cleared",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\nA GOOD PLACE TO START\nYour daily review is ready.\n\nTake a look at these senders and decide what still belongs.\n\nReview 8 today\n\u2197\nPreview email moves before confirming.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\nD\nDesign Dispatch\ndispatch.example\n42\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.\n\nTHE SPACE\nYOU\u2019VE MADE\n12,480\nemails cleared since Mar 2026\nUndone actions excluded\nA little attention.\n\u2197\n3 unreviewed senders\nGive each sender a first decision on your terms.\n\u2192\n\u2197\nSee your senders\nRevisit the senders that have a place in your inbox.\n\u2192\nSMALL DECISIONS ADD UP\nMore space.\nLess second-guessing.\n\nYour cleanup history keeps every outcome in view, with Undo available for supported actions.\n\nSee your activity\n\u2197\nYOUR WORKSPACE\nThe rest of your day, in view.\n\nPick up a conversation, check what will return, or let a rule handle the repeat work.\n\nCATCH UP\nDaily Brief\nIncluded with Pro\n\u2197\nFollow-ups\nIncluded with Pro\n\u2197\nLater\nSee what is set to return\n\u2197\nKEEP IT CLEAR\nAutopilot\nIncluded with Plus\n\u2197\nQuiet Hours\nIncluded with Plus\n\u2197\nActivity & Undo\nSee decisions and recover supported actions\n\u2197\nEmails archived\n11,932\nEmails deleted\n548\nSenders decided\n86\n\nA considered inbox, one decision at a time.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Your daily review is ready."
+        },
+        {
+          "tag": "H2",
+          "text": "A little attention."
+        },
+        {
+          "tag": "H2",
+          "text": "More space.Less second-guessing."
+        },
+        {
+          "tag": "H2",
+          "text": "The rest of your day, in view."
+        },
+        {
+          "tag": "H3",
+          "text": "Catch up"
+        },
+        {
+          "tag": "H3",
+          "text": "Keep it clear"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--cleared&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "019-home-homeview--cleared-320-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--sync-failed",
+    "title": "Home/HomeView",
+    "name": "Sync Failed",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\nMAILBOX NEEDS ATTENTION\nGmail scan failed\n\nScan again in Settings \u2192 Gmail accounts.\n\nOpen Settings\n\u2197",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Gmail scan failed"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--sync-failed&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/020-home-homeview--sync-failed-320-dark.png"
+  },
+  {
+    "id": "home-homeview--load-error",
+    "title": "Home/HomeView",
+    "name": "Load Error",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\n!\nWe couldn't load Home\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load Home"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--load-error&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/021-home-homeview--load-error-320-dark.png"
+  },
+  {
+    "id": "home-homeview--new-user",
+    "title": "Home/HomeView",
+    "name": "New User",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\nA FRESH START\nNothing cleared yet\n\nStart with the senders in your inbox. See their activity, then decide what deserves a place.\n\nReview senders\n\u2197\nYou\u2019ll see a preview before email is moved.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Nothing cleared yet"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--new-user&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(89, 65, 95)",
+            "opacity": "1",
+            "tag": "A"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 255, 255)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "Review senders\n\u2197"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "022-home-homeview--new-user-320-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--first-review-ready",
+    "title": "Home/HomeView",
+    "name": "First Review Ready",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\nA FRESH START\nYour first review is ready\n\nStart with the senders in your inbox. See their activity, then decide what deserves a place.\n\nReview 2 today\n\u2197\nYou\u2019ll see a preview before email is moved.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Your first review is ready"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--first-review-ready&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/023-home-homeview--first-review-ready-320-light.png"
+  },
+  {
+    "id": "home-homeview--cleared",
+    "title": "Home/HomeView",
+    "name": "Cleared",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\nA GOOD PLACE TO START\nYour daily review is ready.\n\nTake a look at these senders and decide what still belongs.\n\nReview 8 today\n\u2197\nPreview email moves before confirming.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\nD\nDesign Dispatch\ndispatch.example\n42\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.\n\nTHE SPACE\nYOU\u2019VE MADE\n12,480\nemails cleared since Mar 2026\nUndone actions excluded\nA little attention.\n\u2197\n3 unreviewed senders\nGive each sender a first decision on your terms.\n\u2192\n\u2197\nSee your senders\nRevisit the senders that have a place in your inbox.\n\u2192\nSMALL DECISIONS ADD UP\nMore space.\nLess second-guessing.\n\nYour cleanup history keeps every outcome in view, with Undo available for supported actions.\n\nSee your activity\n\u2197\nYOUR WORKSPACE\nThe rest of your day, in view.\n\nPick up a conversation, check what will return, or let a rule handle the repeat work.\n\nCATCH UP\nDaily Brief\nIncluded with Pro\n\u2197\nFollow-ups\nIncluded with Pro\n\u2197\nLater\nSee what is set to return\n\u2197\nKEEP IT CLEAR\nAutopilot\nIncluded with Plus\n\u2197\nQuiet Hours\nIncluded with Plus\n\u2197\nActivity & Undo\nSee decisions and recover supported actions\n\u2197\nEmails archived\n11,932\nEmails deleted\n548\nSenders decided\n86\n\nA considered inbox, one decision at a time.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Your daily review is ready."
+        },
+        {
+          "tag": "H2",
+          "text": "A little attention."
+        },
+        {
+          "tag": "H2",
+          "text": "More space.Less second-guessing."
+        },
+        {
+          "tag": "H2",
+          "text": "The rest of your day, in view."
+        },
+        {
+          "tag": "H3",
+          "text": "Catch up"
+        },
+        {
+          "tag": "H3",
+          "text": "Keep it clear"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--cleared&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "024-home-homeview--cleared-320-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--sync-failed",
+    "title": "Home/HomeView",
+    "name": "Sync Failed",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\nMAILBOX NEEDS ATTENTION\nGmail scan failed\n\nScan again in Settings \u2192 Gmail accounts.\n\nOpen Settings\n\u2197",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Gmail scan failed"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--sync-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/025-home-homeview--sync-failed-320-light.png"
+  },
+  {
+    "id": "home-homeview--load-error",
+    "title": "Home/HomeView",
+    "name": "Load Error",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\n!\nWe couldn't load Home\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load Home"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--load-error&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/026-home-homeview--load-error-320-light.png"
+  },
+  {
+    "id": "features-activity-filterdialog--desktop",
+    "title": "Features/Activity/FilterDialog",
+    "name": "Desktop",
+    "source": "./src/features/activity/activity-filter-dialog.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Explicit desktop fixture width420; separate mobile fixture below",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Source\nAll\nTriage\nAutopilot\nScreener\nManual\nOutcome\nCompleted\nDismissed by you\nFailed\nFixed on retry\nSkipped for Protected\nTime\n7 days\n30 days\n90 days\nAll\nFrom\nTo\nView\nGroup by sender",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-filterdialog--desktop&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "027-features-activity-filterdialog--desktop-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-activity-filterdialog--mobile",
+    "title": "Features/Activity/FilterDialog",
+    "name": "Mobile",
+    "source": "./src/features/activity/activity-filter-dialog.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Filter\nSource\nAll\nTriage\nAutopilot\nScreener\nManual\nOutcome\nCompleted\nDismissed by you\nFailed\nFixed on retry\nSkipped for Protected\nTime\n7 days\n30 days\n90 days\nAll\nFrom\nTo\nView\nGroup by sender\nView results",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-filterdialog--mobile&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 0,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "028-features-activity-filterdialog--mobile-320-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "clearForeground": {
+      "barBackground": "rgb(45, 38, 48)",
+      "color": "rgba(255, 255, 255, 0.7)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:54.684784+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png"
+  },
+  {
+    "id": "senders-senderlist--default",
+    "title": "Senders/SenderList",
+    "name": "Default",
+    "source": "./src/features/senders/sender-list.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Desktop helper intentionally uses compact=false or min-width760; phone variants reviewed separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n128 in inbox\n8% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef\nC\nChase\nalerts@chase.com\n42 in inbox\n88% marked read \u00b7 90d\n312\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nO\nOld Navy\nRequest accepted\ndeals@oldnavy.com\n20% marked read \u00b7 90d\n88\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nlinkedin.com\n3 senders\n930\nemails\nreceived \u00b7 retained",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Chase",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Old Navy",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderlist--default&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(146, 64, 14)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(6, 95, 70)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(6, 95, 70)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Keep"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "030-senders-senderlist--default-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderrow--rest",
+    "title": "Senders/SenderRow",
+    "name": "Rest",
+    "source": "./src/features/senders/sender-row.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Desktop helper intentionally uses compact=false or min-width760; phone variants reviewed separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n20% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderrow--rest&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(146, 64, 14)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Unsubscribe"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "031-senders-senderrow--rest-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-actiontoolbar--highlighted-recommendation",
+    "title": "Triage/ActionToolbar",
+    "name": "Highlighted Recommendation",
+    "source": "./src/features/triage/action-toolbar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Desktop helper intentionally uses compact=false or min-width760; phone variants reviewed separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Keep\nK\nKeep\nThis sender stops coming up in Triage.\nArchive\nA\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nU\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nL\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nD\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "032-triage-actiontoolbar--highlighted-recommendation-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderlist--phone",
+    "title": "Senders/SenderList",
+    "name": "Phone",
+    "source": "./src/features/senders/sender-list.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n1,204\nemails\nreceived \u00b7 all time\n\u22ef\nArchiving\u2026\n128 in inbox\n8% marked read \u00b7 90d\nC\nChase\nalerts@chase.com\n312\nemails\nreceived \u00b7 all time\n\u22ef\n42 in inbox\n88% marked read \u00b7 90d\nO\nOld Navy\ndeals@oldnavy.com\n88\nemails\nreceived \u00b7 all time\n\u22ef\nRequest accepted\n20% marked read \u00b7 90d\nlinkedin.com\n3 senders\n930\nemails\nreceived \u00b7 retained",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Chase",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Old Navy",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderlist--phone&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "033-senders-senderlist--phone-320-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderrow--compact",
+    "title": "Senders/SenderRow",
+    "name": "Compact",
+    "source": "./src/features/senders/sender-row.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n1,204\nemails\nreceived \u00b7 all time\n\u22ef\n20% marked read \u00b7 90d",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderrow--compact&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "034-senders-senderrow--compact-320-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-selectionbar--mobile-sheet",
+    "title": "Senders/SelectionBar",
+    "name": "Mobile Sheet",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear selection\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mobile-sheet&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/035-senders-selectionbar--mobile-sheet-320-light.png"
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "clearForeground": {
+      "barBackground": "rgb(244, 237, 241)",
+      "color": "rgba(38, 29, 41, 0.72)",
+      "fontSize": "13px",
+      "opacity": "1",
+      "text": "Clear"
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "verificationNote": "Recaptured after final Clear foreground correction",
+    "capturedAtUtc": "2026-10-03T22:50:52.685979+00:00",
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png"
+  },
+  {
+    "id": "senders-senderlist--default",
+    "title": "Senders/SenderList",
+    "name": "Default",
+    "source": "./src/features/senders/sender-list.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "applicability": "Desktop helper checked at intended desktop size",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n128 in inbox\n8% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef\nC\nChase\nalerts@chase.com\n42 in inbox\n88% marked read \u00b7 90d\n312\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nO\nOld Navy\nRequest accepted\ndeals@oldnavy.com\n20% marked read \u00b7 90d\n88\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nlinkedin.com\n3 senders\n930\nemails\nreceived \u00b7 retained",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Chase",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Old Navy",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderlist--default&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(238, 190, 132)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(63, 207, 157)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(63, 207, 157)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Keep"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "037-senders-senderlist--default-1440-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderrow--rest",
+    "title": "Senders/SenderRow",
+    "name": "Rest",
+    "source": "./src/features/senders/sender-row.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "applicability": "Desktop helper checked at intended desktop size",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n20% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderrow--rest&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(238, 190, 132)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Unsubscribe"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "038-senders-senderrow--rest-1440-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-actiontoolbar--highlighted-recommendation",
+    "title": "Triage/ActionToolbar",
+    "name": "Highlighted Recommendation",
+    "source": "./src/features/triage/action-toolbar.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "applicability": "Desktop helper checked at intended desktop size",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "Keep\nK\nKeep\nThis sender stops coming up in Triage.\nArchive\nA\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nU\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nL\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nD\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "039-triage-actiontoolbar--highlighted-recommendation-1440-dark.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-inlinepreview--archive",
+    "title": "Triage/InlinePreview",
+    "name": "Archive",
+    "source": "./src/features/triage/inline-preview.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Explicit fixed-width standalone helper; product Triage screen reviewed at320 separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "47 emails from Groupon. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 47\nPress A again to confirm \u00b7 Esc cancels",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-inlinepreview--archive&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "040-triage-inlinepreview--archive-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-protectedactionnotice--on-archive",
+    "title": "Triage/ProtectedActionNotice",
+    "name": "On Archive",
+    "source": "./src/features/triage/protected-notice.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Explicit fixed-width standalone helper; product Triage screen reviewed at320 separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-protectedactionnotice--on-archive&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(161, 37, 37, 0.06)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(161, 37, 37)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it."
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "041-triage-protectedactionnotice--on-archive-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-sessionprogress--focus-position",
+    "title": "Triage/SessionProgress",
+    "name": "Focus Position",
+    "source": "./src/features/triage/session-progress.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Explicit fixed-width standalone helper; product Triage screen reviewed at320 separately",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "2 decided\n\u00b7\nReviewing 3 of 12",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-sessionprogress--focus-position&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "042-triage-sessionprogress--focus-position-1440-light.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "primitives-actionpopover--default",
+    "title": "Primitives/ActionPopover",
+    "name": "Default",
+    "source": "../../packages/shared/src/components/action-popover.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Shared popover fixture with deliberate320px anchor margin; test hover contrast at desktop size",
+    "interactiveState": "hover-Unsubscribe",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "\u22ef\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=primitives-actionpopover--default&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(146, 64, 14)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(161, 37, 37)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 1,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/043-primitives-actionpopover--default-1440-light.png"
+  },
+  {
+    "id": "primitives-actionpopover--dimmed-primary",
+    "title": "Primitives/ActionPopover",
+    "name": "Dimmed Primary",
+    "source": "../../packages/shared/src/components/action-popover.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "light",
+    "applicability": "Enabled verb also visible on host; lettering remains legible",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "\u22ef\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=primitives-actionpopover--dimmed-primary&viewMode=story&globals=theme%3Alight",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(104, 95, 107)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(161, 37, 37)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 1,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/044-primitives-actionpopover--dimmed-primary-1440-light.png"
+  },
+  {
+    "id": "features-activity-activityscreen--next-page-error",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Next Page Error",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n\nHistory \u00b7 Last 30 days \u00b7 Active mailbox\n\nLast 30 days\nArchived\n8,420\nemails\nfrom 47 senders\nIn the last 30 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 30 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n10\nsenders\nIn the last 30 days\nAll time: 74 senders\nLater\n96\nemails\nfrom 3 senders\nIn the last 30 days\nAll time: 731 emails\nfrom 19 senders\nKept\n7\nsenders\nIn the last 30 days\nAll time: 35 senders\n\nTotals from every source.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nSun, May 24\nN\nNewsletter Daily\ndaily.example\n11:00 PM\nArchived12 emails\nBy Autopilot \u00b7 Newsletter graveyard\nUndo\n\u21ba\nO\nOld Navy\noldnavy.example\n5:00 PM\nUnsubscribe request recorded1 email\nBy you\nCouldn\u2019t load more \u2014 try again\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n23\nCompleted\n0\nDismissed by you\n1\nFailed\nReview\n2\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "Sun, May 24"
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--next-page-error&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(104, 95, 107)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(14, 20, 19, 0.05)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(45, 38, 48)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(161, 37, 37)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Review"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(0, 0, 238)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "0\nSkipped for Protected"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(255, 252, 248)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(246, 242, 235)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(104, 95, 107)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 60,
+        "incomplete": 1,
+        "passes": 28,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-features-activity-activityscreen--next-page-error-320-light.png"
+  },
+  {
+    "id": "primitives-actionpopover--default",
+    "title": "Primitives/ActionPopover",
+    "name": "Default",
+    "source": "../../packages/shared/src/components/action-popover.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "applicability": "Shared popover fixture with deliberate320px anchor margin; test hover contrast at desktop size",
+    "interactiveState": "hover-Unsubscribe",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "\u22ef\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=primitives-actionpopover--default&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(238, 190, 132)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 154, 159)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 1,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/046-primitives-actionpopover--default-1440-dark.png"
+  },
+  {
+    "id": "primitives-actionpopover--dimmed-primary",
+    "title": "Primitives/ActionPopover",
+    "name": "Dimmed Primary",
+    "source": "../../packages/shared/src/components/action-popover.stories.tsx",
+    "width": 1440,
+    "height": 900,
+    "theme": "dark",
+    "applicability": "Enabled verb also visible on host; lettering remains legible",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "\u22ef\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=primitives-actionpopover--dimmed-primary&viewMode=story&globals=theme%3Adark",
+      "width": 1440
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Keep"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Archive"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Unsubscribe"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 154, 159)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Delete"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 1,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/047-primitives-actionpopover--dimmed-primary-1440-dark.png"
+  },
+  {
+    "id": "features-activity-activityscreen--next-page-error",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Next Page Error",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n\nHistory \u00b7 Last 30 days \u00b7 Active mailbox\n\nLast 30 days\nArchived\n8,420\nemails\nfrom 47 senders\nIn the last 30 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 30 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n10\nsenders\nIn the last 30 days\nAll time: 74 senders\nLater\n96\nemails\nfrom 3 senders\nIn the last 30 days\nAll time: 731 emails\nfrom 19 senders\nKept\n7\nsenders\nIn the last 30 days\nAll time: 35 senders\n\nTotals from every source.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nSun, May 24\nN\nNewsletter Daily\ndaily.example\n11:00 PM\nArchived12 emails\nBy Autopilot \u00b7 Newsletter graveyard\nUndo\n\u21ba\nO\nOld Navy\noldnavy.example\n5:00 PM\nUnsubscribe request recorded1 email\nBy you\nCouldn\u2019t load more \u2014 try again\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n23\nCompleted\n0\nDismissed by you\n1\nFailed\nReview\n2\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "Sun, May 24"
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--next-page-error&viewMode=story&globals=theme%3Adark",
+      "width": 320
+    },
+    "colorSamples": [
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgba(238, 246, 243, 0.07)",
+            "opacity": "1",
+            "tag": "BUTTON"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(244, 237, 241)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "BUTTON",
+        "text": "Later"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(255, 154, 159)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Review"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(158, 158, 255)",
+        "fontSize": "14px",
+        "opacity": "1",
+        "tag": "A",
+        "text": "0\nSkipped for Protected"
+      },
+      {
+        "backgrounds": [
+          {
+            "color": "rgb(48, 42, 50)",
+            "opacity": "1",
+            "tag": "SECTION"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "DIV"
+          },
+          {
+            "color": "rgb(30, 26, 33)",
+            "opacity": "1",
+            "tag": "BODY"
+          }
+        ],
+        "color": "rgb(184, 170, 182)",
+        "fontSize": "13px",
+        "opacity": "1",
+        "tag": "SPAN",
+        "text": "Skipped for Protected"
+      }
+    ],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 60,
+        "incomplete": 1,
+        "passes": 28,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/048-features-activity-activityscreen--next-page-error-320-dark.png"
+  },
+  {
+    "id": "senders-selectionbar--mobile-sheet",
+    "title": "Senders/SelectionBar",
+    "name": "Mobile Sheet",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "light",
+    "applicability": "Same isolated mobile fixture with free tier to verify readable locked-plan note",
+    "args": "tier:free",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear selection\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mobile-sheet&viewMode=story&globals=theme%3Alight&args=tier%3Afree",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-senders-selectionbar--mobile-sheet-320-light.png"
+  },
+  {
+    "id": "senders-selectionbar--mobile-sheet",
+    "title": "Senders/SelectionBar",
+    "name": "Mobile Sheet",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "width": 320,
+    "height": 844,
+    "theme": "dark",
+    "applicability": "Same isolated mobile fixture with free tier to verify readable locked-plan note",
+    "args": "tier:free",
+    "renderedContent": true,
+    "dom": {
+      "bodyText": "3\nsenders selected\nClear selection\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "dark",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mobile-sheet&viewMode=story&globals=theme%3Adark&args=tier%3Afree",
+      "width": 320
+    },
+    "colorSamples": [],
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/050-senders-selectionbar--mobile-sheet-320-dark.png"
+  }
+]
