@@ -91,6 +91,16 @@ export function useSwipeVerb({
   const onPointerDown = useCallback<React.PointerEventHandler<HTMLElement>>(
     (e) => {
       if (!enabled || e.pointerType !== 'touch') return;
+      // Native controls/disclosures own their gesture. A drag on a control
+      // must not also start a card decision; this includes nested icons/text.
+      // The list row's role=button header remains its intended swipe surface.
+      if (
+        e.target instanceof Element &&
+        e.target.closest(
+          'a, button, input, select, textarea, details, [contenteditable]:not([contenteditable="false" i])',
+        )
+      )
+        return;
       origin.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
     },
     [enabled],

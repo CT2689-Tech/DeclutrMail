@@ -608,6 +608,39 @@ describe('focus ↔ list', () => {
   });
 });
 
+describe('focus mode — sender identity', () => {
+  it('discloses the full identity without starting a decision or recommendation refresh', () => {
+    const long = {
+      ...LINKEDIN,
+      senderName: 'The Weekly Community Newsletter and Events Digest',
+      senderEmail: 'weekly-community-newsletter-and-events@example.invalid',
+    };
+    renderScreen(ready([long, GROUPON]));
+    const summary = within(card()).getByText('Sender details');
+    const details = summary.closest('details')!;
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(summary);
+    expect(details).toHaveAttribute('open');
+    expect(within(card()).getByText(`${long.senderName} · ${long.senderEmail}`)).toBeVisible();
+    expect(cardTitle()).toBe(long.senderName);
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    expect(useTriageStore.getState().expandedRowId).toBeNull();
+    fireEvent.click(summary);
+    expect(details).not.toHaveAttribute('open');
+  });
+
+  it('closes the previous identity disclosure when Skip selects another sender', () => {
+    renderScreen(ready([LINKEDIN, GROUPON]));
+    fireEvent.click(within(card()).getByText('Sender details'));
+    expect(within(card()).getByText('Sender details').closest('details')).toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: /Skip/ }));
+    expect(cardTitle()).toBe(GROUPON.senderName);
+    expect(within(card()).getByText('Sender details').closest('details')).not.toHaveAttribute(
+      'open',
+    );
+  });
+});
+
 describe('focus mode — mobile', () => {
   beforeEach(() => setViewportWidth(375));
 
@@ -619,6 +652,16 @@ describe('focus mode — mobile', () => {
     }
     expect(toolbar.querySelector('kbd')).toBeNull();
     expect(screen.queryByText(/Swipe ·/)).toBeNull();
+  });
+
+  it('does not interpret a drag beginning on a control as an Archive swipe', () => {
+    renderScreen(ready([GROUPON, LINKEDIN]));
+    const control = within(card()).getByRole('button', { name: 'Why?' });
+    const touch = { pointerType: 'touch', pointerId: 1 };
+    fireEvent.pointerDown(control, { ...touch, clientX: 200, clientY: 200 });
+    fireEvent.pointerUp(control, { ...touch, clientX: 80, clientY: 203 });
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('a right swipe on the card is Keep through the same onAction path', async () => {

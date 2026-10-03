@@ -172,6 +172,41 @@ export function TriageFocusCard({
             </span>
           </div>
         </div>
+        <details
+          key={row.id}
+          data-dm-sender-identity
+          style={{ width: '100%', marginTop: isNarrow ? space[1] : space[2] }}
+        >
+          <summary
+            data-dm-button=""
+            style={{
+              width: 'fit-content',
+              maxWidth: '100%',
+              minHeight: 44,
+              boxSizing: 'border-box',
+              margin: '0 auto',
+              padding: `${space[3]}px ${space[2]}px`,
+              borderRadius: radius.pill,
+              fontSize: text.sm,
+              lineHeight: '20px',
+              color: color.fgSoft,
+              cursor: 'pointer',
+            }}
+          >
+            Sender details
+          </summary>
+          <p
+            style={{
+              margin: `${space[2]}px 0 0`,
+              fontSize: text.sm,
+              lineHeight: 1.5,
+              color: color.fgSoft,
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {row.senderName} · {row.senderEmail}
+          </p>
+        </details>
         {row.protectionReason !== null && (
           <span style={{ marginTop: space[3] }}>
             <ProtectedMark />

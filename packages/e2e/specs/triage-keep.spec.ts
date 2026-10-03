@@ -74,6 +74,19 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   // expand ↔ collapse with state, so match both.
   await page.goto('/triage');
   await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
+  // Reading a complete sender identity owns Enter; it must not decide or skip.
+  const focus = page.getByRole('region', { name: 'Current decision' });
+  const originalName = await focus.getByRole('heading', { level: 2 }).textContent();
+  const identity = focus.locator('[data-dm-sender-identity]');
+  await expect(identity).not.toHaveAttribute('open');
+  await identity.getByText('Sender details', { exact: true }).press('Enter');
+  await expect(identity).toHaveAttribute('open', '');
+  await expect(identity.locator('p')).toBeVisible();
+  await expect(identity.locator('p')).toContainText(originalName!);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(focus.getByRole('heading', { level: 2 })).toHaveText(originalName!);
+  await identity.getByText('Sender details', { exact: true }).press('Enter');
+  await expect(identity).not.toHaveAttribute('open');
   await page.getByRole('button', { name: 'List', exact: true }).click();
   const queue = page.getByRole('list', { name: 'Triage queue' });
   await expect(queue).toBeVisible();

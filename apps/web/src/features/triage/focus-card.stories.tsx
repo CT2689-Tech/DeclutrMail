@@ -126,3 +126,19 @@ export const InlinePreview: Story<typeof TriageFocusCard> = {
   },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
+
+/** The native disclosure must wrap even identities without word boundaries. */
+export const UnbrokenIdentity: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: {
+      ...row('t-linkedin'),
+      senderName: 'CommunityNewsletterEventsAndMembershipAnnouncements'.repeat(2),
+      senderEmail:
+        'community-newsletter-and-events@weekly-community-newsletter-and-event-announcements.example.invalid',
+      senderDomain: 'example.invalid',
+      brandMark: false,
+    },
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
