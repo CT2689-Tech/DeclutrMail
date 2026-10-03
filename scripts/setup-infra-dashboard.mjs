@@ -77,7 +77,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Periodic runtime gauges and heartbeats depend on their collectors; blank means unavailable. Empty event-only failure or outcome counters mean no matching events observed, not proof of successful delivery or a healthy collector. Check collector freshness alongside them. Distribution percentiles describe observations and are approximate. Billing export panels require fresh rows; withheld readings mean unavailable.',
+              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost source availability is recorded per snapshot: 1 measured / 0 unavailable. The chart averages snapshots per day for each vendor; a value between 0 and 1 means mixed availability, not a vendor count. Blank coverage is unknown.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Periodic runtime gauges and heartbeats depend on their collectors; blank means unavailable. Empty event-only failure or outcome counters mean no matching events observed, not proof of successful delivery or a healthy collector. Check collector freshness alongside them. Distribution percentiles describe observations and are approximate. Billing export panels require fresh rows; withheld readings mean unavailable.',
           },
         },
         {
@@ -93,10 +93,7 @@ export function dashboard(project) {
           },
         },
         custom('Reported usage charges — MTD USD, per vendor', 'cost_mtd_usd'),
-        custom(
-          'Cost coverage — 1 measured, 0 unavailable (inspect alongside costs)',
-          'cost_available',
-        ),
+        custom('Cost source availability — daily average (0–1), per vendor', 'cost_available'),
         custom('Vendor check status — 0 OK, 1 warn, 2 breach, 3 error, 4 missing access', 'status'),
         custom(
           'Daily collector heartbeat — absent points mean no collection',
