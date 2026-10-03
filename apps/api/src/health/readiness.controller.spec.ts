@@ -1,5 +1,5 @@
 import { PATH_METADATA } from '@nestjs/common/constants';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Redis } from 'ioredis';
 
 import { ReadinessController } from './readiness.controller.js';
@@ -43,6 +43,57 @@ const suspendedRedis = {
 } as unknown as Redis;
 
 describe('ReadinessController', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it.each(['database', 'redis'] as const)(
+    'records which dependency timed out: %s',
+    async (dependency) => {
+      vi.useFakeTimers();
+      const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const hung = () => new Promise(() => {});
+      const db = dependency === 'database' ? ({ execute: hung } as unknown as DrizzleDb) : okDb;
+      const redis = dependency === 'redis' ? ({ ping: hung } as unknown as Redis) : okRedis;
+      const { r, captured } = res();
+      const response = new ReadinessController(db, redis).getReadiness(r as never);
+      await vi.advanceTimersByTimeAsync(2000);
+      await response;
+      expect(captured.code).toBe(503);
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(log.mock.calls[0]![0])).toEqual({
+        level: 'warn',
+        kind: 'readiness.dependency_failed',
+        dependency,
+        reason: 'timeout',
+        durationMs: 2000,
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('records rejection without exposing provider details in logs', async () => {
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { r } = res();
+    await new ReadinessController(downDb, suspendedRedis).getReadiness(r as never);
+    expect(log).toHaveBeenCalledTimes(2);
+    const records = log.mock.calls.map(([line]) => JSON.parse(line));
+    expect(records.map(({ dependency, reason }) => ({ dependency, reason }))).toEqual([
+      { dependency: 'database', reason: 'error' },
+      { dependency: 'redis', reason: 'error' },
+    ]);
+    expect(JSON.stringify(records)).not.toMatch(/budget|suspended|connection refused/i);
+  });
+
+  it('clears successful probe timers without logging failures', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { r } = res();
+    await new ReadinessController(okDb, okRedis).getReadiness(r as never);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(log).not.toHaveBeenCalled();
+  });
   it('is served at /readyz, distinct from the liveness path', () => {
     expect(Reflect.getMetadata(PATH_METADATA, ReadinessController)).toBe('readyz');
   });
