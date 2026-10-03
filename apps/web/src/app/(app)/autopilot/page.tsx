@@ -39,7 +39,7 @@ export default async function AutopilotPage() {
       prefetch={(queryClient) => {
         if (mailboxId === undefined) return [];
         const mailboxOptions = { mailboxId };
-        const queries: Array<Promise<unknown>> = [
+        return [
           queryClient.fetchQuery(
             autopilotRulesQueryOptions((signal) =>
               serverGet<AutopilotRuleDto[]>(
@@ -51,31 +51,33 @@ export default async function AutopilotPage() {
             ),
           ),
         ];
-        if (me !== null && hasCapability(me.tier, 'autopilot')) {
-          queries.push(
-            queryClient.fetchQuery(
-              pendingSuggestionsPageQueryOptions(mailboxId, (signal) =>
-                serverGetEnvelope<AutopilotMatchDto[], AutopilotPendingMeta>(
-                  '/api/autopilot/pending-suggestions',
-                  cookieHeader,
-                  signal,
-                  mailboxOptions,
-                ),
+      }}
+      streamPrefetch={(queryClient) => {
+        if (mailboxId === undefined || me === null || !hasCapability(me.tier, 'autopilot'))
+          return [];
+        const mailboxOptions = { mailboxId };
+        return [
+          queryClient.fetchQuery(
+            pendingSuggestionsPageQueryOptions(mailboxId, (signal) =>
+              serverGetEnvelope<AutopilotMatchDto[], AutopilotPendingMeta>(
+                '/api/autopilot/pending-suggestions',
+                cookieHeader,
+                signal,
+                mailboxOptions,
               ),
             ),
-            queryClient.fetchQuery(
-              patternSuggestionQueryOptions((signal) =>
-                serverGet<AutopilotPatternSuggestionDto | null>(
-                  '/api/autopilot/pattern-suggestion',
-                  cookieHeader,
-                  signal,
-                  mailboxOptions,
-                ),
+          ),
+          queryClient.fetchQuery(
+            patternSuggestionQueryOptions((signal) =>
+              serverGet<AutopilotPatternSuggestionDto | null>(
+                '/api/autopilot/pattern-suggestion',
+                cookieHeader,
+                signal,
+                mailboxOptions,
               ),
             ),
-          );
-        }
-        return queries;
+          ),
+        ];
       }}
     >
       <AutopilotEntitlementSurface />

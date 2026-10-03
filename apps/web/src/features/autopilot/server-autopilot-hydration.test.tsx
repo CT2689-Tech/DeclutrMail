@@ -1,4 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cloneElement } from 'react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider, type DehydratedState } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasCapability } from '@declutrmail/shared/entitlements';
@@ -21,6 +22,7 @@ vi.mock('@/features/autopilot/autopilot-entitlement-surface', () => ({
 import AutopilotPage from '@/app/(app)/autopilot/page';
 import { makeQueryClient } from '@/lib/query-client';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
+import { resetMailboxScopedCache } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useAutopilotRules } from './api/use-autopilot-rules';
 import { usePendingSuggestions } from './api/use-pending-suggestions';
 import { usePatternSuggestion } from './api/use-pattern-suggestion';
@@ -187,6 +189,59 @@ describe('Autopilot server hydration', () => {
     },
   );
 
+  it.each([401, 403, 409, 500])(
+    'recovers a late failed stream without delaying rules (%i)',
+    async (status) => {
+      let pendingReads = 0;
+      const fetchSpy = vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        if (path === paths[1] && ++pendingReads === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          return Response.json({ error: { code: 'TEST_FAILURE' } }, { status });
+        }
+        return response(path);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      const boundary = await hydrateRoute();
+      const state: DehydratedState = boundary.props.state;
+      const transportFailure = state.queries
+        .find((query) => query.queryKey[1] === 'pending-suggestions')
+        ?.promise?.catch((error: unknown) => error);
+      const client = makeQueryClient();
+      render(<QueryClientProvider client={client}>{boundary}</QueryClientProvider>);
+      expect(screen.getByText('Rules ready')).toBeInTheDocument();
+      expect(screen.getByText('Review loading')).toBeInTheDocument();
+      expect(pendingReads).toBe(1);
+      await waitFor(() => expect(screen.getByText('Review ready: 73')).toBeInTheDocument(), {
+        timeout: 2_000,
+      });
+      expect(pendingReads).toBe(2);
+      expect(await transportFailure).toMatchObject({
+        name: 'DeclutrMailStreamedQueryRecovery',
+        message: 'Optional query is recovering in the browser',
+      });
+      expect(await transportFailure).not.toHaveProperty('body');
+      client.clear();
+    },
+  );
+
+  it('streams slow successful suggestions without refetching or delaying rules', async () => {
+    const fetchSpy = vi.fn(async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      if (path !== paths[0]) await new Promise((resolve) => setTimeout(resolve, 100));
+      return response(path);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const boundary = await hydrateRoute();
+    const client = makeQueryClient();
+    render(<QueryClientProvider client={client}>{boundary}</QueryClientProvider>);
+    expect(screen.getByText('Rules ready')).toBeInTheDocument();
+    expect(screen.getByText('Review loading')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Review ready: 73')).toBeInTheDocument());
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    client.clear();
+  });
+
   it('keeps the first page and a cursor page in separate cache entries', async () => {
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));
@@ -246,14 +301,72 @@ describe('Autopilot server hydration', () => {
     expect(keys).not.toContainEqual(['autopilot', 'pending-suggestions', 'page', mailboxId, null]);
   });
 
-  it('bounds a hung suggestions read while retaining completed rule and pattern reads', async () => {
+  it('discards an old mailbox stream when scope resets during the first load', async () => {
+    const secondMailbox = '00000000-0000-4000-8000-000000000002';
+    let resolveOld!: (value: Response) => void;
+    let pendingReads = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        if (path === paths[1]) {
+          if (++pendingReads === 1)
+            return new Promise<Response>((resolve) => {
+              resolveOld = resolve;
+            });
+          return Response.json({ data: [], meta: { ...pendingMeta, total: 5 } });
+        }
+        return response(path);
+      }),
+    );
+    const boundary = await hydrateRoute();
+    const client = makeQueryClient();
+    function MailboxProbe({ id }: { id: string }) {
+      const pending = usePendingSuggestions(id);
+      return (
+        <p>
+          {pending.isSuccess ? `Mailbox review: ${pending.data.meta?.total}` : 'Mailbox loading'}
+        </p>
+      );
+    }
+    const view = render(
+      <QueryClientProvider client={client}>
+        {cloneElement(boundary, { children: <MailboxProbe id={mailboxId} /> })}
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('Mailbox loading')).toBeInTheDocument();
+    view.rerender(
+      <QueryClientProvider client={client}>
+        {cloneElement(boundary, { children: <MailboxProbe id={secondMailbox} /> })}
+      </QueryClientProvider>,
+    );
+    await act(async () => {
+      await resetMailboxScopedCache(client);
+    });
+    await waitFor(() => expect(screen.getByText('Mailbox review: 5')).toBeInTheDocument());
+    await act(async () => {
+      resolveOld(response(paths[1]));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(
+      client.getQueryData(['autopilot', 'pending-suggestions', 'page', mailboxId, null]),
+    ).toBeUndefined();
+    expect(
+      client.getQueryData(['autopilot', 'pending-suggestions', 'page', secondMailbox, null]),
+    ).toMatchObject({ meta: { total: 5 } });
+    expect(screen.queryByText('Mailbox review: 73')).not.toBeInTheDocument();
+    client.clear();
+  });
+
+  it('renders rules immediately, aborts a hung stream, and recovers in the client', async () => {
     vi.useFakeTimers();
     let pendingAborted = false;
+    let pendingReads = 0;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request, init: RequestInit) => {
         const path = new URL(String(input)).pathname;
-        if (path === paths[1]) {
+        if (path === paths[1] && ++pendingReads === 1) {
           return new Promise<Response>((_resolve, reject) =>
             init.signal?.addEventListener(
               'abort',
@@ -268,15 +381,22 @@ describe('Autopilot server hydration', () => {
         return response(path);
       }),
     );
-    const started = Date.now();
     const rendering = hydrateRoute();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(0);
     const boundary = await rendering;
-    expect(Date.now() - started).toBe(2000);
+    expect(pendingAborted).toBe(false);
+    const client = makeQueryClient();
+    render(<QueryClientProvider client={client}>{boundary}</QueryClientProvider>);
+    expect(screen.getByText('Rules ready')).toBeInTheDocument();
+    expect(screen.getByText('Review loading')).toBeInTheDocument();
+    expect(pendingReads).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_100);
+    });
     expect(pendingAborted).toBe(true);
-    expect(hydratedKeys(boundary)).toEqual([
-      ['autopilot', 'rules'],
-      ['autopilot', 'pattern-suggestion'],
-    ]);
+    expect(screen.getByText('Rules ready')).toBeInTheDocument();
+    expect(screen.getByText('Review ready: 73')).toBeInTheDocument();
+    expect(pendingReads).toBe(2);
+    client.clear();
   });
 });

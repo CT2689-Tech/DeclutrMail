@@ -174,9 +174,14 @@ describe('screen dependencies', () => {
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(ready).toBe(true);
-    expect(fetchSpy.mock.calls.map(([input]) => new URL(String(input)).pathname)).not.toContain(
-      slowPath,
-    );
+    const startedPaths = fetchSpy.mock.calls.map(([input]) => new URL(String(input)).pathname);
+    if (route === AutopilotPage) {
+      // Optional Autopilot reads start early and stream; they must not
+      // hold the primary rules, whose readiness assertion stays above.
+      expect(startedPaths).toContain(slowPath);
+    } else {
+      expect(startedPaths).not.toContain(slowPath);
+    }
     await vi.advanceTimersByTimeAsync(1_500);
     expect((await render).props.state?.queries.length).toBeGreaterThan(0);
   });
