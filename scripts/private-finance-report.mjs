@@ -226,25 +226,98 @@ export function assertPrivateBucket(metadata, policy) {
     throw new Error('Finance bucket must not grant public access');
 }
 class FinanceStageError extends Error {
-  constructor(stage) {
+  constructor(stage, category = 'unknown') {
     super('Private finance reporting stage failed');
     this.stage = stage;
+    this.category = category;
+  }
+}
+class FinanceTransferError extends Error {
+  constructor(category) {
+    super('Private finance transfer failed');
+    this.category = category;
+  }
+}
+const httpCategories = {
+  401: 'unauthenticated',
+  403: 'permission_denied',
+  404: 'not_found',
+  412: 'precondition_failed',
+};
+const categoryOf = (error) => {
+  if (error instanceof FinanceTransferError) return error.category;
+  if (['AbortError', 'TimeoutError'].includes(error?.name) || error?.code === 'ETIMEDOUT')
+    return 'timeout';
+  // Only recognize an explicit command HTTP status, never arbitrary document text.
+  const stderr = Buffer.isBuffer(error?.stderr) ? error.stderr.subarray(0, 8192).toString() : '';
+  const status = /\bHTTPError\s*:?\s*(401|403|404|412)\b/.exec(stderr)?.[1];
+  if (status) return httpCategories[status];
+  return 'unknown';
+};
+/** Exact-object uploads avoid bucket listing, preserving prefix-scoped IAM. */
+export async function uploadFinanceObject({
+  bucket,
+  object,
+  body,
+  contentType,
+  accessToken,
+  ifGenerationMatch,
+  request = fetch,
+}) {
+  const url = new URL(
+    `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucket)}/o`,
+  );
+  url.searchParams.set('uploadType', 'media');
+  url.searchParams.set('name', object);
+  if (ifGenerationMatch != null)
+    url.searchParams.set('ifGenerationMatch', String(ifGenerationMatch));
+  try {
+    const response = await request(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': contentType },
+      body,
+      redirect: 'error',
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) {
+      // Do not read or retain provider error bodies, URLs or credential details.
+      await response.body?.cancel();
+      throw new FinanceTransferError(httpCategories[response.status] ?? 'http_error');
+    }
+    const metadata = await response.json();
+    if (metadata.md5Hash !== createHash('md5').update(body).digest('base64'))
+      throw new FinanceTransferError('integrity_mismatch');
+  } catch (error) {
+    throw new FinanceTransferError(categoryOf(error));
   }
 }
 const stage = (name, operation) => {
   try {
     return operation();
-  } catch {
+  } catch (error) {
     // Never retain command stderr, input documents, paths or the original cause.
-    throw new FinanceStageError(name);
+    throw new FinanceStageError(name, categoryOf(error));
+  }
+};
+const asyncStage = async (name, operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    throw new FinanceStageError(name, categoryOf(error));
   }
 };
 export function financeFailureMessage(error) {
   const failedStage = error instanceof FinanceStageError ? error.stage : 'unknown';
-  return `Private finance reporting failed at stage=${failedStage}; check bucket privacy, input schema and scoped permissions. No financial document contents logged.`;
+  const category = error instanceof FinanceStageError ? error.category : 'unknown';
+  const prior =
+    error instanceof FinanceStageError && error.uploadFailureCategory
+      ? ` upload_failure=${error.uploadFailureCategory};`
+      : '';
+  return `Private finance reporting failed at stage=${failedStage}; failure=${category};${prior} check bucket privacy, input schema and scoped permissions. No financial document contents logged.`;
 }
-export function runPrivateFinanceReport({
+export async function runPrivateFinanceReport({
   env = process.env,
+  upload = uploadFinanceObject,
   cleanup = (dir) => rmSync(dir, { recursive: true, force: true }),
   gc = (...args) =>
     execFileSync('gcloud', args, {
@@ -290,23 +363,45 @@ export function runPrivateFinanceReport({
       writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
       writeFileSync(reportPath, report, { mode: 0o600 });
     });
-    const object = `${uri}/observations/${date}/${hash}.json`;
+    const accessToken = stage('access_token_read', () => {
+      const token = gc('auth', 'print-access-token').trim();
+      if (!token || /\s/.test(token)) throw new Error('Invalid access token');
+      return token;
+    });
+    const put = (object, path, contentType, ifGenerationMatch) =>
+      upload({
+        bucket,
+        object,
+        body: readFileSync(path),
+        contentType,
+        accessToken,
+        ifGenerationMatch,
+      });
+    const object = `observations/${date}/${hash}.json`;
     try {
-      stage('observation_upload', () =>
-        gc('storage', 'cp', '--if-generation-match=0', snapshotPath, object),
+      await asyncStage('observation_upload', () =>
+        put(object, snapshotPath, 'application/json', 0),
       );
-    } catch {
-      const existing = stage('observation_retry_read', () => gc('storage', 'cat', object));
+    } catch (uploadError) {
+      let existing;
+      try {
+        existing = stage('observation_retry_read', () => gc('storage', 'cat', `${uri}/${object}`));
+      } catch (readError) {
+        readError.uploadFailureCategory = uploadError.category;
+        throw readError;
+      }
       stage('observation_retry_validation', () => {
         if (existing !== JSON.stringify(snapshot)) throw new Error('Observation write conflict');
       });
     }
-    stage('latest_markdown_upload', () =>
-      gc('storage', 'cp', reportPath, `${uri}/reports/latest.md`),
+    await asyncStage('latest_markdown_upload', () =>
+      put('reports/latest.md', reportPath, 'text/markdown; charset=utf-8'),
     );
-    stage('latest_html_upload', () => gc('storage', 'cp', htmlPath, `${uri}/reports/latest.html`));
-    stage('dated_markdown_upload', () =>
-      gc('storage', 'cp', reportPath, `${uri}/reports/${date}.md`),
+    await asyncStage('latest_html_upload', () =>
+      put('reports/latest.html', htmlPath, 'text/html; charset=utf-8'),
+    );
+    await asyncStage('dated_markdown_upload', () =>
+      put(`reports/${date}.md`, reportPath, 'text/markdown; charset=utf-8'),
     );
   } catch (error) {
     failure = error;
@@ -322,7 +417,7 @@ export function runPrivateFinanceReport({
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    runPrivateFinanceReport();
+    await runPrivateFinanceReport();
     console.log('Private finance report updated; document contents omitted from workflow logs.');
   } catch (error) {
     console.error(financeFailureMessage(error));
