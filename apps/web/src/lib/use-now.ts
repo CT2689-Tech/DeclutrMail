@@ -10,18 +10,19 @@
  *
  * An optional refresh interval supports labels that must age while a tab
  * stays open. Callers that only need a hydration-safe local timestamp omit
- * it and pay one post-mount update.
+ * it and pay one post-mount update. An observation key refreshes the clock
+ * when a server observation changes without remounting its row.
  */
 
 import { useEffect, useState } from 'react';
 
-export function useNow(refreshIntervalMs?: number): number | null {
+export function useNow(refreshIntervalMs?: number, observationKey?: string | null): number | null {
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
     setNow(Date.now());
     if (refreshIntervalMs === undefined) return undefined;
     const timer = window.setInterval(() => setNow(Date.now()), refreshIntervalMs);
     return () => window.clearInterval(timer);
-  }, [refreshIntervalMs]);
+  }, [refreshIntervalMs, observationKey]);
   return now;
 }

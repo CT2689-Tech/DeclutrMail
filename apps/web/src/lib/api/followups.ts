@@ -37,6 +37,8 @@ export interface FollowupRow {
   subject: string;
   /** ISO-8601 — when the user's outbound message went out. */
   sentAt: string;
+  /** Optional during API/web rollout. Indexed-data evaluation, not Gmail sync freshness. */
+  lastEvaluatedAt?: string | null;
   /** D85 — computed at request time, never stored. */
   priority: FollowupPriorityWire;
   status: FollowupStatusWire;

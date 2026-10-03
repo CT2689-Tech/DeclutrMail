@@ -319,6 +319,7 @@ function projectFollowup(
     recipientDisplayName: row.recipientDisplayName,
     subject: row.subject,
     sentAt: row.sentAt.toISOString(),
+    lastEvaluatedAt: row.lastCheckAt?.toISOString() ?? null,
     priority: computePriority(row.sentAt.getTime(), nowMs),
     status: row.status,
     feedbackRating:

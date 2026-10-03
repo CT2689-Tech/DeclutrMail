@@ -176,3 +176,16 @@ export const LongSubjects: Story<typeof FollowupsScreen> = {
       ),
     ),
 };
+
+/** Persisted evaluation versus unavailable evidence, in the same quiet list. */
+export const EvaluationFreshness: Story<typeof FollowupsScreen> = {
+  render: (_args: ComponentProps<typeof FollowupsScreen>) =>
+    frame(
+      makeClient(
+        FIXTURES.slice(0, 2).map((row, index) => ({
+          ...row,
+          lastEvaluatedAt: index === 0 ? new Date(NOW - 5 * 60_000).toISOString() : null,
+        })),
+      ),
+    ),
+};
