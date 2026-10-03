@@ -2,7 +2,7 @@
  * Pure date helpers for the Snoozed surface (D80 grouping + D82
  * presets). All functions take an explicit `now` — and, for the
  * bucket/label helpers, an explicit IANA `timeZone` — so tests are
- * deterministic; callers pass `new Date()` and `useUserTimeZone()`.
+ * deterministic; callers pass an explicit clock and `useUserTimeZone()`.
  *
  * Times are computed in the user's timezone (D82 — "5:00 PM local",
  * "9:00 AM local") and serialized to ISO on the wire. The zone must be
@@ -10,9 +10,8 @@
  * hydrated HTML (/later): the server's process zone is not the user's,
  * and locale/zone drift between the server string and the first client
  * render makes React discard the server tree (error #418; e2e
- * hydration-smoke). The `now` clock itself still differs by the
- * hydration delay — a midnight crossing inside that window can flip a
- * bucket (rare, accepted; React falls back to a client render).
+ * hydration-smoke). Later seeds its first render with the server clock,
+ * then updates its buckets and labels from one post-mount clock.
  */
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';

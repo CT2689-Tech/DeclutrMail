@@ -44,7 +44,7 @@ export default async function LaterPage() {
         pitch="Every sender you moved to Later, grouped by when they return."
         footnote="Their email stays readable in Gmail under the DeclutrMail/Later label."
       >
-        <SnoozedScreen />
+        <SnoozedScreen initialNow={Date.now()} />
       </TierGate>
     </ServerQueryHydration>
   );
