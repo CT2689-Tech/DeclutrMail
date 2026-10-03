@@ -8,6 +8,7 @@ import {
   settleServerQueries,
   type ServerHydrationSurface,
 } from './server-query-client';
+import { QueryHydrationBoundary } from './query-hydration-boundary';
 import { StreamedQueryRecoveryError } from './streamed-query-recovery';
 
 export type ServerQueryPrefetch = (queryClient: QueryClient) => Array<Promise<unknown>>;
@@ -67,5 +68,9 @@ export async function ServerQueryHydration({
     state.queries.push(...streamedState.queries);
   }
 
-  return <HydrationBoundary state={state}>{content}</HydrationBoundary>;
+  return streamedClient ? (
+    <QueryHydrationBoundary state={state}>{content}</QueryHydrationBoundary>
+  ) : (
+    <HydrationBoundary state={state}>{content}</HydrationBoundary>
+  );
 }
