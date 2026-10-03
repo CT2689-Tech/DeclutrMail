@@ -35,6 +35,7 @@ const LOGO = 72;
  */
 export function TriageFocusCard({
   row,
+  timeZone = 'UTC',
   busy = false,
   unknownVerb = null,
   whyOpen,
@@ -45,6 +46,8 @@ export function TriageFocusCard({
   unprotectSlot,
 }: {
   row: TriageDecisionRow;
+  /** Named account zone; standalone demo cards use UTC. */
+  timeZone?: string;
   /** True while this sender's decision is confirming server-side (D226 — no optimistic removal). */
   busy?: boolean;
   /**
@@ -308,7 +311,7 @@ export function TriageFocusCard({
               borderTop: `1px solid ${color.lineSoft}`,
             }}
           >
-            <TriageRowExpanded row={row} />
+            <TriageRowExpanded row={row} timeZone={timeZone} />
           </div>
         )}
 

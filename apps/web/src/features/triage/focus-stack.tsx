@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Button, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
 
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { isTypingTarget } from '@/features/senders/keyboard';
 import type { PreviewCount } from './action-preview';
 import type { ActionPreviewDetail } from './action-preview-detail';
@@ -69,6 +70,7 @@ export function TriageFocusStack({
   unknownVerbs: ReadonlyMap<string, string>;
 }) {
   const isNarrow = useIsAtMost('xs');
+  const timeZone = useUserTimeZone();
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
@@ -96,6 +98,7 @@ export function TriageFocusStack({
     card = (
       <TriageFocusCard
         row={row}
+        timeZone={timeZone}
         busy={busyRowIds.has(row.id)}
         unknownVerb={unknownVerbs.get(row.id) ?? null}
         whyOpen={expandedRowId === row.id}
