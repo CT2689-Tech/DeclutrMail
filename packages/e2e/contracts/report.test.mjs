@@ -10,6 +10,7 @@ const files = [
   ['sender-policy', 1],
   ['protection-review', 1],
   ['followups-dismiss', 1],
+  ['later-recovery', 1],
   ['brief-preview', 1],
   ['senders-search-typing', 3],
   ['public-journeys', 2],
