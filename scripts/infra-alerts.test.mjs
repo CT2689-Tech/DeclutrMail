@@ -71,7 +71,17 @@ test('worker alert requires multiple failing regions and rejects filter injectio
   assert.equal(t.duration, '120s');
 });
 test('runtime metric labels remain bounded and chart definitions reference the shared contract', () => {
-  const allowed = new Set(['queue', 'reason', 'worker', 'sync', 'outcome', 'source', 'status']);
+  const allowed = new Set([
+    'queue',
+    'reason',
+    'worker',
+    'sync',
+    'outcome',
+    'source',
+    'status',
+    'direction',
+    'verb',
+  ]);
   for (const m of RUNTIME_LOG_METRICS) {
     assert.ok(m.filter.includes('resource.labels.service_name="declutrmail-worker"'));
     for (const label of m.metricDescriptor.labels) assert.ok(allowed.has(label.key));
@@ -79,7 +89,7 @@ test('runtime metric labels remain bounded and chart definitions reference the s
   const names = new Set(RUNTIME_LOG_METRICS.map((m) => m.name));
   for (const w of dashboard('test').gridLayout.widgets) {
     const filter = w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter?.filter;
-    const metric = filter?.match(/logging.googleapis.com\/user\/(ops_[a-z_]+)/)?.[1];
+    const metric = filter?.match(/logging\.googleapis\.com\/user\/(ops_[a-z0-9_]+)/)?.[1];
     if (metric) assert.ok(names.has(metric), `${metric} lacks a provisioned definition`);
   }
 });
@@ -115,6 +125,14 @@ test('runtime activation rejects missing, stale, future and failed-only observat
     /reconnect/,
   );
   assert.throws(() => assertRuntimeCoverage(series.slice(1), now), /mailbox/);
+  assert.throws(
+    () =>
+      assertRuntimeCoverage(
+        series.filter((s) => s.metric.labels.source !== 'actions'),
+        now,
+      ),
+    /actions/,
+  );
   for (const endTime of ['2026-09-05T11:00:00Z', '2026-09-05T12:01:00Z']) {
     assert.throws(() =>
       assertRuntimeCoverage(
@@ -134,6 +152,25 @@ test('runtime activation rejects missing, stale, future and failed-only observat
       })),
       now,
     ),
+  );
+});
+
+test('action panels preserve snapshot means rather than estimating counts from histogram percentiles', () => {
+  const widgets = dashboard('test').gridLayout.widgets;
+  const charts = widgets.filter((w) => w.title.startsWith('Cleanup / Undo'));
+  assert.equal(charts.length, 8);
+  for (const w of charts) {
+    const series = w.xyChart.dataSets[0].timeSeriesQuery.timeSeriesFilter;
+    assert.match(series.filter, /logging\.googleapis\.com\/user\/ops_action_/);
+    assert.equal(series.aggregation.perSeriesAligner, 'ALIGN_MEAN');
+    assert.equal(series.aggregation.crossSeriesReducer, 'REDUCE_MAX');
+    assert.equal(series.aggregation.alignmentPeriod, '300s');
+    assert.ok(series.aggregation.groupByFields.includes('metric.label.direction'));
+    assert.ok(series.aggregation.groupByFields.includes('metric.label.verb'));
+  }
+  assert.match(
+    widgets.find((w) => w.title === 'Cleanup and Undo: durable results').text.content,
+    /exact mean of snapshots/,
   );
 });
 

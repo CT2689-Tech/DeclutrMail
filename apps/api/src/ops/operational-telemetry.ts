@@ -4,6 +4,8 @@ import { cronRuns, outboxEvents, providerSyncState, schema } from '@declutrmail/
 import { findStuckMailboxes } from '@declutrmail/workers';
 import type { StuckMailbox } from '@declutrmail/workers';
 
+import { readActionOutcomes } from './action-outcomes.js';
+
 type Db = PostgresJsDatabase<typeof schema>;
 type Log = Record<string, string | number>;
 type Emit = (record: Log) => void;
@@ -140,6 +142,7 @@ export async function collectOperationalTelemetry(
     }
   };
   await Promise.all([
+    collect('actions', () => read(db, (tx) => readActionOutcomes(tx, now))),
     collect('mailbox', async () =>
       mailboxHealth(await read(db, (tx) => findStuckMailboxes(tx, { now: () => now }))),
     ),
