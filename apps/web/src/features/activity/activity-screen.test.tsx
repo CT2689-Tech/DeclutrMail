@@ -60,12 +60,20 @@ vi.mock('@/features/auth/auth-provider', () => ({
 const NOW = new Date('2026-05-25T08:00:00Z').getTime();
 
 // next/navigation shim — the screen reads useSearchParams + uses
-// useRouter().replace to drive filter URL state.
+// native history replacement to drive filter URL state. Deferred snapshots model navigation lag.
 const replaceMock = vi.fn();
 let currentSearch = '';
+let lastSyncedSearch: string | undefined;
+const nativeReplaceState = window.history.replaceState.bind(window.history);
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: replaceMock }),
-  useSearchParams: () => new URLSearchParams(currentSearch),
+  useSearchParams: () => {
+    if (lastSyncedSearch !== currentSearch) {
+      lastSyncedSearch = currentSearch;
+      nativeReplaceState(null, '', `/activity${currentSearch ? `?${currentSearch}` : ''}`);
+    }
+    return new URLSearchParams(currentSearch);
+  },
 }));
 
 const STATS_BASE: ActivityStatsWire = {
@@ -170,6 +178,11 @@ beforeEach(() => {
   trackMock.mockReset();
   authState.activeMailboxId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   currentSearch = '';
+  lastSyncedSearch = undefined;
+  vi.spyOn(window.history, 'replaceState').mockImplementation((data, unused, url) => {
+    nativeReplaceState(data, unused, url);
+    replaceMock(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+  });
 });
 afterEach(() => {
   resetFetchStub();
@@ -3606,4 +3619,48 @@ it('suspends recovery verification while the dialog belongs to earlier-filter pl
     release?.(jsonOk({ data: [], meta: { ...META_BASE, source: 'autopilot' } })),
   );
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+describe('Activity filters — overlapping edits', () => {
+  it('retains an outcome when a date preset is picked before the route snapshot updates', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const dialog = await openFilters();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Failed' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: '7 days' }));
+    const result = new URL(replaceMock.mock.lastCall![0], 'http://localhost');
+    expect(result.searchParams.get('outcome')).toBe('failed');
+    expect(result.searchParams.get('window')).toBe('7d');
+  });
+  it('uses a restored browser URL for the next edit and preserves unrelated parameters and hash', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const dialog = await openFilters();
+    nativeReplaceState(
+      null,
+      '',
+      '/activity?outcome=failed&source=manual&sender_q=example&group=sender&context=review&date_from=2026-05-20#history',
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: '7 days' }));
+    const result = new URL(replaceMock.mock.lastCall![0], 'http://localhost');
+    expect(result.searchParams.get('outcome')).toBe('failed');
+    expect(result.searchParams.get('source')).toBe('manual');
+    expect(result.searchParams.get('sender_q')).toBe('example');
+    expect(result.searchParams.get('group')).toBe('sender');
+    expect(result.searchParams.get('context')).toBe('review');
+    expect(result.searchParams.has('date_from')).toBe(false);
+    expect(result.hash).toBe('#history');
+  });
 });

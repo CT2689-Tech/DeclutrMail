@@ -58,6 +58,7 @@ import { isSkipKey } from './focus-stack';
 import { resetTriageStore, useTriageStore } from './store';
 import { storeTriageMode } from './test-mode';
 import { TriageScreen } from './triage-screen';
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
 vi.mock('@/features/auth/auth-provider', () => ({
@@ -252,6 +253,21 @@ describe('focus mode — the card', () => {
     expect(document.querySelector('[data-dm-verdict-band]')?.textContent).toContain('strong');
     // This is what arms the D25 stale-read refresh (`useRefreshStaleRead`).
     expect(useTriageStore.getState().expandedRowId).toBe(LINKEDIN.id);
+  });
+
+  it('keeps Last seen in the account timezone when switching Focus and List', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-07-01T08:00:00.000Z'));
+    try {
+      const client = createTestQueryClient();
+      client.setQueryData(ME_QUERY_KEY, { user: { timezone: 'America/Los_Angeles' } });
+      renderScreen(ready([{ ...LINKEDIN, lastSeenAt: '2026-07-01T02:00:00.000Z' }]), client);
+      fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+      expect(screen.getByText('Last seen').previousElementSibling).toHaveTextContent('1d');
+      fireEvent.click(screen.getByRole('button', { name: 'List' }));
+      expect(screen.getByText('Last seen').previousElementSibling).toHaveTextContent('1d');
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('protected sender: the Protected mark and the evidence, in place of a read rate', () => {

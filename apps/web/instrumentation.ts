@@ -14,6 +14,7 @@
 // Sentry.
 
 import type * as Sentry from '@sentry/nextjs';
+import { isStreamedQueryRecoveryError } from './src/lib/streamed-query-recovery';
 
 export async function register(): Promise<void> {
   try {
@@ -28,6 +29,9 @@ export async function register(): Promise<void> {
 export async function onRequestError(
   ...args: Parameters<typeof Sentry.captureRequestError>
 ): Promise<void> {
+  // Only the fixed marker from an already-classified optional stream.
+  // All unrelated render/route errors continue through normal reporting.
+  if (isStreamedQueryRecoveryError(args[0])) return;
   try {
     const sdk = await import('@sentry/nextjs');
     await sdk.captureRequestError(...args);

@@ -225,57 +225,202 @@ export function assertPrivateBucket(metadata, policy) {
   )
     throw new Error('Finance bucket must not grant public access');
 }
-function main() {
-  const bucket = process.env.PRIVATE_FINANCE_BUCKET;
-  if (!bucket || !/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(bucket))
-    throw new Error('Configure private finance bucket name');
-  const gc = (...args) =>
+class FinanceStageError extends Error {
+  constructor(stage, category = 'unknown') {
+    super('Private finance reporting stage failed');
+    this.stage = stage;
+    this.category = category;
+  }
+}
+class FinanceTransferError extends Error {
+  constructor(category) {
+    super('Private finance transfer failed');
+    this.category = category;
+  }
+}
+const httpCategories = {
+  401: 'unauthenticated',
+  403: 'permission_denied',
+  404: 'not_found',
+  412: 'precondition_failed',
+};
+const categoryOf = (error) => {
+  if (error instanceof FinanceTransferError) return error.category;
+  if (['AbortError', 'TimeoutError'].includes(error?.name) || error?.code === 'ETIMEDOUT')
+    return 'timeout';
+  // Only recognize an explicit command HTTP status, never arbitrary document text.
+  const stderr = Buffer.isBuffer(error?.stderr) ? error.stderr.subarray(0, 8192).toString() : '';
+  const status = /\bHTTPError\s*:?\s*(401|403|404|412)\b/.exec(stderr)?.[1];
+  if (status) return httpCategories[status];
+  return 'unknown';
+};
+/** Exact-object uploads avoid bucket listing, preserving prefix-scoped IAM. */
+export async function uploadFinanceObject({
+  bucket,
+  object,
+  body,
+  contentType,
+  accessToken,
+  ifGenerationMatch,
+  request = fetch,
+}) {
+  const url = new URL(
+    `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucket)}/o`,
+  );
+  url.searchParams.set('uploadType', 'media');
+  url.searchParams.set('name', object);
+  if (ifGenerationMatch != null)
+    url.searchParams.set('ifGenerationMatch', String(ifGenerationMatch));
+  try {
+    const response = await request(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': contentType },
+      body,
+      redirect: 'error',
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!response.ok) {
+      // Do not read or retain provider error bodies, URLs or credential details.
+      await response.body?.cancel();
+      throw new FinanceTransferError(httpCategories[response.status] ?? 'http_error');
+    }
+    const metadata = await response.json();
+    if (metadata.md5Hash !== createHash('md5').update(body).digest('base64'))
+      throw new FinanceTransferError('integrity_mismatch');
+  } catch (error) {
+    throw new FinanceTransferError(categoryOf(error));
+  }
+}
+const stage = (name, operation) => {
+  try {
+    return operation();
+  } catch (error) {
+    // Never retain command stderr, input documents, paths or the original cause.
+    throw new FinanceStageError(name, categoryOf(error));
+  }
+};
+const asyncStage = async (name, operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    throw new FinanceStageError(name, categoryOf(error));
+  }
+};
+export function financeFailureMessage(error) {
+  const failedStage = error instanceof FinanceStageError ? error.stage : 'unknown';
+  const category = error instanceof FinanceStageError ? error.category : 'unknown';
+  const prior =
+    error instanceof FinanceStageError && error.uploadFailureCategory
+      ? ` upload_failure=${error.uploadFailureCategory};`
+      : '';
+  return `Private finance reporting failed at stage=${failedStage}; failure=${category};${prior} check bucket privacy, input schema and scoped permissions. No financial document contents logged.`;
+}
+export async function runPrivateFinanceReport({
+  env = process.env,
+  upload = uploadFinanceObject,
+  cleanup = (dir) => rmSync(dir, { recursive: true, force: true }),
+  gc = (...args) =>
     execFileSync('gcloud', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 60000,
-    });
+    }),
+} = {}) {
+  const bucket = stage('configuration', () => {
+    const value = env.PRIVATE_FINANCE_BUCKET;
+    if (!value || !/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(value))
+      throw new Error('Configure private finance bucket name');
+    return value;
+  });
   const uri = `gs://${bucket}`;
-  assertPrivateBucket(
+  const metadata = stage('bucket_metadata_read', () =>
     JSON.parse(gc('storage', 'buckets', 'describe', uri, '--format=json')),
+  );
+  const policy = stage('bucket_iam_read', () =>
     JSON.parse(gc('storage', 'buckets', 'get-iam-policy', uri, '--format=json')),
   );
-  const ledger = JSON.parse(gc('storage', 'cat', `${uri}/config/invoices.json`));
-  const registry = JSON.parse(gc('storage', 'cat', `${uri}/config/subscriptions.json`));
-  const snapshot = JSON.parse(readFileSync(process.env.INFRA_SNAPSHOT_PATH, 'utf8'));
-  const report = financeReport(ledger, registry, snapshot);
-  const dir = mkdtempSync(join(tmpdir(), 'private-finance-'));
+  stage('bucket_privacy_validation', () => assertPrivateBucket(metadata, policy));
+  const ledger = stage('invoices_read', () =>
+    JSON.parse(gc('storage', 'cat', `${uri}/config/invoices.json`)),
+  );
+  const registry = stage('subscriptions_read', () =>
+    JSON.parse(gc('storage', 'cat', `${uri}/config/subscriptions.json`)),
+  );
+  const snapshot = stage('snapshot_read', () =>
+    JSON.parse(readFileSync(env.INFRA_SNAPSHOT_PATH, 'utf8')),
+  );
+  const report = stage('report_validation', () => financeReport(ledger, registry, snapshot));
+  const dir = stage('temporary_directory', () => mkdtempSync(join(tmpdir(), 'private-finance-')));
+  let failure;
   try {
     const hash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
     const date = new Date(snapshot.observedAt).toISOString().slice(0, 10);
     const snapshotPath = join(dir, 'snapshot.json');
     const reportPath = join(dir, 'report.md');
     const htmlPath = join(dir, 'report.html');
-    writeFileSync(htmlPath, reportHtml(report), { mode: 0o600 });
-    writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
-    writeFileSync(reportPath, report, { mode: 0o600 });
-    const object = `${uri}/observations/${date}/${hash}.json`;
+    stage('report_files', () => {
+      writeFileSync(htmlPath, reportHtml(report), { mode: 0o600 });
+      writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
+      writeFileSync(reportPath, report, { mode: 0o600 });
+    });
+    const accessToken = stage('access_token_read', () => {
+      const token = gc('auth', 'print-access-token').trim();
+      if (!token || /\s/.test(token)) throw new Error('Invalid access token');
+      return token;
+    });
+    const put = (object, path, contentType, ifGenerationMatch) =>
+      upload({
+        bucket,
+        object,
+        body: readFileSync(path),
+        contentType,
+        accessToken,
+        ifGenerationMatch,
+      });
+    const object = `observations/${date}/${hash}.json`;
     try {
-      gc('storage', 'cp', '--if-generation-match=0', snapshotPath, object);
-    } catch {
-      if (gc('storage', 'cat', object) !== JSON.stringify(snapshot))
-        throw new Error('Observation write conflict');
+      await asyncStage('observation_upload', () =>
+        put(object, snapshotPath, 'application/json', 0),
+      );
+    } catch (uploadError) {
+      let existing;
+      try {
+        existing = stage('observation_retry_read', () => gc('storage', 'cat', `${uri}/${object}`));
+      } catch (readError) {
+        readError.uploadFailureCategory = uploadError.category;
+        throw readError;
+      }
+      stage('observation_retry_validation', () => {
+        if (existing !== JSON.stringify(snapshot)) throw new Error('Observation write conflict');
+      });
     }
-    gc('storage', 'cp', reportPath, `${uri}/reports/latest.md`);
-    gc('storage', 'cp', htmlPath, `${uri}/reports/latest.html`);
-    gc('storage', 'cp', reportPath, `${uri}/reports/${date}.md`);
+    await asyncStage('latest_markdown_upload', () =>
+      put('reports/latest.md', reportPath, 'text/markdown; charset=utf-8'),
+    );
+    await asyncStage('latest_html_upload', () =>
+      put('reports/latest.html', htmlPath, 'text/html; charset=utf-8'),
+    );
+    await asyncStage('dated_markdown_upload', () =>
+      put(`reports/${date}.md`, reportPath, 'text/markdown; charset=utf-8'),
+    );
+  } catch (error) {
+    failure = error;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      stage('temporary_cleanup', () => cleanup(dir));
+    } catch (error) {
+      // A cleanup error must not erase the boundary that stopped publication.
+      failure ??= error;
+    }
   }
-  console.log('Private finance report updated; document contents omitted from workflow logs.');
+  if (failure) throw failure;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    main();
-  } catch {
-    console.error(
-      'Private finance reporting failed; check bucket privacy, input schema and scoped permissions. No financial document contents logged.',
-    );
+    await runPrivateFinanceReport();
+    console.log('Private finance report updated; document contents omitted from workflow logs.');
+  } catch (error) {
+    console.error(financeFailureMessage(error));
     process.exitCode = 1;
   }
 }

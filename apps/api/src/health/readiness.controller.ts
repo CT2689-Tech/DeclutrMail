@@ -22,19 +22,37 @@ interface ReadinessBody {
  * is indistinguishable from a healthy one to an uptime check that only
  * watches for non-200s — it just times out and reports nothing useful.
  */
-async function probe(run: () => Promise<unknown>): Promise<DependencyState> {
+async function probe(
+  dependency: 'database' | 'redis',
+  run: () => Promise<unknown>,
+): Promise<DependencyState> {
+  const started = Date.now();
+  const timeout = new Error('readiness probe timeout');
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
       run(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), PROBE_TIMEOUT_MS)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(timeout), PROBE_TIMEOUT_MS);
+      }),
     ]);
     return 'ok';
-  } catch {
-    // Deliberately swallowed: the CAUSE goes to logs/Sentry through the
-    // failing client's own error path, never into this response body.
-    // Provider errors are quotable — Upstash's suspension reply names the
-    // vendor and the billing state — and this endpoint is unauthenticated.
+  } catch (error) {
+    // Client error events do not report our local timeout. Preserve the
+    // dependency and failure category here; never log raw provider errors,
+    // which can contain connection details or credentials.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'readiness.dependency_failed',
+        dependency,
+        reason: error === timeout ? 'timeout' : 'error',
+        durationMs: Date.now() - started,
+      }),
+    );
     return 'down';
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -67,13 +85,13 @@ export class ReadinessController {
   @Get()
   async getReadiness(@Res() res: Response): Promise<void> {
     const [database, redis] = await Promise.all([
-      probe(() => this.db.execute(sql`select 1`)),
+      probe('database', () => this.db.execute(sql`select 1`)),
       // A missing REDIS_URL is a legitimate posture outside production
       // (local dev, CI), so it reads as `not_configured` rather than
       // `down` — the app genuinely has no Redis to be down.
       this.redis === null
         ? Promise.resolve<DependencyState>('not_configured')
-        : probe(() => this.redis!.ping()),
+        : probe('redis', () => this.redis!.ping()),
     ]);
 
     // In PRODUCTION, `not_configured` is itself the fault: BullMQ has no
