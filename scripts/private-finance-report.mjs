@@ -225,57 +225,107 @@ export function assertPrivateBucket(metadata, policy) {
   )
     throw new Error('Finance bucket must not grant public access');
 }
-function main() {
-  const bucket = process.env.PRIVATE_FINANCE_BUCKET;
-  if (!bucket || !/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(bucket))
-    throw new Error('Configure private finance bucket name');
-  const gc = (...args) =>
+class FinanceStageError extends Error {
+  constructor(stage) {
+    super('Private finance reporting stage failed');
+    this.stage = stage;
+  }
+}
+const stage = (name, operation) => {
+  try {
+    return operation();
+  } catch {
+    // Never retain command stderr, input documents, paths or the original cause.
+    throw new FinanceStageError(name);
+  }
+};
+export function financeFailureMessage(error) {
+  const failedStage = error instanceof FinanceStageError ? error.stage : 'unknown';
+  return `Private finance reporting failed at stage=${failedStage}; check bucket privacy, input schema and scoped permissions. No financial document contents logged.`;
+}
+export function runPrivateFinanceReport({
+  env = process.env,
+  cleanup = (dir) => rmSync(dir, { recursive: true, force: true }),
+  gc = (...args) =>
     execFileSync('gcloud', args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 60000,
-    });
+    }),
+} = {}) {
+  const bucket = stage('configuration', () => {
+    const value = env.PRIVATE_FINANCE_BUCKET;
+    if (!value || !/^[a-z0-9][a-z0-9._-]{1,220}[a-z0-9]$/.test(value))
+      throw new Error('Configure private finance bucket name');
+    return value;
+  });
   const uri = `gs://${bucket}`;
-  assertPrivateBucket(
+  const metadata = stage('bucket_metadata_read', () =>
     JSON.parse(gc('storage', 'buckets', 'describe', uri, '--format=json')),
+  );
+  const policy = stage('bucket_iam_read', () =>
     JSON.parse(gc('storage', 'buckets', 'get-iam-policy', uri, '--format=json')),
   );
-  const ledger = JSON.parse(gc('storage', 'cat', `${uri}/config/invoices.json`));
-  const registry = JSON.parse(gc('storage', 'cat', `${uri}/config/subscriptions.json`));
-  const snapshot = JSON.parse(readFileSync(process.env.INFRA_SNAPSHOT_PATH, 'utf8'));
-  const report = financeReport(ledger, registry, snapshot);
-  const dir = mkdtempSync(join(tmpdir(), 'private-finance-'));
+  stage('bucket_privacy_validation', () => assertPrivateBucket(metadata, policy));
+  const ledger = stage('invoices_read', () =>
+    JSON.parse(gc('storage', 'cat', `${uri}/config/invoices.json`)),
+  );
+  const registry = stage('subscriptions_read', () =>
+    JSON.parse(gc('storage', 'cat', `${uri}/config/subscriptions.json`)),
+  );
+  const snapshot = stage('snapshot_read', () =>
+    JSON.parse(readFileSync(env.INFRA_SNAPSHOT_PATH, 'utf8')),
+  );
+  const report = stage('report_validation', () => financeReport(ledger, registry, snapshot));
+  const dir = stage('temporary_directory', () => mkdtempSync(join(tmpdir(), 'private-finance-')));
+  let failure;
   try {
     const hash = createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
     const date = new Date(snapshot.observedAt).toISOString().slice(0, 10);
     const snapshotPath = join(dir, 'snapshot.json');
     const reportPath = join(dir, 'report.md');
     const htmlPath = join(dir, 'report.html');
-    writeFileSync(htmlPath, reportHtml(report), { mode: 0o600 });
-    writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
-    writeFileSync(reportPath, report, { mode: 0o600 });
+    stage('report_files', () => {
+      writeFileSync(htmlPath, reportHtml(report), { mode: 0o600 });
+      writeFileSync(snapshotPath, JSON.stringify(snapshot), { mode: 0o600 });
+      writeFileSync(reportPath, report, { mode: 0o600 });
+    });
     const object = `${uri}/observations/${date}/${hash}.json`;
     try {
-      gc('storage', 'cp', '--if-generation-match=0', snapshotPath, object);
+      stage('observation_upload', () =>
+        gc('storage', 'cp', '--if-generation-match=0', snapshotPath, object),
+      );
     } catch {
-      if (gc('storage', 'cat', object) !== JSON.stringify(snapshot))
-        throw new Error('Observation write conflict');
+      const existing = stage('observation_retry_read', () => gc('storage', 'cat', object));
+      stage('observation_retry_validation', () => {
+        if (existing !== JSON.stringify(snapshot)) throw new Error('Observation write conflict');
+      });
     }
-    gc('storage', 'cp', reportPath, `${uri}/reports/latest.md`);
-    gc('storage', 'cp', htmlPath, `${uri}/reports/latest.html`);
-    gc('storage', 'cp', reportPath, `${uri}/reports/${date}.md`);
+    stage('latest_markdown_upload', () =>
+      gc('storage', 'cp', reportPath, `${uri}/reports/latest.md`),
+    );
+    stage('latest_html_upload', () => gc('storage', 'cp', htmlPath, `${uri}/reports/latest.html`));
+    stage('dated_markdown_upload', () =>
+      gc('storage', 'cp', reportPath, `${uri}/reports/${date}.md`),
+    );
+  } catch (error) {
+    failure = error;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      stage('temporary_cleanup', () => cleanup(dir));
+    } catch (error) {
+      // A cleanup error must not erase the boundary that stopped publication.
+      failure ??= error;
+    }
   }
-  console.log('Private finance report updated; document contents omitted from workflow logs.');
+  if (failure) throw failure;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    main();
-  } catch {
-    console.error(
-      'Private finance reporting failed; check bucket privacy, input schema and scoped permissions. No financial document contents logged.',
-    );
+    runPrivateFinanceReport();
+    console.log('Private finance report updated; document contents omitted from workflow logs.');
+  } catch (error) {
+    console.error(financeFailureMessage(error));
     process.exitCode = 1;
   }
 }
