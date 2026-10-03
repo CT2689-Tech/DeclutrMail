@@ -37,6 +37,8 @@ test('Later failed return restores recovery controls after queue acceptance and 
   page,
 }) => {
   await page.goto('/later');
+  await page.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(page.getByTestId('cookie-consent-banner')).toBeHidden();
   await expect(page.getByText(BILLING_SEED.archiveSenderName, { exact: true })).toBeVisible();
   await expect(page.getByText('Return retrying', { exact: true })).toBeVisible();
   // Cancel first: no queue request may be sent by merely inspecting the confirm.
