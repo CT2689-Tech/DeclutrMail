@@ -62,7 +62,13 @@ tests passed. Tests cover invalid metadata, current tier changes, account change
 unmount/logout, and missing versus empty stack data. The existing intercepted
 browser journey now asserts actual automatic and explicit SDK transport metadata;
 the Essential-only journey also runs with the QA marker and must remain silent.
-All SDK requests are answered locally and reach no live PostHog project. Public
+All SDK requests are answered locally and reach no live PostHog project.
+The first CI trace confirmed both automatic and explicit events carried context;
+the assertion failed because the current SDK uses a `{batch: [...]}` transport
+envelope. The decoder now reads that envelope in addition to arrays/single events.
+Capture context loads lazily with the consented SDK; only bounded plan state stays
+synchronous for logout. This avoids putting optional wire enrichment on the
+Cookies page’s initial JavaScript path without changing its bundle budget. Public
 transport verifies unknown plan; authenticated plan binding has focused unit
 coverage rather than a claimed browser-tier proof.
 

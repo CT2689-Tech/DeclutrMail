@@ -206,7 +206,11 @@ test('"Accept all" initializes PostHog and page_viewed reaches the wire', async 
     posthogRequests.flatMap((request) => {
       try {
         const parsed: unknown = JSON.parse(request.body);
-        return Array.isArray(parsed) ? parsed : [parsed];
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object' && 'batch' in parsed) {
+          return Array.isArray(parsed.batch) ? parsed.batch : [];
+        }
+        return [parsed];
       } catch {
         return [];
       }

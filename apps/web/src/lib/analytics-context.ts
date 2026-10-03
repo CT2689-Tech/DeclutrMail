@@ -1,12 +1,8 @@
-import { TIER_IDS, type TierId } from '@declutrmail/shared/entitlements';
+import { analyticsPlan } from './analytics-plan';
+export { setAnalyticsPlan } from './analytics-plan';
 
 // Only bounded metadata is added. No address, query, mailbox or user identifier.
-let plan: TierId | 'unknown' = 'unknown';
 export const ANALYTICS_QA_STORAGE_KEY = 'dm-analytics-qa';
-
-export function setAnalyticsPlan(value: unknown): void {
-  plan = TIER_IDS.includes(value as TierId) ? (value as TierId) : 'unknown';
-}
 
 /** Read at capture time so an automatic pageview cannot reuse a stale tier. */
 export function analyticsContext(): Record<string, string> {
@@ -30,7 +26,7 @@ export function analyticsContext(): Record<string, string> {
     telemetry_context_version: '1',
     app_environment: environment,
     app_release: release,
-    plan_tier: plan,
+    plan_tier: analyticsPlan(),
     // QA is explicitly self-declared per browser. Everything else is unclassified,
     // not an inferred customer; older events have no context version at all.
     traffic_class: qa ? 'internal_qa' : 'unclassified',

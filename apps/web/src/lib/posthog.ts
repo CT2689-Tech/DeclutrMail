@@ -7,7 +7,7 @@ import {
   type EventProps,
 } from '@declutrmail/shared/observability';
 import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
-import { analyticsContext, setAnalyticsPlan } from './analytics-context';
+import { setAnalyticsPlan } from './analytics-plan';
 
 /**
  * PostHog browser wrapper (D159).
@@ -71,7 +71,10 @@ async function loadSdk(): Promise<PosthogSdk | null> {
 
   if (!sdkPromise) {
     sdkPromise = (async () => {
-      const mod = await import('posthog-js');
+      const [mod, { analyticsContext }] = await Promise.all([
+        import('posthog-js'),
+        import('./analytics-context'),
+      ]);
       // Loading the chunk yields. Consent may have been withdrawn meanwhile;
       // init itself emits automatic pageviews, so the later capture gate is too late.
       if (!hasAnalyticsConsent()) {

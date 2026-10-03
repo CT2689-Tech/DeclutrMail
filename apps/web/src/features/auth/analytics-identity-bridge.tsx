@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 
 import { CONSENT_CHANGE_EVENT } from '@/lib/cookie-consent';
 import { identifyUser } from '@/lib/posthog';
-import { setAnalyticsPlan } from '@/lib/analytics-context';
+import { setAnalyticsPlan } from '@/lib/analytics-plan';
 import type { Tier } from './api/use-me';
 
 /**
