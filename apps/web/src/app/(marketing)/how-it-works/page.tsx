@@ -27,7 +27,7 @@ export default function HowItWorksPage() {
   return (
     <ProductStoryShell
       title="See the sender. Know what will change."
-      lede="DeclutrMail puts recurring senders and their recent email in one place. Open the right-hand inspector, then preview the exact scope before moving mail."
+      lede="DeclutrMail puts recurring senders and their recent email in one place. Open a sender's details, then preview the scope before moving mail."
       visual={<HeroWorkspace />}
     >
       <nav className="dm-story-jumps dm-story-shell" aria-label="Explore how it works">
@@ -52,10 +52,7 @@ export default function HowItWorksPage() {
         <div className="dm-story-split">
           <div>
             <h3>Keep doing in Gmail</h3>
-            <p>
-              Read full messages, reply, compose, search, use labels, and manage conversations.
-              Gmail remains the source of truth for the mailbox.
-            </p>
+            <p>Read full messages, reply, compose, search, use labels, and manage conversations.</p>
           </div>
           <div>
             <h3>Do faster in DeclutrMail</h3>
@@ -109,8 +106,8 @@ export default function HowItWorksPage() {
           <p>
             Archive, Later, Delete, and unsubscribe requests have a confirmation step. Keep is an
             inline sender decision. For mail-moving actions, the affected-email preview comes before
-            you confirm. Activity updates only after Gmail confirms the change, or the sender
-            reports the result of a one-click unsubscribe request.
+            you confirm. Activity shows running actions and confirmed outcomes, with Undo when
+            available.
           </p>
         }
         aside={<ConfirmCardFigure />}
@@ -154,10 +151,10 @@ export default function HowItWorksPage() {
         title="Manual cleanup is not a hidden rule."
         intro={
           <p>
-            Manual actions affect only the email shown before you confirm; a manual Archive, Later,
-            or Delete does not quietly decide what happens to future mail. Autopilot rules are
-            separate and must be turned on: you see what a rule would do first, and only a rule you
-            deliberately turn on acts without asking.
+            Manual actions affect current mail matching the scope you approve; a manual Archive,
+            Later, or Delete does not quietly decide what happens to future mail. Autopilot rules
+            are separate and must be turned on: you see what a rule would do first, and only a rule
+            you deliberately turn on acts without asking.
           </p>
         }
       >
@@ -167,9 +164,9 @@ export default function HowItWorksPage() {
             Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
             which lists unfamiliar senders for review while their email still arrives in Gmail, the
             whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
-            when those rules may act. Pro adds the Daily Brief, a once-a-day summary of what needs
-            your attention, and Follow-ups, a queue for senders you replied to but haven&rsquo;t
-            heard back from. <Link href="/pricing">See every plan</Link>.
+            when those rules may run. Pro adds the Daily Brief, a once-a-day summary of what needs
+            your attention, and Follow-ups, a queue of sent conversations that may need a follow-up.{' '}
+            <Link href="/pricing">See every plan</Link>.
           </p>
         </div>
       </StorySection>

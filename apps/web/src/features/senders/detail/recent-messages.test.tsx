@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { RecentMessage } from './types';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { RecentMessages } from './recent-messages';
 it('decodes Gmail entities once and renders decoded markup only as text', async () => {
@@ -31,4 +32,32 @@ it('decodes Gmail entities once and renders decoded markup only as text', async 
   ).toBeInTheDocument();
   expect(container.querySelector('img')).toBeNull();
   expect(container.querySelector('script')).toBeNull();
+});
+
+const message: RecentMessage = {
+  id: 'm1',
+  providerMessageId: 'provider1',
+  threadId: 'thread1',
+  subject: 'A sample subject',
+  snippet: 'Gmail preview',
+  receivedAt: '2026-10-01T09:00:00Z',
+  sizeBytes: 300,
+  hasAttachment: true,
+  unread: true,
+};
+
+describe('RecentMessages accessible indicators', () => {
+  it('exposes unread and attachment statuses as named images', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <RecentMessages
+          messages={[message]}
+          mailboxEmail="sample@example.com"
+          senderEmail="sender@example.com"
+        />
+      </QueryWrapper>,
+    );
+    expect(screen.getByRole('img', { name: 'Unread' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Has attachment' })).toBeInTheDocument();
+  });
 });

@@ -64,6 +64,24 @@ describe('<SenderList /> — domain groups (D51)', () => {
 });
 
 describe('<SenderList /> — j/k/↑/↓ follow the rows', () => {
+  it('keeps the sender in place while a nonmodal account dialog owns row-follow keys', () => {
+    const { onOpen } = renderList({ activeId: 'b' });
+    const accountDialog = document.createElement('div');
+    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('aria-label', 'Gmail accounts');
+    document.body.append(accountDialog);
+    try {
+      for (const key of ['j', 'k', 'ArrowDown', 'ArrowUp'])
+        fireEvent.keyDown(accountDialog, { key });
+      expect(onOpen).not.toHaveBeenCalled();
+      accountDialog.remove();
+      fireEvent.keyDown(document.body, { key: 'j' });
+      expect(onOpen).toHaveBeenCalledExactlyOnceWith('c');
+    } finally {
+      accountDialog.remove();
+    }
+  });
+
   it('j opens the first row when nothing is open, then the next', () => {
     const { onOpen } = renderList();
     fireEvent.keyDown(window, { key: 'j' });

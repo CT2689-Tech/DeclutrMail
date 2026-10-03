@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { installFetchStub, resetFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
@@ -23,9 +23,10 @@ import { formatLastAttempt, SnoozedScreen } from './snoozed-screen';
 // so the screen must bucket in the machine zone for the grouping
 // assertions to stay meaningful wherever the suite runs. Exact
 // pinned-zone strings are asserted in snooze-times.test.ts instead.
+const accountZone = vi.hoisted(() => ({ value: '' }));
 vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  useUserTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  useUserTimeZone: () => accountZone.value || Intl.DateTimeFormat().resolvedOptions().timeZone,
 }));
 
 /**
@@ -85,11 +86,12 @@ function listHandler(rows: SnoozedSenderRow[]): FetchStubHandler {
 
 function renderScreen() {
   const client = createTestQueryClient();
-  return render(
+  const view = render(
     <QueryWrapper client={client}>
       <SnoozedScreen />
     </QueryWrapper>,
   );
+  return { ...view, client };
 }
 
 describe('SnoozedScreen — edge states', () => {
@@ -500,5 +502,71 @@ describe('formatLastAttempt', () => {
 
   it('degrades honestly on an unparseable stamp', () => {
     expect(formatLastAttempt('not-a-time', 'UTC')).toBe('at an unknown time');
+  });
+});
+
+describe('Later — custom timezone and retained refresh', () => {
+  afterEach(() => {
+    resetFetchStub();
+    accountZone.value = '';
+  });
+  it('submits a custom wall time in the account timezone instead of the device timezone', async () => {
+    accountZone.value = 'Asia/Kolkata';
+    let body: unknown;
+    installFetchStub([
+      listHandler([ROW_EVENTUALLY]),
+      {
+        method: 'PATCH',
+        path: new RegExp(`^/api/snoozed/${ROW_EVENTUALLY.senderId}$`),
+        respond: async (req) => {
+          body = await req.json();
+          return new Response(
+            JSON.stringify({
+              data: {
+                senderId: ROW_EVENTUALLY.senderId,
+                snoozedUntil: '2099-10-04T03:30:00.000Z',
+                snoozedAt: new Date().toISOString(),
+                reason: null,
+                changed: true,
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        },
+      },
+    ]);
+    const user = userEvent.setup();
+    renderScreen();
+    await screen.findByText('Quarterly Newsletter');
+    await user.click(screen.getByRole('button', { name: 'Change return time' }));
+    fireEvent.change(screen.getByLabelText('Custom · Asia/Kolkata'), {
+      target: { value: '2099-10-04T09:00' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Set' }));
+    await waitFor(() => expect(body).toEqual({ until: '2099-10-04T03:30:00.000Z' }));
+  });
+  it('preserves rows and offers retry after a background list failure', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/snoozed',
+        respond: () =>
+          fail
+            ? new Response('{}', { status: 500 })
+            : new Response(JSON.stringify({ data: [ROW_EVENTUALLY] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' },
+              }),
+      },
+    ]);
+    const view = renderScreen();
+    await screen.findByText('Quarterly Newsletter');
+    fail = true;
+    await view.client.invalidateQueries({ queryKey: ['snoozed'] });
+    expect(await screen.findByText(/Couldn’t refresh Later\./)).toBeInTheDocument();
+    expect(screen.getByText('Quarterly Newsletter')).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't load Later/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 });

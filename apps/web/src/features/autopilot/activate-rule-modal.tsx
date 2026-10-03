@@ -139,7 +139,7 @@ function ActivateRuleSheet({
   // Turning a rule on without the unattended capability can only mean
   // Observe, so the choice disappears rather than offering a commit
   // that would 402.
-  const enablingToAct = enabling && canRunUnattended;
+  const enablingToAct = enabling && canRunUnattended && !reviewOnly;
   const offersChoice = enablingToAct && onWatchFirst != null;
   const watching = offersChoice && choice === 'watch';
   // Does the commit leave the rule in `active`? Both the day-7 promote

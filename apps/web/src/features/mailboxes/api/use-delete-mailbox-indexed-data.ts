@@ -24,6 +24,8 @@ export function useDeleteMailboxIndexedData() {
       );
       return env.data;
     },
-    onSuccess: () => resetMailboxScopedCache(qc),
+    // A lost response can follow a durable deletion request. Reconcile
+    // on either outcome rather than retaining a falsely connected cache.
+    onSettled: () => resetMailboxScopedCache(qc),
   });
 }

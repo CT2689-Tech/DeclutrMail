@@ -248,7 +248,7 @@ export function ScreenerRow({
                   row.recommendation.confidence,
                 );
                 return band === null ? null : (
-                  <span style={{ opacity: 0.85 }}>
+                  <span>
                     {' · '}
                     {band}
                   </span>
@@ -281,7 +281,8 @@ export function ScreenerRow({
       {expanded && (
         <div
           id={`screener-row-body-${row.id}`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 12px 16px 68px' }}
+          className="dm-screener-expanded"
+          style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 14 }}
         >
           {/* K/A/U/L/D toolbar. */}
           <div
@@ -333,10 +334,10 @@ export function ScreenerRow({
                       : color.card,
                     color: active
                       ? verb === 'delete'
-                        ? color.danger
+                        ? color.dangerText
                         : color.primary
                       : verb === 'delete'
-                        ? color.danger
+                        ? color.dangerText
                         : color.fg,
                   }}
                 >

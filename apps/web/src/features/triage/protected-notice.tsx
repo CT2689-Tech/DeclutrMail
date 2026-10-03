@@ -93,7 +93,7 @@ export function ProtectedActionNotice({
         border: `1px solid ${color.dangerBorder}`,
         fontSize: text.sm,
         lineHeight: 1.5,
-        color: color.danger,
+        color: color.dangerText,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,

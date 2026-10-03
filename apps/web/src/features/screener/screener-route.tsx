@@ -48,5 +48,12 @@ function ScreenerQueueRoute() {
     error: queue.error,
     retry: () => void queue.refetch(),
   });
-  return <ScreenerScreen state={state} totalPending={count.data?.pending ?? null} />;
+  return (
+    <ScreenerScreen
+      state={state}
+      totalPending={count.data?.pending ?? null}
+      refreshFailed={queue.isError && queue.data !== undefined}
+      onRefresh={() => void queue.refetch()}
+    />
+  );
 }

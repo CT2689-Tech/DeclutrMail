@@ -124,7 +124,9 @@ const rowBase: RowProps = {
 export const RowExpanded: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
-      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
         <ScreenerRow {...rowBase} />
       </div>
     </Shell>
@@ -160,7 +162,9 @@ export const RowOutcomeUnknown: Story<typeof ScreenerRow> = {
 export const PreviewPending: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
-      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
         <ScreenerRow {...rowBase} pendingVerb="archive" previewInboxCount={4} />
       </div>
     </Shell>
@@ -178,7 +182,9 @@ export const PreviewPending: Story<typeof ScreenerRow> = {
 export const DeletePreview: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
-      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
         <ScreenerRow {...rowBase} pendingVerb="delete" previewInboxCount={2} />
       </div>
     </Shell>
@@ -195,7 +201,9 @@ export const DeletePreview: Story<typeof ScreenerRow> = {
 export const DeleteReachPreview: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
-      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
         <ScreenerRow
           {...rowBase}
           pendingVerb="delete"
@@ -219,7 +227,9 @@ export const DeleteReachPreview: Story<typeof ScreenerRow> = {
 export const ProtectedOverridePreview: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
-      <div style={{ maxWidth: 900, margin: '24px auto' }}>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
         <ScreenerRow
           {...rowBase}
           row={SCREENER_QUEUE.find((r) => r.isProtected)!}

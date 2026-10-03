@@ -55,6 +55,8 @@ export interface EmptyStateTierNudge {
 }
 
 export interface EmptyStateProps {
+  /** Match the surrounding heading hierarchy; nested states default to h3. */
+  headingLevel?: 2 | 3;
   icon?: ReactNode;
   title: ReactNode;
   /** Body copy. Aliased as `body` for legacy call sites. */
@@ -74,7 +76,9 @@ export function EmptyState({
   action,
   tier,
   tierNudge,
+  headingLevel = 3,
 }: EmptyStateProps) {
+  const Heading = headingLevel === 2 ? 'h2' : 'h3';
   // `description` wins when both are supplied; `body` is the legacy alias.
   const copy = description ?? body;
   const showNudge = tier === 'free' && tierNudge !== undefined;
@@ -109,7 +113,7 @@ export function EmptyState({
         </span>
       )}
       <div>
-        <h3
+        <Heading
           style={{
             fontSize: text.xl,
             fontWeight: 650,
@@ -119,7 +123,7 @@ export function EmptyState({
           }}
         >
           {title}
-        </h3>
+        </Heading>
         {copy != null && (
           <p
             style={{

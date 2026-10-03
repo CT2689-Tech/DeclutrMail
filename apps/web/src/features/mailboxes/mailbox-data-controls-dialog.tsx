@@ -161,7 +161,7 @@ export function MailboxDataControlsDialog({
           <section style={optionStyle(true)} aria-labelledby="dm-disconnect-delete-title">
             <h3
               id="dm-disconnect-delete-title"
-              style={{ ...optionTitleStyle, color: color.danger }}
+              style={{ ...optionTitleStyle, color: color.dangerText }}
             >
               {alreadyDisconnected ? 'Delete saved data' : 'Disconnect & delete saved data'}
             </h3>
@@ -183,7 +183,7 @@ export function MailboxDataControlsDialog({
             <p
               style={{
                 margin: '12px 0 0',
-                color: color.danger,
+                color: color.dangerText,
                 fontSize: text.sm,
                 lineHeight: 1.5,
               }}
@@ -246,7 +246,7 @@ export function MailboxDataControlsDialog({
                 margin: '8px 0 12px',
                 padding: '10px 12px',
                 borderRadius: radius.md,
-                color: color.danger,
+                color: color.dangerText,
                 background: color.dangerBg,
                 fontSize: text.sm,
               }}

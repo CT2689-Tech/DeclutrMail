@@ -21,7 +21,7 @@ import {
   editorialTitleStyle,
   EditorialKicker,
 } from '@/features/editorial/page';
-import { useEffect } from 'react';
+import { useEffect, useId } from 'react';
 import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
 import { initSentryBrowser } from '@/lib/sentry';
 import { captureErrorBoundaryException, type ErrorBoundary } from '@/lib/error-capture';
@@ -62,6 +62,7 @@ export function RouteErrorScreen({
   /** Escape-hatch link — a route that is NOT this one. */
   escape: { href: string; label: string };
 }) {
+  const titleId = useId();
   useEffect(() => {
     void (async () => {
       await initSentryBrowser();
@@ -73,12 +74,16 @@ export function RouteErrorScreen({
   }, [error, boundary]);
 
   const ErrorHeading = title ? 'h2' : 'h1';
+  // Feature boundaries sit inside AppShell's main landmark; root errors
+  // have no screen title and replace that shell entirely.
+  const ErrorContainer = title ? 'section' : 'main';
 
   // The shared ErrorState composition (amber disc, title, one muted
   // sentence, one capsule) — kept inline only so the headline stays this
   // error heading and the escape link + support reference can sit beneath.
   return (
-    <main
+    <ErrorContainer
+      aria-labelledby={title ? titleId : undefined}
       className={triageMode ? styles.triage : undefined}
       data-triage-mode={triageMode}
       style={{
@@ -106,7 +111,9 @@ export function RouteErrorScreen({
       {title && (
         <>
           {kicker && <EditorialKicker>{kicker}</EditorialKicker>}
-          <h1 style={editorialTitleStyle}>{title}</h1>
+          <h1 id={titleId} style={editorialTitleStyle}>
+            {title}
+          </h1>
         </>
       )}
       <style>{`.dm-route-escape { transition: background ${motion.fast} ${motion.ease}; }
@@ -129,7 +136,7 @@ export function RouteErrorScreen({
             height: 56,
             borderRadius: radius.pill,
             background: color.amberBg,
-            color: color.amber,
+            color: color.amberDeep,
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -208,6 +215,6 @@ export function RouteErrorScreen({
           </div>
         )}
       </div>
-    </main>
+    </ErrorContainer>
   );
 }

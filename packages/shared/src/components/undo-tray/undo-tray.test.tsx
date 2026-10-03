@@ -59,6 +59,7 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
       />,
     );
     expect(html).toContain('data-dm-undo-tray="error"');
+    expect(html).toMatch(/<div[^>]*data-dm-undo-tray="error"[^>]*role="alert"/);
     expect(html).toContain('Couldn’t load recent actions');
     expect(html).toContain('View Activity');
   });

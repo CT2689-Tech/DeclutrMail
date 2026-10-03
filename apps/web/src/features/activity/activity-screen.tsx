@@ -9,7 +9,16 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useNow } from '@/lib/use-now';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useIsFetching, useIsMutating, useMutationState } from '@tanstack/react-query';
 
@@ -112,6 +121,8 @@ export const activityUndoRecoveryHelp =
     ? "Archive, Later, and Delete can be undone within your plan's Undo window"
     : `Archive, Later, and Delete have a ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`) +
   "; deleted email also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
+
+const ActivityInteractionBlocked = createContext(false);
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
@@ -319,14 +330,18 @@ export function ActivityScreen() {
     setFailedTokens(new Set());
     setBulkError(null);
   }, [filterKey, bulkBusy]);
-  const toggleRow = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
+  const toggleRow = useCallback(
+    (id: string) => {
+      if (query.isPlaceholderData) return;
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [query.isPlaceholderData],
+  );
 
   const invalidActiveFilters =
     dateFilters.isInvalid ||
@@ -457,71 +472,74 @@ export function ActivityScreen() {
           {/* Chips filter the list, so they sit directly above it. */}
           <ActionChips verbs={filters.verbs ?? []} onVerbs={setVerbs} />
 
-          <BulkActionBar
-            rows={rows}
-            selectedIds={selectedIds}
-            bulkBusy={bulkBusy}
-            bulkError={bulkError}
-            onSetBulkBusy={setBulkBusy}
-            onSetBulkError={setBulkError}
-            onSetFailedTokens={setFailedTokens}
-            onClear={() => {
-              setSelectedIds(new Set());
-              setBulkError(null);
-            }}
-          />
+          <ActivityInteractionBlocked.Provider value={showingStaleRows}>
+            <BulkActionBar
+              rows={rows}
+              selectedIds={selectedIds}
+              bulkBusy={bulkBusy}
+              bulkError={bulkError}
+              onSetBulkBusy={setBulkBusy}
+              onSetBulkError={setBulkError}
+              onSetFailedTokens={setFailedTokens}
+              onClear={() => {
+                setSelectedIds(new Set());
+                setBulkError(null);
+              }}
+            />
 
-          <div
-            aria-busy={showingStaleRows}
-            style={{
-              opacity: showingStaleRows ? 0.55 : 1,
-              pointerEvents: showingStaleRows ? 'none' : undefined,
-              transition: `opacity ${motion.fast} ${motion.ease}`,
-            }}
-          >
-            {rows.length === 0 ? (
-              <ActivityEmptyState scope={emptyScope(filters)} window={filters.window ?? '30d'} />
-            ) : groupMode === 'sender' ? (
-              <GroupedList
-                rows={rows}
-                selectedIds={selectedIds}
-                onToggle={toggleRow}
-                failedTokens={failedTokens}
-                isMobile={isMobile}
-                mailboxEmail={activeMailboxEmail}
-                mailboxId={activeMailboxId}
-              />
-            ) : (
-              <Timeline
-                rows={rows}
-                selectedIds={selectedIds}
-                onToggle={toggleRow}
-                failedTokens={failedTokens}
-                isMobile={isMobile}
-                mailboxEmail={activeMailboxEmail}
-                mailboxId={activeMailboxId}
+            <div
+              aria-busy={showingStaleRows}
+              inert={showingStaleRows}
+              style={{
+                opacity: showingStaleRows ? 0.55 : 1,
+                pointerEvents: showingStaleRows ? 'none' : undefined,
+                transition: `opacity ${motion.fast} ${motion.ease}`,
+              }}
+            >
+              {rows.length === 0 ? (
+                <ActivityEmptyState scope={emptyScope(filters)} window={filters.window ?? '30d'} />
+              ) : groupMode === 'sender' ? (
+                <GroupedList
+                  rows={rows}
+                  selectedIds={selectedIds}
+                  onToggle={toggleRow}
+                  failedTokens={failedTokens}
+                  isMobile={isMobile}
+                  mailboxEmail={activeMailboxEmail}
+                  mailboxId={activeMailboxId}
+                />
+              ) : (
+                <Timeline
+                  rows={rows}
+                  selectedIds={selectedIds}
+                  onToggle={toggleRow}
+                  failedTokens={failedTokens}
+                  isMobile={isMobile}
+                  mailboxEmail={activeMailboxEmail}
+                  mailboxId={activeMailboxId}
+                />
+              )}
+            </div>
+
+            {rows.length > 0 && (
+              <LoadMoreRegion
+                hasNextPage={query.hasNextPage}
+                isFetchingNextPage={query.isFetchingNextPage}
+                // Next-page-scoped error signal (TanStack v5): true only when
+                // the failed fetch was a `fetchNextPage` (fetchMeta direction
+                // 'forward'). The query-wide `isError` also flips on a failed
+                // background refetch (the 1.5s in-flight poll or
+                // refetchOnWindowFocus) while data is retained — gating the
+                // amber retry on it showed "Couldn't load more" to users who
+                // never loaded more.
+                nextPageFailed={query.isFetchNextPageError}
+                onLoadMore={() => {
+                  if (!query.isFetchingNextPage) void query.fetchNextPage();
+                }}
+                loadedCount={rows.length}
               />
             )}
-          </div>
-
-          {rows.length > 0 && (
-            <LoadMoreRegion
-              hasNextPage={query.hasNextPage}
-              isFetchingNextPage={query.isFetchingNextPage}
-              // Next-page-scoped error signal (TanStack v5): true only when
-              // the failed fetch was a `fetchNextPage` (fetchMeta direction
-              // 'forward'). The query-wide `isError` also flips on a failed
-              // background refetch (the 1.5s in-flight poll or
-              // refetchOnWindowFocus) while data is retained — gating the
-              // amber retry on it showed "Couldn't load more" to users who
-              // never loaded more.
-              nextPageFailed={query.isFetchNextPageError}
-              onLoadMore={() => {
-                if (!query.isFetchingNextPage) void query.fetchNextPage();
-              }}
-              loadedCount={rows.length}
-            />
-          )}
+          </ActivityInteractionBlocked.Provider>
         </>
       )}
       {!invalidActiveFilters && (
@@ -818,7 +836,7 @@ const SUMMARY_VERBS: ReadonlyArray<{
     key: 'deleted',
     verb: 'delete',
     label: 'Moved to Trash',
-    tone: color.danger,
+    tone: color.dangerText,
   },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
   // intent rows), which for one-click include attempts that may fail
@@ -1448,6 +1466,7 @@ function BulkActionBar({
   onSetFailedTokens: (updater: (prev: Set<string>) => Set<string>) => void;
   onClear: () => void;
 }) {
+  const interactionBlocked = useContext(ActivityInteractionBlocked);
   const revert = useRevertActivity();
   const mailboxId = useOptionalAuth()?.me?.activeMailboxId ?? undefined;
   const pendingTokens = useMutationState({
@@ -1466,6 +1485,7 @@ function BulkActionBar({
   if (selectedIds.size === 0) return null;
 
   const runBulkUndo = async () => {
+    if (interactionBlocked || bulkBusy) return;
     onSetBulkBusy(true);
     onSetBulkError(null);
     onSetFailedTokens(() => new Set());
@@ -1556,7 +1576,7 @@ function BulkActionBar({
         tone="primary"
         size="md"
         onClick={runBulkUndo}
-        disabled={revertableCount === 0 || bulkBusy}
+        disabled={interactionBlocked || revertableCount === 0 || bulkBusy}
       >
         {bulkBusy ? 'Undoing…' : `Undo ${revertableCount}`}
       </Button>
@@ -1801,7 +1821,7 @@ function GroupedList({
 const VERB_TONE_COLOR: Record<VerbTone, string> = {
   dark: color.fg,
   amber: color.amber,
-  danger: color.danger,
+  danger: color.dangerText,
   primary: color.emerald,
   neutral: color.fgMuted,
 };
@@ -1837,7 +1857,7 @@ export function activityActionDot(action: ActivityRowWire['action']): {
  */
 export function activityResultColor(row: ActivityRowWire): string {
   if (row.executionState?.kind === 'failed' || row.action === 'unsubscribe_failed') {
-    return color.danger;
+    return color.dangerText;
   }
   if (row.action === 'unsubscribe_unconfirmed' || row.action === 'unsubscribe_action_required') {
     return color.amber;
@@ -2282,6 +2302,7 @@ function RecoveryCell({
   mailboxId: string | null;
   mailboxEmail: string | null;
 }) {
+  const interactionBlocked = useContext(ActivityInteractionBlocked);
   const createPreview = useCreateActionRecoveryPreview();
   const confirmRecovery = useConfirmActionRecovery();
   const [open, setOpen] = useState(false);
@@ -2306,7 +2327,7 @@ function RecoveryCell({
   };
 
   const startReview = async () => {
-    if (createPreview.isPending) return;
+    if (interactionBlocked || createPreview.isPending) return;
     setOpen(true);
     setPreviewId(null);
     createPreview.reset();
@@ -2328,7 +2349,13 @@ function RecoveryCell({
   };
 
   const confirm = async ({ wakeAt, senderProtected }: RecoveryConfirmation) => {
-    if (!preview || preview.status !== 'ready' || confirmationLockedRef.current) return;
+    if (
+      interactionBlocked ||
+      !preview ||
+      preview.status !== 'ready' ||
+      confirmationLockedRef.current
+    )
+      return;
     confirmationLockedRef.current = true;
     const identity = confirmationRef.current;
     const confirmationWakeAt = wakeAt ?? null;
@@ -2358,7 +2385,7 @@ function RecoveryCell({
   };
 
   const retryVerification = async () => {
-    if (createPreview.isPending) return;
+    if (interactionBlocked || createPreview.isPending) return;
     createPreview.reset();
     setPreviewId(null);
     resetConfirmation();
@@ -2397,7 +2424,7 @@ function RecoveryCell({
       <button
         type="button"
         onClick={() => void startReview()}
-        disabled={createPreview.isPending}
+        disabled={interactionBlocked || createPreview.isPending}
         style={{
           ...rowControlStyle,
           color: color.amber,
@@ -2524,6 +2551,7 @@ function UndoCell({
    *  the bar dismisses. Address silent-failure-hunter 2026-06-05. */
   bulkFailedTokens?: Set<string> | undefined;
 }) {
+  const interactionBlocked = useContext(ActivityInteractionBlocked);
   const revert = useRevertActivity();
   const undo = row.undoState;
   const timeZone = useUserTimeZone();
@@ -2549,8 +2577,15 @@ function UndoCell({
         <button
           type="button"
           aria-busy={isPendingHere}
-          onClick={() => revert.mutate(undo.token)}
-          disabled={isPendingHere}
+          onClick={() => {
+            if (!interactionBlocked) revert.mutate(undo.token);
+          }}
+          disabled={interactionBlocked || isPendingHere}
+          title={
+            failed
+              ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
+              : 'Revert this action.'
+          }
           onMouseEnter={(e) => {
             if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
           }}
@@ -2656,6 +2691,7 @@ function ActivityErrorState({
   return (
     <div style={embedded ? { width: '100%', fontFamily: font.sans } : screenColumnStyle}>
       <RecoverableErrorState
+        headingLevel={2}
         title={title}
         description={message}
         onRetry={onRecover}
@@ -2735,6 +2771,7 @@ function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: Acti
   if (scope === 'none') {
     return (
       <EmptyState
+        headingLevel={2}
         title="No activity yet."
         description="Actions you, Autopilot, or your rules take will be recorded here."
       />
@@ -2748,6 +2785,7 @@ function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: Acti
   if (scope === 'window') {
     return (
       <EmptyState
+        headingLevel={2}
         title={`No activity in the ${windowToLabel(window, null, null).toLowerCase()}.`}
         description="Older activity, if there is any, is one step away."
         action={showAll}
@@ -2756,6 +2794,7 @@ function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: Acti
   }
   return (
     <EmptyState
+      headingLevel={2}
       title="Nothing matches these filters."
       description="Clear a filter, or show everything."
       action={showAll}

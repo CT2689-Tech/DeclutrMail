@@ -13,6 +13,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { EmptyState } from './empty-state';
 
 describe('<EmptyState /> — D212 primitive', () => {
+  it('supports a page-level heading without changing nested defaults', () => {
+    expect(renderToStaticMarkup(<EmptyState title="No senders" headingLevel={2} />)).toMatch(
+      /<h2[^>]*>No senders<\/h2>/,
+    );
+    expect(renderToStaticMarkup(<EmptyState title="No senders" />)).toMatch(
+      /<h3[^>]*>No senders<\/h3>/,
+    );
+  });
   it('renders the title verbatim', () => {
     const html = renderToStaticMarkup(<EmptyState title="No senders yet" />);
     expect(html).toContain('No senders yet');

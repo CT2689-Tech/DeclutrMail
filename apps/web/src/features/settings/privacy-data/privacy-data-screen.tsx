@@ -139,6 +139,7 @@ export function PrivacyDataView({
       {/* 1 — the D228 trust badge (locked copy module). The storage
           boundary is stated HERE and nowhere else on the page. */}
       <PrivacyBadge
+        headingLevel={2}
         variant="card"
         style={{ border: 'none', borderRadius: radius.xl, boxShadow: shadow.card }}
       />
@@ -258,7 +259,10 @@ export function PrivacyDataView({
             ))}
           </div>
           {exportFailed && exportPendingFormat === null && (
-            <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '10px 0 0' }}>
+            <p
+              role="alert"
+              style={{ fontSize: text.sm, color: color.dangerText, margin: '10px 0 0' }}
+            >
               The export could not be prepared.{' '}
               {exportFailure === 'rate_limited'
                 ? 'Exports are limited to a few every five minutes — wait, then try again.'

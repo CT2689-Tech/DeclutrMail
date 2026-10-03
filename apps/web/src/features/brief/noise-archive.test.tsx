@@ -544,7 +544,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     // preview must state the number that is about to move.
     await within(dialog).findByRole('heading', { name: /Archive 351 emails/ });
     expect(within(dialog).getByText(/in\s+your inbox now/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/This archives everything/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/including email outside this Brief/i)).toBeInTheDocument();
   });
 
   it('blocks confirm when nothing from those senders is in the inbox', async () => {
@@ -1170,7 +1170,8 @@ describe('Brief Noise bulk archive (D65)', () => {
       briefHandler(),
       bulkPreviewHandler(),
       enqueueHandler(),
-      batchStatusHandler({ status: 'failed', done: 0, failed: 2, affectedCount: 0 }),
+      // A failed chunked job can still report mail moved before its failure.
+      batchStatusHandler({ status: 'failed', done: 0, failed: 2, affectedCount: 17 }),
       undoStateHandler(),
     ]);
     renderScreen();
@@ -1178,6 +1179,7 @@ describe('Brief Noise bulk archive (D65)', () => {
 
     await screen.findByText('Archive failed — check Activity before retrying.');
     expect(screen.queryByText(/Nothing was archived/)).toBeNull();
+    expect(screen.queryByText(/Archived 17/)).toBeNull();
   });
 
   it('leaves a persistent line on partial failure and disarms the succeeded senders', async () => {

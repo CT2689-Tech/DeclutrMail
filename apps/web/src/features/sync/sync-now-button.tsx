@@ -338,7 +338,7 @@ function FailedSyncIndicator({
           fontFamily: font.sans,
           fontSize: text.sm,
           fontWeight: 600,
-          color: color.danger,
+          color: color.dangerText,
           whiteSpace: 'nowrap',
         }}
       >

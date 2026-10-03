@@ -27,7 +27,7 @@ export function HeroWorkspace() {
               <i />
             </span>
             <span>DeclutrMail / Clean up</span>
-            <span>ILLUSTRATIVE WORKSPACE</span>
+            <span>Fictional sample</span>
           </div>
           <div className="dm-mkt-hero-workspace-body">
             <div className="dm-mkt-hero-workspace-rail">
@@ -77,7 +77,6 @@ export function HeroWorkspace() {
             <div className="dm-mkt-hero-workspace-detail">
               <div className="dm-mkt-hero-workspace-detail-top">
                 <span>SENDER DETAILS</span>
-                <span>01 / 04</span>
               </div>
               <span className="dm-mkt-hero-workspace-profile-avatar">fn</span>
               <h3>Fieldnotes</h3>
@@ -116,7 +115,7 @@ export function HeroWorkspace() {
         </div>
       </div>
       <figcaption id="dm-mkt-hero-workspace-caption" className="dm-mkt-hero-workspace-caption">
-        01 / Your inbox by sender <span>Fictional sample</span>
+        Illustrative sender list and email details. Fictional sample.
       </figcaption>
     </figure>
   );

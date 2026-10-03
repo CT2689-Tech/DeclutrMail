@@ -54,7 +54,7 @@ export function GracePeriodBanner() {
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: text.md, fontWeight: 600, color: color.danger }}>
+        <span style={{ fontSize: text.md, fontWeight: 600, color: color.dangerText }}>
           {executing
             ? 'Account deletion is in progress.'
             : immediate
@@ -68,7 +68,7 @@ export function GracePeriodBanner() {
           </span>
         )}
         {cancelError != null && (
-          <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
+          <span role="alert" style={{ fontSize: text.sm, color: color.dangerText }}>
             {cancelError}
           </span>
         )}

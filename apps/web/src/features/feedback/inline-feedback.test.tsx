@@ -12,7 +12,11 @@ vi.mock('@/lib/posthog', () => ({ track: h.track }));
 
 function renderFeedback(node: ReactNode) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}>{node}</QueryClientProvider>);
+  return render(node, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
 }
 
 beforeEach(() => {
@@ -21,6 +25,36 @@ beforeEach(() => {
 });
 
 describe('InlineFeedback', () => {
+  it('drops the saved rating and receipt when the observation changes', async () => {
+    h.post.mockResolvedValue({ data: { rating: 'useful' } });
+    const view = renderFeedback(
+      <InlineFeedback surface="brief" referenceId="brief-1" initialRating={null} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Useful' }));
+    await screen.findByText('Feedback saved.');
+
+    view.rerender(<InlineFeedback surface="brief" referenceId="brief-2" initialRating={null} />);
+
+    expect(screen.getByRole('button', { name: 'Useful' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Feedback saved.')).not.toBeInTheDocument();
+  });
+
+  it('does not apply a late feedback response to the next observation', async () => {
+    let resolve!: (value: unknown) => void;
+    h.post.mockReturnValue(new Promise((done) => (resolve = done)));
+    const view = renderFeedback(
+      <InlineFeedback surface="brief" referenceId="brief-1" initialRating={null} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Useful' }));
+    await waitFor(() => expect(h.post).toHaveBeenCalledOnce());
+    view.rerender(<InlineFeedback surface="brief" referenceId="brief-2" initialRating={null} />);
+    resolve({ data: { rating: 'useful' } });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Useful' })).toBeEnabled());
+    expect(screen.getByRole('button', { name: 'Useful' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByText('Feedback saved.')).not.toBeInTheDocument();
+  });
+
   it('renders an accessible group and restores the persisted selection', () => {
     renderFeedback(
       <InlineFeedback surface="activity" referenceId="row-1" initialRating="expected" />,
@@ -78,13 +112,16 @@ describe('InlineFeedback', () => {
     expect(onSaved).toHaveBeenCalledWith('useful');
   });
 
-  it('offers all Brief ratings and keeps the prior value on failure', async () => {
+  it('keeps the prior selection and reports an unconfirmed receipt when the request fails', async () => {
     h.post.mockRejectedValue(new Error('offline'));
     renderFeedback(<InlineFeedback surface="brief" referenceId="brief-1" initialRating="useful" />);
     expect(screen.getByRole('button', { name: 'Something looks wrong' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Not useful' }));
 
-    expect(await screen.findByText(/couldn't save feedback/i)).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "We couldn't confirm your feedback was saved. Try again.",
+    );
+    expect(screen.queryByText(/Nothing changed|Feedback saved\./i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Useful' })).toHaveAttribute('aria-pressed', 'true');
     expect(h.track).not.toHaveBeenCalled();
   });

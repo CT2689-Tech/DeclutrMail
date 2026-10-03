@@ -112,7 +112,7 @@ export function UnsubBatchReceipt({
       ? 'neutral'
       : 'positive';
   const frame = {
-    failed: { bg: color.dangerBg, border: color.dangerBorder, badge: color.danger, glyph: '!' },
+    failed: { bg: color.dangerBg, border: color.dangerBorder, badge: color.dangerText, glyph: '!' },
     neutral: { bg: color.card, border: color.line, badge: color.fgMuted, glyph: '·' },
     positive: {
       bg: color.emeraldBg,

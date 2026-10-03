@@ -236,7 +236,7 @@ describe('StepProtectionReview — the review', () => {
     };
 
     renderReview({ onComplete });
-    const exit = screen.getByRole('button', { name: /Continue to Senders/i });
+    const exit = screen.getByRole('button', { name: /Open workspace/i });
 
     fireEvent.click(exit); // first attempt — the server 500s
     fireEvent.click(exit); // the user takes the toast's advice
@@ -281,7 +281,7 @@ describe('StepProtectionReview — the edges', () => {
     expect(screen.getByText(/We protected 12 senders you write back to\./)).toBeInTheDocument();
     expect(screen.getByText(/nothing here to second-guess/)).toBeInTheDocument();
     expect(screen.queryByTestId('triage-screen')).toBeNull();
-    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
   });
 
   it('never claims nothing is weakly protected when rows just could not be shown', () => {

@@ -142,7 +142,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
         'gmail-storage-full',
         'is-it-safe-to-connect-gmail-app',
       ].includes(article.slug) ? (
-        <SenderWalkthrough id={`guide-${article.slug}`} />
+        <SenderWalkthrough id={`guide-${article.slug}`} headingLevel={2} />
       ) : null}
 
       {article.sections.map((section) => (

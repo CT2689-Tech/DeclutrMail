@@ -36,3 +36,10 @@ describe('composeScreenerState', () => {
     if (state.kind === 'error') expect(state.error).toBe(err);
   });
 });
+
+it('keeps a successfully loaded empty queue on a background refresh failure', () => {
+  expect(
+    composeScreenerState({ ...base, rows: [], isError: true, error: new Error('refresh failed') })
+      .kind,
+  ).toBe('empty');
+});

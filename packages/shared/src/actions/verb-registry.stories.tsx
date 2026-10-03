@@ -96,7 +96,7 @@ const TONE_TO_COLOR: Record<VerbSpec['tone'], string> = {
   dark: color.fg,
   amber: color.amber,
   primary: color.primary,
-  danger: color.danger,
+  danger: color.dangerText,
 };
 
 export const Popover: Story = {

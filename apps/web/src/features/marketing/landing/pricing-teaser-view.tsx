@@ -15,7 +15,8 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
     formatMoney(point, currencyForPricePoint(point, provider));
 
   return (
-    <section className="dm-mkt-section dm-mkt-shell dm-mkt-center dm-mkt-pricing">
+    <section id="plans" className="dm-mkt-section dm-mkt-shell dm-mkt-center dm-mkt-pricing">
+      <p className="dm-mkt-journey-kicker">Plans &amp; pricing</p>
       <h2 className="dm-mkt-h2">Start free. Pay when it earns it.</h2>
 
       <p className="dm-mkt-lede">
@@ -23,7 +24,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
         often you want DeclutrMail to help.
       </p>
       <div className="dm-mkt-tiers">
-        <div className="dm-mkt-tier">
+        <div className="dm-mkt-tier dm-mkt-tier-free">
           <div className="dm-mkt-tier-name">{free.name}</div>
           <p className="dm-mkt-tier-job">{TIER_JOBS.free}</p>
           <div className="dm-mkt-tier-price">
@@ -36,7 +37,7 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
           </ul>
         </div>
 
-        <div className="dm-mkt-tier">
+        <div className="dm-mkt-tier dm-mkt-tier-plus">
           <div className="dm-mkt-tier-name">{plus.name}</div>
           <p className="dm-mkt-tier-job">{TIER_JOBS.plus}</p>
           <div className="dm-mkt-tier-price">
@@ -63,14 +64,20 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
         </div>
       </div>
 
-      <p className="dm-mkt-pricing-foot">
-        {founding
-          ? `${founding.name}: ${money(founding.annual)} / year, limited to the first ${founding.maxRedemptions} paid subscriptions. `
-          : ''}
-        Monthly prices shown in {provider === 'paddle' ? 'USD' : 'INR'}; local pricing, where
-        available, appears on the full pricing page. Annual billing saves two months on standard
-        paid plans. 30-day money-back guarantee on every paid plan.
-      </p>
+      <div className="dm-mkt-pricing-foot">
+        <p className="dm-mkt-refund-note">30-day money-back guarantee on every paid plan.</p>
+        <details className="dm-mkt-billing-details">
+          <summary>Annual billing, currency and Founding Pro</summary>
+          <p>
+            {founding
+              ? `${founding.name}: ${money(founding.annual)} / year, limited to the first ${founding.maxRedemptions} paid subscriptions. `
+              : ''}
+            Monthly prices shown in {provider === 'paddle' ? 'USD' : 'INR'}; local pricing, where
+            available, appears on the full pricing page. Annual billing saves two months on standard
+            paid plans.
+          </p>
+        </details>
+      </div>
       <TrackedCta
         href="/pricing"
         cta="see_pricing"

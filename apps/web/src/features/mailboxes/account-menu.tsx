@@ -83,6 +83,8 @@ export function AccountMenu() {
     };
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // Own this press even if React removes the dialog before page listeners run.
+      e.preventDefault();
       setOpen(false);
       triggerRef.current?.focus();
     };
@@ -536,7 +538,7 @@ export function AccountMenu() {
               // idempotent, so another try confirms it either way.
               onError: () => {
                 setDataControlsError(
-                  `Couldn't confirm ${managedMailbox.email} was disconnected. Try again.`,
+                  `Could not confirm disconnecting ${managedMailbox.email}. Check the account status before trying again.`,
                 );
               },
             });
@@ -560,7 +562,7 @@ export function AccountMenu() {
                 // request if there is one.
                 onError: () => {
                   setDataControlsError(
-                    `Couldn't confirm saved-data deletion for ${managedMailbox.email}. Try again.`,
+                    `Could not confirm saved-data deletion for ${managedMailbox.email}. Check the account status before trying again.`,
                   );
                 },
               },
@@ -610,7 +612,8 @@ function MenuStatus({
   tone: 'primary' | 'muted' | 'danger';
   children: string;
 }) {
-  const fg = tone === 'primary' ? color.primary : tone === 'danger' ? color.danger : color.fgMuted;
+  const fg =
+    tone === 'primary' ? color.primary : tone === 'danger' ? color.dangerText : color.fgMuted;
   return (
     <span
       style={{

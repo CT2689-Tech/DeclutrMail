@@ -51,13 +51,13 @@ describe('rendered public promises and product entry', () => {
     expect(rendered).not.toMatch(/actually clears space|unsubscribed so far only left/);
   });
 
-  it('labels the illustrative walkthrough and explains the complete product journey', () => {
+  it('labels the illustrative Archive walkthrough and preserves its recovery boundary', () => {
     render(<ProductJourney />);
     expect(screen.getByText(/Illustrative walkthrough · made-up data/)).toBeInTheDocument();
-    expect(screen.getByText(/not your mailbox/)).toBeInTheDocument();
-    expect(screen.getByText(/Keep is an inline decision/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing changes in Gmail/)).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Archive walkthrough' })).toBeInTheDocument();
     expect(
-      screen.getByText(/Delivered unsubscribe requests cannot be recalled/),
+      screen.getByText(/A delivered unsubscribe request cannot be recalled/),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Try the Senders workspace/ })).toHaveAttribute(
       'href',

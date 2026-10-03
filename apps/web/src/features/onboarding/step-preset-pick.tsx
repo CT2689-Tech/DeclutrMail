@@ -3,7 +3,7 @@
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 
 import { useState, type ReactNode } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, tokens, toast } from '@declutrmail/shared';
 import type {
   OnboardingGoal,
@@ -12,6 +12,10 @@ import type {
 } from '@declutrmail/shared/contracts';
 
 import { autopilotRulesQueryOptions } from '@/features/autopilot/api/query-options';
+import {
+  isMailboxScopeConflict,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 import { fetchAutopilotRules } from '@/lib/api/autopilot';
 import { captureFeatureException } from '@/lib/sentry';
 import { track } from '@/lib/posthog';
@@ -91,6 +95,7 @@ export function StepPresetPick({
   const [picked, setPicked] = useState<ReadonlySet<OnboardingPresetKey>>(new Set());
   const [goal, setGoal] = useState<OnboardingGoal | null>(initialGoal);
   const submit = useSubmitPresetPicks();
+  const queryClient = useQueryClient();
 
   // Same key as the Autopilot screen so the cache is shared; the poll
   // stops the moment the seeder has run (or immediately, when rules
@@ -246,10 +251,28 @@ export function StepPresetPick({
       {/* Honest seed status — never blocks submission (picks persist
           in preferences and the seeder applies them; see docblock). */}
       {!rules.isLoading && !rulesSeeded && (
-        <p style={{ color: color.fgMuted, fontSize: text.sm, margin: '0 0 14px', maxWidth: 460 }}>
-          Your suggestions are still being prepared. Selections made now will appear when they are
-          ready.
-        </p>
+        <div style={{ marginBottom: 14 }}>
+          <p role="status" style={{ color: color.fgMuted, fontSize: text.sm, maxWidth: 460 }}>
+            {rules.isError
+              ? "We couldn't check your preset rules. You can still save your selections."
+              : 'No preset rules are available yet. You can still save your selections.'}
+          </p>
+          {rules.isError && (
+            <Button
+              tone="default"
+              size="sm"
+              onClick={() => {
+                if (isMailboxScopeConflict(rules.error)) {
+                  void resetMailboxScopedCache(queryClient);
+                } else {
+                  void rules.refetch();
+                }
+              }}
+            >
+              {isMailboxScopeConflict(rules.error) ? 'Refresh connection' : 'Try again'}
+            </Button>
+          )}
+        </div>
       )}
 
       <Button

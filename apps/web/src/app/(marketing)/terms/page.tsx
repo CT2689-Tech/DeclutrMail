@@ -72,11 +72,11 @@ export default function TermsOfServicePage() {
           DeclutrMail modifies your mailbox only at your instruction — either an action you approve
           directly, or a rule you explicitly enabled. Before a manual sender-cleanup action moves
           mail in Triage or Senders, DeclutrMail shows the current matching count, an available
-          sample, and the planned Gmail changes. The worker re-checks Gmail at execution, so the
-          final affected count can change if the inbox changes in between. Autopilot rules show a
-          preview before activation; once enabled, matching future mail can run without a new
-          per-message approval. You are responsible for reviewing previews and rule scope before
-          approval. {ACTION_SAFETY_SUMMARY}
+          sample, and the planned Gmail changes. Matching mail is resolved again when the action
+          runs, so the final affected count can change. Autopilot rules show a preview before
+          activation; once enabled, matching future mail can run without a new per-message approval.
+          You are responsible for reviewing previews and rule scope before approval.{' '}
+          {ACTION_SAFETY_SUMMARY}
         </p>
         <p>
           Unsubscribe actions use the mechanisms senders publish. We cannot guarantee a sender

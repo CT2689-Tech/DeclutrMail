@@ -248,6 +248,7 @@ function MessageRow({
       }}
     >
       <span
+        role="img"
         aria-label={message.unread ? 'Unread' : 'Read'}
         title={message.unread ? 'Unread' : 'Read'}
         style={{
@@ -369,7 +370,7 @@ function MessageRow({
         }}
       >
         {message.hasAttachment && (
-          <span aria-label="Has attachment" title="Has attachment">
+          <span role="img" aria-label="Has attachment" title="Has attachment">
             <PaperclipIcon />
           </span>
         )}

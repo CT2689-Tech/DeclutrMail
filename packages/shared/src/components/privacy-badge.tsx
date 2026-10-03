@@ -33,10 +33,13 @@ export type PrivacyBadgeVariant = 'card' | 'inline';
 export function PrivacyBadge({
   variant = 'card',
   style,
+  headingLevel = 3,
 }: {
   variant?: PrivacyBadgeVariant;
   style?: CSSProperties;
+  headingLevel?: 2 | 3;
 }) {
+  const Heading = headingLevel === 2 ? 'h2' : 'h3';
   if (variant === 'inline') {
     return (
       <div
@@ -88,7 +91,7 @@ export function PrivacyBadge({
       }}
     >
       <header style={{ marginBottom: 12 }}>
-        <h3
+        <Heading
           style={{
             margin: 0,
             fontSize: text.lg,
@@ -98,7 +101,7 @@ export function PrivacyBadge({
           }}
         >
           {PRIVACY_BADGE_HEADLINE}
-        </h3>
+        </Heading>
         <p
           style={{
             margin: '6px 0 0',

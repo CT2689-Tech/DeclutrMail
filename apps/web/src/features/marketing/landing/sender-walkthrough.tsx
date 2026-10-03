@@ -14,13 +14,16 @@ const STEPS = ['Inspect', 'Preview', 'Result', 'Undo'] as const;
 export function SenderWalkthrough({
   id,
   showDemoLink = true,
+  headingLevel = 3,
 }: {
   id: string;
   showDemoLink?: boolean;
+  headingLevel?: 2 | 3;
 }) {
+  const PanelHeading = headingLevel === 2 ? 'h2' : 'h3';
   return (
     <fieldset className="dm-walkthrough" aria-describedby={`${id}-disclosure ${id}-undo`}>
-      <legend>A cleanup, step by step</legend>
+      <legend>Archive walkthrough</legend>
       <p id={`${id}-disclosure`} className="dm-walkthrough-note">
         Illustrative walkthrough · made-up data. Nothing changes in Gmail.
       </p>
@@ -43,7 +46,7 @@ export function SenderWalkthrough({
       <div className="dm-walkthrough-panels">
         <div id={`${id}-panel-1`} data-step="1" className="dm-walkthrough-panel">
           <p className="dm-walkthrough-eyebrow">Senders → Sender details</p>
-          <h3>LinkedIn Updates</h3>
+          <PanelHeading>LinkedIn Updates</PanelHeading>
           <p className="dm-walkthrough-note">updates@example.com · sample sender</p>
           <dl>
             <div>
@@ -56,8 +59,7 @@ export function SenderWalkthrough({
             </div>
           </dl>
           <p>
-            Open a sender beside the list. Check recent subjects and the email your decision would
-            affect.
+            Open a sender's details. Check recent subjects and the email your decision would affect.
           </p>
           <p className="dm-walkthrough-note">
             Marked-read flags give context; they do not prove an email was read.
@@ -65,7 +67,7 @@ export function SenderWalkthrough({
         </div>
         <div id={`${id}-panel-2`} data-step="2" className="dm-walkthrough-panel">
           <p className="dm-walkthrough-eyebrow">Archive preview</p>
-          <h3>Archive 128 emails?</h3>
+          <PanelHeading>Archive 128 emails?</PanelHeading>
           <dl>
             <div>
               <dt>Where</dt>
@@ -84,7 +86,7 @@ export function SenderWalkthrough({
         </div>
         <div id={`${id}-panel-3`} data-step="3" className="dm-walkthrough-panel">
           <p className="dm-walkthrough-eyebrow">Activity → Completed</p>
-          <h3>128 emails archived</h3>
+          <PanelHeading>128 emails archived</PanelHeading>
           <p>LinkedIn Updates · Archive</p>
           <p>
             Activity records the completed result. If an action is still running or needs attention,
@@ -96,7 +98,7 @@ export function SenderWalkthrough({
         </div>
         <div id={`${id}-panel-4`} data-step="4" className="dm-walkthrough-panel">
           <p className="dm-walkthrough-eyebrow">Activity → Undo complete</p>
-          <h3>128 emails restored</h3>
+          <PanelHeading>128 emails restored</PanelHeading>
           <p>In this example, the archived inbox email returns to Inbox.</p>
           <p className="dm-walkthrough-note">
             Undo applies to supported mail-moving actions. A delivered unsubscribe request cannot be

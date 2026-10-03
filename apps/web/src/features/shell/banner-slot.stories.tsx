@@ -12,7 +12,7 @@ function DemoBanner({ children }: { children: string }) {
         padding: '10px 20px',
         background: color.dangerBg,
         borderBottom: `1px solid ${color.dangerBorder}`,
-        color: color.danger,
+        color: color.dangerText,
         fontFamily: font.sans,
         fontSize: text.md,
         fontWeight: 600,

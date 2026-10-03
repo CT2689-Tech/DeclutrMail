@@ -24,7 +24,7 @@ const { color, radius, space } = tokens;
  * cached or in-flight number never arms this button.
  *
  * The scope line is the load-bearing sentence on this surface. The
- * Noise heading above it counts YESTERDAY's mail (the frozen D69
+ * Noise heading above it counts the edition's mail (the frozen D69
  * snapshot); the archive reaches everything from these senders that is
  * in the inbox now. Those two numbers routinely differ, so the sheet
  * says which one is about to move, in the title.
@@ -119,8 +119,8 @@ export function NoiseArchiveSheet({
       subtitle={
         nothingToActOn ? undefined : (
           <>
-            This archives everything from {n === 1 ? 'this sender' : 'these senders'} that is in
-            your inbox now — not only yesterday&rsquo;s mail. Nothing is deleted.
+            Archives all email from {n === 1 ? 'this sender' : 'these senders'} in your inbox now,
+            including email outside this Brief.
           </>
         )
       }

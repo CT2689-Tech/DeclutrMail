@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { useDeleteMailboxIndexedData } from './use-delete-mailbox-indexed-data';
 
 describe('useDeleteMailboxIndexedData', () => {
@@ -52,4 +52,25 @@ describe('useDeleteMailboxIndexedData', () => {
     expect(posted).toEqual({ confirmPhrase: 'DELETE person@example.com' });
     expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
   });
+});
+
+it('useDeleteMailboxIndexedData reconciles an uncertain response instead of retaining stale mailbox data', async () => {
+  installFetchStub([
+    {
+      method: 'POST',
+      path: '/api/mailboxes/11111111-1111-4111-8111-111111111111/indexed-data-deletion',
+      respond: () => jsonServerError(),
+    },
+  ]);
+  const client = createTestQueryClient();
+  client.setQueryData(['senders', 'list'], [{ id: 'stale' }]);
+  const { result } = renderHook(() => useDeleteMailboxIndexedData(), {
+    wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+  });
+  result.current.mutate({
+    mailboxId: '11111111-1111-4111-8111-111111111111',
+    confirmPhrase: 'DELETE person@example.com',
+  });
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
 });

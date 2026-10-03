@@ -28,7 +28,7 @@ vi.mock('@/lib/sentry', () => ({
   initSentryBrowser: () => initSpy(),
 }));
 
-import GlobalError from './global-error';
+import GlobalError, { GlobalErrorContent } from './global-error';
 
 beforeEach(() => {
   captureSpy.mockClear();
@@ -49,7 +49,7 @@ describe('GlobalError boundary — D167', () => {
     });
   });
 
-  it('renders calm-branded headline copy', () => {
+  it('renders a manual recovery state without implying automatic reload or a verified mailbox outcome', () => {
     render(
       <GlobalError
         error={Object.assign(new Error('Layout crashed'), { digest: 'd' })}
@@ -101,5 +101,18 @@ describe('GlobalError boundary — D167', () => {
     );
     const BANNED_VERB = ['S', 'c', 'r', 'e', 'e', 'n'].join('');
     expect(container.textContent ?? '').not.toMatch(new RegExp(`\\b${BANNED_VERB}\\b`));
+  });
+});
+
+it('provides readable literal color fallbacks without the root token stylesheet', () => {
+  render(<GlobalErrorContent error={new Error('private')} reset={() => undefined} />);
+  expect(screen.getByRole('main')).toHaveStyle({
+    color: '#2d2630',
+    backgroundColor: '#f6f2eb',
+  });
+  expect(screen.getByRole('button', { name: 'Try again' })).toHaveStyle({
+    backgroundColor: '#59415f',
+    color: '#ffffff',
+    height: '44px',
   });
 });

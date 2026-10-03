@@ -103,8 +103,9 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
         <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
+          headingLevel={2}
           title="We couldn't load your invoices"
-          description="Your plan and your billing are unaffected — this page only reads them."
+          description="Try again to load your invoices."
           onRetry={() => invoices.refetch()}
         />
       </section>
@@ -216,6 +217,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           </p>
         ) : (
           <EmptyState
+            headingLevel={2}
             title="No invoices yet"
             description="Your first one appears here once a payment has been collected."
           />
@@ -382,7 +384,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           role="alert"
           style={{
             fontSize: text.sm,
-            color: color.danger,
+            color: color.dangerText,
             background: color.dangerBg,
             borderRadius: radius.md,
             padding: '8px 10px',

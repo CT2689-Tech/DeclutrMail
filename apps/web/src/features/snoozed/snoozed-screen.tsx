@@ -34,6 +34,7 @@ import {
   formatWakeTime,
   groupByWakeTime,
   snoozePresets,
+  parseSnoozeWallTime,
   WAKE_BUCKET_LABELS,
   WAKE_BUCKETS,
   type WakeBucket,
@@ -177,12 +178,21 @@ function SnoozedScreenContents() {
           second banner; the affected rows below carry the per-sender
           detail instead. */}
 
+      {query.isError && query.data !== undefined && (
+        <div role="status">
+          Couldn’t refresh Later.{' '}
+          <Button tone="ghost" onClick={() => void query.refetch()}>
+            Try again
+          </Button>
+        </div>
+      )}
       {query.isLoading ? (
         <LoadingState />
-      ) : query.isError ? (
+      ) : query.isError && query.data === undefined ? (
         <SnoozedErrorState error={query.error} onRetry={() => query.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
+          headingLevel={2}
           title="Nothing in Later"
           description={
             <>
@@ -424,7 +434,7 @@ export function SnoozedRow({
             </div>
           ) : null}
           {returnIssue ? (
-            <div style={{ fontSize: text.sm, color: color.danger }}>{returnIssue}</div>
+            <div style={{ fontSize: text.sm, color: color.dangerText }}>{returnIssue}</div>
           ) : null}
           {row.returnStatus === 'retrying' && row.lastReturnAttemptAt ? (
             <div
@@ -564,7 +574,7 @@ function WakeConfirm({
         </Button>
       </span>
       {error ? (
-        <span role="alert" style={{ fontSize: text.sm, color: color.danger, width: '100%' }}>
+        <span role="alert" style={{ fontSize: text.sm, color: color.dangerText, width: '100%' }}>
           {error instanceof ApiError && error.status === 503
             ? "The return schedule isn't available right now. Try again in a moment."
             : "Couldn't start the return. Try again in a moment."}
@@ -604,7 +614,18 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
     );
   };
 
-  const customValid = custom !== '' && new Date(custom).getTime() > Date.now();
+  const customTime = parseSnoozeWallTime(custom, timeZone);
+  const customValid = customTime.kind === 'valid' && customTime.at.getTime() > Date.now();
+  const customError =
+    custom !== '' && customTime.kind !== 'valid'
+      ? customTime.kind === 'missing'
+        ? 'This time is skipped by a daylight-saving change. Choose another time.'
+        : customTime.kind === 'ambiguous'
+          ? 'This time occurs twice during a daylight-saving change. Choose another time.'
+          : 'Enter a valid return time.'
+      : custom !== '' && !customValid
+        ? 'Choose a future return time.'
+        : null;
 
   return (
     <div
@@ -639,10 +660,11 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
             gap: 6,
           }}
         >
-          Custom
+          Custom · {timeZone}
           <input
             type="datetime-local"
             value={custom}
+            aria-invalid={customError !== null}
             onChange={(e) => setCustom(e.target.value)}
             style={{
               fontSize: text.sm,
@@ -660,7 +682,10 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
         <Button
           tone="default"
           disabled={!customValid || setSnooze.isPending}
-          onClick={() => submit(new Date(custom).toISOString(), 'custom')}
+          onClick={() => {
+            if (customTime.kind === 'valid' && customValid)
+              submit(customTime.at.toISOString(), 'custom');
+          }}
         >
           Set
         </Button>
@@ -693,9 +718,14 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
           Cancel
         </Button>
       </div>
+      {customError && (
+        <span role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
+          {customError}
+        </span>
+      )}
 
       {setSnooze.isError ? (
-        <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
+        <span role="alert" style={{ fontSize: text.sm, color: color.dangerText }}>
           Couldn&rsquo;t update the return time. Try again in a moment.
         </span>
       ) : null}
@@ -737,6 +767,7 @@ function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
       }}
     >
       <ErrorState
+        headingLevel={2}
         title="We couldn't load Later"
         description={loadErrorDescription(error)}
         onRetry={onRetry}

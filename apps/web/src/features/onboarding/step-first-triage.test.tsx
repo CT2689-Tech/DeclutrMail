@@ -1,12 +1,14 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { fireEvent, render as renderNode, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { StepFirstTriage } from './step-first-triage';
 
 const onboarding = vi.hoisted(() => ({
   firstTriage: {
     isError: false,
-    error: null,
+    error: null as unknown,
     isLoading: false,
     data: {
       rows: [] as typeof TRIAGE_QUEUE,
@@ -16,6 +18,11 @@ const onboarding = vi.hoisted(() => ({
   },
 }));
 const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+const connection = vi.hoisted(() => ({ reset: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/features/mailboxes/api/reset-mailbox-cache', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, resetMailboxScopedCache: connection.reset };
+});
 const triageStats = vi.hoisted(() => ({
   isError: false,
   isLoading: false,
@@ -47,6 +54,9 @@ beforeEach(() => {
   // `isError` was not reset here, so the first test to set it would have
   // leaked into every test after it.
   onboarding.firstTriage.isError = false;
+  onboarding.firstTriage.error = null;
+  onboarding.firstTriage.refetch.mockClear();
+  connection.reset.mockClear();
   onboarding.firstTriage.isLoading = false;
   onboarding.firstTriage.data = {
     rows: [] as typeof TRIAGE_QUEUE,
@@ -56,7 +66,30 @@ beforeEach(() => {
   analytics.track.mockReset();
 });
 
+function render(node: ReactNode) {
+  return renderNode(<QueryWrapper client={createTestQueryClient()}>{node}</QueryWrapper>);
+}
+
 describe('StepFirstTriage', () => {
+  it.each(['SELECT_MAILBOX', 'NO_ACTIVE_MAILBOX'])(
+    'reconciles %s instead of repeating the failed read',
+    (code) => {
+      onboarding.firstTriage.isError = true;
+      onboarding.firstTriage.error = { code };
+      const onComplete = vi.fn();
+      render(
+        <StepFirstTriage onComplete={onComplete} completing={false} goal="reduce_newsletters" />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh connection' }));
+
+      expect(connection.reset).toHaveBeenCalledOnce();
+      expect(onboarding.firstTriage.refetch).not.toHaveBeenCalled();
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    },
+  );
+
   it('frames the active step as a finite goal-led relief session', () => {
     onboarding.firstTriage.data = {
       rows: TRIAGE_QUEUE.slice(0, 3),
@@ -98,7 +131,7 @@ describe('StepFirstTriage', () => {
     expect(screen.getByText(/can be undone from Activity/i)).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/require Plus/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
   });
 
   it('spares Plus/Pro users the Free-tier caveat', () => {
@@ -106,7 +139,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/On Free/i)).not.toBeInTheDocument();
   });
@@ -116,7 +149,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });
@@ -134,7 +167,7 @@ describe('StepFirstTriage', () => {
     const title = screen.getByRole('heading', { level: 1 });
     expect(title).toHaveTextContent(/decisions/i);
     expect(title).not.toHaveTextContent(/\bclean/i);
-    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Open workspace/i })).toBeInTheDocument();
   });
 
   it('stays retryable when the completion POST fails', () => {
@@ -151,7 +184,7 @@ describe('StepFirstTriage', () => {
     render(
       <StepFirstTriage onComplete={onComplete} completing={false} goal="reduce_newsletters" />,
     );
-    const exit = screen.getByRole('button', { name: /Continue to Senders/i });
+    const exit = screen.getByRole('button', { name: /Open workspace/i });
 
     fireEvent.click(exit);
     fireEvent.click(exit);
@@ -184,7 +217,7 @@ describe('StepFirstTriage', () => {
   });
 
   // The mid-review exit ends onboarding for good. It was briefly given
-  // the COMPLETION panel's label ("Continue to Senders"), which reads as
+  // the COMPLETION panel's label ("Open workspace"), which reads as
   // navigation while senders are still queued. The two controls must not
   // share a name.
   it('does not label the mid-review exit as navigation', () => {
@@ -196,7 +229,7 @@ describe('StepFirstTriage', () => {
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
     expect(screen.getByRole('button', { name: /Finish for today/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Continue to Senders/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Open workspace/i })).not.toBeInTheDocument();
   });
 
   // Step 5 renders `corner` in every state — mid-review, loading, error

@@ -8,9 +8,16 @@
   color: var(--dm-fg);
 }
 .dm-walkthrough legend {
-  padding: 0 6px;
+  float: left;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 0;
   font-size: 14px;
   font-weight: 600;
+}
+.dm-walkthrough legend + p {
+  clear: both;
+  margin-top: 0;
 }
 .dm-walkthrough .dm-walkthrough-note {
   font-size: 12px;
@@ -53,6 +60,7 @@
   padding-block: 16px;
   min-height: 290px;
 }
+.dm-walkthrough .dm-walkthrough-panel h2,
 .dm-walkthrough-panel h3 {
   margin: 8px 0;
   font-family: var(--dm-font-display);

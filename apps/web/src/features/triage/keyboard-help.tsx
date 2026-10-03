@@ -34,7 +34,7 @@ const { color, font, radius, shadow, text } = tokens;
  *   - ?            → this overlay
  *
  * `?` never opens on top of another modal (e.g. the D226 action
- * sheet) — same aria-modal guard as the senders cheatsheet.
+ * sheet) — same dialog guard as the senders cheatsheet.
  */
 export function TriageKeyboardHelp() {
   const [open, setOpen] = useState(false);
@@ -46,7 +46,7 @@ export function TriageKeyboardHelp() {
         return;
       }
       if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target)) {
-        if (!open && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+        if (!open && document.querySelector('[role="dialog"]')) return;
         e.preventDefault();
         setOpen((v) => !v);
       }

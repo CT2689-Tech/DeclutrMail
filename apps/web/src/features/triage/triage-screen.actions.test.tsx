@@ -1784,6 +1784,30 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(enqueues).toHaveLength(0);
   });
 
+  it('keeps its inline preview when a nonmodal account dialog owns Escape', async () => {
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await screen.findByRole('region', { name: /^Preview · Archive / });
+    const accountDialog = document.createElement('div');
+    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('aria-label', 'Gmail accounts');
+    document.body.append(accountDialog);
+    try {
+      fireEvent.keyDown(accountDialog, { key: 'Escape' });
+      expect(useTriageStore.getState().pendingAction).toMatchObject({
+        surface: 'inline',
+        verb: 'Archive',
+      });
+      accountDialog.remove();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(useTriageStore.getState().pendingAction).toBeNull();
+    } finally {
+      accountDialog.remove();
+    }
+  });
+
   it('Escape inside an input is ignored (typing convention)', async () => {
     useTriageStore.getState().setRememberPreference('Archive', true);
     const client = createTestQueryClient();

@@ -14,7 +14,7 @@ describe('/how-it-works', () => {
     expect(copy).toContain('Gmail remains where you read, reply, compose, and search');
     expect(copy).toContain('companion to Gmail, not a replacement email client');
     expect(copy).toContain('Recent subject links return to Gmail');
-    expect(copy).toContain('Manual actions affect only the email shown before you confirm');
+    expect(copy).toContain('Manual actions affect current mail matching the scope you approve');
     expect(copy).toContain('Autopilot rules are separate and must be turned on');
     const jumps = screen.getByRole('navigation', { name: 'Explore how it works' });
     expect(within(jumps).getByRole('link', { name: 'Past email' })).toHaveAttribute(
@@ -65,7 +65,9 @@ describe('/how-it-works', () => {
       expect(figure).toHaveAttribute('aria-labelledby');
     }
     expect(container.querySelector('header header')).toBeNull();
-    expect(screen.getByText(/Your inbox by sender/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('figure', { name: /Illustrative sender list and email details/i }),
+    ).toBeInTheDocument();
   });
 
   it('states each decision once, in one table, with a start-free CTA and the scope disclosure', () => {

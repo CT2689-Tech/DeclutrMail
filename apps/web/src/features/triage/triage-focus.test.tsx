@@ -420,6 +420,23 @@ describe('focus mode — Skip', () => {
     expect(cardTitle()).toBe(GROUPON.senderName);
   });
 
+  it('keeps the current sender while a nonmodal account dialog owns Skip', () => {
+    renderScreen(ready([GROUPON, LINKEDIN]));
+    const accountDialog = document.createElement('div');
+    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('aria-label', 'Gmail accounts');
+    document.body.append(accountDialog);
+    try {
+      fireEvent.keyDown(accountDialog, { key: 'ArrowRight' });
+      expect(cardTitle()).toBe(GROUPON.senderName);
+      accountDialog.remove();
+      fireEvent.keyDown(window, { key: 'ArrowRight' });
+      expect(cardTitle()).toBe(LINKEDIN.senderName);
+    } finally {
+      accountDialog.remove();
+    }
+  });
+
   it('is ignored while a sheet is open — the sender stays under its preview', async () => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     fireEvent.keyDown(window, { key: 'a' });

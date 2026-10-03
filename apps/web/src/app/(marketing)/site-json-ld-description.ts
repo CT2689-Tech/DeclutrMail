@@ -12,10 +12,11 @@ import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-
 
 /**
  * D245: same derive-or-hedge shape as every other undo-window site.
- * ADR-0030: leads with the preview guarantee, keeps the sender as the
- * mechanism — see `layout.tsx` for the full history of that wording.
+ * Keep is inline; affected-email previews apply to mail-moving actions.
  */
-export const softwareApplicationDescription =
+const activityUndoWindow =
   UNIFORM_UNDO_WINDOW_DAYS === null
-    ? 'Gmail cleanup that previews every action before it runs — the current matching count, an available sample, and the exact Gmail changes — then takes one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Archive and Later are reversible from Activity for the plan’s undo window; a delivered unsubscribe request cannot be recalled.'
-    : `Gmail cleanup that previews every action before it runs — the current matching count, an available sample, and the exact Gmail changes — then takes one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Archive and Later are reversible from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days; a delivered unsubscribe request cannot be recalled.`;
+    ? 'until the deadline shown there'
+    : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`;
+
+export const softwareApplicationDescription = `Gmail cleanup with one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Before a manual action moves email, see the matching count, a sample when available, and the planned Gmail changes. Keep records an inline decision. Unsubscribe confirms the request method and any separate cleanup. Archive, Later, and Delete can be undone from Activity ${activityUndoWindow}; a delivered unsubscribe request cannot be recalled.`;

@@ -206,7 +206,10 @@ export function ActivitySupportBundleDialog({
               )}
             </div>
             {invalidRange && (
-              <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: text.sm }}>
+              <div
+                role="alert"
+                style={{ marginTop: 8, color: color.dangerText, fontSize: text.sm }}
+              >
                 The From date must be earlier than the To date.
               </div>
             )}
@@ -262,7 +265,7 @@ export function ActivitySupportBundleDialog({
               style={{
                 padding: '12px 14px',
                 borderRadius: radius.lg,
-                color: color.danger,
+                color: color.dangerText,
                 background: color.dangerBg,
                 fontSize: text.base,
               }}

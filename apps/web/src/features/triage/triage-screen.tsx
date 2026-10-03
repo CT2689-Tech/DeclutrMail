@@ -234,7 +234,7 @@ export function TriageScreen({
   // resting-queue empty state must not claim "nothing to do" while the
   // active mailbox's initial sync has terminally failed.
   const activeMailbox = auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId);
-  const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const mailboxReadiness = activeMailbox?.readiness;
   const mailboxNeedsReconnect = activeMailbox?.needsReconnect === true;
   const pendingAction = useTriageStore((s) => s.pendingAction);
   // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
@@ -1055,7 +1055,8 @@ export function TriageScreen({
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
-              toast(`Couldn't save Keep for ${row.senderName} — nothing changed.`, 'warn');
+              invalidateAfterDecision(qc);
+              toast(`Couldn't confirm Keep for ${row.senderName}.`, 'warn');
             },
             onSettled: () => setIntentRowId(null),
           },
@@ -1563,7 +1564,8 @@ export function TriageScreen({
   useEffect(() => {
     if (pendingAction == null || pendingAction.surface !== 'inline') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]')) return;
       // Don't hijack Escape inside inputs / textareas / contentEditable
       // (same convention as the toolbar's verb shortcuts).
       const target = e.target as HTMLElement | null;
@@ -1657,7 +1659,16 @@ export function TriageScreen({
             </p>
           </div>
           {state.kind === 'ready' && hasQueue && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: 12,
+                minWidth: 0,
+                maxWidth: '100%',
+              }}
+            >
               {/* The screen's one count. */}
               <SessionProgress
                 decided={sessionMailboxId === actionMailboxId ? sessionDecidedCount : 0}
@@ -1718,7 +1729,7 @@ export function TriageScreen({
           <TriageEmptyState
             stats={state.stats}
             onOpenUpgrade={openPricing}
-            syncFailed={mailboxSyncFailed}
+            readiness={mailboxReadiness}
             syncNeedsReconnect={mailboxNeedsReconnect}
             footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}
           />
@@ -1874,6 +1885,7 @@ export function TriageScreen({
 function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <ErrorState
+      headingLevel={2}
       title="Your queue didn't load"
       description={loadErrorDescription(error)}
       onRetry={onRetry}

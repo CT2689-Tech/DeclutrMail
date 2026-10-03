@@ -35,6 +35,9 @@ import type { OnboardingFirstTriageMeta } from '@declutrmail/shared/contracts';
 import { type TriageDecisionRow } from '@/features/triage/data';
 import { TRIAGE_QUEUE } from '@/features/triage/fixtures';
 import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/use-triage-queue';
+import { AuthProvider } from '@/features/auth/auth-provider';
+import { ME_QUERY_KEY, type Me } from '@/features/auth/api/me-contract';
+import { undoKeys } from '@/features/undo/query-keys';
 import { FIRST_TRIAGE_KEY } from './api/use-onboarding';
 import { StepProtectionReview } from './step-protection-review';
 
@@ -45,6 +48,7 @@ const meta: Meta<typeof StepProtectionReview> = {
   component: StepProtectionReview,
   parameters: {
     layout: 'fullscreen',
+    nextjs: { appDirectory: true },
     docs: {
       description: {
         component:
@@ -95,6 +99,7 @@ function Seeded({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(FIRST_TRIAGE_KEY, { rows, meta: readMeta });
+  seedAuth(client);
   // The stats are one field of the single Triage cache entry now, so the
   // story seeds the whole payload rather than a stats-only key.
   client.setQueryData(TRIAGE_BOOTSTRAP_KEY, {
@@ -118,7 +123,9 @@ function Seeded({
   });
   return (
     <QueryClientProvider client={client}>
-      <div style={{ background: color.bg, minHeight: 640 }}>{children}</div>
+      <AuthProvider>
+        <div style={{ background: color.bg, minHeight: 640 }}>{children}</div>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }
@@ -258,9 +265,39 @@ function pinnedClient(): QueryClient {
   });
 }
 
+function seedAuth(client: QueryClient) {
+  // Keep these fixtures focused on the protection state, with no cold
+  // reads from the development API or unrelated tray failure chips.
+  client.setQueryDefaults(undoKeys.all, { enabled: false });
+  client.setQueryData(undoKeys.tray(), []);
+  client.setQueryData(undoKeys.inFlight(), []);
+  const me: Me = {
+    user: {
+      id: 'story-user',
+      email: 'story@example.com',
+      workspaceId: 'story-workspace',
+      timezone: 'UTC',
+    },
+    activeMailboxId: 'story-mailbox',
+    mailboxes: [
+      {
+        id: 'story-mailbox',
+        email: 'story@example.com',
+        status: 'active',
+        connectedAt: null,
+        readiness: 'ready',
+      },
+    ],
+    tier: 'free',
+    cleanupRemaining: 50,
+  };
+  client.setQueryData(ME_QUERY_KEY, me);
+}
+
 /** A client whose first-triage read never settles. */
 function Pending({ children }: { children: React.ReactNode }) {
   const client = pinnedClient();
+  seedAuth(client);
   void client.prefetchQuery({
     queryKey: FIRST_TRIAGE_KEY,
     queryFn: () => new Promise<never>(() => {}),
@@ -275,6 +312,7 @@ function Pending({ children }: { children: React.ReactNode }) {
 /** A client whose first-triage read rejected with the given error. */
 function Failing({ error, children }: { error: unknown; children: React.ReactNode }) {
   const client = pinnedClient();
+  seedAuth(client);
   void client
     .prefetchQuery({
       queryKey: FIRST_TRIAGE_KEY,

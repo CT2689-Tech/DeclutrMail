@@ -32,7 +32,10 @@ describe('canonical public product-truth copy', () => {
   });
 
   it('separates manual message actions from future automation', () => {
-    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('New email from that sender is unchanged');
+    expect(MANUAL_ACTION_SCOPE_CLAIM).toMatch(/Delete.*archived.*select/i);
+    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('when the action runs');
+    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('do not create rules for future deliveries');
+    expect(MANUAL_ACTION_SCOPE_CLAIM).not.toMatch(/shown before you confirm|new email.*unchanged/i);
     expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('you preview a rule before turning it on');
     // Same rule as above: no plan name belongs in canonical copy.
     expect(MANUAL_ACTION_SCOPE_CLAIM).not.toMatch(/\b(Free|Plus|Pro)\b/);
@@ -43,6 +46,7 @@ describe('canonical public product-truth copy', () => {
     expect(ACTION_PREVIEW_CLAIM).toContain('sample when available');
     expect(ACTION_PREVIEW_CLAIM).toContain('final number can change');
     expect(ACTION_PREVIEW_CLAIM).not.toMatch(/exact (?:messages|set|scope)/i);
+    expect(ACTION_PREVIEW_CLAIM).not.toMatch(/(?:checks?|rechecks?) Gmail again/i);
   });
 
   it('names the preview snippet boundary for Brief', () => {

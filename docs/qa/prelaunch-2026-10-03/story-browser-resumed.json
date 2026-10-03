@@ -1,0 +1,1949 @@
+[
+  {
+    "id": "settings-briefprefscard--save-failed",
+    "title": "Settings/BriefPrefsCard",
+    "name": "Save Failed",
+    "source": "./src/features/settings/settings-index/brief-prefs-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Daily Brief ready at\nAmerica/Los_Angeles\n12:00 AM\n1:00 AM\n2:00 AM\n3:00 AM\n4:00 AM\n5:00 AM\n6:00 AM\n7:00 AM\n8:00 AM\n9:00 AM\n10:00 AM\n11:00 AM\n12:00 PM\n1:00 PM\n2:00 PM\n3:00 PM\n4:00 PM\n5:00 PM\n6:00 PM\n7:00 PM\n8:00 PM\n9:00 PM\n10:00 PM\n11:00 PM\n\nCould not save the delivery time. Try again.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/084-settings-briefprefscard--save-failed.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-briefprefscard--loading",
+    "title": "Settings/BriefPrefsCard",
+    "name": "Loading",
+    "source": "./src/features/settings/settings-index/brief-prefs-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Loading Brief preferences\u2026",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/085-settings-briefprefscard--loading.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-emailprefscard--defaults",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Defaults",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Notifications\nSync completion alerts\nOn\nReminder emails\nOn\nWeekly value receipt\nPlus and Pro: new senders in Screener.\nOff\nAccount notices\nDeletion confirmations and receipts.\nAlways on",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--defaults&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/086-settings-emailprefscard--defaults.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 13px; color: var(--dm-fg-muted); min-width: 48px; text-align: right;\">On</span>",
+              "target": ["button[aria-label=\"Disable reminder emails\"] > span:nth-child(1)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 13px; color: var(--dm-fg-muted); min-width: 48px; text-align: right;\">Off</span>",
+              "target": ["button[aria-label=\"Enable weekly value receipt\"] > span:nth-child(1)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--defaults&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-emailprefscard--save-failed",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Save Failed",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Notifications\nSync completion alerts\nOn\nReminder emails\nOn\nWeekly value receipt\nPlus and Pro: new senders in Screener.\nOff\nAccount notices\nDeletion confirmations and receipts.\nAlways on\n\nCould not save the preference. Try again.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/087-settings-emailprefscard--save-failed.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 13px; color: var(--dm-fg-muted); min-width: 48px; text-align: right;\">On</span>",
+              "target": ["button[aria-label=\"Disable reminder emails\"] > span:nth-child(1)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 13px; color: var(--dm-fg-muted); min-width: 48px; text-align: right;\">Off</span>",
+              "target": ["button[aria-label=\"Enable weekly value receipt\"] > span:nth-child(1)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-emailprefscard--loading",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Loading",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Notifications\nLoading email preferences\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/088-settings-emailprefscard--loading.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-mailboxescard--two-connected",
+    "title": "Settings/MailboxesCard",
+    "name": "Two Connected",
+    "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Gmail accounts\nC\nchintan.a.thakkar@gmail.com\nSynced 4m ago\nActive\nReady\nC\nchintan.a.thakkar.crypt@gmail.com\nSynced 3h ago\nReady\nAdd Gmail account",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Gmail accounts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--two-connected&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/089-settings-mailboxescard--two-connected.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--two-connected&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-mailboxescard--empty",
+    "title": "Settings/MailboxesCard",
+    "name": "Empty",
+    "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
+    "mobile": {
+      "bodyText": "Gmail accounts\n\nNo mailboxes connected yet.\n\nConnect Gmail",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Gmail accounts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/090-settings-mailboxescard--empty.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--empty&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-verbtourcard--default",
+    "title": "Settings/VerbTourCard",
+    "name": "Default",
+    "source": "./src/features/settings/settings-index/verb-tour-card.stories.tsx",
+    "mobile": {
+      "bodyText": "What the five decisions do\nReplay the tour",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-verbtourcard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/091-settings-verbtourcard--default.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 84,
+        "incomplete": 0,
+        "passes": 4,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-verbtourcard--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "settings-switch--off",
+    "title": "Settings/Switch",
+    "name": "Off",
+    "source": "./src/features/settings/switch.stories.tsx",
+    "mobile": {
+      "bodyText": "",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-switch--off&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/092-settings-switch--off.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-switch--off&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "shell-bannerslot--empty",
+    "title": "Shell/BannerSlot",
+    "name": "Empty",
+    "source": "./src/features/shell/banner-slot.stories.tsx",
+    "mobile": {
+      "bodyText": "",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=shell-bannerslot--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/093-shell-bannerslot--empty.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=shell-bannerslot--empty&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "features-later-laterscreen--populated",
+    "title": "Features/Later/LaterScreen",
+    "name": "Populated",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nLater today\n\u00b7 1\nDaily Digest\nnews.example.com\n12 in Later\nReturns Today 5:39 PM\n\u201cafter launch week\u201d\nChange return time\nBring back now\nTomorrow\n\u00b7 1\nDeals & Offers\nshop.example.com\n47 in Later\nReturns Tomorrow 8:39 PM\nChange return time\nBring back now\nThis week\n\u00b7 1\nConference Updates\nconf.example.com\n5 in Later\nReturns Thu 2:39 PM\n\u201cuntil the schedule is final\u201d\nChange return time\nBring back now\nEventually\n\u00b7 1\nQuarterly Newsletter\ncorp.example.com\n3 in Later\nReturns Nov 2\nChange return time\nBring back now",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H2",
+          "text": "Later today\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "Tomorrow\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "This week\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "Eventually\u00b7 1"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/094-features-later-laterscreen--populated.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--populated&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "features-later-laterscreen--error-state",
+    "title": "Features/Later/LaterScreen",
+    "name": "Error State",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\n!\nWe couldn't load Later\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H3",
+          "text": "We couldn't load Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/095-features-later-laterscreen--error-state.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 1
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--error-state&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/heading-order?application=axeAPI",
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Heading order invalid",
+              "html": "<h3 style=\"color: var(--dm-fg); font-size: 20px; font-weight: 650; margin: 0px; letter-spacing: -0.02em;\">We couldn't load Later</h3>",
+              "target": ["h3"]
+            }
+          ],
+          "tags": ["cat.semantics", "best-practice"]
+        }
+      ]
+    }
+  },
+  {
+    "id": "features-later-laterscreen--empty",
+    "title": "Features/Later/LaterScreen",
+    "name": "Empty",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nNothing in Later\n\nSend a sender to Later from Triage or Senders.\nBrowse senders \u2192",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H3",
+          "text": "Nothing in Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/096-features-later-laterscreen--empty.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 83,
+        "incomplete": 0,
+        "passes": 5,
+        "violations": 1
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--empty&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/heading-order?application=axeAPI",
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Heading order invalid",
+              "html": "<h3 style=\"font-size: 20px; font-weight: 650; margin: 0px; letter-spacing: -0.02em; color: var(--dm-fg);\">Nothing in Later</h3>",
+              "target": ["h3"]
+            }
+          ],
+          "tags": ["cat.semantics", "best-practice"]
+        }
+      ]
+    }
+  },
+  {
+    "id": "features-later-laterscreen--loading",
+    "title": "Features/Later/LaterScreen",
+    "name": "Loading",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nLoading Later senders",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading Later senders"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/097-features-later-laterscreen--loading.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--loading&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "sync-syncerrorbanner--visible",
+    "title": "Sync/SyncErrorBanner",
+    "name": "Visible",
+    "source": "./src/features/sync/sync-error-banner.stories.tsx",
+    "mobile": {
+      "bodyText": "New email isn't syncing \u2014 the last attempt failed.\nTry again\n\nError stamped 5 minutes ago, last success 30 minutes ago \u2014 the banner surfaces.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncerrorbanner--visible&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/098-sync-syncerrorbanner--visible.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=sync-syncerrorbanner--visible&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "sync-syncnowbutton--idle",
+    "title": "Sync/SyncNowButton",
+    "name": "Idle",
+    "source": "./src/features/sync/sync-now-button.stories.tsx",
+    "mobile": {
+      "bodyText": "Synced 12m ago \u00b7 Sync now\n10/3/2026, 2:27:25 PM\n\nReady, synced 12 minutes ago \u2014 the ordinary \"Sync now\" control.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncnowbutton--idle&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/099-sync-syncnowbutton--idle.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=sync-syncnowbutton--idle&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "onboarding-verbtour--first-run",
+    "title": "Onboarding/VerbTour",
+    "name": "First Run",
+    "source": "./src/features/tour/verb-tour.stories.tsx",
+    "mobile": {
+      "bodyText": "HOW DECIDING WORKS \u00b7 1 OF 3\nFive decisions, one sender at a time\n\nEach sender gets one of these. Press the letter or use the buttons.\n\nK\nKeep \u2014 This sender stops coming up in Triage.\nA\nArchive \u2014 Moves out of your inbox, stays in Gmail.\nU\nUnsubscribe \u2014 DeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nL\nLater \u2014 Moves to Gmail's DeclutrMail/Later label until the time you pick.\nD\nDelete \u2014 Email in Inbox moves to Gmail Trash.\nNext\nSkip for now",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Five decisions, one sender at a time"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-verbtour--first-run&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/100-onboarding-verbtour--first-run.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=onboarding-verbtour--first-run&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-actiontoolbar--highlighted-recommendation",
+    "title": "Triage/ActionToolbar",
+    "name": "Highlighted Recommendation",
+    "source": "./src/features/triage/action-toolbar.stories.tsx",
+    "mobile": {
+      "bodyText": "Keep\nK\nKeep\nThis sender stops coming up in Triage.\nArchive\nA\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nU\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nL\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nD\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "UnsubscribeU"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "U"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Unsubscribe"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "LaterL"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "L"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/101-triage-actiontoolbar--highlighted-recommendation.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-batchactionsheet--archive-loaded",
+    "title": "Triage/BatchActionSheet",
+    "name": "Archive Loaded",
+    "source": "./src/features/triage/batch-action-sheet.stories.tsx",
+    "mobile": {
+      "bodyText": "A\nA\nA\nArchive 288 emails from 3 senders?\n\nFrom amazon.com. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 288\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive 288 emails from 3 senders?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--archive-loaded&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/102-triage-batchactionsheet--archive-loaded.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(1) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(2) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(3) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--archive-loaded&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-batchactionsheet--loading",
+    "title": "Triage/BatchActionSheet",
+    "name": "Loading",
+    "source": "./src/features/triage/batch-action-sheet.stories.tsx",
+    "mobile": {
+      "bodyText": "A\nA\nA\nArchive email from 3 senders?\n\nFrom amazon.com. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive\nCancel\n\nCounting the inbox\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive email from 3 senders?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/103-triage-batchactionsheet--loading.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(1) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(2) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(3) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--loading&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-domainbatchcard--default",
+    "title": "Triage/DomainBatchCard",
+    "name": "Default",
+    "source": "./src/features/triage/domain-batch-card.stories.tsx",
+    "mobile": {
+      "bodyText": "4 senders from amazon.com\nArchive all\nLater for all\nDecide one by one\nShow senders",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-domainbatchcard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/104-triage-domainbatchcard--default.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-domainbatchcard--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-focuscard--default",
+    "title": "Triage/FocusCard",
+    "name": "Default",
+    "source": "./src/features/triage/focus-card.stories.tsx",
+    "mobile": {
+      "bodyText": "L\nLinkedIn\nnotifications-noreply@linkedin.com\n192\nemails in 90 days\n\nNone marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "LinkedIn"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-focuscard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/105-triage-focuscard--default.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-focuscard--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-inlinepreview--archive",
+    "title": "Triage/InlinePreview",
+    "name": "Archive",
+    "source": "./src/features/triage/inline-preview.stories.tsx",
+    "mobile": {
+      "bodyText": "47 emails from Groupon. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 47\nPress A again to confirm \u00b7 Esc cancels",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "P",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail."
+        },
+        {
+          "cls": "",
+          "tag": "P",
+          "text": "Undo from Activity for 30 days."
+        },
+        {
+          "cls": "",
+          "tag": "DETAILS",
+          "text": "DetailsCountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "SUMMARY",
+          "text": "Details"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DL",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DD",
+          "text": "Inbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "Archive 47Press A again to confirm \u00b7 Esc cancels"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-inlinepreview--archive&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/106-triage-inlinepreview--archive.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-inlinepreview--archive&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-keyboardhelp--open",
+    "title": "Triage/KeyboardHelp",
+    "name": "Open",
+    "source": "./src/features/triage/keyboard-help.stories.tsx",
+    "mobile": {
+      "bodyText": "Keyboard shortcuts\nDecide\nKeep this sender\nK\nArchive this sender\nA\nUnsubscribe from this sender\nU\nMove this sender to Later\nL\nMove this sender\u2019s inbox email to Gmail Trash\nD\nNavigate\nSkip to the next sender\n\u2192\nOpen or close a list row\nEnter / Space\nUndo the last decision\nZ\nIn a preview\nConfirm the preview\n\u2318\u23ce\nCancel the sheet / dismiss an inline preview\nEsc\nToggle this overlay\n?\nOn touch\nKeep\nSwipe \u2192\nArchive\nSwipe \u2190\nLater\nSwipe \u2191",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Keyboard shortcuts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-keyboardhelp--open&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/107-triage-keyboardhelp--open.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<kbd style=\"display: inline-flex...\">",
+              "target": ["div:nth-child(8) > kbd"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<kbd style=\"display: inline-flex...\">",
+              "target": ["div:nth-child(9) > kbd"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<kbd style=\"display: inline-flex...\">",
+              "target": ["div:nth-child(12) > kbd"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-keyboardhelp--open&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-protectedactionnotice--on-archive",
+    "title": "Triage/ProtectedActionNotice",
+    "name": "On Archive",
+    "source": "./src/features/triage/protected-notice.stories.tsx",
+    "mobile": {
+      "bodyText": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnprotectNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Nothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand."
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-protectedactionnotice--on-archive&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/108-triage-protectedactionnotice--on-archive.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 1,
+        "passes": 8,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements",
+              "html": "<span>This sender stays <strong>Protected</strong>, so bulk and automatic cleanup will keep skipping it.</span>",
+              "target": ["div[role=\"status\"] > span:nth-child(1)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-protectedactionnotice--on-archive&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-sessionprogress--focus-position",
+    "title": "Triage/SessionProgress",
+    "name": "Focus Position",
+    "source": "./src/features/triage/session-progress.stories.tsx",
+    "mobile": {
+      "bodyText": "2 decided\n\u00b7\nReviewing 3 of 12",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "2 decided\u00b7Reviewing 3 of 12"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "2 decided\u00b7Reviewing 3 of 12"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-sessionprogress--focus-position&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/109-triage-sessionprogress--focus-position.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-sessionprogress--focus-position&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-triagescreen--default",
+    "title": "Triage/TriageScreen",
+    "name": "Default",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n0 decided\n\u00b7\nReviewing 1 of 3\nFocus\nList\nG\nGroupon\nnoreply@groupon.com\n156\nemails in 90 days\n\n30% marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.\nSkip\nNow deciding Groupon",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "0 decided\u00b7Reviewing 1 of 3FocusList"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "FocusList"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "List"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Now deciding Groupon"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "Groupon"
+        }
+      ],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/110-triage-triagescreen--default.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(1) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-triagescreen--error-state",
+    "title": "Triage/TriageScreen",
+    "name": "Error State",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n!\nYour queue didn't load\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H3",
+          "text": "Your queue didn't load"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/111-triage-triagescreen--error-state.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 1
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--error-state&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/heading-order?application=axeAPI",
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Heading order invalid",
+              "html": "<h3 style=\"color: var(--dm-fg); font-size: 20px; font-weight: 650; margin: 0px; letter-spacing: -0.02em;\">Your queue didn't load</h3>",
+              "target": ["h3"]
+            }
+          ],
+          "tags": ["cat.semantics", "best-practice"]
+        }
+      ]
+    }
+  },
+  {
+    "id": "triage-triagescreen--empty",
+    "title": "Triage/TriageScreen",
+    "name": "Empty",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\nYou\u2019re done for now.\n\nNew decisions appear as senders send again.\n\n14 decided\n6 archived\n3 unsubscribes\n2 to Later\n\nCompare Pro features",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "You\u2019re done for now."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/112-triage-triagescreen--empty.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--empty&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  },
+  {
+    "id": "triage-triagescreen--loading",
+    "title": "Triage/TriageScreen",
+    "name": "Loading",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\nLoading triage queue",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading triage queue"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/113-triage-triagescreen--loading.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--loading&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    }
+  }
+]

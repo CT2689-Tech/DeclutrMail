@@ -230,6 +230,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 export function SendersScreen() {
+  const { me } = useAuth();
   // D159 — one page_viewed per route mount, loading/error branches
   // included (the content component only mounts on success).
   // `mailbox_id: null`: useAuth lives in the content component; PostHog
@@ -275,6 +276,16 @@ export function SendersScreen() {
       q: debouncedQuery,
     }),
   );
+  const loadedScope = useRef({
+    mailboxId: me.activeMailboxId,
+    updatedAt: sendersQuery.dataUpdatedAt,
+  });
+  if (
+    !sendersQuery.isPlaceholderData &&
+    sendersQuery.dataUpdatedAt !== loadedScope.current.updatedAt
+  ) {
+    loadedScope.current = { mailboxId: me.activeMailboxId, updatedAt: sendersQuery.dataUpdatedAt };
+  }
   // F011 — a filtered search that starves.
   //
   // The default compose is `activity: 'active'`, so searching a sender
@@ -308,6 +319,16 @@ export function SendersScreen() {
     }),
     enabled: searchNarrowedToNothing,
   });
+  const widenedScope = useRef({
+    mailboxId: me.activeMailboxId,
+    updatedAt: widenProbe.dataUpdatedAt,
+  });
+  if (
+    !widenProbe.isPlaceholderData &&
+    widenProbe.dataUpdatedAt !== widenedScope.current.updatedAt
+  ) {
+    widenedScope.current = { mailboxId: me.activeMailboxId, updatedAt: widenProbe.dataUpdatedAt };
+  }
   const widenedCount = widenProbe.data?.pages[0]?.meta.query?.totalMatching ?? 0;
   // Codex round-1 review of QA-senders-filtering-20260901-03: `widenProbe`
   // also rides `keepPreviousData`, so on the FIRST render of a new
@@ -392,8 +413,22 @@ export function SendersScreen() {
   if (sendersQuery.isLoading) {
     return <SendersLoadingState />;
   }
-  if (sendersQuery.isError) {
-    return <SendersErrorState onRetry={() => sendersQuery.refetch()} />;
+  const failedQuery = sendersQuery.isError
+    ? sendersQuery
+    : showingWidened && widenProbe.isError
+      ? widenProbe
+      : null;
+  const retainRows =
+    failedQuery?.data !== undefined &&
+    !failedQuery?.isPlaceholderData &&
+    (showingWidened ? widenedScope : loadedScope).current.mailboxId === me.activeMailboxId &&
+    !(
+      failedQuery?.error instanceof ApiError &&
+      failedQuery.error.status >= 400 &&
+      failedQuery.error.status < 500
+    );
+  if (failedQuery && !retainRows) {
+    return <SendersErrorState onRetry={() => failedQuery.refetch()} />;
   }
   return (
     <SendersScreenContent
@@ -446,6 +481,13 @@ export function SendersScreen() {
       totalMatching={totalMatching}
       showingStaleRows={showingStaleRows}
       countsMayBeStale={countsMayBeStale}
+      refreshFailed={failedQuery !== null}
+      loadingMoreFailed={failedQuery?.isFetchNextPageError === true}
+      retrying={failedQuery?.isFetching === true}
+      onRetry={() => {
+        if (failedQuery?.isFetchNextPageError) void failedQuery.fetchNextPage();
+        else void failedQuery?.refetch();
+      }}
       filterCounts={filterCounts}
       compose={compose}
       setCompose={setCompose}
@@ -512,6 +554,10 @@ function SendersScreenContent({
   totalMatching,
   showingStaleRows,
   countsMayBeStale,
+  refreshFailed,
+  loadingMoreFailed,
+  retrying,
+  onRetry,
   filterCounts,
   compose,
   setCompose,
@@ -568,6 +614,10 @@ function SendersScreenContent({
    * (which also gates mutations on the rows themselves).
    */
   countsMayBeStale: boolean;
+  refreshFailed: boolean;
+  loadingMoreFailed: boolean;
+  retrying: boolean;
+  onRetry: () => void;
   /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
   filterCounts:
     | {
@@ -593,6 +643,7 @@ function SendersScreenContent({
   }) => void;
   clearSearchAndFilters: () => void;
 }) {
+  const resultsReadOnly = showingStaleRows || refreshFailed;
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
   const actionMailboxId = me.activeMailboxId ?? undefined;
@@ -1019,6 +1070,7 @@ function SendersScreenContent({
   // crash on `undefined.id`.
   const previewVerb = pendingAction?.verb;
   const previewFirstSender =
+    !resultsReadOnly &&
     pendingAction != null &&
     pendingAction.senders.length === 1 &&
     (previewVerb === 'Archive' ||
@@ -1045,6 +1097,7 @@ function SendersScreenContent({
   const bulkPreviewSenderIds = useMemo(
     () =>
       pendingAction != null &&
+      !resultsReadOnly &&
       pendingAction.senders.length > 1 &&
       (pendingAction.verb === 'Archive' ||
         pendingAction.verb === 'Later' ||
@@ -1052,7 +1105,7 @@ function SendersScreenContent({
         pendingAction.verb === 'Unsubscribe')
         ? pendingAction.senders.map((s) => s.id)
         : null,
-    [pendingAction],
+    [pendingAction, resultsReadOnly],
   );
   const bulkPreviewQuery = useBulkActionPreview(bulkPreviewSenderIds, actionMailboxId);
   useEffect(() => {
@@ -1153,6 +1206,9 @@ function SendersScreenContent({
     setSelected(new Set());
     setPendingAction(null);
   }, [showingStaleRows]);
+  useEffect(() => {
+    if (refreshFailed && !submitting) setPendingAction(null);
+  }, [refreshFailed, submitting]);
   const toggleWithRange = useCallback(
     (orderedIds: readonly string[], id: string, shiftKey: boolean) => {
       if (showingStaleRows) return;
@@ -2343,7 +2399,7 @@ function SendersScreenContent({
   // Protect change nothing and fire directly.
   const requestAction = useCallback(
     (req: ActionRequest) => {
-      if (showingStaleRows) return;
+      if (resultsReadOnly) return;
       if (req.senders.length === 0) return;
       if (
         req.verb === 'Archive' ||
@@ -2356,7 +2412,7 @@ function SendersScreenContent({
         performAction(req.verb, req.senders);
       }
     },
-    [performAction, showingStaleRows],
+    [performAction, resultsReadOnly],
   );
 
   // Bulk verbs (SelectionBar buttons + the selection-scoped shortcuts)
@@ -2367,7 +2423,7 @@ function SendersScreenContent({
   // opening an empty preview.
   const requestBulkAction = useCallback(
     (verb: 'Keep' | keyof typeof ELIGIBLE) => {
-      if (showingStaleRows) return;
+      if (resultsReadOnly) return;
       if (selectedSenders.length > 1 && !canUseActionSelector(tier, verb, 'multi-sender')) {
         toast(
           `Multi-sender actions require ${multiSenderPlanName()} — select one sender or see plans.`,
@@ -2497,7 +2553,7 @@ function SendersScreenContent({
         skipped: { protectedCount, peopleCount: skippedTotal - protectedCount },
       });
     },
-    [selectedSenders, requestAction, showingStaleRows, tier, me.cleanupRemaining],
+    [selectedSenders, requestAction, resultsReadOnly, tier, me.cleanupRemaining],
   );
 
   // Cancel stays live while submitting: it closes the UI only. If the
@@ -2508,11 +2564,11 @@ function SendersScreenContent({
   }, []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
-      if (pendingAction && !showingStaleRows) {
+      if (pendingAction && !resultsReadOnly) {
         performAction(pendingAction.verb, pendingAction.senders, opts);
       }
     },
-    [pendingAction, performAction, showingStaleRows],
+    [pendingAction, performAction, resultsReadOnly],
   );
 
   // D51 saved views — apply / save-current / delete. The contract's
@@ -2593,7 +2649,7 @@ function SendersScreenContent({
   // Selection-scoped K/A/U/L/D shortcuts (D227). A press acts on the current
   // selection exactly like the SelectionBar — through the mandatory D226
   // preview, never a direct mutation. Guarded so the keys are inert while
-  // typing in a field or while any modal (preview / cheatsheet / review)
+  // typing in a field or while any dialog (account / preview / cheatsheet / review)
   // is open, and only when at least one sender is selected.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -2605,7 +2661,7 @@ function SendersScreenContent({
       // acting on a checkbox selection elsewhere in the list would preview
       // something other than what is on screen.
       if (paneSenderId !== null) return;
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (document.querySelector('[role="dialog"]')) return;
       // ADR-0019 + silent-failure-hunter 2026-06-03 — when an
       // ActionPopover is open on any card, its window-level keydown
       // listener also fires shortcut picks. Without this guard
@@ -2754,6 +2810,14 @@ function SendersScreenContent({
               label: 'Manual decisions vs automatic rules',
             }}
           />
+          {refreshFailed && (
+            <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+              {loadingMoreFailed ? 'Couldn’t load more senders.' : 'Couldn’t refresh Senders.'}{' '}
+              <Button tone="ghost" size="sm" disabled={retrying} onClick={onRetry}>
+                Try again
+              </Button>
+            </div>
+          )}
 
           {showFirstCleanupNudge && senders[0] !== undefined && (
             <FirstCleanupNudge href={`/senders/${senders[0].id}`} />
@@ -2825,10 +2889,10 @@ function SendersScreenContent({
           <fieldset
             className={workspaceStyles.results}
             data-testid="sender-results-region"
-            disabled={showingStaleRows}
-            inert={showingStaleRows ? true : undefined}
+            disabled={resultsReadOnly}
+            inert={resultsReadOnly ? true : undefined}
             aria-busy={showingStaleRows}
-            aria-disabled={showingStaleRows}
+            aria-disabled={resultsReadOnly}
             style={{
               margin: 0,
               minWidth: 0,
@@ -2843,21 +2907,31 @@ function SendersScreenContent({
               // a finished conclusion the app has not earned, for the plain
               // view and for a search alike. Checked BEFORE the filter- and
               // query-specific branches.
-              <EmptyState title="Still syncing" body="Senders appear as the scan finishes." />
+              <EmptyState
+                headingLevel={2}
+                title="Still syncing"
+                body="Senders appear as the scan finishes."
+              />
             ) : senders.length === 0 && mailboxSyncFailed ? (
               // Same shape for the one readiness value that guard didn't
               // cover — a search over a failed scan never really ran.
-              <EmptyState title="Scan failed" body={failedScanStep(mailboxNeedsReconnect)} />
+              <EmptyState
+                headingLevel={2}
+                title="Scan failed"
+                body={failedScanStep(mailboxNeedsReconnect)}
+              />
             ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
               // First-visit default is active-only (launch-audit B2). A
               // mailbox with nothing ACTIVE must not read as a filter
               // mistake — name the default and offer the full list.
               <EmptyState
+                headingLevel={2}
                 title="No active senders"
                 action={<Button onClick={clearSearchAndFilters}>Show all senders</Button>}
               />
             ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
               <EmptyState
+                headingLevel={2}
                 // F011 — say WHICH thing found nothing. `No senders match
                 // "X"` is a claim about the QUERY; when filters are on, the
                 // honest title names both.
@@ -2885,7 +2959,7 @@ function SendersScreenContent({
                 }
               />
             ) : senders.length === 0 ? (
-              <EmptyState title="No senders yet" />
+              <EmptyState headingLevel={2} title="No senders yet" />
             ) : (
               // `senders` arrives already BE-filtered (D38); D51 brand
               // rollup groups ≥3 senders sharing a registrable domain into
@@ -2923,7 +2997,7 @@ function SendersScreenContent({
                   padding: '16px 0 4px',
                 }}
               >
-                {infiniteScrollEnabled && (
+                {infiniteScrollEnabled && !refreshFailed && (
                   <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
                 )}
                 <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
@@ -2941,7 +3015,7 @@ function SendersScreenContent({
                 onClear={() => setSelected(new Set())}
                 onAct={requestBulkAction}
                 tier={tier}
-                busy={enqueueBulk.isPending}
+                busy={enqueueBulk.isPending || refreshFailed}
               />
             ) : (
               <SelectionBar
@@ -2949,7 +3023,7 @@ function SendersScreenContent({
                 onClear={() => setSelected(new Set())}
                 onAct={requestBulkAction}
                 tier={tier}
-                busy={enqueueBulk.isPending}
+                busy={enqueueBulk.isPending || refreshFailed}
               />
             ))}
         </div>
@@ -3003,7 +3077,7 @@ function SendersScreenContent({
 
       <ConfirmActionModal
         variant={isPhone ? 'sheet' : 'modal'}
-        request={showingStaleRows ? null : pendingAction}
+        request={resultsReadOnly ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
         submitting={submitting}
@@ -3117,7 +3191,7 @@ function SenderResultsWarning({
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      style={{ fontSize: text.sm, color: syncFailed ? color.danger : color.amber }}
+      style={{ fontSize: text.sm, color: syncFailed ? color.dangerText : color.amber }}
     >
       {message}
       {/* A filter change can disable the rows WHILE a scan state shows. */}
@@ -3239,8 +3313,9 @@ function SendersErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't load your senders"
-        description="Your Gmail messages and sender settings haven't changed. Try again in a moment."
+        description="Try again in a moment."
         onRetry={onRetry}
       />
     </div>

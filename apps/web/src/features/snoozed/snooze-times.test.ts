@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 
-import { formatWakeTime, groupByWakeTime, snoozePresets, wakeBucket } from './snooze-times';
+import {
+  formatWakeTime,
+  groupByWakeTime,
+  parseSnoozeWallTime,
+  snoozePresets,
+  wakeBucket,
+} from './snooze-times';
 
 // A Thursday morning in the user's zone: 2026-06-11 08:00 IST.
 // Fixed INSTANT + explicit IANA zone so every assertion is an exact
@@ -134,4 +140,34 @@ describe('snoozePresets (D82)', () => {
     const december = new Date('2026-12-10T08:00:00+05:30');
     expect(at(snoozePresets(december, TZ), 'next_month')).toBe('2027-01-01T03:30:00.000Z');
   });
+});
+
+describe('parseSnoozeWallTime', () => {
+  it.each([
+    ['2026-10-04T09:00', 'Asia/Kolkata', '2026-10-04T03:30:00.000Z'],
+    ['2026-10-04T09:00', 'America/Los_Angeles', '2026-10-04T16:00:00.000Z'],
+    ['2026-03-08T01:30', 'America/Los_Angeles', '2026-03-08T09:30:00.000Z'],
+    ['2026-03-08T03:30', 'America/Los_Angeles', '2026-03-08T10:30:00.000Z'],
+    ['2026-11-01T02:30', 'America/Los_Angeles', '2026-11-01T10:30:00.000Z'],
+  ])('resolves %s in account zone %s independently of device time', (value, zone, iso) => {
+    const result = parseSnoozeWallTime(value, zone);
+    expect(result.kind).toBe('valid');
+    if (result.kind === 'valid') expect(result.at.toISOString()).toBe(iso);
+  });
+  it('rejects a spring-forward time that never occurs', () => {
+    expect(parseSnoozeWallTime('2026-03-08T02:30', 'America/Los_Angeles')).toEqual({
+      kind: 'missing',
+    });
+  });
+  it('rejects a fall-back time that occurs twice instead of guessing an offset', () => {
+    expect(parseSnoozeWallTime('2026-11-01T01:30', 'America/Los_Angeles')).toEqual({
+      kind: 'ambiguous',
+    });
+  });
+  it.each(['2026-02-30T09:00', '2026-13-01T09:00', 'bad', ''])(
+    'rejects malformed calendar value %s',
+    (value) => {
+      expect(parseSnoozeWallTime(value, 'Asia/Kolkata')).toEqual({ kind: 'invalid' });
+    },
+  );
 });

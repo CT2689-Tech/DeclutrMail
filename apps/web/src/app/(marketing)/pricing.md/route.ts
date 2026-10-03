@@ -138,10 +138,12 @@ behaviours a user chooses between, not two products and not two plans.
 
 ## What every plan does, including Free
 
-- Every Archive, Later, Delete, and Unsubscribe action shows the current
-  matching count, an available sample, and the exact Gmail changes before you
-  approve it. DeclutrMail checks Gmail again when the action runs, so the final
-  number can change if the mailbox changed in between.
+- Every Archive, Later, and Delete action shows the current matching count,
+  a sample when available, and the planned Gmail changes before you approve it.
+  The final number can change before the action runs.
+- Keep records an inline sender decision. Unsubscribe confirms the request
+  method and any separate Archive or Delete; only the separate cleanup needs
+  an affected-email preview.
 - Manual actions affect current matched mail. They do not create future-mail
   rules; that is what Autopilot presets are for.
 - Archive and Later can be reversed from Activity ${activityUndoWindowClause()}.

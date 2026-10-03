@@ -99,6 +99,12 @@ describe('QuietHoursCard — form contract', () => {
     expect(screen.getByLabelText('Quiet window end')).toHaveValue('06:00');
     expect(screen.getByLabelText('Quiet window timezone')).toHaveValue('Asia/Kolkata');
     expect(screen.getByRole('switch', { name: 'Quiet hours' })).toBeChecked();
+    expect(screen.getByText('Saved')).toBeInTheDocument();
+  });
+
+  it('does not label browser defaults as Saved without a persisted config', () => {
+    renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
   });
 
   it('Save is disabled until the form is dirty', async () => {

@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
 import type { MailboxHealth } from '@/features/settings/api/use-mailbox-health';
 import { AccountMenu } from './account-menu';
+import { ActionToolbar } from '@/features/senders/detail/action-toolbar';
+import { KeyboardCheatsheet } from '@/features/senders/keyboard-cheatsheet';
+import { TriageKeyboardHelp } from '@/features/triage/keyboard-help';
+import { makeSender } from '@/features/senders/testing/make-sender';
 import type { loadMailboxDataControls } from './load-mailbox-data-controls';
 
 const MAILBOX_A: MeMailbox = {
@@ -139,6 +143,46 @@ describe('AccountMenu Gmail reconnect health', () => {
     deleteIndexedDataMutateSpy.mockClear();
     logoutMutateSpy.mockClear();
     useMailboxesHealthSpy.mockClear();
+  });
+
+  it('owns nonmodal keyboard input without sender actions or stacked Help, then restores shortcuts', async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    const sender = makeSender({ unsubscribeMethod: 'one_click' });
+    render(
+      <>
+        <AccountMenu />
+        <ActionToolbar sender={sender} onAction={onAction} shortcuts />
+        <KeyboardCheatsheet />
+        <TriageKeyboardHelp />
+      </>,
+    );
+    const trigger = screen.getByRole('button', { name: MAILBOX_A.email });
+    await user.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Gmail accounts' });
+    expect(dialog).not.toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveFocus();
+    for (const key of ['k', 'a', 'u', 'l', 'd', '?']) {
+      fireEvent.keyDown(dialog, { key });
+    }
+    expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+    // onAction is the sole gateway to a preview or durable Keep request.
+    expect(onAction).not.toHaveBeenCalled();
+    for (const mutation of [
+      setActiveMutateSpy,
+      disconnectMutateSpy,
+      deleteIndexedDataMutateSpy,
+      logoutMutateSpy,
+    ]) {
+      expect(mutation).not.toHaveBeenCalled();
+    }
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    fireEvent(dialog, escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(trigger, { key: 'k' });
+    expect(onAction).toHaveBeenCalledExactlyOnceWith({ verb: 'Keep', senders: [sender] });
   });
 
   it('reports a failed switch and leaves the account picker available to retry', async () => {

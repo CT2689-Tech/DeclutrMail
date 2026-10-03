@@ -114,7 +114,7 @@ export function SenderList({
       if (!letter && !arrow) return;
       if (letter && anySelected) return;
       if (isTypingTarget(e.target)) return;
-      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
       // Arrows inside the pane (or any other scroller) keep scrolling it.
       if (
         arrow &&

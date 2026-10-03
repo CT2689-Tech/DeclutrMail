@@ -8,7 +8,7 @@ import {
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { Button, ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
@@ -143,6 +143,8 @@ function invalidateAfterDecision(qc: QueryClient): void {
 export function ScreenerScreen({
   state = DEFAULT_SCREENER_STATE,
   totalPending = null,
+  refreshFailed = false,
+  onRefresh,
 }: {
   state?: ScreenerScreenState;
   /**
@@ -154,6 +156,8 @@ export function ScreenerScreen({
    * the count query hasn't resolved.
    */
   totalPending?: number | null;
+  refreshFailed?: boolean;
+  onRefresh?: () => void;
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
@@ -720,6 +724,8 @@ export function ScreenerScreen({
     const rows = state.rows;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
+      // Account/help dialogs own keys even when this row has an inline preview.
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
       if (target) {
         const tag = target.tagName;
@@ -814,6 +820,14 @@ export function ScreenerScreen({
       )}
 
       {state.kind === 'loading' && <LoadingState />}
+      {refreshFailed && (
+        <div role="status">
+          Couldn’t refresh this list.{' '}
+          <Button tone="ghost" onClick={() => onRefresh?.()}>
+            Try again
+          </Button>
+        </div>
+      )}
       {state.kind === 'error' && <ScreenerErrorState error={state.error} onRetry={state.retry} />}
       {(state.kind === 'empty' || (state.kind === 'ready' && state.rows.length === 0)) && (
         <ScreenerEmptyState readiness={activeMailbox?.readiness} />
@@ -944,6 +958,7 @@ export function ScreenerScreen({
 function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <ErrorState
+      headingLevel={2}
       title="Your pending senders didn't load"
       description={loadErrorDescription(error)}
       onRetry={onRetry}

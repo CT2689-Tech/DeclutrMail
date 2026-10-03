@@ -1016,6 +1016,7 @@ export function AutopilotScreen({
           section. The two reads share a fate and retry explicitly. */}
       {state.kind === 'error' && (
         <ErrorState
+          headingLevel={2}
           title="We couldn't load your Autopilot"
           description={state.message}
           onRetry={state.retry}

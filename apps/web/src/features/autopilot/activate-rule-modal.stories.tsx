@@ -1,7 +1,6 @@
 // Storybook CSF3 stories for the D226 ActivateRuleModal — the
 // Observe → Active confirm sheet with the embedded first-sweep
-// dry-run (D10/D103). Same lightweight local CSF shims as the
-// AutopilotScreen stories.
+// dry-run (D10/D103).
 //
 // The gating contract on display: Confirm ("Switch to Active") is
 // DISABLED until the preview resolves — loading and error states keep
@@ -9,6 +8,7 @@
 // only (D227).
 
 import { useMemo, useRef, useState, type ComponentProps } from 'react';
+import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { AutopilotPreviewSenderPageDto } from '@/lib/api/autopilot';
 import { tokens } from '@declutrmail/shared';
@@ -18,20 +18,7 @@ import { AUTO_ARCHIVE_LOW_ENGAGEMENT, NEWSLETTER_GRAVEYARD, RULE_PREVIEW_RESULT 
 
 const { color } = tokens;
 
-type StoryMeta<C extends (...args: never) => unknown> = {
-  title: string;
-  component: C;
-  parameters?: Record<string, unknown>;
-  tags?: readonly string[];
-};
-
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
-  parameters?: Record<string, unknown>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
-};
-
-const meta: StoryMeta<typeof ActivateRuleModal> = {
+const meta: Meta<typeof ActivateRuleModal> = {
   title: 'Autopilot/ActivateRuleModal',
   component: ActivateRuleModal,
   parameters: {
@@ -82,13 +69,29 @@ function StoryQueryFrame({ children }: { children: React.ReactNode }) {
  * The ENABLE entry point — the rule is off and the toggle opened this.
  * Two commit paths: run it, or watch first. Both gate on the dry-run.
  */
-export const EnableWithWatchFirst: Story<typeof ActivateRuleModal> = {
-  args: { ...baseArgs, rule: NEWSLETTER_GRAVEYARD, intent: 'enable', onWatchFirst: noop },
+export const EnableWithWatchFirst: StoryObj<typeof ActivateRuleModal> = {
+  args: {
+    ...baseArgs,
+    rule: { ...NEWSLETTER_GRAVEYARD, enabled: false },
+    intent: 'enable',
+    onWatchFirst: noop,
+  },
+  render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
+};
+
+/** Review-only presets never offer unattended execution, even on an entitled tier. */
+export const EnableReviewOnly: StoryObj<typeof ActivateRuleModal> = {
+  args: {
+    ...baseArgs,
+    rule: { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false },
+    intent: 'enable',
+    onWatchFirst: noop,
+  },
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };
 
 /** Long sender evidence must scroll inside the sheet, above persistent actions. */
-export const NewsletterLongDetails: Story<typeof ActivateRuleModal> = {
+export const NewsletterLongDetails: StoryObj<typeof ActivateRuleModal> = {
   args: {
     ...baseArgs,
     rule: { ...NEWSLETTER_GRAVEYARD, enabled: false },
@@ -219,35 +222,35 @@ function SenderPreviewDemo({
   );
 }
 
-export const LargeSenderList: Story<typeof ActivateRuleModal> = {
+export const LargeSenderList: StoryObj<typeof ActivateRuleModal> = {
   args: { ...NewsletterLongDetails.args },
   render: (args: ModalArgs) => frame(<SenderPreviewDemo args={args} total={5000} />),
 };
 
-export const SenderPageError: Story<typeof ActivateRuleModal> = {
+export const SenderPageError: StoryObj<typeof ActivateRuleModal> = {
   args: { ...NewsletterLongDetails.args },
   render: (args: ModalArgs) => frame(<SenderPreviewDemo args={args} total={53} failFirst />),
 };
 
-export const SenderPreviewExpired: Story<typeof ActivateRuleModal> = {
+export const SenderPreviewExpired: StoryObj<typeof ActivateRuleModal> = {
   args: { ...NewsletterLongDetails.args },
   render: (args: ModalArgs) => frame(<SenderPreviewDemo args={args} total={53} expired />),
 };
 
 /** Preview resolved — sample senders listed, Confirm enabled. */
-export const PreviewReady: Story<typeof ActivateRuleModal> = {
+export const PreviewReady: StoryObj<typeof ActivateRuleModal> = {
   args: baseArgs,
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };
 
 /** Dry-run still running — Confirm stays disabled (the D226 gate). */
-export const PreviewLoading: Story<typeof ActivateRuleModal> = {
+export const PreviewLoading: StoryObj<typeof ActivateRuleModal> = {
   args: { ...baseArgs, preview: { status: 'loading' } },
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };
 
 /** No matches: the rule can still be enabled for future arrivals. */
-export const PreviewEmpty: Story<typeof ActivateRuleModal> = {
+export const PreviewEmpty: StoryObj<typeof ActivateRuleModal> = {
   args: {
     ...baseArgs,
     preview: {
@@ -266,7 +269,7 @@ export const PreviewEmpty: Story<typeof ActivateRuleModal> = {
 };
 
 /** Dry-run failed — retry offered, Confirm stays disabled. */
-export const PreviewError: Story<typeof ActivateRuleModal> = {
+export const PreviewError: StoryObj<typeof ActivateRuleModal> = {
   args: {
     ...baseArgs,
     preview: { status: 'error', message: 'Dry-run failed (HTTP 500).' },
@@ -275,7 +278,7 @@ export const PreviewError: Story<typeof ActivateRuleModal> = {
 };
 
 /** Confirm clicked — PATCH in flight. */
-export const Activating: Story<typeof ActivateRuleModal> = {
+export const Activating: StoryObj<typeof ActivateRuleModal> = {
   args: { ...baseArgs, isActivating: true },
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };

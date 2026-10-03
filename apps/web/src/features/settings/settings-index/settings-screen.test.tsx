@@ -1198,6 +1198,39 @@ describe('SettingsScreen', () => {
     );
   });
 
+  it.each(['BILLING_DISABLED', 'SERVICE_UNAVAILABLE'])(
+    'keeps known inbox limits when billing reports %s',
+    async (code) => {
+      me = {
+        ...makeMe([
+          mailbox(MAILBOX_A, 'active@example.com'),
+          { ...mailbox(MAILBOX_B, 'disconnected@example.com'), status: 'disconnected' },
+        ]),
+        tier: 'free',
+      };
+      installFetchStub([
+        ...happyHandlers().filter((handler) => handler.path !== '/api/billing/subscription'),
+        {
+          method: 'GET',
+          path: '/api/billing/subscription',
+          respond: () =>
+            new Response(JSON.stringify({ error: { code, message: 'Unavailable' } }), {
+              status: 503,
+            }),
+        },
+      ]);
+      renderScreen();
+
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: /add gmail account/i })).toBeDisabled(),
+      );
+      expect(
+        screen.getByRole('button', { name: 'Reconnect disconnected@example.com' }),
+      ).toBeDisabled();
+      expect(screen.getByRole('link', { name: /upgrade for more/i })).toBeInTheDocument();
+    },
+  );
+
   it('stays reachable with NO active mailbox and fires no session-scoped sync poll (D216 reachability)', async () => {
     // A user who disconnected their last Gmail: the layout now renders
     // /settings through the no-active-mailbox gate, so the real screen

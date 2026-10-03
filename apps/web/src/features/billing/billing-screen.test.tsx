@@ -276,7 +276,10 @@ describe('BillingScreen — designed states', () => {
     expect(
       within(alert).getByRole('heading', { name: "We couldn't load your billing details" }),
     ).toBeInTheDocument();
-    expect(within(alert).getByText(/no charge or plan change was made/i)).toBeInTheDocument();
+    expect(
+      within(alert).getByText(/try again to confirm your current billing details/i),
+    ).toBeInTheDocument();
+    expect(within(alert).queryByText(/no charge or plan change was made/i)).not.toBeInTheDocument();
 
     fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
 

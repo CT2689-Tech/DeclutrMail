@@ -114,7 +114,7 @@ export function PaymentMethodCard({
         >
           <strong style={{ fontWeight: 600 }}>Your last payment didn&rsquo;t go through.</strong>{' '}
           {showSupportPath
-            ? 'Your plan stays active while we sort this out with you.'
+            ? 'Contact support to update your payment method.'
             : 'Updating your card is what restores the plan — the provider retries automatically once it succeeds.'}
         </p>
       ) : null}
@@ -148,7 +148,7 @@ export function PaymentMethodCard({
               role="alert"
               style={{
                 fontSize: text.sm,
-                color: color.danger,
+                color: color.dangerText,
                 background: color.dangerBg,
                 borderRadius: radius.md,
                 padding: '8px 10px',

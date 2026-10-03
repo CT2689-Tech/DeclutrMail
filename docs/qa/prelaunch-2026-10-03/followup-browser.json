@@ -1,0 +1,1687 @@
+[
+  {
+    "id": "settings-privacydata--two-mailboxes",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "YOUR WORKSPACE / PRIVACY & DATA\n\nPrivacy & data\n\nReview access and stored data for all connected inboxes, export your records, or manage retention and deletion. Connection status is separate from sync health in Settings.\n\nConnected inboxes\nData inventory\nRecovery\nExport\nCookies\nDisconnect or delete\nPolicies\nWe never fetch or store full email contents.\n\nDeclutrMail uses only the Gmail details listed below.\n\nGmail details DeclutrMail stores:\nGmail message and conversation IDs\nSender name and email address\nSubject line\nGmail preview snippet (the short text shown in your inbox list)\nDate received\nGmail labels\nYour Gmail label names\nRead or unread state\nWhether a message was sent by you\nRecipient email addresses from To and Cc on email you sent\nUnsubscribe links and whether one-click unsubscribe is supported\nEstimated Gmail message size\nDeclutrMail never fetches or stores:\nFull email contents\nEmail HTML\nAttachments\nImages embedded in emails\nRaw email source\nEmail headers other than From, Subject, To, Cc, and unsubscribe information\nGmail data inventory\nAccess granted\nConnection and sync data\nMessage data\nDerived product data\nRecords we keep to investigate problems\n\nAnthropic only ever sees the items marked above for Brief summaries or optional sender explanations. Anthropic states that standard API inputs and outputs are deleted within 30 days, except where longer retention is required for usage-policy enforcement or law, or different contract terms apply.\n\nBrandfetch receives a s",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 61,
+        "incomplete": 0,
+        "passes": 27,
+        "violations": 1
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-privacydata--two-mailboxes&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/heading-order?application=axeAPI",
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Heading order invalid",
+              "html": "<h3 style=\"margin: 0px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--dm-primary-deep);\">We never fetch or store full email contents.</h3>",
+              "target": ["header > h3"]
+            }
+          ],
+          "tags": ["cat.semantics", "best-practice"]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-settings-privacydata--two-mailboxes.png"
+  },
+  {
+    "id": "senders-senderlist--phone",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "S\nSubstack\nno-reply@substack.com\n1,204\nemails\nreceived \u00b7 all time\n\u22ef\nArchiving\u2026\n128 in inbox\n8% marked read \u00b7 90d\nC\nChase\nalerts@chase.com\n312\nemails\nreceived \u00b7 all time\n\u22ef\n42 in inbox\n88% marked read \u00b7 90d\nO\nOld Navy\ndeals@oldnavy.com\n88\nemails\nreceived \u00b7 all time\n\u22ef\nRequest accepted\n20% marked read \u00b7 90d\nlinkedin.com\n3 senders\n930\nemails\nreceived \u00b7 retained",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 17,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "div[data-testid=\"sender-row-s1\"] > div:nth-child(1) > .dm-srow-avatar > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 15px; font-weight: 600; color: var(--dm-fg); font-variant-numeric: tabular-nums;\">1,204</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s1\"] > ._rowCount_1pd1l_499 > span:nth-child(1) > span:nth-child(1)"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 12px; color: var(--dm-fg-muted);\">emails</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s1\"] > ._rowCount_1pd1l_499 > span:nth-child(1) > span:nth-child(2)"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>128 in inbox</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s1\"] > ._compactRowContext_1pd1l_469 > ._rowEvidence_1pd1l_174 > span:nth-child(1)"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "div[data-testid=\"sender-row-s2\"] > div:nth-child(1) > .dm-srow-avatar > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<a href=\"/senders/s2\" title=\"Chase &lt;alerts@chase.com&gt;\" style=\"font-size: 15px; font-weight: 600; color: var(--dm-fg); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: normal; overflow-wrap: anywhere; min-width: 0px;\">Chase</a>",
+              "target": ["a[href=\"/senders/s2\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 15px; font-weight: 600; color: var(--dm-fg); font-variant-numeric: tabular-nums;\">312</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s2\"] > ._rowCount_1pd1l_499 > span:nth-child(1) > span:nth-child(1)"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span style=\"font-size: 12px; color: var(--dm-fg-muted);\">emails</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s2\"] > ._rowCount_1pd1l_499 > span:nth-child(1) > span:nth-child(2)"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<button type=\"button\" aria-label=\"More actions for Cha...\" title=\"More actions for Cha...\" style=\"width: 32px; height:...\">",
+              "target": ["button[aria-label=\"More actions for Chase\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>42 in inbox</span>",
+              "target": [
+                "div[data-testid=\"sender-row-s2\"] > ._compactRowContext_1pd1l_469 > ._rowEvidence_1pd1l_174 > span:nth-child(1)"
+              ]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=senders-senderlist--phone&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-senders-senderlist--phone.png"
+  },
+  {
+    "id": "senders-senderrow--compact",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "S\nSubstack\nno-reply@substack.com\n1,204\nemails\nreceived \u00b7 all time\n\u22ef\n20% marked read \u00b7 90d",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-srow-avatar > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<button type=\"button\" aria-label=\"More actions for Sub...\" title=\"More actions for Sub...\" style=\"width: 32px; height:...\">",
+              "target": ["button[aria-label=\"More actions for Substack\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=senders-senderrow--compact&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-senders-senderrow--compact.png"
+  },
+  {
+    "id": "admin-security-events--populated",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "OPERATOR WORKSPACE / AUDIT LOG\n\nSecurity events\nSEVERITY\nAll\nCritical\nWarning\nInfo\nEVENT TYPE\nFROM\nTO\nClear filters\nOCCURRED\tSEVERITY\tEVENT TYPE\tSOURCE IP\tUSER AGENT\tPAYLOAD\n2026-05-29 20:00:00Z\twarning\tlogin.failure\t203.0.113.7\tcurl/8\t{\"provider\":\"google\",\"reason\":\"invalid_state\"}\n2026-05-29 20:00:00Z\tcritical\trate_limit.breach\t198.51.100.42\tMozilla/5.0 (suspected bot)\t{\"bucket\":\"auth\"}\n2026-05-29 20:00:00Z\twarning\twebhook.signature_failure\t\u2014\t\u2014\t{\"source\":\"pubsub.gmail\",\"reason\":\"oidc_verify_failed\",\"step\":2,\"subReason\":\"signature_invalid\"}\n2026-05-29 20:00:00Z\tinfo\toauth.refresh_failed\t203.0.113.7\tcurl/8\t{\"provider\":\"google\",\"reason\":\"transient_failure\",\"mailboxAccountId\":\"mb-abc\"}\n2026-05-29 20:00:00Z\tcritical\tkms.access_error\t203.0.113.7\tcurl/8\t{\"provider\":\"gcp\",\"operation\":\"decrypt\",\"reason\":\"kms_call_failed\",\"keyResource\":\"projects/p/locations/l/keyRings/r/cryptoKeys/k\"}\nCouldn't refresh security events. The events already shown are still available and may be out of date.\nRetry refresh",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 24,
+        "violations": 2
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 18,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">login.failure</td>",
+              "target": ["div:nth-child(4) > table > tbody > tr:nth-child(1) > td:nth-child(3)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">203.0.113.7</td>",
+              "target": ["div:nth-child(4) > table > tbody > tr:nth-child(1) > td:nth-child(4)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">curl/8</td>",
+              "target": ["tr:nth-child(1) > td:nth-child(5)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 12px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">{\"provider\":\"google\",\"reason\":\"invalid_state\"}</td>",
+              "target": ["tr:nth-child(1) > td:nth-child(6)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">rate_limit.breach</td>",
+              "target": ["div:nth-child(4) > table > tbody > tr:nth-child(2) > td:nth-child(3)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">198.51.100.42</td>",
+              "target": ["div:nth-child(4) > table > tbody > tr:nth-child(2) > td:nth-child(4)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;\">Mozilla/5.0 (suspected bot)</td>",
+              "target": ["tr:nth-child(2) > td:nth-child(5)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 12px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">{\"bucket\":\"auth\"}</td>",
+              "target": ["tr:nth-child(2) > td:nth-child(6)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 14px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">webhook.signature_failure</td>",
+              "target": ["div:nth-child(4) > table > tbody > tr:nth-child(3) > td:nth-child(3)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<td style=\"padding: 10px 12px; font-size: 12px; color: var(--dm-fg); vertical-align: top; font-family: var(--dm-font-mono);\">{\"source\":\"pubsub.gmail\",\"reason\":\"oidc_verify_failed\",\"step\":2,\"subReason\":\"signature_invalid\"}</td>",
+              "target": ["tr:nth-child(3) > td:nth-child(6)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=admin-security-events--populated&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #b45309, background color: #f6ead5, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<span style=\"display: inline-flex...\">",
+              "target": ["tr:nth-child(1) > td:nth-child(2) > span"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #b45309, background color: #f6ead5, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<span style=\"display: inline-flex...\">",
+              "target": ["tr:nth-child(3) > td:nth-child(2) > span"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        },
+        {
+          "help": "Scrollable region must have keyboard access",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/scrollable-region-focusable?application=axeAPI",
+          "id": "scrollable-region-focusable",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element should have focusable content\n  Element should be focusable",
+              "html": "<div style=\"overflow-x: auto; border: 1px solid var(--dm-border); border-radius: 8px;\">",
+              "target": ["#storybook-root > div > div > div:nth-child(4)"]
+            }
+          ],
+          "tags": [
+            "cat.keyboard",
+            "wcag2a",
+            "wcag211",
+            "wcag213",
+            "TTv5",
+            "TT4.a",
+            "EN-301-549",
+            "EN-9.2.1.1",
+            "EN-9.2.1.3",
+            "RGAAv4",
+            "RGAA-7.3.2"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-admin-security-events--populated.png"
+  },
+  {
+    "id": "features-brief-briefscreen--populated",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CATCH UP / YOUR DAILY EDITION\n\nDaily Brief\nSat, May 23\n\nPrepared in the morning. See what changed\n\nSTART HERE\n2 to review\nCheck each message before responding \u2192\nFOR YOUR INFORMATION\n1 highlight\nWorth a glance when you have time \u2192\nREVIEW POSSIBLE NOISE\n2 senders\nReview the selection before archiving \u2192\nRead generated note\nReview\n\u00b7 2\n\nThese may need attention. Read the message before deciding whether to reply.\n\nB\nBig Boss\nexample.com\nQ4 plans \u2014 please review when you get a chance\nReview sender\nV\nVendor Finance\nvendor.io\nInvoice #4471 \u2014 net-30 question\nReview sender\nFYI\n\u00b7 1\nF\nFirst National\nfirst.example\nMay statement is ready\nReview sender\nNoise\n\u00b7 2\n\u00b7 7 messages yesterday\n\nSelected senders are ready for one Archive preview. The preview shows what is in your Inbox now before anything moves.\n\nArchive 2 senders\nN\nNewsletter Daily\n4 messages yesterday\nReview sender\nO\nOld Navy\n3 messages yesterday\nReview sender\nHow was this Brief?\nUseful\nNot useful\nSomething looks wrong",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 24,
+        "violations": 1
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 5,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "#brief-reply > ul > .dm-brief-row:nth-child(1) > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-brief-row:nth-child(2) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["#brief-fyi > ul > .dm-brief-row > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-noise-row:nth-child(1) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-noise-row:nth-child(2) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-brief-briefscreen--populated&viewMode=story&globals=theme%3Alight",
+      "violations": [
+        {
+          "help": "Links must be distinguishable without relying on color",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/link-in-text-block?application=axeAPI",
+          "id": "link-in-text-block",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  The link has insufficient color contrast of 1.46:1 with the surrounding text. (Minimum contrast is 3:1, link text: #59415f, surrounding text: #685f6b)\n  The link has no styling (such as underline) to distinguish it from the surrounding text",
+              "html": "<a href=\"/activity\" style=\"color: var(--dm-primary); text-decoration: none; white-space: nowrap;\">See what changed</a>",
+              "target": ["a[href$=\"activity\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2a",
+            "wcag141",
+            "TTv5",
+            "TT13.a",
+            "EN-301-549",
+            "EN-9.1.4.1",
+            "RGAAv4",
+            "RGAA-10.6.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-features-brief-briefscreen--populated.png"
+  },
+  {
+    "id": "triage-triagescreen--default",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 372,
+      "storyError": false,
+      "text": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n0 decided\n\u00b7\nReviewing 1 of 3\nFocus\nList\nG\nGroupon\nnoreply@groupon.com\n156\nemails in 90 days\n\n30% marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.\nSkip\nNow deciding Groupon",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(1) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-triage-triagescreen--default.png"
+  },
+  {
+    "id": "shell-appshell--default",
+    "theme": "light",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CLEAN UP\n?\nSenders\n214\nTriage\nScreener\n7\nYour senders",
+      "theme": "light",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=shell-appshell--default&viewMode=story&globals=theme%3Alight",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-light-shell-appshell--default.png"
+  },
+  {
+    "id": "features-activity-activityscreen--populated",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n\nHistory \u00b7 Last 30 days \u00b7 Active mailbox\n\nLast 30 days\nArchived\n47\n1,335 all time\nDeleted\n0\n212 all time\nUnsubscribes\n12\n86 all time\nLater\n3\n19 all time\nKept\n8\n41 all time\n\nActions, not emails, from every source. Undone actions aren\u2019t counted.\n\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nSun, May 24\nN\nNewsletter Daily\ndaily.example\n11:00 PM\nArchived12 emails\nBy Autopilot \u00b7 Newsletter graveyard\nUndo\n\u21ba\nO\nOld Navy\noldnavy.example\n5:00 PM\nUnsubscribe request recorded1 email\nBy you\nO\nOld Navy\noldnavy.example\n6:00 PM\nUnsubscribe request accepted\nBy you\nSat, May 23\nB\nBig Boss\nexample.com\n1:00 PM\nKeep decision saved\nVia Triage\nFri, May 22\nV\nVendor Co\nvendor.example\n1:00 AM\nArchived7 emails\nBy Autopilot\nUndone\nWed, May 13\nO\nOlder Sender\nexample.com\n1:00 AM\nArchived3 emails\nBy you\nExpired\nEnd of activity \u00b7 6 actions shown\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n23\nCompleted\n0\nDismissed by you\n1\nFailed\nReview\n2\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 61,
+        "incomplete": 1,
+        "passes": 27,
+        "violations": 1
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 11,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" aria-pressed=\"false\" style=\"display: inline-flex...\">",
+              "target": ["div[role=\"group\"] > button[type=\"button\"]:nth-child(4)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" aria-pressed=\"false\" style=\"display: inline-flex...\">",
+              "target": ["div[role=\"group\"] > button[type=\"button\"]:nth-child(5)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" aria-pressed=\"false\" style=\"display: inline-flex...\">",
+              "target": ["button[type=\"button\"]:nth-child(6)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" aria-pressed=\"false\" style=\"display: inline-flex...\">",
+              "target": ["button[type=\"button\"]:nth-child(7)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "section[aria-label=\"Sun, May 24\"] > ul > li[data-activity-card=\"\"]:nth-child(1) > div:nth-child(2) > label > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<span aria-hidden=\"true\">\u21ba</span>",
+              "target": ["button[title=\"Revert this action.\"] > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "li[data-activity-card=\"\"]:nth-child(2) > div:nth-child(2) > label > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "li[data-activity-card=\"\"]:nth-child(3) > div:nth-child(2) > label > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "section[aria-label=\"Sat, May 23\"] > ul > li[data-activity-card=\"\"] > div:nth-child(2) > label > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "section[aria-label=\"Fri, May 22\"] > ul > li[data-activity-card=\"\"] > div:nth-child(2) > label > span[aria-hidden=\"true\"]"
+              ]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--populated&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.2 (foreground color: #e5636a, background color: #302a32, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<span style=\"font-weight: 600; color: var(--dm-danger);\">Review</span>",
+              "target": ["span:nth-child(2) > span"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-features-activity-activityscreen--populated.png"
+  },
+  {
+    "id": "autopilot-autopilotscreen--default",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "AUTOMATIONS / YOUR RULES\n\nAutopilot\nPause all\nAutopilot has collected matches for a week.\nNewsletter graveyard \u2014 would have requested unsubscribe from 34 senders in the last 7 days. Approve or dismiss them below.\nNot now\nRun without asking \u2192 Plus\nREVIEW FIRST\n3 suggestions\nPreview before approving, or skip \u2192\nWATCH FIRST\n4 watching\nMatches wait for your approval \u2192\nACTING\n0 running\nNo rules change mail on their own \u2192\nAll rules \u00b7 5\nWatch first \u00b7 4\nActing \u00b7 0\nPaused or inactive \u00b7 1\nRules\nReview low-engagement senders for Archive\nWatch first\n\nArchives \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nAuto-unsubscribe noisy senders\nWatch first\n\nUnsubscribes \u00b7 Matches become suggestions for your approval.\n\nDetails\nReview new senders for Later\nWatch first\n\nMoves to Later \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nNewsletter graveyard\nWatch first\n\nUnsubscribes \u00b7 Matches become suggestions for your approval.\n\nDetails\nLong-dormant unsubscribe\n\nUnsubscribes\n\nDetails\nPending suggestions\n3 waiting\nFrom \u201cReview low-engagement senders for Archive\u201d\n2 waiting\nBargain Bulletin\nwould archive\nnoreply@bargainbulletin.example\nWhy suggested: monthly_volume=47, read_rate=0.04\nSkip suggestion\nQuarterly Recap\nwould archive\nteam@quarterly-recap.example\nWhy suggested: monthly_volume=12, read_rate=0.08\nSkip suggestion\nReview selected\nReview all 2\nFrom \u201cNewsletter graveyard\u201d \u00b7 Watch first review ready\n1 waiting\nSender details still syncing\nwould unsubscribe\nWhy ",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 64,
+        "incomplete": 0,
+        "passes": 24,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=autopilot-autopilotscreen--default&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-autopilot-autopilotscreen--default.png"
+  },
+  {
+    "id": "features-billing-billingscreen--free-tier",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "YOUR WORKSPACE / PLAN & BILLING\n\nPlan & billing\n\nApplies to this workspace and its connected inboxes.\n\nCurrent plan\nFree\n$0\n\nFree forever \u2014 no card on file. 3 of 50 cleanup actions left.\n\nYour plan includes\n1 of 1 connected inboxes \u00b7 Manage inboxes\n50 cleanup actions per month. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.\nSenders\nPlans\nMonthly\nAnnual \u2014 2 months free\nFree\nCurrent\n$0\nReview and clean up senders in one Gmail inbox.\nPlus\n$90/yr \u00b7 $7.50/mo effective\nClear a larger backlog and set rules for future mail.\nUpgrade to Plus\nPro\n$190/yr \u00b7 $15.83/mo effective\nStay on top of your Gmail inboxes with Brief and Follow-ups.\nFounding Pro: $129/yr for the first 250 \u2014 confirmed at checkout.\nUpgrade to Pro\nCompare included features\nCompare plans\n\nBilling help \u00b7 Refund policy",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" aria-pressed=\"true\" style=\"border-width: medium...\">",
+              "target": ["button[type=\"button\"]:nth-child(2)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-billing-billingscreen--free-tier&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-features-billing-billingscreen--free-tier.png"
+  },
+  {
+    "id": "features-brief-briefscreen--populated",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CATCH UP / YOUR DAILY EDITION\n\nDaily Brief\nSat, May 23\n\nPrepared in the morning. See what changed\n\nSTART HERE\n2 to review\nCheck each message before responding \u2192\nFOR YOUR INFORMATION\n1 highlight\nWorth a glance when you have time \u2192\nREVIEW POSSIBLE NOISE\n2 senders\nReview the selection before archiving \u2192\nRead generated note\nReview\n\u00b7 2\n\nThese may need attention. Read the message before deciding whether to reply.\n\nB\nBig Boss\nexample.com\nQ4 plans \u2014 please review when you get a chance\nReview sender\nV\nVendor Finance\nvendor.io\nInvoice #4471 \u2014 net-30 question\nReview sender\nFYI\n\u00b7 1\nF\nFirst National\nfirst.example\nMay statement is ready\nReview sender\nNoise\n\u00b7 2\n\u00b7 7 messages yesterday\n\nSelected senders are ready for one Archive preview. The preview shows what is in your Inbox now before anything moves.\n\nArchive 2 senders\nN\nNewsletter Daily\n4 messages yesterday\nReview sender\nO\nOld Navy\n3 messages yesterday\nReview sender\nHow was this Brief?\nUseful\nNot useful\nSomething looks wrong",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 24,
+        "violations": 1
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 5,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [
+                "#brief-reply > ul > .dm-brief-row:nth-child(1) > span[aria-hidden=\"true\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-brief-row:nth-child(2) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["#brief-fyi > ul > .dm-brief-row > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-noise-row:nth-child(1) > span[aria-hidden=\"true\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": [".dm-noise-row:nth-child(2) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-brief-briefscreen--populated&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Links must be distinguishable without relying on color",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/link-in-text-block?application=axeAPI",
+          "id": "link-in-text-block",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  The link has insufficient color contrast of 1.21:1 with the surrounding text. (Minimum contrast is 3:1, link text: #d1b8d6, surrounding text: #b8aab6)\n  The link has no styling (such as underline) to distinguish it from the surrounding text",
+              "html": "<a href=\"/activity\" style=\"color: var(--dm-primary); text-decoration: none; white-space: nowrap;\">See what changed</a>",
+              "target": ["a[href$=\"activity\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2a",
+            "wcag141",
+            "TTv5",
+            "TT13.a",
+            "EN-301-549",
+            "EN-9.1.4.1",
+            "RGAAv4",
+            "RGAA-10.6.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-features-brief-briefscreen--populated.png"
+  },
+  {
+    "id": "features-followups-followupsscreen--populated",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CATCH UP / CONVERSATIONS\n\nFollow-ups\n\nPossible follow-ups from email sent in the last 60 days. Checked about every six hours, so a recent reply can still show. Check the thread in Gmail before following up. Mark resolved only hides it here \u2014 nothing changes in Gmail.\n\nREVIEW FIRST\n2 over a week\nOpen the conversation before nudging \u2192\nKEEP AN EYE ON\n2 more recent\nThey may still reply without a nudge \u2192\nOver a week\n\u00b7 2\nBig Boss\nexample.com\nQ4 plans \u2014 please review when you get a chance\nSent 10d ago\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\nVendor Finance\nvendor.io\nInvoice #4471 \u2014 terms question\nSent 9d ago\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\n3\u20137 days\n\u00b7 1\nStartup PM\nstartup.co\nRe: Tuesday sync prep\nSent 4d ago\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\n1\u20133 days\n\u00b7 1\nPeer\nexample.com\nLunch?\nSent 2d ago\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 0,
+        "passes": 20,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-followups-followupsscreen--populated&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-features-followups-followupsscreen--populated.png"
+  },
+  {
+    "id": "home-homeview--cleared",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\nTHE SPACE\nYOU\u2019VE MADE\n12,480\nemails cleared since Mar 2026\nUndone actions excluded\nA GOOD PLACE TO START\nA few decisions.\nA little more space.\n\nYour daily review is ready. Take a look at these senders and decide what still belongs.\n\nReview 8 today\n\u2197\nNothing changes until you confirm.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\nD\nDesign Dispatch\ndispatch.example\n42\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.\n\nA little attention.\n\u2197\n3 unreviewed senders\nGive each sender a first decision on your terms.\n\u2192\n\u2197\nSee your senders\nRevisit the senders that have a place in your inbox.\n\u2192\nSMALL DECISIONS ADD UP\nMore space.\nLess second-guessing.\n\nYour cleanup history keeps every outcome in view, with Undo available for supported actions.\n\nSee your activity\n\u2197\nYOUR WORKSPACE\nThe rest of your day, in view.\n\nPick up a conversation, check what will return, or let a rule handle the repeat work.\n\nCATCH UP\nDaily Brief\nIncluded with Pro\n\u2197\nFollow-ups\nIncluded with Pro\n\u2197\nLater\nSee what is set to return\n\u2197\nKEEP IT CLEAR\nAutopilot\nIncluded with Plus\n\u2197\nQuiet Hours\nIncluded with Plus\n\u2197\nActivity & Undo\nSee decisions and recover supported actions\n\u2197\nEmails archived\n11,932\nEmails deleted\n548\nSenders decided\n86\n\nA considered inbox, one decision at a time.",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<span aria-hidden=\"true\">\u2192</span>",
+              "target": ["a[href$=\"screener\"] > span[aria-hidden=\"true\"]:nth-child(3)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<span aria-hidden=\"true\">\u2192</span>",
+              "target": ["a[href$=\"senders\"] > span[aria-hidden=\"true\"]:nth-child(3)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--cleared&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-home-homeview--cleared.png"
+  },
+  {
+    "id": "quiet-quiethourscard--unconfigured",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "chintan.a.thakkar@gmail.com\nQuiet hours\nStart\nEnd\nTimezone\nAmerica/Los_Angeles\nCrosses midnight \u2014 quiet from 22:00 until 07:00 the next day.\nSave quiet hours\nSaved",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 6,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<span style=\"font-family: var(--dm-font-sans); font-size: 15px; font-weight: 500; color: var(--dm-fg);\">Start</span>",
+              "target": ["div:nth-child(1) > div:nth-child(2) > span"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<input aria-label=\"Quiet window start\" type=\"time\" value=\"22:00\" style=\"font-family: var(--d...\">",
+              "target": ["input[aria-label=\"Quiet window start\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<span style=\"font-family: var(--dm-font-sans); font-size: 15px; font-weight: 500; color: var(--dm-fg);\">End</span>",
+              "target": ["div:nth-child(1) > div:nth-child(3) > span"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<input aria-label=\"Quiet window end\" type=\"time\" value=\"07:00\" style=\"font-family: var(--d...\">",
+              "target": ["input[aria-label=\"Quiet window end\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<span style=\"font-family: var(--dm-font-sans); font-size: 15px; font-weight: 500; color: var(--dm-fg);\">Timezone</span>",
+              "target": ["div:nth-child(4) > span:nth-child(1)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a background gradient",
+              "html": "<select aria-label=\"Quiet window timezon...\" class=\"dm-select-well\" style=\"appearance: none; fo...\">",
+              "target": ["select"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=quiet-quiethourscard--unconfigured&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-quiet-quiethourscard--unconfigured.png"
+  },
+  {
+    "id": "screener-screenerscreen--protected-override-preview",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 344,
+      "storyError": false,
+      "text": "D\nDr. Mehta Clinic\nmehtaclinic.example\nFirst seen Yesterday\nYour appointment on Friday, 10:30\nKeep\n\u00b7 unsure\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: Yesterday \u00b7 Messages received: 2 \u00b7 2 in inbox\nWhy this is suggested: Too new to judge \u2014 looks personal, so keeping is the safe call.\nOpen sender\n\n3 emails from Dr. Mehta Clinic. They move to Gmail Trash.\n\nUndo from Activity for 30 days. Future email is unchanged.\n\nThis sender is Protected because you starred a message. Confirming acts on it anyway; it stays Protected.\n\nDetails\nConfirm Delete anyway\nCancel",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 1
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 2,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["div[role=\"button\"] > span[aria-hidden=\"true\"]:nth-child(1)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it's partially obscured by another element",
+              "html": "<button type=\"button\" data-dm-button=\"\" style=\"display: inline-flex...\">",
+              "target": ["button[data-dm-button=\"\"][type=\"button\"]:nth-child(2)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--protected-override-preview&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.25 (foreground color: #bda6c2, background color: #4d424f, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<span style=\"opacity: 0.85;\"> \u00b7 unsure</span>",
+              "target": ["div:nth-child(3) > span > span"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.28 (foreground color: #e5636a, background color: #4e3641, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" class=\"dm-screener-verb\" aria-pressed=\"true\" style=\"display: inline-flex...\">",
+              "target": [".dm-screener-verb[type=\"button\"]:nth-child(5)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.09 (foreground color: #e5636a, background color: #463e48, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<strong style=\"font-weight: 600; color: var(--dm-danger);\">This sender is Protected</strong>",
+              "target": ["p[role=\"status\"] > strong"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-screener-screenerscreen--protected-override-preview.png"
+  },
+  {
+    "id": "senders-senderdetailpage--default",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "L\nLinkedIn\nnoreply@linkedin.com\nProtected\nNOW \u00b7 CURRENT MAIL\n\u2014\n\nCurrently in your inbox\n\n\u2014\n\nCurrently archived\n\nYOUR NEXT DECISION\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nSuggestion \u00b7 Archive \u2014 highlighted button is Keep\nPATTERN \u00b7 YOUR HISTORY\n64\n\nemails in the last 90 days \u00b7 2,432 received \u00b7 all time\n\nMarked read\n0% \u00b7 90 days\n12-month trend\nMonthly values\nLast seen\ntoday\nYou wrote\n0\u00d7\nRecent messages\nInbox + archived\nInbox\nArchived\n3 people viewed your profile\nTop posts in your network, hand-picked based on what people like you are reading.\ntoday\n36KB\nTrending in your network\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\nyesterday\n10KB\nNew connection request\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n2d ago\n19KB\nWeekly digest\nTop posts in your network, hand-picked based on what people like you are reading.\n3d ago\n32KB\nYou have 5 new notifications\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n4d ago\n9KB\n3 people viewed your profile\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n5d ago\n11KB\nTrending in your network\nTop posts in your network, hand-picked based on what people like you are reading.\n6d ago\n5KB\nNew connection request\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n1w ago\n16KB\nDecision timeline\nView in Activity \u2192\nTriage \u00b7 ",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 2
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["._identityMain_1pd1l_254 > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--default&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Elements must only use permitted ARIA attributes",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/aria-prohibited-attr?application=axeAPI",
+          "id": "aria-prohibited-attr",
+          "impact": "serious",
+          "nodeCount": 10,
+          "nodes": [
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(1) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(2) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(3) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(4) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Has attachment\" title=\"Has attachment\">",
+              "target": [
+                "li:nth-child(4) > .dm-recent-message-row > .dm-recent-message-size > span[aria-label=\"Has attachment\"][title=\"Has attachment\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(5) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Has attachment\" title=\"Has attachment\">",
+              "target": [
+                "li:nth-child(5) > .dm-recent-message-row > .dm-recent-message-size > span[aria-label=\"Has attachment\"][title=\"Has attachment\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(6) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(7) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix all of the following:\n  aria-label attribute cannot be used on a span with no valid role attribute.",
+              "html": "<span aria-label=\"Unread\" title=\"Unread\" style=\"width: 8px; height: 8px; border-radius: 50%; background: var(--dm-primary); border: 1.5px solid var(--dm-primary); display: inline-block; flex-shrink: 0;\"></span>",
+              "target": [
+                "li:nth-child(8) > .dm-recent-message-row > span[aria-label=\"Unread\"][title=\"Unread\"]"
+              ]
+            }
+          ],
+          "tags": [
+            "cat.aria",
+            "wcag2a",
+            "wcag412",
+            "EN-301-549",
+            "EN-9.4.1.2",
+            "RGAAv4",
+            "RGAA-7.1.1"
+          ]
+        },
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.44 (foreground color: #e5636a, background color: #3d3840, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" aria-label=\"Delete (D)\" style=\"display: inline-flex...\">",
+              "target": ["button[aria-label=\"Delete (D)\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-senders-senderdetailpage--default.png"
+  },
+  {
+    "id": "settings-privacydata--two-mailboxes",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "YOUR WORKSPACE / PRIVACY & DATA\n\nPrivacy & data\n\nReview access and stored data for all connected inboxes, export your records, or manage retention and deletion. Connection status is separate from sync health in Settings.\n\nConnected inboxes\nData inventory\nRecovery\nExport\nCookies\nDisconnect or delete\nPolicies\nWe never fetch or store full email contents.\n\nDeclutrMail uses only the Gmail details listed below.\n\nGmail details DeclutrMail stores:\nGmail message and conversation IDs\nSender name and email address\nSubject line\nGmail preview snippet (the short text shown in your inbox list)\nDate received\nGmail labels\nYour Gmail label names\nRead or unread state\nWhether a message was sent by you\nRecipient email addresses from To and Cc on email you sent\nUnsubscribe links and whether one-click unsubscribe is supported\nEstimated Gmail message size\nDeclutrMail never fetches or stores:\nFull email contents\nEmail HTML\nAttachments\nImages embedded in emails\nRaw email source\nEmail headers other than From, Subject, To, Cc, and unsubscribe information\nGmail data inventory\nAccess granted\nConnection and sync data\nMessage data\nDerived product data\nRecords we keep to investigate problems\n\nAnthropic only ever sees the items marked above for Brief summaries or optional sender explanations. Anthropic states that standard API inputs and outputs are deleted within 30 days, except where longer retention is required for usage-policy enforcement or law, or different contract terms apply.\n\nBrandfetch receives a s",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 61,
+        "incomplete": 0,
+        "passes": 27,
+        "violations": 1
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=settings-privacydata--two-mailboxes&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Heading levels should only increase by one",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/heading-order?application=axeAPI",
+          "id": "heading-order",
+          "impact": "moderate",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Heading order invalid",
+              "html": "<h3 style=\"margin: 0px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; color: var(--dm-primary-deep);\">We never fetch or store full email contents.</h3>",
+              "target": ["header > h3"]
+            }
+          ],
+          "tags": ["cat.semantics", "best-practice"]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-settings-privacydata--two-mailboxes.png"
+  },
+  {
+    "id": "features-later-laterscreen--populated",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nLater today\n\u00b7 1\nDaily Digest\nnews.example.com\n12 in Later\nReturns Today 5:42 PM\n\u201cafter launch week\u201d\nChange return time\nBring back now\nTomorrow\n\u00b7 1\nDeals & Offers\nshop.example.com\n47 in Later\nReturns Tomorrow 8:42 PM\nChange return time\nBring back now\nThis week\n\u00b7 1\nConference Updates\nconf.example.com\n5 in Later\nReturns Thu 2:42 PM\n\u201cuntil the schedule is final\u201d\nChange return time\nBring back now\nEventually\n\u00b7 1\nQuarterly Newsletter\ncorp.example.com\n3 in Later\nReturns Nov 2\nChange return time\nBring back now",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--populated&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-features-later-laterscreen--populated.png"
+  },
+  {
+    "id": "triage-triagescreen--default",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 372,
+      "storyError": false,
+      "text": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n0 decided\n\u00b7\nReviewing 1 of 3\nFocus\nList\nG\nGroupon\nnoreply@groupon.com\n156\nemails in 90 days\n\n30% marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.\nSkip\nNow deciding Groupon",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 1
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content is too short to determine if it is actual text content",
+              "html": "<span aria-hidden=\"true\" style=\"position: relative; ...\">",
+              "target": ["span:nth-child(1) > span[aria-hidden=\"true\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Adark",
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3.18 (foreground color: #d75e65, background color: #3b363e, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" aria-label=\"Delete (D)\" aria-describedby=\"_r_4_\" style=\"display: inline-flex...\">",
+              "target": ["button[aria-label=\"Delete (D)\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-triage-triagescreen--default.png"
+  },
+  {
+    "id": "shell-appshell--default",
+    "theme": "dark",
+    "dom": {
+      "scrollWidth": 320,
+      "storyError": false,
+      "text": "CLEAN UP\n?\nSenders\n214\nTriage\nScreener\n7\nYour senders",
+      "theme": "dark",
+      "width": 320
+    },
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:6006/iframe.html?id=shell-appshell--default&viewMode=story&globals=theme%3Adark",
+      "violations": []
+    },
+    "screenshot": "/tmp/declutrmail-launch-review/story-shots/followup-dark-shell-appshell--default.png"
+  }
+]

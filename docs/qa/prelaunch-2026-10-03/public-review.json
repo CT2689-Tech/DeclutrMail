@@ -1,0 +1,2128 @@
+{
+  "summary": {
+    "reviewedAt": "2026-10-03",
+    "reviewer": "copy_duplication_review",
+    "scope": "Read-only review of every public marketing/content route except /sign-in, all source-defined variants, FAQs and changelog entries, shared navigation/metadata, simulator branches, invalid paths, machine-readable endpoints, and historical-domain redirects.",
+    "method": "Source-only review; targeted worker/API traces and selected current primary-source checks. Parent separately verifies rendered desktop/mobile/light/dark pages. No source files changed by this reviewer.",
+    "publicContentRouteCount": 47,
+    "routeInventory": {
+      "static": 20,
+      "howTo": 6,
+      "answers": 5,
+      "blogArticles": 3,
+      "versus": 8,
+      "alternatives": 5,
+      "faqAnswers": 17,
+      "changelogEntries": 17,
+      "exactLegacyMappings": 35
+    },
+    "findingCounts": {
+      "P1": 0,
+      "P2": 4,
+      "P3": 6
+    },
+    "copyClarityScore": 8,
+    "assessment": "The homepage now has clearer distinct purposes for each section and retains its original hero/voice. Launch concerns are specific action guarantees, one demo count, recovery consistency, and a few destination/label issues; a wholesale rewrite is unnecessary.",
+    "purposefulRepetition": [
+      "Header, hero, and final Start free actions serve different page positions and can stay.",
+      "Topic-specific simulator CTAs connect guides/comparisons to the relevant sample rather than merely duplicate a generic CTA.",
+      "Site navigation and one in-page guide CTA are useful different entry points; do not remove both solely because they share a destination."
+    ],
+    "claimChecks": {
+      "plans": "Public plan amounts/capabilities and purchase availability compared to shared tier/pricing manifests and runtime CTA branches, not live catalog or checkout.",
+      "privacy": "Published no-full-content, subject/snippet, Anthropic, analytics-consent and unsubscribe distinctions compared to shared canonical copy and referenced implementation/context.",
+      "external": "Selected vendor and Google claims were checked against primary sources today; this was not a complete independent verification of every competitor feature, price, or linked source. No external claim was promoted to a finding without contradictory evidence."
+    },
+    "primarySourcesConsulted": [
+      "https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/",
+      "https://clean.email/features",
+      "https://clean.email/help/cleaning/canceling-accidental-action-with-quick-cancel",
+      "https://leavemealone.com/pricing/",
+      "https://www.trimbox.io/privacy",
+      "https://unroll.me/legal/privacy/",
+      "https://www.sanebox.com/help/412-privacy-and-security-i-don-t-want-sanebox-reading-my-mail",
+      "https://support.google.com/mail/answer/15621070?hl=en"
+    ],
+    "productionMarkersAndBaseUrls": "No unintended localhost/staging/TODO/placeholder marketing copy found in reviewed source. Fictional sample domains are explicitly labelled. siteUrl defaults to https://declutrmail.com but honors NEXT_PUBLIC_APP_URL; OAuth API origin is environment-controlled. Exact deployed origins, availability, billing rails, Google approval receipt, email delivery and live provider behavior remain unverified by this reviewer.",
+    "limitations": [
+      "Browser screenshots, DOM, accessibility, mobile layout, interaction and production host tests are owned by the parent; none are claimed here.",
+      "Authentication, onboarding and core authenticated app surfaces are assigned to other reviewers; /sign-in is explicitly excluded.",
+      "Existing untracked records-prototype code is not part of the marketing route inventory reviewed here.",
+      "No paid checkout, live write, unsubscribe request, Gmail mutation, or external message was sent.",
+      "Security/privacy/legal copy was checked for repository consistency, not supplied as legal advice or certification."
+    ]
+  },
+  "coverage": [
+    {
+      "route": "/",
+      "screen": "Homepage",
+      "statesReviewed": [
+        "hero and illustrative workspace",
+        "product tour: four walkthrough choices",
+        "in-page section navigation",
+        "everyday tools",
+        "privacy inventory collapsed/expanded source",
+        "pricing and final signup CTA"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/page.tsx, landing/hero.tsx, landing/hero-workspace.tsx, landing/product-journey.tsx, landing/sender-walkthrough.tsx, landing/sections.tsx, landing/pricing-teaser-view.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-it-works",
+      "screen": "Product guide",
+      "statesReviewed": [
+        "sender review",
+        "decision semantics",
+        "confirmation and Activity",
+        "Autopilot boundary",
+        "Gmail data boundary",
+        "illustrative figures and topic demo links"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/how-it-works/page.tsx, product-story/diagrams.tsx, product-story/story-shell.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/demo",
+      "screen": "Legacy demo alias",
+      "statesReviewed": ["permanent redirect to /inbox-simulator"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/demo/page.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator",
+      "screen": "Interactive fictional demo",
+      "statesReviewed": [
+        "default Senders workspace",
+        "Daily Triage Focus and List",
+        "Keep immediate decision",
+        "Archive/Unsubscribe/Later/Delete confirmation",
+        "Delete Inbox only and Inbox + archived",
+        "secondary Archive on unsubscribe",
+        "guided steps 1\u20134",
+        "Autopilot preview and Observe activation",
+        "Activity and Undo",
+        "completed outcome",
+        "reset",
+        "orientation disclosure",
+        "sample persistence and synthetic data labels"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/inbox-simulator/page.tsx, inbox-simulator/inbox-simulator-screen.tsx, inbox-simulator/senders-simulator.tsx, features/triage/action-sheet.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/pricing",
+      "screen": "Pricing",
+      "statesReviewed": [
+        "Free, Plus, Pro, Founding offers",
+        "monthly/yearly toggle",
+        "India and international price inputs",
+        "enabled-billing checkout intent",
+        "disabled-billing waitlist CTA",
+        "founding availability branches",
+        "waitlist idle/submitting/confirmed/error",
+        "feature comparison and footnotes"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/pricing/page.tsx, pricing/pricing-screen.tsx, pricing/pricing-model.ts, pricing/tier-card.tsx, pricing/cta.ts, pricing/waitlist-form.tsx, pricing/compare-table.tsx, packages/shared tier manifest",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/help",
+      "screen": "Help hub",
+      "statesReviewed": ["support task links", "how-to/answer entries", "contact and FAQ journeys"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/help/page.tsx, learn/index-pages.tsx, learn/support-tasks.tsx, learn/hub-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq",
+      "screen": "FAQ",
+      "statesReviewed": [
+        "all 17 answers",
+        "collapsed/expanded details source",
+        "topic demo and signup destinations"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/faq/page.tsx, learn/index-pages.tsx, learn/faq-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/contact",
+      "screen": "Contact",
+      "statesReviewed": [
+        "support address",
+        "billing/refund help",
+        "security reporting route",
+        "mailbox-data request caution"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/contact/page.tsx, learn/support-tasks.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/beta",
+      "screen": "Beta entry",
+      "statesReviewed": [
+        "open-beta default",
+        "reason=not_invited branch",
+        "permission disclosure",
+        "signup and daily-review demo destinations"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/beta/page.tsx, app/(marketing)/beta/beta-denied-tracker.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog",
+      "screen": "Public changelog",
+      "statesReviewed": [
+        "all 17 dated entries",
+        "historical-snapshot disclosure",
+        "noindex metadata",
+        "RSS link",
+        "no internal provenance rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/changelog/page.tsx, learn/index-pages.tsx, learn/changelog-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/security",
+      "screen": "Security",
+      "statesReviewed": [
+        "data and encryption claims",
+        "restricted Gmail scope",
+        "Google/CASA verification statement",
+        "provider and AI boundaries",
+        "security contact links"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/security/page.tsx, packages/shared privacy/verification copy",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/privacy",
+      "screen": "Privacy policy",
+      "statesReviewed": [
+        "stored Gmail fields",
+        "never-fetched data",
+        "Anthropic boundaries",
+        "analytics consent",
+        "retention",
+        "export/disconnect/deletion",
+        "processors",
+        "policy contact"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/privacy/page.tsx, packages/shared privacy copy",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/terms",
+      "screen": "Terms",
+      "statesReviewed": [
+        "account responsibilities",
+        "manual actions and automation",
+        "billing",
+        "unsubscribe versus recovery",
+        "service limitations",
+        "termination and contact"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/terms/page.tsx, packages/shared/src/copy/action-safety.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/refunds",
+      "screen": "Refund policy",
+      "statesReviewed": [
+        "billing providers",
+        "refund request path",
+        "recurring versus Founding purchase copy",
+        "cancellation and refund distinction"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/refunds/page.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/cookies",
+      "screen": "Cookie policy",
+      "statesReviewed": [
+        "essential auth/preferences cookies",
+        "optional telemetry consent",
+        "consent controls",
+        "analytics data boundary"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/cookies/page.tsx, public-shell/public-shell.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/methodology",
+      "screen": "Recommendation methodology",
+      "statesReviewed": [
+        "protection and sufficient-data cascade",
+        "Archive versus Unsubscribe scoring explanation",
+        "marked-read semantics",
+        "Gmail category boundary",
+        "AI explanation disclosure"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/methodology/page.tsx, product-story/diagrams.tsx, packages/shared privacy/action copy",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/compare",
+      "screen": "Comparison hub",
+      "statesReviewed": [
+        "all eight tools",
+        "comparison table",
+        "DeclutrMail entry and plan summaries",
+        "provider/data/automation distinctions",
+        "source/date disclosures"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/compare/page.tsx, comparison/comparison-screen.tsx, comparison/comparison-data.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to",
+      "screen": "How-to hub",
+      "statesReviewed": ["all six guide links", "topic demo and CTA destinations"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/how-to/page.tsx, learn/index-pages.tsx, learn/how-to-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers",
+      "screen": "Answers hub",
+      "statesReviewed": ["all five answer links", "topic demo and CTA destinations"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/answers/page.tsx, learn/index-pages.tsx, learn/answer-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/blog",
+      "screen": "Blog hub",
+      "statesReviewed": [
+        "all three article links",
+        "dates and source inputs",
+        "topic demo and CTA destinations"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/blog/page.tsx, learn/index-pages.tsx, learn/blog-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/clean-gmail-by-sender",
+      "screen": "How to clean Gmail by sender",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/bulk-delete-emails-from-one-sender",
+      "screen": "How to delete all emails from one sender in Gmail",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/gmail-storage-full",
+      "screen": "Gmail storage full? How to free up space",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/auto-archive-future-emails-in-gmail",
+      "screen": "How to auto archive emails in Gmail",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/stop-promotional-emails-gmail",
+      "screen": "How to stop promotional emails in Gmail",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/unsubscribe-from-emails-gmail",
+      "screen": "How to unsubscribe from emails in Gmail",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/how-to-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/how-to route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/is-it-safe-to-connect-gmail-app",
+      "screen": "Is it safe to connect a Gmail cleanup app?",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/answer-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/answers route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/what-is-metadata-only-email-analysis",
+      "screen": "What is metadata-only email analysis?",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/answer-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/answers route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/how-undo-works-for-gmail-cleanup",
+      "screen": "How does undo work for Gmail cleanup?",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/answer-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/answers route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/best-way-to-clean-gmail-2026",
+      "screen": "What is the best way to clean Gmail in 2026?",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/answer-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/answers route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/sender-level-vs-message-level-cleanup",
+      "screen": "Sender review vs email-by-email cleanup",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/answer-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/answers route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/blog/why-cleanup-starts-with-senders",
+      "screen": "Why email cleanup should start with senders",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/blog-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/blog route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/blog/metadata-only-is-a-design-constraint",
+      "screen": "Metadata-only should be a design constraint",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/blog-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/blog route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/blog/reversible-does-not-mean-risk-free",
+      "screen": "Reversible does not mean risk-free",
+      "statesReviewed": [
+        "metadata and canonical path",
+        "entire answer/intro",
+        "all sections and step sequence",
+        "callouts and action/recovery claims",
+        "all source entries",
+        "related links",
+        "topic-specific demo and signup CTA",
+        "ArticlePage shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/blog-content.ts, learn/article-page.tsx, learn/learn-shell.tsx, learn/journey-links.ts, app/(marketing)/blog route wrapper",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/vs/clean-email",
+      "screen": "clean-email versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/trimbox",
+      "screen": "trimbox versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/sanebox",
+      "screen": "sanebox versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/leave-me-alone",
+      "screen": "leave-me-alone versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/unroll-me",
+      "screen": "unroll-me versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/gmail-filters",
+      "screen": "gmail-filters versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/gmail",
+      "screen": "gmail versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/vs/meta-muse",
+      "screen": "meta-muse versus DeclutrMail",
+      "statesReviewed": [
+        "complete tool definition and source entries",
+        "provider/data scope",
+        "manual and future-mail controls",
+        "history/recovery comparison",
+        "pricing/access qualifications",
+        "choose-tool and choose-DeclutrMail sections",
+        "related comparisons and topic demo",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts, comparison/comparison-screen.tsx, app/(marketing)/vs/[competitor]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Selected current primary-source checks are listed in summary; not every vendor feature/price or source URL was reverified today."
+    },
+    {
+      "route": "/alternatives/clean-email",
+      "screen": "clean-email alternatives",
+      "statesReviewed": [
+        "when to stay with the subject",
+        "all seven generated alternative entries: trimbox, sanebox, leave-me-alone, unroll-me, gmail-filters, gmail, meta-muse",
+        "DeclutrMail fit section",
+        "oldest verification date derivation",
+        "every comparison/deep-link CTA",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts: alternativesFor, comparison/alternatives-screen.tsx, app/(marketing)/alternatives/[tool]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Alternative claims reuse the eight comparison definitions; every generated entry was reviewed but not every external source was reverified today."
+    },
+    {
+      "route": "/alternatives/unroll-me",
+      "screen": "unroll-me alternatives",
+      "statesReviewed": [
+        "when to stay with the subject",
+        "all seven generated alternative entries: clean-email, trimbox, sanebox, leave-me-alone, gmail-filters, gmail, meta-muse",
+        "DeclutrMail fit section",
+        "oldest verification date derivation",
+        "every comparison/deep-link CTA",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts: alternativesFor, comparison/alternatives-screen.tsx, app/(marketing)/alternatives/[tool]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Alternative claims reuse the eight comparison definitions; every generated entry was reviewed but not every external source was reverified today."
+    },
+    {
+      "route": "/alternatives/sanebox",
+      "screen": "sanebox alternatives",
+      "statesReviewed": [
+        "when to stay with the subject",
+        "all seven generated alternative entries: clean-email, trimbox, leave-me-alone, unroll-me, gmail-filters, gmail, meta-muse",
+        "DeclutrMail fit section",
+        "oldest verification date derivation",
+        "every comparison/deep-link CTA",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts: alternativesFor, comparison/alternatives-screen.tsx, app/(marketing)/alternatives/[tool]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Alternative claims reuse the eight comparison definitions; every generated entry was reviewed but not every external source was reverified today."
+    },
+    {
+      "route": "/alternatives/leave-me-alone",
+      "screen": "leave-me-alone alternatives",
+      "statesReviewed": [
+        "when to stay with the subject",
+        "all seven generated alternative entries: clean-email, trimbox, sanebox, unroll-me, gmail-filters, gmail, meta-muse",
+        "DeclutrMail fit section",
+        "oldest verification date derivation",
+        "every comparison/deep-link CTA",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts: alternativesFor, comparison/alternatives-screen.tsx, app/(marketing)/alternatives/[tool]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Alternative claims reuse the eight comparison definitions; every generated entry was reviewed but not every external source was reverified today."
+    },
+    {
+      "route": "/alternatives/trimbox",
+      "screen": "trimbox alternatives",
+      "statesReviewed": [
+        "when to stay with the subject",
+        "all seven generated alternative entries: clean-email, sanebox, leave-me-alone, unroll-me, gmail-filters, gmail, meta-muse",
+        "DeclutrMail fit section",
+        "oldest verification date derivation",
+        "every comparison/deep-link CTA",
+        "canonical metadata and static parameter"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: comparison/comparison-data.ts: alternativesFor, comparison/alternatives-screen.tsx, app/(marketing)/alternatives/[tool]/page.tsx, learn/journey-links.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Alternative claims reuse the eight comparison definitions; every generated entry was reviewed but not every external source was reverified today."
+    },
+    {
+      "route": "/faq#what-is-declutrmail",
+      "screen": "FAQ answer: what-is-declutrmail",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#replacement-inbox",
+      "screen": "FAQ answer: replacement-inbox",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#stored-data",
+      "screen": "FAQ answer: stored-data",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#full-bodies",
+      "screen": "FAQ answer: full-bodies",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#anthropic",
+      "screen": "FAQ answer: anthropic",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#action-effects",
+      "screen": "FAQ answer: action-effects",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#future-mail",
+      "screen": "FAQ answer: future-mail",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#undo",
+      "screen": "FAQ answer: undo",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#where-undo",
+      "screen": "FAQ answer: where-undo",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#unsubscribe",
+      "screen": "FAQ answer: unsubscribe",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#unsubscribe-undo",
+      "screen": "FAQ answer: unsubscribe-undo",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#suspicious-mail",
+      "screen": "FAQ answer: suspicious-mail",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#autopilot",
+      "screen": "FAQ answer: autopilot",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#later-vs-snooze",
+      "screen": "FAQ answer: later-vs-snooze",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#plans",
+      "screen": "FAQ answer: plans",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#disconnect-delete",
+      "screen": "FAQ answer: disconnect-delete",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/faq#refunds-support",
+      "screen": "FAQ answer: refunds-support",
+      "statesReviewed": [
+        "question label",
+        "entire answer",
+        "expanded-details source",
+        "shared rendering"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/faq-content.ts, learn/index-pages.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-29",
+      "screen": "Steadier payments and syncs",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-28",
+      "screen": "Delete reaches filtered mail",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-27",
+      "screen": "The Free tier opens",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-26",
+      "screen": "Actions say what they will do",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-25",
+      "screen": "India can pay in rupees",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-24",
+      "screen": "Paid plans open outside India",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-23",
+      "screen": "Tighter access controls",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-22",
+      "screen": "Safer deletion and sync recovery",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-21",
+      "screen": "Self-serve plan changes",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-20",
+      "screen": "Two payment problems fixed",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-18",
+      "screen": "A clearer sort label",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-17",
+      "screen": "Senders agrees with itself",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-15",
+      "screen": "Protection you can check",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-14",
+      "screen": "The public site, and one name per idea",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-10",
+      "screen": "Decision flow and trust polish",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-09",
+      "screen": "Mobile and public-surface build",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog#2026-07-08",
+      "screen": "Launch workflows take shape",
+      "statesReviewed": [
+        "full historical entry",
+        "release date and public title",
+        "internal provenance omitted by rendering",
+        "RSS serialization"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: learn/changelog-content.ts, learn/index-pages.tsx, app/(marketing)/changelog/rss.xml/route.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?workspace=triage",
+      "screen": "Daily Triage deep link",
+      "statesReviewed": ["workspace selection and mode initialization"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?workspace=senders",
+      "screen": "Senders deep link",
+      "statesReviewed": ["explicit and default sender workspace"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?tour=1",
+      "screen": "Guided-tour deep link",
+      "statesReviewed": [
+        "guided mode parsed",
+        "workspace remains default Senders",
+        "conditional rendering prevents tour from appearing"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?step=1",
+      "screen": "Guided sender-review sample",
+      "statesReviewed": ["triage and guided step initialization", "inspection and Archive sample"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?step=2",
+      "screen": "Guided unsubscribe sample",
+      "statesReviewed": [
+        "triage and guided step initialization",
+        "one-click confirmation and paired historic Archive"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?step=3",
+      "screen": "Guided Autopilot sample",
+      "statesReviewed": [
+        "triage and guided step initialization",
+        "dry run and observe-only low-engagement preset"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?step=4",
+      "screen": "Guided Delete sample",
+      "statesReviewed": [
+        "triage and guided step initialization",
+        "Inbox-only/all-mail choice",
+        "Activity Undo and Trash recovery"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/inbox-simulator?step=invalid",
+      "screen": "Invalid sample step",
+      "statesReviewed": [
+        "non-numeric, out-of-range and decimal values fail the integer/range guard",
+        "presence of step still selects Triage"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: inbox-simulator/inbox-simulator-screen.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/beta?reason=not_invited",
+      "screen": "Denied beta branch",
+      "statesReviewed": ["reason parsing", "denial explanation", "contact/retry navigation"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/beta/page.tsx, app/(marketing)/beta/beta-denied-tracker.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/pricing.md",
+      "screen": "Machine-readable pricing",
+      "statesReviewed": [
+        "manifest-derived offers and comparison",
+        "disabled/enabled billing wording",
+        "action guarantee paragraphs",
+        "canonical Link header",
+        "noindex header"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/pricing.md/route.ts, pricing/pricing-model.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/llms.txt",
+      "screen": "Machine-readable public product summary",
+      "statesReviewed": [
+        "entire static file",
+        "action and privacy guarantees",
+        "plan features and pricing",
+        "all public route links",
+        "comparison and alternatives descriptions"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: public/llms.txt",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/changelog/rss.xml",
+      "screen": "Changelog feed",
+      "statesReviewed": [
+        "all 17 item inputs",
+        "XML escaping",
+        "absolute source URLs",
+        "channel metadata and caching"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/changelog/rss.xml/route.ts, learn/changelog-content.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/sitemap.xml",
+      "screen": "Sitemap",
+      "statesReviewed": [
+        "public static and generated variants",
+        "canonical origin",
+        "changelog/noindex exclusion",
+        "no authenticated URLs"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/sitemap.ts, landing/urls.ts, comparison/comparison-data.ts, learn content",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/robots.txt",
+      "screen": "Robots",
+      "statesReviewed": ["public allow", "authenticated-route exclusions", "canonical sitemap URL"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/robots.ts, landing/urls.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/blog/nonexistent-slug",
+      "screen": "Unknown blog article",
+      "statesReviewed": [
+        "content lookup returns undefined",
+        "notFound()",
+        "global 404 copy and recovery links"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/blog/[slug]/page.tsx, app/not-found.tsx, app/not-found-view.tsx, app/not-found-audience.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/vs/nonexistent-competitor",
+      "screen": "Unknown comparison",
+      "statesReviewed": ["dynamicParams=false", "notFound fallback", "global 404"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/vs/[competitor]/page.tsx, app/not-found-view.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/alternatives/nonexistent-tool",
+      "screen": "Unknown alternatives page",
+      "statesReviewed": ["dynamicParams=false", "notFound fallback", "global 404"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/alternatives/[tool]/page.tsx, app/not-found-view.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/how-to/nonexistent-slug",
+      "screen": "Unknown statically defined guide",
+      "statesReviewed": ["no corresponding route", "global anonymous 404 recovery"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/how-to route inventory, app/not-found-view.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/answers/nonexistent-slug",
+      "screen": "Unknown statically defined answer",
+      "statesReviewed": ["no corresponding route", "global anonymous 404 recovery"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/answers route inventory, app/not-found-view.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "/nonexistent-path",
+      "screen": "Global 404",
+      "statesReviewed": [
+        "anonymous audience",
+        "authenticated audience inferred by session probe",
+        "audience probe failure fallback",
+        "noindex metadata",
+        "recovery links"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/not-found.tsx, app/not-found-view.tsx, app/not-found-audience.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "(marketing error boundary)",
+      "screen": "Public route failure",
+      "statesReviewed": [
+        "page-failure copy",
+        "Retry reset callback",
+        "Home/Demo/Pricing/Contact recovery links",
+        "exception details omitted"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/(marketing)/error.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "(shared public header/footer)",
+      "screen": "Shared navigation and consent",
+      "statesReviewed": [
+        "desktop links",
+        "mobile menu",
+        "active-route selection",
+        "theme controls",
+        "sign-in/signup paths",
+        "footer legal/support links",
+        "consent settings"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: public-shell/public-shell.tsx, public-shell/nav-links.ts, public-shell/mobile-menu.tsx, landing/footer.tsx, landing/urls.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "(shared SEO/OG)",
+      "screen": "Public metadata and social copy",
+      "statesReviewed": [
+        "default OG headline",
+        "simulator OG copy",
+        "canonical paths and metadataBase",
+        "SoftwareApplication JSON-LD",
+        "dynamic offer generation"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: app/layout.tsx, app/(marketing)/layout.tsx, app/(marketing)/site-json-ld-description.ts, marketing/page-metadata.ts, app/opengraph-image.tsx, app/(marketing)/inbox-simulator/opengraph-image.tsx",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here."
+    },
+    {
+      "route": "https://declutrmail.ai/blog/email-overload-problem",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/blog/why-cleanup-starts-with-senders",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/blog/is-unroll-me-safe",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/unroll-me",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/blog/launch-announcement",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/changelog",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/blog/privacy-first-design",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/blog/metadata-only-is-a-design-constraint",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/blog/psychology-of-digital-clutter",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/blog/why-cleanup-starts-with-senders",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/clean-email-vs-declutrmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/clean-email",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/leave-me-alone-vs-declutrmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/leave-me-alone",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/sanebox-vs-declutrmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/sanebox",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/unroll-me-vs-declutrmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/unroll-me",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/declutrmail-vs-unroll-me-vs-leave-me-alone",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/vs/unroll-me",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/compare/mailstrom-vs-declutrmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/compare",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/help",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/auto-archive-gmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/how-to/auto-archive-future-emails-in-gmail",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/find-all-email-subscriptions-gmail",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/how-to/unsubscribe-from-emails-gmail",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/gmail-storage-full",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/how-to/gmail-storage-full",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/unsubscribe-safely",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/how-to/unsubscribe-from-emails-gmail",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/inbox-zero-strategy",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/answers/best-way-to-clean-gmail-2026",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/digital-minimalism-email",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/blog/why-cleanup-starts-with-senders",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/privacy-first-email-management",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/answers/what-is-metadata-only-email-analysis",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/email-management-glossary",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/help",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/legal/privacy",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/privacy",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/legal/terms",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/terms",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/legal/refund",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/refunds",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/topics",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/blog",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/tools/email-cleanup-calculator",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/inbox-simulator",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/llms-full.txt",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/llms.txt",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/ai.txt",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/llms.txt",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/dashboard",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/triage",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/review",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/triage",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/undo",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/activity",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/auto-clean",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/autopilot",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/rules",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/autopilot",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/categories",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/senders",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/simulate",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/inbox-simulator",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/auth/callback",
+      "screen": "Legacy-domain redirect",
+      "statesReviewed": [
+        "apex/www .ai host condition",
+        "exact path maps permanently to https://declutrmail.com/sign-in",
+        "destination exists in current public/app route inventory"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned redirect rules were inspected, not executed against the historical domain. Authenticated destination rendering is owned by another reviewer."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/unsubscribe-from-:brand",
+      "screen": "Legacy branded unsubscribe guide",
+      "statesReviewed": [
+        "pattern redirects to /how-to/unsubscribe-from-emails-gmail after exact rules"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned rules inspected in source only."
+    },
+    {
+      "route": "https://declutrmail.ai/guides/:path*",
+      "screen": "Legacy unmatched guides",
+      "statesReviewed": ["pattern redirects to /help after topical exact mappings"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned rules inspected in source only."
+    },
+    {
+      "route": "https://declutrmail.ai/:path*",
+      "screen": "Legacy domain catch-all",
+      "statesReviewed": [
+        "unmapped paths preserved on canonical .com host",
+        "unknown preserved paths may correctly reach current 404"
+      ],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned rules inspected in source only."
+    },
+    {
+      "route": "https://www.declutrmail.ai/:path*",
+      "screen": "Legacy www domain",
+      "statesReviewed": ["same topical exact/pattern redirects as apex .ai"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned rules inspected in source only."
+    },
+    {
+      "route": "https://www.declutrmail.com/:path*",
+      "screen": "Canonical www redirect",
+      "statesReviewed": ["permanent redirect to apex .com preserving pathname"],
+      "method": "Read-only source review of route, rendered-copy inputs, shared templates, links, state branches, and relevant implementation/manifests. Sources: lib/legacy-domain-redirects.ts, next.config.ts",
+      "limitations": "Source-only: this reviewer did not render or interact with this route. Parent owns browser/visual verification. Production configuration and provider operations are not verified here. Host-conditioned rules inspected in source only."
+    }
+  ],
+  "findings": [
+    {
+      "id": "PUB-01",
+      "priority": "P2",
+      "route": "/terms; /pricing.md; /llms.txt; public uses of ACTION_PREVIEW_CLAIM",
+      "state": "Manual sender action between preview and execution",
+      "title": "Published Gmail recheck guarantee is stronger than the worker implementation",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/copy/action-safety.ts",
+          "line": 11,
+          "detail": "Canonical action-preview copy says DeclutrMail checks Gmail again when the action runs."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/terms/page.tsx",
+          "line": 74,
+          "detail": "Terms specifically says the worker re-checks Gmail at execution."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/pricing.md/route.ts",
+          "line": 143,
+          "detail": "Machine-readable pricing repeats the execution-time Gmail check."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/public/llms.txt",
+          "line": 3,
+          "detail": "Static public summary repeats the same guarantee."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/workers/src/label-action.worker.ts",
+          "line": 303,
+          "detail": "Sender selector is resolved again by resolveSenderActionIds."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/workers/src/label-action.worker.ts",
+          "line": 689,
+          "detail": "resolveSenderActionIds selects provider IDs from the local mailMessages database using senderActionWhere; it does not fetch current Gmail scope."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/workers/src/label-action.worker.ts",
+          "line": 381,
+          "detail": "The resolved local IDs are passed directly to Gmail batchModify."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/gmail/gmail-client.service.ts",
+          "line": 671,
+          "detail": "batchModify only posts the supplied IDs and label changes in chunks; it performs no Gmail message-scope read."
+        }
+      ],
+      "recommendation": "Remove the claim that Gmail is rechecked. Describe that the matching scope is resolved again when execution starts and the final count can differ, or implement and verify an actual provider recheck before retaining the guarantee. Keep the current-index wording in the Delete guide; that wording matches the implementation.",
+      "verification": "Source trace from selector resolution through Gmail mutation adapter; no provider mutation or production freshness test performed. A Gmail label-name lookup is not a current message-scope recheck.",
+      "launchImpact": "A user may approve a preview believing the provider is freshly checked. This trust guarantee should match the implementation before launch."
+    },
+    {
+      "id": "PUB-02",
+      "priority": "P2",
+      "route": "All public routes via SoftwareApplication JSON-LD; /pricing.md",
+      "state": "Structured data and machine-readable action semantics",
+      "title": "Public machine-readable copy promises a preview for every action",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/site-json-ld-description.ts",
+          "line": 20,
+          "detail": "Both description branches claim every action is previewed, then include Keep among the five decisions; both also mention Activity recovery only for Archive and Later."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/pricing.md/route.ts",
+          "line": 141,
+          "detail": "Every Unsubscribe action is described as showing a matching count/sample/exact Gmail change, even when no backlog cleanup is selected."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/how-it-works/page.tsx",
+          "line": 106,
+          "detail": "Visible guide correctly says Keep is inline and affected-email previews apply to mail-moving actions."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/action-sheet.tsx",
+          "line": 71,
+          "detail": "Keep is explicitly never previewed."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/action-sheet.tsx",
+          "line": 132,
+          "detail": "The live affected-email preview gate covers Archive, Later, Delete, and Unsubscribe only when historic Archive is selected."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/copy/action-safety.ts",
+          "line": 29,
+          "detail": "Canonical recovery claim includes Activity Undo for Delete."
+        }
+      ],
+      "recommendation": "Align JSON-LD and pricing markdown with the visible guide: Keep records an inline decision; mail-moving actions show the affected-email preview; unsubscribe confirms its method and any optional separate cleanup. Include Delete with Archive/Later when listing Activity Undo.",
+      "verification": "Compared shared JSON-LD and markdown against production ActionSheet branches, visible product guide, and canonical recovery copy. Source-only.",
+      "launchImpact": "Search/answer-engine summaries can repeat product behavior that disagrees with the visible page and application."
+    },
+    {
+      "id": "PUB-03",
+      "priority": "P2",
+      "route": "/inbox-simulator?workspace=triage; /inbox-simulator?step=4",
+      "state": "Completed demo after Delete with Inbox + archived",
+      "title": "Demo outcome counts archived mail as cleared from Inbox",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 667,
+          "detail": "affectedCount includes syntheticArchivedCount when Delete reach is all_mail."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 1317,
+          "detail": "OutcomeSummary sums the entire affectedCount into clearedFromInbox."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 1324,
+          "detail": "That total is labelled Cleared from Inbox."
+        }
+      ],
+      "recommendation": "Track inbox-removed count separately from total affected count, or label the total as Emails acted on. Verify the completed summary for Delete with archived reach and for Archive/Later/unsubscribe-with-backlog.",
+      "verification": "Deterministic source calculation: archived messages contribute to the value despite already being outside Inbox. Parent can reproduce with the guided Delete sample and complete the tour.",
+      "launchImpact": "The demo teaches an incorrect outcome metric for a supported action scope."
+    },
+    {
+      "id": "PUB-04",
+      "priority": "P3",
+      "route": "/inbox-simulator?tour=1",
+      "state": "Direct guided-tour query link",
+      "title": "Guided-tour query does not select the workspace that renders the tour",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 447,
+          "detail": "Workspace defaults to Senders."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 520,
+          "detail": "Only workspace=triage or a step query selects Triage."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 521,
+          "detail": "tour=1 selects guided mode without selecting Triage."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 946,
+          "detail": "SendersSimulator renders while workspace is Senders; the guided tour is in the other branch."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 848,
+          "detail": "Changing demo mode uses tour=1 as its URL representation."
+        }
+      ],
+      "recommendation": "When parsing tour=1, select Triage as well as guided mode. Preserve an explicit Senders choice only if that query combination is intentionally supported and documented.",
+      "verification": "Source state initialization and render-branch trace; step=1\u20134 already sets the required workspace. No runtime assertion by this reviewer.",
+      "launchImpact": "A shared direct tour URL can open the sender workspace instead of the promised guided experience."
+    },
+    {
+      "id": "PUB-05",
+      "priority": "P2",
+      "route": "/how-to/unsubscribe-from-emails-gmail; /how-it-works",
+      "state": "Paired unsubscribe with separate Archive or Delete",
+      "title": "Recovery explanation omits Activity Undo for a paired Delete",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/how-to-content.ts",
+          "line": 835,
+          "detail": "The guide explicitly supports a secondary Archive or Delete in the unsubscribe confirmation."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/how-to-content.ts",
+          "line": 861,
+          "detail": "Recovery paragraph says only the archive portion is reversible while its Activity window is open and then gives Delete only Gmail Trash recovery."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/product-story/diagrams.tsx",
+          "line": 245,
+          "detail": "Lifecycle note only says a paired Archive has its own Undo, despite Delete being a supported paired cleanup."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/copy/action-safety.ts",
+          "line": 29,
+          "detail": "Delete can be undone from Activity until its displayed deadline; Trash is an additional fallback."
+        }
+      ],
+      "recommendation": "Say that a separate Archive or Delete has its own Activity Undo until its deadline, while the sent unsubscribe request cannot be recalled. Preserve the distinction with Trash without adding a longer caveat.",
+      "verification": "Compared guide, lifecycle figure, and canonical recovery semantics. Source-only; no actual unsubscribe request sent.",
+      "launchImpact": "A user deciding whether to include Delete can infer a more limited recovery path than the product offers."
+    },
+    {
+      "id": "PUB-06",
+      "priority": "P3",
+      "route": "/beta",
+      "state": "Open-beta daily review link",
+      "title": "Daily-review CTA lands in the default Senders demo",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(marketing)/beta/page.tsx",
+          "line": 127,
+          "detail": "Try the daily review demo links to bare /inbox-simulator."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 447,
+          "detail": "Bare simulator URL starts in Senders; Daily Triage is a separate workspace."
+        }
+      ],
+      "recommendation": "Link this CTA to /inbox-simulator?workspace=triage, or change its label to match the sender workspace.",
+      "verification": "Source destination versus simulator default state; no navigation performed by this reviewer.",
+      "launchImpact": "Visitors following the named daily-review path must discover and switch to a different workspace."
+    },
+    {
+      "id": "PUB-07",
+      "priority": "P3",
+      "route": "/how-to/auto-archive-future-emails-in-gmail",
+      "state": "Numbered Autopilot instructions",
+      "title": "Autopilot guide asks readers to enable the same rule twice",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/how-to-content.ts",
+          "line": 564,
+          "detail": "First step is Turn on review."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/how-to-content.ts",
+          "line": 568,
+          "detail": "Second step waits for representative traffic after the preset is enabled."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/how-to-content.ts",
+          "line": 573,
+          "detail": "Third step says to review the sample before turning on the rule."
+        }
+      ],
+      "recommendation": "Place the activation preview in the first step. Make the third step review the collected suggestions, names, and exceptions rather than repeat the pre-activation instruction.",
+      "verification": "Read the complete ordered steps and preceding always-Observe explanation. Source-only.",
+      "launchImpact": "The learning path is harder to follow even though the underlying always-review behavior is correctly explained."
+    },
+    {
+      "id": "PUB-08",
+      "priority": "P3",
+      "route": "/",
+      "state": "Privacy & control section, then expanded inventory",
+      "title": "Homepage privacy summary repeats the same data boundary",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/landing/sections.tsx",
+          "line": 145,
+          "detail": "The lede states the canonical no-full-email-contents boundary."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/landing/sections.tsx",
+          "line": 164,
+          "detail": "A nearby Full messages stay in Gmail item repeats the same no-full-email-contents claim."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/landing/sections.tsx",
+          "line": 174,
+          "detail": "Expanded data inventory renders another full PrivacyBadge card."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/CLAUDE.md",
+          "line": 723,
+          "detail": "Repository copy budget puts trust/privacy copy once per flow at its decision point."
+        }
+      ],
+      "recommendation": "Keep one clear boundary in the section lede and use the summary for distinct facts such as the stored fields, access controls, and decision controls. Let the disclosure add the full inventory rather than duplicate its introduction. Keep useful Start free repetition in header/hero/final CTA.",
+      "verification": "Adjacent visible source copy plus expanded disclosure; this is a focused duplication finding, not a recommendation for a homepage rewrite.",
+      "launchImpact": "Minor reading burden on the mobile section and one less distinct reason to scan each summary item."
+    },
+    {
+      "id": "PUB-09",
+      "priority": "P3",
+      "route": "Public article/comparison topic CTAs; /inbox-simulator",
+      "state": "Shared topic demo buttons and simulator controls",
+      "title": "Several button labels exceed the repository copy budget",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/learn/journey-links.ts",
+          "line": 4,
+          "detail": "Try an unsubscribe preview has four words; the other topic labels at lines 7, 10, and 12 also have four."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 906,
+          "detail": "Where this fits in your workspace uses six words."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 1305,
+          "detail": "Preview the Autopilot rule uses four words."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+          "line": 1429,
+          "detail": "Explore all sample senders uses four words."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/CLAUDE.md",
+          "line": 721,
+          "detail": "Button or menu item budget is three words or fewer."
+        }
+      ],
+      "recommendation": "Use short, destination-specific labels such as Preview Unsubscribe, Preview automation, Delete and recovery, Try Senders, Workspace guide, Preview rule, and Explore senders. Keep article titles and explanatory prose descriptive.",
+      "verification": "Word count of actual button/CTA strings against explicit repository budget; no assumption that every prose link is a button.",
+      "launchImpact": "Small but repeated scanability issue across many generated pages and mobile demo controls."
+    },
+    {
+      "id": "PUB-10",
+      "priority": "P3",
+      "route": "/pricing and public disabled-billing waitlist surfaces",
+      "state": "Waitlist submission rejection",
+      "title": "Waitlist error claims a network failure for every failed request",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/pricing/waitlist-form.tsx",
+          "line": 38,
+          "detail": "All thrown errors use the same generic error state."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/marketing/pricing/waitlist-form.tsx",
+          "line": 113,
+          "detail": "The displayed error says the server could not be reached."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/lib/api/waitlist.ts",
+          "line": 24,
+          "detail": "The form delegates to apiPost, whose rejected responses include server HTTP errors as well as network failures."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/lib/api/client.ts",
+          "line": 53,
+          "detail": "ApiError represents any non-2xx response; a responding server can therefore produce this state."
+        }
+      ],
+      "recommendation": "Use a truthful generic failure with a next action, such as Couldn\u2019t join the waitlist. Try again., or distinguish verified network and server causes.",
+      "verification": "Source catch/error-class trace; rejection states were not injected by this reviewer.",
+      "launchImpact": "A visitor can receive an inaccurate failure diagnosis and no useful distinction for retrying."
+    }
+  ]
+}

@@ -136,9 +136,9 @@ export function ActionToolbar({
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
       if (isTypingTarget(e.target)) return;
-      // Inert while the preview (or any other modal / menu) is open —
+      // Inert while the preview (or any other dialog / menu) is open —
       // same guards as the Senders list's selection shortcuts.
-      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return;
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
       const entry = VERBS.find((v) => v.shortcut.toLowerCase() === e.key.toLowerCase());
       if (!entry) return;
       const { sender: s, onAction: act, busy: isBusy } = live.current;
@@ -173,7 +173,7 @@ export function ActionToolbar({
         // `tone: 'danger'` for this verb) makes Delete findable before the
         // D226 confirm step, not just after, without adding weight.
         const deleteAccentStyle =
-          verb === 'Delete' && !isHighlighted && !disabled ? { color: color.danger } : null;
+          verb === 'Delete' && !isHighlighted && !disabled ? { color: color.dangerText } : null;
         // QA-sender-detail-20260902-07/-16: the highlighted verb had no
         // stated reason, and the only verb `canUnsubscribe` ever disables
         // — no List-Unsubscribe channel — rendered greyed out with no

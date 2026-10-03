@@ -14,7 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useUiStore } from '@declutrmail/shared';
 
@@ -222,7 +222,116 @@ describe('BriefScreen — edge states', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 
-  it('D70 — quiet-inbox empty state renders verbatim copy when all sections are empty', async () => {
+  it.each([500, 404])(
+    'keeps a loaded edition and Noise selection after a %i refresh',
+    async (status) => {
+      let fail = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/briefs/today',
+          respond: () =>
+            fail
+              ? new Response('{}', { status, headers: { 'content-type': 'application/json' } })
+              : jsonOk({ data: BASE_BRIEF }),
+        },
+        historyHandler(),
+      ]);
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <BriefScreen />
+        </QueryWrapper>,
+      );
+      const selected = await screen.findByRole('checkbox', { name: /newsletter daily/i });
+      fireEvent.click(selected);
+      expect(selected).not.toBeChecked();
+      fail = true;
+      await act(async () => {
+        await client.refetchQueries({ queryKey: briefKeys.today() });
+      });
+      const retry = await screen.findByRole('button', { name: 'Try again' });
+      expect(screen.getByText('Q4 plan review')).toBeInTheDocument();
+      expect(screen.getByLabelText('Brief day')).toBeInTheDocument();
+      expect(screen.getByRole('checkbox', { name: /newsletter daily/i })).not.toBeChecked();
+      expect(retry.closest('[role="status"]')).toHaveTextContent(
+        status === 404 ? /not available yet/i : /couldn.t refresh/i,
+      );
+      if (status === 404) expect(screen.queryByText(/messages yesterday/i)).not.toBeInTheDocument();
+      fireEvent.click(selected);
+      expect(screen.getByRole('button', { name: /Archive 1 sender/i })).toBeDisabled();
+      fail = false;
+      fireEvent.click(retry);
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument(),
+      );
+      expect(screen.getByRole('button', { name: /Archive 1 sender/i })).toBeEnabled();
+    },
+  );
+
+  it('keeps the selected historical edition after a failed refresh', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => (fail ? jsonServerError() : jsonOk({ data: BASE_BRIEF })),
+      },
+      historyHandler(),
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Brief day'),
+      PAST_BRIEF.runDateLocal,
+    );
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: briefKeys.today() });
+    });
+    await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument();
+    expect(screen.getByLabelText('Brief day')).toHaveValue(PAST_BRIEF.runDateLocal);
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('does not retain an edition after a mailbox-scope refusal', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          fail
+            ? new Response(JSON.stringify({ error: { code: 'NO_ACTIVE_MAILBOX' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              })
+            : jsonOk({ data: BASE_BRIEF }),
+      },
+      historyHandler(),
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Q4 plan review');
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: briefKeys.today() });
+    });
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
+  it('renders edition-neutral copy when all Brief sections are empty', async () => {
     const empty: BriefWire = {
       ...BASE_BRIEF,
       briefPayload: { reply: [], fyi: [], noise: [], narrative: '' },
@@ -238,7 +347,7 @@ describe('BriefScreen — edge states', () => {
     renderScreen();
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /your inbox was quiet yesterday\./i }),
+        screen.getByRole('heading', { name: /no items in this edition\./i }),
       ).toBeInTheDocument(),
     );
     const feedback = screen.getByRole('group', { name: /how was this brief/i });
@@ -247,7 +356,8 @@ describe('BriefScreen — edge states', () => {
     expect(
       within(feedback).getByRole('button', { name: 'Something looks wrong' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/enjoy the morning — we.ll be back tomorrow\./i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing to review in this Daily Brief/i)).toBeInTheDocument();
+    expect(screen.queryByText(/yesterday|back tomorrow/i)).toBeNull();
   });
 });
 
@@ -697,6 +807,29 @@ describe('BriefScreen — D61 history', () => {
     );
     expect(screen.queryByRole('heading', { name: /messages yesterday/i })).not.toBeInTheDocument();
     expect(String(useUiStore.getState().screenHelp?.body)).toMatch(/email from Fri, May 22/i);
+  });
+
+  it('dates historical Noise rows by the edition they belong to', async () => {
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler([
+        BASE_BRIEF,
+        {
+          ...PAST_BRIEF,
+          briefPayload: { ...PAST_BRIEF.briefPayload, noise: BASE_BRIEF.briefPayload.noise },
+        },
+      ]),
+    ]);
+    renderScreen();
+    await userEvent.setup().selectOptions(await screen.findByLabelText('Brief day'), '2026-05-23');
+
+    const noise = await screen.findByRole('region', {
+      name: /Noise .*4 messages on Fri, May 22/,
+    });
+    expect(
+      within(within(noise).getByRole('list')).getByText('4 messages on Fri, May 22'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('4 messages yesterday')).not.toBeInTheDocument();
   });
 
   it('hides the switcher and still renders today when history fails', async () => {

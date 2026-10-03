@@ -118,6 +118,21 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.getByText(/Guided decision 1 of 4/i)).toBeInTheDocument();
   });
 
+  it.each(['?tour=1', '?workspace=senders&tour=1'])(
+    'opens the guided tour in Daily Triage for the direct query %s',
+    (query) => {
+      window.history.pushState({}, '', `/inbox-simulator${query}`);
+      render(<InboxSimulatorScreen />);
+
+      expect(screen.getByRole('button', { name: /Daily Triage/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(screen.getByText(/Guided decision 1 of 4/i)).toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Guided demo progress' })).toBeInTheDocument();
+    },
+  );
+
   it('offers a separate interactive Senders workspace without confusing it with Triage', () => {
     render(<InboxSimulatorScreen />);
     const senders = screen.getByRole('button', { name: /Senders workspace Inspector/ });
@@ -142,9 +157,7 @@ describe('InboxSimulatorScreen', () => {
     // Explore mode, not a specific guided step: this checks the general
     // D226 preview-then-confirm mechanism, which every row offers
     // regardless of which guided step currently occupies slot 1.
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
 
     fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
@@ -165,9 +178,7 @@ describe('InboxSimulatorScreen', () => {
 
   it('records Keep without opening a preview', () => {
     render(<InboxSimulatorScreen />);
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
 
     fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Keep \(K\)/ })[0]!);
@@ -360,9 +371,7 @@ describe('InboxSimulatorScreen', () => {
 
   it('offers the historic-archive option on Unsubscribe, off by default', () => {
     render(<InboxSimulatorScreen />);
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
     const unsubscribableRow = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod !== 'none')!;
     const header = screen.getByRole('button', {
       name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
@@ -387,9 +396,7 @@ describe('InboxSimulatorScreen', () => {
     // rejects everything, by design), so this both checks the outcome
     // text and proves persistence still accepts it.
     render(<InboxSimulatorScreen />);
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
     const unsubscribableRow = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod !== 'none')!;
     const header = screen.getByRole('button', {
       name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
@@ -438,9 +445,7 @@ describe('InboxSimulatorScreen', () => {
     // `defaultLaterWakeAtIso`, or swapping in the real sheet would quietly
     // strand a previously-clickable verb.
     render(<InboxSimulatorScreen />);
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
     fireEvent.click(screen.getByRole('button', { name: /Groupon — expand triage detail/ }));
     fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
     const dialog = sheetFor(firstRow.senderName);
@@ -484,7 +489,7 @@ describe('InboxSimulatorScreen', () => {
   /** Walks every remaining step after `reachRuleStep()`: turns the rule on,
    *  then deletes Groupon (step 4) — landing on `DemoCompletion`. */
   function finishFromRuleStep() {
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
     fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
     fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
     fireEvent.click(
@@ -502,12 +507,48 @@ describe('InboxSimulatorScreen', () => {
     finishFromRuleStep();
   }
 
+  it('excludes already archived mail from the inbox-cleared outcome after all-mail Delete and reload', async () => {
+    const { unmount } = render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
+
+    const deletedRow = TRIAGE_QUEUE.find((row) => row.id === 't-groupon')!;
+    const deleteCount = syntheticInboxCount(deletedRow) + syntheticArchivedCount(deletedRow);
+    const dialog = sheetFor(deletedRow.senderName);
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Delete/ }));
+
+    const archiveBatch = findDomainBatches(TRIAGE_QUEUE).find(
+      (batch) => batch.domain === 'amazon.com',
+    )!;
+    const inboxRemoved =
+      archiveBatch.eligibleRows.reduce((total, row) => total + syntheticInboxCount(row), 0) +
+      syntheticInboxCount(deletedRow);
+    const expectInboxOutcome = () => {
+      const outcome = screen.getByLabelText('Sample outcome');
+      expect(within(outcome).getByText('Cleared from Inbox').nextElementSibling).toHaveTextContent(
+        inboxRemoved.toLocaleString('en-US'),
+      );
+    };
+    expectInboxOutcome();
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!).decisions).toContainEqual(
+        expect.objectContaining({ rowId: deletedRow.id, affectedCount: deleteCount }),
+      ),
+    );
+    unmount();
+    render(<InboxSimulatorScreen />);
+    expectInboxOutcome();
+  });
+
   it('offers a review-only rule and names Plus', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     expect(screen.getByRole('heading', { name: 'A preset can keep watch.' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
 
     // Low-engagement signals can include important account mail, so this
     // preset never offers an unattended acting path.
@@ -520,7 +561,7 @@ describe('InboxSimulatorScreen', () => {
   it('previews only Inbox mail still actionable after the earlier batch', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
 
     const archivedBatch = findDomainBatches(TRIAGE_QUEUE, []).find(
       (batch) => batch.domain === 'amazon.com',
@@ -557,7 +598,7 @@ describe('InboxSimulatorScreen', () => {
   it('turning the rule on advances the guide to step 4', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
 
     fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
@@ -571,7 +612,7 @@ describe('InboxSimulatorScreen', () => {
   it('turning on the review-only rule completes the step without an acting option', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
 
     expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
@@ -586,7 +627,7 @@ describe('InboxSimulatorScreen', () => {
     // at step 4, never replay the already-decided rule step.
     const { unmount } = render(<InboxSimulatorScreen />);
     reachRuleStep();
-    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
     fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     await waitFor(() =>
@@ -710,9 +751,7 @@ describe('InboxSimulatorScreen', () => {
     render(<InboxSimulatorScreen />);
     // Derived, not pinned: the fixture count is expected to grow, and a
     // literal here would fail for the wrong reason every time it does.
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: `Explore ${TRIAGE_QUEUE.length} senders` }));
 
     // Protected sender: present, and its protection is the D245
     // replies signal — never a read-rate claim (§2.6 guardrail).

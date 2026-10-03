@@ -30,6 +30,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
       {/* The privacy boundary, stated once, at the decision point —
           directly above the button that starts Google consent. */}
       <PrivacyBadge
+        headingLevel={2}
         style={{
           width: '100%',
           textAlign: 'left',

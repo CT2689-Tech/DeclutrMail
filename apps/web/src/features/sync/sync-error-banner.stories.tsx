@@ -132,8 +132,8 @@ export const HiddenAfterRecovery: Story<typeof SyncErrorBanner> = {
     ),
 };
 
-/** Hidden — the error aged past the 60-minute window. */
-export const HiddenWhenStale: Story<typeof SyncErrorBanner> = {
+/** Persistent — an older failure with no later successful outcome. */
+export const UnresolvedFailure: Story<typeof SyncErrorBanner> = {
   render: () =>
     frame(
       statusOf({
@@ -141,7 +141,7 @@ export const HiddenWhenStale: Story<typeof SyncErrorBanner> = {
         last_sync_error_at: minutesAgo(90),
         last_sync_error_code: 'GMAIL_HISTORY_GONE',
       }),
-      'Error stamped 90 minutes ago — outside the 60-minute window, nothing renders.',
+      'Error stamped 90 minutes ago — no successful sync has proved recovery.',
     ),
 };
 

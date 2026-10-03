@@ -72,6 +72,7 @@
 
   /* Canonical danger family */
   --dm-danger: #a12525;
+  --dm-danger-text: var(--dm-danger);
   --dm-danger-bg: rgba(161, 37, 37, 0.06);
   --dm-danger-border: rgba(161, 37, 37, 0.3);
   --dm-danger-deep: #7a1a1a;
@@ -178,6 +179,8 @@
   --dm-red-border: rgba(242, 125, 125, 0.35);
 
   --dm-danger: #e5636a;
+  /* Text on dark cards and danger washes needs more contrast than filled buttons. */
+  --dm-danger-text: #ff9a9f;
   --dm-danger-bg: rgba(229, 99, 106, 0.12);
   --dm-danger-border: rgba(229, 99, 106, 0.4);
   --dm-danger-deep: #f28389;

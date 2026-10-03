@@ -60,7 +60,7 @@ const TONE_TO_FG: Record<VerbTone, string> = {
   dark: color.fg,
   amber: color.amber,
   primary: color.primary,
-  danger: color.danger,
+  danger: color.dangerText,
 };
 
 export interface ActionPopoverProps {
@@ -357,7 +357,7 @@ function VerbDot({ verb }: { verb: { id: string; tone: string } }) {
   const tone: Record<string, string> = {
     dark: color.fg,
     amber: color.amber,
-    danger: color.danger,
+    danger: color.dangerText,
     primary: color.primary,
     neutral: color.fgMuted,
   };

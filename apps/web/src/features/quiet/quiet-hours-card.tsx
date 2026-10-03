@@ -320,7 +320,7 @@ function QuietHoursForm({
           style={{
             fontFamily: font.sans,
             fontSize: text.sm,
-            color: color.danger,
+            color: color.dangerText,
             padding: '0 16px',
           }}
         >

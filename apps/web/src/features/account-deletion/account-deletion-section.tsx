@@ -129,7 +129,7 @@ function PendingState({
       }}
     >
       <h3 style={rowHeadingStyle}>Delete account and data</h3>
-      <p style={{ fontSize: text.md, color: color.danger, fontWeight: 600, margin: 0 }}>
+      <p style={{ fontSize: text.md, color: color.dangerText, fontWeight: 600, margin: 0 }}>
         {executing
           ? 'Deletion is in progress — your data is being removed.'
           : basis === 'waived-immediate'
@@ -143,7 +143,7 @@ function PendingState({
         </p>
       )}
       {cancelFailed && (
-        <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: 0 }}>
+        <p role="alert" style={{ fontSize: text.sm, color: color.dangerText, margin: 0 }}>
           Could not cancel. Refresh and try again.
         </p>
       )}

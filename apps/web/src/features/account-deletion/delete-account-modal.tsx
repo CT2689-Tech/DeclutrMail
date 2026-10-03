@@ -242,7 +242,6 @@ export function DeleteAccountModal({
                 boxShadow: phraseMatches ? `inset 0 0 0 1.5px ${color.emerald}` : 'none',
                 background: color.fill,
                 color: color.fg,
-                outline: 'none',
               }}
             />
           </div>
@@ -252,7 +251,7 @@ export function DeleteAccountModal({
               role="alert"
               style={{
                 fontSize: text.sm,
-                color: color.danger,
+                color: color.dangerText,
                 background: color.dangerBg,
                 borderRadius: radius.md,
                 padding: '10px 12px',
@@ -276,7 +275,7 @@ function DangerGlyph() {
         height: 64,
         borderRadius: radius.pill,
         background: color.dangerBg,
-        color: color.danger,
+        color: color.dangerText,
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -359,7 +358,7 @@ function ModeOption({
           style={{
             fontSize: text.md,
             fontWeight: 600,
-            color: danger ? color.danger : color.fg,
+            color: danger ? color.dangerText : color.fg,
           }}
         >
           {title}

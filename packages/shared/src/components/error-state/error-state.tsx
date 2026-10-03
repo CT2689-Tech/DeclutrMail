@@ -19,6 +19,7 @@ import { color, font, radius, text } from '../../tokens/tokens';
  * API message that can contain transport or implementation details.
  */
 export interface ErrorStateProps {
+  headingLevel?: 2 | 3;
   title: ReactNode;
   description: ReactNode;
   onRetry: () => void;
@@ -30,7 +31,9 @@ export function ErrorState({
   description,
   onRetry,
   retryLabel = 'Try again',
+  headingLevel = 3,
 }: ErrorStateProps) {
+  const Heading = headingLevel === 2 ? 'h2' : 'h3';
   return (
     <div
       role="alert"
@@ -64,7 +67,7 @@ export function ErrorState({
         !
       </span>
       <div>
-        <h3
+        <Heading
           style={{
             color: color.fg,
             fontSize: text.xl,
@@ -74,7 +77,7 @@ export function ErrorState({
           }}
         >
           {title}
-        </h3>
+        </Heading>
         <p
           style={{
             color: color.fgMuted,

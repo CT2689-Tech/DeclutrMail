@@ -97,11 +97,14 @@ export function ActionToolbar({
   useEffect(() => {
     if (!keyboardEnabled || disabled) return;
     const onKey = (e: KeyboardEvent) => {
+      // Dialogs own their keyboard, including nonmodal account controls.
+      if (document.querySelector('[role="dialog"]')) return;
       // Don't hijack typing in inputs / textareas / contentEditable.
       const target = e.target as HTMLElement | null;
       if (target) {
         const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable)
+          return;
       }
       const verb = resolveShortcut(e);
       if (verb == null) return;
@@ -158,7 +161,7 @@ export function ActionToolbar({
             onClick={() => onAction(verb)}
             style={{
               ...(bar ? { width: '100%' } : null),
-              ...(!isHighlighted && verb === 'Delete' ? { color: color.danger } : null),
+              ...(!isHighlighted && verb === 'Delete' ? { color: color.dangerText } : null),
             }}
             {...(reason != null ? { title: reason } : {})}
             {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}

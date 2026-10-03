@@ -175,18 +175,18 @@ describe('TriageScreen — empty / loading branches', () => {
   });
 
   it('surfaces the Pro nudge for Plus users only — single soft link (D33)', () => {
-    // Plus user → soft "See Pro automation" link.
+    // Plus user → soft plan comparison link; Autopilot is already included.
     const plus = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    expect(plus).toContain('See Pro automation');
+    expect(plus).toContain('Compare Pro features');
 
     // Free user → Plus banner only; NO Pro link (the funnel is
     // Free → Plus → Pro, not Free → Pro).
     const free = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE });
-    expect(free).not.toContain('See Pro automation');
+    expect(free).not.toContain('Compare Pro features');
 
     // Pro user → no nudge at all (D33 explicit: hidden for Pro).
     const pro = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO });
-    expect(pro).not.toContain('See Pro automation');
+    expect(pro).not.toContain('Compare Pro features');
     expect(pro).not.toContain('See Plus');
   });
 
