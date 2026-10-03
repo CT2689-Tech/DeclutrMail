@@ -41,8 +41,17 @@ test.beforeAll(async () => {
       updated_at: new Date().toISOString(),
     },
   });
-  await sql`UPDATE mailbox_accounts SET quiet_state = quiet_state || ${baseline}::jsonb WHERE id = ${mailboxId}`;
+  await sql`UPDATE mailbox_accounts SET quiet_state = quiet_state || ${baseline}::text::jsonb WHERE id = ${mailboxId}`;
   prepared = true;
+  // Raw postgres-js serializes parameters inferred as jsonb. Text first
+  // keeps already-stringified fixture JSON from becoming a JSON string/array.
+  const baselineRead = await api.get<QuietHoursState>(`/api/mailboxes/${mailboxId}/quiet-hours`);
+  expect(baselineRead.config).toEqual({
+    enabled: false,
+    startLocal: '20:00',
+    endLocal: '21:00',
+    timezone: 'UTC',
+  });
 });
 
 test.afterAll(async () => {
@@ -54,7 +63,7 @@ test.afterAll(async () => {
     }
     await sql`
       UPDATE mailbox_accounts
-      SET quiet_state = (quiet_state - 'quiet_hours' - ${MARKER}) || ${JSON.stringify(restore)}::jsonb
+      SET quiet_state = (quiet_state - 'quiet_hours' - ${MARKER}) || ${JSON.stringify(restore)}::text::jsonb
       WHERE id = ${mailboxId}
     `;
   }

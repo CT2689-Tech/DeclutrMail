@@ -35,3 +35,16 @@ says the prompt is needed, waits for its removal, and restores both attribution
 fields on the fixed synthetic user in cleanup. Fresh browser consent is awaited
 explicitly; no force click or hidden consent write. This is setup for a returning
 configuration journey, not an onboarding audit. New candidate execution pending.
+
+The corrected click reached PUT200 but the independent GET returned null. Trace
+showed GET already returned null before the write: the raw postgres-js fixture
+parameter inferred as jsonb serialized already-stringified JSON again, making the
+jsonb merge an array. Setup and cleanup now cast serialized JSON through text
+first; a pre-UI API assertion verifies the exact baseline roundtrip. Production
+Drizzle sets transparent jsonb serialization; no product fix is inferred from this
+fixture error. Actual new-candidate execution remains required.
+
+A separate negative control used the installed raw postgres-js JSON serializer
+and PGlite jsonb merge: the original produced an array; text-first parse preserved
+the object and baseline20:00 value. E2E typecheck/lint and21 harness contracts pass.
+This proves the fixture encoding correction, not the real HTTP journey.
