@@ -12,7 +12,8 @@ Tomorrow preset kept its original date. A document hydrating across account
 midnight could also rebuild its mismatched server markup.
 
 After: one minute clock updates groups, return labels, presets and custom-date
-validity. The serialized server timestamp keeps the first hydration markup stable.
+validity. Presets resolve again at click time, and expired presets/custom times
+show a recovery message before any request. The serialized server timestamp keeps the first hydration markup stable.
 Rows share one keyed list parent, with accessible bucket headings/counts between
 rows, so regrouping preserves input DOM, draft, focus and mutation observers.
 The existing mailbox-keyed screen still discards account-specific interaction state
@@ -30,9 +31,12 @@ on an account switch. No shared clock hook or backend contract changed.
 
 ## Evidence and limits
 
+Click-before-tick controls also failed the first repair: Tomorrow saved the old
+date and an expired preset still sent a request.
+
 The first three regression assertions failed on the original source: stale heading,
 real hydration mismatch, and the original Tomorrow ISO submitted after midnight.
-Six new cases plus existing Later/date/shared-clock cases pass: 36 tests in four
+Ten new cases plus existing Later/date/shared-clock cases pass: 40 tests in four
 files. Web typecheck, changed-file ESLint, Prettier and diff checks pass.
 
 Local browser smoke used an isolated source copy, local Postgres/Redis and an
@@ -46,7 +50,7 @@ not by claiming the browser session happened at midnight. Synthetic screenshot i
 stored outside Git. The four owned senders and policies were removed (zero
 remaining owned rows), the tab closed and owned services stopped. Independent
 source/design/TypeScript review found no blockers and independently passed all
-36 focused tests.
+40 focused tests.
 
 The existing minute clock may be throttled in a background tab; it samples the
 current wall clock on its next tick. This is presentation freshness, not a worker

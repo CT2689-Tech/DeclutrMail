@@ -310,4 +310,120 @@ describe('Later account calendar clock', () => {
       client.clear();
     }
   });
+  it('resolves Tomorrow at the click time before the next minute tick', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(BEFORE_MIDNIGHT);
+    let until: unknown;
+    installFetchStub([
+      {
+        method: 'PATCH',
+        path: `/api/snoozed/${ROW.senderId}`,
+        respond: async (request) => {
+          until = ((await request.json()) as { until: string }).until;
+          return new Response(JSON.stringify({ data: {} }), {
+            headers: { 'content-type': 'application/json' },
+          });
+        },
+      },
+    ]);
+    const client = cachedClient();
+    const view = render(
+      <QueryWrapper client={client}>
+        <SnoozedScreen />
+      </QueryWrapper>,
+    );
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Tomorrow/ }));
+      });
+      expect(until).toBe('2026-10-05T16:00:00.000Z');
+    } finally {
+      view.unmount();
+      client.clear();
+    }
+  });
+
+  it('rejects an expired Later today preset before the next clock tick', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse('2026-10-03T23:59:40Z'));
+    const mutation = vi.fn(
+      () =>
+        new Response(JSON.stringify({ data: {} }), {
+          headers: { 'content-type': 'application/json' },
+        }),
+    );
+    installFetchStub([
+      { method: 'PATCH', path: `/api/snoozed/${ROW.senderId}`, respond: mutation },
+    ]);
+    const client = cachedClient();
+    const view = render(
+      <QueryWrapper client={client}>
+        <SnoozedScreen />
+      </QueryWrapper>,
+    );
+    try {
+      fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Later today/ }));
+      });
+      expect(mutation).not.toHaveBeenCalled();
+      expect(screen.getByRole('alert')).toHaveTextContent(/Choose another/);
+    } finally {
+      view.unmount();
+      client.clear();
+    }
+  });
+  it.each([10_000, 3_600_000])(
+    'validates custom time at submission (%i ms ahead)',
+    async (offset) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(BEFORE_MIDNIGHT);
+      const selected = new Date(BEFORE_MIDNIGHT + offset);
+      const localInput = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, '0')}-${String(selected.getDate()).padStart(2, '0')}T${String(selected.getHours()).padStart(2, '0')}:${String(selected.getMinutes()).padStart(2, '0')}:${String(selected.getSeconds()).padStart(2, '0')}`;
+      let submittedUntil: unknown;
+      const mutation = vi.fn(async (request: Request) => {
+        submittedUntil = ((await request.json()) as { until: string }).until;
+        return new Response(JSON.stringify({ data: {} }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      });
+      installFetchStub([
+        { method: 'PATCH', path: `/api/snoozed/${ROW.senderId}`, respond: mutation },
+      ]);
+      const client = cachedClient();
+      const view = render(
+        <QueryWrapper client={client}>
+          <SnoozedScreen />
+        </QueryWrapper>,
+      );
+      try {
+        fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
+        fireEvent.change(screen.getByLabelText('Custom'), { target: { value: localInput } });
+        expect(screen.getByRole('button', { name: 'Set' })).toBeEnabled();
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: 'Set' }));
+        });
+        if (offset === 10_000) {
+          expect(mutation).not.toHaveBeenCalled();
+          expect(screen.getByRole('alert')).toHaveTextContent(/Choose another/);
+        } else {
+          expect(mutation).toHaveBeenCalledTimes(1);
+          expect(submittedUntil).toBe(selected.toISOString());
+        }
+      } finally {
+        view.unmount();
+        client.clear();
+      }
+    },
+  );
 });

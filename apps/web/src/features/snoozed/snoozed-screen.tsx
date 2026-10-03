@@ -579,12 +579,14 @@ function SnoozeMenu({
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
   const [custom, setCustom] = useState('');
+  const [expiredPreset, setExpiredPreset] = useState(false);
   // Presets resolve in the user zone — the zone the rows display in —
   // so the saved instant reads back as the wall time that was picked.
   const timeZone = useUserTimeZone();
   const presets = useMemo(() => snoozePresets(new Date(now), timeZone), [now, timeZone]);
 
   const submit = (until: string, presetId: SnoozePresetEventId) => {
+    setExpiredPreset(false);
     const trimmed = reason.trim();
     setSnooze.mutate(
       {
@@ -622,7 +624,14 @@ function SnoozeMenu({
             tone="default"
             size="sm"
             disabled={setSnooze.isPending}
-            onClick={() => submit(preset.at.toISOString(), preset.id)}
+            onClick={() => {
+              // The presentation clock can lag a click across midnight or 5 PM.
+              const current = snoozePresets(new Date(), timeZone).find(
+                (candidate) => candidate.id === preset.id,
+              );
+              if (current) submit(current.at.toISOString(), current.id);
+              else setExpiredPreset(true);
+            }}
           >
             {preset.label}
           </Button>
@@ -660,7 +669,11 @@ function SnoozeMenu({
         <Button
           tone="default"
           disabled={!customValid || setSnooze.isPending}
-          onClick={() => submit(new Date(custom).toISOString(), 'custom')}
+          onClick={() => {
+            const until = new Date(custom);
+            if (until.getTime() > Date.now()) submit(until.toISOString(), 'custom');
+            else setExpiredPreset(true);
+          }}
         >
           Set
         </Button>
@@ -694,7 +707,11 @@ function SnoozeMenu({
         </Button>
       </div>
 
-      {setSnooze.isError ? (
+      {expiredPreset ? (
+        <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
+          That return time has passed. Choose another time.
+        </span>
+      ) : setSnooze.isError ? (
         <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
           Couldn&rsquo;t update the return time. Try again in a moment.
         </span>
