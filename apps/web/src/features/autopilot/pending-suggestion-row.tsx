@@ -4,6 +4,7 @@ import { Button, tokens } from '@declutrmail/shared';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
 import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
+import { MatchReasonCopy } from './match-reason-copy';
 
 const { color, font, motion, radius, text } = tokens;
 
@@ -166,7 +167,9 @@ export function PendingSuggestionRow({
               </span>
             </>
           )}
-          <span className="dm-suggestion-reason">Why suggested: {match.reason}</span>
+          <div className="dm-suggestion-reason">
+            <MatchReasonCopy reason={match.reason} prefix="Why suggested: " />
+          </div>
         </div>
       </div>
       <div className="dm-suggestion-skip">
