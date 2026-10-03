@@ -111,6 +111,15 @@ export function eventSummary(event) {
     if (
       key === 'surface' &&
       [
+        'landing',
+        'home',
+        'sender-detail',
+        'activity',
+        'screener',
+        'cookies',
+        'sign-in',
+        'pricing',
+        'help',
         'senders',
         'triage',
         'brief',

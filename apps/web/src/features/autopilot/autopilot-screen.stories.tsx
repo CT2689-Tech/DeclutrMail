@@ -256,3 +256,53 @@ export const ActivateConfirmOpen: Story<typeof ActivateRuleModal> = {
       />,
     ),
 };
+
+/** Older page reachable without widening selection or the approval scope. */
+export const OlderPendingPage: Story<typeof AutopilotScreen> = {
+  args: {
+    ...Default.args,
+    pendingPagination: {
+      pageKey: 'synthetic-older',
+      total: 61,
+      hasNext: false,
+      hasPrevious: true,
+      loading: false,
+      onNext: () => undefined,
+      onPrevious: () => undefined,
+      onNewest: () => undefined,
+    },
+  },
+  render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
+};
+
+/** Page emptied by concurrent resolution; preserve the queue scope and recovery. */
+export const EmptyOlderPendingPage: Story<typeof AutopilotScreen> = {
+  args: {
+    ...OlderPendingPage.args,
+    state: { kind: 'ready', rules: PRESET_RULES_ALL_FIVE, suggestions: [] },
+  },
+  render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
+};
+
+export const LoadingOlderPendingPage: Story<typeof AutopilotScreen> = {
+  args: {
+    ...OlderPendingPage.args,
+    state: { kind: 'ready', rules: PRESET_RULES_ALL_FIVE, suggestions: [] },
+    suggestionsState: { kind: 'loading' },
+    pendingPagination: { ...OlderPendingPage.args!.pendingPagination!, loading: true },
+  },
+  render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
+};
+
+export const ErrorOlderPendingPage: Story<typeof AutopilotScreen> = {
+  args: {
+    ...OlderPendingPage.args,
+    state: { kind: 'ready', rules: PRESET_RULES_ALL_FIVE, suggestions: [] },
+    suggestionsState: {
+      kind: 'error',
+      message: 'Could not load this page.',
+      retry: () => undefined,
+    },
+  },
+  render: (args: PageArgs) => frame(<AutopilotScreen {...args} />),
+};

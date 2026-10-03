@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { initSentryBrowserRuntime } from './sentry-browser-runtime';
 
 const sdk = vi.hoisted(() => ({
@@ -42,6 +42,7 @@ function initOptions(): InitOptions {
 }
 
 describe('heavy Sentry browser runtime', () => {
+  afterEach(() => vi.unstubAllGlobals());
   beforeAll(() => {
     sdk.init.mockClear();
     cachedInitOptions = undefined;
@@ -160,6 +161,7 @@ describe('heavy Sentry browser runtime', () => {
   // site (2026-09-19) had `__sentry_captured__: true` and zero search hits.
   it('labels React invariant errors with a closed-set reason that survives the scrub', () => {
     const options = initOptions();
+    vi.stubGlobal('window', undefined);
     const send = (value: string, tags?: Record<string, string>) =>
       options?.beforeSend?.(
         { exception: { values: [{ type: 'Error', value }] }, ...(tags ? { tags } : {}) },
@@ -272,5 +274,49 @@ describe('heavy Sentry browser runtime', () => {
       extra: { digest: 'abcdef1234567890' },
     });
     expect(sdk.captureRouterTransitionStart).toHaveBeenCalledWith('/senders', 'push');
+  });
+});
+
+describe('global-error capture page context', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('adds a finite page to uncaught errors without transporting URL or sender identity', () => {
+    vi.stubGlobal('window', {
+      location: { pathname: '/senders/private-sender-id', search: '?q=private@example.com' },
+    });
+    const event = initOptions().beforeSend({
+      exception: { values: [{ type: 'Error', value: 'Minified React error #418; private text' }] },
+      request: { url: 'https://app.example.com/senders/private-sender-id?q=private@example.com' },
+    });
+    expect(event).toEqual({
+      exception: { values: [{ type: 'Error' }] },
+      tags: { reason: 'react-error-418', surface: 'sender-detail' },
+      fingerprint: ['react-error-418'],
+    });
+    expect(JSON.stringify(event)).not.toContain('private');
+  });
+  it('preserves a capture site surface rather than replacing it with the current page', () => {
+    vi.stubGlobal('window', { location: { pathname: '/home' } });
+    expect(initOptions().beforeSend({ tags: { surface: 'query', reason: 'failed' } })).toEqual({
+      tags: { surface: 'query', reason: 'failed' },
+    });
+  });
+  it('reads the page at capture time across navigation and leaves unknown paths unlabelled', () => {
+    const location = { pathname: '/quiet' };
+    vi.stubGlobal('window', { location });
+    expect(initOptions().beforeSend({ tags: 'malformed' })).toEqual({ tags: { surface: 'quiet' } });
+    location.pathname = '/followups';
+    expect(initOptions().beforeSend({})).toEqual({ tags: { surface: 'followups' } });
+    location.pathname = '/private@example.com';
+    expect(initOptions().beforeSend({})).toEqual({});
+  });
+  it('does not depend on readable browser location', () => {
+    vi.stubGlobal('window', {
+      get location() {
+        throw new Error('unavailable');
+      },
+    });
+    expect(initOptions().beforeSend({ exception: { values: [{ type: 'Error' }] } })).toEqual({
+      exception: { values: [{ type: 'Error' }] },
+    });
   });
 });

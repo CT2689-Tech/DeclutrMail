@@ -22,6 +22,7 @@ import type {
   AutopilotPreviewSample,
   AutopilotRulePreviewResult,
   Envelope,
+  AutopilotPendingMeta,
 } from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch, apiPost } from './client';
 
@@ -221,8 +222,12 @@ export function fetchAutopilotRules(
 /** GET /api/autopilot/pending-suggestions — D104 Observe-mode buffer. */
 export function fetchPendingSuggestions(
   signal?: AbortSignal,
-): Promise<Envelope<AutopilotMatchDto[], unknown>> {
-  return apiGet<AutopilotMatchDto[]>('/api/autopilot/pending-suggestions', { signal });
+  cursor?: string,
+): Promise<Envelope<AutopilotMatchDto[], AutopilotPendingMeta>> {
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  return apiGet<AutopilotMatchDto[]>(`/api/autopilot/pending-suggestions${query}`, {
+    signal,
+  }) as Promise<Envelope<AutopilotMatchDto[], AutopilotPendingMeta>>;
 }
 
 /** GET one aggregate repeated-decision opportunity, or null. */

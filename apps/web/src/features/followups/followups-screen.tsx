@@ -228,7 +228,7 @@ function FollowupsScopeNote() {
     <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
       Possible follow-ups from email sent in the last 60 days. Checked about every six hours, so a
       recent reply can still show. Check the thread in Gmail before following up. Mark resolved only
-      hides it here — nothing changes in Gmail.
+      hides it here — nothing changes in Gmail. Counts cover shown conversations, up to 100.
     </p>
   );
 }
@@ -407,8 +407,10 @@ export function FollowupListItem({
 }) {
   const recipient = recipientLine(row);
   const subject = row.subject;
-  const now = useNow();
+  const now = useNow(60_000, row.lastEvaluatedAt);
   const relative = now === null ? '' : relativeTime(row.sentAt, now);
+  const evaluatedMs = Date.parse(row.lastEvaluatedAt ?? '');
+  const evaluationKnown = now !== null && Number.isFinite(evaluatedMs) && evaluatedMs <= now;
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({
         mailboxEmail,
@@ -466,17 +468,36 @@ export function FollowupListItem({
       >
         <FollowupSubject subject={subject} />
       </div>
-      <time
-        dateTime={row.sentAt}
+      <div
         style={{
           fontSize: text.sm,
           color: color.fgMuted,
           fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
+          minWidth: 0,
         }}
       >
-        Sent {relative}
-      </time>
+        <time dateTime={row.sentAt} style={{ whiteSpace: 'nowrap' }}>
+          Sent {relative}
+        </time>
+        <details
+          style={{ fontSize: text.xs, marginTop: 4, maxWidth: 180, overflowWrap: 'anywhere' }}
+        >
+          <summary style={{ cursor: 'pointer' }}>Evaluation</summary>
+          <p style={{ margin: '4px 0 0' }}>
+            {evaluationKnown ? (
+              <>
+                <time dateTime={row.lastEvaluatedAt!}>
+                  Evaluated {relativeTime(row.lastEvaluatedAt!, now!)}
+                </time>{' '}
+                from indexed mail.
+              </>
+            ) : (
+              'Evaluation time unavailable.'
+            )}{' '}
+            New replies may still be syncing.
+          </p>
+        </details>
+      </div>
       {gmailHref ? (
         <a
           href={gmailHref}

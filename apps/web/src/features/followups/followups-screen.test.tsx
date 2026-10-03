@@ -8,12 +8,18 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
-import { FollowupsScreen, recipientLine, relativeTime, truncate } from './followups-screen';
+import {
+  FollowupsScreen,
+  FollowupListItem,
+  recipientLine,
+  relativeTime,
+  truncate,
+} from './followups-screen';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
@@ -57,7 +63,70 @@ function renderScreen() {
   );
 }
 
+describe('Followups evaluation clock', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('ages while mounted and accepts a new observation on the same row', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const row = { ...ROW_HIGH, lastEvaluatedAt: new Date(NOW - 5 * 60_000).toISOString() };
+    const client = createTestQueryClient();
+    const view = (nextRow: typeof row) => (
+      <QueryWrapper client={client}>
+        <FollowupListItem row={nextRow} mailboxEmail={null} />
+      </QueryWrapper>
+    );
+    const { rerender } = render(view(row));
+    expect(screen.getByText('Evaluated 5m ago')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(screen.getByText('Evaluated 6m ago')).toBeInTheDocument();
+    // Arrives between interval ticks, newer than the previous display clock.
+    vi.setSystemTime(NOW + 90_000);
+    rerender(view({ ...row, lastEvaluatedAt: new Date(NOW + 89_000).toISOString() }));
+    expect(screen.queryByText('Evaluation time unavailable.')).not.toBeInTheDocument();
+    expect(screen.getByText(/Evaluated/)).toHaveAttribute(
+      'datetime',
+      new Date(NOW + 89_000).toISOString(),
+    );
+  });
+});
+
 describe('FollowupsScreen — edge states', () => {
+  it('shows a recorded evaluation as indexed-data evidence behind disclosure', async () => {
+    const stamp = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [{ ...ROW_HIGH, lastEvaluatedAt: stamp }] }),
+      },
+    ]);
+    renderScreen();
+    const evaluated = await screen.findByText(/Evaluated .*ago/);
+    expect(evaluated).toHaveAttribute('datetime', stamp);
+    expect(evaluated.closest('details')).not.toHaveAttribute('open');
+    expect(evaluated.closest('p')).toHaveTextContent(
+      'from indexed mail. New replies may still be syncing.',
+    );
+    expect(screen.getByText(/Counts cover shown conversations, up to 100/)).toBeInTheDocument();
+    expect(screen.queryByText(/Gmail checked|synced .*ago/i)).not.toBeInTheDocument();
+  });
+
+  it.each([undefined, null, 'invalid', '2999-01-01T00:00:00Z'])(
+    'keeps unavailable or future evaluation evidence unknown (%s)',
+    async (lastEvaluatedAt) => {
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/followups',
+          respond: () => jsonOk({ data: [{ ...ROW_HIGH, lastEvaluatedAt }] }),
+        },
+      ]);
+      renderScreen();
+      expect(await screen.findByText(/Evaluation time unavailable/)).toBeInTheDocument();
+      expect(screen.queryByText(/Evaluated .*ago/)).not.toBeInTheDocument();
+    },
+  );
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 

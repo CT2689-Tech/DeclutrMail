@@ -170,6 +170,11 @@ export function PendingSuggestionRow({
           <div className="dm-suggestion-reason">
             <MatchReasonCopy reason={match.reason} prefix="Why suggested: " />
           </div>
+          {Number.isFinite(Date.parse(match.matchedAt)) && (
+            <time dateTime={match.matchedAt}>
+              Matched {new Date(match.matchedAt).toISOString().slice(0, 10)} UTC
+            </time>
+          )}
         </div>
       </div>
       <div className="dm-suggestion-skip">

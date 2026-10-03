@@ -22,13 +22,15 @@ permissions, Gmail mutation or telemetry collection changes. Relates to D245;
 ADR-0042 governs the existing tokens and primitives.
 
 Root owns the helper/component/contracts/story and pending row/rule sample.
-Pending row is also changed by merged PR860 (match date); changes are separate
-lines, same integration owner, no semantic dependency. Based on main76d23446;
-normal merge queue must verify combined source. Rollback: revert, no migration.
+Pending row is also changed by merged PR860 (match date); same integration owner, no semantic dependency. An actual adjacent-line conflict
+required integrating main ca9839e6 once; the resolution retains both the new
+explanation and original recorded date, with a component assertion for datetime.
+Normal merge queue must verify combined source. Rollback: revert, no migration.
 
-Full repository typecheck/lint pass (six existing warnings). Relevant 97 web tests
-passed after recorded-time and adjusted-rate corrections; final18 contracts passed
-including the rounding regression. Final web typecheck and targeted lint pass.
+After resolving the actual conflict, 114 combined explanation, Autopilot and Home
+web tests passed, including recorded datetime and equal-rounding assertions. Full
+repository typecheck/lint pass (six existing warnings). Earlier targeted formatting
+and lint checks passed.
 Independent reviewer cleared semantics, privacy, fallback and disclosure behavior.
 Synthetic Storybook desktop and390x844 verified pending and sample contexts, native
 keyboard disclosure with visible focus, no selection/mutation and no horizontal

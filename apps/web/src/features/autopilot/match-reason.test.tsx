@@ -82,6 +82,10 @@ describe('recorded Autopilot match explanations', () => {
     fireEvent.click(screen.getByText('Show recorded match details'));
     expect(screen.getByText(reason)).toBeInTheDocument();
     expect(view.container.querySelector('img')).toBeNull();
+    expect(view.container.querySelector('time')).toHaveAttribute(
+      'datetime',
+      PENDING_SUGGESTIONS[0]!.matchedAt,
+    );
     expect(select).not.toHaveBeenCalled();
     expect(dismiss).not.toHaveBeenCalled();
   });

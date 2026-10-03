@@ -95,6 +95,52 @@ function labelReactInvariant(event: Record<string, unknown>): Record<string, unk
   };
 }
 
+/** Capture-time page context for SDK/global errors; never a URL or entity id. */
+function labelCaptureSurface(event: Record<string, unknown>): Record<string, unknown> {
+  const tags = event.tags;
+  // A capture site's own context is authoritative. Ignore malformed tags safely.
+  if (tags && typeof tags === 'object' && !Array.isArray(tags) && 'surface' in tags) return event;
+  let path: string;
+  try {
+    if (typeof window === 'undefined') return event;
+    path = window.location.pathname;
+  } catch {
+    return event;
+  }
+  const exact: Record<string, string> = {
+    '/': 'landing',
+    '/home': 'home',
+    '/senders': 'senders',
+    '/triage': 'triage',
+    '/brief': 'brief',
+    '/screener': 'screener',
+    '/activity': 'activity',
+    '/later': 'snoozed',
+    '/autopilot': 'autopilot',
+    '/quiet': 'quiet',
+    '/followups': 'followups',
+    '/settings': 'settings',
+    '/onboarding': 'onboarding',
+    '/billing': 'billing',
+    '/cookies': 'cookies',
+    '/sign-in': 'sign-in',
+    '/pricing': 'pricing',
+    '/help': 'help',
+  };
+  const surface =
+    exact[path] ??
+    (/^\/senders\/[^/]+\/?$/.test(path)
+      ? 'sender-detail'
+      : path.startsWith('/settings/')
+        ? 'settings'
+        : undefined);
+  if (!surface) return event;
+  return {
+    ...event,
+    tags: { ...(tags && typeof tags === 'object' && !Array.isArray(tags) ? tags : {}), surface },
+  };
+}
+
 const browserRuntime: BrowserSentryRuntime = {
   addBreadcrumb(crumb): void {
     const breadcrumb = scrubSentryBreadcrumb({
@@ -183,7 +229,7 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
         ),
       beforeSend: (event) =>
         scrubSentryEvent(
-          labelReactInvariant(event as unknown as Record<string, unknown>),
+          labelCaptureSurface(labelReactInvariant(event as unknown as Record<string, unknown>)),
         ) as unknown as typeof event,
       beforeSendTransaction: (event) =>
         scrubSentryTransaction(event as unknown as Record<string, unknown>) as unknown as

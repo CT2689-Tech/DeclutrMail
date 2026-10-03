@@ -82,6 +82,7 @@ async function seedFollowup(
     status?: 'awaiting' | 'replied' | 'dismissed';
     subject?: string;
     recipientEmail?: string;
+    lastCheckAt?: Date;
   },
 ): Promise<string> {
   const [row] = await db
@@ -94,6 +95,7 @@ async function seedFollowup(
       subject: partial.subject ?? 'subj',
       sentAt: partial.sentAt,
       status: partial.status ?? 'awaiting',
+      ...(partial.lastCheckAt ? { lastCheckAt: partial.lastCheckAt } : {}),
       ...(partial.status === 'dismissed' ? { dismissedAt: new Date() } : {}),
     })
     .returning({ id: followupTracker.id });
@@ -114,6 +116,20 @@ describe('FollowupReadService', () => {
   });
 
   describe('listAwaiting', () => {
+    it('returns the persisted indexed-data evaluation time rather than request or row update time', async () => {
+      const evaluatedAt = new Date(NOW_MS - 6 * 60 * 60 * 1000);
+      const id = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'evaluation-stamp',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+        lastCheckAt: evaluatedAt,
+      });
+      const list = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      const row = list.find((item) => item.id === id)!;
+      expect(row.lastEvaluatedAt).toBe(evaluatedAt.toISOString());
+      expect(row.lastEvaluatedAt).not.toBe(new Date(NOW_MS).toISOString());
+      expect(row.lastEvaluatedAt).not.toBe(row.updatedAt);
+      expect(await service.listAwaiting(mailboxB.mailboxAccountId, NOW_MS)).toEqual([]);
+    });
     it('keeps the stated 60-day window even when old awaiting rows remain stored', async () => {
       await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
         threadId: 'expired',

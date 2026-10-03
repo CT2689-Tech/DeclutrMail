@@ -107,8 +107,17 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  * only; the API rejects `is_preset=false`.
  */
 export function AutopilotRoute() {
+  const mailboxId = useOptionalAuth()?.me.activeMailboxId ?? null;
+  const [pages, setPages] = useState<{ mailboxId: string | null; cursors: string[] }>({
+    mailboxId,
+    cursors: [],
+  });
+  // Resolve account changes synchronously; never query/render the previous account's cursor.
+  const cursors = pages.mailboxId === mailboxId ? pages.cursors : [];
+  useEffect(() => setPages({ mailboxId, cursors: [] }), [mailboxId]);
+  const cursor = cursors.at(-1);
   const rulesQuery = useAutopilotRules();
-  const suggestionsQuery = usePendingSuggestions();
+  const suggestionsQuery = usePendingSuggestions(mailboxId, cursor);
   const patternQuery = usePatternSuggestion();
   const refetchRules = rulesQuery.refetch;
   const refetchSuggestions = suggestionsQuery.refetch;
@@ -126,7 +135,7 @@ export function AutopilotRoute() {
       return { kind: 'error', message: loadErrorDescription(err), retry };
     }
     const rules = rulesQuery.data ?? [];
-    const matches = suggestionsQuery.data ?? [];
+    const matches = suggestionsQuery.data?.data ?? [];
     if (rules.length === 0 && matches.length === 0) {
       return { kind: 'empty', rules, patternSuggestion: patternQuery.data ?? null };
     }
@@ -156,6 +165,19 @@ export function AutopilotRoute() {
   return (
     <AutopilotScreen
       state={state}
+      pendingPagination={{
+        pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
+        total: suggestionsQuery.data?.meta?.total ?? null,
+        hasNext: suggestionsQuery.data?.meta?.pagination?.hasMore ?? false,
+        hasPrevious: cursors.length > 0,
+        loading: suggestionsQuery.isFetching,
+        onNext: () => {
+          const next = suggestionsQuery.data?.meta?.pagination?.nextCursor;
+          if (next) setPages({ mailboxId, cursors: [...cursors, next] });
+        },
+        onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
+        onNewest: () => setPages({ mailboxId, cursors: [] }),
+      }}
       suggestionsState={sectionState(suggestionsQuery, refetchSuggestions)}
       patternState={sectionState(patternQuery, refetchPattern)}
     />
@@ -197,14 +219,27 @@ function sectionState(
   return { kind: 'ready' };
 }
 
+interface PendingPagination {
+  pageKey: string;
+  total: number | null;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  loading: boolean;
+  onNext: () => void;
+  onPrevious: () => void;
+  onNewest: () => void;
+}
+
 export function AutopilotScreen({
   state,
   suggestionsState = { kind: 'ready' },
   patternState = { kind: 'ready' },
+  pendingPagination,
 }: {
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
+  pendingPagination?: PendingPagination;
 }) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
@@ -242,6 +277,10 @@ export function AutopilotScreen({
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setApproveTarget(null);
+  }, [activeMailboxId, pendingPagination?.pageKey]);
   /**
    * The rule whose D226 preview is open, and WHY.
    *
@@ -328,7 +367,12 @@ export function AutopilotScreen({
    * (Caught in the U15 smoke: 4,813 pending in the DB rendered as
    * "collected 41 pending suggestions".)
    */
-  const pendingBufferTruncated = suggestions.length >= PENDING_BUFFER_CAP;
+  const pendingBufferTruncated =
+    pendingPagination?.total != null
+      ? pendingPagination.total > suggestions.length ||
+        pendingPagination.hasPrevious ||
+        pendingPagination.hasNext
+      : suggestions.length >= PENDING_BUFFER_CAP;
 
   const pendingCountByRule = useMemo(() => {
     const counts = new Map<string, number>();
@@ -868,7 +912,9 @@ export function AutopilotScreen({
                   ? 'Loading suggestions…'
                   : suggestionsState.kind === 'error'
                     ? 'Suggestions unavailable'
-                    : `${suggestions.length}${pendingBufferTruncated ? '+' : ''} suggestion${suggestions.length === 1 ? '' : 's'}`,
+                    : pendingPagination
+                      ? 'Review suggestions'
+                      : `${suggestions.length}${pendingBufferTruncated ? '+' : ''} suggestion${suggestions.length === 1 ? '' : 's'}`,
               detail: 'Preview before approving, or skip',
               filter: null,
             },
@@ -1071,6 +1117,7 @@ export function AutopilotScreen({
                   alignItems: 'baseline',
                   justifyContent: 'space-between',
                   gap: 8,
+                  flexWrap: 'wrap',
                 }}
               >
                 <h2
@@ -1079,15 +1126,19 @@ export function AutopilotScreen({
                 >
                   Pending suggestions
                 </h2>
-                {state.kind === 'ready' && suggestions.length > 0 && (
-                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                    <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {suggestions.length}
-                      {pendingBufferTruncated ? '+' : ''}
-                    </span>{' '}
-                    waiting
-                  </span>
-                )}
+                {state.kind === 'ready' &&
+                  suggestionsState.kind === 'ready' &&
+                  (suggestions.length > 0 || pendingPagination?.total != null) && (
+                    <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                        {suggestions.length}
+                        {!pendingPagination && pendingBufferTruncated ? '+' : ''}
+                      </span>{' '}
+                      {pendingPagination
+                        ? `on this page · ${pendingPagination.total === null ? 'total unavailable' : `${pendingPagination.total} waiting at last check`}`
+                        : 'waiting'}
+                    </span>
+                  )}
               </div>
 
               {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
@@ -1105,7 +1156,15 @@ export function AutopilotScreen({
               )}
               {state.kind === 'ready' &&
                 suggestionsState.kind === 'ready' &&
-                suggestions.length === 0 && <SuggestionsEmptyState />}
+                suggestions.length === 0 &&
+                (pendingPagination?.hasPrevious || (pendingPagination?.total ?? 0) > 0 ? (
+                  <EmptyState
+                    title="No suggestions on this page"
+                    description="Pending suggestions may have changed. Return to newest to review what is waiting."
+                  />
+                ) : (
+                  <SuggestionsEmptyState />
+                ))}
               {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
                   {groups.map((group) => (
@@ -1137,6 +1196,41 @@ export function AutopilotScreen({
                   ))}
                 </div>
               )}
+              {pendingPagination &&
+                (pendingPagination.hasPrevious ||
+                  pendingPagination.hasNext ||
+                  ((pendingPagination.total ?? 0) > 0 && suggestions.length === 0)) && (
+                  <nav
+                    aria-label="Pending suggestion pages"
+                    style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+                  >
+                    {(pendingPagination.hasPrevious || suggestions.length === 0) && (
+                      <Button tone="ghost" size="sm" onClick={pendingPagination.onNewest}>
+                        Newest suggestions
+                      </Button>
+                    )}
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      disabled={!pendingPagination.hasPrevious}
+                      onClick={pendingPagination.onPrevious}
+                    >
+                      Previous suggestions
+                    </Button>
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      disabled={
+                        !pendingPagination.hasNext ||
+                        pendingPagination.loading ||
+                        suggestionsState.kind !== 'ready'
+                      }
+                      onClick={pendingPagination.onNext}
+                    >
+                      {pendingPagination.loading ? 'Loading suggestions…' : 'Older suggestions'}
+                    </Button>
+                  </nav>
+                )}
             </section>
           )}
         </>
