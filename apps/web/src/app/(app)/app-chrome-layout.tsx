@@ -155,7 +155,7 @@ function AppChrome({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
   }, [router]);
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref, me.tier);
   // D245: `snoozed` remains the internal capability/nav key, while
   // `/later` is the canonical user-facing route.
   const routeSegment = pathname.split('/')[1] || 'senders';

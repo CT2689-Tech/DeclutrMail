@@ -79,6 +79,11 @@ const nextConfig: NextConfig = {
    */
   env: {
     NEXT_PUBLIC_SENTRY_RELEASE: process.env.VERCEL_GIT_COMMIT_SHA ?? '',
+    NEXT_PUBLIC_TELEMETRY_ENVIRONMENT:
+      process.env.VERCEL_ENV ??
+      (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development'
+        ? process.env.NODE_ENV
+        : 'unknown'),
   },
 
   /**
