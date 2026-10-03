@@ -42,6 +42,7 @@ const api = new ApiClient();
 
 /** Static routes that must hydrate from the server tree without recovery. */
 const HYDRATED_ROUTES = [
+  '/home',
   '/senders',
   '/triage',
   '/activity',

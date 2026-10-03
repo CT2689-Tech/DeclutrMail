@@ -1,4 +1,5 @@
 import { expect, test, type Route } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 import type { QuietHoursConfig, QuietHoursState } from '@declutrmail/shared/contracts';
 import { ApiClient, requireLiveStack } from '../helpers/api';
@@ -89,9 +90,14 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     endLocal: '07:00',
     timezone: 'America/Los_Angeles',
   };
-  await page.goto('/quiet');
-  await expect(page.getByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
   const toggle = page.getByRole('switch', { name: 'Quiet hours', exact: true });
+  const expectQuietReady = async () => {
+    await expect(page.getByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
+    await expectScreenMounted(page);
+    await expect(toggle).toBeEnabled();
+  };
+  await page.goto('/quiet');
+  await expectQuietReady();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   const consent = page.getByRole('button', { name: 'Essential only', exact: true });
   // Fresh browser storage has no consent; choose through the visible UI.
@@ -126,6 +132,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   `;
   expect(firstStored[0]!.quiet_state[MARKER]).toBe('synthetic co-tenancy evidence');
   await page.reload();
+  await expectQuietReady();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await expect(timezone).toHaveValue(config.timezone);
   await expect(page.getByLabel('Quiet window start')).toHaveValue(config.startLocal);
@@ -162,6 +169,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   expect(afterFailure[0]!.quiet_state).toEqual(firstStored[0]!.quiet_state);
   await page.unroute(pattern, rejectWrite);
   await page.reload();
+  await expectQuietReady();
   await expect(page.getByLabel('Quiet window end')).toHaveValue('07:00');
   await end.focus();
   await end.press('ArrowUp');
@@ -182,6 +190,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await save.click();
   expect((await disable).status()).toBe(200);
   await page.reload();
+  await expectQuietReady();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   expect((await api.get<QuietHoursState>(path)).config).toEqual({
     ...config,

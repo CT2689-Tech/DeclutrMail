@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
@@ -87,6 +88,7 @@ test('review pages cover the backlog and recover when the older page is exhauste
   expect(new Set([...first.data, ...older.data].map((row) => row.id)).size).toBe(61);
 
   await page.goto('/autopilot');
+  await expectScreenMounted(page);
   // Dismiss any consent overlay before interacting with the lower review section.
   const essential = page.getByRole('button', { name: 'Essential only', exact: true });
   if (await essential.isVisible()) await essential.click();
@@ -109,6 +111,7 @@ test('review pages cover the backlog and recover when the older page is exhauste
   await page.getByRole('button', { name: 'Newest suggestions', exact: true }).click();
   await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
   await page.reload();
+  await expectScreenMounted(page);
   await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
   const dismissed = await sql<{ count: string }[]>`
     SELECT count(*)::text AS count FROM rule_match_log

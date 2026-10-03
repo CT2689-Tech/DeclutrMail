@@ -16,6 +16,7 @@ import { BILLING_SEED } from '../helpers/seed-billing';
  */
 
 const APP_ROUTES = [
+  '/home',
   '/senders',
   '/triage',
   '/screener',

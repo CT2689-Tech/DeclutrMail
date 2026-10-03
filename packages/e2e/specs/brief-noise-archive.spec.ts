@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack, type CompositePreview } from '../helpers/api';
@@ -205,6 +206,7 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   // MUST precede the first navigation — see the helper for why.
   await declineNonEssentialCookies(page);
   await page.goto('/brief');
+  await expectScreenMounted(page);
 
   // ---- D65: every actionable sender arrives CHECKED. Uncheck all but
   // the target so the mutation touches exactly one sender.

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { applyJourneySeed } from '../helpers/seed-journeys';
@@ -44,6 +45,7 @@ test('opening Triage asks for the sentences its template reasons need', async ({
     (res) => res.url().endsWith('/api/triage/explain') && res.request().method() === 'POST',
   );
   await page.goto('/triage');
+  await expectScreenMounted(page);
   const response = await asked;
 
   expect(response.status()).toBe(202);

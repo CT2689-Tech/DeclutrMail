@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
 
@@ -24,6 +25,7 @@ test.beforeAll(async () => {
 
 test('typing a multi-word query keeps every keystroke', async ({ page }) => {
   await page.goto('/senders');
+  await expectScreenMounted(page);
 
   const input = page.getByRole('combobox', { name: 'Search senders' });
   await expect(input).toBeVisible();
@@ -54,6 +56,7 @@ test('picking a suggestion mid-typing is not undone by the pending notify timer'
   // timer fires ~150ms later and resurrects the typed fragment over
   // the picked name, leaving input and list out of sync.
   await page.goto('/senders');
+  await expectScreenMounted(page);
 
   const input = page.getByRole('combobox', { name: 'Search senders' });
   await expect(input).toBeVisible();
@@ -76,6 +79,7 @@ test('picking a suggestion mid-typing is not undone by the pending notify timer'
 
 test('backspacing to empty restores the unfiltered list', async ({ page }) => {
   await page.goto('/senders');
+  await expectScreenMounted(page);
 
   const input = page.getByRole('combobox', { name: 'Search senders' });
   await expect(input).toBeVisible();

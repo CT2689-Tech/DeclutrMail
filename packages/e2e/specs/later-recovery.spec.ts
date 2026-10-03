@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
@@ -37,9 +38,16 @@ test('Later failed return restores recovery controls after queue acceptance and 
   page,
 }) => {
   await page.goto('/later');
+  await expectScreenMounted(page);
   await page.getByRole('button', { name: 'Essential only', exact: true }).click();
   await expect(page.getByTestId('cookie-consent-banner')).toBeHidden();
-  await expect(page.getByText(BILLING_SEED.archiveSenderName, { exact: true })).toBeVisible();
+  const sender = page.getByText(BILLING_SEED.archiveSenderName, { exact: true });
+  const row = page.getByRole('listitem').filter({ has: sender });
+  // Streamed SSR can briefly retain a hidden name. Persistent duplicate rows
+  // or names must fail rather than selecting one occurrence.
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(sender).toHaveCount(1, { timeout: 30_000 });
+  await expect(sender).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Return retrying', { exact: true })).toBeVisible();
   // Cancel first: no queue request may be sent by merely inspecting the confirm.
   let wakeRequests = 0;
@@ -79,6 +87,10 @@ test('Later failed return restores recovery controls after queue acceptance and 
   await expect(page.getByRole('button', { name: 'Change return time', exact: true })).toBeEnabled();
   expect(wakeRequests).toBe(1);
   await page.reload();
+  await expectScreenMounted(page);
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(sender).toHaveCount(1, { timeout: 30_000 });
+  await expect(sender).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Return retrying', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Bring back now', exact: true })).toBeEnabled();
 });

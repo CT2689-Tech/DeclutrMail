@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
@@ -28,6 +29,7 @@ test('Brief separates yesterday from current-inbox preview and cancel never enqu
       writes.push(request.url());
   });
   await page.goto('/brief');
+  await expectScreenMounted(page);
   const banner = page.getByTestId('cookie-consent-banner');
   await expect(banner).toBeVisible();
   await banner.getByRole('button', { name: 'Essential only', exact: true }).click();

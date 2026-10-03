@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { applyJourneySeed } from '../helpers/seed-journeys';
@@ -60,6 +61,7 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
 
   // ---- Senders list — the entry point of the walk.
   await page.goto('/senders');
+  await expectScreenMounted(page);
   const firstRow = page.locator('[data-testid^="sender-row-"]').first();
   await expect(firstRow).toBeVisible({ timeout: 30_000 });
   const rowTestId = await firstRow.getAttribute('data-testid');

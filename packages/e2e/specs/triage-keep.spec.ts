@@ -1,4 +1,5 @@
 import { expect, test, type Request } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { applyJourneySeed } from '../helpers/seed-journeys';
@@ -73,6 +74,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   // "See all" — and find its row. The header's accessible name flips
   // expand ↔ collapse with state, so match both.
   await page.goto('/triage');
+  await expectScreenMounted(page);
   await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
   // Reading a complete sender identity owns Enter; it must not decide or skip.
   const focus = page.getByRole('region', { name: 'Current decision' });
@@ -167,6 +169,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   `;
   expect(Number(events[0]?.count)).toBe(1);
   await page.reload();
+  await expectScreenMounted(page);
   await expect(page.getByRole('heading', { level: 1, name: 'Triage' })).toBeVisible();
   expect(
     (await api.get<TriageQueueRow[]>('/api/triage/queue')).some(
