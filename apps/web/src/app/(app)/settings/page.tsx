@@ -13,7 +13,7 @@ import type { MeSettings } from '@declutrmail/shared/contracts';
 
 import { SettingsScreen } from '@/features/settings/settings-index/settings-screen';
 import { meSettingsQueryOptions } from '@/features/settings/api/query-options';
-import { getServerMe } from '@/features/auth/api/server-me';
+import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
@@ -28,13 +28,15 @@ export const metadata = {
  */
 export default async function SettingsPage() {
   const cookieHeader = (await headers()).get('cookie') ?? '';
-  const me = await getServerMe(cookieHeader);
+  // The user-scoped preferences endpoint authenticates this read itself.
+  // Start it independently of the app shell's session bootstrap.
+  const eligible = hasServerAccessCookie(cookieHeader);
 
   return (
     <ServerQueryHydration
       surface="settings"
       prefetch={(queryClient) => {
-        if (me === null) return [];
+        if (!eligible) return [];
         return [
           queryClient.fetchQuery(
             meSettingsQueryOptions((signal) =>
