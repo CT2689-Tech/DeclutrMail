@@ -37,6 +37,7 @@ import {
   AutopilotApproveMatchesRequestSchema,
   type AutopilotApproveResult,
   type AutopilotRulePreviewResult,
+  type AutopilotPreviewSenderPage,
   type Envelope,
   ok,
 } from '@declutrmail/shared/contracts';
@@ -337,13 +338,54 @@ export class AutopilotController {
   async previewRule(
     @CurrentMailbox() mailbox: { id: string },
     @Param('id') id: string,
+    @Body() body?: unknown,
   ): Promise<Envelope<AutopilotRulePreviewResult>> {
     if (!isUuid(id)) {
       throw new BadRequestException('Rule id must be a UUID.');
     }
-    const result = await this.reads.previewRule(mailbox.id, id);
+    let includeSenders = false;
+    if (body != null) {
+      if (
+        typeof body !== 'object' ||
+        Array.isArray(body) ||
+        Object.keys(body).some((key) => key !== 'includeSenders') ||
+        ('includeSenders' in body && typeof body.includeSenders !== 'boolean')
+      ) {
+        throw new BadRequestException('Body must be { includeSenders?: boolean }.');
+      }
+      includeSenders = 'includeSenders' in body && body.includeSenders === true;
+    }
+    const result = await this.reads.previewRule(mailbox.id, id, includeSenders);
     if (!result) {
       throw notFound('Rule not found.');
+    }
+    return ok(result);
+  }
+
+  @Get('rules/:id/preview/:previewId/senders')
+  @RateLimit('triage-load')
+  @CapabilityExempt()
+  async previewSenders(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('id') id: string,
+    @Param('previewId') previewId: string,
+    @Query('page') rawPage?: string,
+  ): Promise<Envelope<AutopilotPreviewSenderPage>> {
+    if (!isUuid(id) || !isUuid(previewId))
+      throw new BadRequestException('Rule and preview ids must be UUIDs.');
+    const page = Number(rawPage ?? '1');
+    if (!/^[1-9]\d*$/.test(rawPage ?? '1') || !Number.isSafeInteger(page)) {
+      throw new BadRequestException('Page must be a positive integer.');
+    }
+    const result = await this.reads.previewSenders(mailbox.id, id, previewId, page);
+    if (!result) {
+      throw new HttpException(
+        {
+          code: 'AUTOPILOT_PREVIEW_EXPIRED',
+          message: 'This preview expired. Refresh to see current matches.',
+        },
+        HttpStatus.GONE,
+      );
     }
     return ok(result);
   }

@@ -220,7 +220,7 @@ export function AutopilotScreen({
   // Separate mutation instance for the activation modal's first-sweep
   // preview (D226) — the rule card's inline panel and the modal must
   // not stomp each other's state.
-  const activatePreview = useRulePreview();
+  const activatePreview = useRulePreview(true);
   // Separate again for Resume's own preview (founder decision
   // 2026-09-29 (a)) — same reasoning as `activatePreview` above.
   const resumePreview = useRulePreview();

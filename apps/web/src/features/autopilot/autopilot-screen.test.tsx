@@ -704,7 +704,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
     const confirm = await screen.findByRole('button', { name: /^turn on$/i });
-    expect(screen.getByRole('radio', { name: /act now/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /act now/i })).toBeChecked();
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -821,7 +821,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(dialog).queryByRole('radiogroup')).toBeNull();
     expect(within(dialog).queryByRole('radio', { name: /act now/i })).toBeNull();
     expect(
-      within(dialog).getByText(/Nothing moves until you approve each match/i),
+      within(dialog).getByText(/No unsubscribe requests until you approve each match/i),
     ).toBeInTheDocument();
 
     const confirm = within(dialog).getByRole('button', { name: /^turn on$/i });
@@ -870,10 +870,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       expect(screen.getByRole('button', { name: /starting to watch/i })).toBeInTheDocument(),
     );
     expect(screen.queryByRole('button', { name: /^turning on…$/i })).toBeNull();
-    expect(screen.getByRole('radio', { name: /watch first/i })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByRole('radio', { name: /watch first/i })).toBeChecked();
     releasePatch();
   });
 
@@ -1303,7 +1300,10 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // up front, the activation report (no longer under its own heading)
     // in Details.
     expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
-    expect(within(dialog).getByText('10 requests · 74 inbox emails')).toBeInTheDocument();
+    expect(within(dialog).getByText('10 unsubscribe requests')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText('Stays where it is, including 74 inbox emails'),
+    ).toBeInTheDocument();
     // Said once per surface — in the note; the Details totals omit it.
     expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
     expect(within(dialog).getByText('34 matches')).toBeInTheDocument();
@@ -1380,9 +1380,11 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(/^2 requests · /)).toBeInTheDocument();
+    expect(within(dialog).getByText('2 unsubscribe requests')).toBeInTheDocument();
     // Existing email stays put — the Details fact, beside its label.
-    expect(dialog.textContent).toContain('Existing emailStays where it is');
+    expect(dialog.textContent).toContain(
+      'Existing emailStays where it is, including 11 inbox emails',
+    );
     expect(within(dialog).getByText(/^About 11 matches/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
     // The note owns the one-way fact; Details must not state it again.

@@ -87,6 +87,24 @@ export const Archive: Story = {
   ),
 };
 
+/** Review layout: left-aligned content and actions outside the scrolling body. */
+export const Review: Story = {
+  render: () => (
+    <PreviewSheet
+      layout="review"
+      onClose={noop}
+      context="Gmail account: you@example.com"
+      title="Turn on Newsletter graveyard?"
+      subtitle="DeclutrMail asks matching senders to stop emailing you."
+      note="Unsubscribe requests can’t be undone."
+      details={details}
+      primary={{ label: 'Watch first', onClick: noop }}
+    >
+      <p>23 senders actionable now</p>
+    </PreviewSheet>
+  ),
+};
+
 function DeleteWithReach() {
   const [reach, setReach] = useState<'inbox' | 'all'>('all');
   const count = reach === 'inbox' ? 0 : 6728;

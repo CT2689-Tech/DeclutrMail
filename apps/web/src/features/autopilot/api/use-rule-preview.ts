@@ -11,8 +11,8 @@
 import { useMutation } from '@tanstack/react-query';
 import { postRulePreview } from '@/lib/api/autopilot';
 
-export function useRulePreview() {
+export function useRulePreview(includeSenders = false) {
   return useMutation({
-    mutationFn: (ruleId: string) => postRulePreview(ruleId).then((env) => env.data),
+    mutationFn: (ruleId: string) => postRulePreview(ruleId, includeSenders).then((env) => env.data),
   });
 }

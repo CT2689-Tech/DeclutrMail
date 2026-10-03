@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import type { ReactNode } from 'react';
 import type { AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from './types';
 import { resolveSenderIdentity } from './sender-label';
@@ -157,21 +158,120 @@ export function RulePreviewTotals({ result }: { result: AutopilotRulePreviewResu
   );
 }
 
-/** Up to ten matching senders: name + address left, the matcher's reason right. */
+/** Rule-card samples and complete, paged activation evidence share the row presentation. */
 export function RulePreviewSample({
   ruleName,
   result,
+  layout = 'list',
+  page,
+  controls,
 }: {
   ruleName: string;
   result: AutopilotRulePreviewResultDto;
+  layout?: 'list' | 'table';
+  page?: { page: number; pageSize: number; total: number } | undefined;
+  controls?: ReactNode;
 }) {
   if (result.sample.length === 0) {
     return (
       <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-        {result.wouldMatchCount > 0
-          ? 'Matching senders have no Inbox mail to act on right now.'
-          : 'Nothing matches right now.'}
+        {page
+          ? 'No senders are ready for action right now.'
+          : result.wouldMatchCount > 0
+            ? 'Matching senders have no Inbox mail to act on right now.'
+            : 'Nothing matches right now.'}
       </span>
+    );
+  }
+  if (layout === 'table') {
+    const rows = result.sample.map((sender) => ({
+      sender,
+      identity: resolveSenderIdentity(sender),
+      evidence: /^Read rate (\d+(?:\.\d+)?)% across all (\d+) messages, last seen (\d+)d ago$/.exec(
+        sender.reason,
+      ),
+    }));
+    const structured = rows.every((row) => row.evidence != null);
+    return (
+      <section
+        className="dm-autopilot-sample"
+        aria-label={`${page ? 'Actionable senders' : 'Sample matches'} for rule ${ruleName}`}
+      >
+        <div className={`dm-autopilot-sample-heading${page ? ' dm-autopilot-paged-heading' : ''}`}>
+          <h3>{page ? 'Senders ready for action' : 'Matching senders'}</h3>
+          <span aria-live={page ? 'polite' : undefined}>
+            {page
+              ? `${((page.page - 1) * page.pageSize + 1).toLocaleString('en-US')}–${Math.min(page.page * page.pageSize, page.total).toLocaleString('en-US')} of ${page.total.toLocaleString('en-US')}`
+              : `Sample of ${result.sample.length.toLocaleString('en-US')}`}
+          </span>
+          {controls}
+        </div>
+        <table className="dm-autopilot-sender-table">
+          {structured && (
+            <caption className="dm-autopilot-sample-note">
+              Matching uses synced email history, including inbox and archived mail. “In inbox”
+              counts only mail currently in your inbox.
+            </caption>
+          )}
+          <thead>
+            <tr>
+              <th scope="col">Sender</th>
+              {structured ? (
+                <>
+                  <th scope="col" title="Across this sender’s synced email history">
+                    Read rate
+                  </th>
+                  <th scope="col">Email history</th>
+                </>
+              ) : (
+                <th scope="col">Why it matches</th>
+              )}
+              <th scope="col">In inbox</th>
+              {structured && <th scope="col">Last seen</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ sender, identity, evidence }) => (
+              <tr key={sender.senderKey}>
+                <th scope="row">
+                  <span className="dm-autopilot-sender-name">{identity.label}</span>
+                  {identity.source === 'name' && sender.senderEmail != null && (
+                    <span className="dm-autopilot-sender-email">{sender.senderEmail}</span>
+                  )}
+                </th>
+                {structured && evidence ? (
+                  <>
+                    <td>
+                      <span className="dm-autopilot-mobile-label">Read rate </span>
+                      {evidence[1]}%
+                    </td>
+                    <td>
+                      <span className="dm-autopilot-mobile-label">Email history </span>
+                      {Number(evidence[2]).toLocaleString('en-US')}
+                    </td>
+                  </>
+                ) : (
+                  <td className="dm-autopilot-sender-reason">{reasonLabel(sender.reason)}</td>
+                )}
+                <td aria-label={sender.inboxCount == null ? 'Inbox count unavailable' : undefined}>
+                  <span className="dm-autopilot-mobile-label">In inbox </span>
+                  {sender.inboxCount == null ? (
+                    <span title="Inbox count unavailable">—</span>
+                  ) : (
+                    sender.inboxCount.toLocaleString('en-US')
+                  )}
+                </td>
+                {structured && evidence && (
+                  <td>
+                    <span className="dm-autopilot-mobile-label">Last seen </span>
+                    {evidence[3]}d ago
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     );
   }
   return (

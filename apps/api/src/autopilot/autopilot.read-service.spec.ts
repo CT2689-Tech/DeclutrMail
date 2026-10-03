@@ -1897,6 +1897,60 @@ describe('AutopilotReadService', () => {
   });
 
   describe('previewRule (U14)', () => {
+    it('pages through one complete actionable preview without repeating the rule evaluation', async () => {
+      const keys = Array.from({ length: 55 }, (_, index) => index.toString(16).padStart(64, '0'));
+      await indexSenders(db, mailboxA, keys);
+      await db.insert(triageDecisions).values(
+        keys.map((senderKey) => ({
+          mailboxAccountId: mailboxA,
+          senderKey,
+          verdict: 'archive' as const,
+          confidence: '0.92',
+          reasoning: 'test',
+          generatedBy: 'template' as const,
+          producedAt: new Date(),
+          expiresAt: new Date(Date.now() + 86_400_000),
+        })),
+      );
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: keys[0]!,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await db.insert(mailMessages).values(
+        keys.map((senderKey, index) => ({
+          mailboxAccountId: mailboxA,
+          senderKey,
+          providerMessageId: `paged-${index}`,
+          providerThreadId: `paged-thread-${index}`,
+          internalDate: new Date(),
+          labelIds: index === 1 ? [] : ['INBOX'],
+          isUnread: false,
+        })),
+      );
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const result = await service.previewRule(mailboxA, ruleId, true);
+      expect(result!.actionableSenderCount).toBe(53);
+      const first = result!.senderPage!;
+      expect(first).toMatchObject({ page: 1, pageSize: 25, total: 53 });
+      expect(first.senders).toHaveLength(25);
+
+      // The sender set and inbox facts must stay those the preview showed,
+      // even if synced signals change between page requests.
+      await db.update(triageDecisions).set({ verdict: 'keep' });
+      await db.update(mailMessages).set({ labelIds: [] });
+      const second = await service.previewSenders(mailboxA, ruleId, first.previewId, 2);
+      const third = await service.previewSenders(mailboxA, ruleId, first.previewId, 3);
+      expect(second!.senders).toHaveLength(25);
+      expect(third!.senders).toHaveLength(3);
+      const all = [...first.senders, ...second!.senders, ...third!.senders];
+      expect(all.map((sender) => sender.senderKey)).toEqual(keys.slice(2));
+      expect(all.every((sender) => sender.inboxCount === 1)).toBe(true);
+      expect(await service.previewSenders(mailboxB, ruleId, first.previewId, 2)).toBeNull();
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+    });
+
     it('reports actionable, Protected, cap, and early observed volume without mutation', async () => {
       const senderKey = 'a1'.repeat(32);
       const protectedSenderKey = 'b1'.repeat(32);
@@ -1959,6 +2013,25 @@ describe('AutopilotReadService', () => {
           labelIds: ['INBOX'],
           isUnread: false,
         },
+        {
+          mailboxAccountId: mailboxA,
+          providerMessageId: 'preview-archived',
+          providerThreadId: 'preview-archived-thread',
+          senderKey,
+          internalDate: new Date(),
+          labelIds: [],
+          isUnread: false,
+        },
+        {
+          mailboxAccountId: mailboxA,
+          providerMessageId: 'preview-outbound-inbox',
+          providerThreadId: 'preview-outbound-thread',
+          senderKey,
+          internalDate: new Date(),
+          labelIds: ['INBOX', 'SENT'],
+          isOutbound: true,
+          isUnread: false,
+        },
       ]);
 
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
@@ -2013,10 +2086,22 @@ describe('AutopilotReadService', () => {
       expect(result!.sample).toHaveLength(1);
       expect(result!.sample[0]!.senderName).toBe('Shop Inc');
       expect(result!.sample[0]!.senderEmail).toBe('deals@shop.com');
+      // Archived mail and the user's own sent mail are not inbox counts.
+      expect(result!.sample[0]!.inboxCount).toBe(2);
       expect(result!.sample[0]!.reason).toContain('Archive');
 
       // No mutation: preview writes no match rows.
       expect(await db.select().from(ruleMatchLog)).toHaveLength(3);
+
+      await db
+        .update(mailMessages)
+        .set({ labelIds: [] })
+        .where(
+          and(eq(mailMessages.mailboxAccountId, mailboxA), eq(mailMessages.senderKey, senderKey)),
+        );
+      const emptyInbox = await service.previewRule(mailboxA, ruleId);
+      expect(emptyInbox!.sample[0]!.inboxCount).toBe(0);
+      expect(emptyInbox!.actionableMessageCount).toBe(0);
 
       // Once the Observe window is complete, the report stops
       // extrapolating and uses only matches inside the latest 7 days.
