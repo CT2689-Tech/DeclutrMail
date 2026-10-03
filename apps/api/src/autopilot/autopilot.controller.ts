@@ -33,6 +33,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  decodeCursor,
+  type AutopilotPendingMeta,
   AutopilotApproveAllRequestSchema,
   AutopilotApproveMatchesRequestSchema,
   type AutopilotApproveResult,
@@ -233,16 +235,27 @@ export class AutopilotController {
 
   /**
    * GET /api/autopilot/pending-suggestions — D104 Observe-mode
-   * suggestions awaiting the user's decision. Newest first; 50 max.
+   * suggestions awaiting the user's decision. Newest first, 50 per keyset page.
    */
   @Get('pending-suggestions')
   @RateLimit('triage-load')
   async listPendingSuggestions(
     @CurrentMailbox() mailbox: { id: string },
-  ): Promise<Envelope<AutopilotMatch[]>> {
-    const accountId = mailbox.id;
-    const matches = await this.reads.listPendingSuggestions(accountId);
-    return ok(matches);
+    @Query('cursor') rawCursor?: string,
+  ): Promise<Envelope<AutopilotMatch[], AutopilotPendingMeta>> {
+    const cursor = rawCursor === undefined ? undefined : decodeCursor(rawCursor);
+    if (
+      rawCursor !== undefined &&
+      (rawCursor.length > 256 ||
+        !/^[A-Za-z0-9_-]+$/.test(rawCursor) ||
+        !cursor ||
+        !isUuid(cursor.id) ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:\d{3})?Z$/.test(cursor.key) ||
+        !Number.isFinite(Date.parse(cursor.key)) ||
+        new Date(cursor.key).toISOString() !== cursor.key.replace(/(\.\d{3})\d{3}Z$/, '$1Z'))
+    )
+      throw new BadRequestException('Invalid pending suggestions cursor.');
+    return this.reads.listPendingSuggestionsPage(mailbox.id, cursor ?? undefined);
   }
 
   /**

@@ -107,11 +107,12 @@ function renderScreen(state: AutopilotScreenState) {
 
 function renderRoute() {
   const client = createTestQueryClient();
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <AutopilotRoute />
     </QueryClientProvider>,
   );
+  return { ...view, client };
 }
 
 const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
@@ -129,6 +130,122 @@ beforeEach(() => {
   trackMock.mockReset();
   authState.activeMailboxId = 'mailbox-a';
   authState.tier = 'pro';
+});
+
+describe('Autopilot pending pages', () => {
+  afterEach(() => resetFetchStub());
+  it('keeps a resolved older page scoped rather than implying the whole queue is empty', () => {
+    const client = createTestQueryClient();
+    const newest = vi.fn();
+    render(
+      <QueryClientProvider client={client}>
+        <AutopilotScreen
+          state={{ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions: [] }}
+          pendingPagination={{
+            pageKey: 'older',
+            total: 10,
+            hasPrevious: true,
+            hasNext: false,
+            loading: false,
+            onNext: vi.fn(),
+            onPrevious: vi.fn(),
+            onNewest: newest,
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('No suggestions on this page')).toBeInTheDocument();
+    expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
+    expect(screen.getByText(/on this page · 10 waiting/)).toHaveTextContent('0 on this page');
+    fireEvent.click(screen.getByRole('button', { name: 'Newest suggestions' }));
+    expect(newest).toHaveBeenCalledOnce();
+  });
+  it('reaches older suggestions, retries a failed page, returns newest and resets on account switch', async () => {
+    const requests: string[] = [];
+    let failNext = true;
+    const first = Array.from({ length: 50 }, (_, i) => ({
+      ...PENDING_SUGGESTIONS[0]!,
+      id: `page-first-${i}`,
+    }));
+    const older = { ...PENDING_SUGGESTIONS[0]!, id: 'page-older', senderName: 'Older fixture' };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: PRESET_RULES_OBSERVE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: (_req, url) => {
+          const cursor = url.searchParams.get('cursor');
+          requests.push(cursor ?? 'first');
+          if (cursor && failNext) {
+            failNext = false;
+            return jsonServerError('page unavailable');
+          }
+          return jsonOk({
+            data: cursor ? [older] : first,
+            meta: {
+              total: 61,
+              pagination: {
+                limit: 50,
+                hasMore: !cursor,
+                nextCursor: cursor ? null : 'opaque-next',
+              },
+            },
+          });
+        },
+      },
+    ]);
+    const view = renderRoute();
+    expect(await screen.findByText(/on this page · 61 waiting at last check/)).toHaveTextContent(
+      '50 on this page',
+    );
+    expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Older suggestions' }));
+    expect(await screen.findByText("Couldn't load pending suggestions")).toBeInTheDocument();
+    // Failed pages expose recovery; no stale first-page rows become actionable.
+    expect(screen.queryByRole('checkbox', { name: /Select suggestion/ })).not.toBeInTheDocument();
+    fireEvent.click(
+      within(
+        screen.getByText("Couldn't load pending suggestions").closest('[role="alert"]')!,
+      ).getByRole('button', { name: /Retry|Try again/i }),
+    );
+    expect(await screen.findByText('Older fixture')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Older suggestions' })).toBeDisabled();
+    expect(screen.getByText(/on this page · 61 waiting at last check/)).toHaveTextContent(
+      '1 on this page',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Newest suggestions' }));
+    await waitFor(() => expect(screen.queryByText('Older fixture')).not.toBeInTheDocument());
+    expect(requests).toContain('opaque-next');
+    fireEvent.click(await screen.findByRole('button', { name: 'Older suggestions' }));
+    expect(await screen.findByText('Older fixture')).toBeInTheDocument();
+    authState.activeMailboxId = 'mailbox-b';
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <AutopilotRoute />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.queryByText('Older fixture')).not.toBeInTheDocument());
+    expect(requests.at(-1)).toBe('first');
+    authState.activeMailboxId = 'mailbox-a';
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <AutopilotRoute />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/on this page · 61 waiting/)).toHaveTextContent('50 on this page'),
+    );
+    expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
+  });
 });
 
 describe('AutopilotScreen — edge states', () => {

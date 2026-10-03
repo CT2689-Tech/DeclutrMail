@@ -426,3 +426,5 @@ export {
   engagementWindowStart,
 } from './engagement-window';
 export { EXPLAIN_BATCH_MAX } from './triage-explain';
+
+export type { AutopilotPendingMeta } from './autopilot';

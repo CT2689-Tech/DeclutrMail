@@ -116,3 +116,49 @@ describe('AutopilotController approve-all body validation', () => {
     expect(approveAllForRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { matchedBefore: cutoff });
   });
 });
+
+describe('Autopilot pending page contract', () => {
+  const page = {
+    data: [],
+    meta: { total: 0, pagination: { limit: 50, hasMore: false, nextCursor: null } },
+  };
+  function reader() {
+    const listPendingSuggestionsPage = vi.fn().mockResolvedValue(page);
+    return {
+      listPendingSuggestionsPage,
+      controller: new AutopilotController(
+        { listPendingSuggestionsPage } as unknown as AutopilotReadService,
+        {} as EntitlementsService,
+      ),
+    };
+  }
+  it('preserves the data array and adds authoritative pagination metadata', async () => {
+    const { controller, listPendingSuggestionsPage } = reader();
+    expect(await controller.listPendingSuggestions(mailbox)).toEqual(page);
+    expect(listPendingSuggestionsPage).toHaveBeenCalledWith(mailbox.id, undefined);
+  });
+  it('accepts a microsecond cursor without reducing its precision', async () => {
+    const { controller, listPendingSuggestionsPage } = reader();
+    const cursor = { key: '2026-10-02T12:00:00.000123Z', id: RULE_ID };
+    await controller.listPendingSuggestions(
+      mailbox,
+      Buffer.from(JSON.stringify(cursor)).toString('base64url'),
+    );
+    expect(listPendingSuggestionsPage).toHaveBeenCalledWith(mailbox.id, cursor);
+  });
+  it.each([
+    '',
+    'garbage',
+    'x'.repeat(257),
+    Buffer.from(JSON.stringify({ key: 'invalid', id: RULE_ID })).toString('base64url'),
+    Buffer.from(JSON.stringify({ key: '2026-10-02T12:00:00.000Z', id: 'invalid' })).toString(
+      'base64url',
+    ),
+  ])('rejects invalid cursor before a database read (%s)', async (cursor) => {
+    const { controller, listPendingSuggestionsPage } = reader();
+    await expect(controller.listPendingSuggestions(mailbox, cursor)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(listPendingSuggestionsPage).not.toHaveBeenCalled();
+  });
+});

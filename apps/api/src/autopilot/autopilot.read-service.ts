@@ -72,8 +72,11 @@ import {
 } from '@declutrmail/workers';
 import { AutopilotRuleActivatedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
-import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
+import { AUTOPILOT_PENDING_PAGE_SIZE, encodeCursor } from '@declutrmail/shared/contracts';
 import type {
+  AutopilotPendingMeta,
+  DecodedCursor,
+  Envelope,
   AutopilotApproveAllRequest,
   AutopilotApproveResult,
   AutopilotRulePreviewResult,
@@ -897,44 +900,79 @@ export class AutopilotReadService {
     return { demotedRules, neutralizedMatches, workspaces: wsIds.length };
   }
 
-  /**
-   * D104 — pending suggestions for the Autopilot screen. Returns the
-   * Observe-mode matches awaiting user decision, newest first. Uses
-   * the partial index `rule_match_log_observe_pending_idx`.
-   *
-   * Page size is fixed at 50 — the Autopilot UI shows a list, not an
-   * infinite feed. Cursoring would land if the backlog ever needs it.
-   */
+  /** Legacy first-page reader used by internal callers. */
   async listPendingSuggestions(mailboxAccountId: string): Promise<AutopilotMatch[]> {
-    const PAGE_SIZE = AUTOPILOT_PENDING_PAGE_SIZE;
-    // LEFT JOIN senders so each match carries the sender's display name +
-    // email (D7 allowlist — sender identity is the FIRST item on the
-    // storage list; surfacing it is NOT a privacy violation). LEFT join
-    // because `building_sender_index` may not have materialised the row
-    // yet — the FE falls back to the senderKey hash in that race window
-    // (FOUNDER 2026-06-06 smoke — the Autopilot UI shipped hash-only and
-    // was unreadable to the user).
-    const rows = await this.db
-      .select({
-        match: ruleMatchLog,
-        senderDisplayName: senders.displayName,
-        senderEmail: senders.email,
-      })
-      .from(ruleMatchLog)
-      .leftJoin(
-        senders,
-        and(
-          eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
-          eq(senders.senderKey, ruleMatchLog.senderKey),
-        ),
-      )
-      .where(
-        and(eq(ruleMatchLog.mailboxAccountId, mailboxAccountId), ruleMatchIsOfferableSuggestion()),
-      )
-      .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
-      .limit(PAGE_SIZE);
-    return rows.map((r) =>
-      projectMatch(r.match, { senderName: r.senderDisplayName, senderEmail: r.senderEmail }),
+    return (await this.listPendingSuggestionsPage(mailboxAccountId)).data;
+  }
+
+  /** D104 keyset page. Reads and counts use the same tenant/offerability scope. */
+  async listPendingSuggestionsPage(
+    mailboxAccountId: string,
+    cursor?: DecodedCursor,
+  ): Promise<Envelope<AutopilotMatch[], AutopilotPendingMeta>> {
+    // One read-only snapshot keeps page rows and the queue total coherent.
+    return this.db.transaction(
+      async (tx) => {
+        // LEFT JOIN senders so each match carries the sender's display name +
+        // email (D7 allowlist — sender identity is the FIRST item on the
+        // storage list; surfacing it is NOT a privacy violation). LEFT join
+        // because `building_sender_index` may not have materialised the row
+        // yet — the FE falls back to the senderKey hash in that race window
+        // (FOUNDER 2026-06-06 smoke — the Autopilot UI shipped hash-only and
+        // was unreadable to the user).
+        const scope = and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          ruleMatchIsOfferableSuggestion(),
+        );
+        const boundary = cursor
+          ? sql`(${ruleMatchLog.matchedAt}, ${ruleMatchLog.id}) < (${cursor.key}::timestamptz, ${cursor.id}::uuid)`
+          : undefined;
+        const rows = await tx
+          .select({
+            match: ruleMatchLog,
+            // Preserve PostgreSQL microseconds; a JS Date cursor loses boundary rows.
+            cursorKey: sql<string>`to_char(${ruleMatchLog.matchedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+            senderDisplayName: senders.displayName,
+            senderEmail: senders.email,
+          })
+          .from(ruleMatchLog)
+          .leftJoin(
+            senders,
+            and(
+              eq(senders.mailboxAccountId, ruleMatchLog.mailboxAccountId),
+              eq(senders.senderKey, ruleMatchLog.senderKey),
+            ),
+          )
+          .where(and(scope, boundary))
+          .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
+          .limit(AUTOPILOT_PENDING_PAGE_SIZE + 1);
+
+        const [count] = await tx
+          .select({ total: sql<number>`count(*)::int` })
+          .from(ruleMatchLog)
+          .where(scope);
+        const hasMore = rows.length > AUTOPILOT_PENDING_PAGE_SIZE;
+        const page = rows.slice(0, AUTOPILOT_PENDING_PAGE_SIZE);
+        const last = page.at(-1);
+        return {
+          data: page.map((r) =>
+            projectMatch(r.match, {
+              senderName: r.senderDisplayName,
+              senderEmail: r.senderEmail,
+            }),
+          ),
+          meta: {
+            total: count?.total ?? 0,
+            pagination: {
+              limit: AUTOPILOT_PENDING_PAGE_SIZE,
+              hasMore,
+              nextCursor:
+                hasMore && last ? encodeCursor({ key: last.cursorKey, id: last.match.id }) : null,
+            },
+          },
+        };
+      },
+      { isolationLevel: 'repeatable read', accessMode: 'read only' },
     );
   }
 
