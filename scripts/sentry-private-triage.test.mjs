@@ -313,3 +313,78 @@ test('capture-page labels remain finite through encrypted triage projection', ()
     );
   }
 });
+
+test('query failure triage preserves known scopes without leaking mailbox keys or arbitrary reasons', () => {
+  for (const reason of ['undo', 'snoozed']) {
+    // Scope must survive either vendor tag order.
+    for (const tags of [
+      [
+        { key: 'reason', value: reason },
+        { key: 'surface', value: 'query' },
+      ],
+      [
+        { key: 'surface', value: 'query' },
+        { key: 'reason', value: reason },
+      ],
+    ])
+      assert.equal(eventSummary({ tags }).tags.reason, reason);
+  }
+  for (const reason of [
+    'PRIVATE_MAILBOX_CONTENT',
+    'private@example.invalid',
+    'private-id',
+    'undo/private-id',
+    'snoozed-private-id',
+    '["undo","in-flight","private-id"]',
+  ]) {
+    assert.equal(
+      eventSummary({
+        tags: [
+          { key: 'surface', value: 'query' },
+          { key: 'reason', value: reason },
+        ],
+      }).tags.reason,
+      undefined,
+    );
+  }
+  for (const surface of ['home', 'unknown', undefined]) {
+    assert.equal(
+      eventSummary({
+        tags: [
+          { key: 'surface', value: surface },
+          { key: 'reason', value: 'undo' },
+        ],
+      }).tags.reason,
+      undefined,
+    );
+  }
+});
+
+test('ambiguous query tags fail closed and malformed tag records do not abort triage', () => {
+  const surface = { key: 'surface', value: 'query' };
+  const reason = { key: 'reason', value: 'undo' };
+  for (const conflict of [
+    { key: 'surface', value: 'home' },
+    { key: 'surface', value: 'PRIVATE_VALUE' },
+  ]) {
+    for (const tags of [
+      [surface, conflict, reason],
+      [conflict, reason, surface],
+    ]) {
+      assert.equal(eventSummary({ tags }).tags.surface, undefined);
+      assert.equal(eventSummary({ tags }).tags.reason, undefined);
+    }
+  }
+  for (const conflict of [
+    { key: 'reason', value: 'snoozed' },
+    { key: 'reason', value: 'PRIVATE_VALUE' },
+  ]) {
+    assert.equal(eventSummary({ tags: [surface, reason, conflict] }).tags.reason, undefined);
+    assert.equal(eventSummary({ tags: [surface, conflict, reason] }).tags.reason, undefined);
+  }
+  assert.deepEqual(
+    eventSummary({ tags: [null, false, [], 'PRIVATE_VALUE', surface, reason, surface, reason] })
+      .tags,
+    { surface: 'query', reason: 'undo' },
+  );
+});
