@@ -218,3 +218,13 @@ export const ErrorState: Story<typeof SnoozedScreen> = {
     return frame(client);
   },
 };
+
+/** Multiple rows in one calendar bucket retain the existing inset dividers. */
+export const SameDayRows: Story<typeof SnoozedScreen> = {
+  render: (_args: ComponentProps<typeof SnoozedScreen>) => {
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const until = new Date(Date.now() + (midnight.getTime() - Date.now()) / 2).toISOString();
+    return frame(makeClient(FIXTURES.map((row) => ({ ...row, snoozedUntil: until }))));
+  },
+};

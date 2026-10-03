@@ -27,6 +27,7 @@ import { ApiError } from '@/lib/api/client';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
+import { useNow } from '@/lib/use-now';
 
 import { flatRowCss } from '@/features/settings/flat-list';
 import { useSetSnooze, useSnoozed, useWakeNow } from './api/use-snoozed';
@@ -84,13 +85,17 @@ type WakeRequest = {
   delayed: boolean;
 };
 
-export function SnoozedScreen() {
+export function SnoozedScreen({ initialNow }: { initialNow?: number } = {}) {
   const auth = useOptionalAuth();
   // Optimistic requests belong to one mailbox; switching accounts remounts them.
-  return <SnoozedScreenContents key={auth?.me.activeMailboxId ?? 'isolated'} />;
+  return (
+    <SnoozedScreenContents key={auth?.me.activeMailboxId ?? 'isolated'} initialNow={initialNow} />
+  );
 }
 
-function SnoozedScreenContents() {
+function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined }) {
+  const liveNow = useNow(60_000);
+  const now = liveNow ?? initialNow ?? null;
   const [wakeRequests, setWakeRequests] = useState<ReadonlyMap<string, WakeRequest>>(new Map());
   const wakingIds = useMemo(
     () => new Set([...wakeRequests].filter(([, request]) => !request.delayed).map(([id]) => id)),
@@ -147,7 +152,10 @@ function SnoozedScreenContents() {
   // The zone comes from the hydration-safe `me` cache so the grouping
   // is identical on the server and in the first client render.
   const timeZone = useUserTimeZone();
-  const grouped = useMemo(() => groupByWakeTime(rows, new Date(), timeZone), [rows, timeZone]);
+  const grouped = useMemo(
+    () => (now === null ? null : groupByWakeTime(rows, new Date(now), timeZone)),
+    [rows, now, timeZone],
+  );
   // Below `sm` (D60 mobile treatment) the 4-track row grid overflows a
   // phone viewport — resolve the breakpoint once and thread it to the
   // rows so each restacks to a single column.
@@ -197,35 +205,48 @@ function SnoozedScreenContents() {
             </>
           }
         />
+      ) : grouped === null || now === null ? (
+        <LoadingState />
       ) : (
-        WAKE_BUCKETS.map((bucket) =>
-          grouped[bucket].length > 0 ? (
-            <BucketGroup
-              key={bucket}
-              bucket={bucket}
-              rows={grouped[bucket]}
-              wakingIds={wakingIds}
-              delayedIds={
-                new Set(
-                  [...wakeRequests].filter(([, request]) => request.delayed).map(([id]) => id),
-                )
-              }
-              onWakeStarted={(senderId) => {
-                const row = rows.find((candidate) => candidate.senderId === senderId);
-                if (!row) return;
-                setWakeRequests((previous) =>
-                  new Map(previous).set(senderId, {
-                    lastAttemptAt: row.lastReturnAttemptAt,
-                    timer: `${row.snoozedAt}/${row.snoozedUntil}`,
-                    deadline: Date.now() + WAKE_FAST_POLL_MS,
-                    delayed: false,
-                  }),
-                );
-              }}
-              isMobile={isMobile}
-            />
-          ) : null,
-        )
+        <>
+          <style>{flatRowCss('dm-later-row')}</style>
+          {/* One parent keeps each sender's draft, focus, and mutation observer
+              mounted when the account calendar moves it to another bucket. */}
+          <ul aria-label="Later senders" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {WAKE_BUCKETS.filter((bucket) => grouped[bucket].length > 0).flatMap(
+              (bucket, index) => [
+                <BucketHeading
+                  key={`heading-${bucket}`}
+                  bucket={bucket}
+                  count={grouped[bucket].length}
+                  first={index === 0}
+                />,
+                ...grouped[bucket].map((row) => (
+                  <SnoozedRow
+                    key={row.senderId}
+                    row={row}
+                    now={now}
+                    waking={wakingIds.has(row.senderId)}
+                    confirmationDelayed={wakeRequests.get(row.senderId)?.delayed ?? false}
+                    onWakeStarted={(senderId) => {
+                      const current = rows.find((candidate) => candidate.senderId === senderId);
+                      if (!current) return;
+                      setWakeRequests((previous) =>
+                        new Map(previous).set(senderId, {
+                          lastAttemptAt: current.lastReturnAttemptAt,
+                          timer: `${current.snoozedAt}/${current.snoozedUntil}`,
+                          deadline: Date.now() + WAKE_FAST_POLL_MS,
+                          delayed: false,
+                        }),
+                      );
+                    }}
+                    isMobile={isMobile}
+                  />
+                )),
+              ],
+            )}
+          </ul>
+        </>
       )}
     </div>
   );
@@ -233,28 +254,17 @@ function SnoozedScreenContents() {
 
 // ── Groups ────────────────────────────────────────────────────────────
 
-function BucketGroup({
+function BucketHeading({
   bucket,
-  rows,
-  wakingIds,
-  delayedIds,
-  onWakeStarted,
-  isMobile,
+  count,
+  first,
 }: {
   bucket: WakeBucket;
-  rows: SnoozedSenderRow[];
-  wakingIds: ReadonlySet<string>;
-  delayedIds: ReadonlySet<string>;
-  onWakeStarted: (senderId: string) => void;
-  isMobile: boolean;
+  count: number;
+  first: boolean;
 }) {
-  const label = WAKE_BUCKET_LABELS[bucket];
   return (
-    <section
-      aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-    >
-      <style>{flatRowCss('dm-later-row')}</style>
+    <li role="presentation" style={{ paddingTop: first ? 0 : 32, paddingBottom: 8 }}>
       <h2
         style={{
           display: 'flex',
@@ -267,7 +277,7 @@ function BucketGroup({
           color: color.fg,
         }}
       >
-        {label}
+        {WAKE_BUCKET_LABELS[bucket]}
         <span
           style={{
             color: color.fgMuted,
@@ -276,30 +286,10 @@ function BucketGroup({
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          · {rows.length}
+          · {count}
         </span>
       </h2>
-      <ul
-        style={{
-          listStyle: 'none',
-          margin: 0,
-          padding: 0,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {rows.map((row) => (
-          <SnoozedRow
-            key={row.senderId}
-            row={row}
-            waking={wakingIds.has(row.senderId)}
-            confirmationDelayed={delayedIds.has(row.senderId)}
-            onWakeStarted={onWakeStarted}
-            isMobile={isMobile}
-          />
-        ))}
-      </ul>
-    </section>
+    </li>
   );
 }
 
@@ -308,12 +298,14 @@ function BucketGroup({
 type RowPanel = 'closed' | 'confirm-wake' | 'snooze-menu';
 
 export function SnoozedRow({
+  now,
   row,
   waking,
   confirmationDelayed = false,
   onWakeStarted,
   isMobile = false,
 }: {
+  now: number;
   row: SnoozedSenderRow;
   waking: boolean;
   confirmationDelayed?: boolean;
@@ -415,7 +407,7 @@ export function SnoozedRow({
                   ? 'Return overdue'
                   : row.returnStatus === 'returning'
                     ? 'Returning now…'
-                    : `Returns ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
+                    : `Returns ${formatWakeTime(row.snoozedUntil, new Date(now), timeZone)}`}
           </div>
           {confirmationDelayed ? (
             <div role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
@@ -484,7 +476,7 @@ export function SnoozedRow({
       ) : null}
 
       {panel === 'snooze-menu' && !waking ? (
-        <SnoozeMenu row={row} onClose={() => setPanel('closed')} />
+        <SnoozeMenu row={row} now={now} onClose={() => setPanel('closed')} />
       ) : null}
     </li>
   );
@@ -575,14 +567,22 @@ function WakeConfirm({
 }
 
 /** D82/D245 — preset durations + custom date/time + optional note. */
-function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => void }) {
+function SnoozeMenu({
+  row,
+  now,
+  onClose,
+}: {
+  row: SnoozedSenderRow;
+  now: number;
+  onClose: () => void;
+}) {
   const setSnooze = useSetSnooze();
   const [reason, setReason] = useState(row.reason ?? '');
   const [custom, setCustom] = useState('');
   // Presets resolve in the user zone — the zone the rows display in —
   // so the saved instant reads back as the wall time that was picked.
   const timeZone = useUserTimeZone();
-  const presets = useMemo(() => snoozePresets(new Date(), timeZone), [timeZone]);
+  const presets = useMemo(() => snoozePresets(new Date(now), timeZone), [now, timeZone]);
 
   const submit = (until: string, presetId: SnoozePresetEventId) => {
     const trimmed = reason.trim();
@@ -604,7 +604,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
     );
   };
 
-  const customValid = custom !== '' && new Date(custom).getTime() > Date.now();
+  const customValid = custom !== '' && new Date(custom).getTime() > now;
 
   return (
     <div
