@@ -55,6 +55,7 @@ describe('shared request performance HTTP smoke', () => {
   let sessions: SessionsService;
   let cookie: string;
   let sessionId: string;
+  let sessionOwner: { userId: string; workspaceId: string };
   let mailboxId: string;
   let otherMailboxId: string;
   let log: ReturnType<typeof vi.spyOn>;
@@ -133,9 +134,9 @@ describe('shared request performance HTTP smoke', () => {
       .returning();
     mailboxId = mailbox!.id;
     otherMailboxId = otherMailbox!.id;
+    sessionOwner = { userId: user!.id, workspaceId: workspace!.id };
     const issued = await sessions.issue({
-      userId: user!.id,
-      workspaceId: workspace!.id,
+      ...sessionOwner,
       ipAddress: null,
       userAgent: null,
     });
@@ -239,10 +240,19 @@ describe('shared request performance HTTP smoke', () => {
   });
 
   it('falls back to the authoritative session DB when optional Redis fails', async () => {
+    // The first HTTP test warmed this process's absence hint. Expire it
+    // so this test must actually exercise the optional Redis failure.
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 60_001);
     cache.get.mockRejectedValue(new Error('Synthetic Redis outage'));
-    const response = await request('me');
-    expect(response.status).toBe(200);
-    expect(timing().operations['auth.session-row']).toMatchObject({ count: 1, failures: 0 });
+    try {
+      const response = await request('me');
+      expect(response.status).toBe(200);
+      expect(cache.get).toHaveBeenCalledTimes(1);
+      expect(timing().operations['auth.session-row']).toMatchObject({ count: 1, failures: 0 });
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('keeps the same auth response when instrumentation is disabled', async () => {
@@ -255,11 +265,29 @@ describe('shared request performance HTTP smoke', () => {
     expect(timing()).not.toHaveProperty('operations');
   });
 
-  it('rejects a revoked session on the next request without a positive cache', async () => {
-    await sessions.revoke(sessionId);
+  it('rejects an externally revoked session on the next request despite a warm absence hint', async () => {
+    const otherInstance = new SessionsService(
+      db as unknown as DrizzleDb,
+      cache as unknown as Redis,
+      new JwtService(),
+    );
+    await otherInstance.revoke(sessionId);
     const response = await request('me');
     expect(response.status).toBe(401);
     expect(timing().operations['auth.session-row']).toMatchObject({ count: 1, failures: 0 });
+    expect(timing().operations['auth.profile']).toBeUndefined();
+  });
+
+  it('rejects a locally revoked session without another DB query', async () => {
+    const fresh = await sessions.issue({ ...sessionOwner, ipAddress: null, userAgent: null });
+    const freshCookie = `dm_access=${fresh.tokens.accessToken}`;
+    expect((await request('me', { cookie: freshCookie })).status).toBe(200);
+    log.mockClear();
+    await sessions.revoke(fresh.sessionId);
+    const response = await request('me', { cookie: freshCookie });
+    expect(response.status).toBe(401);
+    expect(timing().operations['auth.session-cache']).toMatchObject({ count: 1, failures: 0 });
+    expect(timing().operations['auth.session-row']).toBeUndefined();
     expect(timing().operations['auth.profile']).toBeUndefined();
   });
 });

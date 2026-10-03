@@ -5,6 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
+import type { Redis } from 'ioredis';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -72,6 +73,136 @@ describe('SessionsService.lookupByJti hot-path writes', () => {
       .from(activeSessions)
       .where(eq(activeSessions.id, session!.id));
     expect(row!.lastUsedAt).toEqual(sentinel);
+  });
+});
+
+describe('SessionsService revocation hints', () => {
+  let pg: PGlite;
+  let db: Db;
+
+  beforeAll(async () => {
+    pg = await freshTestPglite();
+    db = drizzle(pg, { schema });
+  });
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  async function setup() {
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: 'Revocation hints' })
+      .returning();
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId: workspace!.id, email: `${randomUUID()}@example.com` })
+      .returning();
+    const jti = randomUUID();
+    const [session] = await db
+      .insert(activeSessions)
+      .values({ userId: user!.id, jti, refreshTokenHash: 'hint-test' })
+      .returning();
+    const redis = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue('OK'),
+      del: vi.fn().mockResolvedValue(1),
+    };
+    const service = new SessionsService(
+      db as unknown as DrizzleDb,
+      redis as unknown as Redis,
+      {} as JwtService,
+    );
+    return { service, redis, jti, session: session! };
+  }
+
+  it('avoids repeated Redis absence reads while still observing a database revocation from another instance', async () => {
+    const { service, redis, jti, session } = await setup();
+    await expect(service.lookupByJti(jti)).resolves.toMatchObject({ id: session.id });
+    await expect(service.lookupByJti(jti)).resolves.toMatchObject({ id: session.id });
+    expect(redis.get).toHaveBeenCalledTimes(1);
+    // A different process revokes the row without touching this process's hint.
+    await db
+      .update(activeSessions)
+      .set({ isRevoked: true })
+      .where(eq(activeSessions.id, session.id));
+    await expect(service.lookupByJti(jti)).resolves.toBeNull();
+    const select = vi.spyOn(db, 'select');
+    await expect(service.lookupByJti(jti)).resolves.toBeNull();
+    expect(select).not.toHaveBeenCalled();
+    select.mockRestore();
+  });
+
+  it('expires a Redis absence hint and respects a refreshed deny hint', async () => {
+    const { service, redis, jti } = await setup();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      await expect(service.lookupByJti(jti)).resolves.not.toBeNull();
+      redis.get.mockResolvedValue('1');
+      clock.mockReturnValue(now + 60_001);
+      await expect(service.lookupByJti(jti)).resolves.toBeNull();
+      expect(redis.get).toHaveBeenCalledTimes(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('does not memoize Redis failures as an absence hint', async () => {
+    const { service, redis, jti } = await setup();
+    redis.get.mockRejectedValueOnce(new Error('Redis unavailable'));
+    await expect(service.lookupByJti(jti)).resolves.not.toBeNull();
+    redis.get.mockResolvedValue('1');
+    await expect(service.lookupByJti(jti)).resolves.toBeNull();
+    expect(redis.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an in-flight Redis absence overwrite a local revoke', async () => {
+    const { service, redis, jti, session } = await setup();
+    let finishRead!: (value: null) => void;
+    redis.get.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishRead = resolve;
+        }),
+    );
+    const lookup = service.lookupByJti(jti);
+    await service.revoke(session.id);
+    const select = vi.spyOn(db, 'select');
+    finishRead(null);
+    await expect(lookup).resolves.toBeNull();
+    await expect(service.lookupByJti(jti)).resolves.toBeNull();
+    expect(select).not.toHaveBeenCalled();
+    select.mockRestore();
+  });
+
+  it('bounds hint retention and rechecks Redis after eviction', async () => {
+    const redis = { get: vi.fn().mockResolvedValue('1') };
+    // Deny hints do not query the database, including after an eviction.
+    const select = vi.fn();
+    const service = new SessionsService(
+      { select } as unknown as DrizzleDb,
+      redis as unknown as Redis,
+      {} as JwtService,
+    );
+    for (let index = 0; index <= 10_000; index += 1) {
+      await expect(service.lookupByJti(`bounded-test-${index}`)).resolves.toBeNull();
+    }
+    await service.lookupByJti('bounded-test-0');
+    expect(redis.get).toHaveBeenCalledTimes(10_002);
+    await service.lookupByJti('bounded-test-10000');
+    expect(redis.get).toHaveBeenCalledTimes(10_002);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('keeps locally revoked tokens denied even when Redis is unavailable', async () => {
+    const { service, redis, jti, session } = await setup();
+    await service.lookupByJti(jti);
+    redis.set.mockRejectedValue(new Error('Redis unavailable'));
+    await service.revoke(session.id);
+    const select = vi.spyOn(db, 'select');
+    await expect(service.lookupByJti(jti)).resolves.toBeNull();
+    expect(select).not.toHaveBeenCalled();
+    select.mockRestore();
   });
 });
 

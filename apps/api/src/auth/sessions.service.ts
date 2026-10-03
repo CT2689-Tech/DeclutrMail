@@ -19,14 +19,13 @@ import { JwtService, hashRefreshToken, type IssuedTokens } from './jwt.service.j
 export const SESSIONS_REDIS = 'SESSIONS_REDIS';
 
 /**
- * Cache TTL for the per-jti revoke check. 60s strikes the documented
- * D155 balance: hot-path lookups hit Redis ~always; an admin/user
- * revoke takes at most 60s to propagate to every API instance after
- * the cache key is invalidated. The cache key is invalidated
- * immediately on revoke from the SAME process, so the 60s lag only
- * affects other instances during a horizontal-scale deployment.
+ * Redis and local revocation hints expire after 60 seconds. A deny hint
+ * avoids repeat DB work for revoked tokens; an absence only skips Redis,
+ * NEVER the fresh session-row check. Revocations and refresh rotations
+ * therefore remain visible across instances on the very next DB lookup.
  */
 const REVOKE_CACHE_TTL_SEC = 60;
+const REVOKE_HINT_MAX = 10_000;
 
 /**
  * `last_used_at` is presence telemetry, not an event log. One write every
@@ -78,6 +77,8 @@ export class SessionsService implements OnModuleDestroy {
   private readonly logger = new Logger(SessionsService.name);
   /** Per-instance write coalescer only; authentication still reads DB every time. */
   private readonly lastUsedWrites = new Map<string, number>();
+  /** Redis hints only. An absence NEVER authorizes: every request still reads DB. */
+  private readonly revocationHints = new Map<string, { revoked: boolean; expiresAt: number }>();
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
@@ -86,6 +87,7 @@ export class SessionsService implements OnModuleDestroy {
   ) {}
 
   async onModuleDestroy(): Promise<void> {
+    this.revocationHints.clear();
     if (this.redis) {
       await this.redis.quit().catch(() => {
         /* noop on shutdown */
@@ -410,17 +412,41 @@ export class SessionsService implements OnModuleDestroy {
     return `session:revoked:${jti}`;
   }
 
+  private rememberRevocationHint(jti: string, revoked: boolean): void {
+    this.revocationHints.delete(jti);
+    this.revocationHints.set(jti, {
+      revoked,
+      expiresAt: Date.now() + REVOKE_CACHE_TTL_SEC * 1_000,
+    });
+    // Expired entries are replaced lazily. Keep memory bounded even when
+    // a process sees many distinct sessions; eviction only costs a Redis read.
+    if (this.revocationHints.size > REVOKE_HINT_MAX) {
+      const oldest = this.revocationHints.keys().next().value;
+      if (oldest !== undefined) this.revocationHints.delete(oldest);
+    }
+  }
+
   private async isRevokedInCache(jti: string): Promise<boolean> {
+    const hint = this.revocationHints.get(jti);
+    if (hint && hint.expiresAt > Date.now()) return hint.revoked;
     if (!this.redis) return false;
     try {
       const v = await this.redis.get(this.cacheKey(jti));
+      // A concurrent local revoke may have installed a deny hint while
+      // Redis was in flight. Never overwrite it with an older absence.
+      const current = this.revocationHints.get(jti);
+      if (current !== hint && current?.revoked && current.expiresAt > Date.now()) return true;
+      this.rememberRevocationHint(jti, v === '1');
       return v === '1';
     } catch {
-      return false; // fail open to DB lookup
+      // An outage is not a successful absence observation. Retry Redis on
+      // the next call and always fall through to the authoritative DB read.
+      return false;
     }
   }
 
   private async markRevokedInCache(jti: string): Promise<void> {
+    this.rememberRevocationHint(jti, true);
     if (!this.redis) return;
     try {
       await this.redis.set(this.cacheKey(jti), '1', 'EX', REVOKE_CACHE_TTL_SEC);
@@ -430,6 +456,7 @@ export class SessionsService implements OnModuleDestroy {
   }
 
   private async invalidateCache(jti: string): Promise<void> {
+    this.revocationHints.delete(jti);
     if (!this.redis) return;
     try {
       await this.redis.del(this.cacheKey(jti));
