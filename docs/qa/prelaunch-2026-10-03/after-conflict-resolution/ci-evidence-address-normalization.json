@@ -1,0 +1,46 @@
+{
+  "failedHead": "b25dbc81cb383b8cbdcaa7697952582426b1e56c",
+  "failedWorkflow": "https://github.com/CT2689-Tech/DeclutrMail/actions/runs/37164922442",
+  "failedJob": "Lint: No personal email addresses in tracked files (D7)",
+  "diagnosis": "Raw JSON escaped newline character n was interpreted as part of an otherwise allowlisted existing fixture address.",
+  "correction": {
+    "reason": "D7 repository consumer-address guard caught escaped-newline prefixes on allowlisted existing Storybook mailbox fixtures. Decode JSON strings, project those consumer addresses to synthetic.test aliases, then serialize. No guard/allowlist change.",
+    "files": ["after/story-browser.json", "story-browser-resumed.json"],
+    "counts": {
+      "addressOccurrencesProjected": 8,
+      "distinctFixtureAddresses": 3
+    },
+    "preserved": "Story IDs, results, counts, violations, fixture/source provenance, capture scope and baseline findings unchanged. No mailbox dropdown PNG was selected in the 40 archived representative captures.",
+    "date": "2026-10-03"
+  },
+  "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "productSourceChanged": false,
+  "baselineJsonUnchanged": true,
+  "localGuard": {
+    "command": "node --test scripts/personal-email-guard.test.mjs",
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "guardOrAllowlistChanged": false,
+    "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/personal-email-guard-final.log"
+  },
+  "remainingLintLocalVerification": {
+    "guardHooks": "PASS against e267f759; no violations, advisory co-located-test notes preserved",
+    "contracts": {
+      "passed": 53,
+      "failed": 0,
+      "skipped": 0
+    },
+    "icons": "PASS all seven current brand assets",
+    "logs": [
+      "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-guard-hooks.log",
+      "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-lint-remaining-contracts.log",
+      "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-icon-check.log"
+    ]
+  },
+  "historicalEvidencePointerCorrection": {
+    "file": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+    "field": "negativeControl.evidence",
+    "reason": "Point to the archived f21 failing served-budget log instead of the subsequent successful log. No result, source or test change."
+  }
+}

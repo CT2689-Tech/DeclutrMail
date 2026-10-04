@@ -1,0 +1,118 @@
+{
+  "id": "CI-METHODOLOGY-TEST-ALIGNMENT",
+  "status": "PASS for test-only correction; final complete remote CI tracked on publication head",
+  "reviewedPublicationHead": "b25dbc81cb383b8cbdcaa7697952582426b1e56c",
+  "reviewedProductSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "integratedMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
+  "initialRemoteCI": {
+    "evidence": "https://github.com/CT2689-Tech/DeclutrMail/actions/runs/37164922442",
+    "files": {
+      "passed": 291,
+      "failed": 1,
+      "skipped": 1,
+      "total": 293
+    },
+    "tests": {
+      "passed": 3760,
+      "failed": 1,
+      "skipped": 3,
+      "total": 3764
+    },
+    "skipDisposition": "Three pre-existing skips are retained explicitly; no skip modified or added.",
+    "failure": {
+      "file": "apps/web/src/app/(marketing)/methodology/page.test.tsx",
+      "test": "preserves preview, one-way unsubscribe, and explicit automation boundaries",
+      "line": 50,
+      "expected": "Activity records the result",
+      "actual": "Activity shows running actions and confirmed outcomes, with Undo when available.",
+      "errorLogLines": [1205, 1206, 1211, 1222, 1223]
+    },
+    "rawLocalLog": "Local run artifact (not archived): final-ci-web.log"
+  },
+  "diagnosis": {
+    "classification": "Obsolete consumer assertion; no product factual regression established.",
+    "correctCurrentContract": "Methodology distinguishes running actions from confirmed outcomes and scopes Undo to availability. Existing paragraph retains preview failure blocking, inline Keep and enabled automation exception; canonical copy separates manual mail-moving previews, delivered unsubscribe irreversibility and explicit future rules.",
+    "whyEarlierAffectedRunMissedIt": {
+      "observed": "The 44-Web affected command omitted the unchanged Methodology test. The original prelaunch correction changed the route copy without aligning this consumer assertion.",
+      "selectionEvidence": [
+        "Local run artifact (not archived): affected-test-command.json",
+        "Local run artifact (not archived): affected-test-paths.txt",
+        "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log:553",
+        "Git history: 04c5fd56 Methodology route and unchanged sibling test"
+      ],
+      "affectedListExactlyMatchesOriginalFixCommitChangedWebAndSharedTests": true,
+      "selectedTestCount": 49,
+      "selectedWebTestCount": 44,
+      "sourceDependencyGap": "Selecting changed test files alone omits unchanged tests consuming changed pages. Full CI included this consumer and caught the stale sentence.",
+      "scopeRecommendation": "When a route source changes, include its sibling page test even when unchanged; retain a full-Web gate as final proof. No selection script changed in this task."
+    }
+  },
+  "correction": {
+    "onlyEditedRepositoryFile": "apps/web/src/app/(marketing)/methodology/page.test.tsx",
+    "change": "Replace one obsolete sentence assertion with full current Activity running/confirmed-outcomes/available-Undo sentence. No assertion removed, relaxed or skipped.",
+    "preservedCoverage": [
+      "Preview cannot load means action cannot run.",
+      "Delivered one-click unsubscribe request cannot be recalled.",
+      "Manual decisions do not create automatic rules.",
+      "Only deliberately enabled rules handle future matches.",
+      "Rule preview precedes enable.",
+      "No plan-name assumption in automation boundary.",
+      "No universal reversible/undoable action claim."
+    ],
+    "testSha256": "03a3372a4b9dc80e9134734a60add57edb76ec6df36feee81b35102869fbde3c"
+  },
+  "sourceTestBoundary": {
+    "productSourceEdited": false,
+    "canonicalCopyEdited": false,
+    "productSourcesUnchangedFromReviewedHeadSha256": {
+      "apps/web/src/app/(marketing)/methodology/page.tsx": "84a1981c974c0bb748ad165babe8be80e7f9f12b36cf4c676a821cec89142157",
+      "packages/shared/src/copy/action-safety.ts": "a36e5579dacc54d41ea02a71b2c741da4150fcd2c8c860b997313291631bddc8",
+      "apps/web/src/features/marketing/product-story/diagrams.tsx": "72897631e6a45ffc049e4f0d3cc419bcf21ba5ca4d61fa47f6df2ac842c57f02"
+    },
+    "testSourceStopped": true,
+    "providerOrWorkerVerification": false,
+    "noOtherFilesChangedByThisOwner": true
+  },
+  "verification": [
+    {
+      "gate": "Focused Methodology suite",
+      "status": "PASS",
+      "files": 1,
+      "tests": 9,
+      "maxWorkers": 1,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-web.log",
+      "runs": 1
+    },
+    {
+      "gate": "Relevant canonical action-safety suite",
+      "status": "PASS",
+      "files": 1,
+      "tests": 5,
+      "maxWorkers": 1,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-canonical.log",
+      "runs": 1
+    },
+    {
+      "gate": "Scoped ESLint changed test",
+      "status": "PASS",
+      "errors": 0,
+      "warnings": 0,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-lint.log"
+    },
+    {
+      "gate": "Web typecheck",
+      "status": "PASS",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-typecheck.log"
+    },
+    {
+      "gate": "Prettier changed test",
+      "status": "PASS",
+      "method": "Formatted once; existing format unchanged."
+    }
+  ],
+  "limitations": [
+    "Initial remote CI result remains historical failed evidence; these focused passes do not constitute a new complete full-Web CI run.",
+    "The integration owner publishes documentation, Git changes and final CI status. This correction performs no server, database or provider action.",
+    "No unrelated file, audit baseline or test-selection machinery changed."
+  ]
+}

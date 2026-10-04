@@ -99,6 +99,18 @@
       "status": "PASS",
       "detail": "PASS for scoped fixes PR; public launch hold retained.",
       "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-design-gate.json"
+    },
+    {
+      "gate": "CI consumer assertion alignment",
+      "status": "PASS",
+      "detail": "Only the obsolete Methodology Activity sentence expectation changed. Methodology 9/9 and canonical safety 5/5 pass; scoped lint/typecheck pass. Canonical tests overlap earlier proof.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-methodology-test-alignment.json"
+    },
+    {
+      "gate": "Tracked evidence and remaining lint contracts",
+      "status": "PASS",
+      "detail": "Unchanged personal-email guard 3/3; guard hooks without violations; 53 additional contract tests and seven brand icon checks pass. Fixture aliases and one historical failure-log pointer normalized without changing product source.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-evidence-address-normalization.json"
     }
   ],
   "fixesPrSignoff": true,
@@ -106,5 +118,19 @@
   "publicHydrationSignal": "Originalthree public HTML recovery failures remain unexplained. New upstream fixes concern authenticated optional-query presentation and Later account clock; neither establishes cause of originalpublic3.",
   "providerBoundary": "Disposable synthetic loopback API/PostgreSQL/Redis only; no provider worker/live OAuth/Gmail/billing/account deletion/export-completeness verification.",
   "screenshots": "Selected scrolled Privacy viewports with fresh-user survey visible; named control/DOM behavior separately tested.",
-  "remoteCi": "Not certified by local gates; status on publication head tracked separately."
+  "remoteCi": {
+    "initialPublicationHead": "b25dbc81cb383b8cbdcaa7697952582426b1e56c",
+    "initialRun": "https://github.com/CT2689-Tech/DeclutrMail/actions/runs/37164922442",
+    "initialResult": "FAIL: fixture-address escaped-prefix guard and one obsolete Methodology assertion; other selected suites, production build and authenticated accessibility passed. Database suite excluded by path detection.",
+    "initialWebResult": {
+      "filesPassed": 291,
+      "filesFailed": 1,
+      "filesSkipped": 1,
+      "testsPassed": 3760,
+      "testsFailed": 1,
+      "testsSkipped": 3
+    },
+    "corrections": "Evidence-only fixture normalization plus one test assertion alignment; product source and browser-test proof remain at 3d3272.",
+    "finalResult": "Pending new publication-head CI; not certified by these local gates."
+  }
 }

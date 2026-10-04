@@ -304,7 +304,7 @@
     "name": "Two Connected",
     "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
     "mobile": {
-      "bodyText": "Gmail accounts\nC\nchintan.a.thakkar@gmail.com\nSynced 4m ago\nActive\nReady\nC\nchintan.a.thakkar.crypt@gmail.com\nSynced 3h ago\nReady\nAdd Gmail account",
+      "bodyText": "Gmail accounts\nC\nfixture-mailbox-1@synthetic.test\nSynced 4m ago\nActive\nReady\nC\nfixture-mailbox-3@synthetic.test\nSynced 3h ago\nReady\nAdd Gmail account",
       "escaped": [],
       "headings": [
         {

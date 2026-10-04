@@ -43,7 +43,8 @@
   "negativeControl": {
     "method": "Real pre-optimization production served budget gate on f21, not a synthetic mirrored copy assertion.",
     "result": "Settings Privacy262.0kB exceeds262kB;50other route templates pass. Exact logs are rounded to one decimal.",
-    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
+    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-before-optimization-bundle-build-final.log",
+    "publicationPointerCorrection": "Corrected the archived log pointer only; the original measured failure and product/test provenance remain unchanged."
   },
   "verification": [
     {

@@ -1922,7 +1922,7 @@
     "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
     "renderedContent": true,
     "mobile": {
-      "bodyText": "chintan.a.thakkar@gmail.com\nQuiet hours\nStart\nEnd\nTimezone\nAmerica/Los_Angeles\nEnds at 07:00 the next day.\nSave quiet hours",
+      "bodyText": "fixture-mailbox-1@synthetic.test\nQuiet hours\nStart\nEnd\nTimezone\nAmerica/Los_Angeles\nEnds at 07:00 the next day.\nSave quiet hours",
       "escaped": [],
       "headings": [],
       "overflow": false,
@@ -1953,7 +1953,7 @@
     "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
     "renderedContent": true,
     "mobile": {
-      "bodyText": "chintan.a.thakkar@gmail.com\nWe couldn't load quiet hours right now.\nRetry",
+      "bodyText": "fixture-mailbox-1@synthetic.test\nWe couldn't load quiet hours right now.\nRetry",
       "escaped": [],
       "headings": [],
       "overflow": false,
@@ -1984,7 +1984,7 @@
     "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
     "renderedContent": true,
     "mobile": {
-      "bodyText": "chintan.a.thakkar@gmail.com",
+      "bodyText": "fixture-mailbox-1@synthetic.test",
       "escaped": [],
       "headings": [],
       "overflow": false,
@@ -2298,7 +2298,7 @@
     "source": "./src/features/senders/confirm-action-modal.stories.tsx",
     "renderedContent": true,
     "mobile": {
-      "bodyText": "M\nGmail account\nyou@gmail.com\nArchive 174 emails?\n\nFrom Macy\u2019s. They leave your inbox and stay in Gmail.\n\nHow far back\nAll inbox \u00b7 174\n30 days+ \u00b7 120\n3 months+ \u00b7 64\n6 months+ \u00b7 31\n1 year+ \u00b7 9\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 174\nCancel\nUses 1 of your 34 cleanup actions left this month.",
+      "bodyText": "M\nGmail account\nfixture-mailbox-2@synthetic.test\nArchive 174 emails?\n\nFrom Macy\u2019s. They leave your inbox and stay in Gmail.\n\nHow far back\nAll inbox \u00b7 174\n30 days+ \u00b7 120\n3 months+ \u00b7 64\n6 months+ \u00b7 31\n1 year+ \u00b7 9\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 174\nCancel\nUses 1 of your 34 cleanup actions left this month.",
       "escaped": [],
       "headings": [
         {
@@ -3677,7 +3677,7 @@
     "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
     "renderedContent": true,
     "mobile": {
-      "bodyText": "Gmail accounts\nC\nchintan.a.thakkar@gmail.com\nSynced 4m ago\nActive\nReady\nC\nchintan.a.thakkar.crypt@gmail.com\nSynced 3h ago\nReady\nAdd Gmail account",
+      "bodyText": "Gmail accounts\nC\nfixture-mailbox-1@synthetic.test\nSynced 4m ago\nActive\nReady\nC\nfixture-mailbox-3@synthetic.test\nSynced 3h ago\nReady\nAdd Gmail account",
       "escaped": [],
       "headings": [
         {

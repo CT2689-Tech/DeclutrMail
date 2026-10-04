@@ -1,0 +1,11 @@
+✔ no tracked file carries a personal email address (942.763667ms)
+✔ a real-looking address is caught; placeholders and business senders are not (0.135292ms)
+✔ the scan refuses to report clean when it cannot see the files (27.061375ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1015.67075

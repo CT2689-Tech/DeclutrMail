@@ -318,12 +318,22 @@
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
-      "sha256": "a88d7c8a5de9a3eeb2a6a40e6c86ecbb40c58460ceb80aa43b04a04232c8879e"
+      "sha256": "3876b05146da224fb5b48012c73b1e29d73d4ce0104984d7a46746d61f7f2280"
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after/story-summary.json",
       "sha256": "82ecb743c59e063c66350de2c1f4bc9180a87b0d68013f7e3373dc897ddf1283"
     }
   ],
-  "logNormalization": "Workspace paths replaced; terminal ANSI escapes and trailing whitespace removed. Results/errors retained; original raw logs remain local."
+  "logNormalization": "Workspace paths replaced; terminal ANSI escapes and trailing whitespace removed. Results/errors retained; original raw logs remain local.",
+  "evidenceNormalization": {
+    "reason": "D7 repository consumer-address guard caught escaped-newline prefixes on allowlisted existing Storybook mailbox fixtures. Decode JSON strings, project those consumer addresses to synthetic.test aliases, then serialize. No guard/allowlist change.",
+    "files": ["after/story-browser.json", "story-browser-resumed.json"],
+    "counts": {
+      "addressOccurrencesProjected": 8,
+      "distinctFixtureAddresses": 3
+    },
+    "preserved": "Story IDs, results, counts, violations, fixture/source provenance, capture scope and baseline findings unchanged. No mailbox dropdown PNG was selected in the40 archived representative captures.",
+    "date": "2026-10-03"
+  }
 }

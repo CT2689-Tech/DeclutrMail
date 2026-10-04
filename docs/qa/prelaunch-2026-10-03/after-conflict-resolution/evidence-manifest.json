@@ -1,11 +1,19 @@
 {
-  "phase": "Actual conflict resolution against main e267f759; prior evidence manifests unchanged",
+  "phase": "Actual conflict resolution against main e267f759; final CI consumer assertion and evidence corrections recorded separately; product/browser-test provenance retained",
   "sourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
   "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
   "integratedMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
   "logNormalization": "ANSI, trailing whitespace and trailing blank lines removed; workspace paths normalized; no result lines removed.",
   "screenshots": "Selected scrolled Privacy inventory viewports; existing fresh-user first-heard survey may cover lower area; behavior/DOM records separately cover named controls.",
   "files": [
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-evidence-address-normalization.json",
+      "sha256": "bb4661902f00b89238e053a33d6be9b28c4164440901034b64a06565d56588de"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-methodology-test-alignment.json",
+      "sha256": "82e41a811da2de75ed4427da95986a9913201a6d523d0d7b734cd56d3fe041d0"
+    },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json",
       "sha256": "fec25a75297982d76cb3c6915a1e8a7a8e75c0126b560dfa451eb8778cbed97f"
@@ -20,7 +28,7 @@
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-summary.json",
-      "sha256": "db4e9113432bc855c97ec0f8213297166901b5283b89c783aa5f2c37d66f9583"
+      "sha256": "c975c9efe2012a844d6d732a0638be8669327acdd5ddb87789b27f6f1f6b5075"
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-proof-plan.json",
@@ -29,6 +37,34 @@
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log",
       "sha256": "555f0d58bcb5822f416788e08404ac8cc91876bd0fe7d08d44c1655a1ba98fc2"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-canonical.log",
+      "sha256": "61976cff27f3f89c7e1e99539ccd1f6e4f275a610a0c51ffeeb656b0ad1fd96a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-typecheck.log",
+      "sha256": "d6327d62d4495c2b430a5bd1e820c74beef77f0cb02a2e19f970e30f8f84b57e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/ci-methodology-web.log",
+      "sha256": "17666a9bec77972f75e4fdcb6a9384028358b4a69833c2dec76c62dd9cc30144"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-guard-hooks.log",
+      "sha256": "9eb8dbe66e6371686123a0cfb4dcafd73a07e61f91534dbb546d8e3b48846063"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-icon-check.log",
+      "sha256": "291da75db7a7002302791d412a09ab36508c825a75f8d97bb5581f1587d02edb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/final-lint-remaining-contracts.log",
+      "sha256": "6900548e46061aaf634f9a407e0a10e3bbd8db7f2f6bc284012986f21ba823a7"
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log",
@@ -89,6 +125,10 @@
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log",
       "sha256": "516f15f07b32855bd84aad1072bf9bd9b339b0afe26172af30eded1f72856207"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/personal-email-guard-final.log",
+      "sha256": "84f9ed2a1a7b891113e5faab2ba1cef1efb8f7bd36a9152ecc005b66ced16c5f"
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/privacy-latest-browser.log",

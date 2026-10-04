@@ -1,0 +1,13 @@
+
+> declutrmail@0.0.0 check:icons [workspace]
+> node scripts/generate-brand-icons.mjs --check
+
+✓ current   apps/web/src/app/icon.svg
+✓ current   apps/web/src/app/favicon.ico
+✓ current   apps/web/src/app/apple-icon.png
+✓ current   apps/web/public/icons/icon-192.png
+✓ current   apps/web/public/icons/icon-512.png
+✓ current   apps/web/public/icons/icon-512-maskable.png
+✓ current   docs/brand/oauth-consent-logo-120.png
+
+All brand assets match the geometry in ADR-0036.

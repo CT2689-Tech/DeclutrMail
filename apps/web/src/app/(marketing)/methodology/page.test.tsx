@@ -47,7 +47,9 @@ describe('/methodology', () => {
     const copy = container.textContent ?? '';
 
     expect(copy).toContain('If that preview cannot load, the action cannot run');
-    expect(copy).toContain('Activity records the result');
+    expect(copy).toContain(
+      'Activity shows running actions and confirmed outcomes, with Undo when available.',
+    );
     expect(copy).toContain('Once a one-click request is delivered, DeclutrMail cannot recall it');
     expect(copy).toContain('A manual decision does not create an automatic rule');
     expect(copy).toContain('only rules you deliberately turn on');

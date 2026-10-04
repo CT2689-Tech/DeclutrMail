@@ -209,7 +209,7 @@
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
-      "sha256": "d97a513b6fb59b64f4b948ec7adee13af587e5d8d0ce85f9e277ea616e59d1af"
+      "sha256": "3d163499145952c782e6bb888c62d5c8320a901ab971270d6fc9e038983b1f20"
     },
     {
       "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/final-home-baseline.png",
@@ -228,5 +228,6 @@
       "sha256": "553675c415826693680e6191b375dc23c7c1a1c4ff249b764b339c3fe136e336"
     }
   ],
-  "logNormalization": "Terminal ANSI and trailing whitespace removed; workspace paths normalized; trailing blank lines trimmed. No result lines removed."
+  "logNormalization": "Terminal ANSI and trailing whitespace removed; workspace paths normalized; trailing blank lines trimmed. No result lines removed.",
+  "publicationPointerCorrection": "Privacy negativeControl.evidence now points to the original failing budget log; only the metadata pointer changed."
 }
