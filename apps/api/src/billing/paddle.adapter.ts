@@ -188,6 +188,7 @@ const UNDONE_STATUSES = new Set(['rejected', 'reversed']);
 
 /** The adjustment fields that decide whether a plan ends (API v2). */
 interface PaddleAdjustment {
+  type?: string;
   action?: string;
   status?: string;
   subscription_id?: string | null;
@@ -203,10 +204,11 @@ interface PaddleAdjustment {
  * treating both as an exit ended the plan of a customer who was being
  * apologised to.
  *
- * Keyed on the ITEM types, not the adjustment's own `type`: Paddle
- * defaults `type` to `partial`, and a dashboard full-amount refund can
- * arrive as `partial` with every item marked `full`. Any item explicitly
- * marked `partial` is the one shape that can only mean a part-refund.
+ * An explicit adjustment-level `full` covers the entire transaction,
+ * even when a prorated upgrade is represented by a `partial` item.
+ * Otherwise preserve the item-level fallback: Paddle defaults `type`
+ * to `partial`, and dashboard full-amount refunds can have all-full
+ * items. A partial item without overall full coverage is not an exit.
  * Everything else — including a payload we cannot read — revokes,
  * because failing to revoke a real refund is the worse error of the two.
  * Chargebacks are never filtered: Paddle raises them itself.
@@ -219,6 +221,7 @@ interface PaddleAdjustment {
 function endsSubscription(adjustment: PaddleAdjustment): boolean {
   if (adjustment.action === 'chargeback') return true;
   if (adjustment.action !== 'refund') return false;
+  if (adjustment.type === 'full') return true;
   return !(adjustment.items ?? []).some((i) => i?.type === 'partial');
 }
 

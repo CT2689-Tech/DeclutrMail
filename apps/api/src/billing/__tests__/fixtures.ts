@@ -146,7 +146,9 @@ export function paddleAdjustmentCreated(args: {
   eventId?: string;
   action?: string;
   subscriptionId?: string | null;
-  /** Item-level adjustment types. Any `partial` marks a part-refund. */
+  /** Adjustment-level coverage; full may contain prorated partial items. */
+  adjustmentType?: 'full' | 'partial';
+  /** Item-level coverage is the fallback when the overall type is not full. */
   itemTypes?: string[];
 }): Record<string, unknown> {
   return {
@@ -156,6 +158,7 @@ export function paddleAdjustmentCreated(args: {
     data: {
       id: 'adj_01paddle000001',
       action: args.action ?? 'refund',
+      type: args.adjustmentType ?? 'partial',
       transaction_id: 'txn_01paddle000001',
       subscription_id:
         args.subscriptionId === undefined ? 'sub_01paddle000001' : args.subscriptionId,
@@ -174,6 +177,7 @@ export function paddleAdjustmentCreated(args: {
 export function paddleAdjustmentUpdated(args: {
   eventId?: string;
   status: 'approved' | 'rejected' | 'pending_approval';
+  adjustmentType?: 'full' | 'partial';
   action?: string;
   subscriptionId?: string | null;
   itemTypes?: string[];
@@ -181,6 +185,7 @@ export function paddleAdjustmentUpdated(args: {
   const created = paddleAdjustmentCreated({
     eventId: args.eventId ?? 'evt_01paddle_adj_updated',
     ...(args.action !== undefined ? { action: args.action } : {}),
+    ...(args.adjustmentType !== undefined ? { adjustmentType: args.adjustmentType } : {}),
     ...(args.subscriptionId !== undefined ? { subscriptionId: args.subscriptionId } : {}),
     ...(args.itemTypes !== undefined ? { itemTypes: args.itemTypes } : {}),
   });
