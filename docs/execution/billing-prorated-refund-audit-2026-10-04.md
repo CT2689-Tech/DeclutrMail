@@ -38,8 +38,22 @@ the existing refund lifecycle for that provider-reported full transaction.
 - Database integration exercises rejection recovery, approved settlement,
   workspace Free entitlement and duplicate handling. Existing partial-refund
   controls remain in the same suites.
-- Full billing tests, workspace typecheck/lint, independent architecture and
-  adversarial lifecycle review: pending at initial record creation.
+- Focused adapter/database-webhook suites: 132/132 passed. Workspace typecheck,
+  lint, formatting and diff checks passed; six existing lint warnings remain.
+  Independent architecture/adversarial review found no blockers. Applicable PR
+  CI, including both API shards, passed on the implementation commit.
+- A broad local billing run stalled and was stopped; it is not a passing run.
+- Fresh read of the actual approved full/partial-item sandbox adjustment maps to
+  `refund_settled` using the repaired adapter.
+- Signed HTTP smoke through the actual API controller/projector and local
+  PostgreSQL, with candidate adapter hash verified: actual provider adjustment
+  data in synthetic event envelopes exercises partial control → created grace
+  (Pro retained) → full approval (Free/canceled) → duplicate (no additional
+  effect). Exactly three processed event rows were observed. Material fixture
+  state was restored and test events removed; the local workspace update
+  timestamp advanced through its trigger. No original refund was used to settle
+  this isolated upgraded-refund sequence. This is provider-shaped replay,
+  not a fresh upgrade-only purchase or provider-issued event delivery.
 - Actual first purchase and upgrade refunds both settled. The original purchase
   refund made the browser show Free, so it masks the upgraded-only terminal
   outcome; do not present that as independent runtime proof of the new fix.
@@ -51,7 +65,9 @@ the existing refund lifecycle for that provider-reported full transaction.
 The approved original refund made the local row canceled/Free while the provider
 remained active with no cancellation schedule. The verdict enforcement pass
 excludes canceled rows; the settled-refund watcher only alerts. Provider renewal
-convergence remains an open blocker and needs a separately verified repair.
+convergence is repaired separately in PR889: the actual sandbox service restored
+the same old cancellation boundary without changing local terminal state, and
+a repeat sweep made no write. Integration/deployment remain separate states.
 
 Useful billing improvements observed in the broader sandbox pass: disclose
 immediate Free access before pause; show the actual refund grace deadline;
