@@ -695,6 +695,7 @@ export class BillingService {
         scheduledProviderPriceId: subscriptions.scheduledProviderPriceId,
         scheduledChangeAt: subscriptions.scheduledChangeAt,
         scheduledChangeState: subscriptions.scheduledChangeState,
+        scheduledChangeRequestedAt: subscriptions.scheduledChangeRequestedAt,
       })
       .from(subscriptions)
       .where(
@@ -756,9 +757,17 @@ export class BillingService {
       (sub.tier === 'pro' && dto.tierId === 'plus') ||
       (sub.tier === dto.tierId && sub.billingCycle === 'annual' && dto.cycle === 'monthly');
     if (isDowngrade) {
+      if (!sub.currentPeriodEnd) throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      if (sub.currentPeriodEnd.getTime() - Date.now() <= 30 * 60_000) {
+        throw new AppException({ code: 'PLAN_CHANGE_TOO_LATE' });
+      }
+      await this.adapterFor(sub.provider).previewPlanChange(sub.providerSubscriptionId, priceId, {
+        kind: 'next_period_no_proration',
+        effectiveAt: sub.currentPeriodEnd.toISOString(),
+      });
       return {
         kind: 'deferred',
-        effectiveAt: sub.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
+        effectiveAt: sub.currentPeriodEnd.toISOString(),
       };
     }
     const preview = await this.adapterFor(sub.provider).previewPlanChange(
@@ -786,13 +795,17 @@ export class BillingService {
       if (!sub.scheduledChangeAt) {
         throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
       }
-      // Same renewal-boundary window as scheduling: pinning
-      // `next_billed_at` at (or past) the boundary is a guaranteed
-      // provider 4xx — refuse cleanly instead. After renewal the user
-      // can upgrade again through the normal picker.
+      // Same renewal-boundary window as scheduling: avoid racing the
+      // provider renewal while restoring its items. After renewal the
+      // user can upgrade again through the normal picker.
       if (sub.scheduledChangeAt.getTime() - Date.now() <= 30 * 60_000) {
         throw new AppException({ code: 'PLAN_CHANGE_TOO_LATE' });
       }
+      await this.adapterFor(sub.provider).previewPlanChange(
+        sub.providerSubscriptionId,
+        sub.providerPriceId,
+        { kind: 'next_period_no_proration', effectiveAt: sub.scheduledChangeAt.toISOString() },
+      );
       const now = new Date();
       await this.db.transaction(async (tx) => {
         await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
@@ -943,6 +956,32 @@ export class BillingService {
       }
       if (sub.scheduledChangeState !== null && !sameScheduledTarget) {
         throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+      }
+
+      // Preflight before writing a mask: a failed read must not erase a
+      // prior ambiguous provider attempt or another request's pending state.
+      await this.adapterFor(sub.provider).previewPlanChange(sub.providerSubscriptionId, priceId, {
+        kind: 'next_period_no_proration',
+        effectiveAt: changeAt.toISOString(),
+      });
+      if (sub.scheduledChangeState !== null) {
+        await this.db.transaction(async (tx) => {
+          await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+          if (!sub.scheduledChangeRequestedAt)
+            throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+          const [pending] = await tx
+            .select({ id: subscriptions.id })
+            .from(subscriptions)
+            .where(
+              and(
+                eq(subscriptions.id, sub.id),
+                eq(subscriptions.scheduledChangeState, 'pending_provider'),
+                eq(subscriptions.scheduledProviderPriceId, priceId),
+                eq(subscriptions.scheduledChangeRequestedAt, sub.scheduledChangeRequestedAt),
+              ),
+            );
+          if (!pending) throw new AppException({ code: 'PLAN_CHANGE_PENDING' });
+        });
       }
 
       if (sub.scheduledChangeState === null) {

@@ -797,37 +797,145 @@ describe('PaddleAdapter checkout + cancel', () => {
     });
   });
 
-  it('changePlan schedules downgrades with no immediate bill and pins the renewal date', async () => {
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: {
-            updated_at: '2026-07-20T12:00:00.000Z',
-            items: [{ price: { id: 'pri_plus_m' } }],
-          },
-        }),
-        { status: 200 },
-      ),
-    );
+  it('deferred preview validates the renewal separately from the no-bill item update', async () => {
+    const effectiveAt = '2026-08-20T12:00:00.000Z';
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ data: { next_billed_at: effectiveAt, update_summary: null } }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            data: {
+              updated_at: '2026-07-20T12:00:00.000Z',
+              items: [{ price: { id: 'pri_plus_m' } }],
+            },
+          }),
+          { status: 200 },
+        ),
+      );
     vi.stubGlobal('fetch', fetchSpy);
     const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
-    const effectiveAt = '2026-08-20T12:00:00.000Z';
 
+    await adapter.previewPlanChange('sub_downgrade', 'pri_plus_m', {
+      kind: 'next_period_no_proration',
+      effectiveAt,
+    });
     const result = await adapter.changePlan('sub_downgrade', 'pri_plus_m', {
       kind: 'next_period_no_proration',
       effectiveAt,
     });
 
-    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(String(init.body))).toEqual({
-      items: [{ price_id: 'pri_plus_m', quantity: 1 }],
-      proration_billing_mode: 'do_not_bill',
-      next_billed_at: effectiveAt,
-    });
+    expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+      'https://sandbox-api.paddle.com/subscriptions/sub_downgrade/preview',
+      'https://sandbox-api.paddle.com/subscriptions/sub_downgrade',
+    ]);
+    for (const [, init] of fetchSpy.mock.calls as [string, RequestInit][]) {
+      expect(JSON.parse(String(init.body))).toEqual({
+        items: [{ price_id: 'pri_plus_m', quantity: 1 }],
+        proration_billing_mode: 'do_not_bill',
+      });
+    }
     expect(result).toEqual({
       providerPriceId: 'pri_plus_m',
       providerUpdatedAt: '2026-07-20T12:00:00.000Z',
     });
+  });
+
+  it.each([
+    { next_billed_at: '2027-08-20T12:00:00.000Z', update_summary: null },
+    { next_billed_at: '2026-08-20T12:00:00.000Z' },
+    { next_billed_at: '2026-08-20T12:00:00.000Z', update_summary: {} },
+    {
+      next_billed_at: '2026-08-20T12:00:00.000Z',
+      update_summary: { result: { action: 'charge', amount: 0, currency_code: 'USD' } },
+    },
+    { next_billed_at: null },
+    { next_billed_at: 'invalid' },
+    {
+      next_billed_at: '2026-08-20T12:00:00.000Z',
+      update_summary: { result: { action: 'charge', amount: '100', currency_code: 'USD' } },
+    },
+    {
+      next_billed_at: '2026-08-20T12:00:00.000Z',
+      update_summary: { result: { action: 'credit', amount: '-100', currency_code: 'USD' } },
+    },
+  ])(
+    'refuses a deferred update when the preview violates the paid-period contract: %j',
+    async (data) => {
+      const fetchSpy = vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ data }), { status: 200 }));
+      vi.stubGlobal('fetch', fetchSpy);
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).previewPlanChange(
+          'sub_deferred',
+          'pri_plus_a',
+          {
+            kind: 'next_period_no_proration',
+            effectiveAt: '2026-08-20T12:00:00.000Z',
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: 'PLAN_CHANGE_UNSUPPORTED',
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(fetchSpy.mock.calls[0]?.[0]).toMatch(/\/preview$/);
+    },
+  );
+
+  it.each(['charge', 'credit'])(
+    'accepts an explicit zero %s while preserving renewal',
+    async (action) => {
+      const nextBilledAt = '2026-08-20T12:00:00.000Z';
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              data: {
+                next_billed_at: nextBilledAt,
+                update_summary: { result: { action, amount: '0', currency_code: 'USD' } },
+              },
+            }),
+            { status: 200 },
+          ),
+        ),
+      );
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).previewPlanChange(
+          'sub_zero',
+          'pri_plus_m',
+          {
+            kind: 'next_period_no_proration',
+            effectiveAt: nextBilledAt,
+          },
+        ),
+      ).resolves.toEqual({ result: { action, amount: '0', currencyCode: 'USD' }, nextBilledAt });
+    },
+  );
+
+  it('a failed deferred preview returns the provider error without attempting a mutation', async () => {
+    const fetchSpy = vi.fn().mockRejectedValue(new Error('ECONNRESET'));
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(
+      makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).previewPlanChange(
+        'sub_deferred',
+        'pri_plus_m',
+        {
+          kind: 'next_period_no_proration',
+          effectiveAt: '2026-08-20T12:00:00.000Z',
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toMatch(/\/preview$/);
   });
 
   it('previewPlanChange hits the read-only preview endpoint and returns the update summary', async () => {

@@ -780,7 +780,7 @@ describe('BillingService', () => {
       expect(result.subscription).toMatchObject({ tier: 'plus', cycle: 'monthly' });
     });
 
-    it('planChangePreview: upgrade previews via the provider; downgrade/same-plan never call it', async () => {
+    it('planChangePreview: provider validates upgrades and downgrades; same-plan skips it', async () => {
       await seedActivePlus();
       paddlePreviewPlanChange.mockResolvedValueOnce({
         result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
@@ -803,7 +803,7 @@ describe('BillingService', () => {
       });
       expect(same).toEqual({ kind: 'none' });
 
-      // Downgrade — deferred to period end, still no provider call.
+      // Downgrade — provider must verify retaining the paid-through boundary.
       paddlePreviewPlanChange.mockClear();
       await db
         .update(subscriptions)
@@ -827,7 +827,30 @@ describe('BillingService', () => {
         kind: 'deferred',
         effectiveAt: DEFERRED_PERIOD_END.toISOString(),
       });
-      expect(paddlePreviewPlanChange).not.toHaveBeenCalled();
+      expect(paddlePreviewPlanChange).toHaveBeenCalledWith('sub_change_me', 'pri_plus_m', {
+        kind: 'next_period_no_proration',
+        effectiveAt: DEFERRED_PERIOD_END.toISOString(),
+      });
+    });
+
+    it('downgrade preview surfaces provider refusal without promising a deferred plan or writing state', async () => {
+      await seedActivePlus();
+      await db.update(subscriptions).set({
+        tier: 'pro',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: DEFERRED_PERIOD_END,
+      });
+      paddlePreviewPlanChange.mockRejectedValueOnce(
+        new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' }),
+      );
+      await expect(
+        service.planChangePreview(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.scheduledChangeState).toBeNull();
+      expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
     });
 
     it('refuses a downgrade scheduled too close to renewal (PLAN_CHANGE_TOO_LATE)', async () => {
@@ -918,6 +941,159 @@ describe('BillingService', () => {
       const [sub] = await db.select().from(subscriptions);
       expect(sub?.scheduledChangeState).toBeNull();
       expect(sub?.scheduledTier).toBeNull();
+    });
+
+    it.each([null, 'pending_provider'] as const)(
+      'preserves prior schedule state %s when the provider write was not attempted',
+      async (prior) => {
+        await db.insert(subscriptions).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_preflight_schedule',
+          tier: 'pro',
+          status: 'active',
+          providerPriceId: 'pri_pro_a',
+          billingCycle: 'annual',
+          currentPeriodEnd: DEFERRED_PERIOD_END,
+          ...(prior
+            ? {
+                scheduledTier: 'plus' as const,
+                scheduledBillingCycle: 'monthly' as const,
+                scheduledProviderPriceId: 'pri_plus_m',
+                scheduledChangeAt: DEFERRED_PERIOD_END,
+                scheduledChangeState: prior,
+                scheduledChangeRequestedAt: new Date(),
+              }
+            : {}),
+        });
+        paddlePreviewPlanChange.mockRejectedValueOnce(
+          new AppException({
+            code: 'PLAN_CHANGE_UNSUPPORTED',
+          }),
+        );
+        await expect(
+          service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+        ).rejects.toMatchObject({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+        const [sub] = await db.select().from(subscriptions);
+        expect(sub?.scheduledChangeState).toBe(prior);
+        expect(sub?.scheduledTier).toBe(prior ? 'plus' : null);
+        expect(sub?.tier).toBe('pro');
+        expect(paddleChangePlan).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['scheduled', 'pending_provider', 'restoring_current'] as const)(
+      'preserves prior restore state %s when a retry cannot perform its preview',
+      async (prior) => {
+        await db.insert(subscriptions).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_preflight_restore',
+          tier: 'pro',
+          status: 'active',
+          providerPriceId: 'pri_pro_a',
+          billingCycle: 'annual',
+          currentPeriodEnd: DEFERRED_PERIOD_END,
+          scheduledTier: 'plus',
+          scheduledBillingCycle: 'monthly',
+          scheduledProviderPriceId: 'pri_plus_m',
+          scheduledChangeAt: DEFERRED_PERIOD_END,
+          scheduledChangeState: prior,
+          scheduledChangeRequestedAt: new Date(),
+        });
+        paddlePreviewPlanChange.mockRejectedValueOnce(
+          new AppException({
+            code: 'BILLING_PROVIDER_ERROR',
+          }),
+        );
+        await expect(
+          service.changePlan(principal, { tierId: 'pro', cycle: 'annual' }),
+        ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+        const [sub] = await db.select().from(subscriptions);
+        expect(sub?.scheduledChangeState).toBe(prior);
+        expect(sub?.scheduledTier).toBe('plus');
+        expect(sub?.tier).toBe('pro');
+        expect(paddleChangePlan).not.toHaveBeenCalled();
+      },
+    );
+
+    it('retries the same pending target when its durable claim is still current', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_valid_retry',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: DEFERRED_PERIOD_END,
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: 'pri_plus_m',
+        scheduledChangeAt: DEFERRED_PERIOD_END,
+        scheduledChangeState: 'pending_provider',
+        scheduledChangeRequestedAt: new Date(),
+      });
+      const result = await service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
+      expect(result.subscription?.scheduledChange?.state).toBe('scheduled');
+      expect(paddleChangePlan).toHaveBeenCalledTimes(1);
+      expect(paddleChangePlan).toHaveBeenCalledWith('sub_valid_retry', 'pri_plus_m', {
+        kind: 'next_period_no_proration',
+        effectiveAt: DEFERRED_PERIOD_END.toISOString(),
+      });
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.tier).toBe('pro');
+    });
+
+    it('refuses a stale pending retry after Keep current clears the schedule during its preview', async () => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_stale_retry',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: DEFERRED_PERIOD_END,
+        scheduledTier: 'plus',
+        scheduledBillingCycle: 'monthly',
+        scheduledProviderPriceId: 'pri_plus_m',
+        scheduledChangeAt: DEFERRED_PERIOD_END,
+        scheduledChangeState: 'pending_provider',
+        scheduledChangeRequestedAt: new Date(),
+      });
+      let releasePreview!: () => void;
+      let signalPreview!: () => void;
+      const previewStarted = new Promise<void>((resolve) => {
+        signalPreview = resolve;
+      });
+      const previewReleased = new Promise<void>((resolve) => {
+        releasePreview = resolve;
+      });
+      paddlePreviewPlanChange.mockImplementationOnce(async () => {
+        signalPreview();
+        await previewReleased;
+        return { result: null, nextBilledAt: DEFERRED_PERIOD_END.toISOString() };
+      });
+      paddleChangePlan.mockResolvedValueOnce({
+        providerPriceId: 'pri_pro_a',
+        providerUpdatedAt: new Date().toISOString(),
+      });
+      const retry = service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' });
+      const retryOutcome = retry.then(
+        () => 'unexpected success',
+        (error: AppException) => error.code,
+      );
+      await previewStarted;
+      const restored = await service.changePlan(principal, { tierId: 'pro', cycle: 'annual' });
+      expect(restored.subscription?.scheduledChange).toBeNull();
+      releasePreview();
+      expect(await retryOutcome).toBe('PLAN_CHANGE_PENDING');
+      expect(paddleChangePlan).toHaveBeenCalledTimes(1);
+      expect(paddleChangePlan.mock.calls[0]?.[1]).toBe('pri_pro_a');
+      const [sub] = await db.select().from(subscriptions);
+      expect(sub?.scheduledChangeState).toBeNull();
+      expect(sub?.tier).toBe('pro');
     });
 
     it('retains the mask after an ambiguous provider timeout', async () => {

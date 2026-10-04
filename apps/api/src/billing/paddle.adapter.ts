@@ -459,7 +459,7 @@ export class PaddleAdapter implements BillingProvider {
   /**
    * PATCH /subscriptions/{id} — swap the single line item to the new
    * price. Upgrades use `prorated_immediately`; scheduled downgrades use
-   * `do_not_bill` and pin the existing renewal date. The webhook
+   * `do_not_bill` after verifying the existing renewal date is retained. The webhook
    * projector masks that provider-side item swap until period end.
    */
   async changePlan(
@@ -486,9 +486,6 @@ export class PaddleAdapter implements BillingProvider {
             items: [{ price_id: providerPriceId, quantity: 1 }],
             proration_billing_mode:
               timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
-            ...(timing.kind === 'next_period_no_proration'
-              ? { next_billed_at: timing.effectiveAt }
-              : {}),
           }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
         },
@@ -563,9 +560,6 @@ export class PaddleAdapter implements BillingProvider {
             items: [{ price_id: providerPriceId, quantity: 1 }],
             proration_billing_mode:
               timing.kind === 'immediate_prorated' ? 'prorated_immediately' : 'do_not_bill',
-            ...(timing.kind === 'next_period_no_proration'
-              ? { next_billed_at: timing.effectiveAt }
-              : {}),
           }),
           signal: AbortSignal.timeout(API_TIMEOUT_MS),
         },
@@ -588,11 +582,29 @@ export class PaddleAdapter implements BillingProvider {
           next_billed_at?: unknown;
           update_summary?: {
             result?: { action?: unknown; amount?: unknown; currency_code?: unknown };
-          };
+          } | null;
         };
       };
       const r = body.data?.update_summary?.result;
       const nextBilledAt = body.data?.next_billed_at;
+      if (timing.kind === 'next_period_no_proration') {
+        const expected = Date.parse(timing.effectiveAt);
+        const actual = typeof nextBilledAt === 'string' ? Date.parse(nextBilledAt) : NaN;
+        // Paddle forbids combining item and billing-date updates. Same-cycle
+        // do_not_bill retains the boundary; cross-cycle swaps can move it.
+        // Null is Paddle's explicit no-immediate-bill summary, not an absent
+        // or malformed field silently rounded into zero.
+        const noBill =
+          body.data?.update_summary === null ||
+          (r &&
+            (r.action === 'charge' || r.action === 'credit') &&
+            typeof r.amount === 'string' &&
+            /^0+$/.test(r.amount) &&
+            typeof r.currency_code === 'string');
+        if (!Number.isFinite(expected) || actual !== expected || !noBill) {
+          throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+        }
+      }
       return {
         result:
           r &&
@@ -603,7 +615,11 @@ export class PaddleAdapter implements BillingProvider {
             : null,
         nextBilledAt: typeof nextBilledAt === 'string' ? nextBilledAt : null,
       };
-    } catch {
+    } catch (err) {
+      if (err instanceof AppException) throw err;
+      if (timing.kind === 'next_period_no_proration') {
+        throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
+      }
       return { result: null, nextBilledAt: null };
     }
   }
