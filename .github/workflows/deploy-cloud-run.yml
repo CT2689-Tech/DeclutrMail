@@ -99,8 +99,8 @@ env:
   # taking rather than a reason to avoid it.
   WORKER_REGION: us-west1
   REPO: declutrmail
-  # Explicit selector: update only after the approved driver rollout completes.
-  API_DB_DRIVER: postgres-js
+  # Match the verified HTTP API rollout; the worker keeps its existing driver.
+  API_DB_DRIVER: node-postgres
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.
   RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
