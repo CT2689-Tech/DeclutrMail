@@ -56,6 +56,7 @@ import { SuggestionGroup } from './suggestion-group';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { useHydrated } from '@/lib/use-hydrated';
 import type {
   AutopilotScreenState,
   RulePreviewState,
@@ -107,6 +108,7 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  * only; the API rejects `is_preset=false`.
  */
 export function AutopilotRoute() {
+  const hydrated = useHydrated();
   const mailboxId = useOptionalAuth()?.me.activeMailboxId ?? null;
   const [pages, setPages] = useState<{ mailboxId: string | null; cursors: string[] }>({
     mailboxId,
@@ -135,9 +137,12 @@ export function AutopilotRoute() {
       return { kind: 'error', message: loadErrorDescription(err), retry };
     }
     const rules = rulesQuery.data ?? [];
-    const matches = suggestionsQuery.data?.data ?? [];
+    // Streamed promises can settle during HTML delivery. Keep the first
+    // browser render identical to SSR; adopt optional data after hydration.
+    const matches = hydrated ? (suggestionsQuery.data?.data ?? []) : [];
+    const patternSuggestion = hydrated ? (patternQuery.data ?? null) : null;
     if (rules.length === 0 && matches.length === 0) {
-      return { kind: 'empty', rules, patternSuggestion: patternQuery.data ?? null };
+      return { kind: 'empty', rules, patternSuggestion };
     }
     const ruleById = new Map<string, AutopilotRuleDto>();
     for (const r of rules) ruleById.set(r.id, r);
@@ -145,7 +150,7 @@ export function AutopilotRoute() {
       match: m,
       rule: ruleById.get(m.ruleId) ?? null,
     }));
-    return { kind: 'ready', rules, suggestions, patternSuggestion: patternQuery.data ?? null };
+    return { kind: 'ready', rules, suggestions, patternSuggestion };
   }, [
     rulesQuery.isLoading,
     rulesQuery.isError,
@@ -159,6 +164,7 @@ export function AutopilotRoute() {
     patternQuery.isError,
     patternQuery.error,
     patternQuery.data,
+    hydrated,
     retry,
   ]);
 
@@ -167,8 +173,8 @@ export function AutopilotRoute() {
       state={state}
       pendingPagination={{
         pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
-        total: suggestionsQuery.data?.meta?.total ?? null,
-        hasNext: suggestionsQuery.data?.meta?.pagination?.hasMore ?? false,
+        total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
+        hasNext: hydrated ? (suggestionsQuery.data?.meta?.pagination?.hasMore ?? false) : false,
         hasPrevious: cursors.length > 0,
         loading: suggestionsQuery.isFetching,
         onNext: () => {
@@ -178,8 +184,10 @@ export function AutopilotRoute() {
         onPrevious: () => setPages({ mailboxId, cursors: cursors.slice(0, -1) }),
         onNewest: () => setPages({ mailboxId, cursors: [] }),
       }}
-      suggestionsState={sectionState(suggestionsQuery, refetchSuggestions)}
-      patternState={sectionState(patternQuery, refetchPattern)}
+      suggestionsState={
+        hydrated ? sectionState(suggestionsQuery, refetchSuggestions) : { kind: 'loading' }
+      }
+      patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
     />
   );
 }

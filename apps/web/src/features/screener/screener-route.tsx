@@ -4,6 +4,7 @@ import { TierGate } from '@/features/billing/tier-gate';
 import { useScreenerCount, useScreenerQueue } from './api/use-screener';
 import { composeScreenerState } from './compose-state';
 import { ScreenerScreen } from './screener-screen';
+import { useHydrated } from '@/lib/use-hydrated';
 
 /**
  * Under-tier copy for /screener. Honours D194: the Screener COLLECTS
@@ -39,6 +40,7 @@ export function ScreenerRoute() {
 }
 
 function ScreenerQueueRoute() {
+  const hydrated = useHydrated();
   const queue = useScreenerQueue();
   const count = useScreenerCount();
   const state = composeScreenerState({
@@ -48,10 +50,12 @@ function ScreenerQueueRoute() {
     error: queue.error,
     retry: () => void queue.refetch(),
   });
+  // The sidebar can populate this shared count before the route hydrates.
+  // SSR and the matching first browser render must both omit the live total.
   return (
     <ScreenerScreen
       state={state}
-      totalPending={count.data?.pending ?? null}
+      totalPending={hydrated ? (count.data?.pending ?? null) : null}
       refreshFailed={queue.isError && queue.data !== undefined}
       onRefresh={() => void queue.refetch()}
     />

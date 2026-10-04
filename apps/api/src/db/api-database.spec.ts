@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { Client, type Pool } from 'pg';
 import type { ConnectionOptions } from 'node:tls';
+import { X509Certificate } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiDbDriver, createApiDatabase, nodePostgresPoolOptions } from './api-database.js';
 import { DbModule, DRIZZLE } from './db.module.js';
@@ -88,6 +91,77 @@ describe('API adapter selection and ownership', () => {
       await closing;
     },
   );
+  it('loads the pinned public CA only for production Supabase connections, with hostname verification', () => {
+    const certificatePath = fileURLToPath(
+      new URL('../../certificates/supabase-root-2021.crt', import.meta.url),
+    );
+    const certificate = readFileSync(certificatePath, 'utf8');
+    const x509 = new X509Certificate(certificate);
+    expect(x509.ca).toBe(true);
+    expect(x509.fingerprint256.replaceAll(':', '').toLowerCase()).toBe(
+      '807025ad50d4ed219d2c9c7d299c004f824eb00cf7f65afef607d07b72e6cafa',
+    );
+    expect(Date.parse(x509.validTo)).toBeGreaterThan(Date.now());
+    for (const host of ['aws-0-us-west-1.pooler.supabase.com', 'db.syntheticproject.supabase.co']) {
+      const base = `postgres://synthetic:local@${host}/db`;
+      const options = nodePostgresPoolOptions({ NODE_ENV: 'production', DATABASE_URL: base });
+      expect(new URL(options.connectionString).searchParams.get('sslrootcert')).toBe(
+        certificatePath,
+      );
+      const ssl = new Client(options).ssl as unknown as ConnectionOptions;
+      expect(ssl.ca?.toString()).toBe(certificate);
+      expect(ssl.rejectUnauthorized).not.toBe(false);
+      expect(ssl.checkServerIdentity).toBeUndefined();
+      expect(new URL(options.connectionString).searchParams.get('sslmode')).toBe('verify-full');
+      expect(
+        nodePostgresPoolOptions({ NODE_ENV: 'test', DATABASE_URL: base }).connectionString,
+      ).toBe(base);
+    }
+    for (const host of [
+      'localhost',
+      'example.test',
+      'db.syntheticproject.supabase.co.attacker.test',
+      'pooler.supabase.com.attacker.test',
+    ]) {
+      const options = nodePostgresPoolOptions({
+        NODE_ENV: 'production',
+        DATABASE_URL: `postgres://synthetic:local@${host}/db`,
+      });
+      expect(new URL(options.connectionString).searchParams.has('sslrootcert')).toBe(false);
+    }
+  });
+  it('preserves an explicit root certificate and fails closed when it cannot be read', () => {
+    const certificatePath = fileURLToPath(
+      new URL('../../certificates/supabase-root-2021.crt', import.meta.url),
+    );
+    const base = 'postgres://synthetic:local@db.syntheticproject.supabase.co/db';
+    const url = new URL(base);
+    url.searchParams.set('sslrootcert', certificatePath);
+    const options = nodePostgresPoolOptions({ NODE_ENV: 'production', DATABASE_URL: url.href });
+    expect(new URL(options.connectionString).searchParams.get('sslrootcert')).toBe(certificatePath);
+    url.searchParams.set('sslrootcert', '/missing-synthetic-certificate.crt');
+    expect(() =>
+      nodePostgresPoolOptions({ NODE_ENV: 'production', DATABASE_URL: url.href }),
+    ).toThrow('production node-postgres requires verified TLS');
+  });
+  it('scopes the CA to pg’s effective host, including last-wins DSN overrides', () => {
+    const supabase = 'aws-0-us-west-1.pooler.supabase.com';
+    for (const [authority, query, expectedCA] of [
+      [supabase, '?host=example.test', false],
+      ['example.test', `?host=${supabase}`, true],
+      ['example.test', `?host=${supabase}&host=example.test`, false],
+      ['example.test', `?host=example.test&host=${supabase}`, true],
+    ] as const) {
+      const options = nodePostgresPoolOptions({
+        NODE_ENV: 'production',
+        DATABASE_URL: `postgres://synthetic:local@${authority}/db${query}`,
+      });
+      expect(new URL(options.connectionString).searchParams.has('sslrootcert')).toBe(expectedCA);
+      const ssl = new Client(options).ssl as unknown as ConnectionOptions;
+      expect(ssl.rejectUnauthorized).not.toBe(false);
+      expect(ssl.checkServerIdentity).toBeUndefined();
+    }
+  });
   it('wires the selected database through Nest and runs its shutdown lifecycle', async () => {
     vi.stubEnv('DATABASE_URL', 'postgres://synthetic:local@127.0.0.1:1/db');
     vi.stubEnv('API_DB_DRIVER', 'node-postgres');

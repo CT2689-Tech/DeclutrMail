@@ -1,10 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { deployApi, smokeApi, trafficAssignment } from './deploy-api-safely.mjs';
+import {
+  assertServingDriver,
+  deployApi,
+  smokeApi,
+  trafficAssignment,
+} from './deploy-api-safely.mjs';
 const old = 'declutrmail-api-old';
 const next = 'declutrmail-api-new';
-const args = ['--region=us-central1', '--project=test', '--image=registry/image'];
+const args = [
+  '--region=us-central1',
+  '--project=test',
+  '--image=registry/image',
+  '--set-env-vars=NODE_ENV=production,API_DB_DRIVER=postgres-js',
+];
 const snapshot = (traffic, latest = old) => ({
   status: { traffic, latestReadyRevisionName: latest, url: 'https://service.run.app' },
 });
@@ -20,6 +30,7 @@ function harness({
   let state = initial;
   const run = async (command) => {
     calls.push(command);
+    if (command[1] === 'revisions') return JSON.stringify({ spec: { containers: [{}] } });
     if (command.includes('describe')) return JSON.stringify(state);
     if (command[1] === 'deploy') {
       if (deployFailure) throw new Error('deploy failure');
@@ -149,7 +160,8 @@ test('missing candidate identity fails closed without promotion', async () => {
   let described = 0;
   h.options.run = async (command) => {
     const result = await run(command);
-    if (command.includes('describe') && ++described === 2) return JSON.stringify(initial);
+    if (command[1] === 'services' && command.includes('describe') && ++described === 2)
+      return JSON.stringify(initial);
     return result;
   };
   await assert.rejects(deployApi(h.options), /Cannot identify ready candidate/);
@@ -186,4 +198,152 @@ test('production deploys serialize across triggers and reject non-main dispatche
   assert.match(ciGate, /if: github\.ref == 'refs\/heads\/main'/);
   const deployJob = workflow.slice(workflow.indexOf('  build-and-deploy:'));
   assert.match(deployJob, /^ {2}build-and-deploy:\s*\n {4}needs: await-ci/);
+});
+
+test('driver preflight checks every resolved serving revision and ignores zero-traffic tags', async () => {
+  const calls = [];
+  const service = snapshot([
+    { revisionName: old, percent: 95 },
+    { revisionName: next, percent: 5 },
+    { revisionName: 'declutrmail-api-unused', percent: 0, tag: 'diagnostic' },
+  ]);
+  const run = async (command) => {
+    calls.push(command);
+    return JSON.stringify({
+      spec: { containers: [{ env: [{ name: 'API_DB_DRIVER', value: 'node-postgres' }] }] },
+    });
+  };
+  await assertServingDriver({
+    service,
+    expected: 'node-postgres',
+    scope: ['--region=test', '--project=test'],
+    run,
+  });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(new Set(calls.map((c) => c[3])), new Set([old, next]));
+});
+
+test('mixed drivers, unknown configuration and failed readback stop before any deployment', async () => {
+  const service = snapshot([
+    { revisionName: old, percent: 95 },
+    { revisionName: next, percent: 5 },
+  ]);
+  for (const resource of [
+    { spec: { containers: [{ env: [{ name: 'API_DB_DRIVER', value: 'node-postgres' }] }] } },
+    {
+      spec: { containers: [{ env: [{ name: 'API_DB_DRIVER', value: 'synthetic-secret-value' }] }] },
+    },
+    {
+      spec: { containers: [{ env: [{ name: 'API_DB_DRIVER', valueFrom: { secretKeyRef: {} } }] }] },
+    },
+    {
+      spec: {
+        containers: [
+          {
+            env: [
+              { name: 'API_DB_DRIVER', value: 'postgres-js' },
+              { name: 'API_DB_DRIVER', value: 'postgres-js' },
+            ],
+          },
+        ],
+      },
+    },
+    {},
+    null,
+  ]) {
+    const h = harness();
+    h.options.run = async (command) => {
+      h.calls.push(command);
+      if (command[1] === 'services') return JSON.stringify(service);
+      if (command[3] === old) return JSON.stringify({ spec: { containers: [{}] } });
+      if (resource === null) throw new Error('synthetic read failure');
+      return JSON.stringify(resource);
+    };
+    await assert.rejects(
+      deployApi(h.options),
+      (error) => !error.message.includes('synthetic-secret-value'),
+    );
+    assert.ok(!h.calls.some((c) => c[1] === 'deploy' || c.includes('update-traffic')));
+    assert.equal(h.smokes.length, 0);
+  }
+});
+
+test('absent driver means postgres-js, but cannot overwrite an opted-in serving revision', async () => {
+  const run = async () => JSON.stringify({ spec: { containers: [{}] } });
+  await assertServingDriver({ service: initial, expected: 'postgres-js', scope: [], run });
+  await assert.rejects(
+    assertServingDriver({ service: initial, expected: 'node-postgres', scope: [], run }),
+    /differs/,
+  );
+});
+
+test('deployment rejects missing, repeated, unknown or conflicting driver declarations', async () => {
+  for (const envArgs of [
+    [],
+    ['--set-env-vars=NODE_ENV=production'],
+    ['--set-env-vars=API_DB_DRIVER='],
+    ['--set-env-vars=API_DB_DRIVER=postgres-js,API_DB_DRIVER=node-postgres'],
+    ['--set-env-vars=API_DB_DRIVER=synthetic-secret-value'],
+    ['--set-env-vars=API_DB_DRIVER=postgres-js', '--set-env-vars=API_DB_DRIVER=node-postgres'],
+    ['--set-env-vars=API_DB_DRIVER=postgres-js', '--update-env-vars=API_DB_DRIVER=node-postgres'],
+    ['--set-env-vars=API_DB_DRIVER=postgres-js', '--env-vars-file=synthetic.yaml'],
+    ['--set-env-vars=API_DB_DRIVER=postgres-js', '--update-secrets=API_DB_DRIVER=synthetic:latest'],
+  ]) {
+    const h = harness();
+    h.options.args = [...args.slice(0, 3), ...envArgs];
+    await assert.rejects(
+      deployApi(h.options),
+      (error) => !error.message.includes('synthetic-secret-value'),
+    );
+    assert.ok(!h.calls.some((c) => c[1] === 'deploy' || c.includes('update-traffic')));
+  }
+});
+
+test('staged driver mismatch never receives traffic', async () => {
+  const h = harness();
+  const run = h.options.run;
+  h.options.run = async (command) => {
+    if (command[1] === 'revisions' && command[3] === next) {
+      h.calls.push(command);
+      return JSON.stringify({
+        spec: { containers: [{ env: [{ name: 'API_DB_DRIVER', value: 'node-postgres' }] }] },
+      });
+    }
+    return run(command);
+  };
+  await assert.rejects(deployApi(h.options), /Staged API driver differs/);
+  assert.equal(h.smokes.length, 0);
+  assert.ok(!h.calls.some((c) => c.some((a) => a.startsWith('--to-revisions='))));
+});
+
+test('serving traffic changes during smoke cannot be overwritten by promotion', async () => {
+  const h = harness();
+  const run = h.options.run;
+  h.options.run = async (command) => {
+    const result = await run(command);
+    if (command[1] === 'services' && command.includes('describe') && h.smokes.length) {
+      return JSON.stringify(snapshot([{ revisionName: 'declutrmail-api-external', percent: 100 }]));
+    }
+    return result;
+  };
+  await assert.rejects(deployApi(h.options), /changed during smoke/);
+  assert.ok(!h.calls.some((c) => c.some((a) => a.startsWith('--to-revisions='))));
+});
+
+test('workflow keeps explicit default and runs driver preflight before build and worker release', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /API_DB_DRIVER: postgres-js/);
+  assert.match(workflow, /API_DB_DRIVER=\$API_DB_DRIVER/);
+  assert.ok(workflow.indexOf('--check-driver=') < workflow.indexOf('docker build --platform'));
+  assert.ok(
+    workflow.indexOf('--check-driver=') < workflow.indexOf('gcloud run deploy declutrmail-worker'),
+  );
+  const worker = workflow.slice(
+    workflow.indexOf('gcloud run deploy declutrmail-worker'),
+    workflow.indexOf('- name: Deploy declutrmail-api'),
+  );
+  assert.doesNotMatch(worker, /API_DB_DRIVER=/);
 });

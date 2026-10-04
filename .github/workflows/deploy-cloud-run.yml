@@ -99,6 +99,8 @@ env:
   # taking rather than a reason to avoid it.
   WORKER_REGION: us-west1
   REPO: declutrmail
+  # Explicit selector: update only after the approved driver rollout completes.
+  API_DB_DRIVER: postgres-js
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.
   RUNTIME_SA: declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com
@@ -219,6 +221,9 @@ jobs:
 
       - name: Verify deployment safety contracts
         run: node --test scripts/deploy-api-safely.test.mjs
+
+      - name: Check serving API driver before releasing either service
+        run: node scripts/deploy-api-safely.mjs --check-driver="$API_DB_DRIVER" --region="$REGION" --project="$PROJECT"
 
       - name: Configure docker auth for Artifact Registry
         run: gcloud auth configure-docker $REGION-docker.pkg.dev --quiet
@@ -530,7 +535,7 @@ jobs:
             --allow-unauthenticated \
             --startup-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=24" \
             --liveness-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3" \
-            --set-env-vars="NODE_ENV=production,API_DB_POOL_MAX=10,HTTP_PERFORMANCE_SAMPLE_RATE=0.1,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production,UNSUB_SEND_ENABLED=true" \
+            --set-env-vars="NODE_ENV=production,API_DB_DRIVER=$API_DB_DRIVER,API_DB_POOL_MAX=10,HTTP_PERFORMANCE_SAMPLE_RATE=0.1,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production,UNSUB_SEND_ENABLED=true" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest" \
             --quiet
 

@@ -3,6 +3,7 @@
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
+import { useHydrated } from '@/lib/use-hydrated';
 import { useSenderInFlightLock } from '@/features/undo/in-flight';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -409,6 +410,7 @@ export function SendersScreen() {
   // come from `queryMeta` above; this call exists only for
   // `hasCompletedCleanup` (the first-cleanup nudge, D227).
   const sendersSummary = useSendersSummary({});
+  const hydrated = useHydrated();
 
   if (sendersQuery.isLoading) {
     return <SendersLoadingState />;
@@ -477,7 +479,7 @@ export function SendersScreen() {
       onWiden={() => setKeepNarrow(false)}
       query={query}
       onQueryChange={setQuery}
-      hasCompletedCleanup={sendersSummary.data?.data.hasCompletedCleanup}
+      hasCompletedCleanup={hydrated ? sendersSummary.data?.data.hasCompletedCleanup : undefined}
       totalMatching={totalMatching}
       showingStaleRows={showingStaleRows}
       countsMayBeStale={countsMayBeStale}

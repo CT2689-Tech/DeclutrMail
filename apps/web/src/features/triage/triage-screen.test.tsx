@@ -100,7 +100,8 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain('>Triage</h1>');
     expect(html).not.toContain('decisions, one at a time.');
     expect(html).toContain('>0 decided<');
-    expect(html).toContain(`>Reviewing 1 of ${TRIAGE_QUEUE.length}<`);
+    expect(html).toContain(`>${TRIAGE_QUEUE.length} in queue<`);
+    expect(html).not.toContain('Reviewing 1 of');
     expect(html).not.toContain('decisions waiting');
   });
 

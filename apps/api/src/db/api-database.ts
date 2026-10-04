@@ -4,6 +4,7 @@ import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { schema } from '@declutrmail/db';
 import { Client, Pool } from 'pg';
 import type { ConnectionOptions } from 'node:tls';
+import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 
 import { apiPoolOptions } from './pool-config.js';
@@ -53,6 +54,20 @@ export function nodePostgresPoolOptions(env: NodeJS.ProcessEnv = process.env) {
       // current verified semantics across pg parser upgrades.
       // Duplicate options are last-wins in pg, unlike URLSearchParams.get().
       parsed.searchParams.set('sslmode', 'verify-full');
+      // pg reads sslrootcert from the DSN; a separate ssl object would be
+      // overwritten by sslmode. Scope this CA to Supabase, not global TLS.
+      // Query-string host overrides win in pg (including the last duplicate).
+      // Use the driver's effective host rather than the URL authority.
+      const host = new Client({ connectionString: parsed.href }).host.toLowerCase();
+      if (
+        !parsed.searchParams.has('sslrootcert') &&
+        (host.endsWith('.pooler.supabase.com') || /^db\.[a-z0-9]+\.supabase\.co$/.test(host))
+      ) {
+        parsed.searchParams.set(
+          'sslrootcert',
+          fileURLToPath(new URL('../../certificates/supabase-root-2021.crt', import.meta.url)),
+        );
+      }
       url = parsed.href;
       const ssl = new Client({ connectionString: url }).ssl as boolean | ConnectionOptions;
       if (
