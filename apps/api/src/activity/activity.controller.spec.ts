@@ -4,12 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { IconsService } from '../icons/icons.service.js';
 import { ActivityController } from './activity.controller.js';
+import type { ActivityStats } from './activity.types.js';
 import type { ActivityReadService } from './activity.read-service.js';
 import type { ActivitySupportBundleService } from './activity-support-bundle.service.js';
 
 function makeController() {
   const reads = {
     listActivity: vi.fn(),
+    startActivityReads: vi.fn(),
     getWeeklyReview: vi.fn(),
   } as unknown as ActivityReadService;
   const bundles = {
@@ -25,8 +27,147 @@ function makeController() {
   const icons = {
     marksFor: vi.fn(() => Promise.resolve(new Set<string>())),
   } as unknown as IconsService;
-  return { controller: new ActivityController(reads, bundles, icons), bundles, reads };
+  return { controller: new ActivityController(reads, bundles, icons), bundles, reads, icons };
 }
+
+const activityRow = {
+  id: '11111111-1111-4111-8111-111111111111',
+  occurredAt: '2026-05-25T08:00:00Z',
+  source: 'manual' as const,
+  action: 'archive' as const,
+  affectedCount: 1,
+  sender: {
+    senderKey: 'key',
+    displayName: 'Test',
+    email: 'test@example.test',
+    domain: 'example.test',
+  },
+  rule: null,
+  feedbackRating: null,
+  undoState: { kind: 'unavailable' as const },
+  executionState: null,
+  reviewOutcome: 'completed' as const,
+};
+
+describe('ActivityController page read scheduling', () => {
+  it.each(['stats', 'allTimeStats'] as const)(
+    'does not start marks when %s fails before rows arrive',
+    async (failedBranch) => {
+      const { controller, reads, icons } = makeController();
+      let finishRows!: (rows: (typeof activityRow)[]) => void;
+      const rows = new Promise<(typeof activityRow)[]>((resolve) => {
+        finishRows = resolve;
+      });
+      const error = new Error('counter read failed');
+      const counts = {
+        stats: Promise.resolve({} as ActivityStats),
+        allTimeStats: Promise.resolve({} as ActivityStats),
+        [failedBranch]: Promise.reject(error),
+      };
+      vi.mocked(reads.startActivityReads).mockReturnValue({ rows, ...counts });
+      await expect(
+        controller.list(
+          { userId: 'user-1', workspaceId: 'workspace-1' },
+          { id: 'mailbox-1' },
+          '7d',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ),
+      ).rejects.toBe(error);
+      finishRows([activityRow]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).not.toHaveBeenCalled();
+    },
+  );
+
+  it('observes late aggregate errors after the row read failed', async () => {
+    const { controller, reads, icons } = makeController();
+    const error = new Error('row read failed');
+    let failStats!: (error: Error) => void;
+    const stats = new Promise<ActivityStats>((_resolve, reject) => {
+      failStats = reject;
+    });
+    vi.mocked(reads.startActivityReads).mockReturnValue({
+      rows: Promise.reject(error),
+      stats,
+      allTimeStats: stats,
+    });
+    await expect(
+      controller.list(
+        { userId: 'user-1', workspaceId: 'workspace-1' },
+        { id: 'mailbox-1' },
+        '7d',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ),
+    ).rejects.toBe(error);
+    failStats(new Error('late aggregate failure'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(icons.marksFor).not.toHaveBeenCalled();
+  });
+
+  it('starts page marks while independent activity counters are pending', async () => {
+    const { controller, reads, icons } = makeController();
+    const rows = Promise.resolve([activityRow]);
+    let finishStats!: (value: ActivityStats) => void;
+    const stats = new Promise<ActivityStats>((resolve) => {
+      finishStats = resolve;
+    });
+    vi.mocked(reads.startActivityReads).mockReturnValue({ rows, stats, allTimeStats: stats });
+    vi.mocked(reads.listActivity).mockImplementation(async () => {
+      const [resolvedRows, resolvedStats] = await Promise.all([rows, stats]);
+      return { rows: resolvedRows, stats: resolvedStats, allTimeStats: resolvedStats };
+    });
+    const args: Parameters<ActivityController['list']> = [
+      { userId: 'user-1', workspaceId: 'workspace-1' },
+      { id: 'mailbox-1' },
+      '7d',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ];
+    const pending = controller.list(...args);
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).toHaveBeenCalledWith(['example.test'], { mayEnqueue: true });
+    } finally {
+      finishStats({
+        archived: 1,
+        unsubscribed: 0,
+        kept: 0,
+        later: 0,
+        deleted: 0,
+        emailCounts: { archived: 1, deleted: 0, later: 0 },
+        senderCounts: { archived: 1, deleted: 0, later: 0, unsubscribed: 0, kept: 0 },
+        followupsDismissed: 0,
+        needsAttention: 0,
+        noisePreventedPerMonth: null,
+      });
+      await pending;
+    }
+    expect((await pending).data[0]?.sender).toMatchObject({
+      domain: 'example.test',
+      brandMark: false,
+    });
+  });
+});
 
 describe('ActivityController weekly review', () => {
   it.each(['unknown', '', 'completed,unknown'])(

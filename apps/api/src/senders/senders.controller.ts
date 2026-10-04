@@ -219,58 +219,72 @@ export class SendersController {
     // could render. `meta.query` is optional in the wire type for
     // exactly this reason.
     const isFirstPage = cursor === null;
-    const [rows, query] = await Promise.all([
-      measureRequestOperation('senders.rows', () =>
-        this.reads.listSenders({
-          ...(currentMailOnly ? { currentMailOnly: true } : {}),
-          ...(hasInboxMail ? { hasInboxMail: true } : {}),
-          mailboxAccountId: accountId,
-          category,
-          isProtected,
-          sort,
-          direction,
-          cursor,
-          limit,
-          q,
-          activity,
-          unsubReady,
-          wroteTo,
-          quietForDays,
-          domain,
-          unsubIgnored,
-        }),
-      ),
-      isFirstPage
-        ? measureRequestOperation('senders.meta', () =>
-            this.reads.getSenderListQueryMeta({
-              ...(currentMailOnly ? { currentMailOnly: true } : {}),
-              ...(hasInboxMail ? { hasInboxMail: true } : {}),
-              mailboxAccountId: accountId,
-              category,
-              isProtected,
-              q,
-              activity,
-              unsubReady,
-              wroteTo,
-              quietForDays,
-              domain,
-              unsubIgnored,
-            }),
-          )
-        : Promise.resolve(null),
-    ]);
-
-    const { page, nextCursor } = takePage(rows, limit, (row) =>
-      encodeCursor({ key: encodeCursorKey(sort, row), id: row.id }),
+    const rowsRead = measureRequestOperation('senders.rows', () =>
+      this.reads.listSenders({
+        ...(currentMailOnly ? { currentMailOnly: true } : {}),
+        ...(hasInboxMail ? { hasInboxMail: true } : {}),
+        mailboxAccountId: accountId,
+        category,
+        isProtected,
+        sort,
+        direction,
+        cursor,
+        limit,
+        q,
+        activity,
+        unsubReady,
+        wroteTo,
+        quietForDays,
+        domain,
+        unsubIgnored,
+      }),
     );
+    const queryRead = isFirstPage
+      ? measureRequestOperation('senders.meta', () =>
+          this.reads.getSenderListQueryMeta({
+            ...(currentMailOnly ? { currentMailOnly: true } : {}),
+            ...(hasInboxMail ? { hasInboxMail: true } : {}),
+            mailboxAccountId: accountId,
+            category,
+            isProtected,
+            q,
+            activity,
+            unsubReady,
+            wroteTo,
+            quietForDays,
+            domain,
+            unsubIgnored,
+          }),
+        )
+      : Promise.resolve(null);
+    const pageRead = rowsRead.then((rows) =>
+      takePage(rows, limit, (row) => encodeCursor({ key: encodeCursorKey(sort, row), id: row.id })),
+    );
+    // Marks depend on the page rows, never on mailbox-wide metadata. Start
+    // their read as soon as rows arrive, overlapping a slower count scan.
+    // Observe both branches immediately; don't start new work after a
+    // known failure, while already in-flight reads remain observed.
+    let readFailed = false;
+    const marksRead = pageRead.then(({ page }) =>
+      readFailed
+        ? new Set<string>()
+        : measureRequestOperation('senders.marks', () =>
+            this.brandMarksFor(page.map((row) => row.domain)),
+          ),
+    );
+    const [{ page, nextCursor }, query, marks] = await Promise.all([
+      pageRead,
+      queryRead,
+      marksRead,
+    ]).catch((error: unknown) => {
+      readFailed = true;
+      throw error;
+    });
     const pagination: PaginationMeta = {
       nextCursor,
       hasMore: nextCursor !== null,
       limit,
     };
-    const marks = await measureRequestOperation('senders.marks', () =>
-      this.brandMarksFor(page.map((row) => row.domain)),
-    );
     const data = page.map((row) => ({ ...row, brandMark: marks.has(row.domain) }));
     return { data, meta: { pagination, ...(query !== null ? { query } : {}) } };
   }

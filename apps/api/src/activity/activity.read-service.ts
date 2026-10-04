@@ -219,6 +219,17 @@ export class ActivityReadService {
    * AND `executed_at IS NULL`).
    */
   async listActivity(params: ListActivityParams): Promise<ListActivityResult> {
+    const reads = this.startActivityReads(params);
+    const [rows, stats, allTimeStats] = await Promise.all([
+      reads.rows,
+      reads.stats,
+      reads.allTimeStats,
+    ]);
+    return { rows, stats, allTimeStats };
+  }
+
+  /** Start independent reads; callers must immediately observe every promise. */
+  startActivityReads(params: ListActivityParams) {
     const { mailboxAccountId, window, dateFrom = null, dateTo = null, nowMs } = params;
     // Custom date range, when supplied, REPLACES the window-derived
     // lower bound — the FE picker shows whichever wins. When neither
@@ -254,20 +265,19 @@ export class ActivityReadService {
       statsLowerBound,
       statsUpperBound,
     ).then((lineages) => this.loadActivityRows(params, lineages));
-    const [rows, stats, allTimeStats] = await Promise.all([
-      rowsPromise,
-      statsPromise,
-      statsLowerBound === null && statsUpperBound === null
-        ? statsPromise
-        : this.aggregateStats({
-            mailboxAccountId,
-            lowerBound: null,
-            upperBound: null,
-            senderQuery: params.senderQuery ?? '',
-          }),
-    ]);
-
-    return { rows, stats, allTimeStats };
+    return {
+      rows: rowsPromise,
+      stats: statsPromise,
+      allTimeStats:
+        statsLowerBound === null && statsUpperBound === null
+          ? statsPromise
+          : this.aggregateStats({
+              mailboxAccountId,
+              lowerBound: null,
+              upperBound: null,
+              senderQuery: params.senderQuery ?? '',
+            }),
+    };
   }
 
   /**

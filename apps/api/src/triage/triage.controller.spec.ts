@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { TriageController } from './triage.controller.js';
 import type { IconsService } from '../icons/icons.service.js';
+import type { TriageQueueFacts, TriageSessionStats, TodaySummary } from './triage.read-service.js';
 import type { TriageReadService } from './triage.read-service.js';
 import type { TriageService } from './triage.service.js';
 
@@ -19,12 +20,28 @@ function makeController(queueSize: number) {
   const triage = {
     getQueueSize: vi.fn().mockResolvedValue(queueSize),
   };
+  const stats: TriageSessionStats = {
+    decidedToday: 0,
+    archivedToday: 0,
+    unsubscribedToday: 0,
+    laterToday: 0,
+    freeRemaining: null,
+    tier: 'pro',
+  };
+  const todaySummary: TodaySummary = {
+    receivedToday: 0,
+    sendersToday: 0,
+    handledAutomatically: 0,
+    queuedDecisions: 0,
+    noiseSenderCount: 0,
+    noiseReductionPct: null,
+  };
   const reads = {
-    getBootstrap: vi.fn().mockResolvedValue({
-      queue: [],
-      stats: { decisionsToday: 0 },
-      todaySummary: { senderDecisionCount: 0 },
-    }),
+    startBootstrapReads: vi.fn(() => ({
+      queue: Promise.resolve([] as TriageQueueFacts[]),
+      stats: Promise.resolve(stats),
+      todaySummary: Promise.resolve(todaySummary),
+    })),
   };
   const icons = {
     marksFor: vi.fn().mockResolvedValue(new Set<string>()),
@@ -34,17 +51,131 @@ function makeController(queueSize: number) {
     reads as unknown as TriageReadService,
     icons as unknown as IconsService,
   );
-  return { controller, triage, reads };
+  return { controller, triage, reads, icons };
 }
 
+const triageRow: TriageQueueFacts = {
+  id: 'decision-1',
+  senderId: 'sender-1',
+  senderKey: 'key',
+  senderName: 'Test',
+  senderEmail: 'test@example.test',
+  senderDomain: 'example.test',
+  gmailCategory: 'updates',
+  unsubscribeMethod: null,
+  verdict: 'archive',
+  confidence: 0.9,
+  reasoning: 'Test',
+  generatedBy: 'template',
+  scoredAt: '2026-05-25T08:00:00Z',
+  stale: false,
+  signals: [],
+  protectionReason: null,
+  protectionEvidenceCurrent: null,
+  monthlyVolume: 1,
+  last90dMessages: 3,
+  readRate: null,
+  lastSeenAt: null,
+  totalAllTime: 3,
+  inboxCount: 3,
+  unreadInboxCount: 3,
+};
+
 describe('TriageController.bootstrap', () => {
+  it.each(['stats', 'todaySummary'] as const)(
+    'does not start marks when %s fails before the queue arrives',
+    async (failedBranch) => {
+      const { controller, reads, icons } = makeController(7);
+      let finishQueue!: (rows: TriageQueueFacts[]) => void;
+      const queue = new Promise<TriageQueueFacts[]>((resolve) => {
+        finishQueue = resolve;
+      });
+      const error = new Error('counter read failed');
+      const counts = {
+        stats: Promise.resolve({} as TriageSessionStats),
+        todaySummary: Promise.resolve({} as TodaySummary),
+        [failedBranch]: Promise.reject(error),
+      };
+      reads.startBootstrapReads.mockReturnValue({ queue, ...counts });
+      await expect(controller.bootstrap({ id: 'mailbox-1' })).rejects.toBe(error);
+      finishQueue([triageRow]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).not.toHaveBeenCalled();
+    },
+  );
+
+  it('observes late counter errors after the queue read failed', async () => {
+    const { controller, reads, icons } = makeController(7);
+    const error = new Error('queue read failed');
+    let failStats!: (error: Error) => void;
+    const stats = new Promise<TriageSessionStats>((_resolve, reject) => {
+      failStats = reject;
+    });
+    reads.startBootstrapReads.mockReturnValue({
+      queue: Promise.reject(error),
+      stats,
+      todaySummary: Promise.resolve({} as TodaySummary),
+    });
+    await expect(controller.bootstrap({ id: 'mailbox-1' })).rejects.toBe(error);
+    failStats(new Error('late aggregate failure'));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(icons.marksFor).not.toHaveBeenCalled();
+  });
+
+  it('keeps a successful bootstrap usable when the icon cache fails', async () => {
+    const { controller, reads, icons } = makeController(7);
+    const defaults = reads.startBootstrapReads();
+    reads.startBootstrapReads.mockReturnValue({ ...defaults, queue: Promise.resolve([triageRow]) });
+    icons.marksFor.mockRejectedValue(new Error('icon cache unavailable'));
+    await expect(controller.bootstrap({ id: 'mailbox-1' })).resolves.toMatchObject({
+      data: { queue: [{ senderDomain: 'example.test', brandMark: false }] },
+    });
+  });
+
+  it('starts queue marks while independent bootstrap counters are pending', async () => {
+    const { controller, reads, icons } = makeController(7);
+    const queue = Promise.resolve([triageRow]);
+    let finishStats!: (value: TriageSessionStats) => void;
+    const stats = new Promise<TriageSessionStats>((resolve) => {
+      finishStats = resolve;
+    });
+    const todaySummary = Promise.resolve({
+      receivedToday: 1,
+      sendersToday: 1,
+      handledAutomatically: 0,
+      queuedDecisions: 1,
+      noiseSenderCount: 1,
+      noiseReductionPct: 10,
+    });
+    reads.startBootstrapReads.mockReturnValue({ queue, stats, todaySummary });
+    const pending = controller.bootstrap({ id: 'mailbox-1' });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).toHaveBeenCalledWith(['example.test'], { mayEnqueue: true });
+    } finally {
+      finishStats({
+        decidedToday: 2,
+        archivedToday: 1,
+        unsubscribedToday: 0,
+        laterToday: 0,
+        freeRemaining: null,
+        tier: 'pro',
+      });
+      await pending;
+    }
+    expect((await pending).data).toMatchObject({
+      queue: [{ brandMark: false }],
+      stats: { decidedToday: 2 },
+    });
+  });
+
   it('sizes the queue via the D30 adaptive policy, not the hard max', async () => {
     const { controller, triage, reads } = makeController(7);
 
     await controller.bootstrap({ id: 'mailbox-1' });
 
     expect(triage.getQueueSize).toHaveBeenCalledWith('mailbox-1');
-    expect(reads.getBootstrap).toHaveBeenCalledWith({
+    expect(reads.startBootstrapReads).toHaveBeenCalledWith({
       mailboxAccountId: 'mailbox-1',
       limit: 7,
     });
@@ -55,7 +186,7 @@ describe('TriageController.bootstrap', () => {
 
     await controller.bootstrap({ id: 'mailbox-2' });
 
-    expect(reads.getBootstrap).toHaveBeenCalledWith({
+    expect(reads.startBootstrapReads).toHaveBeenCalledWith({
       mailboxAccountId: 'mailbox-2',
       limit: 12,
     });

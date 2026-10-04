@@ -436,6 +436,41 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     });
   });
 
+  it('starts conditional noise volume while daily counters are still pending', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedMessage(db, mailboxId, SENDER_A, 0);
+    const queue = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    expect(queue.some((row) => row.verdict !== 'keep' && row.last90dMessages > 0)).toBe(true);
+    vi.spyOn(svc, 'listQueue').mockResolvedValue(queue);
+    let finishReceived!: (value: { total: number; senders: number }[]) => void;
+    let finishAutopilot!: (value: { handled: number }[]) => void;
+    const received = new Promise<{ total: number; senders: number }[]>((resolve) => {
+      finishReceived = resolve;
+    });
+    const autopilot = new Promise<{ handled: number }[]>((resolve) => {
+      finishAutopilot = resolve;
+    });
+    const select = vi
+      .spyOn(db, 'select')
+      .mockReturnValueOnce({ from: () => ({ where: () => received }) } as never)
+      .mockReturnValueOnce({ from: () => ({ where: () => autopilot }) } as never);
+    const pending = svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(select).toHaveBeenCalledTimes(3);
+    } finally {
+      finishReceived([{ total: 1, senders: 1 }]);
+      finishAutopilot([{ handled: 2 }]);
+      await pending;
+    }
+    expect(await pending).toMatchObject({
+      receivedToday: 1,
+      handledAutomatically: 2,
+      queuedDecisions: queue.length,
+      noiseReductionPct: 100,
+    });
+  });
+
   it('builds the route bootstrap while executing the queue read only once', async () => {
     await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
     await seedMessage(db, mailboxId, SENDER_A, 0);

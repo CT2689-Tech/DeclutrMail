@@ -1135,6 +1135,17 @@ export class TriageReadService {
     limit: number;
     now?: Date;
   }): Promise<TriageBootstrapFacts> {
+    const reads = this.startBootstrapReads(input);
+    const [queue, stats, todaySummary] = await Promise.all([
+      reads.queue,
+      reads.stats,
+      reads.todaySummary,
+    ]);
+    return { queue, stats, todaySummary };
+  }
+
+  /** Share the queue read while callers observe all independent branches. */
+  startBootstrapReads(input: { mailboxAccountId: string; limit: number; now?: Date }) {
     // ONE window instant for both halves of the noise share — see
     // `noiseWindowStartFrom`.
     const windowStart = noiseWindowStartFrom(input.now);
@@ -1143,15 +1154,14 @@ export class TriageReadService {
       limit: input.limit,
       windowStart,
     });
-    const [queue, stats, todaySummary] = await Promise.all([
-      queuePromise,
-      this.getSessionStats({
+    return {
+      queue: queuePromise,
+      stats: this.getSessionStats({
         mailboxAccountId: input.mailboxAccountId,
         ...(input.now === undefined ? {} : { now: input.now }),
       }),
-      this.getTodaySummaryFromQueue(input, queuePromise, windowStart),
-    ]);
-    return { queue, stats, todaySummary };
+      todaySummary: this.getTodaySummaryFromQueue(input, queuePromise, windowStart),
+    };
   }
 
   /**
@@ -1218,39 +1228,46 @@ export class TriageReadService {
     // The queue the user will see — same clamp, ordering, and decided-
     // sender exclusion as GET /api/triage/queue. In the bootstrap path
     // this is the SAME promise used for the queue payload, not a repeat.
-    const [[received], [autopilot], queueRows] = await Promise.all([
+    let readFailed = false;
+    const noiseRead = queuePromise.then(async (queueRows) => {
+      const noiseRows = queueRows.filter((r) => r.verdict !== 'keep');
+      const queuedNoise = noiseRows.reduce((sum, r) => sum + r.last90dMessages, 0);
+      let noiseReductionPct: number | null = null;
+      // The denominator depends on this queue and cutoff only. Preserve the
+      // conditional read while overlapping it with independent daily counts.
+      if (!readFailed && queueRows.length > 0 && queuedNoise > 0) {
+        const [volume] = await this.db
+          .select({ total: count() })
+          .from(mailMessages)
+          .where(
+            and(
+              eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
+              eq(mailMessages.isOutbound, false),
+              // The SAME cutoff the numerator used. These were two different
+              // rules — rolling here, midnight-anchored there — so the share
+              // was a ratio between two spans that could differ by a day.
+              gte(mailMessages.internalDate, windowStart),
+            ),
+          );
+        noiseReductionPct = noiseSharePct(queuedNoise, Number(volume?.total ?? 0));
+      }
+      return { queueRows, noiseRows, noiseReductionPct };
+    });
+    const [[received], [autopilot], noise] = await Promise.all([
       receivedPromise,
       autopilotPromise,
-      queuePromise,
-    ]);
-    const noiseRows = queueRows.filter((r) => r.verdict !== 'keep');
-    const queuedNoise = noiseRows.reduce((sum, r) => sum + r.last90dMessages, 0);
-
-    let noiseReductionPct: number | null = null;
-    if (queueRows.length > 0 && queuedNoise > 0) {
-      const [volume] = await this.db
-        .select({ total: count() })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
-            eq(mailMessages.isOutbound, false),
-            // The SAME cutoff the numerator used. These were two different
-            // rules — rolling here, midnight-anchored there — so the share
-            // was a ratio between two spans that could differ by a day.
-            gte(mailMessages.internalDate, windowStart),
-          ),
-        );
-      noiseReductionPct = noiseSharePct(queuedNoise, Number(volume?.total ?? 0));
-    }
-
+      noiseRead,
+    ]).catch((error: unknown) => {
+      readFailed = true;
+      throw error;
+    });
     return {
       receivedToday: Number(received?.total ?? 0),
       sendersToday: Number(received?.senders ?? 0),
       handledAutomatically: Number(autopilot?.handled ?? 0),
-      queuedDecisions: queueRows.length,
-      noiseSenderCount: noiseRows.length,
-      noiseReductionPct,
+      queuedDecisions: noise.queueRows.length,
+      noiseSenderCount: noise.noiseRows.length,
+      noiseReductionPct: noise.noiseReductionPct,
     };
   }
 }
