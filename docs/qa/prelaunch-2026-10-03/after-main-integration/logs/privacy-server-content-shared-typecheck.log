@@ -1,0 +1,3 @@
+
+> @declutrmail/shared@0.0.0 typecheck [workspace]/packages/shared
+> tsc --noEmit

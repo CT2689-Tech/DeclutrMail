@@ -1,0 +1,232 @@
+{
+  "phase": "current-main integration and measured static-content optimization",
+  "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+  "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+  "historicalEvidence": "Original after/ evidence remains at 1b5c9f93/c86557eb; f21 pre-optimization runtime is labeled separately.",
+  "screenshots": {
+    "main-integration-home-baseline.png": "f21 pre-optimization visible light desktop header/hero only",
+    "final-home-baseline.png": "Final frozen-source light desktop header/hero baseline only",
+    "privacy-final-desktop.png": "Final frozen-source selected scrolled inventory viewport; existing fresh-user first-heard prompt remains visible; not whole-page capture",
+    "privacy-final-mobile.png": "Final frozen-source selected compact scrolled inventory viewport; existing fresh-user first-heard prompt remains visible; not whole-page capture"
+  },
+  "files": [
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-diagnosis.json",
+      "sha256": "1fbc40e5d74bad23f0ff6847327ee2b6527182dae07cfd0831a2eb4c6e692da9"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json",
+      "sha256": "b32a5ee899bce48562c80e136b7e73e988ff890834a9789e60bf8bd1e475ee92"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json",
+      "sha256": "6bf03add13d52c311932b1de8de7dabfbfc5a7208bb87087186c441491b27895"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-stream-locator-diagnosis.json",
+      "sha256": "04b1feea6f9f1ce50a43339b04c95d57d35d247d9ad145d6f6abbf3077c1170f"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-before-mounted-readiness.log",
+      "sha256": "8921f76fda9744c7105aa468552a9777bfa3626b43704e91d3999f0a4aaff93a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-diagnosis.log",
+      "sha256": "cd3fbac1511a87c170c5fb250355ea6e9d6a88398fc03966e3ba757e2cbec552"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-focused.log",
+      "sha256": "48112e0daa7ff4e3fd8b8cf8f51dd624acffb8b7d458a3ec1c3d94f78c6c00a7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
+      "sha256": "d0c3580a0e6a51c6c9120f623a84d2a08b13493c13c2ef1bae2b7cc506358fb6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
+      "sha256": "cc2aa1233a25ebc8a57d3ec7e37b7a184d395df6617726f15183461fc45d9b44"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-error-context.md",
+      "sha256": "14120dbaa6de5054a6f64239d9dbf3f2775652e5138add4c4d773b032baadc37"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
+      "sha256": "d0c3580a0e6a51c6c9120f623a84d2a08b13493c13c2ef1bae2b7cc506358fb6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log",
+      "sha256": "9b51884d68400f0a04518da8c996264d8651f89ccf7a4534b28bb5b0130d4bc5"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/final-home-baseline.txt",
+      "sha256": "476635df151730854c3d67396896260aa6bbde44bbe5310d215a18d02ed2401a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
+      "sha256": "7e56c9236316a04490d90a79ba33dd9084afb8a2f61c015554527880c1887b4f"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log",
+      "sha256": "cf2f3dd3b67f57e07340f93e4542e5c940187aa80240886d9a1922d4acd35b42"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
+      "sha256": "8e687dcfebde6ad2c8f4208285b4b65859f19a5987482e169ef7f1b3e79a8e8b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
+      "sha256": "d31ad352799116cf3cf0f738239d7a81ae22c3ebf32538dfa67facece41f54b4"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-before-brief-locator-fix.log",
+      "sha256": "358f7e1f9b5cad61406488ce168c642a65ab8660ad9caec57005e2d5b61b60e8"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-before-optimization-bundle-build-final.log",
+      "sha256": "16ca83efdf28d8108c19471030e0fb4ac0016aa6b7b2706e24398ae9fef7ce66"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-core-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-core-tests.log",
+      "sha256": "d15bf8a1add5930a65a4bb759c248604973706ce92d61a323d43ec752b68f083"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log",
+      "sha256": "116b5a094a37cac8da6a68397becde0512d97aa0219c2fc8c7948e84b1a8bbeb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-stream-tests.log",
+      "sha256": "e4d293357bf5196d133d0914356cfca1ff17454d3b6cd08651fbfc43f59f5f7b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log",
+      "sha256": "b16e871c43e44e86d94074cd09df967a1a3d2b016a5bf5e959e12a76575f8577"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log",
+      "sha256": "f942a52fb9e257c2ea5ef2fa93410c996b1c8f07b2f7a93f3718753f6a210000"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-final-browser.log",
+      "sha256": "e29923f80e5a33b5cc7231929dc3e8be7494ef178e66d9d617e444c46c126eb1"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-html-equivalence.log",
+      "sha256": "70903854733aab96c3acca3b7353c3d35c2959f27c96108517c313b918290284"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-shared-tests.log",
+      "sha256": "865162fa10ce79eb1194517eb8b45c2137ec1ddf09f9b5b07833a68423082131"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-shared-typecheck.log",
+      "sha256": "bdfc9b527e6b376851302b6b0f84ccaf5900bc61a832ec61c908a28bda2df836"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-tests.log",
+      "sha256": "ddc5523163bb9a70edf3844b55e675b1a6d64c9360bb52cd3c83789fa947263a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-web-typecheck.log",
+      "sha256": "d6327d62d4495c2b430a5bd1e820c74beef77f0cb02a2e19f970e30f8f84b57e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
+      "sha256": "7b7cf2897859de25eaad7e2fe365b9782e28258dfca1c9fe8bb593f43ae2e796"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/shortcuts-a11y-desktop-error-context.md",
+      "sha256": "5aff8d360ee84f85d0422f033d2985b08b096921336b6a42bae2110abd5c277e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/shortcuts-a11y-mobile-reduced-motion-error-context.md",
+      "sha256": "b9341e355919213e9af385ebb8484b6dd5b5283277542c16bd244852dbeb77d3"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log",
+      "sha256": "301ab9fc18529a29ecf6c9894aa08fe16c91b77626b92c20ef84694f25835bcd"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-before-optimization-runtime-summary.json",
+      "sha256": "fb53d2c5aee1242edf029cbb4a4e405e92dd9d14f94d06295feef6259b6fec4d"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
+      "sha256": "0cc36cb7dbdfab856a7ae9abf22481712c7e40ddbfdd96f69eed1891f8147a66"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json",
+      "sha256": "1edc08ceb5dc65d9aefb02c4dfad69045fc090f9555e9aea041781ca10d15ef7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design.json",
+      "sha256": "6ed1a1fdfd72c8e0fc8ba0a8dffbc48650ed8a735360b569831744396fabde81"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-independent-gate.json",
+      "sha256": "b23e4c5c92125cf541183d827631a68764a685df35da274e950d7d1ceb0fabae"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-runtime-summary.json",
+      "sha256": "611795edfc0771ea5d642a33c53d4434c2028e59d8d271c23b37e27d8f7bf683"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json",
+      "sha256": "02809eef12ab7ce7d47417f2bd9c14206a1bbaf6f2468f4f701f85d25a02b9a0"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-summary.json",
+      "sha256": "bdf7ae0ae1a71c0400c7251e25b6a7d3d77c60ebd77eae317aec2ea2deec557d"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-bundle-diagnosis.json",
+      "sha256": "e407d7d0916ecfa9929bcc236d783feac4ddfbc612558baed28efb070a9e8b5d"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json",
+      "sha256": "1a6ec59952ed59809cf7fae3c587b5538b30d6dcc4e90965cff6a9dffc0cc575"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json",
+      "sha256": "2071556d6b12d8049182634013a9ee6efd8b15fc323e283613f31c7510c03efb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+      "sha256": "d97a513b6fb59b64f4b948ec7adee13af587e5d8d0ce85f9e277ea616e59d1af"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/final-home-baseline.png",
+      "sha256": "c240aac268d0130adf678d1c7c4194295ce0bc41f5b6ca8de4dbc2ef7736859b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/main-integration-home-baseline.png",
+      "sha256": "c240aac268d0130adf678d1c7c4194295ce0bc41f5b6ca8de4dbc2ef7736859b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/privacy-final-desktop.png",
+      "sha256": "7ba18a593a71c49f7242a7807d376ec69e0a57fa3f70ce38a0a4c21319a39a48"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/privacy-final-mobile.png",
+      "sha256": "553675c415826693680e6191b375dc23c7c1a1c4ff249b764b339c3fe136e336"
+    }
+  ],
+  "logNormalization": "Terminal ANSI and trailing whitespace removed; workspace paths normalized; trailing blank lines trimmed. No result lines removed."
+}

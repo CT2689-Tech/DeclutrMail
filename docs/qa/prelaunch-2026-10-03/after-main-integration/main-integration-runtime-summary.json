@@ -1,0 +1,3646 @@
+{
+  "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+  "environment": "Fresh tracked production web archive + disposable synthetic loopback API/PostgreSQL/Redis; no provider worker or live Gmail/payment/account operations.",
+  "preliminaryFailure": {
+    "id": "journeys-final-before-brief-locator-fix",
+    "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "testCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "stats": {
+      "startTime": "2026-10-03T23:51:04.548Z",
+      "duration": 25393.196,
+      "expected": 14,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "tests": [
+      {
+        "file": "autopilot-pages.spec.ts",
+        "title": "review pages cover the backlog and recover when the older page is exhausted",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1703,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "brief-preview.spec.ts",
+        "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+        "project": "default",
+        "status": "unexpected",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 306,
+            "errors": [
+              "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByText('1 message yesterday', { exact: true })\nExpected: visible\nError: strict mode violation: getByText('1 message yesterday', { exact: true }) resolved to 2 elements:\n    1) <div>1 message yesterday</div> aka getByRole('region', { name: 'Noise (1 senders, 1 messages' }).getByText('message yesterday')\n    2) <div>1 message yesterday</div> aka getByText('message yesterday').nth(1)\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByText('1 message yesterday', { exact: true }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByText('1 message yesterday', { exact: true })\u001b[22m\n\n\n  39 |     }),\n  40 |   ).toBeChecked();\n> 41 |   await expect(page.getByText('1 message yesterday', { exact: true })).toBeVisible();\n     |                                                                        ^\n  42 |   await page.getByRole('button', { name: 'Archive 1 sender', exact: true }).click();\n  43 |   const dialog = page.getByRole('dialog');\n  44 |   await expect(dialog).toBeVisible();\n    at /Users/chintant/projects/DeclutrMail/packages/e2e/specs/brief-preview.spec.ts:41:72"
+            ]
+          }
+        ]
+      },
+      {
+        "file": "cookie-consent.spec.ts",
+        "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 2414,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "cookie-consent.spec.ts",
+        "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 4255,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "followups-dismiss.spec.ts",
+        "title": "Mark resolved dismisses the row, audits it, and survives reload",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 740,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "later-recovery.spec.ts",
+        "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 3124,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "protection-review.spec.ts",
+        "title": "protected senders show the exact reason, and Unprotect works in place",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 313,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "public-journeys.spec.ts",
+        "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1435,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "public-journeys.spec.ts",
+        "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1146,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "quiet-hours.spec.ts",
+        "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1944,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "sender-policy.spec.ts",
+        "title": "Protect toggle persists across reload and restores on toggle-back",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 742,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "senders-search-typing.spec.ts",
+        "title": "typing a multi-word query keeps every keystroke",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1542,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "senders-search-typing.spec.ts",
+        "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1669,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "senders-search-typing.spec.ts",
+        "title": "backspacing to empty restores the unfiltered list",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1267,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "triage-keep.spec.ts",
+        "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+        "project": "default",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 767,
+            "errors": []
+          }
+        ]
+      }
+    ],
+    "disposition": "Whole-page Brief text strictness matched2DOMelements. Scoped to exactly one accessible seeded sender row; no production change. Hidden stream twin inferred but not directly reproduced. Original failed log/context retained."
+  },
+  "finalRuns": [
+    {
+      "id": "journeys-final-1",
+      "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+      "stats": {
+        "startTime": "2026-10-03T23:55:09.373Z",
+        "duration": 24307.4,
+        "expected": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "autopilot-pages.spec.ts",
+          "title": "review pages cover the backlog and recover when the older page is exhausted",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1841,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "brief-preview.spec.ts",
+          "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 460,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 2431,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 4281,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "followups-dismiss.spec.ts",
+          "title": "Mark resolved dismisses the row, audits it, and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 721,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "later-recovery.spec.ts",
+          "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 3126,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "protection-review.spec.ts",
+          "title": "protected senders show the exact reason, and Unprotect works in place",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 309,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1000,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 554,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "quiet-hours.spec.ts",
+          "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1881,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "sender-policy.spec.ts",
+          "title": "Protect toggle persists across reload and restores on toggle-back",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 740,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "typing a multi-word query keeps every keystroke",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1627,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1689,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "backspacing to empty restores the unfiltered list",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1209,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "triage-keep.spec.ts",
+          "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 798,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "journeys-final-2",
+      "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+      "stats": {
+        "startTime": "2026-10-03T23:55:56.304Z",
+        "duration": 23716.967,
+        "expected": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "autopilot-pages.spec.ts",
+          "title": "review pages cover the backlog and recover when the older page is exhausted",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1788,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "brief-preview.spec.ts",
+          "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 356,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 2346,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 4209,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "followups-dismiss.spec.ts",
+          "title": "Mark resolved dismisses the row, audits it, and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 717,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "later-recovery.spec.ts",
+          "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 3087,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "protection-review.spec.ts",
+          "title": "protected senders show the exact reason, and Unprotect works in place",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 306,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1463,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 522,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "quiet-hours.spec.ts",
+          "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1818,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "sender-policy.spec.ts",
+          "title": "Protect toggle persists across reload and restores on toggle-back",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 680,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "typing a multi-word query keeps every keystroke",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1541,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1594,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "backspacing to empty restores the unfiltered list",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1108,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "triage-keep.spec.ts",
+          "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 789,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hydration-final-1",
+      "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+      "stats": {
+        "startTime": "2026-10-03T23:56:25.546Z",
+        "duration": 40688.132,
+        "expected": 43,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 966,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 893,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 883,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 883,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 887,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 872,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 905,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 872,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 922,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 894,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 894,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 887,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 880,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 886,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 863,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 893,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 877,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 917,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 885,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 884,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 877,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 872,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 882,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 863,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 893,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 871,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /home",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 896,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1786,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /triage",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 893,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /activity",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 897,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /autopilot",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1235,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /billing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 912,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /brief",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 880,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /followups",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 900,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /later",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 888,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /quiet",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 881,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /screener",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 945,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 969,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/privacy",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 916,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 894,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /onboarding",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 876,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /admin/security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 868,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hydration-final-2",
+      "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+      "stats": {
+        "startTime": "2026-10-03T23:57:31.826Z",
+        "duration": 41946.731999999996,
+        "expected": 43,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1288,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 951,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 930,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 941,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 910,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 908,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 915,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 923,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 893,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 939,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 909,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 919,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 904,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 906,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 912,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 898,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 924,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 881,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 950,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 911,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 902,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 901,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 888,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 900,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 877,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /home",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 900,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1831,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /triage",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 919,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /activity",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 911,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /autopilot",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 950,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /billing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 915,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /brief",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 906,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /followups",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 884,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /later",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 907,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /quiet",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 887,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /screener",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 875,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 897,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/privacy",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 915,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /onboarding",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 870,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /admin/security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 908,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "a11y-responsive-final",
+      "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+      "stats": {
+        "startTime": "2026-10-04T00:05:04.976Z",
+        "duration": 60587.553,
+        "expected": 70,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/ passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1084,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/pricing passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 992,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/inbox-simulator passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 690,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/compare passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 756,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/vs/unroll-me passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 727,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/alternatives/clean-email passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 724,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 688,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/security passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 618,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/privacy passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 726,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/how-it-works passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 822,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/faq passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 600,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/contact passes the public accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 551,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "the public shell exposes a working skip link as the first tab stop",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 220,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/ passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 812,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/pricing passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 816,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/inbox-simulator passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 595,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/compare passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 735,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/vs/unroll-me passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 730,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/alternatives/clean-email passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 741,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 694,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/security passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 647,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/privacy passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 734,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/how-it-works passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 816,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/faq passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 643,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "/contact passes the public accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 564,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-public.spec.ts",
+          "title": "the public shell exposes a working skip link as the first tab stop",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 209,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/senders passes the authenticated accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1295,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/triage passes the authenticated accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1482,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/activity passes the authenticated accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 712,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/settings/privacy passes the authenticated accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 909,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/billing passes the authenticated accessibility smoke",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 903,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "Activity filters load on first open and restore focus",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1668,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "keyboard shortcut dialog traps and restores focus",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 415,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+          "project": "a11y-desktop",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1544,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/senders passes the authenticated accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1025,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/triage passes the authenticated accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1428,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/activity passes the authenticated accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 632,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/settings/privacy passes the authenticated accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "/billing passes the authenticated accessibility smoke",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 829,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "Activity filters load on first open and restore focus",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1742,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "keyboard shortcut dialog traps and restores focus",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 448,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "a11y-smoke.spec.ts",
+          "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+          "project": "a11y-mobile-reduced-motion",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1529,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/home stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1451,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/senders stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 716,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/triage stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 873,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/screener stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 878,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/autopilot stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 867,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/quiet stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 865,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/brief stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 872,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/followups stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 867,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/later stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 860,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/activity stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 866,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/billing stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 868,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/settings stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 865,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/settings/privacy stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 862,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/settings/help stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 870,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/settings/senders stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 870,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/senders/e2eb1111-0000-4000-8000-00000000000a stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 877,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/admin/security stays inside the compact authenticated viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 859,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/ stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 675,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/pricing stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 650,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/inbox-simulator stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 646,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/compare stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 646,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/vs/unroll-me stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 648,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/alternatives/clean-email stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 645,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/how-to/clean-gmail-by-sender stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 645,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/privacy stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 642,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/how-it-works stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 659,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "/faq stays inside the compact public viewport",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 643,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "responsive-layout.spec.ts",
+          "title": "the compact navigation drawer remains fully reachable",
+          "project": "responsive-phone",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 818,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "finalProcessRestart": "Between hydration-final-1 and hydration-final-2; same frozen source, no test retries/overrides.",
+  "originalHydrationResidual": "Initial three public React418 errors remain archived at original1b source; final passes do not establish their cause.",
+  "limits": "Repeated runs count as executions, not distinct tests; selected responsive/axe checks are not exhaustive interactions or full WCAG certification.",
+  "preliminaryAccessibilityFailure": {
+    "id": "a11y-before-mounted-readiness",
+    "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+    "stats": {
+      "startTime": "2026-10-03T23:58:37.590Z",
+      "duration": 88795.77200000001,
+      "expected": 68,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0
+    },
+    "tests": [
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/ passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 917,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/pricing passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 844,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/inbox-simulator passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 589,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/compare passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 740,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/vs/unroll-me passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 739,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/alternatives/clean-email passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 753,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 724,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/security passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 645,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/privacy passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 753,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/how-it-works passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 859,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/faq passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 620,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/contact passes the public accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 570,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "the public shell exposes a working skip link as the first tab stop",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 230,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/ passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 816,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/pricing passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 809,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/inbox-simulator passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 572,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/compare passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 710,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/vs/unroll-me passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 710,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/alternatives/clean-email passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 778,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 700,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/security passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 787,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/privacy passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 725,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/how-it-works passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 785,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/faq passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 590,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "/contact passes the public accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 540,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-public.spec.ts",
+        "title": "the public shell exposes a working skip link as the first tab stop",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 209,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/senders passes the authenticated accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 765,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/triage passes the authenticated accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1427,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/activity passes the authenticated accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 617,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/settings/privacy passes the authenticated accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 856,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/billing passes the authenticated accessibility smoke",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 792,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "Activity filters load on first open and restore focus",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1681,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "keyboard shortcut dialog traps and restores focus",
+        "project": "a11y-desktop",
+        "status": "unexpected",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15236,
+            "errors": [
+              "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Keyboard shortcuts' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Keyboard shortcuts' }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Keyboard shortcuts' })\u001b[22m\n\n\n  153 |\n  154 |   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });\n> 155 |   await expect(dialog).toBeVisible();\n      |                        ^\n  156 |   const close = dialog.getByRole('button', { name: 'Close shortcuts' });\n  157 |   await expect(close).toBeFocused();\n  158 |\n    at /Users/chintant/projects/DeclutrMail/packages/e2e/specs/a11y-smoke.spec.ts:155:24"
+            ]
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+        "project": "a11y-desktop",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1207,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/senders passes the authenticated accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 978,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/triage passes the authenticated accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1397,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/activity passes the authenticated accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 590,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/settings/privacy passes the authenticated accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 827,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "/billing passes the authenticated accessibility smoke",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 768,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "Activity filters load on first open and restore focus",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1237,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "keyboard shortcut dialog traps and restores focus",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "unexpected",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15226,
+            "errors": [
+              "Error: \u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: getByRole('dialog', { name: 'Keyboard shortcuts' })\nExpected: visible\nTimeout: 15000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - Expect \"toBeVisible\" getByRole('dialog', { name: 'Keyboard shortcuts' }) with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('dialog', { name: 'Keyboard shortcuts' })\u001b[22m\n\n\n  153 |\n  154 |   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });\n> 155 |   await expect(dialog).toBeVisible();\n      |                        ^\n  156 |   const close = dialog.getByRole('button', { name: 'Close shortcuts' });\n  157 |   await expect(close).toBeFocused();\n  158 |\n    at /Users/chintant/projects/DeclutrMail/packages/e2e/specs/a11y-smoke.spec.ts:155:24"
+            ]
+          }
+        ]
+      },
+      {
+        "file": "a11y-smoke.spec.ts",
+        "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+        "project": "a11y-mobile-reduced-motion",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1492,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/home stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 943,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/senders stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 711,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/triage stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 874,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/screener stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 868,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/autopilot stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 867,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/quiet stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 860,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/brief stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 865,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/followups stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 867,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/later stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 864,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/activity stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 867,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/billing stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 876,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/settings stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 865,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/settings/privacy stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 863,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/settings/help stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 871,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/settings/senders stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 871,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/senders/e2eb1111-0000-4000-8000-00000000000a stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 906,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/admin/security stays inside the compact authenticated viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 861,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/ stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 679,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/pricing stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 650,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/inbox-simulator stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 649,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/compare stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 651,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/vs/unroll-me stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 647,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/alternatives/clean-email stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 640,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/how-to/clean-gmail-by-sender stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 641,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/privacy stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 638,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/how-it-works stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 664,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "/faq stays inside the compact public viewport",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 642,
+            "errors": []
+          }
+        ]
+      },
+      {
+        "file": "responsive-layout.spec.ts",
+        "title": "the compact navigation drawer remains fully reachable",
+        "project": "responsive-phone",
+        "status": "expected",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 810,
+            "errors": []
+          }
+        ]
+      }
+    ],
+    "disposition": "Native shortcut scenario had no mounted-screen readiness precondition. Slow-CPU diagnosis directly observed SSR heading/native focus with zero question-mark listeners before About marker, then actual dialog/trap/restore passed after marker; exact earlier timeout did not recur in diagnosis. Four test-only mounted waits added; focused6 and normal-setup70 rerun passed. Original68/70 log/context retained."
+  },
+  "finalExecutions": 186,
+  "finalPasses": 186,
+  "finalSkipped": 0,
+  "finalUnexpected": 0,
+  "finalFlaky": 0
+}

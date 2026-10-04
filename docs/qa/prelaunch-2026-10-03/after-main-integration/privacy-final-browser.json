@@ -1,0 +1,61 @@
+{
+  "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "method": "Owned isolated Chromium, synthetic authenticated state, loopback production build; intercepted export response tests browser handoff only, not provider/account export completeness.",
+  "records": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "status": 200,
+      "nativeDisclosureOpened": true,
+      "nativeDisclosurePreservedThroughPendingAndPrepared": true,
+      "exportPendingDisabled": true,
+      "syntheticDownloadHandoff": true,
+      "providerExportExecuted": false,
+      "cookieControlsVisible": true,
+      "overflow": false,
+      "hydrationErrors": [],
+      "axeViolations": [],
+      "axeIncomplete": [
+        {
+          "id": "aria-valid-attr-value",
+          "impact": "critical"
+        },
+        {
+          "id": "color-contrast",
+          "impact": "serious"
+        }
+      ],
+      "screenshot": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/privacy-final-desktop.png"
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "status": 200,
+      "nativeDisclosureOpened": true,
+      "nativeDisclosurePreservedThroughPendingAndPrepared": true,
+      "exportPendingDisabled": true,
+      "syntheticDownloadHandoff": true,
+      "providerExportExecuted": false,
+      "cookieControlsVisible": true,
+      "overflow": false,
+      "hydrationErrors": [],
+      "axeViolations": [],
+      "axeIncomplete": [
+        {
+          "id": "aria-valid-attr-value",
+          "impact": "critical"
+        },
+        {
+          "id": "color-contrast",
+          "impact": "serious"
+        }
+      ],
+      "screenshot": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/privacy-final-mobile.png"
+    }
+  ],
+  "screenshotLimit": "AppShell uses an internal main scroller: screenshots show the selected scrolled inventory viewport and the existing first-heard survey for a fresh synthetic user, not every page section. DOM/behavior checks cover the named controls independently."
+}

@@ -1,0 +1,419 @@
+{
+  "review": "Independent design and interaction source assessment of upstream main integration for PR 881",
+  "method": "Read-only current working source and Git comparisons against HEAD and MERGE_HEAD; test code inspected, no test execution or browser use.",
+  "snapshot": {
+    "head": "2abb9311c164fbc5db90245c3535077a13f4aba9",
+    "mergeHead": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "historicalRenderedProductSource": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "mergeInProgress": false,
+    "sourceSha256": {
+      "apps/web/src/features/activity/activity-screen.tsx": "8441e5892c0e4c0dd4c7f4f48b7d8f33519a72d2cdf8539780d3b2e5e225fa41",
+      "apps/web/src/features/triage/focus-card.tsx": "31fa6365090c4c0b4de75cd3e4e42063ee0203884bbc930e5ca187a296d78a8a",
+      "apps/web/src/features/triage/focus-stack.tsx": "033c36b93811da030abb4bbfaa2f441598dca662cd6ce1990f3d23e4a0e9827a",
+      "apps/web/src/features/triage/triage-row-expanded.tsx": "58427c84668b4bf9c329d6b09d06d45a4fd62bf9b2cc59b8f256e0534c7b9d90",
+      "apps/web/src/features/triage/action-toolbar.tsx": "bca3518502f5af083fc040c16c9ff7860cb79bd460ef61230c6ae2e8b07ba2b4",
+      "apps/web/src/features/auth/api/use-me.ts": "1650a457cc125935f44dd960d44cacd94f24ae9ede7674c4639bc775db176be5",
+      "apps/web/src/app/(app)/autopilot/page.tsx": "eecf20d8bffaed99954612482e0e7f0e50f238c54a6019ffe80a185d3999660e",
+      "apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx": "e23431757e35aafc384d43e35184fd5ebd0f4b144009fafb1e04c5374a3883fb",
+      "apps/web/src/features/autopilot/autopilot-screen.tsx": "2f7be72414d1b649c41de003739bca72e8a9e26a12773992581468928bad5810",
+      "apps/web/src/features/autopilot/api/query-options.ts": "d9d76340e3c903e6724ad6ff39b2aadce8b4dc5f87eb44ee2dbb4365a8ec457d",
+      "apps/web/src/features/autopilot/api/use-pending-suggestions.ts": "254caf06cad468bc9da0c10f13aa15a76de7161e34673e70fa7a6b2cc03ec9c4",
+      "apps/web/src/lib/query-client.ts": "ffb21a7f0814c19c1ff3f305838b5bc6bdba4c639618179656735300756e90ee",
+      "apps/web/src/lib/query-hydration-boundary.tsx": "70d09abf90449fbe688ddfb717eacb0eaa9caf4435e10b154d8dd54d026a73d8",
+      "apps/web/src/lib/server-query-hydration.tsx": "d53d2b1af5ca3e9eeaa6cf9b7f9431ddb8b2b76b26c76e8498ff1750108be2fa",
+      "apps/web/src/lib/server-query-client.ts": "563583b187b29a507f36dee978d6450e371074806694ead1766320710092d2b5",
+      "apps/web/src/lib/streamed-query-recovery.ts": "b9e1fd0b922868e404191a9893485e3b89da4337717f00a5cc7eade6750dcdf7",
+      "apps/web/instrumentation.ts": "cc07a61205cb3de80617cea2f317e4b420eea0fea6ef06cfc98acc1dd7418d37"
+    },
+    "sourceFreeze": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "sourceHashesMatchFrozenCommit": true,
+    "comparedSourceFiles": 17,
+    "changedReviewedSourceFiles": []
+  },
+  "sourceAssessment": "NO_ACTIONABLE_SOURCE_REGRESSIONS_FOUND_IN_REVIEWED_SCOPE",
+  "sourceGate": "PASS_SCOPED_REVIEW",
+  "currentMergedIntegrationGate": "PASS_FOR_SCOPED_FIXES_PR",
+  "renderedCurrentMergedSourceVerified": false,
+  "findings": [],
+  "coverage": [
+    {
+      "route": "/activity",
+      "statesReviewed": [
+        "rapid distinct filter composition",
+        "restored URL plus unrelated parameters/hash",
+        "placeholder rows",
+        "keyboard selection and individual Undo",
+        "bulk Undo",
+        "portal recovery preview and confirmation",
+        "invalid filters",
+        "next-page retry",
+        "empty/error heading levels"
+      ],
+      "method": "Current source and HEAD/MERGE_HEAD comparisons; regression test assertions read.",
+      "result": "PASS_SOURCE_ONLY",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 211,
+          "detail": "URL edits synchronously merge with window.location.href and use native replaceState, preserving upstream filter race fix."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 332,
+          "detail": "Selection handler refuses placeholder data; filter-change selection cleanup retains its in-flight bulk guard."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 474,
+          "detail": "Interaction guard wraps bulk actions, both list variants, and paging; retained list is inert and aria-busy."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 1487,
+          "detail": "Bulk Undo keeps both handler and disabled guards for placeholder data and current bulk work."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 2329,
+          "detail": "Recovery verification is guarded; confirmation at 2350 still requires ready preview and a locked idempotent identity, including portal path."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 2580,
+          "detail": "Individual Undo keeps handler and disabled checks; next-page failure foreground remains amberDeep at line 799."
+        },
+        {
+          "file": "apps/web/src/features/activity/activity-screen.test.tsx",
+          "line": 3499,
+          "detail": "Keyboard Undo/selection placeholder regression remains, alongside recovery portal guard at 3557 and native-history composition tests at 3625/3641."
+        }
+      ],
+      "limitations": [
+        "At initial source review Activity test contents had no conflict markers but index was UU. Root has now committed the merge; both regression families are preserved per CORE report.",
+        "No current-merge browser/API behavior run by this reviewer; root current runtime proof pending."
+      ]
+    },
+    {
+      "route": "/triage",
+      "statesReviewed": [
+        "Focus/List Last seen account timezone",
+        "standalone demo focus card",
+        "nonmodal account dialog Skip",
+        "action dialog keyboard verbs",
+        "inline action preview",
+        "busy/unknown rows"
+      ],
+      "method": "Current source and overlapping merge comparisons; timezone and dialog regression test assertions read.",
+      "result": "PASS_SOURCE_ONLY",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/triage/focus-stack.tsx",
+          "line": 73,
+          "detail": "Focus stack now obtains the existing cache-only account timezone and forwards it to the focus card at line 101."
+        },
+        {
+          "file": "apps/web/src/features/triage/focus-card.tsx",
+          "line": 38,
+          "detail": "Standalone card defaults to UTC without importing auth/query state; expanded reasoning receives that explicit zone at line 314."
+        },
+        {
+          "file": "apps/web/src/features/triage/triage-row-expanded.tsx",
+          "line": 135,
+          "detail": "Last seen uses the passed account zone after the hydration-safe useNow gate."
+        },
+        {
+          "file": "apps/web/src/features/triage/focus-stack.tsx",
+          "line": 85,
+          "detail": "Skip still yields to every role=dialog, including nonmodal account controls; upstream timezone wiring did not revert our broader dialog guard."
+        },
+        {
+          "file": "apps/web/src/features/triage/action-toolbar.tsx",
+          "line": 100,
+          "detail": "Canonical keyboard actions retain the same all-dialog guard and preview callbacks."
+        },
+        {
+          "file": "apps/web/src/features/triage/triage-focus.test.tsx",
+          "line": 258,
+          "detail": "Account timezone consistency assertion remains for Focus and List; nonmodal Skip guard regression remains at 439."
+        }
+      ],
+      "limitations": [
+        "No rendered account-timezone or keyboard rerun performed by this reviewer on the merged candidate."
+      ]
+    },
+    {
+      "route": "/autopilot",
+      "statesReviewed": [
+        "Free catalog-only",
+        "eligible Rules primary load",
+        "pending/pattern optional loading",
+        "early and late optional read failure",
+        "deadline and browser recovery",
+        "paged/changed mailbox scope",
+        "rule mode controls",
+        "approval/activation previews",
+        "page and section error hierarchy"
+      ],
+      "method": "Current route, entitlement surface, screen, query keys, stream bridge, and diagnostic boundary source; relevant regression tests inspected.",
+      "result": "PASS_SOURCE_ONLY",
+      "evidence": [
+        {
+          "file": "apps/web/src/app/(app)/autopilot/page.tsx",
+          "line": 39,
+          "detail": "Primary Rules read remains awaited; optional pending/pattern reads start separately at line 55 only with confirmed mailbox and autopilot capability."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx",
+          "line": 35,
+          "detail": "Under-tier surface still mounts the read-only preset catalog instead of mutation/suggestion route."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/api/query-options.ts",
+          "line": 27,
+          "detail": "Server and client share pending-page query options keyed by mailbox and cursor; client hook adopts this factory."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/autopilot-screen.tsx",
+          "line": 115,
+          "detail": "Mailbox cursor switches resolve synchronously; section states at 206 distinguish loading/error from ready."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/autopilot-screen.tsx",
+          "line": 1083,
+          "detail": "Rule mode changes and counts remain gated until suggestions are ready; section retries/skeletons remain at 1145, 1148."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/autopilot-screen.tsx",
+          "line": 1019,
+          "detail": "Our whole-page error headingLevel=2 survives alongside unchanged section h2/h3 structure."
+        },
+        {
+          "file": "apps/web/src/lib/server-query-hydration.tsx",
+          "line": 40,
+          "detail": "Optional reads use a separate QueryClient deadline owner, avoiding cancellation of the primary Rules reads; rejected results keep browser recovery."
+        },
+        {
+          "file": "apps/web/src/lib/query-hydration-boundary.tsx",
+          "line": 18,
+          "detail": "Only pending transported snapshots normalize thenables into native promises; settled snapshots use the existing path."
+        },
+        {
+          "file": "apps/web/src/lib/query-client.ts",
+          "line": 159,
+          "detail": "Client Component SSR does not run browser retry readers; browser retains the existing transient-only policy."
+        },
+        {
+          "file": "apps/web/instrumentation.ts",
+          "line": 32,
+          "detail": "Request diagnostics skip only the exact optional-stream transport marker; unrelated render errors still report. This is scoped duplicate transport handling, not general hydration suppression."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/server-autopilot-hydration.test.tsx",
+          "line": 144,
+          "detail": "Free catalog-only and absent-mailbox coverage exists, followed by early/late 401/403/409/500 recovery, slow stream, page scope, mailbox reset and deadline tests."
+        },
+        {
+          "file": "apps/web/src/lib/query-hydration-boundary.test.tsx",
+          "line": 14,
+          "detail": "Real renderToString/hydrateRoot assertions cover stream fulfillment before/after first client hydration, plus settled/newer cache and rejected transport controls."
+        },
+        {
+          "file": "apps/web/src/lib/streamed-query-recovery.test.ts",
+          "line": 27,
+          "detail": "Unrelated errors and spoofed-name/different-message markers continue reporting; telemetry failure stays optional."
+        }
+      ],
+      "limitations": [
+        "No current merged production direct-load/reload/hydration claim.",
+        "Autopilot is the sole current streaming caller (source search verified); downstream arbitrary Suspense/deferred consumers are not covered by this review."
+      ]
+    }
+  ],
+  "structuralChecks": {
+    "canonicalVerbsAndShortcuts": "No changes to action vocabulary or bindings in reviewed merge; existing preview/confirmation paths retained.",
+    "actionLifecycle": "No new destructive mutation path or weakened activation/approval/recovery gate found.",
+    "stateAndComponentBoundaries": "No new state library or packages/shared promotion; existing TanStack server-state/client cache boundary retained. New lib hydration wrapper is nonvisual infrastructure, not a feature UI component.",
+    "storyCoverage": "Existing affected visual states remain represented by feature stories. Current merged fixtures not rendered; source regression tests represent stream ordering and account-zone mechanism.",
+    "hierarchyAndForeground": "Auto-merge preserves our page-level error/empty heading levels and corrected foreground tokens; no changed layout dimensions or new copy duplications found in reviewed UI."
+  },
+  "hydrationResidual": {
+    "id": "HYDRATION-01",
+    "status": "UNCHANGED_UNEXPLAINED_INITIAL_PUBLIC_SIGNAL",
+    "initialRoutes": ["/", "/compare", "/faq"],
+    "claim": "Upstream Autopilot Flight-stream mechanism and its repair do not establish the cause of the three initial public returning-visitor HTML hydration failures.",
+    "historicalEvidence": "Initial 40/43 and both exact 43/43 rechecks at product 1b5c9f93 remain historical evidence; current merged runtime proof is pending root.",
+    "publicLaunchSignoff": false
+  },
+  "requiredNextProofs": [
+    "Root current merged production journeys (15 cases twice), hydration (43 cases twice), and accessibility/responsive (70 cases).",
+    "Root resolve the measured Privacy bundle-budget discrepancy or record its verified gate disposition.",
+    "Preserve original public HYDRATION-01 as unexplained; upstream Autopilot repair does not establish its cause."
+  ],
+  "actionsPerformed": {
+    "sourceWrites": false,
+    "gitMutations": false,
+    "browserUse": false,
+    "liveApiOrMailboxOrPaymentUse": false,
+    "testExecution": false,
+    "artifactWriteOnly": true
+  },
+  "updatedAtUtc": "2026-10-03T23:44:21.614910+00:00",
+  "buildPrerequisites": {
+    "sourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "webProductionBuild": {
+      "result": "PASS",
+      "method": "Root supplied result"
+    },
+    "storybookProductionBuild": {
+      "result": "PASS",
+      "method": "Root supplied result"
+    },
+    "workspaceTypecheck": {
+      "result": "PASS",
+      "projects": 8,
+      "method": "Root supplied result and log inspected",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
+    },
+    "rootLint": {
+      "result": "PASS",
+      "errors": 0,
+      "existingWarnings": 6,
+      "method": "Root supplied result and log inspected",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
+    },
+    "bundleBudget": {
+      "result": "PENDING_DIAGNOSIS",
+      "detail": "Root reported Privacy first-load display 262.0 KiB against 262 KiB budget; COPY investigating read-only. No new source work by reviewer."
+    }
+  },
+  "currentMergedRenderCoverage": {
+    "sourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "homepageBaseline": {
+      "artifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/main-integration-home-baseline.png",
+      "method": "Root supplied capture independently inspected via local image viewer",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 640
+      },
+      "visibleScope": "Header and above-fold hero/product sample with expected cookie-consent prompt",
+      "result": "NO_ACTIONABLE_FINDINGS_IN_VISIBLE_VIEWPORT",
+      "observations": [
+        "Header links and CTA remain legible and fit the viewport.",
+        "Headline and supporting copy retain distinct hierarchy and explain the Gmail cleanup offering.",
+        "Fictional sample label remains in the mockup window bar rather than a visible footer caption."
+      ],
+      "limitations": [
+        "This is one viewport, not a new full homepage or mobile review.",
+        "Consent prompt is visible; it is an intended UI state, not an unexpected error overlay."
+      ]
+    },
+    "rootNativeBrowserBaseline": {
+      "result": "PASS",
+      "capturedErrors": 0,
+      "method": "Root supplied meaningful native agent-browser snapshot result"
+    },
+    "broaderRuntime": "Pending root current production journeys, hydration and accessibility/responsive suites.",
+    "historicalCaptures": {
+      "productSource": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "publicRoutes": 48,
+      "storybookBaselineStates": 121,
+      "status": "HISTORICAL_NOT_RELABELLED_AS_CURRENT_MERGE"
+    }
+  },
+  "privacyOptimizationReview": {
+    "result": "PASS_SOURCE_ONLY",
+    "comparison": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470 to 05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "files": [
+      "apps/web/src/app/(app)/settings/privacy/page.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+      "packages/shared/src/components/privacy-badge.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx"
+    ],
+    "findings": [],
+    "evidence": [
+      {
+        "file": "apps/web/src/app/(app)/settings/privacy/page.tsx",
+        "line": 21,
+        "detail": "Server page supplies the rendered static content slot and canonical string projection to existing client controller."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+        "line": 33,
+        "detail": "Export copy is projected from shared canonical contracts into strings only, without dataset IDs/functions or account/tier/time-derived content."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+        "line": 54,
+        "detail": "Same PrivacyBadge h2 and styles; native SettingsGroup anchor remains privacy-gmail-data-inventory at line 60."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+        "line": 170,
+        "detail": "Inventory disclosures retain native details/summary DOM and original responsive/motion token CSS."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+        "line": 53,
+        "detail": "Auth, billing and export hooks remain client-owned; live mailbox/tier/retention and pending/failure/download state still drive the view."
+      },
+      {
+        "file": "packages/shared/src/components/privacy-badge.tsx",
+        "line": 1,
+        "detail": "Badge has only token/copy/JSX dependencies and no browser APIs/hooks/event handlers. Directive removal preserves its component API."
+      },
+      {
+        "file": "apps/web/src/features/onboarding/step-promise.tsx",
+        "line": 1,
+        "detail": "Other production Badge consumer remains inside its existing client boundary and keeps headingLevel=2 at line 33."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+        "line": 67,
+        "detail": "Existing stories mount the actual static content and projected canonical copy rather than parallel fixtures."
+      },
+      {
+        "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx",
+        "line": 237,
+        "detail": "New regression verifies an open native inventory disclosure retains DOM identity and open state through pending and prepared export updates."
+      }
+    ],
+    "consumerSweep": {
+      "query": "rg -n PrivacyBadge apps/web/src packages/shared/src --glob *.tsx",
+      "productionConsumers": ["PrivacyDataContent", "StepPromise"],
+      "additionalConsumers": "Existing shared Badge stories/tests and PrivacyDataView stories/tests. Shared exports and comment references are not extra product consumers.",
+      "staleStaticReaderCheck": "No account, mailbox status, tier, locale, time or server fetched data enters the static slot/copy projection. Those live readers remain in the existing client route."
+    },
+    "structuralChecks": {
+      "newPromotionOrLibrary": false,
+      "serverStateLayerChange": false,
+      "mutationOrLifecycleChange": false,
+      "newVisualComponentCoverage": "Static feature extraction is rendered in all existing PrivacyDataView stories; loading/error/disabled states remain controller states. Shared PrivacyBadge stories remain intact.",
+      "headingAndForeground": "Original DOM heading levels, IDs, colors and layout styles preserved."
+    },
+    "ownerVerification": {
+      "result": "PASS_REPORTED_BY_COPY",
+      "focusedSuites": "Privacy/export/replay plus shared Badge/data-export; no duplicate execution by reviewer",
+      "htmlEquivalence": {
+        "artifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json",
+        "method": "Owner renderToStaticMarkup exact full HTML comparison against untouched f21 before view; JSON independently inspected",
+        "states": 8,
+        "allEqual": true,
+        "limitations": "Static HTML equivalence is not current production browser or bundle proof."
+      }
+    }
+  },
+  "finalGateArtifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json",
+  "finalSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "finalCurrentRuntimeSummary": {
+    "journeys": "15/15 twice",
+    "hydration": "43/43 twice",
+    "accessibilityResponsive": "70/70",
+    "buildsAndBudget": "PASS",
+    "privacyBrowser": "PASS_SCOPED_DESKTOP_AND_PHONE_INTERCEPTED_HANDOFF",
+    "fixesPrSignoff": true,
+    "launchSignoff": false
+  }
+}

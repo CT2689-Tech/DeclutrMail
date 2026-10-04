@@ -1,0 +1,136 @@
+
+> @declutrmail/e2e@0.0.0 e2e:a11y [workspace]/packages/e2e
+> playwright test --project=a11y-desktop --project=a11y-mobile-reduced-motion --project=responsive-phone
+
+
+Running 70 tests using 1 worker
+
+  ✓   1 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › / passes the public accessibility smoke (917ms)
+  ✓   2 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /pricing passes the public accessibility smoke (844ms)
+  ✓   3 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /inbox-simulator passes the public accessibility smoke (589ms)
+  ✓   4 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /compare passes the public accessibility smoke (740ms)
+  ✓   5 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /vs/unroll-me passes the public accessibility smoke (739ms)
+  ✓   6 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /alternatives/clean-email passes the public accessibility smoke (753ms)
+  ✓   7 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /how-to/clean-gmail-by-sender passes the public accessibility smoke (724ms)
+  ✓   8 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /security passes the public accessibility smoke (645ms)
+  ✓   9 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /privacy passes the public accessibility smoke (753ms)
+  ✓  10 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /how-it-works passes the public accessibility smoke (859ms)
+  ✓  11 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /faq passes the public accessibility smoke (620ms)
+  ✓  12 [a11y-desktop] › specs/a11y-public.spec.ts:91:3 › /contact passes the public accessibility smoke (570ms)
+  ✓  13 [a11y-desktop] › specs/a11y-public.spec.ts:107:1 › the public shell exposes a working skip link as the first tab stop (230ms)
+  ✓  14 [a11y-desktop] › specs/a11y-smoke.spec.ts:96:3 › /senders passes the authenticated accessibility smoke (765ms)
+  ✓  15 [a11y-desktop] › specs/a11y-smoke.spec.ts:96:3 › /triage passes the authenticated accessibility smoke (1.4s)
+  ✓  16 [a11y-desktop] › specs/a11y-smoke.spec.ts:96:3 › /activity passes the authenticated accessibility smoke (617ms)
+  ✓  17 [a11y-desktop] › specs/a11y-smoke.spec.ts:96:3 › /settings/privacy passes the authenticated accessibility smoke (856ms)
+  ✓  18 [a11y-desktop] › specs/a11y-smoke.spec.ts:96:3 › /billing passes the authenticated accessibility smoke (792ms)
+  ✓  19 [a11y-desktop] › specs/a11y-smoke.spec.ts:116:1 › Activity filters load on first open and restore focus (1.7s)
+  ✘  20 [a11y-desktop] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus (15.2s)
+  ✓  21 [a11y-desktop] › specs/a11y-smoke.spec.ts:172:1 › Privacy export distinguishes failures, announces preparation and permits a retry (1.2s)
+  ✓  22 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › / passes the public accessibility smoke (816ms)
+  ✓  23 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /pricing passes the public accessibility smoke (809ms)
+  ✓  24 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /inbox-simulator passes the public accessibility smoke (572ms)
+  ✓  25 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /compare passes the public accessibility smoke (710ms)
+  ✓  26 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /vs/unroll-me passes the public accessibility smoke (710ms)
+  ✓  27 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /alternatives/clean-email passes the public accessibility smoke (778ms)
+  ✓  28 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /how-to/clean-gmail-by-sender passes the public accessibility smoke (700ms)
+  ✓  29 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /security passes the public accessibility smoke (787ms)
+  ✓  30 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /privacy passes the public accessibility smoke (725ms)
+  ✓  31 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /how-it-works passes the public accessibility smoke (785ms)
+  ✓  32 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /faq passes the public accessibility smoke (590ms)
+  ✓  33 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:91:3 › /contact passes the public accessibility smoke (540ms)
+  ✓  34 [a11y-mobile-reduced-motion] › specs/a11y-public.spec.ts:107:1 › the public shell exposes a working skip link as the first tab stop (209ms)
+  ✓  35 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:96:3 › /senders passes the authenticated accessibility smoke (978ms)
+  ✓  36 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:96:3 › /triage passes the authenticated accessibility smoke (1.4s)
+  ✓  37 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:96:3 › /activity passes the authenticated accessibility smoke (590ms)
+  ✓  38 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:96:3 › /settings/privacy passes the authenticated accessibility smoke (827ms)
+  ✓  39 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:96:3 › /billing passes the authenticated accessibility smoke (768ms)
+  ✓  40 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:116:1 › Activity filters load on first open and restore focus (1.2s)
+  ✘  41 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus (15.2s)
+  ✓  42 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:172:1 › Privacy export distinguishes failures, announces preparation and permits a retry (1.5s)
+  ✓  43 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /home stays inside the compact authenticated viewport (943ms)
+  ✓  44 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /senders stays inside the compact authenticated viewport (711ms)
+  ✓  45 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /triage stays inside the compact authenticated viewport (874ms)
+  ✓  46 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /screener stays inside the compact authenticated viewport (868ms)
+  ✓  47 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /autopilot stays inside the compact authenticated viewport (867ms)
+  ✓  48 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /quiet stays inside the compact authenticated viewport (860ms)
+  ✓  49 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /brief stays inside the compact authenticated viewport (865ms)
+  ✓  50 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /followups stays inside the compact authenticated viewport (867ms)
+  ✓  51 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /later stays inside the compact authenticated viewport (864ms)
+  ✓  52 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /activity stays inside the compact authenticated viewport (867ms)
+  ✓  53 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /billing stays inside the compact authenticated viewport (876ms)
+  ✓  54 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /settings stays inside the compact authenticated viewport (865ms)
+  ✓  55 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /settings/privacy stays inside the compact authenticated viewport (863ms)
+  ✓  56 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /settings/help stays inside the compact authenticated viewport (871ms)
+  ✓  57 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /settings/senders stays inside the compact authenticated viewport (871ms)
+  ✓  58 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /senders/e2eb1111-0000-4000-8000-00000000000a stays inside the compact authenticated viewport (906ms)
+  ✓  59 [responsive-phone] › specs/responsive-layout.spec.ts:69:3 › /admin/security stays inside the compact authenticated viewport (861ms)
+  ✓  60 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › / stays inside the compact public viewport (679ms)
+  ✓  61 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /pricing stays inside the compact public viewport (650ms)
+  ✓  62 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /inbox-simulator stays inside the compact public viewport (649ms)
+  ✓  63 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /compare stays inside the compact public viewport (651ms)
+  ✓  64 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /vs/unroll-me stays inside the compact public viewport (647ms)
+  ✓  65 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /alternatives/clean-email stays inside the compact public viewport (640ms)
+  ✓  66 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /how-to/clean-gmail-by-sender stays inside the compact public viewport (641ms)
+  ✓  67 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /privacy stays inside the compact public viewport (638ms)
+  ✓  68 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /how-it-works stays inside the compact public viewport (664ms)
+  ✓  69 [responsive-phone] › specs/responsive-layout.spec.ts:76:3 › /faq stays inside the compact public viewport (642ms)
+  ✓  70 [responsive-phone] › specs/responsive-layout.spec.ts:82:1 › the compact navigation drawer remains fully reachable (810ms)
+
+
+  1) [a11y-desktop] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Keyboard shortcuts' })
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Keyboard shortcuts' }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Keyboard shortcuts' })
+
+
+      153 |
+      154 |   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    > 155 |   await expect(dialog).toBeVisible();
+          |                        ^
+      156 |   const close = dialog.getByRole('button', { name: 'Close shortcuts' });
+      157 |   await expect(close).toBeFocused();
+      158 |
+        at [workspace]/packages/e2e/specs/a11y-smoke.spec.ts:155:24
+
+    Error Context: test-results/a11y-smoke-keyboard-shortcut-dialog-traps-and-restores-focus-a11y-desktop/error-context.md
+
+  2) [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('dialog', { name: 'Keyboard shortcuts' })
+    Expected: visible
+    Timeout: 15000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" getByRole('dialog', { name: 'Keyboard shortcuts' }) with timeout 15000ms
+      - waiting for getByRole('dialog', { name: 'Keyboard shortcuts' })
+
+
+      153 |
+      154 |   const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
+    > 155 |   await expect(dialog).toBeVisible();
+          |                        ^
+      156 |   const close = dialog.getByRole('button', { name: 'Close shortcuts' });
+      157 |   await expect(close).toBeFocused();
+      158 |
+        at [workspace]/packages/e2e/specs/a11y-smoke.spec.ts:155:24
+
+    Error Context: test-results/a11y-smoke-keyboard-shortcut-dialog-traps-and-restores-focus-a11y-mobile-reduced-motion/error-context.md
+
+  2 failed
+    [a11y-desktop] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus
+    [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:139:1 › keyboard shortcut dialog traps and restores focus
+  68 passed (1.5m)
+[workspace]/packages/e2e:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @declutrmail/e2e@0.0.0 e2e:a11y: `playwright test --project=a11y-desktop --project=a11y-mobile-reduced-motion --project=responsive-phone`
+Exit status 1

@@ -1,0 +1,21 @@
+
+ RUN  v5.0.1 [workspace]/apps/web
+
+
+ Test Files  3 passed (3)
+      Tests  34 passed (34)
+   Start at  16:46:44
+   Duration  4.01s (tests 44%, environment 23%, transform 15%, setup 10%, import 7%)
+
+    Isolate  3 workers spawned · ~379ms startup each (spawn + environment, per file)
+             at least ~758ms faster with isolate: false — reuses workers across files instead of one per file
+
+
+
+ RUN  v5.0.1 [workspace]/apps/web
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  16:47:19
+   Duration  1.05s (transform 45%, environment 17%, import 15%, tests 12%, setup 11%)

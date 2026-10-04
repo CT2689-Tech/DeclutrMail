@@ -1,0 +1,185 @@
+{
+  "reviewKind": "read-only merge integration review",
+  "preparedAtUtc": "2026-10-03T23:31:29.812038+00:00",
+  "revisionContext": {
+    "headBeforeMerge": "2abb9311c164fbc5db90245c3535077a13f4aba9",
+    "upstreamMergeHead": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "reviewedState": "auto-merged working/index tree during root merge; Activity test conflict belongs to CORE and was not inspected/edited for this task",
+    "historicalProductProof": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "historicalReadinessTests": "c86557eb",
+    "newIntegratedBuildRuntimeProof": "pending root; prior production evidence is not relabeled as proof of this integrated source"
+  },
+  "scope": [
+    "packages/e2e/specs/hydration-smoke.spec.ts",
+    "apps/web/src/lib/query-client.ts",
+    "apps/web/src/lib/streamed-query-recovery.ts",
+    "apps/web/src/lib/query-hydration-boundary.tsx",
+    "apps/web/src/lib/server-query-hydration.tsx",
+    "apps/web/instrumentation.ts",
+    "apps/web/src/app/(app)/autopilot/page.tsx",
+    "apps/web/src/features/autopilot/api/query-options.ts",
+    "apps/web/src/features/autopilot/api/use-pending-suggestions.ts",
+    "associated unit suites and public consumer trace"
+  ],
+  "sourceChanges": [],
+  "gitWrites": [],
+  "browserRuns": 0,
+  "databaseOrProviderWrites": 0,
+  "findings": [],
+  "observations": [
+    {
+      "id": "INT-STREAM-COVERAGE",
+      "conclusion": "Automatic E2E merge retains root Home coverage and upstream streamed Autopilot completion assertions without weakening HTTP/content/overlay/hydration diagnostics.",
+      "evidence": [
+        {
+          "file": "packages/e2e/specs/hydration-smoke.spec.ts",
+          "line": 45,
+          "detail": "/home remains in static HYDRATED_ROUTES"
+        },
+        {
+          "file": "packages/e2e/specs/hydration-smoke.spec.ts",
+          "line": 92,
+          "detail": "Autopilot waits for Rules heading and absence of all four current primary/pending/pattern loading labels"
+        },
+        {
+          "file": "packages/e2e/specs/hydration-smoke.spec.ts",
+          "line": 114,
+          "detail": "Hydration errors must still be an empty array; no filtered React418 errors or forced interaction"
+        }
+      ],
+      "verification": "read-only assertions checked against both task-owned Home and upstream additions; actual browser execution belongs to root"
+    },
+    {
+      "id": "INT-STREAM-SNAPSHOT",
+      "conclusion": "Only pending queries with a transported promise are normalized to native promises, preserving the first pending snapshot while retaining the same server read; settled snapshots and newer cache data retain their path.",
+      "evidence": [
+        {
+          "file": "apps/web/src/lib/query-hydration-boundary.tsx",
+          "line": 18,
+          "detail": "success/absent-promise snapshots are unchanged"
+        },
+        {
+          "file": "apps/web/src/lib/query-hydration-boundary.tsx",
+          "line": 23,
+          "detail": "Promise.resolve makes fulfilled Flight-style thenable adoption asynchronous"
+        }
+      ],
+      "verification": "4 real renderToString/hydrateRoot cases pass: fulfilled before client, unresolved after client, settled/newer cache, rejected thenable without markup recovery or extra reader"
+    },
+    {
+      "id": "INT-STREAM-RECOVERY",
+      "conclusion": "Node Client Component query retries are disabled; browser transient-only retry policy remains. Optional streams have a separate deadline owner from primary content, with safe redacted transport and observed abandoned rejections.",
+      "evidence": [
+        {
+          "file": "apps/web/src/lib/query-client.ts",
+          "line": 159,
+          "detail": "retry is false in Node, retryTransientOnly in browser"
+        },
+        {
+          "file": "apps/web/src/lib/server-query-hydration.tsx",
+          "line": 40,
+          "detail": "optional section uses a separate server QueryClient"
+        },
+        {
+          "file": "apps/web/src/lib/server-query-hydration.tsx",
+          "line": 44,
+          "detail": "optional settlement begins without delaying primary settlement"
+        },
+        {
+          "file": "apps/web/src/lib/server-query-hydration.tsx",
+          "line": 61,
+          "detail": "only fixed recovery marker is transported after TanStack redaction"
+        }
+      ],
+      "verification": "SSR recovery 4 cases and server Autopilot 19 cases pass, including no Node browser fetch/refresh, successful adoption, abandoned-render rejection observation, scope resets, late failure/deadline browser recovery and no duplicate initial read"
+    },
+    {
+      "id": "INT-STREAM-DIAGNOSTICS",
+      "conclusion": "Next request instrumentation suppresses only the exact safe recovery marker. Unrelated errors and same-name/different-message errors still report; telemetry failure remains optional.",
+      "evidence": [
+        {
+          "file": "apps/web/src/lib/streamed-query-recovery.ts",
+          "line": 12,
+          "detail": "both Error name and fixed message must match"
+        },
+        {
+          "file": "apps/web/instrumentation.ts",
+          "line": 34,
+          "detail": "early return is restricted to the recovery marker"
+        }
+      ],
+      "verification": "5 marker/reporting tests pass; expected telemetry-failure warning is a covered test, not a runtime provider failure"
+    },
+    {
+      "id": "INT-STREAM-SCOPE",
+      "conclusion": "Autopilot is the sole current production streamPrefetch caller. Optional reads require confirmed mailbox and autopilot capability; Free still fetches only capability-exempt rules. The pending-page server/client keys include mailbox and cursor.",
+      "evidence": [
+        {
+          "file": "apps/web/src/app/(app)/autopilot/page.tsx",
+          "line": 55,
+          "detail": "only production streamPrefetch call; explicit capability/mailbox guard"
+        },
+        {
+          "file": "apps/web/src/features/autopilot/api/query-options.ts",
+          "line": 33,
+          "detail": "pending-suggestion page cache key includes mailboxId and cursor"
+        }
+      ],
+      "verification": "19 Autopilot cache-adoption/scope/Free/error/deadline cases pass; query-client23 and server-client13 existing guard/deadline cases also pass"
+    }
+  ],
+  "originalPublicHydrationAttribution": {
+    "status": "unproven; three recorded public React418 failures remain open",
+    "routes": ["/", "/compare", "/faq"],
+    "state": "returning visitor with accepted analytics/all consent and dark theme",
+    "evidence": "local run artifact (not archived): hydration.json",
+    "trace": "Marketing layout and these pages have no ServerQueryHydration/streamPrefetch boundary or query-consuming marketing content. Root Providers supplies makeQueryClient globally, but the new stream boundary is selected only for streamPrefetch.",
+    "scopedSearch": "Searched production apps/web/src for ServerQueryHydration/streamPrefetch call sites. Searched marketing route group/features, consent and theme for useQuery/useSuspenseQuery/HydrationBoundary/ServerQueryHydration/streamPrefetch; only a layout test comment mentioned useQuery, no production consumer matched.",
+    "sourceEvidence": [
+      {
+        "file": "apps/web/src/lib/server-query-hydration.tsx",
+        "line": 72,
+        "detail": "new boundary conditional on streamedClient"
+      },
+      {
+        "file": "apps/web/src/app/providers.tsx",
+        "line": 58,
+        "detail": "shared global QueryClientProvider remains, without route-specific streamed state"
+      },
+      {
+        "file": "apps/web/src/app/(marketing)/layout.tsx",
+        "line": 149,
+        "detail": "public shell mounts theme/header/consent/analytics, no server query hydration boundary"
+      }
+    ],
+    "inference": "These authenticated optional-query fixes do not supply a source or runtime explanation for the original public-three failures. A root build and the original returning-public-state reproduction are required before changing that finding.",
+    "causeClaimed": false,
+    "resolvedClaimed": false
+  },
+  "verification": {
+    "method": "Vitest unit/React hydration tests with stubbed fetch/auth/Sentry; sequential files, maxWorkers1; no DB/browser stack or provider",
+    "command": "pnpm --filter @declutrmail/web exec vitest run src/lib/query-client.test.ts src/lib/server-query-client.test.ts src/lib/server-query-stream-ssr.test.tsx src/lib/streamed-query-recovery.test.ts src/lib/query-hydration-boundary.test.tsx src/features/autopilot/server-autopilot-hydration.test.tsx 'src/app/(app)/page-performance.test.tsx' --maxWorkers=1 --fileParallelism=false --reporter=verbose",
+    "exitCode": 0,
+    "filesPassed": 7,
+    "testsPassed": 83,
+    "durationSeconds": 11.14,
+    "perFile": {
+      "src/features/autopilot/server-autopilot-hydration.test.tsx": 19,
+      "src/lib/query-client.test.ts": 23,
+      "src/lib/server-query-client.test.ts": 13,
+      "src/app/(app)/page-performance.test.tsx": 15,
+      "src/lib/query-hydration-boundary.test.tsx": 4,
+      "src/lib/server-query-stream-ssr.test.tsx": 4,
+      "src/lib/streamed-query-recovery.test.ts": 5
+    },
+    "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-stream-tests.log"
+  },
+  "limitations": [
+    "Source/isolated unit review is not Next Flight/browser validation of the merged production build; root owns the actual original-public and strengthened Autopilot browser gate.",
+    "The promise bridge regression covers current Autopilot consumers without a descendant Suspense boundary; it does not establish arbitrary future deferred-descendant hydration safety.",
+    "No old-boundary negative control was rerun in this review; upstream execution notes describe their earlier deterministic negative control and disclaim production event attribution.",
+    "No cause for original public HTML mismatches or provider/worker completion is inferred from query-unit green results.",
+    "Activity conflict, private finance tooling, API readiness and other upstream changes are outside this assigned review; no source/Git edits were made."
+  ],
+  "reviewStatus": "complete bounded read-only review; no confirmed actionable regression in assigned source; new integrated runtime proof remains root-owned"
+}

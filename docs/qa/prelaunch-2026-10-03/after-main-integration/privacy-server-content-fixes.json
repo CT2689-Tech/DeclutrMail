@@ -1,0 +1,131 @@
+{
+  "id": "POST-MAIN-PRIVACY-BUNDLE",
+  "title": "Restore Privacy initial-JavaScript headroom without weakening the served budget",
+  "status": "source and focused verification complete; root production bundle/runtime gates pending",
+  "baselineRevision": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+  "sourceRevision": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "sourceStopped": true,
+  "files": [
+    "apps/web/src/app/(app)/settings/privacy/page.tsx",
+    "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+    "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+    "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+    "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx",
+    "packages/shared/src/components/privacy-badge.tsx"
+  ],
+  "implementation": [
+    {
+      "file": "apps/web/src/app/(app)/settings/privacy/page.tsx",
+      "detail": "Server page supplies actual static trust/inventory ReactNode and only canonical export display strings; opening comment now quotes the current full-email boundary."
+    },
+    {
+      "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+      "detail": "Moved original static badge, five native inventory disclosures, registry formatting/deletion/processor copy and CSS intact. SettingsGroup retains exact privacy-gmail-data-inventory ID. Exports exhaustive, serializable display projection of canonical manifest; registry-derived dataset IDs are omitted."
+    },
+    {
+      "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+      "detail": "Client route/view accepts required static content and display strings. Auth/billing/export hooks, mutation callbacks, state selection, consent, controls, error/receipt live region and navigation are unchanged; no runtime import of static content."
+    },
+    {
+      "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+      "detail": "Every Storybook state receives production static content and canonical copy, with no hand-maintained mock text."
+    },
+    {
+      "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx",
+      "detail": "Fixtures use production content/copy. New regression verifies native disclosure opens, keeps same node/id through pending/prepared export, and export buttons/receipt remain truthful."
+    },
+    {
+      "file": "packages/shared/src/components/privacy-badge.tsx",
+      "detail": "Removed unnecessary client directive from pure JSX; only React type, CSS-variable tokens and canonical strings are imported. Existing client Onboarding ancestor continues to own that consumer."
+    }
+  ],
+  "measuredDiagnosis": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-bundle-diagnosis.json",
+  "negativeControl": {
+    "method": "Real pre-optimization production served budget gate on f21, not a synthetic mirrored copy assertion.",
+    "result": "Settings Privacy262.0kB exceeds262kB;50other route templates pass. Exact logs are rounded to one decimal.",
+    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
+  },
+  "verification": [
+    {
+      "gate": "Web Privacy + export/replay focused suites",
+      "result": "PASS",
+      "files": 3,
+      "tests": 34,
+      "maxWorkers": 1,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-tests.log"
+    },
+    {
+      "gate": "Shared PrivacyBadge + canonical data-export contract",
+      "result": "PASS",
+      "files": 2,
+      "tests": 14,
+      "maxWorkers": 1,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-shared-tests.log"
+    },
+    {
+      "gate": "Exact complete old/new server HTML equality",
+      "result": "PASS",
+      "tests": 1,
+      "states": 8,
+      "stateNames": [
+        "ready",
+        "no-mailboxes",
+        "tier-unknown",
+        "export-pending",
+        "export-failed",
+        "export-429",
+        "export-401",
+        "export-prepared"
+      ],
+      "method": "renderToStaticMarkup of untouched archived before view against new view with actual server content and canonical copy; exact complete HTML comparison, no whitespace normalization",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-html-equivalence.log"
+      ],
+      "temporaryFixtureRemoved": true
+    },
+    {
+      "gate": "Scoped ESLint on all six files",
+      "result": "PASS",
+      "errors": 0,
+      "warnings": 0,
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-lint.log"
+    },
+    {
+      "gate": "Web typecheck",
+      "result": "PASS",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-web-typecheck.log"
+    },
+    {
+      "gate": "Shared typecheck",
+      "result": "PASS",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/privacy-server-content-shared-typecheck.log"
+    },
+    {
+      "gate": "Prettier on all six files",
+      "result": "PASS",
+      "method": "Formatted before source freeze; source was not modified afterward."
+    },
+    {
+      "gate": "Independent source boundary review",
+      "result": "PASS per CORE reviewer",
+      "method": "Read-only review at05af47e8vsf21; no duplicated runtime/test execution."
+    },
+    {
+      "gate": "React best-practices review",
+      "result": "PASS",
+      "scope": "Server/client ownership, reduced serialized props, hook-free shared component, native disclosure/accessibility preservation and unchanged async export lifecycle."
+    }
+  ],
+  "pendingRootProof": [
+    "Final production rebuild and existing unmodified51-route served bundle checker; require multiple-kB Privacy headroom, not only threshold rounding.",
+    "Final merged/frozen browser proof of Privacy static disclosures, export/cookie controls and global hydration/runtime gates."
+  ],
+  "limits": [
+    "No provider, live billing, DB seeding/reset, browser/server launch, deploy, stage, branch or commit performed by this owner.",
+    "Registry chunk available for removal was4764gzip bytes; actual final reduction is not claimed until root rebuild measures the served response.",
+    "No claim that this performance change resolves separate public React418 failures.",
+    "Baseline audit/findings remain historical and unchanged; this is a post-main integration correction."
+  ],
+  "launchSignoff": false
+}

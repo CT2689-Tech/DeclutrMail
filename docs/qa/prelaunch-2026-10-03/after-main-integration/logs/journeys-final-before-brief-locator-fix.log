@@ -1,0 +1,58 @@
+
+> @declutrmail/e2e@0.0.0 e2e:journeys [workspace]/packages/e2e
+> playwright test triage-keep sender-policy protection-review autopilot-pages followups-dismiss later-recovery quiet-hours brief-preview senders-search-typing public-journeys cookie-consent --project=default
+
+
+Running 15 tests using 1 worker
+
+  ✓   1 [default] › specs/autopilot-pages.spec.ts:50:1 › review pages cover the backlog and recover when the older page is exhausted (1.7s)
+  ✘   2 [default] › specs/brief-preview.spec.ts:23:1 › Brief separates yesterday from current-inbox preview and cancel never enqueues (306ms)
+  ✓   3 [default] › specs/cookie-consent.spec.ts:135:1 › decline is the default: "Essential only" persists and PostHog stays fully silent (2.4s)
+  ✓   4 [default] › specs/cookie-consent.spec.ts:177:1 › "Accept all" initializes PostHog and page_viewed reaches the wire (4.3s)
+  ✓   5 [default] › specs/followups-dismiss.spec.ts:46:1 › Mark resolved dismisses the row, audits it, and survives reload (740ms)
+  ✓   6 [default] › specs/later-recovery.spec.ts:37:1 › Later failed return restores recovery controls after queue acceptance and survives reload (3.1s)
+  ✓   7 [default] › specs/protection-review.spec.ts:50:1 › protected senders show the exact reason, and Unprotect works in place (313ms)
+  ✓   8 [default] › specs/public-journeys.spec.ts:45:1 › guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up (1.4s)
+  ✓   9 [default] › specs/public-journeys.spec.ts:77:1 › comparison visitor checks sources and refund terms before permission-aware signup (1.1s)
+  ✓  10 [default] › specs/quiet-hours.spec.ts:82:1 › Quiet hours save, rejected save, retry and disable survive real API reads and reload (1.9s)
+  ✓  11 [default] › specs/sender-policy.spec.ts:59:1 › Protect toggle persists across reload and restores on toggle-back (742ms)
+  ✓  12 [default] › specs/senders-search-typing.spec.ts:26:1 › typing a multi-word query keeps every keystroke (1.5s)
+  ✓  13 [default] › specs/senders-search-typing.spec.ts:51:1 › picking a suggestion mid-typing is not undone by the pending notify timer (1.7s)
+  ✓  14 [default] › specs/senders-search-typing.spec.ts:80:1 › backspacing to empty restores the unfiltered list (1.3s)
+  ✓  15 [default] › specs/triage-keep.spec.ts:49:1 › Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed (767ms)
+
+
+  1) [default] › specs/brief-preview.spec.ts:23:1 › Brief separates yesterday from current-inbox preview and cancel never enqueues
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('1 message yesterday', { exact: true })
+    Expected: visible
+    Error: strict mode violation: getByText('1 message yesterday', { exact: true }) resolved to 2 elements:
+        1) <div>1 message yesterday</div> aka getByRole('region', { name: 'Noise (1 senders, 1 messages' }).getByText('message yesterday')
+        2) <div>1 message yesterday</div> aka getByText('message yesterday').nth(1)
+
+    Call log:
+      - Expect "toBeVisible" getByText('1 message yesterday', { exact: true }) with timeout 15000ms
+      - waiting for getByText('1 message yesterday', { exact: true })
+
+
+      39 |     }),
+      40 |   ).toBeChecked();
+    > 41 |   await expect(page.getByText('1 message yesterday', { exact: true })).toBeVisible();
+         |                                                                        ^
+      42 |   await page.getByRole('button', { name: 'Archive 1 sender', exact: true }).click();
+      43 |   const dialog = page.getByRole('dialog');
+      44 |   await expect(dialog).toBeVisible();
+        at [workspace]/packages/e2e/specs/brief-preview.spec.ts:41:72
+
+    Error Context: test-results/brief-preview-Brief-separa-ba19a-w-and-cancel-never-enqueues-default/error-context.md
+
+    Error Context: test-results/brief-preview-Brief-separa-ba19a-w-and-cancel-never-enqueues-default/error-context.md
+
+  1 failed
+    [default] › specs/brief-preview.spec.ts:23:1 › Brief separates yesterday from current-inbox preview and cancel never enqueues
+  14 passed (25.4s)
+[workspace]/packages/e2e:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @declutrmail/e2e@0.0.0 e2e:journeys: `playwright test triage-keep sender-policy protection-review autopilot-pages followups-dismiss later-recovery quiet-hours brief-preview senders-search-typing public-journeys cookie-consent --project=default`
+Exit status 1

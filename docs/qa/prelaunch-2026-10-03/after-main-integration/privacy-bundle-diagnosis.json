@@ -1,0 +1,955 @@
+{
+  "task": "Read-only merged Privacy initial-JavaScript diagnosis and proposal",
+  "sourceRevision": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+  "baselineRevision": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "status": "Approved proposal implemented in05af47e8; focused tests/static checks passed; root production measurement pending",
+  "measuredFailure": {
+    "route": "/(app)/settings/privacy/page",
+    "roundedCurrentGzipKB": 262.0,
+    "ceilingKB": 262,
+    "roundedBaselineGzipKB": 261.9,
+    "currentRoutesPassed": 50,
+    "totalRoutes": 51,
+    "logs": [
+      "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log",
+      "before-main-bundle-build-final.log"
+    ],
+    "limitation": "Existing served checker logs round to one decimal; no new runtime measurement or exact served HTML chunk-set capture performed by this reviewer."
+  },
+  "confirmedBuildEvidence": {
+    "privacyOwnEntry": {
+      "routeEntry": "/(app)/settings/privacy/page",
+      "before": "static/chunks/app/(app)/settings/privacy/page-cbab9e38b39cf645.js",
+      "after": "static/chunks/app/(app)/settings/privacy/page-80394c9510987b74.js",
+      "beforeGzipBytes": 7570,
+      "afterGzipBytes": 7569,
+      "deltaGzipBytes": -1
+    },
+    "settingsCrossReferencedEntry": {
+      "routeEntry": "/(app)/settings/page",
+      "before": "static/chunks/app/(app)/settings/page-a10b4e3b67ea2cde.js",
+      "after": "static/chunks/app/(app)/settings/page-b684601665ac4b5c.js",
+      "beforeGzipBytes": 11276,
+      "afterGzipBytes": 11412,
+      "deltaGzipBytes": 136
+    },
+    "hydrationBoundaryClientReference": {
+      "module": "node_modules/.pnpm/@tanstack+react-query@5.103.2_react@19.3.0/node_modules/@tanstack/react-query/build/modern/HydrationBoundary.js",
+      "beforeChunks": [
+        "7347",
+        "static/chunks/7347-ffe2f94138d55579.js",
+        "934",
+        "static/chunks/934-9d304c262d78d7e3.js",
+        "5220",
+        "static/chunks/5220-cb94dbe2c7ba7807.js",
+        "6563",
+        "static/chunks/6563-f57c51823cdcdf41.js",
+        "6074",
+        "static/chunks/6074-3ebf11d5ce4462ed.js",
+        "6810",
+        "static/chunks/6810-a3ff08d6836ecbf5.js",
+        "1492",
+        "static/chunks/1492-267dae681b8eed9e.js",
+        "3943",
+        "static/chunks/3943-4197cec13bfebf5d.js",
+        "9946",
+        "static/chunks/9946-3d9e8e61be926a2f.js",
+        "9563",
+        "static/chunks/9563-80ca148157910a25.js",
+        "5729",
+        "static/chunks/5729-47e7d69a4092a3d4.js",
+        "986",
+        "static/chunks/986-8e2aa2f825c42713.js",
+        "4448",
+        "static/chunks/4448-0472ce25666ccfc7.js",
+        "6314",
+        "static/chunks/6314-978383cb6bf499c2.js",
+        "379",
+        "static/chunks/379-d79c7040475a5860.js",
+        "109",
+        "static/chunks/app/(app)/settings/page-a10b4e3b67ea2cde.js"
+      ],
+      "afterChunks": [
+        "7347",
+        "static/chunks/7347-ffe2f94138d55579.js",
+        "934",
+        "static/chunks/934-9d304c262d78d7e3.js",
+        "5220",
+        "static/chunks/5220-cb94dbe2c7ba7807.js",
+        "6563",
+        "static/chunks/6563-f57c51823cdcdf41.js",
+        "6074",
+        "static/chunks/6074-3ebf11d5ce4462ed.js",
+        "6810",
+        "static/chunks/6810-a3ff08d6836ecbf5.js",
+        "1492",
+        "static/chunks/1492-267dae681b8eed9e.js",
+        "3943",
+        "static/chunks/3943-4197cec13bfebf5d.js",
+        "9946",
+        "static/chunks/9946-3d9e8e61be926a2f.js",
+        "9563",
+        "static/chunks/9563-80ca148157910a25.js",
+        "5729",
+        "static/chunks/5729-47e7d69a4092a3d4.js",
+        "986",
+        "static/chunks/986-8e2aa2f825c42713.js",
+        "4448",
+        "static/chunks/4448-0472ce25666ccfc7.js",
+        "6314",
+        "static/chunks/6314-978383cb6bf499c2.js",
+        "379",
+        "static/chunks/379-d79c7040475a5860.js",
+        "109",
+        "static/chunks/app/(app)/settings/page-b684601665ac4b5c.js"
+      ],
+      "whyActuallyRendered": "ServerAppBoundary returns this HydrationBoundary around every app route at server-app-boundary.tsx:45."
+    },
+    "newWrapperClientReference": {
+      "module": "apps/web/src/lib/query-hydration-boundary.tsx",
+      "chunks": [
+        "7347",
+        "static/chunks/7347-ffe2f94138d55579.js",
+        "934",
+        "static/chunks/934-9d304c262d78d7e3.js",
+        "5220",
+        "static/chunks/5220-cb94dbe2c7ba7807.js",
+        "6563",
+        "static/chunks/6563-f57c51823cdcdf41.js",
+        "6074",
+        "static/chunks/6074-3ebf11d5ce4462ed.js",
+        "6810",
+        "static/chunks/6810-a3ff08d6836ecbf5.js",
+        "1492",
+        "static/chunks/1492-267dae681b8eed9e.js",
+        "3943",
+        "static/chunks/3943-4197cec13bfebf5d.js",
+        "9946",
+        "static/chunks/9946-3d9e8e61be926a2f.js",
+        "9563",
+        "static/chunks/9563-80ca148157910a25.js",
+        "5729",
+        "static/chunks/5729-47e7d69a4092a3d4.js",
+        "986",
+        "static/chunks/986-8e2aa2f825c42713.js",
+        "4448",
+        "static/chunks/4448-0472ce25666ccfc7.js",
+        "6314",
+        "static/chunks/6314-978383cb6bf499c2.js",
+        "379",
+        "static/chunks/379-d79c7040475a5860.js",
+        "109",
+        "static/chunks/app/(app)/settings/page-b684601665ac4b5c.js"
+      ]
+    },
+    "registryChunk": {
+      "path": "static/chunks/5025-67dcaebcf29ffa2b.js",
+      "gzipBytes": 4764,
+      "clientModulesReferencingItInPrivacyManifest": [
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx"
+      ],
+      "isInAppLayoutManifest": false
+    }
+  },
+  "causeAssessment": "The route-specific entry shrank by one gzip byte. The Settings own entry genuinely referenced by the AppShell HydrationBoundary grew by136 gzip bytes; the new native-promise QueryHydrationBoundary implementation is in that entry. This is the directly established shared increase against the previously narrow Privacy ceiling, not a proven exact decomposition of every served byte. Keep the upstream correctness fix.",
+  "excludedCandidates": [
+    {
+      "candidate": "Deferred export download implementation",
+      "reason": "Already user-initiated await import in use-data-export.ts:35\u201337; no ZIP library present."
+    },
+    {
+      "candidate": "Closed DeleteAccountModal",
+      "reason": "AccountDeletionSection already uses next/dynamic and mounts only modalOpen; Privacy only links to /settings#account."
+    },
+    {
+      "candidate": "Fake route-local HydrationBoundary to change bundle manifest mapping",
+      "reason": "No genuine Privacy route hydration use; would manipulate measure instead of reduce JavaScript."
+    }
+  ],
+  "proposedSmallestSoundReduction": {
+    "approach": "Render static trust badge + data inventory in server-compatible PrivacyDataFacts and pass as ReactNode from SettingsPrivacyPage to existing client controller/view; pass only canonical export display labels/JSON description as serialized props.",
+    "requiredDetails": [
+      "Remove unnecessary use client from PrivacyBadge (pure JSX, no hooks/event handlers/browser reads); existing Onboarding client ancestor still owns its client use.",
+      "Move full registry imports and static native InventoryGroup rendering/formatting out of PrivacyDataView; preserve native details, IDs, heading levels, styling and copy.",
+      "Move DATA_EXPORT_FORMAT_MANIFEST consumer to server because includedInventoryIds computes against the full registry even though client controls need only labels.",
+      "Avoid a client fallback import of PrivacyDataFacts; required typed props for production, stories and tests prevent reintroducing dependency.",
+      "Keep auth, billing, useDataExport, consent, mutation receipts, error handling and deletion navigation in existing client view."
+    ],
+    "availableRemovablePayload": "Registry chunk alone is4764gzip bytes (4.65kB) and helper/unused manifest JS additional; actual retained/cross-route chunk result must be proven by production rebuild and existing served budget gate.",
+    "scope": [
+      "apps/web/src/app/(app)/settings/privacy/page.tsx",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+      "new server-compatible privacy static-content module",
+      "packages/shared/src/components/privacy-badge.tsx",
+      "Privacy screen story/test fixture props"
+    ],
+    "verificationPlan": [
+      "Existing Privacy view export pending/error/success/native inventory regressions with identical static slot fixture.",
+      "Existing shared PrivacyBadge canonical-copy/snapshot tests; no mirror tests for every word.",
+      "Web/shared typecheck and scoped lint/format.",
+      "Production rebuild + existing unmodified51route served bundle gate, requiring meaningful multiple-kB Privacy margin.",
+      "Rendered Privacy native disclosures, export controls and consent interaction; root owns runtime/provider-free proof."
+    ],
+    "notYetImplemented": false
+  },
+  "limits": [
+    "No provider, database seed/reset, browser, server launch or Git mutations.",
+    "No claim that reducing this route resolves the independently observed public React418 issue.",
+    "No budget/check changes."
+  ],
+  "changedAppEntryGzipBytes": [
+    {
+      "routeEntry": "/global-error",
+      "before": "static/chunks/app/global-error-2250593d9dbd9d6b.js",
+      "after": "static/chunks/app/global-error-57463e6f5dab4f68.js",
+      "beforeGzipBytes": 2665,
+      "afterGzipBytes": 2666,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/not-found",
+      "before": "static/chunks/app/not-found-5c6b63bdab8cb8c6.js",
+      "after": "static/chunks/app/not-found-5b315b8ad749b8d1.js",
+      "beforeGzipBytes": 4578,
+      "afterGzipBytes": 4573,
+      "deltaGzipBytes": -5
+    },
+    {
+      "routeEntry": "/layout",
+      "before": "static/chunks/app/layout-9c0fe9ab1648630c.js",
+      "after": "static/chunks/app/layout-19aebdbfb5ebde12.js",
+      "beforeGzipBytes": 2041,
+      "afterGzipBytes": 2043,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/error",
+      "before": "static/chunks/app/error-bebb8bd4a0ac7709.js",
+      "after": "static/chunks/app/error-a8229bb99f504f7a.js",
+      "beforeGzipBytes": 2064,
+      "afterGzipBytes": 2061,
+      "deltaGzipBytes": -3
+    },
+    {
+      "routeEntry": "/design-prototype/page",
+      "before": "static/chunks/app/design-prototype/page-a87569a490b4f4fe.js",
+      "after": "static/chunks/app/design-prototype/page-f04c0f3318b26e6f.js",
+      "beforeGzipBytes": 22642,
+      "afterGzipBytes": 22642,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/layout",
+      "before": "static/chunks/app/(app)/layout-9531d12af5260e97.js",
+      "after": "static/chunks/app/(app)/layout-3628dc40f69d7894.js",
+      "beforeGzipBytes": 21667,
+      "afterGzipBytes": 21666,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/admin/security/error",
+      "before": "static/chunks/app/(app)/admin/security/error-7a6b1ca2daf0c88f.js",
+      "after": "static/chunks/app/(app)/admin/security/error-5e9d2f28fc30d26e.js",
+      "beforeGzipBytes": 603,
+      "afterGzipBytes": 606,
+      "deltaGzipBytes": 3
+    },
+    {
+      "routeEntry": "/(app)/admin/security/loading",
+      "before": "static/chunks/app/(app)/admin/security/loading-8178e8fb9f57aee9.js",
+      "after": "static/chunks/app/(app)/admin/security/loading-cafcc63521627f83.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 535,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/admin/security/page",
+      "before": "static/chunks/app/(app)/admin/security/page-e1bc7aedd7529b22.js",
+      "after": "static/chunks/app/(app)/admin/security/page-c99d16fe86567845.js",
+      "beforeGzipBytes": 7293,
+      "afterGzipBytes": 7428,
+      "deltaGzipBytes": 135
+    },
+    {
+      "routeEntry": "/(app)/followups/error",
+      "before": "static/chunks/app/(app)/followups/error-4aff8a8fa8d74878.js",
+      "after": "static/chunks/app/(app)/followups/error-7d36fe56e322be5f.js",
+      "beforeGzipBytes": 593,
+      "afterGzipBytes": 597,
+      "deltaGzipBytes": 4
+    },
+    {
+      "routeEntry": "/(app)/followups/loading",
+      "before": "static/chunks/app/(app)/followups/loading-6eb2170ed9274430.js",
+      "after": "static/chunks/app/(app)/followups/loading-2bdc4bb721830aa8.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 537,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/followups/page",
+      "before": "static/chunks/app/(app)/followups/page-d84cd66495b45e7a.js",
+      "after": "static/chunks/app/(app)/followups/page-be63eec114732113.js",
+      "beforeGzipBytes": 7184,
+      "afterGzipBytes": 7186,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(app)/screener/error",
+      "before": "static/chunks/app/(app)/screener/error-d20113bdef639795.js",
+      "after": "static/chunks/app/(app)/screener/error-b9ed7aee19ee8482.js",
+      "beforeGzipBytes": 584,
+      "afterGzipBytes": 583,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/screener/loading",
+      "before": "static/chunks/app/(app)/screener/loading-25c0fd143249f34b.js",
+      "after": "static/chunks/app/(app)/screener/loading-c1f9bae653607b2a.js",
+      "beforeGzipBytes": 537,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/screener/page",
+      "before": "static/chunks/app/(app)/screener/page-fc2cf6f460e22013.js",
+      "after": "static/chunks/app/(app)/screener/page-74203328a4967a86.js",
+      "beforeGzipBytes": 17132,
+      "afterGzipBytes": 17136,
+      "deltaGzipBytes": 4
+    },
+    {
+      "routeEntry": "/(app)/senders/error",
+      "before": "static/chunks/app/(app)/senders/error-d481d2590c356d99.js",
+      "after": "static/chunks/app/(app)/senders/error-cad2b8f059b55e6d.js",
+      "beforeGzipBytes": 579,
+      "afterGzipBytes": 580,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/senders/loading",
+      "before": "static/chunks/app/(app)/senders/loading-31ae96f8dd10b1c5.js",
+      "after": "static/chunks/app/(app)/senders/loading-2f8318eaea6367ed.js",
+      "beforeGzipBytes": 1029,
+      "afterGzipBytes": 1030,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/senders/[id]/error",
+      "before": "static/chunks/app/(app)/senders/[id]/error-304b8b8b04c83ed5.js",
+      "after": "static/chunks/app/(app)/senders/[id]/error-bbee7bb8cce9d251.js",
+      "beforeGzipBytes": 588,
+      "afterGzipBytes": 586,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(app)/senders/[id]/page",
+      "before": "static/chunks/app/(app)/senders/[id]/page-364431c576778231.js",
+      "after": "static/chunks/app/(app)/senders/[id]/page-58fafcd2866951bb.js",
+      "beforeGzipBytes": 1037,
+      "afterGzipBytes": 1041,
+      "deltaGzipBytes": 4
+    },
+    {
+      "routeEntry": "/(app)/senders/page",
+      "before": "static/chunks/app/(app)/senders/page-44c0248c7498191c.js",
+      "after": "static/chunks/app/(app)/senders/page-90acb5bff5dbc14f.js",
+      "beforeGzipBytes": 30244,
+      "afterGzipBytes": 30255,
+      "deltaGzipBytes": 11
+    },
+    {
+      "routeEntry": "/(app)/settings/error",
+      "before": "static/chunks/app/(app)/settings/error-d5d4a80b9360ad7b.js",
+      "after": "static/chunks/app/(app)/settings/error-eb6ecddc9193effa.js",
+      "beforeGzipBytes": 590,
+      "afterGzipBytes": 590,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/settings/loading",
+      "before": "static/chunks/app/(app)/settings/loading-ea64404ebe69b13f.js",
+      "after": "static/chunks/app/(app)/settings/loading-d33a58b9d1aa734f.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/settings/senders/error",
+      "before": "static/chunks/app/(app)/settings/senders/error-26e92ad5d6f963be.js",
+      "after": "static/chunks/app/(app)/settings/senders/error-6ca74f0271f53785.js",
+      "beforeGzipBytes": 590,
+      "afterGzipBytes": 591,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/settings/senders/loading",
+      "before": "static/chunks/app/(app)/settings/senders/loading-f650d0d0187ee000.js",
+      "after": "static/chunks/app/(app)/settings/senders/loading-cb5d10bade7593af.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/settings/senders/page",
+      "before": "static/chunks/app/(app)/settings/senders/page-97b04ab42d5aee28.js",
+      "after": "static/chunks/app/(app)/settings/senders/page-e832dab3c77cc5a6.js",
+      "beforeGzipBytes": 8653,
+      "afterGzipBytes": 8784,
+      "deltaGzipBytes": 131
+    },
+    {
+      "routeEntry": "/(app)/triage/error",
+      "before": "static/chunks/app/(app)/triage/error-f46da7f18d373a7f.js",
+      "after": "static/chunks/app/(app)/triage/error-457584726d1e7d57.js",
+      "beforeGzipBytes": 821,
+      "afterGzipBytes": 821,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/triage/loading",
+      "before": "static/chunks/app/(app)/triage/loading-2436fc06e1cf9e2c.js",
+      "after": "static/chunks/app/(app)/triage/loading-1dfefd1f38359472.js",
+      "beforeGzipBytes": 2745,
+      "afterGzipBytes": 2747,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(app)/triage/page",
+      "before": "static/chunks/app/(app)/triage/page-95ca61ef9035723b.js",
+      "after": "static/chunks/app/(app)/triage/page-c57a8c0df5e2f8a0.js",
+      "beforeGzipBytes": 973,
+      "afterGzipBytes": 980,
+      "deltaGzipBytes": 7
+    },
+    {
+      "routeEntry": "/(marketing)/layout",
+      "before": "static/chunks/app/(marketing)/layout-ce0a29c9cad1a110.js",
+      "after": "static/chunks/app/(marketing)/layout-1fc515ec91b68a4f.js",
+      "beforeGzipBytes": 5724,
+      "afterGzipBytes": 5728,
+      "deltaGzipBytes": 4
+    },
+    {
+      "routeEntry": "/(marketing)/error",
+      "before": "static/chunks/app/(marketing)/error-071a3514a35fabd7.js",
+      "after": "static/chunks/app/(marketing)/error-f62d765073a92439.js",
+      "beforeGzipBytes": 1278,
+      "afterGzipBytes": 1278,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/onboarding/layout",
+      "before": "static/chunks/app/onboarding/layout-b2b7d7edf9c82a86.js",
+      "after": "static/chunks/app/onboarding/layout-7ce49dedf1c4e328.js",
+      "beforeGzipBytes": 3705,
+      "afterGzipBytes": 3704,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/onboarding/error",
+      "before": "static/chunks/app/onboarding/error-8544175d9b7994dd.js",
+      "after": "static/chunks/app/onboarding/error-1eab878f5fd3610f.js",
+      "beforeGzipBytes": 567,
+      "afterGzipBytes": 567,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/onboarding/page",
+      "before": "static/chunks/app/onboarding/page-f638e9002641b82d.js",
+      "after": "static/chunks/app/onboarding/page-1ff5f002d927398a.js",
+      "beforeGzipBytes": 15784,
+      "afterGzipBytes": 15819,
+      "deltaGzipBytes": 35
+    },
+    {
+      "routeEntry": "/(app)/activity/error",
+      "before": "static/chunks/app/(app)/activity/error-c9d8a25902840b24.js",
+      "after": "static/chunks/app/(app)/activity/error-549f29e935837462.js",
+      "beforeGzipBytes": 596,
+      "afterGzipBytes": 596,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/activity/loading",
+      "before": "static/chunks/app/(app)/activity/loading-0ce973aa249ac7d7.js",
+      "after": "static/chunks/app/(app)/activity/loading-8e167abff4feef0a.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/activity/page",
+      "before": "static/chunks/app/(app)/activity/page-b36a8875ad67b41d.js",
+      "after": "static/chunks/app/(app)/activity/page-7b869ac9da643869.js",
+      "beforeGzipBytes": 21792,
+      "afterGzipBytes": 21927,
+      "deltaGzipBytes": 135
+    },
+    {
+      "routeEntry": "/(app)/billing/error",
+      "before": "static/chunks/app/(app)/billing/error-8f9f5f42bdeac0e2.js",
+      "after": "static/chunks/app/(app)/billing/error-ea3cd417512be982.js",
+      "beforeGzipBytes": 589,
+      "afterGzipBytes": 589,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/billing/loading",
+      "before": "static/chunks/app/(app)/billing/loading-572f73eb3c44041a.js",
+      "after": "static/chunks/app/(app)/billing/loading-d88e2181278187f2.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/billing/page",
+      "before": "static/chunks/app/(app)/billing/page-59fdf251303b62b6.js",
+      "after": "static/chunks/app/(app)/billing/page-c9ef43e2b5fcdaec.js",
+      "beforeGzipBytes": 19426,
+      "afterGzipBytes": 19556,
+      "deltaGzipBytes": 130
+    },
+    {
+      "routeEntry": "/(app)/autopilot/error",
+      "before": "static/chunks/app/(app)/autopilot/error-99e46a7b3ee9e8a7.js",
+      "after": "static/chunks/app/(app)/autopilot/error-54f3901433e7a808.js",
+      "beforeGzipBytes": 588,
+      "afterGzipBytes": 589,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/autopilot/loading",
+      "before": "static/chunks/app/(app)/autopilot/loading-842e4b376ae71ba9.js",
+      "after": "static/chunks/app/(app)/autopilot/loading-569e32d83a857db0.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 535,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/autopilot/page",
+      "before": "static/chunks/app/(app)/autopilot/page-3adfd32e5e4a1dde.js",
+      "after": "static/chunks/app/(app)/autopilot/page-b34660d70a7e2386.js",
+      "beforeGzipBytes": 17306,
+      "afterGzipBytes": 17470,
+      "deltaGzipBytes": 164
+    },
+    {
+      "routeEntry": "/(app)/brief/error",
+      "before": "static/chunks/app/(app)/brief/error-8ed46378195ac11b.js",
+      "after": "static/chunks/app/(app)/brief/error-606d688f0277f059.js",
+      "beforeGzipBytes": 590,
+      "afterGzipBytes": 592,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(app)/brief/loading",
+      "before": "static/chunks/app/(app)/brief/loading-b2115f6298510b4b.js",
+      "after": "static/chunks/app/(app)/brief/loading-7746368f5477cb42.js",
+      "beforeGzipBytes": 537,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/brief/page",
+      "before": "static/chunks/app/(app)/brief/page-e971a6020f5fbd4d.js",
+      "after": "static/chunks/app/(app)/brief/page-49803e4d06b52009.js",
+      "beforeGzipBytes": 15361,
+      "afterGzipBytes": 15384,
+      "deltaGzipBytes": 23
+    },
+    {
+      "routeEntry": "/(app)/home/error",
+      "before": "static/chunks/app/(app)/home/error-f23f68c1d6d92620.js",
+      "after": "static/chunks/app/(app)/home/error-7a99310cedfa8a0b.js",
+      "beforeGzipBytes": 575,
+      "afterGzipBytes": 573,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(app)/home/loading",
+      "before": "static/chunks/app/(app)/home/loading-c310e5f48dd8b9f9.js",
+      "after": "static/chunks/app/(app)/home/loading-f0dcb6bef32b965d.js",
+      "beforeGzipBytes": 2239,
+      "afterGzipBytes": 2241,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(app)/home/page",
+      "before": "static/chunks/app/(app)/home/page-7b9ff585fb4bf4e5.js",
+      "after": "static/chunks/app/(app)/home/page-5c02a3d39166f821.js",
+      "beforeGzipBytes": 2998,
+      "afterGzipBytes": 3184,
+      "deltaGzipBytes": 186
+    },
+    {
+      "routeEntry": "/(app)/quiet/error",
+      "before": "static/chunks/app/(app)/quiet/error-fa2913f14822e31d.js",
+      "after": "static/chunks/app/(app)/quiet/error-4827f3c3895ef83e.js",
+      "beforeGzipBytes": 589,
+      "afterGzipBytes": 589,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/quiet/loading",
+      "before": "static/chunks/app/(app)/quiet/loading-ae7877d2fb50ba58.js",
+      "after": "static/chunks/app/(app)/quiet/loading-bbb2d82d5c1f0596.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 535,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/quiet/page",
+      "before": "static/chunks/app/(app)/quiet/page-eb3a7e75a502b365.js",
+      "after": "static/chunks/app/(app)/quiet/page-38f6a7f9e6e26ffb.js",
+      "beforeGzipBytes": 8488,
+      "afterGzipBytes": 8497,
+      "deltaGzipBytes": 9
+    },
+    {
+      "routeEntry": "/(app)/later/error",
+      "before": "static/chunks/app/(app)/later/error-eca9e3b4245cc90a.js",
+      "after": "static/chunks/app/(app)/later/error-178afa928c46646c.js",
+      "beforeGzipBytes": 600,
+      "afterGzipBytes": 600,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/later/loading",
+      "before": "static/chunks/app/(app)/later/loading-2f8c4dd77c9529a2.js",
+      "after": "static/chunks/app/(app)/later/loading-8f338dc21aa636bb.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/later/page",
+      "before": "static/chunks/app/(app)/later/page-75729f2e092415f3.js",
+      "after": "static/chunks/app/(app)/later/page-3abb736d22f5015b.js",
+      "beforeGzipBytes": 8152,
+      "afterGzipBytes": 8153,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(app)/settings/help/error",
+      "before": "static/chunks/app/(app)/settings/help/error-5343611024b64fb6.js",
+      "after": "static/chunks/app/(app)/settings/help/error-bc25bc84dd378cd0.js",
+      "beforeGzipBytes": 591,
+      "afterGzipBytes": 596,
+      "deltaGzipBytes": 5
+    },
+    {
+      "routeEntry": "/(app)/settings/help/page",
+      "before": "static/chunks/app/(app)/settings/help/page-2d5c1d6e7837c3a6.js",
+      "after": "static/chunks/app/(app)/settings/help/page-9cac265fd24d06ff.js",
+      "beforeGzipBytes": 7495,
+      "afterGzipBytes": 7498,
+      "deltaGzipBytes": 3
+    },
+    {
+      "routeEntry": "/(app)/settings/privacy/error",
+      "before": "static/chunks/app/(app)/settings/privacy/error-511114987ef0d017.js",
+      "after": "static/chunks/app/(app)/settings/privacy/error-a3ddb4cb3690b804.js",
+      "beforeGzipBytes": 582,
+      "afterGzipBytes": 584,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(app)/settings/privacy/loading",
+      "before": "static/chunks/app/(app)/settings/privacy/loading-449ad3b27efaa3b1.js",
+      "after": "static/chunks/app/(app)/settings/privacy/loading-8c4b3b16938d0a73.js",
+      "beforeGzipBytes": 536,
+      "afterGzipBytes": 536,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(app)/settings/privacy/page",
+      "before": "static/chunks/app/(app)/settings/privacy/page-cbab9e38b39cf645.js",
+      "after": "static/chunks/app/(app)/settings/privacy/page-80394c9510987b74.js",
+      "beforeGzipBytes": 7570,
+      "afterGzipBytes": 7569,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(app)/settings/page",
+      "before": "static/chunks/app/(app)/settings/page-a10b4e3b67ea2cde.js",
+      "after": "static/chunks/app/(app)/settings/page-b684601665ac4b5c.js",
+      "beforeGzipBytes": 11276,
+      "afterGzipBytes": 11412,
+      "deltaGzipBytes": 136
+    },
+    {
+      "routeEntry": "/(marketing)/answers/best-way-to-clean-gmail-2026/page",
+      "before": "static/chunks/app/(marketing)/answers/best-way-to-clean-gmail-2026/page-d2b41c11fd8944a4.js",
+      "after": "static/chunks/app/(marketing)/answers/best-way-to-clean-gmail-2026/page-28ac3a473f255f33.js",
+      "beforeGzipBytes": 786,
+      "afterGzipBytes": 784,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(marketing)/answers/how-undo-works-for-gmail-cleanup/page",
+      "before": "static/chunks/app/(marketing)/answers/how-undo-works-for-gmail-cleanup/page-f2e41a5ad2064933.js",
+      "after": "static/chunks/app/(marketing)/answers/how-undo-works-for-gmail-cleanup/page-e5c0c1286a273f84.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 784,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/alternatives/[tool]/page",
+      "before": "static/chunks/app/(marketing)/alternatives/[tool]/page-7a92e5a99818603a.js",
+      "after": "static/chunks/app/(marketing)/alternatives/[tool]/page-ee1b2892b2013aa0.js",
+      "beforeGzipBytes": 737,
+      "afterGzipBytes": 737,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/answers/page",
+      "before": "static/chunks/app/(marketing)/answers/page-099205d2f1babc77.js",
+      "after": "static/chunks/app/(marketing)/answers/page-19e807333e556487.js",
+      "beforeGzipBytes": 741,
+      "afterGzipBytes": 742,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/answers/is-it-safe-to-connect-gmail-app/page",
+      "before": "static/chunks/app/(marketing)/answers/is-it-safe-to-connect-gmail-app/page-5a2109c6a364e709.js",
+      "after": "static/chunks/app/(marketing)/answers/is-it-safe-to-connect-gmail-app/page-e5648a8703e5e75c.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/answers/what-is-metadata-only-email-analysis/page",
+      "before": "static/chunks/app/(marketing)/answers/what-is-metadata-only-email-analysis/page-819192d1c8a12dd6.js",
+      "after": "static/chunks/app/(marketing)/answers/what-is-metadata-only-email-analysis/page-d275bd2979a60def.js",
+      "beforeGzipBytes": 785,
+      "afterGzipBytes": 785,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/blog/page",
+      "before": "static/chunks/app/(marketing)/blog/page-59520d22454a0102.js",
+      "after": "static/chunks/app/(marketing)/blog/page-6373fa92496b110d.js",
+      "beforeGzipBytes": 741,
+      "afterGzipBytes": 740,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/changelog/page",
+      "before": "static/chunks/app/(marketing)/changelog/page-92e5ada9a03fdf2b.js",
+      "after": "static/chunks/app/(marketing)/changelog/page-51e8ba0436f6cee8.js",
+      "beforeGzipBytes": 740,
+      "afterGzipBytes": 742,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(marketing)/compare/page",
+      "before": "static/chunks/app/(marketing)/compare/page-6966840cda50f51a.js",
+      "after": "static/chunks/app/(marketing)/compare/page-7c65c7ffa8623a0f.js",
+      "beforeGzipBytes": 741,
+      "afterGzipBytes": 742,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/blog/[slug]/page",
+      "before": "static/chunks/app/(marketing)/blog/[slug]/page-88f08802a7864e62.js",
+      "after": "static/chunks/app/(marketing)/blog/[slug]/page-d98dab41e46549f0.js",
+      "beforeGzipBytes": 785,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(marketing)/beta/page",
+      "before": "static/chunks/app/(marketing)/beta/page-4ac794aad3468651.js",
+      "after": "static/chunks/app/(marketing)/beta/page-e41a44c33be533ab.js",
+      "beforeGzipBytes": 1017,
+      "afterGzipBytes": 1015,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(marketing)/faq/page",
+      "before": "static/chunks/app/(marketing)/faq/page-65db20a1d745ef35.js",
+      "after": "static/chunks/app/(marketing)/faq/page-edc3ba0540ba556b.js",
+      "beforeGzipBytes": 741,
+      "afterGzipBytes": 742,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/cookies/page",
+      "before": "static/chunks/app/(marketing)/cookies/page-9b81c12c11cbe426.js",
+      "after": "static/chunks/app/(marketing)/cookies/page-cdea963c58abe361.js",
+      "beforeGzipBytes": 3146,
+      "afterGzipBytes": 3145,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/bulk-delete-emails-from-one-sender/page",
+      "before": "static/chunks/app/(marketing)/how-to/bulk-delete-emails-from-one-sender/page-d118417598298ea4.js",
+      "after": "static/chunks/app/(marketing)/how-to/bulk-delete-emails-from-one-sender/page-05ca4eddd87f91ac.js",
+      "beforeGzipBytes": 784,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/clean-gmail-by-sender/page",
+      "before": "static/chunks/app/(marketing)/how-to/clean-gmail-by-sender/page-6eac1cf4a995b911.js",
+      "after": "static/chunks/app/(marketing)/how-to/clean-gmail-by-sender/page-fdf9556d54505f48.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/contact/page",
+      "before": "static/chunks/app/(marketing)/contact/page-f39e29ba1824e05d.js",
+      "after": "static/chunks/app/(marketing)/contact/page-f057ea42885613c2.js",
+      "beforeGzipBytes": 960,
+      "afterGzipBytes": 960,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/gmail-storage-full/page",
+      "before": "static/chunks/app/(marketing)/how-to/gmail-storage-full/page-389423ee623ae3e3.js",
+      "after": "static/chunks/app/(marketing)/how-to/gmail-storage-full/page-1cc0dc190a75c05c.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/auto-archive-future-emails-in-gmail/page",
+      "before": "static/chunks/app/(marketing)/how-to/auto-archive-future-emails-in-gmail/page-0128455ce99610a4.js",
+      "after": "static/chunks/app/(marketing)/how-to/auto-archive-future-emails-in-gmail/page-456fe49419b5da67.js",
+      "beforeGzipBytes": 785,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": -2
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/stop-promotional-emails-gmail/page",
+      "before": "static/chunks/app/(marketing)/how-to/stop-promotional-emails-gmail/page-afdb472faafebe45.js",
+      "after": "static/chunks/app/(marketing)/how-to/stop-promotional-emails-gmail/page-6a03bb4e376096e4.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/page",
+      "before": "static/chunks/app/(marketing)/how-to/page-0b25b5776bf29cd9.js",
+      "after": "static/chunks/app/(marketing)/how-to/page-6771544f49175ea1.js",
+      "beforeGzipBytes": 741,
+      "afterGzipBytes": 740,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/help/page",
+      "before": "static/chunks/app/(marketing)/help/page-db5f731cc0f35eee.js",
+      "after": "static/chunks/app/(marketing)/help/page-6ec022140f6a0888.js",
+      "beforeGzipBytes": 950,
+      "afterGzipBytes": 950,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/inbox-simulator/page",
+      "before": "static/chunks/app/(marketing)/inbox-simulator/page-9f61278908c0b60a.js",
+      "after": "static/chunks/app/(marketing)/inbox-simulator/page-67bd0125c114dd90.js",
+      "beforeGzipBytes": 19058,
+      "afterGzipBytes": 19055,
+      "deltaGzipBytes": -3
+    },
+    {
+      "routeEntry": "/(marketing)/how-to/unsubscribe-from-emails-gmail/page",
+      "before": "static/chunks/app/(marketing)/how-to/unsubscribe-from-emails-gmail/page-b9ca3de7b7eb0bd8.js",
+      "after": "static/chunks/app/(marketing)/how-to/unsubscribe-from-emails-gmail/page-f1dcdf308feb0365.js",
+      "beforeGzipBytes": 784,
+      "afterGzipBytes": 784,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/page",
+      "before": "static/chunks/app/(marketing)/page-521d26000c6904a6.js",
+      "after": "static/chunks/app/(marketing)/page-66068d9747fcb104.js",
+      "beforeGzipBytes": 763,
+      "afterGzipBytes": 764,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/how-it-works/page",
+      "before": "static/chunks/app/(marketing)/how-it-works/page-9e83f483ccd1e5de.js",
+      "after": "static/chunks/app/(marketing)/how-it-works/page-93616077b826a752.js",
+      "beforeGzipBytes": 737,
+      "afterGzipBytes": 736,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/methodology/page",
+      "before": "static/chunks/app/(marketing)/methodology/page-56c72b4eca27d965.js",
+      "after": "static/chunks/app/(marketing)/methodology/page-395e41844fea2792.js",
+      "beforeGzipBytes": 724,
+      "afterGzipBytes": 726,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(marketing)/pricing/page",
+      "before": "static/chunks/app/(marketing)/pricing/page-ec929e130e91e30c.js",
+      "after": "static/chunks/app/(marketing)/pricing/page-9f71995e92cb4ebe.js",
+      "beforeGzipBytes": 8563,
+      "afterGzipBytes": 8562,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/refunds/page",
+      "before": "static/chunks/app/(marketing)/refunds/page-50d2c69c1dd57dbd.js",
+      "after": "static/chunks/app/(marketing)/refunds/page-2ce8624a372fe2a1.js",
+      "beforeGzipBytes": 960,
+      "afterGzipBytes": 960,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/sign-in/page",
+      "before": "static/chunks/app/(marketing)/sign-in/page-d82260524d1a9f86.js",
+      "after": "static/chunks/app/(marketing)/sign-in/page-d2772a07293ef613.js",
+      "beforeGzipBytes": 728,
+      "afterGzipBytes": 727,
+      "deltaGzipBytes": -1
+    },
+    {
+      "routeEntry": "/(marketing)/vs/[competitor]/page",
+      "before": "static/chunks/app/(marketing)/vs/[competitor]/page-bb98c9c27e30bccd.js",
+      "after": "static/chunks/app/(marketing)/vs/[competitor]/page-3de8aee5acf78203.js",
+      "beforeGzipBytes": 742,
+      "afterGzipBytes": 744,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(marketing)/security/page",
+      "before": "static/chunks/app/(marketing)/security/page-56cf79819d63026c.js",
+      "after": "static/chunks/app/(marketing)/security/page-ef0d8c1bf2875f3e.js",
+      "beforeGzipBytes": 944,
+      "afterGzipBytes": 944,
+      "deltaGzipBytes": 0
+    },
+    {
+      "routeEntry": "/(marketing)/privacy/page",
+      "before": "static/chunks/app/(marketing)/privacy/page-909a52205e724ddf.js",
+      "after": "static/chunks/app/(marketing)/privacy/page-87d3990601197dab.js",
+      "beforeGzipBytes": 958,
+      "afterGzipBytes": 960,
+      "deltaGzipBytes": 2
+    },
+    {
+      "routeEntry": "/(marketing)/terms/page",
+      "before": "static/chunks/app/(marketing)/terms/page-480a9ec89115590b.js",
+      "after": "static/chunks/app/(marketing)/terms/page-0ab5bb0a66107e29.js",
+      "beforeGzipBytes": 959,
+      "afterGzipBytes": 960,
+      "deltaGzipBytes": 1
+    },
+    {
+      "routeEntry": "/(marketing)/answers/sender-level-vs-message-level-cleanup/page",
+      "before": "static/chunks/app/(marketing)/answers/sender-level-vs-message-level-cleanup/page-8282f8b762a172fa.js",
+      "after": "static/chunks/app/(marketing)/answers/sender-level-vs-message-level-cleanup/page-b8a279ce355e4372.js",
+      "beforeGzipBytes": 783,
+      "afterGzipBytes": 783,
+      "deltaGzipBytes": 0
+    }
+  ],
+  "implementationRecord": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json"
+}

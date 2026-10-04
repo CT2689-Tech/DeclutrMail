@@ -1,0 +1,425 @@
+{
+  "review": "Final current-main design and source gate for scoped fixes PR 881",
+  "updatedAtUtc": "2026-10-04T00:09:57.871423+00:00",
+  "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+  "sourceAssessment": {
+    "result": "PASS",
+    "findings": [],
+    "integrationScope": [
+      "Activity guards and upstream filter URL ownership",
+      "Triage Focus account-zone detail and dialog keyboard ownership",
+      "Autopilot primary/optional streamed reads and recovery boundaries",
+      "Privacy static server slot and all PrivacyBadge consumers"
+    ],
+    "sourceSha256": {
+      "apps/web/src/features/activity/activity-screen.tsx": "8441e5892c0e4c0dd4c7f4f48b7d8f33519a72d2cdf8539780d3b2e5e225fa41",
+      "apps/web/src/features/triage/focus-card.tsx": "31fa6365090c4c0b4de75cd3e4e42063ee0203884bbc930e5ca187a296d78a8a",
+      "apps/web/src/features/triage/focus-stack.tsx": "033c36b93811da030abb4bbfaa2f441598dca662cd6ce1990f3d23e4a0e9827a",
+      "apps/web/src/features/triage/triage-row-expanded.tsx": "58427c84668b4bf9c329d6b09d06d45a4fd62bf9b2cc59b8f256e0534c7b9d90",
+      "apps/web/src/features/triage/action-toolbar.tsx": "bca3518502f5af083fc040c16c9ff7860cb79bd460ef61230c6ae2e8b07ba2b4",
+      "apps/web/src/features/auth/api/use-me.ts": "1650a457cc125935f44dd960d44cacd94f24ae9ede7674c4639bc775db176be5",
+      "apps/web/src/app/(app)/autopilot/page.tsx": "eecf20d8bffaed99954612482e0e7f0e50f238c54a6019ffe80a185d3999660e",
+      "apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx": "e23431757e35aafc384d43e35184fd5ebd0f4b144009fafb1e04c5374a3883fb",
+      "apps/web/src/features/autopilot/autopilot-screen.tsx": "2f7be72414d1b649c41de003739bca72e8a9e26a12773992581468928bad5810",
+      "apps/web/src/features/autopilot/api/query-options.ts": "d9d76340e3c903e6724ad6ff39b2aadce8b4dc5f87eb44ee2dbb4365a8ec457d",
+      "apps/web/src/features/autopilot/api/use-pending-suggestions.ts": "254caf06cad468bc9da0c10f13aa15a76de7161e34673e70fa7a6b2cc03ec9c4",
+      "apps/web/src/lib/query-client.ts": "ffb21a7f0814c19c1ff3f305838b5bc6bdba4c639618179656735300756e90ee",
+      "apps/web/src/lib/query-hydration-boundary.tsx": "70d09abf90449fbe688ddfb717eacb0eaa9caf4435e10b154d8dd54d026a73d8",
+      "apps/web/src/lib/server-query-hydration.tsx": "d53d2b1af5ca3e9eeaa6cf9b7f9431ddb8b2b76b26c76e8498ff1750108be2fa",
+      "apps/web/src/lib/server-query-client.ts": "563583b187b29a507f36dee978d6450e371074806694ead1766320710092d2b5",
+      "apps/web/src/lib/streamed-query-recovery.ts": "b9e1fd0b922868e404191a9893485e3b89da4337717f00a5cc7eade6750dcdf7",
+      "apps/web/instrumentation.ts": "cc07a61205cb3de80617cea2f317e4b420eea0fea6ef06cfc98acc1dd7418d37",
+      "apps/web/src/app/(app)/settings/privacy/page.tsx": "651e0118457f19b7f9db713109caae844f773378d176e5de10b65cf530089cd1",
+      "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx": "8ed4a6ad3bc609fb055df10d3929933c402c752f61f9b1ea52786dd68910f368",
+      "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx": "45e309ff0ff1a4070875d7ee3368d3990695cdd55dbdb206fa52364e4e7d9aad",
+      "packages/shared/src/components/privacy-badge.tsx": "b6e6cdb0935951147ae10532e71475dfed0d4e6ffbe6b3634721062234ef7cc2"
+    },
+    "prior17ReviewedFilesMatch": true,
+    "detailArtifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design.json",
+    "privacyOptimizationReview": {
+      "result": "PASS_SOURCE_ONLY",
+      "comparison": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470 to 05af47e88831289ef0a9d86d7d17d5db4ad34228",
+      "files": [
+        "apps/web/src/app/(app)/settings/privacy/page.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+        "packages/shared/src/components/privacy-badge.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+        "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx"
+      ],
+      "findings": [],
+      "evidence": [
+        {
+          "file": "apps/web/src/app/(app)/settings/privacy/page.tsx",
+          "line": 21,
+          "detail": "Server page supplies the rendered static content slot and canonical string projection to existing client controller."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+          "line": 33,
+          "detail": "Export copy is projected from shared canonical contracts into strings only, without dataset IDs/functions or account/tier/time-derived content."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+          "line": 54,
+          "detail": "Same PrivacyBadge h2 and styles; native SettingsGroup anchor remains privacy-gmail-data-inventory at line 60."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+          "line": 170,
+          "detail": "Inventory disclosures retain native details/summary DOM and original responsive/motion token CSS."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+          "line": 53,
+          "detail": "Auth, billing and export hooks remain client-owned; live mailbox/tier/retention and pending/failure/download state still drive the view."
+        },
+        {
+          "file": "packages/shared/src/components/privacy-badge.tsx",
+          "line": 1,
+          "detail": "Badge has only token/copy/JSX dependencies and no browser APIs/hooks/event handlers. Directive removal preserves its component API."
+        },
+        {
+          "file": "apps/web/src/features/onboarding/step-promise.tsx",
+          "line": 1,
+          "detail": "Other production Badge consumer remains inside its existing client boundary and keeps headingLevel=2 at line 33."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+          "line": 67,
+          "detail": "Existing stories mount the actual static content and projected canonical copy rather than parallel fixtures."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx",
+          "line": 237,
+          "detail": "New regression verifies an open native inventory disclosure retains DOM identity and open state through pending and prepared export updates."
+        }
+      ],
+      "consumerSweep": {
+        "query": "rg -n PrivacyBadge apps/web/src packages/shared/src --glob *.tsx",
+        "productionConsumers": ["PrivacyDataContent", "StepPromise"],
+        "additionalConsumers": "Existing shared Badge stories/tests and PrivacyDataView stories/tests. Shared exports and comment references are not extra product consumers.",
+        "staleStaticReaderCheck": "No account, mailbox status, tier, locale, time or server fetched data enters the static slot/copy projection. Those live readers remain in the existing client route."
+      },
+      "structuralChecks": {
+        "newPromotionOrLibrary": false,
+        "serverStateLayerChange": false,
+        "mutationOrLifecycleChange": false,
+        "newVisualComponentCoverage": "Static feature extraction is rendered in all existing PrivacyDataView stories; loading/error/disabled states remain controller states. Shared PrivacyBadge stories remain intact.",
+        "headingAndForeground": "Original DOM heading levels, IDs, colors and layout styles preserved."
+      },
+      "ownerVerification": {
+        "result": "PASS_REPORTED_BY_COPY",
+        "focusedSuites": "Privacy/export/replay plus shared Badge/data-export; no duplicate execution by reviewer",
+        "htmlEquivalence": {
+          "artifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json",
+          "method": "Owner renderToStaticMarkup exact full HTML comparison against untouched f21 before view; JSON independently inspected",
+          "states": 8,
+          "allEqual": true,
+          "limitations": "Static HTML equivalence is not current production browser or bundle proof."
+        }
+      }
+    }
+  },
+  "buildPrerequisites": {
+    "currentSource": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "method": "Final frozen-candidate results supplied by root; no duplicate build or test execution by this reviewer.",
+    "webProductionBuild": "PASS",
+    "storybookProductionBuild": "PASS",
+    "workspaceTypecheck": {
+      "result": "PASS",
+      "projects": 8
+    },
+    "rootLint": {
+      "result": "PASS",
+      "errors": 0,
+      "existingWarnings": 6
+    },
+    "publicPrerender": {
+      "result": "PASS",
+      "staticRoutes": 45
+    },
+    "servedBundleBudgets": {
+      "result": "PASS",
+      "templates": 51,
+      "checkerOrCapsChanged": false,
+      "privacy": {
+        "measuredKb": 259.5,
+        "capKb": 262
+      }
+    }
+  },
+  "runtimeProofs": {
+    "currentSource": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "journeysTwice": {
+      "result": "PASS",
+      "runs": [
+        {
+          "artifact": "journeys-final-1.json",
+          "expected": 15,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "resultEntries": 15,
+          "allPassed": true,
+          "retryIndexes": [0],
+          "method": "Final root-run Playwright JSON independently inspected, no duplicate execution."
+        },
+        {
+          "artifact": "journeys-final-2.json",
+          "expected": 15,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "resultEntries": 15,
+          "allPassed": true,
+          "retryIndexes": [0],
+          "method": "Final root-run Playwright JSON independently inspected, no duplicate execution."
+        }
+      ],
+      "contracts": "Both assert-journeys contracts PASS per root, zero skips."
+    },
+    "hydrationTwice": {
+      "result": "PASS",
+      "runs": [
+        {
+          "artifact": "hydration-final-1.json",
+          "expected": 43,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "resultEntries": 43,
+          "allPassed": true,
+          "retryIndexes": [0],
+          "method": "Final root-run Playwright JSON independently inspected, no duplicate execution."
+        },
+        {
+          "artifact": "hydration-final-2.json",
+          "expected": 43,
+          "unexpected": 0,
+          "skipped": 0,
+          "flaky": 0,
+          "resultEntries": 43,
+          "allPassed": true,
+          "retryIndexes": [0],
+          "method": "Final root-run Playwright JSON independently inspected, no duplicate execution."
+        }
+      ],
+      "processRestart": "Root reports exact full final runs after production process restart."
+    },
+    "accessibilityResponsive": {
+      "result": "PASS",
+      "run": {
+        "artifact": "a11y-responsive-final.json",
+        "expected": 70,
+        "unexpected": 0,
+        "skipped": 0,
+        "flaky": 0,
+        "resultEntries": 70,
+        "allPassed": true,
+        "retryIndexes": [0],
+        "method": "Final root-run Playwright JSON independently inspected; no duplicate execution."
+      },
+      "scope": "Complete root-run 70-case accessibility/responsive suite, including actual interactions after mounted readiness and existing axe/viewport assertions.",
+      "verificationCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706"
+    },
+    "initialFinalJourneyReplay": {
+      "status": "TEST_ONLY_LOCATOR_SCOPE_CORRECTED",
+      "initialArtifact": "journeys-final-before-brief-locator-fix.json",
+      "initialLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-before-brief-locator-fix.log",
+      "finalCorrection": "brief-preview.spec.ts now identifies the seeded sender checkbox exactly, then its one accessible Noise-region listitem before asserting the frozen count. Preview/cancel and API action-count assertions retained.",
+      "productSourceChanges": false,
+      "hiddenStreamingTwin": "Inferred, not reproduced or established.",
+      "verificationCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+      "freshFullRuns": "Both 15/15 PASS with zero unexpected/skipped/flaky/retries."
+    },
+    "initialFinalAccessibility": {
+      "initialResult": "68/70 PASS with two interactive readiness failures, original evidence preserved by root",
+      "status": "TEST_ONLY_READINESS_CORRECTION_VERIFIED_COMPLETE_SUITE",
+      "method": "CORE root-supplied controlled CPU6x evidence on desktop and phone, not a browser run by this reviewer",
+      "observation": "SSR heading and native Filter focus became available before the mounted About marker with zero question-mark window listeners; after the marker, dialog opening, trap, close and focus restoration passed.",
+      "correction": "Test-only shared expectScreenMounted applied to interactive accessibility scenarios and after reload. All existing assertions retained.",
+      "productSourceChanges": false,
+      "newComplete70Run": "PASS 70/70; zero unexpected, skipped, flaky results or retries.",
+      "publicHydrationAttribution": "This readiness mechanism does not identify the cause of the original three public HTML hydration failures.",
+      "initialArtifact": "a11y-before-mounted-readiness.json",
+      "initialLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-before-mounted-readiness.log",
+      "initialStats": {
+        "startTime": "2026-10-03T23:58:37.590Z",
+        "duration": 88795.77200000001,
+        "expected": 68,
+        "skipped": 0,
+        "unexpected": 2,
+        "flaky": 0
+      },
+      "diagnosticArtifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-diagnosis.json",
+      "fixArtifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json",
+      "measuredEvidenceLimitation": "CPU6x demonstrated pre-marker SSR/native focus with zero question listeners and post-marker successful real dialog behavior. The complete ungated failure did not reproduce in the bounded instrumented check; the original 68/70 result remains the negative control. No post-mount product keyboard defect or product fix is claimed.",
+      "correctionSourceReview": "Only shared expectScreenMounted import and four calls in interactive a11y scenarios/post-reload. Existing trap, focus restore, failure, retry, exact download, live region, axe and overflow assertions remain.",
+      "verificationCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706"
+    },
+    "privacyNativeBrowser": {
+      "result": "PASS_SCOPED",
+      "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+      "artifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json",
+      "method": "Owned isolated Chromium, synthetic authenticated state, loopback production build; intercepted export response tests browser handoff only, not provider/account export completeness.",
+      "records": [
+        {
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "status": 200,
+          "nativeDisclosureOpened": true,
+          "nativeDisclosurePreservedThroughPendingAndPrepared": true,
+          "exportPendingDisabled": true,
+          "syntheticDownloadHandoff": true,
+          "providerExportExecuted": false,
+          "cookieControlsVisible": true,
+          "overflow": false,
+          "hydrationErrors": [],
+          "axeViolations": [],
+          "axeIncomplete": [
+            {
+              "id": "aria-valid-attr-value",
+              "impact": "critical"
+            },
+            {
+              "id": "color-contrast",
+              "impact": "serious"
+            }
+          ],
+          "screenshot": "privacy-final-desktop.png"
+        },
+        {
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "status": 200,
+          "nativeDisclosureOpened": true,
+          "nativeDisclosurePreservedThroughPendingAndPrepared": true,
+          "exportPendingDisabled": true,
+          "syntheticDownloadHandoff": true,
+          "providerExportExecuted": false,
+          "cookieControlsVisible": true,
+          "overflow": false,
+          "hydrationErrors": [],
+          "axeViolations": [],
+          "axeIncomplete": [
+            {
+              "id": "aria-valid-attr-value",
+              "impact": "critical"
+            },
+            {
+              "id": "color-contrast",
+              "impact": "serious"
+            }
+          ],
+          "screenshot": "privacy-final-mobile.png"
+        }
+      ],
+      "reviewerScreenshotInspection": "Both supplied screenshots independently viewed locally; desktop two-column and phone stacked inventory remain legible without overflow in the visible scrolled main viewport. Existing first-heard survey overlay is expected for this fresh synthetic user and offers Skip; no actionable changed-layout issue found in the captured scope.",
+      "limits": [
+        "Screenshots show a scrolled internal main viewport, not full document or whole Privacy page.",
+        "Export response is intercepted; this proves browser pending/prepared/download handoff, not provider account export or completeness.",
+        "Axe covers the stated main scope; incomplete aria-valid-attr-value and color-contrast checks remain recorded. Zero violations is not a full WCAG certification.",
+        "This reviewer did not run a new browser; root isolated loopback production records were independently inspected."
+      ]
+    }
+  },
+  "historicalEvidence": {
+    "originalCaptureSource": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "publicRouteCaptures": 48,
+    "storybookBaselineStates": 121,
+    "status": "HISTORICAL_NOT_RELABELLED_CURRENT",
+    "mergedHomepageBaseline": {
+      "artifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/screenshots/main-integration-home-baseline.png",
+      "method": "Root supplied capture independently inspected via local image viewer",
+      "theme": "light",
+      "viewport": {
+        "width": 1280,
+        "height": 640
+      },
+      "visibleScope": "Header and above-fold hero/product sample with expected cookie-consent prompt",
+      "result": "NO_ACTIONABLE_FINDINGS_IN_VISIBLE_VIEWPORT",
+      "observations": [
+        "Header links and CTA remain legible and fit the viewport.",
+        "Headline and supporting copy retain distinct hierarchy and explain the Gmail cleanup offering.",
+        "Fictional sample label remains in the mockup window bar rather than a visible footer caption."
+      ],
+      "limitations": [
+        "This is one viewport, not a new full homepage or mobile review.",
+        "Consent prompt is visible; it is an intended UI state, not an unexpected error overlay."
+      ]
+    },
+    "mergedHomepageBaselineSource": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "f21BuildsTypeLint": "PASS, superseded for final gate by new 05af47e8 source"
+  },
+  "residuals": [
+    {
+      "id": "HYDRATION-01",
+      "status": "UNEXPLAINED_UNREPRODUCED_INITIAL_PUBLIC_SIGNAL",
+      "routes": ["/", "/compare", "/faq"],
+      "initialResult": "40/43 passed with three real React #418 HTML errors on accepted-analytics/dark returning loads",
+      "preservedArtifacts": ["hydration-initial.json", "hydration-initial.log"],
+      "historicalExactRechecks": "Two 43/43 PASS runs at original 1b product source, no retries/skips",
+      "causeEstablished": false,
+      "fixClaimed": false,
+      "upstreamAutopilotRepairAttribution": "The specific Flight-stream repair does not establish the cause of these public failures.",
+      "nonblockingForScopedFixesPr": true,
+      "publicLaunchHeld": true
+    }
+  ],
+  "currentMergedIntegrationGate": "PASS_FOR_SCOPED_FIXES_PR",
+  "fixesPrSignoff": true,
+  "launchSignoff": false,
+  "publicLaunchHoldReasons": [
+    "Unexplained initial public HYDRATION-01 signal",
+    "Required provider purchase/webhook/refund rehearsal and applicable cutover verification remain outside this task"
+  ],
+  "actionsPerformed": {
+    "sourceWrites": false,
+    "gitMutations": false,
+    "browserRuns": 0,
+    "testExecution": false,
+    "liveApiMailboxPaymentUse": false,
+    "artifactWriteOnly": true
+  },
+  "testVerificationCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+  "verificationCommits": {
+    "productSource": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "journeysAndHydration": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+    "accessibilityFinal": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+    "productSourceDiffPathsThroughFinalTests": [],
+    "all21ReviewedSourceHashesMatch": true
+  },
+  "currentRenderedEvidence": {
+    "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "homepage": {
+      "artifact": "final-home-baseline.png",
+      "viewport": {
+        "width": 1280,
+        "height": 640
+      },
+      "theme": "light",
+      "result": "NO_ACTIONABLE_FINDINGS_IN_VISIBLE_HEADER_HERO_SCOPE",
+      "method": "Root-supplied capture independently inspected via local image viewer; expected consent prompt visible.",
+      "limitations": ["Above-fold viewport only; no claim of complete homepage/mobile capture."]
+    },
+    "privacy": "Final root native records and screenshots at 1440x1000 and 390x844 as detailed in runtimeProofs.privacyNativeBrowser.",
+    "a11yResponsive": "Current70-case root production suite independently inspected.",
+    "historicalBoundaries": "Original 1b5c9f93 public 48-route and 121-state Storybook captures remain historical; they are not relabeled as current 05af renders."
+  },
+  "originalAuditFindings": {
+    "total": 39,
+    "addressed": 39,
+    "result": "PASS",
+    "method": "Original implementation/cross-review mapping and owner/root confirmation; retained original evidence boundaries."
+  },
+  "remainingDesignFindings": [],
+  "integrationBlockers": [],
+  "nonblockingResiduals": ["HYDRATION-01"],
+  "summary": "Source, scoped current rendered evidence, builds, bundle limits and current production runtime gate PASS for scoped fixes PR 881 at 05af47e8. All 39 original findings are addressed. Initial public HYDRATION-01 remains unexplained and nonblocking for this fixes PR; public launch remains held for that residual and required provider rehearsal. No claim that the original public hydration signal is fixed."
+}

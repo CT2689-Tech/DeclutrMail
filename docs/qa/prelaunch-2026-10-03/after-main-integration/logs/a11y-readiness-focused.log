@@ -1,0 +1,15 @@
+
+Running 6 tests using 1 worker
+
+(node:54121) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [a11y-desktop] › specs/a11y-smoke.spec.ts:117:1 › Activity filters load on first open and restore focus (1.4s)
+  ✓  2 [a11y-desktop] › specs/a11y-smoke.spec.ts:141:1 › keyboard shortcut dialog traps and restores focus (437ms)
+  ✓  3 [a11y-desktop] › specs/a11y-smoke.spec.ts:175:1 › Privacy export distinguishes failures, announces preparation and permits a retry (1.5s)
+(node:54134) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  4 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:117:1 › Activity filters load on first open and restore focus (1.9s)
+  ✓  5 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:141:1 › keyboard shortcut dialog traps and restores focus (506ms)
+  ✓  6 [a11y-mobile-reduced-motion] › specs/a11y-smoke.spec.ts:175:1 › Privacy export distinguishes failures, announces preparation and permits a retry (1.5s)
+
+  6 passed (8.5s)

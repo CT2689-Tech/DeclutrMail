@@ -1,0 +1,127 @@
+{
+  "id": "QA-A11Y-MOUNTED-READINESS",
+  "status": "PASS: test-only mounted-readiness class correction; focused6/6 and root normal-setup full70/70 passed",
+  "sourceStopped": true,
+  "productionSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "filesEdited": ["packages/e2e/specs/a11y-smoke.spec.ts"],
+  "productionSourceChanges": false,
+  "stagedOrCommittedByReviewer": false,
+  "diagnosis": {
+    "initialFailure": "Full current-source accessibility run passed68/70. Desktop and phone shortcuts cases pressed ? after SSR heading/native focus; the dialog never opened.",
+    "preservedNegativeEvidence": [
+      "local run artifact (not archived): a11y-before-mounted-readiness.json",
+      "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-before-mounted-readiness.log"
+    ],
+    "sourceEvidence": [
+      {
+        "file": "apps/web/src/features/senders/keyboard-cheatsheet.tsx",
+        "line": 38,
+        "detail": "Global ? listener attaches from useEffect and is absent in SSR output."
+      },
+      {
+        "file": "packages/e2e/helpers/screen-ready.ts",
+        "line": 8,
+        "detail": "Shared helper requires exactly one visible About button registered by mounted ScreenIntro useEffect; does not substitute for query freshness/action assertions."
+      },
+      {
+        "file": "packages/e2e/specs/a11y-smoke.spec.ts",
+        "line": 141,
+        "detail": "Prior case awaited only SSR h1 before native focus/key press."
+      }
+    ],
+    "boundedRuntimeEvidence": [
+      {
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "CPU": 6,
+        "oldReadiness": {
+          "SSRHeadingAndNativeFilterFocus": "PASS",
+          "aboutVisible": false,
+          "questionListenerRegistrations": 0,
+          "otherDialogs": 0
+        },
+        "afterMountedMarker": {
+          "aboutVisible": true,
+          "questionListenerRegistrations": 3,
+          "actualDialogTrapAndFocusRestore": "PASS"
+        },
+        "attemptedAPIWrites": []
+      },
+      {
+        "viewport": {
+          "width": 375,
+          "height": 812
+        },
+        "CPU": 6,
+        "oldReadiness": {
+          "SSRHeadingAndNativeFilterFocus": "PASS",
+          "aboutVisible": false,
+          "questionListenerRegistrations": 0,
+          "otherDialogs": 0
+        },
+        "afterMountedMarker": {
+          "aboutVisible": true,
+          "questionListenerRegistrations": 3,
+          "actualDialogTrapAndFocusRestore": "PASS"
+        },
+        "attemptedAPIWrites": []
+      }
+    ],
+    "conclusion": "Directly demonstrated readiness gap: visible SSR heading/native focus can precede both About mount and question listener attachment. After shared mounted marker, actual dialog open, Tab/Shift+Tab trap and Escape focus restore worked in both viewports.",
+    "limitation": "The complete ungated failure did not recur in this bounded instrumented browser check: keypress protocol timing crossed later listener registration. The preserved original68/70 failure remains the negative control; no post-mount production keyboard defect or production change claimed."
+  },
+  "implementation": {
+    "change": "Only shared expectScreenMounted import and four calls in interactive tests: Activity Filter, native shortcuts focus/key, Privacy export, and Privacy after reload.",
+    "unchangedChecks": [
+      "Route/data heading checks",
+      "Actual Filter first-open content and focus restoration",
+      "Real shortcuts dialog opens and traps both Tab directions",
+      "Escape closes and restores exact trigger focus",
+      "All existing axe and viewport checks",
+      "Privacy500/429/network failures and retry semantics",
+      "All export buttons disabled during preparation",
+      "Exact intercepted download bytes and filename",
+      "Truthful prepared live region and cleared receipt after reload"
+    ],
+    "noBypass": "No retries, first(), force, DOM readiness substitution, arbitrary sleeps in product spec, skips, assertion suppression or real mailbox/seed/reset writes."
+  },
+  "verification": {
+    "focusedPlaywright": {
+      "result": "PASS6/6;0skips/unexpected/flaky",
+      "durationSeconds": 8.5,
+      "projects": ["a11y-desktop", "a11y-mobile-reduced-motion"],
+      "cases": ["Activity filters", "keyboard shortcut dialog", "Privacy export"],
+      "report": "local run artifact (not archived): a11y-readiness-focused.json",
+      "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-focused.log",
+      "isolation": "Original project/expect/action settings and saved synthetic storage; temporary ESM config disables DB globalsetup only; no source config edits or seed/reset."
+    },
+    "diagnosticArtifact": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-diagnosis.json",
+    "diagnosticLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-diagnosis.log",
+    "eslint": "PASS0errors/warnings",
+    "lintLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log",
+    "prettier": "PASS unchanged",
+    "diffCheck": "PASS",
+    "fullAccessibilityResponsive": {
+      "result": "PASS70/70;0skips/unexpected/flaky",
+      "productionSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+      "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+      "normalGlobalSetup": true,
+      "durationSeconds": 60.6,
+      "report": "local run artifact (not archived): a11y-responsive-final.json",
+      "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
+      "owner": "root; exact final report read back by independent reviewer"
+    },
+    "typecheck": "PASS: latest E2E typecheck",
+    "typecheckLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
+    "finalPrivacyBrowser": {
+      "result": "PASS: desktop1440 and phone390, named native disclosure/export/consent checks",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json",
+      "limitation": "Intercepted synthetic export bytes; no provider completeness claim; axe incomplete checks retained."
+    }
+  },
+  "cleanup": "All owned baseline CLI, diagnostic Playwright and focused runner browsers closed; no servers started.",
+  "launchBoundary": "Independent publicHYDRATION-01 remains separate untraced historical evidence; neither mounted test readiness nor upstream authenticated query fixes prove that signal fixed.",
+  "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706"
+}

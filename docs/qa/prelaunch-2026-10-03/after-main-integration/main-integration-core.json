@@ -1,0 +1,167 @@
+{
+  "summary": {
+    "status": "PASS: core conflict resolved and auto-merged behavior reviewed; affected suites passed",
+    "sourceStopped": true,
+    "productSourceChangesByReviewer": false,
+    "testOnlyConflictResolution": true,
+    "committedOrStaged": false,
+    "noLiveWrites": true,
+    "priorBranchHead": "2abb9311c164fbc5db90245c3535077a13f4aba9",
+    "upstreamMergeHead": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "historicalProductionSource": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "productionVerification": "Current merged source build and isolated end-to-end verification pending root; prior1b proof is historical."
+  },
+  "filesEdited": ["apps/web/src/features/activity/activity-screen.test.tsx"],
+  "conflictResolution": {
+    "file": "apps/web/src/features/activity/activity-screen.test.tsx",
+    "approach": "Concatenated both regression sets with their proper closing scopes. Preserved upstream native-history navigation mock/spy and both overlapping-filter regressions alongside existing placeholder keyboard Undo/selection and recovery-preview safeguards.",
+    "preservedRegressions": [
+      {
+        "line": 3499,
+        "test": "suspends keyboard Undo and selection while earlier-filter rows are placeholders"
+      },
+      {
+        "line": 3557,
+        "test": "suspends recovery verification while the dialog belongs to earlier-filter placeholders"
+      },
+      {
+        "line": 3625,
+        "test": "retains an outcome when a date preset is picked before the route snapshot updates"
+      },
+      {
+        "line": 3641,
+        "test": "uses a restored browser URL for the next edit and preserves unrelated parameters and hash"
+      }
+    ],
+    "indexState": "No conflict markers remain in the file; unmerged index left for root to stage as instructed."
+  },
+  "autoMergeReview": [
+    {
+      "file": "apps/web/src/features/activity/activity-screen.tsx",
+      "result": "PASS; no production correction required",
+      "evidence": [
+        {
+          "line": 211,
+          "detail": "Filter writes merge with synchronous window.location.href and native replaceState, preserving rapid independent edits and restored unrelated query/hash values."
+        },
+        {
+          "line": 334,
+          "detail": "Row selection rejects placeholder data."
+        },
+        {
+          "line": 386,
+          "detail": "showingStaleRows derives from query.isPlaceholderData; provider exposes ownership to bulk Undo and row recovery."
+        },
+        {
+          "line": 491,
+          "detail": "Retained prior-filter rows are inert and aria-busy while current filter resolves."
+        },
+        {
+          "line": 1487,
+          "detail": "Bulk Undo dispatch refuses blocked interactions."
+        },
+        {
+          "line": 2329,
+          "detail": "Recovery review creation refuses blocked interactions."
+        },
+        {
+          "line": 2352,
+          "detail": "Recovery confirmation refuses blocked interactions and nonready previews."
+        },
+        {
+          "line": 2387,
+          "detail": "Provider verification retry refuses blocked interactions."
+        },
+        {
+          "line": 2580,
+          "detail": "Per-row Undo has both dispatch guard and disabled state."
+        }
+      ]
+    },
+    {
+      "file": "apps/web/src/features/triage/focus-stack.tsx",
+      "result": "PASS; nonmodal account dialog keyboard ownership retained",
+      "evidence": [
+        {
+          "line": 73,
+          "detail": "Uses cached user timezone for authenticated Focus details."
+        },
+        {
+          "line": 85,
+          "detail": "Any mounted role=dialog owns ArrowRight Skip, including nonmodal AccountMenu."
+        },
+        {
+          "line": 101,
+          "detail": "Named account timezone reaches TriageFocusCard without altering action handlers."
+        },
+        {
+          "line": 224,
+          "detail": "Departing animation snapshot remains inert and aria-hidden rather than another mounted keyboard consumer."
+        }
+      ]
+    },
+    {
+      "file": "apps/web/src/features/triage/focus-card.tsx",
+      "result": "PASS; account-zone explanation matches list",
+      "evidence": [
+        {
+          "line": 314,
+          "detail": "Passes supplied account timezone to shared expanded explanation; standalone/public cards retain defaultUTC."
+        }
+      ]
+    },
+    {
+      "file": "apps/web/src/features/triage/triage-focus.test.tsx",
+      "result": "PASS: upstream timezone and existing modal ownership regressions retained",
+      "evidence": [
+        {
+          "line": 258,
+          "detail": "Focus/List Last seen parity uses a date crossing the America/Los_Angeles calendar boundary."
+        },
+        {
+          "line": 439,
+          "detail": "Nonmodal account dialog prevents Skip and permits it again after closing."
+        }
+      ]
+    },
+    {
+      "file": "apps/web/src/features/triage/triage-screen.tsx",
+      "result": "PASS: inline Escape ownership intact",
+      "evidence": [
+        {
+          "line": 1567,
+          "detail": "Honors defaultPrevented and any mounted role=dialog before clearing an inline preview."
+        }
+      ]
+    },
+    {
+      "file": "apps/web/src/features/triage/action-toolbar.tsx",
+      "result": "PASS: verb keyboard ownership intact",
+      "evidence": [
+        {
+          "line": 101,
+          "detail": "Any mounted role=dialog blocks K/A/U/L/D before dispatch; typing controls remain guarded."
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "testCommand": "pnpm --filter @declutrmail/web exec vitest run src/features/activity/activity-screen.test.tsx src/features/activity/api/query-options.test.ts src/features/activity/api/use-activity.test.tsx src/features/triage/triage-focus.test.tsx src/features/triage/triage-screen.actions.test.tsx src/features/triage/action-toolbar.test.tsx src/features/triage/triage-row.test.tsx src/features/triage/triage-queue.test.tsx --maxWorkers=1 --no-file-parallelism",
+    "tests": "8suites/325testsPASS; no skipped/failed cases;17.55s; serial maxWorkers1",
+    "testLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-core-tests.log",
+    "lint": "PASS: Activity screen/test plus Focus card/stack/test; zero errors or warnings",
+    "lintLog": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-core-lint.log",
+    "format": "Activity conflict test PrettierPASS unchanged",
+    "diffCheck": "Scoped git diff --checkPASS; no conflict markers in edited file"
+  },
+  "remaining": [
+    "Root stages/commits the coordinated merge; reviewer performed no Git mutations.",
+    "Root verifies current merged production archive/build/end-to-end and full-source checks before updating final PR evidence.",
+    "Public HYDRATION-01 remains an unresolved historical intermittent signal. Upstream pending-query hydration879/global query recovery873 are not proof that the public mismatch is fixed."
+  ],
+  "limitations": [
+    "Source review and test-DOM verification only for this integration; no new browser/runtime session by this reviewer.",
+    "All8 user untracked paths preserved; no edits outside the sole conflict test and temporary report/logs.",
+    "No API/worker/provider/billing/deletion/DB source changes by reviewer; upstream main changes remain upstream provenance."
+  ]
+}
