@@ -15,11 +15,14 @@ import type { BillingSubscription, CancelRequest } from '@declutrmail/shared/con
 
 import { apiPost } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 import { billingKeys } from './query-keys';
 
 export function useCancelSubscription() {
   const queryClient = useQueryClient();
   return useMutation<BillingSubscription, Error, CancelRequest>({
+    onError: billingMutationFailure('cancel'),
     mutationFn: async (body) => {
       const envelope = await apiPost<BillingSubscription>('/api/billing/cancel', body);
       return envelope.data;

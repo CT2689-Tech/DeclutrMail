@@ -14,11 +14,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { BillingSubscription, PlanChangeRequest } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
+
+import { billingMutationFailure } from './mutation-failure';
 import { billingKeys } from './query-keys';
 
 export function useChangePlan() {
   const queryClient = useQueryClient();
   return useMutation<BillingSubscription, Error, PlanChangeRequest>({
+    onError: billingMutationFailure('change-plan'),
     mutationFn: async (body) => {
       const envelope = await apiPost<BillingSubscription>('/api/billing/change-plan', body);
       return envelope.data;

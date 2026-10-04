@@ -20,8 +20,11 @@ import type {
 
 import { apiPost } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 export function useReconcileCheckout() {
   return useMutation<BillingReconcileOutcome, Error, BillingReconcileRequest>({
+    onError: billingMutationFailure('reconcile'),
     mutationFn: async (hint) => {
       // The local pending record rides along as a search hint so a
       // stale lock (server claim already TTL'd + swept) still gets a

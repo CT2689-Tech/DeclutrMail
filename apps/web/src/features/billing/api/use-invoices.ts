@@ -20,6 +20,8 @@ import { BillingInvoiceDocumentSchema } from '@declutrmail/shared/contracts';
 
 import { apiGet } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 import { BillingPayloadError } from '../billing-payload-error';
 import { billingInvoicesQueryOptions } from './query-options';
 import { parseBillingInvoices } from './parse-payload';
@@ -55,6 +57,7 @@ export function useInvoices(options?: { enabled?: boolean }) {
  */
 export function useInvoiceDocument() {
   return useMutation<string, Error, string>({
+    onError: billingMutationFailure('invoice-document'),
     mutationFn: async (invoiceId: string) => {
       const envelope = await apiGet<unknown>(
         `/api/billing/invoices/${encodeURIComponent(invoiceId)}/document`,
