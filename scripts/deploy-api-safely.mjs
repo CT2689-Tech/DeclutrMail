@@ -28,6 +28,75 @@ export function trafficAssignment(service) {
     .join(',');
 }
 
+function databaseDriver(value) {
+  const driver = value?.trim() || 'postgres-js';
+  if (!['postgres-js', 'node-postgres'].includes(driver))
+    throw new Error('Unknown API database driver; refusing deployment');
+  return driver;
+}
+
+async function revisionDriver(revision, scope, run) {
+  const resource = JSON.parse(
+    await run([
+      'run',
+      'revisions',
+      'describe',
+      revision,
+      ...scope,
+      '--format=json(spec.containers)',
+    ]),
+  );
+  if (resource.spec?.containers?.length !== 1)
+    throw new Error('Cannot establish API revision configuration');
+  const entries = (resource.spec.containers[0].env ?? []).filter((e) => e.name === 'API_DB_DRIVER');
+  if (entries.length > 1 || (entries.length === 1 && typeof entries[0].value !== 'string'))
+    throw new Error('Cannot establish API revision driver');
+  return databaseDriver(entries[0]?.value);
+}
+
+/** Hold routine releases during a driver canary, or until its manifest is updated. */
+export async function assertServingDriver({ service, expected, scope, run }) {
+  const driver = databaseDriver(expected);
+  const assignment = trafficAssignment(service);
+  for (const entry of assignment.split(',')) {
+    const revision = entry.split('=')[0];
+    if ((await revisionDriver(revision, scope, run)) !== driver)
+      throw new Error(
+        'Serving API driver differs from deployment manifest; finish or roll back the driver rollout first',
+      );
+  }
+}
+
+function deploymentDriver(args) {
+  const flags = args.filter((arg) => arg.startsWith('--set-env-vars='));
+  if (flags.length !== 1)
+    throw new Error('Exactly one explicit --set-env-vars configuration required');
+  const values = flags[0]
+    .slice('--set-env-vars='.length)
+    .split(',')
+    .filter((entry) => entry.startsWith('API_DB_DRIVER='));
+  if (values.length !== 1 || !values[0].slice('API_DB_DRIVER='.length).trim())
+    throw new Error('Explicit API_DB_DRIVER required in deployment manifest');
+  // This helper accepts the comma-delimited API manifest, not alternate
+  // delimiters or a second env source that could override the checked value.
+  if (
+    flags[0].startsWith('--set-env-vars=^') ||
+    args.some((arg) =>
+      /^--(?:update-env-vars|env-vars-file|remove-env-vars|clear-env-vars)(=|$)/.test(arg),
+    ) ||
+    args.some(
+      (arg) =>
+        /^--(?:set-secrets|update-secrets)=/.test(arg) &&
+        arg
+          .slice(arg.indexOf('=') + 1)
+          .split(',')
+          .some((entry) => entry.startsWith('API_DB_DRIVER=')),
+    )
+  )
+    throw new Error('Conflicting API database driver configuration');
+  return databaseDriver(values[0].slice('API_DB_DRIVER='.length));
+}
+
 export async function smokeApi(url, request = fetch) {
   const checks = [
     ['/api/healthz', 200, (body) => body.status === 'ok'],
@@ -80,6 +149,8 @@ export async function deployApi({
     run(['run', 'services', 'update-traffic', SERVICE, ...scope, ...changes]);
   const before = await describe();
   const rollback = trafficAssignment(before);
+  const driver = deploymentDriver(args);
+  await assertServingDriver({ service: before, expected: driver, scope, run });
   log(`Previous API traffic (manual recovery if runner is terminated): ${rollback}`);
   let promotionAttempted = false;
   let failure;
@@ -97,7 +168,11 @@ export async function deployApi({
     ) {
       throw new Error('Cannot identify ready candidate and its tagged URL');
     }
+    if ((await revisionDriver(candidate.revisionName, scope, run)) !== driver)
+      throw new Error('Staged API driver differs from deployment manifest');
     await smoke(candidate.url);
+    if (trafficAssignment(await describe()) !== rollback)
+      throw new Error('Serving traffic changed during smoke; refusing promotion');
     // Mark BEFORE invoking: a failed CLI response can follow an applied traffic change.
     promotionAttempted = true;
     await update(`--to-revisions=${candidate.revisionName}=100`);
@@ -135,22 +210,43 @@ export async function deployApi({
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const command = process.argv.slice(2);
-    if (command.slice(0, 4).join(' ') !== 'gcloud run deploy declutrmail-api')
-      throw new Error('Only the API deploy command can be staged');
-    await deployApi({
-      args: command.slice(4),
-      run: async (args) => {
-        try {
-          return (await execute('gcloud', args, { timeout: 600000, maxBuffer: 4 * 1024 * 1024 }))
-            .stdout;
-        } catch {
-          // Do not print command arguments, env configuration or full service resources.
-          throw new Error(
-            `gcloud ${args.slice(0, 3).join(' ')} failed; inspect the Cloud Run operation`,
-          );
-        }
-      },
-    });
+    const run = async (args) => {
+      try {
+        return (await execute('gcloud', args, { timeout: 600000, maxBuffer: 4 * 1024 * 1024 }))
+          .stdout;
+      } catch {
+        // Do not print command arguments, env configuration or full resources.
+        throw new Error(
+          `gcloud ${args.slice(0, 3).join(' ')} failed; inspect the Cloud Run operation`,
+        );
+      }
+    };
+    if (command[0]?.startsWith('--check-driver=')) {
+      const scope = command.slice(1);
+      if (
+        scope.length !== 2 ||
+        !scope[0].startsWith('--region=') ||
+        !scope[1].startsWith('--project=')
+      )
+        throw new Error('Driver check requires explicit region and project');
+      const service = JSON.parse(
+        await run(['run', 'services', 'describe', SERVICE, ...scope, '--format=json(status)']),
+      );
+      await assertServingDriver({
+        service,
+        expected: command[0].slice('--check-driver='.length),
+        scope,
+        run,
+      });
+      console.log('Serving API driver matches deployment manifest');
+    } else {
+      if (command.slice(0, 4).join(' ') !== 'gcloud run deploy declutrmail-api')
+        throw new Error('Only the API deploy command can be staged');
+      await deployApi({
+        args: command.slice(4),
+        run,
+      });
+    }
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
