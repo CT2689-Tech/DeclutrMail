@@ -191,8 +191,8 @@ export function CancelModal({
               }}
             >
               <strong style={{ fontWeight: 600, color: color.fg }}>Pause instead?</strong> Billing
-              stops for 30 days and picks up automatically after that. Your senders, rules and
-              history stay exactly as they are.
+              and access from this subscription pause immediately. Billing resumes automatically
+              after 30 days. Your saved senders and history remain.
             </p>
             <Button tone="default" size="sm" onClick={onPause} disabled={isPausing || isCanceling}>
               {isPausing ? 'Pausing…' : 'Pause for 30 days'}

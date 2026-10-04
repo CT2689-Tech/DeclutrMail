@@ -816,11 +816,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     mockTier = 'pro';
     renderScreen();
 
-    // Present tense, and the clamp is disclosed: the deadline is
-    // LEAST(now()+7d, period_end), so promising the plan until
-    // confirmation ALONE would be false for a short remaining period.
+    // The bounded grace may end before the paid period or approval.
+    // The payload has no grace deadline; do not promise the whole period.
     expect(await screen.findByText(/refund is being processed/i)).toBeInTheDocument();
-    expect(screen.getByText(/whichever comes first/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/ends on approval or when the refund grace period expires/i),
+    ).toBeInTheDocument();
 
     // The plan is theirs, so there is nothing to buy — a locked picker is
     // CORRECT here, unlike in the backstop where it is a trap.
@@ -2318,8 +2319,11 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
-    const offer = within(screen.getByTestId('cancel-modal')).getByTestId('pause-offer');
+    const offer = within(await screen.findByTestId('cancel-modal')).getByTestId('pause-offer');
     expect(within(offer).getByText(/Pause instead\?/)).toBeInTheDocument();
+    expect(offer).toHaveTextContent(/access from this subscription pause immediately/i);
+    expect(offer).toHaveTextContent(/resumes automatically.*30 days/i);
+    expect(offer).not.toHaveTextContent(/rules.*exactly/i);
 
     fireEvent.click(within(offer).getByRole('button', { name: 'Pause for 30 days' }));
     await waitFor(() => expect(posted).toBe(1));
