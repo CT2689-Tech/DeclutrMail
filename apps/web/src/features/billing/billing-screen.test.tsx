@@ -3924,6 +3924,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // affordance until the row is resumed or canceled. The notice above
     // carries those verbs.
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
@@ -3952,7 +3953,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
     expect(screen.queryByTestId('non-backing-subscription-notice')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upgrade to Plus' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
   });
 
   it('a COMPED Pro says so on the card, with no price and no cancel control', async () => {
@@ -3981,6 +3982,8 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByTestId('complimentary-note')).toHaveTextContent(
       'Pro is complimentary on this account',
     );
+    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
     // No subscription exists, so nothing here may offer to manage one.
     expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
@@ -4005,6 +4008,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     const note = await screen.findByTestId('complimentary-note');
     expect(note).toHaveTextContent('through Dec 31, 2026');
     expect(note).toHaveTextContent('reverts to your paid subscription');
+    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
   });
 
   it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {
@@ -4041,6 +4045,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // (status past_due ∈ SUBSCRIPTION_EXISTS), so no checkout affordance
     // renders at all.
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
