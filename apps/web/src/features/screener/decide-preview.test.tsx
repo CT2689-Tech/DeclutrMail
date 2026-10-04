@@ -416,8 +416,10 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
       ).toBeInTheDocument();
       // The title says it once — no lead describing the move and its undo.
       expect(screen.queryByText(/undo/i)).toBeNull();
-      // Confirm stays live at zero, so the sheet says what it does.
-      expect(screen.getByText(/removes .* from the Screener/i)).toBeInTheDocument();
+      expect(
+        screen.getByText('Choose Keep to record a decision without moving email.'),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: new RegExp(`^${verb}`, 'i') })).toBeDisabled();
     },
   );
 

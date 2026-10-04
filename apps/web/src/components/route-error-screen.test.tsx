@@ -45,7 +45,7 @@ describe('RouteErrorScreen', () => {
       expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
       expect(screen.getByText(kicker)).toBeInTheDocument();
       expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
-      expect(screen.getByRole('main')).toHaveStyle({ maxWidth: '1120px', gap: `${gap}px` });
+      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1120px', gap: `${gap}px` });
       expect(document.body).not.toHaveTextContent('private backend value');
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
       expect(reset).toHaveBeenCalledTimes(1);
@@ -55,13 +55,35 @@ describe('RouteErrorScreen', () => {
     localStorage.setItem('dm.triage.mode', JSON.stringify('list'));
     try {
       render(<TriageError error={new Error('private')} reset={() => {}} />);
-      expect(screen.getByRole('main')).toHaveStyle({ maxWidth: '928px' });
-      expect(screen.getByRole('main')).toHaveAttribute('data-triage-mode', 'list');
-      expect(screen.getByRole('main').className).toContain('triage');
+      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '928px' });
+      expect(screen.getByRole('region')).toHaveAttribute('data-triage-mode', 'list');
+      expect(screen.getByRole('region').className).toContain('triage');
       expect(localStorage.getItem('dm.triage.mode')).toBe('"list"');
     } finally {
       localStorage.removeItem('dm.triage.mode');
     }
+  });
+  it('keeps one main landmark inside the authenticated shell', () => {
+    const { container } = render(
+      <main>
+        <LaterError error={new Error('private')} reset={() => {}} />
+      </main>,
+    );
+    expect(container.querySelectorAll('main')).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'Later' })).toBeInTheDocument();
+  });
+  it('uses a main landmark for a standalone fallback', () => {
+    render(
+      <RouteErrorScreen
+        error={new Error('private')}
+        reset={() => {}}
+        boundary="app-router-error"
+        headline="Couldn’t load."
+        body="Try again."
+        escape={{ href: '/triage', label: 'Back to Triage' }}
+      />,
+    );
+    expect(screen.getAllByRole('main')).toHaveLength(1);
   });
   it('renders copy + digest, never the error message (D7), and tags the boundary', async () => {
     const reset = vi.fn();

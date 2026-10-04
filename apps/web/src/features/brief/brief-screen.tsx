@@ -114,6 +114,20 @@ export function BriefScreen() {
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useBriefToday();
+  const mailboxId = auth?.me.activeMailboxId;
+  // Scoped keys are reset on switches; an old cached receipt cannot be
+  // retained after a failed read for a different active mailbox.
+  const loadedScope = useRef({ mailboxId, updatedAt: query.dataUpdatedAt });
+  if (query.dataUpdatedAt !== loadedScope.current.updatedAt) {
+    loadedScope.current = { mailboxId, updatedAt: query.dataUpdatedAt };
+  }
+  const notYet = query.error instanceof ApiError && query.error.status === 404;
+  const retainEdition =
+    query.data != null &&
+    loadedScope.current.mailboxId === mailboxId &&
+    (notYet ||
+      !(query.error instanceof ApiError && query.error.status >= 400 && query.error.status < 500));
+  const refreshFailed = query.isError && retainEdition;
 
   // D61 history. `null` means "showing today"; any other value is a
   // run_date_local the user picked. Held here rather than in BriefBody
@@ -131,12 +145,12 @@ export function BriefScreen() {
 
   if (query.isLoading) return <LoadingState />;
 
-  if (query.isError) {
+  if (query.isError && !retainEdition) {
     // 404 is a designed state, not a real error (D69 worker tick can
     // lag yesterday's wall-clock 8am by up to an hour for some UTC
     // offsets). Branch on `ApiError.status === 404` so we render the
     // "Brief lands soon" message instead of the generic retry CTA.
-    if (query.error instanceof ApiError && query.error.status === 404) {
+    if (notYet) {
       return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
     }
     // Non-404 → log to Sentry as a feature exception so the dashboard
@@ -170,7 +184,11 @@ export function BriefScreen() {
       // Only today's Brief is a "first view" worth recording. Marking a
       // three-week-old snapshot opened because someone browsed back to
       // it would make D61's opened_at mean something else entirely.
-      isToday={selected.id === brief.id}
+      isToday={selected.id === brief.id && !notYet}
+      refreshFailed={refreshFailed}
+      notYet={notYet}
+      refreshing={query.isFetching}
+      onRefresh={() => handleBriefRefresh(query.refetch)}
       days={history.data ?? []}
       selectedRunDate={selectedRunDate}
       onSelectRunDate={setSelectedRunDate}
@@ -204,6 +222,10 @@ function BriefBody({
   days,
   selectedRunDate,
   onSelectRunDate,
+  refreshFailed,
+  notYet,
+  refreshing,
+  onRefresh,
 }: {
   brief: BriefWire;
   mailboxEmail: string | null;
@@ -213,6 +235,10 @@ function BriefBody({
   days: readonly BriefWire[];
   selectedRunDate: string | null;
   onSelectRunDate: (runDate: string | null) => void;
+  refreshFailed: boolean;
+  notYet: boolean;
+  refreshing: boolean;
+  onRefresh: () => void;
 }) {
   const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
   const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
@@ -274,6 +300,14 @@ function BriefBody({
         }
       />
       <BriefReturnLinks />
+      {refreshFailed && (
+        <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+          {notYet ? 'Today’s Brief is not available yet.' : 'Couldn’t refresh your Brief.'}{' '}
+          <Button tone="ghost" size="sm" disabled={refreshing} onClick={onRefresh}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       {isEmpty ? (
         <QuietInboxState />
@@ -319,6 +353,7 @@ function BriefBody({
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
               dayWord={isToday ? 'yesterday' : `on ${dateLabel}`}
+              actionsBlocked={refreshFailed}
             />
           )}
         </>
@@ -415,7 +450,12 @@ function BriefReturnLinks() {
             target: 'activity',
           })
         }
-        style={{ color: color.primary, textDecoration: 'none', whiteSpace: 'nowrap' }}
+        style={{
+          color: color.primary,
+          textDecoration: 'underline',
+          textUnderlineOffset: 3,
+          whiteSpace: 'nowrap',
+        }}
       >
         See what changed
       </Link>
@@ -664,6 +704,7 @@ function NoiseSection({
   isMobile,
   mailboxEmail,
   dayWord,
+  actionsBlocked,
 }: {
   groups: BriefSenderGroupWire[];
   noiseSenders: BriefNoiseSenderWire[];
@@ -675,10 +716,14 @@ function NoiseSection({
    * The counts are frozen (D69); only the word that anchors them moves.
    */
   dayWord: string;
+  actionsBlocked: boolean;
 }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
   const targets = useMemo(() => buildNoiseTargets(groups, noiseSenders), [groups, noiseSenders]);
   const archive = useNoiseArchive(targets);
+  useEffect(() => {
+    if (actionsBlocked && archive.sheetOpen) archive.closeSheet();
+  }, [actionsBlocked, archive.sheetOpen, archive.closeSheet]);
 
   const excludedCount = targets.filter((t) => blockedReason(t) !== null).length;
   const selectedCount = archive.selectedTargets.length;
@@ -731,8 +776,11 @@ function NoiseSection({
         selectedCount={selectedCount}
         excludedCount={excludedCount}
         busy={archive.busy}
+        disabled={actionsBlocked}
         outcome={archive.outcome}
-        onArchive={archive.openSheet}
+        onArchive={() => {
+          if (!actionsBlocked) archive.openSheet();
+        }}
       />
       <ul
         style={{
@@ -750,6 +798,7 @@ function NoiseSection({
             checked={archive.selected.has(target.senderKey)}
             archived={archive.archivedKeys.has(target.senderKey)}
             unconfirmed={archive.unconfirmedKeys.has(target.senderKey)}
+            dayWord={dayWord}
             busy={archive.busy}
             onToggle={archive.toggle}
             isMobile={isMobile}
@@ -760,13 +809,17 @@ function NoiseSection({
       </ul>
 
       <NoiseArchiveSheet
-        open={archive.sheetOpen}
+        open={archive.sheetOpen && !actionsBlocked}
         targets={archive.pendingTargets}
         preview={archive.preview}
         {...(mailboxEmail ? { mailboxEmail } : {})}
         onCancel={archive.closeSheet}
-        onConfirm={archive.confirm}
-        onRetryPreview={archive.retryPreview}
+        onConfirm={() => {
+          if (!actionsBlocked) archive.confirm();
+        }}
+        onRetryPreview={() => {
+          if (!actionsBlocked) archive.retryPreview();
+        }}
       />
     </section>
   );
@@ -785,12 +838,14 @@ export function NoiseArchiveBar({
   selectedCount,
   excludedCount,
   busy,
+  disabled = false,
   outcome,
   onArchive,
 }: {
   selectedCount: number;
   excludedCount: number;
   busy: boolean;
+  disabled?: boolean;
   outcome: NoiseArchiveOutcome | null;
   onArchive: () => void;
 }) {
@@ -836,7 +891,7 @@ export function NoiseArchiveBar({
       {/* No aria-label: the visible label already names the count, and a
           second wording would give screen readers a different sentence
           than the one on screen. */}
-      <Button tone="primary" disabled={selectedCount === 0 || busy} onClick={onArchive}>
+      <Button tone="primary" disabled={selectedCount === 0 || busy || disabled} onClick={onArchive}>
         {busy ? 'Archiving…' : `Archive ${selectedCount} sender${selectedCount === 1 ? '' : 's'}`}
       </Button>
     </div>
@@ -1119,6 +1174,7 @@ const BLOCKED_COPY = {
  */
 function NoiseRow({
   target,
+  dayWord,
   checked,
   archived,
   unconfirmed,
@@ -1129,6 +1185,7 @@ function NoiseRow({
   mailboxEmail,
 }: {
   target: NoiseTarget;
+  dayWord: string;
   checked: boolean;
   archived: boolean;
   /** Its archive may be running; a second one would run it twice. */
@@ -1140,7 +1197,7 @@ function NoiseRow({
   mailboxEmail: string | null;
 }) {
   const count = target.messageCount;
-  const countLabel = `${count} message${count === 1 ? '' : 's'} yesterday`;
+  const countLabel = `${count} message${count === 1 ? '' : 's'} ${dayWord}`;
   const href = gmailHref(mailboxEmail, messageIds[0]);
   const blocked = blockedReason(target);
   const selectable = blocked === null && !archived && !unconfirmed;
@@ -1214,7 +1271,7 @@ function NoiseRow({
         }}
       >
         {/* The frozen count stays put in every state (D69) — it says
-            what yesterday held, which an archive taken today does not
+            what the edition held, which an archive taken today does not
             change. The status that follows it is about now. */}
         {countLabel}
         {archived
@@ -1323,6 +1380,7 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
       <h1 style={H1_STYLE}>Daily Brief</h1>
       <RetryableErrorState
+        headingLevel={2}
         title="We couldn't load your Brief"
         description={loadErrorDescription(error)}
         onRetry={onRetry}
@@ -1344,8 +1402,9 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
       <h1 style={H1_STYLE}>Daily Brief</h1>
       <EmptyState
+        headingLevel={2}
         title="Your Brief is not available yet"
-        description="Briefs summarize the previous day’s email after your inbox has been scanned. There is no edition available for this inbox yet. You can review senders while you wait."
+        description="Your first edition will summarize a previous day of email after your inbox has been scanned."
         action={
           <Button tone="primary" onClick={onRefresh}>
             Refresh
@@ -1363,16 +1422,13 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
   );
 }
 
-/**
- * D70 — "Your inbox was quiet yesterday. Enjoy the morning — we'll be
- * back tomorrow." Verbatim copy from the plan; the Noise section
- * disappears automatically because the BE returns `[]` for it.
- */
+/** An empty edition can be today's Brief or a historical one. */
 function QuietInboxState() {
   return (
     <EmptyState
-      title="Your inbox was quiet yesterday."
-      description={<>Enjoy the morning — we&rsquo;ll be back tomorrow.</>}
+      headingLevel={2}
+      title="No items in this edition."
+      description="There is nothing to review in this Daily Brief."
     />
   );
 }

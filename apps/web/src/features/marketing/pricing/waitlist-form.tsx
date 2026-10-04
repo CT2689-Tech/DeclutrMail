@@ -109,8 +109,11 @@ export function WaitlistForm({ tierInterest, source }: { tierInterest: TierId; s
         {status === 'submitting' ? 'Joining…' : 'Join the waitlist'}
       </button>
       {status === 'error' ? (
-        <span role="alert" style={{ fontFamily: font.sans, fontSize: 12.5, color: color.danger }}>
-          Couldn’t reach the server — please try again.
+        <span
+          role="alert"
+          style={{ fontFamily: font.sans, fontSize: 12.5, color: color.dangerText }}
+        >
+          Couldn’t join the waitlist. Try again.
         </span>
       ) : null}
     </form>

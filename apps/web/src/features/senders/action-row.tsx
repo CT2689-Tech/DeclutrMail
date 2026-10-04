@@ -224,9 +224,9 @@ export function legacyVerbFromId(
  */
 /** Lettering colour for the quiet row button, keyed by the verb's tone. */
 const LEAD_TEXT_COLOR: Record<ReturnType<typeof leadButtonTone>, string> = {
-  warn: color.amber,
-  danger: color.danger,
-  primary: color.emerald,
+  warn: color.amberDeep,
+  danger: color.dangerText,
+  primary: color.emeraldText,
   dark: color.fg,
   default: color.fg,
 };

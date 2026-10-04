@@ -326,12 +326,8 @@
   text-decoration-color: currentColor;
 }
 
-/* The shared PrivacyBadge, re-laid out flat: the trust line across the
-   top, then the storage list and the never-fetched list side by side.
-   Its box (fill, border, shadow, padding) is reset through its `style`
-   prop; the few inline typographic values that fight this layout are
-   overridden here, scoped to the landing. */
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+/* The full registry adds the stored and never-fetched lists side by side. */
+.dm-mkt-privacy-data {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 32px 48px;
@@ -366,7 +362,7 @@
   cursor: pointer;
 }
 
-.dm-mkt-privacy-inventory .dm-mkt-privacy-badge {
+.dm-mkt-privacy-inventory .dm-mkt-privacy-data {
   padding-top: 22px;
 }
 
@@ -396,45 +392,28 @@
   }
 }
 
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header {
-  grid-column: 1 / -1;
-  margin: 0 !important;
-  padding-bottom: 28px;
-  border-bottom: 1px solid var(--mkt-line);
+.dm-mkt-privacy-data strong {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 15px;
+  color: var(--mkt-ink);
 }
 
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header h3 {
-  font-size: clamp(22px, 2.2vw, 28px) !important;
-  line-height: 1.25;
-  color: var(--mkt-ink) !important;
+.dm-mkt-privacy-data ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 16px;
 }
 
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header p {
-  margin-top: 10px !important;
-  font-size: 17px !important;
-}
-
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div {
-  margin-top: 0 !important;
-}
-
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div > div {
-  margin-bottom: 14px !important;
-  font-size: 15px !important;
-  color: var(--mkt-ink) !important;
-}
-
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] ul {
-  gap: 10px !important;
-}
-
-.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] li {
-  font-size: 16px !important;
+.dm-mkt-privacy-data li {
+  font-size: 16px;
+  line-height: 1.5;
   color: var(--mkt-ink-soft);
 }
 
 @media (max-width: 560px) {
-  .dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+  .dm-mkt-privacy-data {
     grid-template-columns: minmax(0, 1fr);
   }
 }

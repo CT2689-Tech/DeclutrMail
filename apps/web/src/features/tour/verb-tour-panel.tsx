@@ -116,7 +116,7 @@ export function VerbTourPanel({
       </div>
 
       {saveFailed && (
-        <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '10px 0 0' }}>
+        <p role="alert" style={{ fontSize: 12, color: color.dangerText, margin: '10px 0 0' }}>
           Could not save that. Try again.
         </p>
       )}

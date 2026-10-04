@@ -1,0 +1,227 @@
+{
+  "summary": {
+    "status": "PASS: scoped PR source, rendered and runtime integration gate; public launch signoff withheld for unresolved HYDRATION-01",
+    "scope": "Independent read-only SYS/public-fix and retained-data integration gate",
+    "sourceStopped": true,
+    "noLiveWrites": true,
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "scopedPrGate": "PASS",
+    "publicLaunchSignoff": false,
+    "originalAuditFindingsClosed": 39
+  },
+  "method": "Independent source/merge review plus owner regression artifacts; safe public-only hydration diagnostics using isolated development/runtime sessions. Final broad source/build/render/authenticated runtime evidence belongs to root and the rendered reviewer, with exact artifacts read back here. No duplicated broad tests or live provider writes.",
+  "checks": [
+    {
+      "area": "Billing and deletion semantics",
+      "result": "Source pass",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/billing/cancel-modal.tsx",
+          "line": 153,
+          "detail": "Mutual pause/cancel lock; existing request/reason callbacks and provider path retained."
+        },
+        {
+          "file": "apps/web/src/features/account-deletion/delete-account-modal.tsx",
+          "detail": "Diff removes focus suppression and updates danger foreground; confirmation, grace, request path untouched."
+        }
+      ],
+      "boundary": "No changed API/worker/database/provider adapter files in combined working diff."
+    },
+    {
+      "area": "Feedback identity",
+      "result": "Source pass",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/feedback/inline-feedback.tsx",
+          "line": 62,
+          "detail": "Observation child keyed by canonical surface/reference; late prior response cannot paint next identity."
+        }
+      ],
+      "boundary": "Current onSaved consumer invalidates Follow-ups reads; no row-specific or Gmail mutation introduced."
+    },
+    {
+      "area": "Mailbox conflict and auth-cache reset",
+      "result": "Source pass",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/onboarding/step-first-triage.tsx",
+          "line": 89,
+          "detail": "Scoped409 offers established resetMailboxScopedCache instead of failed read retry."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/api/use-disconnect-mailbox.ts",
+          "line": 26,
+          "detail": "onSettled reconciles cache for uncertain outcomes."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/api/use-delete-mailbox-indexed-data.ts",
+          "line": 29,
+          "detail": "onSettled reconciles cache for uncertain outcomes."
+        },
+        {
+          "file": "apps/web/src/features/mailboxes/api/reset-mailbox-cache.ts",
+          "line": 65,
+          "detail": "Existing reset dispatches generation event before cancel/remove-inactive/invalidate, preserving scope ownership."
+        }
+      ]
+    },
+    {
+      "area": "Autopilot preview and rule authority",
+      "result": "Source pass",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/autopilot/activate-rule-modal.tsx",
+          "line": 142,
+          "detail": "Review-only presets cannot offer Act now, preserving server approval requirement."
+        },
+        {
+          "file": "apps/web/src/features/autopilot/activate-rule-modal.tsx",
+          "line": 203,
+          "detail": "Confirm requires ready preview, valid expiry, and unblocked evidence paging."
+        }
+      ],
+      "boundary": "No rule execution or backend contract changes."
+    },
+    {
+      "area": "Public safety truth and demo parity",
+      "result": "Source pass",
+      "evidence": [
+        {
+          "file": "packages/shared/src/copy/action-safety.ts",
+          "line": 32,
+          "detail": "Manual scope applies when action runs; archived Delete is explicit; no rule for future deliveries; separate Autopilot paragraph preserved."
+        },
+        {
+          "file": "apps/web/src/features/marketing/landing/product-journey.tsx",
+          "line": 17,
+          "detail": "Matching count/planned Gmail changes wording matches actual preview."
+        }
+      ],
+      "boundary": "Original incorrect canonical failed new assertion. Corrected shared5/5 and selected rendered homepage1/1 pass; full outcome/storage parity owner tests recorded separately."
+    },
+    {
+      "area": "Retained data and mutation guards",
+      "result": "Source pass; owner focused regressions21passed",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/senders-screen.tsx",
+          "line": 421,
+          "detail": "Displayed query ownership tracked independently; reject placeholder/prior mailbox/4xx; retry failed query."
+        },
+        {
+          "file": "apps/web/src/features/senders/senders-screen.tsx",
+          "line": 646,
+          "detail": "Retained failed read blocks mutation previews and dispatch."
+        },
+        {
+          "file": "apps/web/src/features/brief/brief-screen.tsx",
+          "detail": "Retained edition preserves identity; failed reads withhold Archive preview and disable Archive without false busy label."
+        },
+        {
+          "file": "apps/web/src/features/followups/followups-screen.tsx",
+          "line": 75,
+          "detail": "Only nonempty same-mailbox rows survive transient failure; optimistic empty after uncertain dismissal routes to retryable error."
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "INTEGRATION-RETRY-01",
+      "status": "resolved; focused regression passed",
+      "detail": "Blocking widened-query error retried narrow query. It now refetches actual failed query and regression verifies mailbox switch recovery."
+    },
+    {
+      "id": "INTEGRATION-EMPTY-01",
+      "status": "resolved; focused regression passed",
+      "detail": "Failed sole-row dismissal plus failed reconciliation formerly asserted No follow-ups. Retention now requires nonempty data; regression rejects empty/success and retries restoration."
+    }
+  ],
+  "evidencePending": [],
+  "limitations": [
+    "No live Gmail, Paddle/Razorpay, deletion, account or external writes; authenticated runtime verification uses the isolated synthetic harness.",
+    "Browser evidence is bounded selected routes/states/viewports, not complete WCAG certification or a production-provider rehearsal.",
+    "Public sweep: all48 routes have light axe and light/dark DOM captures;10 representative dark routes have axe scans.",
+    "Current multi-sender eligibility is Free: tier-lock note color adaptation is source-reviewed, not a rendered reachable-branch claim.",
+    "Initial3 hydration failures remain genuine untraced evidence; subsequent clean reruns do not establish a fix."
+  ],
+  "retainedVerification": {
+    "result": "4files/21selected tests passed;210skipped",
+    "log": "local run artifact (not archived): declutrmail-retained-latest.log",
+    "scope": "All8prior failures plus retention/cold-error/ownership/retry/keyboard cases; serial maxWorkers1."
+  },
+  "rootIntegratedEvidence": {
+    "typechecks": "Parent reports workspace and final frozen-webPASS",
+    "lint": "0errors6existingwarnings",
+    "sharedTests": "726PASS",
+    "affectedWebTests": "All1089assertionsverified across41passing suites plus3rerun89tests",
+    "foregroundTests": "SelectionBar/ActionRow19PASS +ActionPopover1PASS; last Clear SelectionBar5PASS",
+    "finalRendered": "PASS:121 baseline states across68 app groups;50 effective focused captures and3 finalClear recaptures.130 distinct story IDs reviewed; revised foreground controls have zero axe violations in both themes.",
+    "remaining": [],
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "productionBuilds": "PASS: production Web and Storybook builds at frozen source1b5c9f93.",
+    "publicPrerender": "PASS:45 static public routes.",
+    "bundle": "PASS:51 templates within budget.",
+    "publicRoutes": "PASS:48 public routes, zero framework overlays, page overflows, broken visible images, invalid local anchors or axe violations in bounded scans.",
+    "accessibilityResponsive": "PASS:70/70 synthetic checks including Home.",
+    "syntheticJourneys": "PASS: journeys-5 and journeys-6 each15/15,0skips/flaky; contracts passed.",
+    "hydration": {
+      "initial": {
+        "result": "40passed/3unexpected/0skipped/0flaky",
+        "report": "local run artifact (not archived): hydration-initial.json"
+      },
+      "warmExactFull": {
+        "result": "43passed/0unexpected/0skipped/0flaky",
+        "durationSeconds": 42.2,
+        "report": "local run artifact (not archived): hydration-rerun-1.json",
+        "normalGlobalSetup": true,
+        "coverageContracts": "PASS; root reported"
+      },
+      "coldRestartExactFull": {
+        "result": "43passed/0unexpected/0skipped/0flaky",
+        "durationSeconds": 41.4,
+        "report": "local run artifact (not archived): hydration.json",
+        "normalGlobalSetup": true,
+        "coverageContracts": "PASS; root reported"
+      },
+      "diagnostics": "79 bounded clean public navigations;6 CDP CPU/network throttled development cases, no expanded hydration diff.",
+      "interpretation": "Current exact runtime gate passes; initial signal remains unresolved and public launch signoff remains false."
+    }
+  },
+  "releaseEvidenceRequired": [
+    "Public launch signoff remains withheld. Rehearse the exact prospective deployment, including accepted analytics plus persisted dark theme, fresh/essential-only states and authenticated hydration. Preserve initial evidence and investigate any recurrence with a concrete DOM diff before release."
+  ],
+  "residualRisks": [
+    {
+      "id": "HYDRATION-01",
+      "status": "unresolved; initially reproduced, subsequently unreproduced; no source fix claimed",
+      "priority": "P1 release risk",
+      "initial": "Initial unchanged-source suite passed40/43; returning accepted-analytics dark visits to /, /compare and /faq emitted React#418 HTML mismatches and lost the seeded theme after recovery.",
+      "preservedEvidence": [
+        "local run artifact (not archived): hydration-initial.json",
+        "docs/qa/prelaunch-2026-10-03/after/logs/hydration-initial.log"
+      ],
+      "currentEvidence": "79 bounded diagnostic navigations were clean. Exact full43 with normal globalsetup passed43/43 on unchanged source, then passed43/43 again after a cold process restart; zero skips, unexpected or flaky cases in either full rerun.",
+      "cause": "No concrete mismatch source or non-minified development DOM diff established. No product/spec changes, retries, diagnostic suppression or speculative patch explain the later passes.",
+      "releaseRequirement": "Public launch signoff remains withheld. Rehearse the exact prospective deployment, including accepted analytics plus persisted dark theme, fresh/essential-only states and authenticated hydration. Preserve initial evidence and investigate any recurrence with a concrete DOM diff before release.",
+      "publicLaunchSignoff": false
+    }
+  ],
+  "evidenceArtifacts": {
+    "productionBuild": "docs/qa/prelaunch-2026-10-03/after/logs/production-build.log",
+    "storybookBuild": "docs/qa/prelaunch-2026-10-03/after/logs/storybook-build-final.log",
+    "prerender": "docs/qa/prelaunch-2026-10-03/after/logs/prerender.log",
+    "bundle": "docs/qa/prelaunch-2026-10-03/after/logs/bundle-build-final.log",
+    "publicRoutes": "docs/qa/prelaunch-2026-10-03/after/public-summary.json",
+    "rendered": "docs/qa/prelaunch-2026-10-03/after/story-summary.json",
+    "renderedReportCaveat": "Rendered report predates the two clean full hydration reruns; this independent gate records subsequent root evidence without editing the reviewer artifact.",
+    "syntheticJourneys": [
+      "local run artifact (not archived): journeys-5.json",
+      "local run artifact (not archived): journeys-6.json"
+    ],
+    "accessibilityResponsive": "local run artifact (not archived): a11y-responsive.json",
+    "hydrationInvestigation": "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json"
+  }
+}

@@ -1,0 +1,136 @@
+{
+  "phase": "Latest actual-conflict resolution and final current-source proof",
+  "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "integratedMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
+  "priorMainIntegrationProductSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "priorPublicationCommit": "b6dad6648c9f3c49e2875ab4eec8deadfe462842",
+  "mergeResolution": "Only Screener route and Later screen production conflicts; hydration presentation/clock merged with retained-data retry, account-zone/DST parsing and foregrounds. Three upstream clock test fixtures aligned with existing exact account-zone label and minute-precision ISO; no assertions removed.",
+  "sourceDiffScope": "No task diff against current main in API/worker/schema/provider/deploy paths; upstream changes preserve provenance.",
+  "checks": [
+    {
+      "gate": "Latest-main source integration units",
+      "status": "PASS",
+      "detail": "14 files/299 assertions; original296pass/3obsolete-label failures preserved; no production changes for test alignment.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log"
+      ]
+    },
+    {
+      "gate": "Workspace and final affected types",
+      "status": "PASS",
+      "detail": "All eight packages before test-only fixture update; scoped Web after final test-only update.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log"
+      ]
+    },
+    {
+      "gate": "Lint and format",
+      "status": "PASS",
+      "detail": "Root zero errors/six existing warnings; final changed production/test paths zero warnings; commit hook Prettier check passes.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-lint.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log"
+      ]
+    },
+    {
+      "gate": "Fresh production Web and Storybook builds",
+      "status": "PASS",
+      "detail": "Frozen tracked archive at latest combined source.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-production-build.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log"
+      ]
+    },
+    {
+      "gate": "Prerender",
+      "status": "PASS",
+      "detail": "45 public routes.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-prerender.log"
+    },
+    {
+      "gate": "Served bundle budgets",
+      "status": "PASS",
+      "detail": "51 route templates +1 declared redirect, unchanged caps/checker; Privacy259.5/262kB.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-bundle-build.log"
+    },
+    {
+      "gate": "Full journeys twice",
+      "status": "PASS",
+      "detail": "15/15 twice, both required journey contracts PASS; no skips/unexpected/flaky/retries.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-2.log"
+      ]
+    },
+    {
+      "gate": "Full hydration twice",
+      "status": "PASS",
+      "detail": "43/43 twice, API/web process restart between; same source, no retries/skips/flaky. Originalpublic3 remain untraced.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-2.log"
+      ]
+    },
+    {
+      "gate": "Full accessibility/responsive",
+      "status": "PASS",
+      "detail": "70/70; existing serious/critical axe gate, responsive/native interaction checks; no skips/unexpected/flaky/retries.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log"
+    },
+    {
+      "gate": "Current production Privacy browser",
+      "status": "PASS",
+      "detail": "1440/390native disclosure across pending/prepared synthetic export, browser download handoff, consent controls, no overflow/hydrationerrors; bounded zero main axe violations.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json"
+    },
+    {
+      "gate": "Independent core current-source/runtime gate",
+      "status": "PASS",
+      "detail": "PASS for scoped fixes PR; public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json"
+    },
+    {
+      "gate": "Independent design current-source/runtime gate",
+      "status": "PASS",
+      "detail": "PASS for scoped fixes PR; public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-design-gate.json"
+    },
+    {
+      "gate": "CI consumer assertion alignment",
+      "status": "PASS",
+      "detail": "Only the obsolete Methodology Activity sentence expectation changed. Methodology 9/9 and canonical safety 5/5 pass; scoped lint/typecheck pass. Canonical tests overlap earlier proof.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-methodology-test-alignment.json"
+    },
+    {
+      "gate": "Tracked evidence and remaining lint contracts",
+      "status": "PASS",
+      "detail": "Unchanged personal-email guard 3/3; guard hooks without violations; 53 additional contract tests and seven brand icon checks pass. Fixture aliases and one historical failure-log pointer normalized without changing product source.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/ci-evidence-address-normalization.json"
+    }
+  ],
+  "fixesPrSignoff": true,
+  "launchSignoff": false,
+  "publicHydrationSignal": "Originalthree public HTML recovery failures remain unexplained. New upstream fixes concern authenticated optional-query presentation and Later account clock; neither establishes cause of originalpublic3.",
+  "providerBoundary": "Disposable synthetic loopback API/PostgreSQL/Redis only; no provider worker/live OAuth/Gmail/billing/account deletion/export-completeness verification.",
+  "screenshots": "Selected scrolled Privacy viewports with fresh-user survey visible; named control/DOM behavior separately tested.",
+  "remoteCi": {
+    "initialPublicationHead": "b25dbc81cb383b8cbdcaa7697952582426b1e56c",
+    "initialRun": "https://github.com/CT2689-Tech/DeclutrMail/actions/runs/37164922442",
+    "initialResult": "FAIL: fixture-address escaped-prefix guard and one obsolete Methodology assertion; other selected suites, production build and authenticated accessibility passed. Database suite excluded by path detection.",
+    "initialWebResult": {
+      "filesPassed": 291,
+      "filesFailed": 1,
+      "filesSkipped": 1,
+      "testsPassed": 3760,
+      "testsFailed": 1,
+      "testsSkipped": 3
+    },
+    "corrections": "Evidence-only fixture normalization plus one test assertion alignment; product source and browser-test proof remain at 3d3272.",
+    "finalResult": "Pending new publication-head CI; not certified by these local gates."
+  }
+}

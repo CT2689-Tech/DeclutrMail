@@ -1,4 +1,5 @@
 import { expect, test, request } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient } from '../helpers/api';
@@ -206,6 +207,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 1. Paywall: Archive on /senders → D226 preview → confirm →
   // server 402 FREE_CAP_REACHED → the designed UpgradeModal.
   await page.goto('/senders');
+  await expectScreenMounted(page);
   // Responsive rows share an identity; exercise the row visible at this viewport.
   const card = page
     .getByTestId(`sender-row-${BILLING_SEED.archiveSenderId}`)
@@ -333,6 +335,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // ---- 5. Gates open: /screener now renders the seeded queue (fresh
   // page load ⇒ fresh me fetch — no stale client cache in play).
   await page.goto('/screener');
+  await expectScreenMounted(page);
   // Accessible name comes from the screen's aria-label, which the
   // plain-language sweep (#410) changed from the internal-sounding
   // "Screener queue" to what a user would actually call it. This spec
@@ -346,6 +349,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
 
   // ---- 6. /billing shows the ACTIVE plan.
   await page.goto('/billing');
+  await expectScreenMounted(page);
   const proCard = page.getByTestId('current-plan-card');
   await expect(proCard).toBeVisible({ timeout: 60_000 });
   await expect(proCard).toContainText('Pro');

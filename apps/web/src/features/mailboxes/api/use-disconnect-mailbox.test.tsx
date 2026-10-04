@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useDisconnectMailbox } from './use-disconnect-mailbox';
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 describe('useDisconnectMailbox', () => {
@@ -36,4 +36,18 @@ describe('useDisconnectMailbox', () => {
     // Unmounted routes must not retain data from the previous mailbox.
     expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
   });
+});
+
+it('useDisconnectMailbox reconciles an uncertain response instead of retaining stale mailbox data', async () => {
+  installFetchStub([
+    { method: 'DELETE', path: '/api/mailboxes/mb-1', respond: () => jsonServerError() },
+  ]);
+  const client = createTestQueryClient();
+  client.setQueryData(['senders', 'list'], [{ id: 'stale' }]);
+  const { result } = renderHook(() => useDisconnectMailbox(), {
+    wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+  });
+  result.current.mutate('mb-1');
+  await waitFor(() => expect(result.current.isError).toBe(true));
+  expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
 });

@@ -1,0 +1,15 @@
+
+> @declutrmail/web@0.0.0 test [workspace]/apps/web
+> vitest run src/features/mailboxes/account-menu.test.tsx src/features/triage/triage-screen.actions.test.tsx src/features/snoozed/snoozed-screen.test.tsx --maxWorkers=1
+
+
+ RUN  v5.0.1 [workspace]/apps/web
+
+
+ Test Files  3 passed (3)
+      Tests  89 passed (89)
+   Start at  15:45:00
+   Duration  16.90s (tests 74%, transform 9%, environment 7%, import 6%, setup 4%)
+
+    Isolate  3 workers spawned · ~600ms startup each (spawn + environment, per file)
+             at least ~1.20s faster with isolate: false — reuses workers across files instead of one per file

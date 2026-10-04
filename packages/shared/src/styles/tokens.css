@@ -64,6 +64,7 @@
   --dm-amber-deep: #92400e;
   --dm-amber-bg: rgba(245, 158, 11, 0.1);
   --dm-emerald: #047857;
+  --dm-emerald-text: #065f46;
   --dm-emerald-bg: rgba(5, 150, 105, 0.1);
   --dm-red: #b91c1c;
   --dm-red-deep: #7f1d1d;
@@ -72,6 +73,7 @@
 
   /* Canonical danger family */
   --dm-danger: #a12525;
+  --dm-danger-text: var(--dm-danger);
   --dm-danger-bg: rgba(161, 37, 37, 0.06);
   --dm-danger-border: rgba(161, 37, 37, 0.3);
   --dm-danger-deep: #7a1a1a;
@@ -171,6 +173,7 @@
   --dm-amber-deep: #eebe84;
   --dm-amber-bg: rgba(227, 167, 92, 0.12);
   --dm-emerald: #3fcf9d;
+  --dm-emerald-text: var(--dm-emerald);
   --dm-emerald-bg: rgba(63, 207, 157, 0.12);
   --dm-red: #f27d7d;
   --dm-red-deep: #f7a3a3;
@@ -178,6 +181,8 @@
   --dm-red-border: rgba(242, 125, 125, 0.35);
 
   --dm-danger: #e5636a;
+  /* Text on dark cards and danger washes needs more contrast than filled buttons. */
+  --dm-danger-text: #ff9a9f;
   --dm-danger-bg: rgba(229, 99, 106, 0.12);
   --dm-danger-border: rgba(229, 99, 106, 0.4);
   --dm-danger-deep: #f28389;

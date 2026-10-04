@@ -1,0 +1,597 @@
+[
+  {
+    "route": "/",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/01-home.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 60,
+        "incomplete": 1,
+        "passes": 28,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 35,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<div class=\"dm-mkt-hero-stage-label\">THE PRODUCT, UP CLOSE <span>\u2198</span></div>",
+              "target": [".dm-mkt-hero-stage-label"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>DeclutrMail / Clean up</span>",
+              "target": [".dm-mkt-hero-window-bar > span:nth-child(2)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>Fictional sample</span>",
+              "target": [".dm-mkt-hero-window-bar > span:nth-child(3)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<p class=\"dm-mkt-hero-workspace-kicker\">CLEAN UP \u00b7 SENDERS</p>",
+              "target": [".dm-mkt-hero-workspace-kicker"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<h3>See who fills<br>your inbox.</h3>",
+              "target": [".dm-mkt-hero-workspace-list > h3"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"dm-mkt-hero-workspace-search\">\u2315 <span>Search senders</span></div>",
+              "target": [".dm-mkt-hero-workspace-search"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>Search senders</span>",
+              "target": [".dm-mkt-hero-workspace-search > span"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<b>Active</b>",
+              "target": ["b"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>Filter</span>",
+              "target": [".dm-mkt-hero-workspace-filters > span:nth-child(2)"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined due to a pseudo element",
+              "html": "<span>Sort: Most received</span>",
+              "target": [".dm-mkt-hero-workspace-filters > span:nth-child(3)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/",
+      "violations": []
+    }
+  },
+  {
+    "route": "/alternatives/clean-email",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/02-alternatives-clean-email.png"
+  },
+  {
+    "route": "/alternatives/leave-me-alone",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/03-alternatives-leave-me-alone.png"
+  },
+  {
+    "route": "/alternatives/sanebox",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/04-alternatives-sanebox.png"
+  },
+  {
+    "route": "/alternatives/trimbox",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/05-alternatives-trimbox.png"
+  },
+  {
+    "route": "/alternatives/unroll-me",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/06-alternatives-unroll-me.png"
+  },
+  {
+    "route": "/answers",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/07-answers.png"
+  },
+  {
+    "route": "/answers/best-way-to-clean-gmail-2026",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/08-answers-best-way-to-clean-gmail-2026.png"
+  },
+  {
+    "route": "/answers/how-undo-works-for-gmail-cleanup",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/09-answers-how-undo-works-for-gmail-cleanup.png"
+  },
+  {
+    "route": "/answers/is-it-safe-to-connect-gmail-app",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/10-answers-is-it-safe-to-connect-gmail-app.png"
+  },
+  {
+    "route": "/answers/sender-level-vs-message-level-cleanup",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/11-answers-sender-level-vs-message-level-cleanup.png"
+  },
+  {
+    "route": "/answers/what-is-metadata-only-email-analysis",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/12-answers-what-is-metadata-only-email-analysis.png"
+  },
+  {
+    "route": "/beta",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/13-beta.png"
+  },
+  {
+    "route": "/blog",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/14-blog.png"
+  },
+  {
+    "route": "/blog/metadata-only-is-a-design-constraint",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/15-blog-metadata-only-is-a-design-constraint.png"
+  },
+  {
+    "route": "/blog/reversible-does-not-mean-risk-free",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/16-blog-reversible-does-not-mean-risk-free.png"
+  },
+  {
+    "route": "/blog/why-cleanup-starts-with-senders",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/17-blog-why-cleanup-starts-with-senders.png"
+  },
+  {
+    "route": "/changelog",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/18-changelog.png"
+  },
+  {
+    "route": "/compare",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/19-compare.png"
+  },
+  {
+    "route": "/contact",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/20-contact.png"
+  },
+  {
+    "route": "/cookies",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/21-cookies.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/cookies",
+      "violations": []
+    }
+  },
+  {
+    "route": "/demo",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/22-demo.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 67,
+        "incomplete": 0,
+        "passes": 21,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/inbox-simulator",
+      "violations": []
+    }
+  },
+  {
+    "route": "/faq",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/23-faq.png"
+  },
+  {
+    "route": "/help",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/24-help.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/help",
+      "violations": []
+    }
+  },
+  {
+    "route": "/how-it-works",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/25-how-it-works.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 57,
+        "incomplete": 1,
+        "passes": 31,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element content contains only non-text characters",
+              "html": "<div class=\"dm-mkt-hero-workspace-search\">\u2315 <span>Search senders</span></div>",
+              "target": [".dm-mkt-hero-workspace-search"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/how-it-works",
+      "violations": []
+    }
+  },
+  {
+    "route": "/how-to",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/26-how-to.png"
+  },
+  {
+    "route": "/how-to/auto-archive-future-emails-in-gmail",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/27-how-to-auto-archive-future-emails-in-gmail.png"
+  },
+  {
+    "route": "/how-to/bulk-delete-emails-from-one-sender",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/28-how-to-bulk-delete-emails-from-one-sender.png"
+  },
+  {
+    "route": "/how-to/clean-gmail-by-sender",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/29-how-to-clean-gmail-by-sender.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements",
+              "html": "<p>These names and counts are invented to demonstrate the decision model. They are not a screenshot or a claim about your inbox.</p>",
+              "target": [".dm-read-example-head > p:nth-child(2)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/how-to/clean-gmail-by-sender",
+      "violations": []
+    }
+  },
+  {
+    "route": "/how-to/gmail-storage-full",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/30-how-to-gmail-storage-full.png"
+  },
+  {
+    "route": "/how-to/stop-promotional-emails-gmail",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/31-how-to-stop-promotional-emails-gmail.png"
+  },
+  {
+    "route": "/how-to/unsubscribe-from-emails-gmail",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/32-how-to-unsubscribe-from-emails-gmail.png"
+  },
+  {
+    "route": "/inbox-simulator",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/33-inbox-simulator.png"
+  },
+  {
+    "route": "/methodology",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/34-methodology.png"
+  },
+  {
+    "route": "/pricing",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/35-pricing.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 53,
+        "incomplete": 0,
+        "passes": 35,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/pricing",
+      "violations": []
+    }
+  },
+  {
+    "route": "/privacy",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/36-privacy.png"
+  },
+  {
+    "route": "/refunds",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/37-refunds.png"
+  },
+  {
+    "route": "/security",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/38-security.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/security",
+      "violations": []
+    }
+  },
+  {
+    "route": "/sign-in",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/39-sign-in.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 0,
+        "passes": 25,
+        "violations": 0
+      },
+      "incomplete": [],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/sign-in",
+      "violations": []
+    }
+  },
+  {
+    "route": "/terms",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/40-terms.png"
+  },
+  {
+    "route": "/vs/clean-email",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/41-vs-clean-email.png",
+    "accessibility": {
+      "axeVersion": "4.12.1",
+      "counts": {
+        "inapplicable": 56,
+        "incomplete": 1,
+        "passes": 32,
+        "violations": 0
+      },
+      "incomplete": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element's background color could not be determined because it partially overlaps other elements",
+              "html": "<li>You want bulk subscription management and a fuller email-management app.</li>",
+              "target": ["div:nth-child(1) > ul > li:nth-child(3)"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ],
+      "lifecycle": {
+        "effectiveLaunch": {
+          "browserLaunched": true,
+          "engine": "chrome",
+          "launchHash": 11677035664275010974
+        },
+        "launched": false,
+        "relaunchedBrowser": false,
+        "restartedBackground": false,
+        "restoreStatus": "not_configured",
+        "reused": true,
+        "saveStatus": "not_attempted"
+      },
+      "url": "http://localhost:3100/vs/clean-email",
+      "violations": []
+    }
+  },
+  {
+    "route": "/vs/gmail",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/42-vs-gmail.png"
+  },
+  {
+    "route": "/vs/gmail-filters",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/43-vs-gmail-filters.png"
+  },
+  {
+    "route": "/vs/leave-me-alone",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/44-vs-leave-me-alone.png"
+  },
+  {
+    "route": "/vs/meta-muse",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/45-vs-meta-muse.png"
+  },
+  {
+    "route": "/vs/sanebox",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/46-vs-sanebox.png"
+  },
+  {
+    "route": "/vs/trimbox",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/47-vs-trimbox.png"
+  },
+  {
+    "route": "/vs/unroll-me",
+    "screenshot": "/tmp/declutrmail-launch-review/public-mobile-shots/48-vs-unroll-me.png"
+  }
+]

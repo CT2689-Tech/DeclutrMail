@@ -20,6 +20,7 @@ import {
   relativeTime,
   truncate,
 } from './followups-screen';
+import { followupsKeys } from './api/query-keys';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
@@ -170,6 +171,78 @@ describe('FollowupsScreen — edge states', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('keeps loaded conversations and expanded subjects after a failed background read', async () => {
+    const subject =
+      'A long conversation subject that exceeds sixty characters and stays expanded while the refresh is unavailable';
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => (fail ? jsonServerError() : jsonOk({ data: [{ ...ROW_HIGH, subject }] })),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <FollowupsScreen />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Read full subject' }));
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: followupsKeys.list() });
+    });
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText('Big Boss')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Collapse subject' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(retry.closest('[role="status"]')).toHaveTextContent(/couldn.t refresh/i);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fail = false;
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'Collapse subject' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
+  it('does not retain conversations after a mailbox-scope refusal', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () =>
+          fail
+            ? new Response(JSON.stringify({ error: { code: 'NO_ACTIVE_MAILBOX' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              })
+            : jsonOk({ data: [ROW_HIGH] }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <FollowupsScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Big Boss');
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: followupsKeys.list() });
+    });
+    await screen.findByRole('alert');
+    expect(screen.queryByText('Big Boss')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+  });
+
   it('renders the observation window in the empty state when no followups await', async () => {
     installFetchStub([
       {
@@ -306,7 +379,7 @@ describe('FollowupsScreen — populated list', () => {
     // The two behaviour-changing facts stay visible beside the list.
     const note = await screen.findByText(/about every six hours/i);
     expect(note).toHaveTextContent(/recent reply can still show/i);
-    expect(note).toHaveTextContent(/nothing changes in Gmail/i);
+    expect(screen.getByText(/nothing changes in Gmail/i)).toBeInTheDocument();
     expect(note).toHaveTextContent(/check the thread in Gmail before following up/i);
     expect(
       await screen.findByRole('button', {
@@ -441,7 +514,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
   });
 });
 
-it('shows a retryable read error if reconciliation after dismissal also fails', async () => {
+it('shows a retryable error rather than false absence when dismissal and reconciliation both fail', async () => {
   let dismissed = false;
   let readsFail = false;
   installFetchStub([
@@ -466,6 +539,11 @@ it('shows a retryable read error if reconciliation after dismissal also fails', 
   expect(
     await screen.findByRole('heading', { name: /couldn[’']t load your follow-ups/i }),
   ).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /^no follow-ups$/i })).not.toBeInTheDocument();
+  expect(
+    screen.queryByText('No tracked conversation is waiting on a reply.'),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText(/Marked resolved|Feedback saved/)).not.toBeInTheDocument();
   readsFail = false;
   fireEvent.click(screen.getByRole('button', { name: /try again/i }));
   expect(await screen.findByText('Big Boss')).toBeInTheDocument();

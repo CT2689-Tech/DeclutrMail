@@ -410,9 +410,7 @@ describe('SendersScreen — edge states', () => {
     expect(
       within(alert).getByRole('heading', { name: /couldn[’']t load your senders/i }),
     ).toBeInTheDocument();
-    expect(
-      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
-    ).toBeInTheDocument();
+    expect(within(alert).getByText(/try again in a moment/i)).toBeInTheDocument();
 
     fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
 
@@ -1016,6 +1014,64 @@ describe('SendersScreen — edge states', () => {
       ]);
     }
 
+    it('does not retain widened rows from another mailbox when the narrow read succeeds', async () => {
+      let failWide = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            const q = url.searchParams.get('q');
+            const wide = q !== null && url.searchParams.get('activity') !== 'active';
+            if (wide && failWide) return jsonServerError();
+            return jsonOk({
+              data: wide
+                ? [
+                    {
+                      ...DORMANT_ROW,
+                      displayName:
+                        mockAuth.activeMailboxId === 'mb-2'
+                          ? 'New mailbox sender'
+                          : DORMANT_ROW.displayName,
+                    },
+                  ]
+                : q
+                  ? []
+                  : [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: { totalMatching: wide || !q ? 1 : 0, asOf: '2026-05-29T12:00:00.000Z' },
+              },
+            });
+          },
+        },
+      ]);
+      const view = renderScreen();
+      await screen.findByText('Sender A');
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'TechGig' },
+      });
+      await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
+      expect(screen.getByRole('link', { name: DORMANT_ROW.displayName! })).toBeInTheDocument();
+      mockAuth.activeMailboxId = 'mb-2';
+      failWide = true;
+      view.rerender(
+        <QueryWrapper client={lastClient}>
+          <SendersScreen />
+        </QueryWrapper>,
+      );
+      await act(async () => {
+        await lastClient.refetchQueries({ queryKey: sendersKeys.all });
+      });
+      await screen.findByRole('alert');
+      expect(screen.queryByText(DORMANT_ROW.displayName!)).not.toBeInTheDocument();
+      expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
+      failWide = false;
+      fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+      expect(await screen.findByRole('link', { name: 'New mailbox sender' })).toBeInTheDocument();
+      expect(screen.queryByText(DORMANT_ROW.displayName!)).not.toBeInTheDocument();
+    });
+
     it('widens past the filter, says so, and shows the sender', async () => {
       installStarvedSearchStub();
       renderScreen();
@@ -1255,6 +1311,42 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(screen.queryByText(/Sender A/)).toBeNull(), { timeout: 2000 });
     expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
     expect(lastReplied).toBe('true');
+  });
+
+  it('blocks selected-sender shortcuts and all writes behind a nonmodal account dialog', async () => {
+    const writes = vi.fn();
+    installFetchStub([
+      oneSenderHandler(),
+      {
+        method: 'POST',
+        path: /^\/api\//,
+        respond: () => {
+          writes();
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    const accountDialog = document.createElement('div');
+    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('aria-label', 'Gmail accounts');
+    document.body.append(accountDialog);
+    try {
+      for (const key of ['k', 'a', 'u', 'l', 'd']) fireEvent.keyDown(accountDialog, { key });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(writes).not.toHaveBeenCalled();
+      expect(screen.getAllByRole('dialog')).toEqual([accountDialog]);
+      accountDialog.remove();
+      fireEvent.keyDown(document.body, { key: 'a' });
+      expect(
+        await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ }),
+      ).toBeInTheDocument();
+    } finally {
+      accountDialog.remove();
+    }
   });
 
   it('routes a selection-scoped A shortcut through the D226 preview (D227)', async () => {
@@ -5016,6 +5108,82 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
  * + the infinite-scroll sentinel.
  */
 describe('SendersScreen — one list, detail pane, pagination & load more (D202)', () => {
+  it('keeps loaded senders and selection after a failed next page, then retries that cursor', async () => {
+    let nextReads = 0;
+    let previewReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('cursor')) {
+            nextReads += 1;
+            return nextReads === 1
+              ? jsonServerError()
+              : jsonOk({
+                  data: [{ ...ROW, id: 'b', displayName: 'Sender B' }],
+                  meta: { pagination: { nextCursor: null, hasMore: false, limit: 50 } },
+                });
+          }
+          return jsonOk({
+            data: [ROW],
+            meta: { pagination: { nextCursor: 'cursor-1', hasMore: true, limit: 50 } },
+          });
+        },
+      },
+      {
+        ...compositePreviewHandler(12),
+        respond: () => {
+          previewReads += 1;
+          return compositePreviewHandler(12).respond();
+        },
+      },
+    ]);
+    renderScreen();
+    const selected = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(selected);
+    fireEvent.click(screen.getByRole('button', { name: /load more senders/i }));
+    await screen.findByText(/couldn.t load more senders/i);
+    expect(screen.getByText('Sender A')).toBeInTheDocument();
+    expect(selected).toBeChecked();
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(previewReads).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Sender B')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeChecked();
+    expect(nextReads).toBe(2);
+  });
+
+  it('keeps loaded senders and selection after a failed background read', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        ...oneSenderHandler(),
+        respond: () => (fail ? jsonServerError() : oneSenderHandler().respond()),
+      },
+    ]);
+    renderScreen();
+    const selected = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(selected);
+    fail = true;
+    await act(async () => {
+      await lastClient.refetchQueries({ queryKey: sendersKeys.all });
+    });
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    expect(screen.getByText('Sender A')).toBeInTheDocument();
+    expect(selected).toBeChecked();
+    expect(retry.closest('[role="status"]')).toHaveTextContent(/couldn.t refresh/i);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fail = false;
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeChecked();
+  });
+
   afterEach(() => {
     resetFetchStub();
   });

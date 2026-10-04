@@ -46,17 +46,17 @@ describe('landing page — D134', () => {
     expect(h1.querySelector('em')?.textContent).toBe('See what moves first.');
   });
 
-  it('states the D228 trust copy once: the badge, plus the collapsed scope disclosures', async () => {
+  it('states the D228 trust copy once, plus the collapsed scope disclosures', async () => {
     const { container } = await renderLanding();
     // The locked headline used to appear seven times on this page. It now
-    // is VISIBLE once, in the PrivacyBadge card. The only other copies sit
+    // is VISIBLE once, in the Privacy section lede. The only other copies sit
     // inside the collapsed OAuth scope disclosures (which quote it
     // verbatim) — one beside each CTA that starts Google OAuth.
     const visible = container.cloneNode(true) as HTMLElement;
     visible.querySelectorAll('details').forEach((d) => d.remove());
     expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
-    expect(container.querySelectorAll('[data-dm-privacy-badge="card"]')).toHaveLength(1);
+    expect(container.querySelector('.dm-mkt-privacy-data')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the
     // page, so assert it directly rather than via a mount count.
     for (const item of PRIVACY_STORAGE_ITEMS) {
@@ -93,12 +93,19 @@ describe('landing page — D134', () => {
     expect(container.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
+  it('describes the product tour preview as a matching count and planned Gmail change', async () => {
+    const { container } = await renderLanding();
+    const tour = container.querySelector('#product-tour');
+    expect(tour?.textContent).toMatch(/matching count and planned Gmail changes/i);
+    expect(tour?.textContent).not.toMatch(/which emails will move/i);
+  });
+
   it('explains why the workspace sits beside Gmail', async () => {
     const { container } = await renderLanding();
     const workflow = container.querySelector('#how-it-works');
-    expect(workflow?.textContent).toContain('Gmail stays where you read and reply');
-    expect(workflow?.textContent).toContain('live action preview');
-    expect(workflow?.textContent).toContain('recorded result');
+    expect(workflow?.textContent).toContain('Your mail stays in your existing Gmail account');
+    expect(workflow?.textContent).toContain('Read and reply');
+    expect(workflow?.textContent).toContain('Review and clean up');
   });
 
   it('states the canonical refund terms beside the prices (D121)', async () => {
@@ -112,7 +119,7 @@ describe('landing page — D134', () => {
     const { container } = await renderLanding();
     expect(container.querySelector('.dm-mkt-privacy-inventory')).not.toHaveAttribute('open');
     expect(container.querySelector('.dm-mkt-privacy-inventory summary')?.textContent).toBe(
-      'See the full data list',
+      'Full data list',
     );
   });
 
@@ -120,7 +127,7 @@ describe('landing page — D134', () => {
     const { container } = await renderLanding();
     const text = container.textContent ?? '';
     expect(text).toContain(`${MIN_UNDO_WINDOW_DAYS} days`);
-    expect(text).toMatch(/delivered unsubscribe requests cannot be recalled/i);
+    expect(text).toMatch(/a delivered unsubscribe request cannot be recalled/i);
   });
 
   it('shows the sender list and right-hand details in a clearly illustrative hero', async () => {

@@ -50,6 +50,8 @@ export const color = {
   amberDeep: 'var(--dm-amber-deep)',
   amberBg: 'var(--dm-amber-bg)',
   emerald: 'var(--dm-emerald)',
+  /** Semantic green lettering on neutral fills; leaves success fills unchanged. */
+  emeraldText: 'var(--dm-emerald-text)',
   emeraldBg: 'var(--dm-emerald-bg)',
   red: 'var(--dm-red)',
   /** Hover/pressed step for red fills — brighter on dark (inverse text). */
@@ -66,7 +68,8 @@ export const color = {
    * is the planned token for the Delete verb — this is that token.
    *
    * Surfaces:
-   *   - `danger`        — text + icon stroke (AA on white surfaces).
+   *   - `danger`        — filled button/background accent.
+   *   - `dangerText`    — text + icon stroke on themed surfaces.
    *   - `dangerBg`      — soft wash for danger banners + chips.
    *   - `dangerBorder`  — outline for danger chips + outlines.
    *   - `dangerDeep`    — pressed/hover state, darker than `danger`.
@@ -77,6 +80,7 @@ export const color = {
    * gets removed in the follow-up distill PR.
    */
   danger: 'var(--dm-danger)',
+  dangerText: 'var(--dm-danger-text)',
   dangerBg: 'var(--dm-danger-bg)',
   dangerBorder: 'var(--dm-danger-border)',
   dangerDeep: 'var(--dm-danger-deep)',

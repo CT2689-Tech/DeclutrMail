@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button, EmptyState, tokens } from '@declutrmail/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { Button, ErrorState, tokens } from '@declutrmail/shared';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
@@ -9,7 +10,10 @@ import { OnboardingVerbTour } from '@/features/tour/verb-tour';
 import { TriageScreen } from '@/features/triage/triage-screen';
 import { TriageUndoTray } from '@/features/triage/triage-undo-tray';
 import type { TriageScreenState, TriageSessionStats } from '@/features/triage/data';
-import { ApiError } from '@/lib/api/client';
+import {
+  isMailboxScopeConflict,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
@@ -43,7 +47,7 @@ export function StepFirstTriage({
   goal,
   corner,
 }: {
-  /** Finish onboarding (D113 write) and leave for /senders. */
+  /** Finish onboarding (D113 write) and open the requested workspace route. */
   onComplete: () => void;
   /** True while the completion POST is in flight. */
   completing: boolean;
@@ -52,6 +56,7 @@ export function StepFirstTriage({
 }) {
   const firstTriage = useFirstTriage();
   const stats = useTriageStats();
+  const queryClient = useQueryClient();
   const started = useRef(false);
   const finished = useRef(false);
 
@@ -81,21 +86,26 @@ export function StepFirstTriage({
   };
 
   if (firstTriage.isError) {
-    const err = firstTriage.error;
+    if (isMailboxScopeConflict(firstTriage.error)) {
+      return (
+        <PanelShell corner={corner}>
+          <ErrorState
+            headingLevel={2}
+            title="Your mailbox connection changed"
+            description="This step needs an active Gmail connection. Refresh your connection state to continue."
+            retryLabel="Refresh connection"
+            onRetry={() => void resetMailboxScopedCache(queryClient)}
+          />
+        </PanelShell>
+      );
+    }
     return (
       <PanelShell corner={corner}>
-        <EmptyState
+        <ErrorState
+          headingLevel={2}
           title="Couldn't load your first review"
-          description={
-            err instanceof ApiError
-              ? "We couldn't load your first senders to review. Try again in a moment."
-              : "We couldn't load the senders for your first review. Try again in a moment."
-          }
-          action={
-            <Button tone="primary" onClick={() => void firstTriage.refetch()}>
-              Try again
-            </Button>
-          }
+          description="We couldn't load the senders for your first review. Try again in a moment."
+          onRetry={() => void firstTriage.refetch()}
         />
       </PanelShell>
     );
@@ -154,7 +164,7 @@ export function StepFirstTriage({
           disabled={completing}
           style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Continue to Senders'}
+          {completing ? 'Finishing…' : 'Open workspace'}
         </Button>
         {/* The undo tray stays reachable on the completion panel — the
             decisions just made must remain reversible (D35/D58). */}
@@ -216,7 +226,7 @@ export function StepFirstTriage({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {/* Ends onboarding for good — `finish` writes `onboarded_at`
               and there is no way back into this step. It was briefly
-              labelled "Continue to Senders", which is what the
+              labelled "Open workspace", which is what the
               COMPLETION panel's primary button says: mid-review, with
               senders still queued, that reads as navigation rather than
               as finishing. Say that it ends the review. */}

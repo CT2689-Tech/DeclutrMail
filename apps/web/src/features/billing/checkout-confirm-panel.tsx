@@ -144,7 +144,7 @@ export function ConfirmPanel({
           role="alert"
           style={{
             fontSize: text.sm,
-            color: color.danger,
+            color: color.dangerText,
             background: color.dangerBg,
             borderRadius: radius.md,
             padding: '8px 10px',

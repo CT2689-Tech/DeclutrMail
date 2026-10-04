@@ -1,10 +1,5 @@
 // Storybook CSF3 stories for the onboarding sync gate (D6, D109, D224).
 //
-// Storybook is seeded in PR 3 (D210). Until that lands this file uses
-// the same lightweight CSF shims as `triage-screen.stories.tsx` so it
-// typechecks without `@storybook/react` installed. Swap the shims for
-// the real imports when the seed lands; the story shapes don't change.
-//
 // Variants (D210 + D211/D212 edge-state coverage):
 //   • Queued               — sync just enqueued, 0%
 //   • Syncing              — mid-scan; the "we'll email you" leave line
@@ -28,29 +23,21 @@
 //   • SyncingSecondary / FailedSecondary — second mailbox, with "Go back to <primary>"
 
 import { useEffect, useState, type ComponentProps } from 'react';
+import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 import { SyncGate } from './sync-gate';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 
 const { color } = tokens;
 
-type StoryMeta<C extends (...args: never) => unknown> = {
-  title: string;
-  component: C;
-  parameters?: Record<string, unknown>;
-  tags?: readonly string[];
-};
+const MAILBOX_ID = 'mb-story';
 
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
-  parameters?: Record<string, unknown>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
-};
-
-const meta: StoryMeta<typeof SyncGate> = {
+const meta: Meta<typeof SyncGate> = {
   title: 'Onboarding/SyncGate',
   component: SyncGate,
+  args: { mailboxId: MAILBOX_ID },
   parameters: {
     layout: 'fullscreen',
     docs: {
@@ -68,14 +55,19 @@ export default meta;
 type GateArgs = ComponentProps<typeof SyncGate>;
 
 function frame(children: React.ReactNode) {
-  // Failed / stuck variants mount TanStack hooks (retry, logout,
-  // disconnect). A fresh QueryClient per story keeps those mutations
-  // off the network; progress-only variants don't need it but sharing
-  // one wrapper is cheaper than a second frame helper.
+  return <StoryQueryFrame>{children}</StoryQueryFrame>;
+}
+
+function StoryQueryFrame({ children }: { children: React.ReactNode }) {
+  const [client] = useState(() => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    queryClient.setQueryData(ME_QUERY_KEY, { user: { timezone: 'UTC' } });
+    return queryClient;
+  });
   return (
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
+    <QueryClientProvider client={client}>
       <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
     </QueryClientProvider>
   );
@@ -86,7 +78,6 @@ function frame(children: React.ReactNode) {
 
 // A failed gate's buttons act on the mailbox it names; without one they
 // are drawn disabled, which is not what users see.
-const MAILBOX_ID = 'mb-story';
 const QUEUED: SyncStatus = {
   readiness_status: 'queued',
   current_stage: 'queued',
@@ -119,7 +110,7 @@ const FAILED: SyncStatus = {
 };
 
 /** Queued — scan enqueued, progress at 0. */
-export const Queued: Story<typeof SyncGate> = {
+export const Queued: StoryObj<typeof SyncGate> = {
   args: { status: QUEUED, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
@@ -128,13 +119,13 @@ export const Queued: Story<typeof SyncGate> = {
  * Syncing — mid-scan. The user has the "Your inbox is ready" email on, so
  * the line under the title says they may leave and will get it (D109).
  */
-export const Syncing: Story<typeof SyncGate> = {
+export const Syncing: StoryObj<typeof SyncGate> = {
   args: { status: SYNCING, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
 /** Syncing, ready email switched off — the leave line makes no email promise. */
-export const SyncingReadyEmailOff: Story<typeof SyncGate> = {
+export const SyncingReadyEmailOff: StoryObj<typeof SyncGate> = {
   args: { status: SYNCING, readyEmail: false },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
@@ -144,7 +135,7 @@ export const SyncingReadyEmailOff: Story<typeof SyncGate> = {
  * re-scan, a reconnect) — no ready email goes, so none is promised even
  * with the setting on.
  */
-export const RescanNoReadyEmail: Story<typeof SyncGate> = {
+export const RescanNoReadyEmail: StoryObj<typeof SyncGate> = {
   args: {
     status: { ...SYNCING, last_synced_at: '2026-09-01T10:00:00.000Z' },
     readyEmail: true,
@@ -162,13 +153,13 @@ const READING: SyncStatus = {
 };
 
 /** Reading, before the mailbox is listed — no total yet, so no count. */
-export const ReadingBeforeTotal: Story<typeof SyncGate> = {
+export const ReadingBeforeTotal: StoryObj<typeof SyncGate> = {
   args: { status: { ...READING, progress_pct: 5, message_progress: null }, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
 /** Listed, first batch not in yet — what the listing found, not a zero. */
-export const ReadingListed: Story<typeof SyncGate> = {
+export const ReadingListed: StoryObj<typeof SyncGate> = {
   args: {
     status: {
       ...READING,
@@ -185,7 +176,7 @@ export const ReadingListed: Story<typeof SyncGate> = {
  * batches. No time left yet: counts on screen at first render are not
  * timed.
  */
-export const ReadingCount: Story<typeof SyncGate> = {
+export const ReadingCount: StoryObj<typeof SyncGate> = {
   args: { status: READING, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
@@ -222,7 +213,7 @@ function LiveReading({ step = 500, ...args }: GateArgs & { step?: number }) {
  * Reading, live — "about N min left" joins the count once two gaps between
  * batches agree, at the rate across them.
  */
-export const ReadingTimeLeft: Story<typeof SyncGate> = {
+export const ReadingTimeLeft: StoryObj<typeof SyncGate> = {
   args: { status: READING, readyEmail: true },
   render: (args: GateArgs) => frame(<LiveReading {...args} />),
 };
@@ -233,7 +224,7 @@ export const ReadingTimeLeft: Story<typeof SyncGate> = {
  * a batch). On a phone the time takes its own line, without the dot; from
  * 540px up it fits on one.
  */
-export const ReadingLongestLine: Story<typeof SyncGate> = {
+export const ReadingLongestLine: StoryObj<typeof SyncGate> = {
   args: {
     status: {
       ...READING,
@@ -245,13 +236,13 @@ export const ReadingLongestLine: Story<typeof SyncGate> = {
 };
 
 /** Ready — shown only until the route navigates to the next step. */
-export const Ready: Story<typeof SyncGate> = {
+export const Ready: StoryObj<typeof SyncGate> = {
   args: { status: READY, readyEmail: true },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
 /** Failed — terminal error with retry affordance. */
-export const Failed: Story<typeof SyncGate> = {
+export const Failed: StoryObj<typeof SyncGate> = {
   args: { status: FAILED, mailboxId: MAILBOX_ID },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
@@ -260,7 +251,7 @@ export const Failed: Story<typeof SyncGate> = {
  * Failed on a permanent error — the longest failed copy. It names
  * support@declutrmail.com because the first-run gate has no route to Help.
  */
-export const FailedPermanent: Story<typeof SyncGate> = {
+export const FailedPermanent: StoryObj<typeof SyncGate> = {
   args: { status: { ...FAILED, error_code: 'PermanentError' }, mailboxId: MAILBOX_ID },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
@@ -269,13 +260,13 @@ export const FailedPermanent: Story<typeof SyncGate> = {
  * Failed because Google stopped accepting our access — "Reconnect Gmail"
  * leads, not a retry against the same dead grant (QA-sync-20260831-07).
  */
-export const FailedReconnect: Story<typeof SyncGate> = {
+export const FailedReconnect: StoryObj<typeof SyncGate> = {
   args: { status: { ...FAILED, error_code: 'AuthExpiredError' }, mailboxId: MAILBOX_ID },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
 /** Failed — invalid_grant: Reconnect only, never Retry. */
-export const FailedInvalidGrant: Story<typeof SyncGate> = {
+export const FailedInvalidGrant: StoryObj<typeof SyncGate> = {
   args: {
     status: { ...FAILED, error_code: 'InvalidGrantError' },
     mailboxId: 'mb-1',
@@ -284,7 +275,7 @@ export const FailedInvalidGrant: Story<typeof SyncGate> = {
 };
 
 /** Failed — insufficient_scopes (ProviderPermissionError alias): Reconnect only. */
-export const FailedInsufficientScopes: Story<typeof SyncGate> = {
+export const FailedInsufficientScopes: StoryObj<typeof SyncGate> = {
   args: {
     status: { ...FAILED, error_code: 'ProviderPermissionError' },
     mailboxId: 'mb-1',
@@ -293,7 +284,7 @@ export const FailedInsufficientScopes: Story<typeof SyncGate> = {
 };
 
 /** Failed — rate_limit with no progress: Try again (quota-resume). */
-export const FailedQuota: Story<typeof SyncGate> = {
+export const FailedQuota: StoryObj<typeof SyncGate> = {
   args: {
     status: { ...FAILED, error_code: 'GmailQuotaError', progress_pct: 0 },
     mailboxId: 'mb-1',
@@ -306,7 +297,7 @@ export const FailedQuota: Story<typeof SyncGate> = {
  * ready. Continue is a wiring hook; production first-run does not pass
  * it (D6 still requires a completed initial scan).
  */
-export const FailedQuotaPartlyReady: Story<typeof SyncGate> = {
+export const FailedQuotaPartlyReady: StoryObj<typeof SyncGate> = {
   args: {
     status: { ...FAILED, error_code: 'GmailQuotaError', progress_pct: 32 },
     mailboxId: 'mb-1',
@@ -321,7 +312,7 @@ const STUCK_NOW = Date.parse('2026-09-21T12:00:00.000Z');
  * Stuck — still `syncing` but the worker heartbeat is older than the
  * shared age gate. Same recovery chrome as failed, with Retry.
  */
-export const Stuck: Story<typeof SyncGate> = {
+export const Stuck: StoryObj<typeof SyncGate> = {
   args: {
     status: {
       ...SYNCING,
@@ -338,7 +329,7 @@ export const Stuck: Story<typeof SyncGate> = {
  * failed as `TransientError`, then a background call recorded
  * `InvalidGrantError`. The gate offers Reconnect, never a retry.
  */
-export const FailedNeedsReconnect: Story<typeof SyncGate> = {
+export const FailedNeedsReconnect: StoryObj<typeof SyncGate> = {
   args: {
     status: {
       ...FAILED,
@@ -358,7 +349,7 @@ export const FailedNeedsReconnect: Story<typeof SyncGate> = {
  * mailbox back and leaves. Only renders when another active mailbox
  * exists; first-run has no escape (strict gate, D6).
  */
-export const SyncingSecondary: Story<typeof SyncGate> = {
+export const SyncingSecondary: StoryObj<typeof SyncGate> = {
   args: {
     status: SYNCING,
     readyEmail: true,
@@ -372,7 +363,7 @@ export const SyncingSecondary: Story<typeof SyncGate> = {
  * offers "Go back to <primary>" alongside the recovery button so the
  * user is never stranded on a failed gate with a working primary inbox.
  */
-export const FailedSecondary: Story<typeof SyncGate> = {
+export const FailedSecondary: StoryObj<typeof SyncGate> = {
   args: {
     status: FAILED,
     mailboxId: MAILBOX_ID,

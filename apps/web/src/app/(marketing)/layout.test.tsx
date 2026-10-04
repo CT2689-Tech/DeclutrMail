@@ -83,6 +83,19 @@ describe('(marketing) layout — D134', () => {
 });
 
 describe('(marketing) layout JSON-LD — D132 SEO batch', () => {
+  it('limits affected-email previews to mail-moving actions and keeps Keep inline', () => {
+    const { container } = renderLayout();
+    const app = readJsonLd(container)['@graph'].find(
+      (node) => node['@type'] === 'SoftwareApplication',
+    );
+    const description = String(app?.description);
+
+    expect(description).not.toMatch(/previews every action/i);
+    expect(description).toMatch(/Keep.*inline/i);
+    expect(description).toMatch(/Archive, Later, and Delete.*Activity/i);
+    expect(description).toMatch(/unsubscribe.*request.*cannot/i);
+  });
+
   it('emits Organization + WebSite + SoftwareApplication in a schema.org graph', () => {
     const { container } = renderLayout();
     const graph = readJsonLd(container)['@graph'];

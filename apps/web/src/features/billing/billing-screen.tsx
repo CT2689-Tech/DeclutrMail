@@ -1524,7 +1524,7 @@ function CurrentPlanCard({
                   role="alert"
                   style={{
                     fontSize: text.sm,
-                    color: color.danger,
+                    color: color.dangerText,
                     background: color.dangerBg,
                     borderRadius: radius.md,
                     padding: '8px 10px',
@@ -1655,7 +1655,7 @@ function ScheduledPlanChangeNotice({
         </span>
       )}
       {changePlan.error ? (
-        <span role="alert" style={{ color: color.danger, fontSize: text.sm }}>
+        <span role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
           {scheduledChangeErrorMessage(changePlan.error)}
         </span>
       ) : null}
@@ -1942,7 +1942,7 @@ function NonBackingSubscriptionNotice({
           role="alert"
           style={{
             fontSize: text.sm,
-            color: color.danger,
+            color: color.dangerText,
             background: color.dangerBg,
             borderRadius: radius.md,
             padding: '8px 10px',
@@ -2117,8 +2117,9 @@ function BillingErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't load your billing details"
-        description="No charge or plan change was made. Try again in a moment."
+        description="Try again to confirm your current billing details."
         onRetry={onRetry}
       />
     </div>
@@ -2144,8 +2145,9 @@ function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't read your billing details"
-        description="The billing service answered in a format this page doesn't recognize, so nothing is shown rather than something wrong. Loading this page made no charge or plan change. Try again in a moment."
+        description="The billing service returned details we couldn't read. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

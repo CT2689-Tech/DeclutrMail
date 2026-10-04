@@ -57,7 +57,7 @@ export function StepProtectionReview({
   completing,
   corner,
 }: {
-  /** Finish onboarding (D113 write) and leave for /senders. */
+  /** Finish onboarding (D113 write) and open the requested workspace route. */
   onComplete: () => void;
   /** True while the completion POST is in flight. */
   completing: boolean;
@@ -111,6 +111,7 @@ export function StepProtectionReview({
       return (
         <PanelShell corner={corner}>
           <ErrorState
+            headingLevel={2}
             title="Your mailbox connection changed"
             description="This step needs an active Gmail connection. Refresh your connection state to continue."
             retryLabel="Refresh connection"
@@ -129,6 +130,7 @@ export function StepProtectionReview({
             "nothing is protected", which is the one claim this surface
             must never make without knowing. */}
         <ErrorState
+          headingLevel={2}
           title="Couldn't load your protection summary"
           description="We couldn't read which senders are protected. Try again in a moment."
           onRetry={() => void firstTriage.refetch()}
@@ -189,7 +191,7 @@ export function StepProtectionReview({
           disabled={completing}
           style={{ minWidth: 240 }}
         >
-          {completing ? 'Finishing…' : 'Continue to Senders'}
+          {completing ? 'Finishing…' : 'Open workspace'}
         </Button>
         {/* Any verb used during the review is still reversible (D35/D58). */}
         <TriageUndoTray />
@@ -424,7 +426,7 @@ function donePanel(
   if (split === null) {
     return {
       headline: pinned > 0 ? 'Protection reviewed.' : 'Nothing to review.',
-      body: 'Continue to Senders to see everything DeclutrMail found.',
+      body: 'Open your workspace to review the rest of your senders.',
     };
   }
 

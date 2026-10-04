@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button, EmptyState, tokens } from '@declutrmail/shared';
+import { Button, ErrorState, tokens } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -116,9 +116,10 @@ export function AutopilotObservePreview() {
           </p>
         )}
         {rules.isError && (
-          <EmptyState
+          <ErrorState
             title="Couldn't load your preset rules"
             description="Try again in a moment."
+            onRetry={() => void rules.refetch()}
           />
         )}
         {rules.data && rules.data.length === 0 && (

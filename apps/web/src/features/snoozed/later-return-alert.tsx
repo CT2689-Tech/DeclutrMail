@@ -42,7 +42,7 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
         flexWrap: 'wrap',
       }}
     >
-      <span style={{ fontSize: text.md, fontWeight: 600, color: color.danger, minWidth: 0 }}>
+      <span style={{ fontSize: text.md, fontWeight: 600, color: color.dangerText, minWidth: 0 }}>
         {laterReturnIssueCopy({
           count: summary.affectedCount,
           sender,
@@ -62,7 +62,7 @@ export function LaterReturnAlert({ enabled }: { enabled: boolean }) {
         {wake.isPending ? 'Starting…' : 'Try return now'}
       </Button>
       {wake.isError ? (
-        <span role="alert" style={{ width: '100%', fontSize: text.sm, color: color.danger }}>
+        <span role="alert" style={{ width: '100%', fontSize: text.sm, color: color.dangerText }}>
           {wake.error instanceof ApiError && wake.error.status === 503
             ? "Returns aren't available right now. Try again in a moment."
             : "Couldn't start the return. Try again in a moment."}

@@ -130,7 +130,7 @@ describe('Later account calendar clock', () => {
     try {
       fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
       const note = screen.getByPlaceholderText('Note (optional)');
-      const custom = screen.getByLabelText('Custom');
+      const custom = screen.getByLabelText('Custom · America/Los_Angeles');
       fireEvent.change(note, { target: { value: 'read after the weekend' } });
       fireEvent.change(custom, { target: { value: '2026-10-05T10:00' } });
       note.focus();
@@ -380,13 +380,22 @@ describe('Later account calendar clock', () => {
       client.clear();
     }
   });
-  it.each([10_000, 3_600_000])(
-    'validates custom time at submission (%i ms ahead)',
-    async (offset) => {
+  it.each([
+    {
+      wallTime: '2026-10-04T00:00',
+      expectedUntil: '2026-10-04T07:00:00.000Z',
+      expiresBeforeNextTick: true,
+    },
+    {
+      wallTime: '2026-10-04T01:00',
+      expectedUntil: '2026-10-04T08:00:00.000Z',
+      expiresBeforeNextTick: false,
+    },
+  ])(
+    'validates account custom time at submission ($wallTime)',
+    async ({ wallTime, expectedUntil, expiresBeforeNextTick }) => {
       vi.useFakeTimers();
       vi.setSystemTime(BEFORE_MIDNIGHT);
-      const selected = new Date(BEFORE_MIDNIGHT + offset);
-      const localInput = `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, '0')}-${String(selected.getDate()).padStart(2, '0')}T${String(selected.getHours()).padStart(2, '0')}:${String(selected.getMinutes()).padStart(2, '0')}:${String(selected.getSeconds()).padStart(2, '0')}`;
       let submittedUntil: unknown;
       const mutation = vi.fn(async (request: Request) => {
         submittedUntil = ((await request.json()) as { until: string }).until;
@@ -405,7 +414,9 @@ describe('Later account calendar clock', () => {
       );
       try {
         fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
-        fireEvent.change(screen.getByLabelText('Custom'), { target: { value: localInput } });
+        fireEvent.change(screen.getByLabelText('Custom · America/Los_Angeles'), {
+          target: { value: wallTime },
+        });
         expect(screen.getByRole('button', { name: 'Set' })).toBeEnabled();
         await act(async () => {
           await vi.advanceTimersByTimeAsync(30_000);
@@ -413,12 +424,12 @@ describe('Later account calendar clock', () => {
         await act(async () => {
           fireEvent.click(screen.getByRole('button', { name: 'Set' }));
         });
-        if (offset === 10_000) {
+        if (expiresBeforeNextTick) {
           expect(mutation).not.toHaveBeenCalled();
           expect(screen.getByRole('alert')).toHaveTextContent(/Choose another/);
         } else {
           expect(mutation).toHaveBeenCalledTimes(1);
-          expect(submittedUntil).toBe(selected.toISOString());
+          expect(submittedUntil).toBe(expectedUntil);
         }
       } finally {
         view.unmount();

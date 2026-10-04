@@ -1,0 +1,21 @@
+
+> declutrmail@0.0.0 lint [workspace]
+> eslint .
+
+
+[workspace]/apps/api/src/undo/undo.types.ts
+  111:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars')
+  114:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-unused-vars')
+
+[workspace]/docs/eval/auto-label.ts
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+[workspace]/docs/eval/score-eval.ts
+  1:1  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+[workspace]/packages/workers/src/initial-sync.worker.ts
+   289:3  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+  1475:7  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+✖ 6 problems (0 errors, 6 warnings)
+  0 errors and 6 warnings potentially fixable with the `--fix` option.

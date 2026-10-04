@@ -7,6 +7,7 @@ import { renderToString } from 'react-dom/server';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { storeConsent } from '@/lib/cookie-consent';
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
+import { ApiError } from '@/lib/api/client';
 
 import { formatUsd } from './pricing-model';
 import { PricingScreen } from './pricing-screen';
@@ -166,20 +167,23 @@ describe('PricingScreen (D19)', () => {
     expect(screen.queryByText(/already (signed up|on the list|registered|joined)/i)).toBeNull();
   });
 
-  it('shows the error state when the waitlist call fails, and recovers on edit', async () => {
-    h.joinWaitlist.mockRejectedValue(new Error('network down'));
+  it.each([
+    ['network failure', new TypeError('Failed to fetch')],
+    ['server rejection', new ApiError(503, null, 'Service unavailable')],
+  ])('shows a retryable waitlist error for %s and recovers on edit', async (_, error) => {
+    h.joinWaitlist.mockRejectedValue(error);
     render(<PricingScreen />);
 
     const input = screen.getByLabelText('Work email for the Team waitlist');
     fireEvent.change(input, { target: { value: 'founder@company.com' } });
     fireEvent.submit(input.closest('form')!);
 
-    await waitFor(() => expect(screen.getByText(/Couldn’t reach the server/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Couldn’t join the waitlist/)).toBeInTheDocument());
     expect(h.track).not.toHaveBeenCalledWith('waitlist_joined', expect.anything());
 
     // Editing the email clears the error.
     fireEvent.change(input, { target: { value: 'founder2@company.com' } });
-    expect(screen.queryByText(/Couldn’t reach the server/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t join the waitlist/)).not.toBeInTheDocument();
   });
 
   it('renders the Enterprise contact-sales mailto', () => {

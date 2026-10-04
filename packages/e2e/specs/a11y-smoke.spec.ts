@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, test, type Page } from '@playwright/test';
 
 import { expectNoBlockingAxeViolations, expectNoViewportOverflow } from '../helpers/a11y';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 /**
  * Authenticated accessibility release gate.
@@ -115,6 +116,7 @@ for (const route of ROUTES) {
 
 test('Activity filters load on first open and restore focus', async ({ page }, testInfo) => {
   await page.goto('/activity');
+  await expectScreenMounted(page);
   const trigger = page.getByRole('button', { name: /^Filter\b/ });
   await expect(trigger).toBeVisible({ timeout: 60_000 });
   const dialog = page.getByRole('dialog', { name: 'Activity filters' });
@@ -138,6 +140,7 @@ test('Activity filters load on first open and restore focus', async ({ page }, t
 
 test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   await page.goto('/senders');
+  await expectScreenMounted(page);
   await expect(page.getByRole('heading', { name: /^Senders\b/, level: 1 })).toBeVisible({
     timeout: 60_000,
   });
@@ -173,6 +176,7 @@ test('Privacy export distinguishes failures, announces preparation and permits a
   page,
 }) => {
   await page.goto('/settings/privacy');
+  await expectScreenMounted(page);
   const section = page.locator('#privacy-export-my-data');
   const alert = section.getByRole('alert');
   const status = section.getByRole('status');
@@ -232,6 +236,7 @@ test('Privacy export distinguishes failures, announces preparation and permits a
   await expectNoViewportOverflow(page);
 
   await page.reload();
+  await expectScreenMounted(page);
   await expect(
     page.getByRole('button', { name: 'Download selected data', exact: true }),
   ).toBeVisible();

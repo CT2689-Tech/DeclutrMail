@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
 
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
@@ -32,6 +32,31 @@ import { AutopilotEntitlementSurface } from './autopilot-entitlement-surface';
 describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
+
+  it('recovers a failed catalog read with an explicit retry', async () => {
+    let reads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () =>
+          ++reads === 1 ? jsonServerError() : jsonOk({ data: [AUTO_ARCHIVE_LOW_ENGAGEMENT] }),
+      },
+    ]);
+    render(
+      <QueryClientProvider client={createTestQueryClient()}>
+        <AutopilotEntitlementSurface />
+      </QueryClientProvider>,
+    );
+
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    fireEvent.click(retry);
+
+    expect(
+      await screen.findByText('Review low-engagement senders for Archive'),
+    ).toBeInTheDocument();
+    expect(reads).toBe(2);
+  });
 
   it('offers a read-only live preview while keeping suggestions and mutations unmounted', async () => {
     let rulesReads = 0;

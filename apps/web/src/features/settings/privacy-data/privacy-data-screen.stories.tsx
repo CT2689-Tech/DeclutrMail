@@ -11,6 +11,7 @@
 
 import type { ComponentProps } from 'react';
 import { PrivacyDataView } from './privacy-data-screen';
+import { PrivacyDataContent, PRIVACY_DATA_EXPORT_COPY } from './privacy-data-content';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -63,6 +64,8 @@ const MAILBOX_B = {
 };
 
 const baseArgs: ViewArgs = {
+  privacyContent: <PrivacyDataContent />,
+  exportCopy: PRIVACY_DATA_EXPORT_COPY,
   mailboxes: [MAILBOX_A, MAILBOX_B],
   undoDays: 30,
   exportPendingFormat: null,

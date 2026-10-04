@@ -1,0 +1,555 @@
+{
+  "summary": "Authenticated core audit found no verified P1 blocker, but identified8 P2 edge-state/recovery/keyboard issues and2 P3 accessibility issues worth addressing before launch. Primary verification is source and contract/test inspection, augmented by mobile Storybook DOM checks and one safely reproduced modal-ownership bug. No source changes, test/DB configuration changes, real Gmail actions, or server startup were performed. This is not a claim that the authenticated product is launch-ready. Parent-reported Activity Empty and GlobalError fixture failures are coverage gaps, not production defects. Home versus Overview was reviewed as section versus child-screen naming and not logged without a concrete route failure.",
+  "coverage": [
+    {
+      "route": "/home",
+      "screen": "Home progress, next step and tools",
+      "statesReviewed": [
+        "new/no progress",
+        "populated recorded counts",
+        "syncing",
+        "failed scan",
+        "initial loading",
+        "query error",
+        "mobile",
+        "Plus/Pro tool cues"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered new-user, sync-failed and load-error fixtures.",
+      "limitations": "No live mailbox totals or paid entitlement runtime. Recorded progress was checked against Home state composition rather than assumed to describe current Gmail counts."
+    },
+    {
+      "route": "/senders",
+      "screen": "Senders list, filters and batch selection",
+      "statesReviewed": [
+        "populated",
+        "empty list",
+        "no filtered match",
+        "loading",
+        "query error",
+        "mobile structure",
+        "protected eligibility",
+        "batch actions",
+        "preview loading/error/zero",
+        "unsubscribe receipts",
+        "keyboard help"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit.",
+      "limitations": "List browser sweep owned by parent. No batch mutation or real unsubscribe; API paths and confirmation guards inspected only."
+    },
+    {
+      "route": "/senders/[id]",
+      "screen": "Sender detail and inspector",
+      "statesReviewed": [
+        "populated",
+        "unknown current counts",
+        "empty",
+        "loading",
+        "error",
+        "protected sender",
+        "recommendation freshness",
+        "recent message location filters",
+        "history",
+        "preview/Undo/unsubscribe",
+        "mobile"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered default detail at 390 px, checked named generic spans in DOM.",
+      "limitations": "Fixture current counts are unknown placeholders; provider count freshness and real Gmail links not exercised. Parent axe scan used as corroboration, not independently rerun."
+    },
+    {
+      "route": "/triage",
+      "screen": "Focus/list daily decisions and completion",
+      "statesReviewed": [
+        "populated focus/list",
+        "empty quiet",
+        "completed/Free/Plus/Pro",
+        "loading",
+        "error",
+        "failed/incomplete scan",
+        "protected",
+        "batch offers",
+        "inline/modal preview",
+        "zero/loading/error preview",
+        "Undo",
+        "mailbox scope reset",
+        "keyboard help",
+        "mobile"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered default/empty-quiet. Opened Keyboard Help then Archive preview once, without confirmation.",
+      "limitations": "Failed-sync completion and queued/syncing claims are source-only. Keep/Unsubscribe dispatch under modal inferred from exact handler chain; no write attempted."
+    },
+    {
+      "route": "/screener",
+      "screen": "First sender decisions",
+      "statesReviewed": [
+        "populated",
+        "empty ready/queued/syncing/failed",
+        "loading",
+        "error",
+        "Plus tier gate",
+        "loaded-window filters/count",
+        "preview pending",
+        "Delete reach/window",
+        "zero match",
+        "protected override",
+        "unsubscribe",
+        "async completion/Undo",
+        "mobile"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered default and protected-override preview at 390 px; inspected screenshot /tmp/core-screener-mobile.png.",
+      "limitations": "No zero-match fixture; contradictory note/gate verified in source and existing tests. Parent owns 320 px overflow finding. API decides/zero-noop contract inspected only."
+    },
+    {
+      "route": "/later",
+      "screen": "Later timers and return recovery",
+      "statesReviewed": [
+        "populated groups",
+        "empty",
+        "loading",
+        "error",
+        "count syncing",
+        "missed/failed return",
+        "change presets/custom/note",
+        "bring back confirmation/poll",
+        "mobile"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered populated fixture. Ran a pure Node date-conversion demonstration with TZ=UTC.",
+      "limitations": "No timer or wake mutation. Account/device timezone mismatch demonstrated with the same JS parse operation outside application; presets and rows checked in source."
+    },
+    {
+      "route": "/activity",
+      "screen": "Activity timeline, grouped rows, filters and recovery",
+      "statesReviewed": [
+        "populated",
+        "unfiltered/filtered/window empty",
+        "loading",
+        "cold error",
+        "invalid filters",
+        "retained/placeholder data",
+        "next-page error/load-more/end",
+        "bulk/per-row Undo",
+        "failed-action recovery",
+        "unsubscribe outcomes",
+        "support-bundle review",
+        "mobile"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered populated at 390 px; filter chips intentionally scroll within their rail without page overflow.",
+      "limitations": "No Undo/recovery/export mutations. Parent reports Empty fixture rendering a load error, so rendered-empty coverage is unavailable; production empty composition reviewed in source."
+    },
+    {
+      "route": "all authenticated routes",
+      "screen": "Shared AppShell, section navigation and account menu",
+      "statesReviewed": [
+        "desktop/icon rail",
+        "mobile section tabs/drawer",
+        "selected child route",
+        "locked navigation",
+        "no active mailbox",
+        "over inbox limit",
+        "switch/reconnect/disconnect/delete-data lifecycle",
+        "dialog/keyboard semantics"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered mobile-tab-bar fixture.",
+      "limitations": "No authenticated account-menu actions or OAuth redirects. Home/Overview names are separate child/section labels and were not treated as inherently inconsistent."
+    },
+    {
+      "route": "all authenticated routes",
+      "screen": "Sync/reconnect and other app banners",
+      "statesReviewed": [
+        "initial queued/syncing/failed",
+        "incremental error",
+        "status-read error",
+        "recovered",
+        "older unresolved error",
+        "invalid grant",
+        "other broken mailbox",
+        "no active mailbox",
+        "banner priority"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered hidden-when-stale; DOM confirmed no sync-error-banner.",
+      "limitations": "No real sync. Expiry issue is intentionally encoded by tests/story but remains an unresolved-health UX concern; account menu retains a hidden-until-open Not syncing status."
+    },
+    {
+      "route": "route errors, root/global errors and404",
+      "screen": "Shared error and loading boundaries",
+      "statesReviewed": [
+        "route exception",
+        "root exception",
+        "global exception",
+        "digest-only details",
+        "try-again/escape",
+        "anonymous/authed404",
+        "route-level streaming loading",
+        "sender-detail loading"
+      ],
+      "method": "Source review of components, query/state composition and related tests; tests were inspected, not executed in this audit. Fixture-only Storybook DOM checks in a dedicated agent-browser session at 390 \u00d7 844; no authenticated production runtime and no mailbox writes. Rendered AppError default at 390 px; it displayed reassurance plus promised background retry.",
+      "limitations": "Parent reports GlobalError story blank, so global UI not rendered here; source inspected.404 assurances were not blanket-flagged as mutation failures. Error retries were not invoked."
+    }
+  ],
+  "findings": [
+    {
+      "id": "CORE-01",
+      "priority": "P2",
+      "route": "/triage",
+      "state": "Keyboard Help or another dialog open over focus card",
+      "title": "Triage decision shortcuts remain active behind modal dialogs",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/action-toolbar.tsx",
+          "line": 99,
+          "detail": "Window key handler suppresses only typing/modifiers/verb capability, then invokes onAction; it has no modal/dialog ownership guard."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/focus-card.tsx",
+          "line": 65,
+          "detail": "actionsDisabled is only busy or inlinePreviewGates.blocked; Keyboard Help/dialog state does not disable it."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/focus-card.tsx",
+          "line": 279,
+          "detail": "Toolbar keyboardEnabled is tied only to actionsDisabled."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/triage-screen.tsx",
+          "line": 1215,
+          "detail": "Keep is dispatched immediately via dispatchAction, while other verbs open pending preview."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/focus-stack.tsx",
+          "line": 80,
+          "detail": "Sibling Skip handler already suppresses shortcuts when any aria-modal dialog is present."
+        }
+      ],
+      "recommendation": "Apply a shared keyboard ownership guard before invoking any decision shortcut; suspend underlying decision listeners while modal help, navigation or data controls own focus. Add a regression test for opening Help then pressing a verb.",
+      "verification": "Browser verified safely:390px triage-triagescreen--default; '?' opened one aria-modal Keyboard Shortcuts dialog. A single 'A' then opened Archive email from Groupon behind it, leaving two aria-modal dialogs. No confirmation or write performed. Keep write consequence is source-verified only.",
+      "launchImpact": "Users trying shortcuts in the help overlay can unexpectedly open previews or save Keep on the hidden sender. Modal focus traps also compete."
+    },
+    {
+      "id": "CORE-02",
+      "priority": "P2",
+      "route": "/later",
+      "state": "Custom return time while device timezone differs from account preference",
+      "title": "Custom Later time uses device timezone while the screen and presets use account timezone",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 121,
+          "detail": "Page explicitly identifies return times with useUserTimeZone account zone."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 511,
+          "detail": "Change return menu computes presets in the account timezone."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 534,
+          "detail": "Custom validation parses datetime-local with new Date(custom), which uses device-local zone."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 590,
+          "detail": "Custom submission serializes device-local Date directly; the account timezone is not used."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snooze-times.ts",
+          "line": 139,
+          "detail": "Preset contract explicitly says saved wall time should match the zone rendered by Later rows."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/senders/snooze.service.ts",
+          "line": 80,
+          "detail": "API persists the supplied ISO instant; it cannot recover the intended timezone."
+        }
+      ],
+      "recommendation": "Interpret the custom wall time in the same explicit account zone as presets/rows, or clearly name and consistently display the device zone. Preview the resolved return time before saving, including DST handling.",
+      "verification": "Source plus pure runtime demonstration: with device TZ=UTC/account America/Los_Angeles, entering 2026-10-04T09:00 serializes 09:00Z and renders back as 2:00 AM Los Angeles, seven hours earlier than the apparent 9:00 AM choice. No application timer changed. Existing screen tests mock account zone to device zone and do not cover this difference.",
+      "launchImpact": "Traveling users or users with a different saved timezone can return mail at the wrong hour."
+    },
+    {
+      "id": "CORE-03",
+      "priority": "P2",
+      "route": "/activity",
+      "state": "URL filter transition with placeholder rows retained",
+      "title": "Stale Activity rows are blocked for pointer users but remain actionable from the keyboard",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/api/use-activity.ts",
+          "line": 78,
+          "detail": "keepPreviousData retains the previous filter rows during a new filter fetch."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/activity-screen.tsx",
+          "line": 368,
+          "detail": "showingStaleRows is query.isPlaceholderData; surrounding comment intends stale rows to be non-interactive."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/activity-screen.tsx",
+          "line": 470,
+          "detail": "Wrapper has aria-busy and pointerEvents:none, but no inert or descendant disabled guard."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/activity-screen.tsx",
+          "line": 2578,
+          "detail": "Undo invokes mutation on click/keyboard activation; disabled only tracks an already pending Undo, not stale-filter data."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/activity-screen.tsx",
+          "line": 318,
+          "detail": "Selection toggle also has no placeholder-data guard."
+        }
+      ],
+      "recommendation": "Make the retained results inert while the filter changes, and guard mutation/selection callbacks against stale-query context. Keep filter controls usable and communicate the loading state.",
+      "verification": "Source-only; native pointer-events:none does not suppress keyboard focus/activation. No live filter-transition Undo attempted. Existing tests inspected without running; no keyboard placeholder-transition coverage found.",
+      "launchImpact": "A keyboard user can undo or select a record from the previous filter while the header already identifies the new filter."
+    },
+    {
+      "id": "CORE-04",
+      "priority": "P2",
+      "route": "/screener",
+      "state": "Archive/Later/Delete preview with true zero matching email",
+      "title": "Zero-match preview promises a confirmation result while disabling confirmation",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/decide-preview.tsx",
+          "line": 205,
+          "detail": "Zero-match note says Confirming records the decision and removes the sender from Screener."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/decide-preview.tsx",
+          "line": 220,
+          "detail": "confirmDisabled is true for every mail-moving verb whose liveCount is0."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/decide-preview.test.tsx",
+          "line": 401,
+          "detail": "Existing zero-header test still comments that Confirm stays live and asserts the promise, without asserting actual enabled state."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/screener/screener.service.ts",
+          "line": 158,
+          "detail": "API can resolve a zero-message no-op, but this UI intentionally blocks zero-count execution, so that API capability is not reachable from this button."
+        }
+      ],
+      "recommendation": "Align zero-state explanation with the gate. Preserve the zero-move safety guard and direct users to Keep when they intend to record a decision without moving email; test the note and disabled button together.",
+      "verification": "Source and test inspection only; no zero-match rendered fixture available and no decide mutation attempted.",
+      "launchImpact": "Users face instructions they cannot follow and may assume the sender is already resolved or the product is broken."
+    },
+    {
+      "id": "CORE-05",
+      "priority": "P2",
+      "route": "shared shell",
+      "state": "Incremental sync error older than 60 minutes with no later success",
+      "title": "Unresolved sync failure disappears from primary chrome merely because it aged",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/sync/sync-error-banner.tsx",
+          "line": 133,
+          "detail": "A later successful sync legitimately clears the error."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/sync/sync-error-banner.tsx",
+          "line": 138,
+          "detail": "A retryable error also clears after SYNC_ERROR_WINDOW_MS without evidence of recovery."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/sync/sync-error-banner.stories.tsx",
+          "line": 140,
+          "detail": "HiddenWhenStale fixture has last_synced_at:null and a 90-minute-old terminal error."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/mailboxes/account-menu.tsx",
+          "line": 335,
+          "detail": "Account menu still labels the same unresolved ready mailbox Not syncing only when health reads are mounted by opening it."
+        }
+      ],
+      "recommendation": "Keep unresolved latest sync outcomes discoverable until a newer success, explicit dismissal with persistent status, or reconnection. A quiet persistent status can replace a prominent stale banner, but age alone should not imply recovery.",
+      "verification": "Browser verified: hidden-when-stale rendered only its explanatory story note; data-testid sync-error-banner was absent. Source confirms there was no successful stamp. Existing tests intentionally encode expiry, so this is a product-reliability issue despite passing expectations.",
+      "launchImpact": "A returning user can see normal chrome while recommendations and counts are stale and incoming email is no longer being synced."
+    },
+    {
+      "id": "CORE-06",
+      "priority": "P2",
+      "route": "/triage",
+      "state": "Empty queue during queued/syncing/failed readiness after an earlier decision",
+      "title": "Triage empty completion language can claim the user is done before the mailbox is ready",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/triage-screen.tsx",
+          "line": 234,
+          "detail": "Only failed readiness is derived; queued/syncing are not passed to the empty state."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/triage-screen.tsx",
+          "line": 1563,
+          "detail": "Empty state receives a syncFailed boolean rather than full readiness."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/empty-state.tsx",
+          "line": 71,
+          "detail": "Failed scan branch only applies when decidedToday===0."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/empty-state.tsx",
+          "line": 90,
+          "detail": "Zero-decisions branch asserts Nothing needs a decision regardless of queued/syncing readiness."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/empty-state.tsx",
+          "line": 161,
+          "detail": "Positive-decisions branch says You are done for now even with syncFailed=true."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/empty-state.test.tsx",
+          "line": 39,
+          "detail": "Existing test explicitly preserves omission of failed-scan copy once there was progress today."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/derive-step.ts",
+          "line": 60,
+          "detail": "Already-onboarded users bypass initial-readiness gating, so these states remain reachable in the core app."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/empty-state.tsx",
+          "line": 37,
+          "detail": "Sibling Screener empty state distinguishes scan-in-progress and failed readiness instead of claiming completion."
+        }
+      ],
+      "recommendation": "Compose empty-state readiness before completion language. Keep any real today tally, but show that scan/reconnection is incomplete or failed and expose its recovery action.",
+      "verification": "Source-only for the broken readiness cases. Browser verified ordinary ready/empty-quiet presentation. Existing test confirms the positive-decisions failure case is currently intentional rather than an untested guess.",
+      "launchImpact": "Users may leave with false confidence that there is no review work, while incomplete discovery is the actual reason for an empty queue."
+    },
+    {
+      "id": "CORE-07",
+      "priority": "P2",
+      "route": "root/global errors, core route errors and account menu",
+      "state": "Render failure or ambiguous mutation failure",
+      "title": "Error copy asserts untouched state and automatic background recovery without outcome evidence",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/error.tsx",
+          "line": 53,
+          "detail": "Root error promises mailbox/decisions untouched and retry the rest in the background, but only passes reset/escape to RouteErrorScreen."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/components/route-error-screen.tsx",
+          "line": 61,
+          "detail": "Boundary only captures diagnostics and exposes manual reset/escape; it does not reconcile mutation outcome or schedule background retry."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/global-error.tsx",
+          "line": 102,
+          "detail": "Global heading says DeclutrMail is reloading although reload begins only on the explicit reset button."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/global-error.tsx",
+          "line": 112,
+          "detail": "Global failure likewise promises untouched mailbox/decisions without reading persisted/provider state."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/triage-screen.tsx",
+          "line": 973,
+          "detail": "Keep onError says nothing changed; request failure can be an ambiguous response after server commit."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/mailboxes/account-menu.tsx",
+          "line": 538,
+          "detail": "Indexed-data deletion onError says Nothing was deleted even though it only knows the request failed client-side."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/mailboxes/mailbox-accounts.service.ts",
+          "line": 582,
+          "detail": "Deletion endpoint disconnects first, then durably queues deletion, before returning its response; lost response cannot prove no write."
+        }
+      ],
+      "recommendation": "Delete unverifiable assurances and automatic-retry promises. State only what could not be loaded or confirmed, give one next step, and reconcile ambiguous write outcomes before claiming no change. Keep factual Gmail safety statements only when the operation contract proves them.",
+      "verification": "Root AppError default browser fixture displayed the exact assurance/background-retry copy. Global behavior and ambiguous-write examples are source-only; no crashes, deletions or Keep writes induced. Parent-reported blank GlobalError fixture is a coverage gap.404 is not blanket included.",
+      "launchImpact": "A user can be told nothing changed after a decision or durable deletion actually started, or wait for recovery that was never scheduled."
+    },
+    {
+      "id": "CORE-08",
+      "priority": "P2",
+      "route": "/screener and /later",
+      "state": "Transient background refetch failure after useful rows loaded",
+      "title": "A background read failure replaces the entire useful queue with a cold-error screen",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/compose-state.ts",
+          "line": 22,
+          "detail": "Any isError returns error even when input.rows is populated from retained query data."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/screener/screener-route.tsx",
+          "line": 45,
+          "detail": "Composer receives queue.data and queue.isError separately, so retained rows with an error can reach this branch."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/snoozed/snoozed-screen.tsx",
+          "line": 136,
+          "detail": "Later renders full error when query.isError even if usable rows remain."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/triage/compose-state.ts",
+          "line": 36,
+          "detail": "Triage already preserves a loaded queue on background failure and uses the cold error only when required data is missing."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/activity/activity-screen.tsx",
+          "line": 343,
+          "detail": "Activity likewise keeps retained rows and confines cold error to no data."
+        }
+      ],
+      "recommendation": "Keep retained same-scope rows on background failure, show a compact stale/retry state, and fail closed only for mutation previews whose fresh proof is unavailable. Reserve full-page error for an initial load with no usable data.",
+      "verification": "Source-only composition review; no production network failure induced. TanStack retained-data behavior is explicitly documented and handled in sibling Triage/Activity implementation.",
+      "launchImpact": "A brief poll/focus hiccup interrupts a usable review or timer list, despite the app having enough data to continue reading safely."
+    },
+    {
+      "id": "CORE-09",
+      "priority": "P3",
+      "route": "/senders/[id] and sender inspector",
+      "state": "Recent message unread/attachment indicators",
+      "title": "Recent-message status icons are named generic spans, so their accessible meaning can be ignored",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/senders/detail/recent-messages.tsx",
+          "line": 226,
+          "detail": "Empty unread/read dot span has aria-label but no nameable role or text alternative."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/senders/detail/recent-messages.tsx",
+          "line": 347,
+          "detail": "Attachment span has aria-label but generic role; its child SVG is aria-hidden."
+        }
+      ],
+      "recommendation": "Use semantic named images or visually hidden status text linked to the message row; hide any purely decorative dot. Rerun accessibility checks for populated desktop/mobile detail and inspector.",
+      "verification": "Browser DOM verified default fixture had 8 generic Unread spans and 2 generic Has attachment spans. Parent axe scan reports 10 aria-prohibited-attr violations in default/mobile, matching these instances. No standalone axe scan executed by this reviewer.",
+      "launchImpact": "Screen-reader users may lose the read/attachment context that sighted users use to inspect a sender."
+    },
+    {
+      "id": "CORE-10",
+      "priority": "P3",
+      "route": "authenticated route error boundaries",
+      "state": "Feature route exception within AppShell",
+      "title": "Shared route error introduces a second nested main landmark",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/shell/app-shell.tsx",
+          "line": 220,
+          "detail": "Authenticated shell wraps children in its main landmark."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/components/route-error-screen.tsx",
+          "line": 77,
+          "detail": "RouteErrorScreen itself renders another main."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/(app)/activity/error.tsx",
+          "line": 18,
+          "detail": "Feature route errors mount RouteErrorScreen inside the still-present shell."
+        }
+      ],
+      "recommendation": "Use a neutral container or labelled section for feature errors inside AppShell; reserve a main landmark for standalone root/marketing/global error pages.",
+      "verification": "Source-only composition. The standalone AppError fixture has one main, correctly; the nested case requires the production shell composition and was not rendered in this fixture audit.",
+      "launchImpact": "Landmark navigation can expose duplicate/nested main regions exactly when users need a clear recovery path."
+    }
+  ]
+}

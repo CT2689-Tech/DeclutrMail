@@ -163,7 +163,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     kind: 'rule',
     shortLabel: 'Make it stick',
     title: 'A preset can keep watch.',
-    body: `${MANUAL_ACTION_SCOPE_CLAIM} Autopilot offers separate preset rules; a manual decision does not create one.`,
+    body: MANUAL_ACTION_SCOPE_CLAIM,
     prompt: 'Preview the low-engagement Archive preset against the sample mailbox.',
   },
   {
@@ -521,7 +521,10 @@ export function InboxSimulatorScreen() {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get('workspace') === 'triage' || params.has('step')) setWorkspace('triage');
-      if (params.get('tour') === '1') setMode('guided');
+      if (params.get('tour') === '1') {
+        setWorkspace('triage');
+        setMode('guided');
+      }
       const stepParam = params.get('step');
       const stepIndex = stepParam === null ? NaN : Number(stepParam) - 1;
       if (Number.isInteger(stepIndex) && stepIndex >= 0 && stepIndex < GUIDED_SCENARIOS.length) {
@@ -906,7 +909,7 @@ export function InboxSimulatorScreen() {
             aria-controls="dm-simulator-orientation-content"
             onClick={() => setOrientationOpen((open) => !open)}
           >
-            Where this fits in your workspace
+            Workspace guide
           </button>
           {orientationOpen ? (
             <ol id="dm-simulator-orientation-content">
@@ -1022,9 +1025,7 @@ export function InboxSimulatorScreen() {
                     className="dm-simulator-mode-button"
                     onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
                   >
-                    {mode === 'guided'
-                      ? `Explore all ${DEMO_ROWS.length} senders`
-                      : 'Take guided tour'}
+                    {mode === 'guided' ? `Explore ${DEMO_ROWS.length} senders` : 'Take guided tour'}
                   </button>
                 </div>
               </div>
@@ -1305,7 +1306,7 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
       </p>
       <div>
         <Button tone="primary" onClick={onPreview}>
-          Preview the Autopilot rule
+          Preview rule
         </Button>
       </div>
     </div>
@@ -1313,11 +1314,14 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
 }
 
 function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
-  // "Cleared from Inbox" — never "freed" or "deleted": Archive/Later/Delete
-  // all remove the message from Inbox view, but only Delete (via Gmail
-  // Trash) is on any path to actually freeing storage (see step 4's own
-  // scenario copy). This label must not blur that distinction.
-  const clearedFromInbox = decisions.reduce((total, decision) => total + decision.affectedCount, 0);
+  // All-mail Delete includes already archived messages in affectedCount.
+  // The Inbox metric includes only the fixture's Inbox portion of each
+  // validated decision; recovery and total affected counts retain the full set.
+  const clearedFromInbox = decisions.reduce(
+    (total, decision) =>
+      total + Math.min(decision.affectedCount, syntheticInboxCount(requireDemoRow(decision.rowId))),
+    0,
+  );
   const undoable = decisions.filter(isActivityUndoable).length;
   const oneWay = decisions.filter((decision) => decision.verb === 'Unsubscribe').length;
 
@@ -1429,7 +1433,7 @@ function DemoCompletion({
           Start free →
         </TrackedCta>
         <Button tone="default" onClick={onExplore}>
-          Explore all sample senders
+          Explore senders
         </Button>
         <Button tone="ghost" onClick={onReset}>
           Start again

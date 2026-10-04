@@ -21,6 +21,7 @@ import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shar
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { Me } from '@/features/auth/api/use-me';
 import { PrivacyDataView } from './privacy-data-screen';
+import { PrivacyDataContent, PRIVACY_DATA_EXPORT_COPY } from './privacy-data-content';
 
 const mailbox = (id: string, email: string): Me['mailboxes'][number] => ({
   id,
@@ -38,6 +39,8 @@ const TWO_MAILBOXES = [
 function renderView(overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = {}) {
   return render(
     <PrivacyDataView
+      privacyContent={<PrivacyDataContent />}
+      exportCopy={PRIVACY_DATA_EXPORT_COPY}
       mailboxes={TWO_MAILBOXES}
       undoDays={30}
       exportPendingFormat={null}
@@ -231,8 +234,39 @@ describe('PrivacyDataView', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent(/saved|complete account/i);
   });
 
+  it('keeps an opened native inventory disclosure through export state changes', async () => {
+    const props = {
+      privacyContent: <PrivacyDataContent />,
+      exportCopy: PRIVACY_DATA_EXPORT_COPY,
+      mailboxes: TWO_MAILBOXES,
+      undoDays: 30,
+      exportFailed: false,
+      exportPendingFormat: null,
+      onExport: vi.fn(),
+    };
+    const { rerender } = render(<PrivacyDataView {...props} />);
+    const summary = screen.getByText('Message data');
+    const disclosure = summary.closest('details');
+    expect(disclosure).not.toBeNull();
+    await userEvent.click(summary);
+    expect(disclosure).toHaveAttribute('open');
+    expect(disclosure?.closest('section')).toHaveAttribute('id', 'privacy-gmail-data-inventory');
+
+    rerender(<PrivacyDataView {...props} exportPendingFormat="csv" />);
+    expect(screen.getByText('Message data').closest('details')).toBe(disclosure);
+    expect(disclosure).toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: /preparing messages csv/i })).toBeDisabled();
+
+    rerender(<PrivacyDataView {...props} exportPreparedFormat="csv" />);
+    expect(disclosure).toHaveAttribute('open');
+    expect(screen.getByRole('status')).toHaveTextContent(/messages csv.*prepared/i);
+    expect(screen.getByRole('button', { name: /messages csv/i })).toBeEnabled();
+  });
+
   it('updates an existing live region when preparation finishes', () => {
     const props = {
+      privacyContent: <PrivacyDataContent />,
+      exportCopy: PRIVACY_DATA_EXPORT_COPY,
       mailboxes: TWO_MAILBOXES,
       undoDays: 30,
       exportFailed: false,

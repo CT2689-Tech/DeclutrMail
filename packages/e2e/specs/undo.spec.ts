@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack, type CompositePreview } from '../helpers/api';
@@ -94,6 +95,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
 
   // ---- Senders list → the target row's ⋯ popover → Archive.
   await page.goto('/senders');
+  await expectScreenMounted(page);
   const card = page.getByTestId(`sender-row-${senderId}`);
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.scrollIntoViewIfNeeded();

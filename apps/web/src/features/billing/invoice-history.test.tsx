@@ -258,7 +258,8 @@ describe('PaymentMethodCard', () => {
   it('does not promise a Paddle-style fix to a past_due Razorpay customer', () => {
     wrap(<PaymentMethodCard provider="razorpay" isPastDue />);
     expect(screen.queryByText(/restores the plan/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/stays active while we sort this out/i)).toBeInTheDocument();
+    expect(screen.getByText(/contact support to update your payment method/i)).toBeInTheDocument();
+    expect(screen.queryByText(/stays active while we sort this out/i)).not.toBeInTheDocument();
   });
 
   it('withholds the control while a money action is unresolved, and says why', () => {

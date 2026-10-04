@@ -11,7 +11,7 @@ const PILL_TONES: Record<PillTone, { bg: string; fg: string }> = {
   primary: { bg: color.primarySoft, fg: color.primary },
   // Semantic fgs ride the theme tokens so the washes stay readable when
   // the dark palette brightens them.
-  amber: { bg: color.amberBg, fg: color.amber },
+  amber: { bg: color.amberBg, fg: color.amberDeep },
   emerald: { bg: color.emeraldBg, fg: color.emerald },
   red: { bg: color.redBg, fg: color.red },
   dark: { bg: color.fg, fg: color.fgInverse },

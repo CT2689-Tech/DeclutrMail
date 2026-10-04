@@ -1,0 +1,110 @@
+
+> @declutrmail/web@0.0.0 build [frozen-workspace]/apps/web
+> next build
+
+   ▲ Next.js 15.5.26
+   - Experiments (use with caution):
+     · clientTraceMetadata
+     · optimizePackageImports
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 24.6s
+   Linting and checking validity of types ...
+
+ ⚠ The Next.js plugin was not detected in your ESLint configuration. See https://nextjs.org/docs/app/api-reference/config/eslint#migrating-existing-config
+   Collecting page data ...
+   Generating static pages (0/79) ...
+   Generating static pages (19/79)
+   Generating static pages (39/79)
+   Generating static pages (59/79)
+ ✓ Generating static pages (79/79)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                            Size  First Load JS
+┌ ○ /                                                 767 B         114 kB
+├ ○ /_not-found                                       338 B         108 kB
+├ ƒ /activity                                       21.9 kB         192 kB
+├ ƒ /admin/security                                 7.42 kB         129 kB
+├ ● /alternatives/[tool]                              739 B         114 kB
+├   ├ /alternatives/clean-email
+├   ├ /alternatives/unroll-me
+├   ├ /alternatives/sanebox
+├   └ [+2 more paths]
+├ ○ /answers                                          741 B         114 kB
+├ ○ /answers/best-way-to-clean-gmail-2026             785 B         114 kB
+├ ○ /answers/how-undo-works-for-gmail-cleanup         783 B         114 kB
+├ ○ /answers/is-it-safe-to-connect-gmail-app          784 B         114 kB
+├ ○ /answers/sender-level-vs-message-level-cleanup    785 B         114 kB
+├ ○ /answers/what-is-metadata-only-email-analysis     785 B         114 kB
+├ ○ /apple-icon.png                                     0 B            0 B
+├ ƒ /autopilot                                      17.5 kB         198 kB
+├ ƒ /beta                                           1.01 kB         114 kB
+├ ƒ /billing                                        25.2 kB         199 kB
+├ ○ /blog                                             740 B         114 kB
+├ ● /blog/[slug]                                      784 B         114 kB
+├   ├ /blog/why-cleanup-starts-with-senders
+├   ├ /blog/metadata-only-is-a-design-constraint
+├   └ /blog/reversible-does-not-mean-risk-free
+├ ƒ /brief                                          15.3 kB         170 kB
+├ ○ /changelog                                        740 B         114 kB
+├ ƒ /changelog/rss.xml                                337 B         108 kB
+├ ○ /compare                                          742 B         114 kB
+├ ○ /contact                                          957 B         114 kB
+├ ○ /cookies                                        3.15 kB         116 kB
+├ ○ /demo                                             336 B         108 kB
+├ ○ /design-prototype                               22.6 kB         167 kB
+├ ○ /faq                                              737 B         114 kB
+├ ƒ /followups                                      7.18 kB         151 kB
+├ ○ /help                                             949 B         114 kB
+├ ƒ /home                                           3.18 kB         152 kB
+├ ○ /how-it-works                                     740 B         114 kB
+├ ○ /how-to                                           740 B         114 kB
+├ ○ /how-to/auto-archive-future-emails-in-gmail       786 B         114 kB
+├ ○ /how-to/bulk-delete-emails-from-one-sender        786 B         114 kB
+├ ○ /how-to/clean-gmail-by-sender                     784 B         114 kB
+├ ○ /how-to/gmail-storage-full                        785 B         114 kB
+├ ○ /how-to/stop-promotional-emails-gmail             785 B         114 kB
+├ ○ /how-to/unsubscribe-from-emails-gmail             784 B         114 kB
+├ ○ /icon.svg                                           0 B            0 B
+├ ○ /inbox-simulator                                22.1 kB         183 kB
+├ ○ /inbox-simulator/opengraph-image-ejwaw3           337 B         108 kB
+├ ƒ /later                                           8.4 kB         148 kB
+├ ○ /manifest.webmanifest                             337 B         108 kB
+├ ○ /methodology                                      724 B         114 kB
+├ ƒ /onboarding                                     15.7 kB         242 kB
+├ ○ /opengraph-image                                  338 B         108 kB
+├ ƒ /pricing                                        8.56 kB         132 kB
+├ ƒ /pricing.md                                       337 B         108 kB
+├ ○ /privacy                                          958 B         114 kB
+├ ƒ /quiet                                          8.49 kB         175 kB
+├ ○ /refunds                                          957 B         114 kB
+├ ○ /robots.txt                                       338 B         108 kB
+├ ƒ /screener                                       17.2 kB         198 kB
+├ ○ /security                                         944 B         114 kB
+├ ƒ /senders                                        30.3 kB         234 kB
+├ ƒ /senders/[id]                                   15.3 kB         213 kB
+├ ƒ /settings                                       11.4 kB         191 kB
+├ ƒ /settings/help                                   7.5 kB         123 kB
+├ ƒ /settings/privacy                               5.43 kB         173 kB
+├ ƒ /settings/senders                               8.78 kB         150 kB
+├ ƒ /sign-in                                          727 B         114 kB
+├ ○ /sitemap.xml                                      338 B         108 kB
+├ ○ /terms                                            959 B         114 kB
+├ ƒ /triage                                           979 B         220 kB
+└ ● /vs/[competitor]                                  743 B         114 kB
+    ├ /vs/clean-email
+    ├ /vs/trimbox
+    ├ /vs/sanebox
+    └ [+5 more paths]
++ First Load JS shared by all                        107 kB
+  ├ chunks/4973-9888990c62e4c6a8.js                 47.3 kB
+  ├ chunks/9b4eba7a-0715675c8419f703.js             54.4 kB
+  └ other shared chunks (total)                     5.75 kB
+
+
+ƒ Middleware                                        37.6 kB
+
+○  (Static)   prerendered as static content
+●  (SSG)      prerendered as static HTML (uses generateStaticParams)
+ƒ  (Dynamic)  server-rendered on demand

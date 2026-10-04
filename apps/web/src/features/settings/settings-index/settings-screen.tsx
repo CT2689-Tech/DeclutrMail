@@ -296,7 +296,7 @@ export function SettingsScreen({
       <MailboxesCard
         mailboxes={me.mailboxes}
         activeMailboxId={me.activeMailboxId}
-        inboxLimit={manifestTier?.inboxLimit ?? null}
+        inboxLimit={TIER_MANIFEST[entitledTier].inboxLimit}
         healthById={healthById}
         highlightMailboxId={highlightMailboxId}
         onConnect={connectMailbox}

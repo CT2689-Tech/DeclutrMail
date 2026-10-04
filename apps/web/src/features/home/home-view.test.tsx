@@ -258,3 +258,58 @@ describe('HomeView', () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Home primary task hierarchy', () => {
+  it.each([
+    ['/triage', 'Review 8 today'],
+    ['/screener', 'Review 4 new'],
+  ])('places %s review before recorded history in reading order', (href, label) => {
+    const { container } = render(
+      <HomeView
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action: { href, label },
+        }}
+      />,
+    );
+    const primary = screen.getByRole('link', { name: new RegExp(label) });
+    const stamp = screen.getByRole('region', { name: 'Your cleanup so far' });
+    expect(primary.compareDocumentPosition(stamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'review');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('A little room');
+  });
+  it('keeps calm introductory framing when no review task is waiting', () => {
+    const { container } = render(
+      <HomeView
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action,
+          pending: { triagePending: 0, screenerPending: 0 },
+        }}
+      />,
+    );
+    const primary = screen.getByRole('link', { name: /Review senders/ });
+    const stamp = screen.getByRole('region', { name: 'Your cleanup so far' });
+    expect(stamp.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'intro');
+  });
+  it('uses the compact intro for a first review without implying an incomplete scan is ready', () => {
+    const first = {
+      kind: 'empty' as const,
+      syncing: false,
+      action: { label: 'Review 2 today', href: '/triage' },
+      senders: [{ id: 'a', name: 'A sender', domain: 'synthetic.test', inboxCount: 2 }],
+    };
+    const { container, rerender } = render(<HomeView state={first} />);
+    expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'review');
+    rerender(<HomeView state={{ ...first, syncing: true }} />);
+    expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'intro');
+    expect(screen.getByRole('heading', { name: 'Reading your Gmail' })).toBeInTheDocument();
+  });
+});

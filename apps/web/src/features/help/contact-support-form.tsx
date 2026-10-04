@@ -129,9 +129,9 @@ export function ContactSupportForm() {
             {status === 'submitting' ? 'Sending…' : 'Send message'}
           </Button>
           {status === 'error' ? (
-            <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
+            <span role="alert" style={{ fontSize: text.sm, color: color.dangerText }}>
               Couldn't send that — try again, or email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.danger }}>
+              <a href="mailto:support@declutrmail.com" style={{ color: color.dangerText }}>
                 support@declutrmail.com
               </a>
               .

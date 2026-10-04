@@ -1,91 +1,69 @@
-/**
- * Tests for `TriageEmptyState` — the D212 resting-queue / D33
- * completion component.
- *
- * Covers QA-sync-20260831-01: the resting state must not claim
- * "nothing to do" when the active mailbox's sync has terminally failed
- * — Triage otherwise has zero sync awareness of any kind.
- */
-
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-
-import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { TRIAGE_SESSION_STATS } from './fixtures';
+import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { TriageEmptyState } from './empty-state';
 
 describe('TriageEmptyState', () => {
-  it('renders the D212 resting-queue copy when the mailbox is caught up', () => {
-    render(<TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} />);
-    expect(screen.getByText('Nothing needs a decision right now.')).toBeInTheDocument();
-  });
-
-  it('does not claim "nothing needs a decision" while the mailbox scan has failed (QA-sync-20260831-01)', () => {
-    // The negative control: reverting the `syncFailed` branch in
-    // `empty-state.tsx` makes this assertion fail — Triage has no other
-    // sync input, so a resting-queue read during a broken scan renders
-    // the same confident "caught up" claim as a genuinely-synced mailbox.
+  it('renders resting copy after a ready scan', () => {
     render(
-      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} syncFailed={true} />,
+      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} readiness="ready" />,
     );
-    expect(screen.getByText("This mailbox's last scan didn't finish.")).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Nothing needs a decision right now.' }),
+    ).toBeInTheDocument();
+  });
+  it.each([0, 3])('prioritizes failed readiness with %s earlier decisions', (decidedToday) => {
+    render(
+      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday }} readiness="failed" />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 2, name: "This mailbox's last scan didn't finish." }),
+    ).toBeInTheDocument();
     expect(screen.queryByText('Nothing needs a decision right now.')).not.toBeInTheDocument();
-    // The copy points at Settings → Gmail accounts, so the button goes there.
+    expect(screen.queryByText(/done for now/i)).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open Settings' })).toHaveAttribute(
       'href',
       '/settings#mailboxes',
     );
+    if (decidedToday > 0) expect(screen.getByText('3 decided today')).toBeInTheDocument();
   });
-
-  it('sends a mailbox that needs reconnecting to Reconnect, not to a retry Settings does not offer', () => {
-    // Settings shows "Needs reconnect" + Reconnect for these, never a
-    // retry button — "Retry the scan in Settings" was a step the user
-    // could not find there.
-    render(
-      <TriageEmptyState
-        stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
-        syncFailed={true}
-        syncNeedsReconnect={true}
-      />,
-    );
-    expect(screen.getByText(/Reconnect it in Settings/)).toBeInTheDocument();
-    expect(screen.queryByText(/Scan again/)).not.toBeInTheDocument();
-  });
-
-  it('keeps the retry step for a failed scan whose grant is fine', () => {
-    render(
-      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} syncFailed={true} />,
-    );
-    expect(screen.getByText(/Scan again in Settings/)).toBeInTheDocument();
-    // No "untouched" reassurance: during a failed re-scan the user may
-    // have acted from Senders, so it is not a fact this state can see.
-    expect(screen.queryByText(/untouched/i)).not.toBeInTheDocument();
-  });
-
-  it.each([true, false])(
-    'says exactly what failedScanSettingsStep says (needsReconnect=%s)',
-    (needsReconnect) => {
-      // The sentences are inline here for the bundle budget; this pins
-      // them to the one helper Home, Senders and the scan toast use.
+  it.each(['queued', 'syncing'] as const)(
+    'does not imply completion during %s readiness',
+    (readiness) => {
       render(
         <TriageEmptyState
-          stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }}
-          syncFailed={true}
-          syncNeedsReconnect={needsReconnect}
+          stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 3 }}
+          readiness={readiness}
         />,
       );
-      expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: /mailbox scan/i })).toBeInTheDocument();
+      expect(screen.getByText('3 decided today')).toBeInTheDocument();
+      expect(screen.queryByText(/done for now/i)).not.toBeInTheDocument();
     },
   );
-
-  it('does not render the sync-failed copy once the user has decided something today', () => {
-    // `decidedToday > 0` is the D33 celebration state, unconditional on
-    // sync health — a session that already made progress should not be
-    // told the scan failed on top of it (a different job's screen, and
-    // this run's approved scope, both stop at the resting state).
+  it('offers status recovery when scan readiness is unknown', () => {
     render(
-      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 3 }} syncFailed={true} />,
+      <TriageEmptyState stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 0 }} readiness={null} />,
     );
-    expect(screen.queryByText("This mailbox's last scan didn't finish.")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Mailbox scan status is unavailable.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open Settings' })).toBeInTheDocument();
   });
 });
+
+it.each([true, false])(
+  'matches the main reconnect-specific recovery step (needsReconnect=%s)',
+  (needsReconnect) => {
+    render(
+      <TriageEmptyState
+        stats={{ ...TRIAGE_SESSION_STATS, decidedToday: 3 }}
+        readiness="failed"
+        syncNeedsReconnect={needsReconnect}
+      />,
+    );
+    expect(screen.getByText(failedScanSettingsStep(needsReconnect))).toBeInTheDocument();
+    expect(screen.queryByText(/untouched|done for now/i)).not.toBeInTheDocument();
+  },
+);

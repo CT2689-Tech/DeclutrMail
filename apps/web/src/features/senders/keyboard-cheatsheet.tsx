@@ -46,8 +46,8 @@ export function KeyboardCheatsheet() {
       if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target)) {
         // Don't stack the cheatsheet over another modal (e.g. the mandatory
         // action preview). When already open, `?` still closes it — the
-        // guard only blocks OPENING on top of an existing aria-modal dialog.
-        if (!open && document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+        // guard only blocks OPENING on top of an existing dialog.
+        if (!open && document.querySelector('[role="dialog"]')) return;
         e.preventDefault();
         setOpen((v) => !v);
       }

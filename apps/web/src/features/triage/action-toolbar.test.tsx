@@ -12,11 +12,9 @@
 //      threshold (D31 — strictly > 0.85), and the protected-row
 //      capability gates.
 //
-// The web-app Vitest is `environment: 'node'` (jsdom not wired), so
-// keyboard-event delivery is asserted via the pure resolver — the
-// same handler the `keydown` listener calls in production.
+// DOM regressions also verify keyboard ownership while dialogs are open.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { VERB_LESSONS } from '@/features/tour/verb-lessons';
@@ -391,5 +389,26 @@ describe('verb tooltips (D38)', () => {
   it('never renders the internal Screener verdict word (D227)', () => {
     const { container } = render(<ActionToolbar row={row} onAction={() => {}} />);
     expect(container.textContent).not.toMatch(/\bScreen\b/);
+  });
+});
+
+describe('ActionToolbar — dialog keyboard ownership', () => {
+  it.each([true, false])('suspends decisions while an aria-modal=%s dialog owns focus', (modal) => {
+    const onAction = vi.fn();
+    const view = render(
+      <>
+        <ActionToolbar row={rowById('t-groupon')} onAction={onAction} />
+        <div role="dialog" aria-modal={modal} aria-label="Help">
+          <button>Close help</button>
+        </div>
+      </>,
+    );
+    const helpButton = screen.getByRole('button', { name: 'Close help' });
+    helpButton.focus();
+    for (const key of ['k', 'a', 'u', 'l', 'd']) fireEvent.keyDown(helpButton, { key });
+    expect(onAction).not.toHaveBeenCalled();
+    view.rerender(<ActionToolbar row={rowById('t-groupon')} onAction={onAction} />);
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(onAction).toHaveBeenCalledExactlyOnceWith('Keep');
   });
 });

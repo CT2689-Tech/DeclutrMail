@@ -201,7 +201,7 @@ export function ActionRecoveryDialog({
                     }}
                   />
                   {!wakeAtValid && (
-                    <span role="alert" style={{ color: color.danger, fontSize: text.sm }}>
+                    <span role="alert" style={{ color: color.dangerText, fontSize: text.sm }}>
                       Choose a future return time.
                     </span>
                   )}
@@ -220,7 +220,7 @@ export function ActionRecoveryDialog({
               style={{
                 borderRadius: radius.lg,
                 background: color.dangerBg,
-                color: color.danger,
+                color: color.dangerText,
                 fontSize: text.base,
                 lineHeight: 1.45,
                 padding: '12px 14px',

@@ -439,7 +439,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'auto-archive-future-emails-in-gmail',
     path: '/how-to/auto-archive-future-emails-in-gmail',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-09-22',
+    updatedAt: '2026-10-03',
     kind: 'How-to guide',
     title: 'How to auto archive emails in Gmail',
     description:
@@ -514,7 +514,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         steps: [
           {
             name: 'Turn on review',
-            text: 'The low-engagement Archive preset records possible matches without moving email. It always waits for your approval.',
+            text: 'Review the activation preview, then turn on the low-engagement Archive preset. It records possible matches without moving email and always waits for your approval.',
           },
           {
             name: 'Wait for representative traffic',
@@ -522,7 +522,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Review names, counts, and exceptions',
-            text: 'Review the sample before turning on the rule. Mark important senders Protected so they stay out of bulk and automatic cleanup.',
+            text: 'Inspect the collected suggestions. Mark important senders Protected so they stay out of bulk and automatic cleanup.',
           },
           {
             name: 'Approve individual matches',
@@ -684,7 +684,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'unsubscribe-from-emails-gmail',
     path: '/how-to/unsubscribe-from-emails-gmail',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-09-22',
+    updatedAt: '2026-10-03',
     kind: 'How-to guide',
     title: 'How to unsubscribe from emails in Gmail',
     description:
@@ -776,7 +776,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Understand why unsubscribe cannot be undone',
         paragraphs: [
           'A delivered unsubscribe request leaves DeclutrMail and reaches another organization. There is no universal protocol for retracting it, so the request itself has no undo window. You can subscribe again through the sender’s site if you later change your mind.',
-          'If the same confirmation also archived existing email, only that archive portion is reversible while its Activity undo window is open. Delete has Gmail Trash recovery. Those recovery mechanisms must not be presented as unsubscribe undo.',
+          'A separate Archive or Delete has its own Activity Undo until the deadline shown there. Delete also has Gmail Trash recovery. Neither reverses the sent unsubscribe request.',
         ],
         callout: {
           title: 'One confirmation may contain two effects',

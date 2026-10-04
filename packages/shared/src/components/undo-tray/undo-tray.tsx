@@ -234,7 +234,7 @@ function UndoTrayBody({
   // no room for it, and the list is not what the user is waiting on.
   if (source.isError && source.entries.length === 0 && notices.length === 0) {
     return (
-      <aside
+      <div
         ref={trayRef}
         data-dm-undo-tray="error"
         role="alert"
@@ -288,7 +288,7 @@ function UndoTrayBody({
             View Activity
           </button>
         ) : null}
-      </aside>
+      </div>
     );
   }
 

@@ -136,8 +136,8 @@ export default function MethodologyPage() {
           Before you confirm, DeclutrMail shows how many emails are affected, a sample when
           available, and what will change in Gmail. If that preview cannot load, the action cannot
           run. Keep is an inline sender decision; enabled Autopilot rules can act on future matches
-          without a separate confirmation each time. Activity records the result after Gmail or the
-          sender confirms it.
+          without a separate confirmation each time. Activity shows running actions and confirmed
+          outcomes, with Undo when available.
         </p>
         <ActionLifecycleFigure />
       </DocSection>
@@ -147,8 +147,8 @@ export default function MethodologyPage() {
         title="A manual decision does not create an automatic rule."
       >
         <p>
-          Archive, Later, and Delete affect only the email shown before you confirm. Autopilot is
-          separate: only rules you deliberately turn on handle future matches, and you see what a
+          Archive, Later, and Delete affect current mail matching the scope you approve. Autopilot
+          is separate: only rules you deliberately turn on handle future matches, and you see what a
           rule would do before you turn it on.
         </p>
         <AutomationBoundaryFigure />

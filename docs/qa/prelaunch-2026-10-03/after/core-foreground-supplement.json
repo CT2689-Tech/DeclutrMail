@@ -1,0 +1,146 @@
+{
+  "summary": {
+    "status": "implemented; SOURCE STOPPED; scoped rendered checks verified",
+    "scope": "Confirmed foreground contrast defects plus neutral-fill/menu class siblings",
+    "sourceFiles": [
+      "apps/web/src/features/senders/selection-bar.tsx",
+      "apps/web/src/features/senders/action-row.tsx",
+      "apps/web/src/features/activity/activity-screen.tsx",
+      "packages/shared/src/tokens/tokens.ts",
+      "packages/shared/src/styles/tokens.css",
+      "packages/shared/src/components/action-popover.tsx"
+    ]
+  },
+  "fixes": [
+    {
+      "id": "UI-FOREGROUND-SHEET",
+      "before": "320light mobile sheet Keep/Archive/Later used inverse white ink on light surface, 1.09:1. Sheet multi-sender locked note reused inverse ink too.",
+      "after": "Sheet neutral verbs use color.fill/color.fg; sheet tier note uses fgSoft/linkfg. Desktop inverse bar colors and semantic Amber/Delete fills unchanged. Amber filled counts no longer attenuated by opacity.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/selection-bar.tsx",
+          "line": 87
+        },
+        {
+          "file": "apps/web/src/features/senders/selection-bar.tsx",
+          "line": 95
+        },
+        {
+          "file": "apps/web/src/features/senders/selection-bar.tsx",
+          "line": 182
+        },
+        {
+          "file": "apps/web/src/features/senders/selection-bar.tsx",
+          "line": 205
+        }
+      ]
+    },
+    {
+      "id": "UI-FOREGROUND-ROWS",
+      "before": "1440light SenderRow resting Unsubscribe amber#b45309 on fill#eae7e0 4.06:1; Keep emerald#047857 on same fill4.44:1.",
+      "after": "Lead pill text uses existing amberDeep and new foreground-only emeraldText. Light emeraldText#065f46; dark aliases existing emerald. Semantic fills unchanged. Shared SenderActionRow fixes both SenderList/SenderRow uses.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/action-row.tsx",
+          "line": 227
+        },
+        {
+          "file": "apps/web/src/features/senders/action-row.tsx",
+          "line": 229
+        },
+        {
+          "file": "packages/shared/src/tokens/tokens.ts",
+          "line": 54
+        },
+        {
+          "file": "packages/shared/src/styles/tokens.css",
+          "line": 67
+        },
+        {
+          "file": "packages/shared/src/styles/tokens.css",
+          "line": 176
+        }
+      ]
+    },
+    {
+      "id": "UI-FOREGROUND-ACTIVITY-RETRY",
+      "before": "Next-page failure retry pill used raw amber lettering on neutral fill, exact same pair mechanism.",
+      "after": "AmberDeep foreground; loading, retry dispatch and cached page state unchanged.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/activity/activity-screen.tsx",
+          "line": 800
+        }
+      ]
+    },
+    {
+      "id": "UI-FOREGROUND-MENU",
+      "before": "Rendered1440light Default Unsubscribe hover4.42:1; enabled DimmedPrimary Unsubscribe2.26:1 due parent opacity0.55.",
+      "after": "Menu amber foreground uses amberDeep; dimmed enabled item uses fgMuted without parent opacity. Disabled treatment, decorative verb dots, fill behavior and action eligibility untouched. Story export stays DimmedPrimary.",
+      "evidence": [
+        {
+          "file": "packages/shared/src/components/action-popover.tsx",
+          "line": 61
+        },
+        {
+          "file": "packages/shared/src/components/action-popover.tsx",
+          "line": 322
+        },
+        {
+          "file": "packages/shared/src/components/action-popover.tsx",
+          "line": 324
+        }
+      ]
+    },
+    {
+      "id": "UI-FOREGROUND-DESKTOP-CLEAR",
+      "before": "Rendered1440dark enabled13px Clear label used fgInverseMuted,3.65:1 on inverse white bar.",
+      "after": "Enabled label uses fgInverseSoft, preserving inverse palette and transparent background; no action behavior changes.",
+      "evidence": [
+        {
+          "file": "apps/web/src/features/senders/selection-bar.tsx",
+          "line": 313
+        }
+      ]
+    }
+  ],
+  "classSweep": {
+    "method": "rg raw amber/emerald foregrounds and inverse/neutral-fill combinations in apps/web/shared; inspected Button foreground overrides, SelectionBar variants, ActionPopover focus/hover/dimmed, Activity retry pills and other sheet/toolbar uses.",
+    "consumersFound": [
+      "SelectionBar mobile neutral verbs",
+      "SelectionBar mobile locked multi-sender note/link",
+      "SelectionBar amber filled count alpha",
+      "SenderActionRow shared by SenderRow and SenderList",
+      "Activity next-page-failed neutral retry pill",
+      "ActionPopover amber hover/focus and enabled dimmed primary",
+      "Desktop SelectionBar enabled Clear inverse-muted foreground"
+    ],
+    "preserved": [
+      "Semantic filled button backgrounds and borders",
+      "Decorative VerbDot and activity-action dots",
+      "Disabled-only opacity",
+      "Desktop SelectionBar inverse palette",
+      "Toolbar inverse keyboard chips paired with filled highlighted verbs"
+    ]
+  },
+  "verification": {
+    "existingFocusedTests": "SelectionBar+ActionRow2files/19tests passed; shared ActionPopover1file/1test passed. No new cosmetic-only tests. All maxWorkers1.",
+    "lint": "ESLint clean on all changed TS/TSX files.",
+    "format": "Prettier check/write clean on all6files.",
+    "diffCheck": "Scoped git diff --check clean.",
+    "browserBefore": "Visual reviewer confirmed MobileSheet/SenderRow and menu focus/dimmed actual light renders; desktop-before.json and popover-before.json under final-story-review.",
+    "browserAfter": "PASS: reviewer final50focused captures plus3Clearrecaptures, bothlight/dark; allreportedforegroundsiblings0axe. Locked-phone tier note is source-reviewed only: current manifest allows multi-sender on free so branch unreachable.",
+    "finalClearChecks": "Targeted SelectionBar ESLint, Prettier and scoped git diff --check pass; existing focused SelectionBar suite5/5passed maxWorkers1.",
+    "integratedRootEvidence": "Parent reports workspace/frozen-web typechecksPASS, full lint0errors6existingwarnings, shared726testsPASS, all1089affectedweb assertions verified across41passing suites plus3rerun89tests. Builds/isolated E2E pending.",
+    "browserEvidence": [
+      "docs/qa/prelaunch-2026-10-03/after/story-summary.json",
+      "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+      "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json"
+    ]
+  },
+  "boundaries": [
+    "No request, mutation, keyboard, selection eligibility/count semantics changed.",
+    "No staging/commit/branch or server startup.",
+    "Source edits stopped before final checks; root owns frozen-source type/lint/build and reviewer owns final contrast evidence."
+  ]
+}

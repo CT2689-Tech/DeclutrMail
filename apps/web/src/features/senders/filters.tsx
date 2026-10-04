@@ -1006,7 +1006,7 @@ function SavedViews({
               flex: '0 0 auto',
               opacity: mutating ? 0.5 : 1,
               cursor: mutating ? 'default' : 'pointer',
-              color: armedDelete === name ? color.danger : color.fgMuted,
+              color: armedDelete === name ? color.dangerText : color.fgMuted,
             }}
           >
             {armedDelete === name ? 'Delete?' : '×'}

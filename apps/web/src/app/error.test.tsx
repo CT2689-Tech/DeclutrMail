@@ -125,6 +125,16 @@ describe('AppError boundary — D167', () => {
     expect(container.textContent).not.toContain(SENTINEL);
   });
 
+  it('does not assert mailbox outcomes or background retries after a render failure', () => {
+    render(<AppError error={new Error('private')} reset={() => undefined} />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'We couldn’t show this page.',
+    );
+    expect(screen.getByRole('main').querySelector('p')).not.toHaveTextContent(
+      /untouched|reloading|background/i,
+    );
+  });
+
   it('uses calm, non-apologetic copy (D209) — no forbidden framings', () => {
     render(
       <AppError

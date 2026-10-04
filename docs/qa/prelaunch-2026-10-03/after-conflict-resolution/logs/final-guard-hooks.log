@@ -1,0 +1,232 @@
+Guard hooks over e267f7597d9b...HEAD: 384 files
+Positive controls: all 9 guards fired from this checkout
+  verify-no-body-storage           checked 384 files · 0 violations · 11 allowlisted
+  check-microcopy                  checked 384 files · 0 violations · 5 allowlisted
+  block-category-prediction        checked 384 files · 0 violations
+  require-no-gmail-hot-path        checked 384 files · 0 violations
+  require-idempotency              checked 384 files · 0 violations
+  require-activity-for-actions     checked 384 files · 0 violations
+  require-preview-before-mutation  checked 384 files · 0 violations · 8 advisories
+  require-tests-after-edit         checked 384 files · 0 violations · 36 advisories
+  check-raw-date-in-sql            checked 384 files · 0 violations
+require-preview-before-mutation — apps/web/src/features/account-deletion/account-deletion-section.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/account-deletion/account-deletion-section.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/account-deletion/grace-period-banner.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/account-deletion/grace-period-banner.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/mailboxes/account-menu.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/mailboxes/account-menu.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/onboarding/step-preset-pick.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/onboarding/step-preset-pick.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/settings/settings-index/mailboxes-card.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/settings/settings-index/mailboxes-card.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/settings/settings-index/settings-screen.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/settings/settings-index/settings-screen.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-preview-before-mutation — apps/web/src/features/snoozed/later-return-alert.tsx
+⚠️  require-preview-before-mutation: destructive mutation in [workspace]/apps/web/src/features/snoozed/later-return-alert.tsx
+   File mounts a destructive mutation but no Preview component / preview state visible.
+   Per D226, the action preview is MANDATORY before any destructive mutation.
+   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check.
+require-tests-after-edit — apps/web/src/app/(app)/settings/privacy/page.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/app/(app)/settings/privacy/page.tsx
+   Looked for: page.{test,spec}.{ts,tsx} + __tests__/page.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/app/(marketing)/site-json-ld-description.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/app/(marketing)/site-json-ld-description.ts
+   Looked for: site-json-ld-description.{test,spec}.{ts,tsx} + __tests__/site-json-ld-description.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/app/(marketing)/terms/page.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/app/(marketing)/terms/page.tsx
+   Looked for: page.{test,spec}.{ts,tsx} + __tests__/page.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/activity/action-recovery-dialog.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/activity/action-recovery-dialog.tsx
+   Looked for: action-recovery-dialog.{test,spec}.{ts,tsx} + __tests__/action-recovery-dialog.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/activity/support-bundle-dialog.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/activity/support-bundle-dialog.tsx
+   Looked for: support-bundle-dialog.{test,spec}.{ts,tsx} + __tests__/support-bundle-dialog.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/activity/weekly-review-strip.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/activity/weekly-review-strip.tsx
+   Looked for: weekly-review-strip.{test,spec}.{ts,tsx} + __tests__/weekly-review-strip.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/autopilot/fixtures.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/autopilot/fixtures.ts
+   Looked for: fixtures.{test,spec}.{ts,tsx} + __tests__/fixtures.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/autopilot/preset-labels.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/autopilot/preset-labels.ts
+   Looked for: preset-labels.{test,spec}.{ts,tsx} + __tests__/preset-labels.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/billing/change-plan-panel.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/billing/change-plan-panel.tsx
+   Looked for: change-plan-panel.{test,spec}.{ts,tsx} + __tests__/change-plan-panel.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/billing/checkout-confirm-panel.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/billing/checkout-confirm-panel.tsx
+   Looked for: checkout-confirm-panel.{test,spec}.{ts,tsx} + __tests__/checkout-confirm-panel.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/billing/payment-method-card.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/billing/payment-method-card.tsx
+   Looked for: payment-method-card.{test,spec}.{ts,tsx} + __tests__/payment-method-card.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/brief/noise-archive-sheet.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/brief/noise-archive-sheet.tsx
+   Looked for: noise-archive-sheet.{test,spec}.{ts,tsx} + __tests__/noise-archive-sheet.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/landing/hero-workspace.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/landing/hero-workspace.tsx
+   Looked for: hero-workspace.{test,spec}.{ts,tsx} + __tests__/hero-workspace.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/landing/pricing-teaser-view.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/landing/pricing-teaser-view.tsx
+   Looked for: pricing-teaser-view.{test,spec}.{ts,tsx} + __tests__/pricing-teaser-view.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/landing/product-journey.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/landing/product-journey.tsx
+   Looked for: product-journey.{test,spec}.{ts,tsx} + __tests__/product-journey.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/landing/sections.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/landing/sections.tsx
+   Looked for: sections.{test,spec}.{ts,tsx} + __tests__/sections.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/landing/sender-walkthrough.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/landing/sender-walkthrough.tsx
+   Looked for: sender-walkthrough.{test,spec}.{ts,tsx} + __tests__/sender-walkthrough.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/learn/article-page.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/learn/article-page.tsx
+   Looked for: article-page.{test,spec}.{ts,tsx} + __tests__/article-page.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/learn/how-to-content.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/learn/how-to-content.ts
+   Looked for: how-to-content.{test,spec}.{ts,tsx} + __tests__/how-to-content.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/learn/journey-links.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/learn/journey-links.ts
+   Looked for: journey-links.{test,spec}.{ts,tsx} + __tests__/journey-links.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/pricing/waitlist-form.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/pricing/waitlist-form.tsx
+   Looked for: waitlist-form.{test,spec}.{ts,tsx} + __tests__/waitlist-form.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/marketing/product-story/diagrams.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/marketing/product-story/diagrams.tsx
+   Looked for: diagrams.{test,spec}.{ts,tsx} + __tests__/diagrams.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/onboarding/step-preset-pick.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/onboarding/step-preset-pick.tsx
+   Looked for: step-preset-pick.{test,spec}.{ts,tsx} + __tests__/step-preset-pick.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/onboarding/step-promise.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/onboarding/step-promise.tsx
+   Looked for: step-promise.{test,spec}.{ts,tsx} + __tests__/step-promise.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/screener/screener-route.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/screener/screener-route.tsx
+   Looked for: screener-route.{test,spec}.{ts,tsx} + __tests__/screener-route.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/screener/screener-row.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/screener/screener-row.tsx
+   Looked for: screener-row.{test,spec}.{ts,tsx} + __tests__/screener-row.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/senders/keyboard.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/senders/keyboard.ts
+   Looked for: keyboard.{test,spec}.{ts,tsx} + __tests__/keyboard.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/settings/privacy-data/privacy-data-content.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/settings/privacy-data/privacy-data-content.tsx
+   Looked for: privacy-data-content.{test,spec}.{ts,tsx} + __tests__/privacy-data-content.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/settings/settings-index/mailboxes-card.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/settings/settings-index/mailboxes-card.tsx
+   Looked for: mailboxes-card.{test,spec}.{ts,tsx} + __tests__/mailboxes-card.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/settings/settings-list.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/settings/settings-list.tsx
+   Looked for: settings-list.{test,spec}.{ts,tsx} + __tests__/settings-list.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/tour/verb-tour-panel.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/tour/verb-tour-panel.tsx
+   Looked for: verb-tour-panel.{test,spec}.{ts,tsx} + __tests__/verb-tour-panel.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/triage/focus-stack.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/triage/focus-stack.tsx
+   Looked for: focus-stack.{test,spec}.{ts,tsx} + __tests__/focus-stack.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — apps/web/src/features/triage/keyboard-help.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/apps/web/src/features/triage/keyboard-help.tsx
+   Looked for: keyboard-help.{test,spec}.{ts,tsx} + __tests__/keyboard-help.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — packages/e2e/helpers/screen-ready.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/packages/e2e/helpers/screen-ready.ts
+   Looked for: screen-ready.{test,spec}.{ts,tsx} + __tests__/screen-ready.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — packages/shared/src/components/pill.tsx
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/packages/shared/src/components/pill.tsx
+   Looked for: pill.{test,spec}.{ts,tsx} + __tests__/pill.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+require-tests-after-edit — packages/shared/src/tokens/tokens.ts
+ℹ️  require-tests-after-edit: no co-located test file for [workspace]/packages/shared/src/tokens/tokens.ts
+   Looked for: tokens.{test,spec}.{ts,tsx} + __tests__/tokens.*
+   Not a blocker — but the PR Definition of Done (CLAUDE.md §8) requires unit/integration tests
+   for affected modules. Type-only / comment-only edits can ignore this.
+✓ No guard violations.

@@ -1,0 +1,6 @@
+✓ 45 public routes prerendered as static HTML.
+  · /pricing — dynamic: the page where someone decides to pay; needs edge geo for the D117 rail
+  · /beta — dynamic: reads searchParams (invite code)
+  · /sign-in — dynamic: reads searchParams (return destination)
+  · /changelog/rss.xml — dynamic: route handler, not a page
+  · /pricing.md — dynamic: route handler, not a page

@@ -1,0 +1,101 @@
+{
+  "id": "CORE-08-siblings",
+  "status": "implemented; source frozen; focused regressions passed",
+  "sourceStopped": true,
+  "files": [
+    "apps/web/src/features/senders/senders-screen.tsx",
+    "apps/web/src/features/senders/senders-screen.test.tsx",
+    "apps/web/src/features/brief/brief-screen.tsx",
+    "apps/web/src/features/brief/brief-screen.test.tsx",
+    "apps/web/src/features/brief/noise-archive.test.tsx",
+    "apps/web/src/features/followups/followups-screen.tsx",
+    "apps/web/src/features/followups/followups-screen.test.tsx"
+  ],
+  "before": "A failed same-key refresh or next-page request replaced loaded content with an error state and discarded local selection/reading state.",
+  "after": "Current-mailbox loaded content survives transient failures with a compact retry; Senders retries the failed cursor, while action previews remain blocked until the read recovers.",
+  "transitions": [
+    {
+      "state": "cold loading/failure",
+      "ui": "Existing skeleton / designed retryable error",
+      "cache": "No retained content invented",
+      "tests": "Existing first-load loading/500/404 tests"
+    },
+    {
+      "state": "same-key background 5xx with data",
+      "ui": "Keep loaded rows/edition and selection/expanded subject; compact Try again",
+      "cache": "Retained TanStack Query payload; no local remount",
+      "tests": "Senders, Brief, Follow-ups new refresh regressions"
+    },
+    {
+      "state": "Senders next-page 5xx",
+      "ui": "Keep loaded selected rows; pause auto sentinel; compact cursor retry",
+      "cache": "Retry fetchNextPage using existing cursor",
+      "tests": "New paging regression verifies 2 cursor reads and selection preserved"
+    },
+    {
+      "state": "loaded Brief today 404",
+      "ui": "Keep dated edition/history, today unavailable; no yesterday claim, Archive disabled",
+      "cache": "Same-mailbox previously loaded edition only",
+      "tests": "New parameterized 404 retention + recovery"
+    },
+    {
+      "state": "4xx scope refusal",
+      "ui": "Existing full designed error; no retained wrong-scope content",
+      "cache": "Global query client continues mailbox reconciliation",
+      "tests": "New Brief and Follow-ups409 regressions"
+    },
+    {
+      "state": "Senders narrow success / wide5xx after mailbox switch",
+      "ui": "Refuse retained prior-mailbox widened rows",
+      "cache": "Independently track narrow/widened payload owners",
+      "tests": "New widened mailbox switch regression"
+    },
+    {
+      "state": "read recovers",
+      "ui": "Clear compact retry; unlock action previews without losing selection/reading state",
+      "cache": "Successful server payload replaces retained data",
+      "tests": "Retry assertions in new tests"
+    },
+    {
+      "state": "Brief archive failed after chunks may have moved",
+      "ui": "Archive failed \u2014 check Activity before retrying; no false zero/success claim",
+      "cache": "Terminal failed receipt remains independent from enqueue refusal",
+      "tests": "Existing failed-job case strengthened to affectedCount17"
+    },
+    {
+      "state": "Follow-ups uncertain dismissal + failed reconciliation leaves optimistic []",
+      "ui": "Full retryable error; no false empty or success receipt; retry restores conversation",
+      "cache": "Do not restore old mailbox snapshot; retain only actual conversations after errors",
+      "tests": "Strengthened dismissal+reconciliation failure regression passed"
+    }
+  ],
+  "negativeControls": [
+    {
+      "command": "pnpm --filter @declutrmail/web test src/features/brief/brief-screen.test.tsx src/features/followups/followups-screen.test.tsx src/features/senders/senders-screen.test.tsx --maxWorkers=1 -t 'keeps a loaded edition|keeps the selected historical|keeps loaded conversations|keeps loaded senders'",
+      "result": "6 failures on unchanged old screen branches",
+      "log": "local run artifact (not archived): declutrmail-retained-negative.log"
+    }
+  ],
+  "verification": {
+    "format": "7 changed files Prettier passed",
+    "intermediate": "Senders and Follow-ups focused cases passed; Brief disabled-label issue found and fixed before freeze",
+    "finalCommand": "pnpm --filter @declutrmail/web test src/features/senders/senders-screen.test.tsx src/features/brief/brief-screen.test.tsx src/features/brief/noise-archive.test.tsx src/features/followups/followups-screen.test.tsx --maxWorkers=1 -t 'keeps a loaded edition|keeps the selected historical|keeps loaded conversations|keeps loaded senders|mailbox-scope refusal|does not retain widened rows|dates historical Noise|dismissal and reconciliation both fail|archive that ended failed|renders the generic error branch on 500|renders an alert on 500|makes placeholder rows read-only|rows are read-only when a filter changes|widens past the filter|goes back to the filter|never claims it looked outside|blocks selected-sender shortcuts'",
+    "finalLog": "local run artifact (not archived): declutrmail-retained-latest.log",
+    "finalStatus": "passed: 4 files, 21 focused tests; includes all 8 preceding broad-run failures",
+    "broadRun": {
+      "result": "223 passed, 8 failed before final expectation and recovery corrections; all 8 rechecked and passed in latest run",
+      "log": "local run artifact (not archived): declutrmail-retained-final.log",
+      "limitations": "Do not report this old run as fully green; parent owns final full snapshot verification."
+    }
+  },
+  "refusalOrigin": {
+    "file": "apps/web/src/features/brief/api/use-noise-archive.ts",
+    "line": 693,
+    "detail": "refused arises only from onEnqueueError when enqueueMayHaveStarted is false; unknown/no response/5xx are unconfirmed and terminal failed jobs are failed, never refused."
+  },
+  "limitations": [
+    "No live Gmail/provider write or production runtime proof.",
+    "Parent owns final lint/typecheck/rendered gate.",
+    "Scope cache reset remains the established global contract; retention does not change query keys or provider semantics."
+  ]
+}

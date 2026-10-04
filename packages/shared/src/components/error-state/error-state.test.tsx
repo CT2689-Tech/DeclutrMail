@@ -4,6 +4,17 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ErrorState } from './error-state';
 
 describe('<ErrorState />', () => {
+  it('supports a page-level heading', () => {
+    const html = renderToStaticMarkup(
+      <ErrorState
+        headingLevel={2}
+        title="Unavailable"
+        description="Try again."
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(html).toMatch(/<h2[^>]*>Unavailable<\/h2>/);
+  });
   it('renders privacy-safe copy and the default retry label', () => {
     const html = renderToStaticMarkup(
       <ErrorState

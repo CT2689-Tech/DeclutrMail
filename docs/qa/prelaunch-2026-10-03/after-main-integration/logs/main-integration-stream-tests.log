@@ -1,0 +1,282 @@
+
+ RUN  v5.0.1 [workspace]/apps/web
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > hydrates all initial plus reads at the exact client keys, without fetching again
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.329,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.788,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > hydrates all initial pro reads at the exact client keys, without fetching again
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.097,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.159,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > starts all mailbox reads together after authentication confirms scope
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":600,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > starts all mailbox reads together after authentication confirms scope
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":600,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > only fetches the capability-exempt rule catalog for Free
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.053,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (401)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.192,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.257,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (403)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.081,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.143,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (409)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.083,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.131,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (500)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.077,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.282,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (500)
+[server-hydration] autopilot prefetch failed; falling back to the client query. GET /api/autopilot/pending-suggestions failed: 500
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > hydrates all initial plus reads at the exact client keys, without fetching again 45ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > hydrates all initial pro reads at the exact client keys, without fetching again 23ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > starts all mailbox reads together after authentication confirms scope 5ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > only fetches the capability-exempt rule catalog for Free 2ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > skips mailbox reads without a confirmed active mailbox: null 0ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > skips mailbox reads without a confirmed active mailbox: {"activeMailboxId":null,"tier":"pro"} 0ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (401) 9ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (403) 5ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (409) 5ms
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (401)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.027,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > leaves a failed pending page absent for client recovery (500) 5ms
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (401)
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: ServerApiError: GET /api/autopilot/pending-suggestions failed: 401 ; The error will be redacted in production builds
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (401)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":101.707,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (403)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.027,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (401) 1109ms
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (403)
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: ServerApiError: GET /api/autopilot/pending-suggestions failed: 403 ; The error will be redacted in production builds
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (403)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":101.719,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (409)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.025,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (403) 1108ms
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (409)
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: ServerApiError: GET /api/autopilot/pending-suggestions failed: 409 ; The error will be redacted in production builds
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (409)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":102.963,"query_count":2,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (500)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.028,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (409) 1107ms
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (500)
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: ServerApiError: GET /api/autopilot/pending-suggestions failed: 500 ; The error will be redacted in production builds
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (500)
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":100.751,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (500)
+[server-hydration] autopilot prefetch failed; falling back to the client query. GET /api/autopilot/pending-suggestions failed: 500
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > streams slow successful suggestions without refetching or delaying rules
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.021,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > recovers a late failed stream without delaying rules (500) 1106ms
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > streams slow successful suggestions without refetching or delaying rules
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":102.376,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > keeps the first page and a cursor page in separate cache entries
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.034,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.065,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > does not hydrate another mailbox’s pending page
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.034,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.067,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > discards an old mailbox stream when scope resets during the first load
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0.019,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > discards an old mailbox stream when scope resets during the first load
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":7.04,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > renders rules immediately, aborts a hung stream, and recovers in the client
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > renders rules immediately, aborts a hung stream, and recovers in the client
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: Error: CancelledError; The error will be redacted in production builds
+
+stdout | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > renders rules immediately, aborts a hung stream, and recovers in the client
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":2000,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":1}
+
+stderr | src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > renders rules immediately, aborts a hung stream, and recovers in the client
+[server-hydration] autopilot prefetch hit the 2000ms deadline; falling back to the client query.
+
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > streams slow successful suggestions without refetching or delaying rules 107ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > keeps the first page and a cursor page in separate cache entries 5ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > does not hydrate another mailbox’s pending page 1ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > discards an old mailbox stream when scope resets during the first load 28ms
+ ✓ src/features/autopilot/server-autopilot-hydration.test.tsx > Autopilot server hydration > renders rules immediately, aborts a hung stream, and recovers in the client 4ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global entitlement-402 handler > routes a FREE_CAP_REACHED 402 into the upgrade-gate store 3ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global entitlement-402 handler > routes an INBOX_LIMIT_REACHED 402 into the upgrade-gate store 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global entitlement-402 handler > routes an ACTION_TIER_REQUIRED 402 into the upgrade-gate store 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global entitlement-402 handler > leaves the store untouched for non-entitlement failures 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > resets the mailbox-scoped cache on NO_ACTIVE_MAILBOX 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > resets the mailbox-scoped cache on SELECT_MAILBOX 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > resets the mailbox-scoped cache on MAILBOX_NOT_OWNED 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > read side > resets the mailbox-scoped cache when a READ fails with NO_ACTIVE_MAILBOX 3ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > read side > resets the mailbox-scoped cache when a READ fails with SELECT_MAILBOX 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > read side > resets the mailbox-scoped cache when a READ fails with MAILBOX_NOT_OWNED 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > read side > leaves the cache alone for a read failure that is not a scope conflict 3ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > read side > coalesces a burst of scope-conflict reads into one reset 2ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > leaves the cache alone for a 409 that is NOT a scope conflict 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > leaves the cache alone for a connect-flow ownership rejection 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > leaves the cache alone for a plain network failure 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > recovers from a TRANSLATED error that carries the code (useSyncNow) 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global mailbox-scope-conflict recovery > leaves the cache alone for a translated error with an unrelated code 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > reports a client-side query defect that no screen would have captured 1ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > reports a 5xx read failure 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > stays silent for the 4xx reads the app renders as designed states 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > reports a retrying surface once per window, not once per attempt 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > throttles per surface, so one noisy surface cannot mask another 0ms
+ ✓ src/lib/query-client.test.ts > makeQueryClient — global query-failure reporting > never puts anything past the query key’s first segment in the tag 0ms
+stdout | src/lib/server-query-client.test.ts > settleServerQueries > stays quiet on designed 4xx prefetch failures
+{"level":"info","event":"server_hydration.prefetch","surface":"senders","duration_ms":0.104,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/lib/server-query-client.test.ts > settleServerQueries > reports 5xx prefetch failures to Sentry and keeps the page renderable
+{"level":"info","event":"server_hydration.prefetch","surface":"senders","duration_ms":0.067,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stdout | src/lib/server-query-client.test.ts > settleServerQueries > stays quiet when billing is intentionally disabled
+{"level":"info","event":"server_hydration.prefetch","surface":"billing","duration_ms":0.02,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > stays quiet on designed 4xx prefetch failures 2ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > logs bounded prefetch duration and outcome metrics for page-load monitoring 1ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > does not pollute latency percentiles when a boundary has no queries to run 0ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > reports 5xx prefetch failures to Sentry and keeps the page renderable 0ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > keeps the page renderable when optional Sentry reporting throws 1ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > stays quiet when billing is intentionally disabled 0ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > bounds a hung prefetch so it cannot hold the whole page hostage 3ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > CANCELS the in-flight query when the deadline fires, not just stops awaiting it 1ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > does NOT cancel when every prefetch settles inside the deadline 0ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > cancels once, not once per timed-out query in the batch 1ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > still rejects the deadline if cancellation throws 1ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > does not report cancelled siblings as unexpected failures 2ms
+ ✓ src/lib/server-query-client.test.ts > settleServerQueries > does not time out a prefetch that settles inside the deadline 0ms
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > starts Settings preferences without waiting for a separate auth bootstrap
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 401 for the client recovery path
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0.36,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 403 for the client recovery path
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0.11,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 500 for the client recovery path
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0.301,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stderr | src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 500 for the client recovery path
+[server-hydration] settings prefetch failed; falling back to the client query. GET /api/me/settings failed: 500
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > hydrates the designed Brief absence without a second read
+{"level":"info","event":"server_hydration.prefetch","surface":"brief","duration_ms":0.106,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 401 into an empty edition
+{"level":"info","event":"server_hydration.prefetch","surface":"brief","duration_ms":0.087,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 403 into an empty edition
+{"level":"info","event":"server_hydration.prefetch","surface":"brief","duration_ms":0.093,"query_count":1,"designed_failure_count":1,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 500 into an empty edition
+{"level":"info","event":"server_hydration.prefetch","surface":"brief","duration_ms":0.147,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stderr | src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 500 into an empty edition
+[server-hydration] brief prefetch failed; falling back to the client query. GET /api/briefs/today failed: 500
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pending suggestions
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pending suggestions
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":1500,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pattern suggestions
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pattern suggestions
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":1500,"query_count":2,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Settings billing
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Settings secondary mailbox health
+{"level":"info","event":"server_hydration.prefetch","surface":"settings","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Quiet secondary mailbox
+{"level":"info","event":"server_hydration.prefetch","surface":"quiet","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+stdout | src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Activity weekly review
+{"level":"info","event":"server_hydration.prefetch","surface":"activity","duration_ms":0,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":0,"timed_out_count":0}
+
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > starts Settings preferences without waiting for a separate auth bootstrap 15ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > does not start a Settings prefetch without an access cookie 2ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 401 for the client recovery path 2ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 403 for the client recovery path 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > leaves a Settings 500 for the client recovery path 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > hydrates the designed Brief absence without a second read 2ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 401 into an empty edition 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 403 into an empty edition 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > does not turn a Brief 500 into an empty edition 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pending suggestions 5ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Autopilot pattern suggestions 2ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Settings billing 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Settings secondary mailbox health 1ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Quiet secondary mailbox 2ms
+ ✓ src/app/(app)/page-performance.test.tsx > screen dependencies > renders primary content without waiting for Activity weekly review 7ms
+ ✓ src/lib/query-hydration-boundary.test.tsx > keeps pending server markup when the stream fulfills before-client hydration 60ms
+ ✓ src/lib/query-hydration-boundary.test.tsx > keeps pending server markup when the stream fulfills after-client hydration 6ms
+ ✓ src/lib/query-hydration-boundary.test.tsx > preserves settled server data and newer existing client data 2ms
+ ✓ src/lib/query-hydration-boundary.test.tsx > adopts a rejected Flight stream without markup recovery or an extra browser read 7ms
+stderr | src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > observes a late failure even when an abandoned render never consumes its snapshot
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions"]]: Error: private failure; The error will be redacted in production builds
+
+stdout | src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > observes a late failure even when an abandoned render never consumes its snapshot
+{"level":"info","event":"server_hydration.prefetch","surface":"autopilot","duration_ms":100,"query_count":1,"designed_failure_count":0,"unexpected_failure_count":1,"timed_out_count":0}
+
+stderr | src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > observes a late failure even when an abandoned render never consumes its snapshot
+[server-hydration] autopilot prefetch failed; falling back to the client query. private failure
+
+stderr | src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > does not call browser API or refresh after a late rejection at 100 ms
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: Error: private server failure; The error will be redacted in production builds
+
+stderr | src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > does not call browser API or refresh after a late rejection at 2000 ms
+A query that was dehydrated as pending ended up rejecting. [["autopilot","pending-suggestions","page","00000000-0000-4000-8000-000000000001",null]]: Error: private server failure; The error will be redacted in production builds
+
+ ✓ src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > observes a late failure even when an abandoned render never consumes its snapshot 10ms
+ ✓ src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > does not call browser API or refresh after a late rejection at 100 ms 14ms
+ ✓ src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > does not call browser API or refresh after a late rejection at 2000 ms 2ms
+ ✓ src/lib/server-query-stream-ssr.test.tsx > streamed query recovery during Client Component SSR > adopts a successful stream during SSR without a browser reader 2ms
+stderr | src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > keeps telemetry failure optional
+{"level":"warn","kind":"sentry.capture_failed"}
+
+ ✓ src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > suppresses only the safe recovery transport marker 2ms
+ ✓ src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > continues reporting unrelated failures: Error: redacted 1ms
+ ✓ src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > continues reporting unrelated failures: Error: Unexpected renderer failure 0ms
+ ✓ src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > continues reporting unrelated failures: DeclutrMailStreamedQueryRecovery: Different failure 0ms
+ ✓ src/lib/streamed-query-recovery.test.ts > optional stream transport diagnostics > keeps telemetry failure optional 1ms
+
+ Test Files  7 passed (7)
+      Tests  83 passed (83)
+   Start at  16:29:25
+   Duration  11.14s (tests 47%, transform 22%, environment 13%, setup 10%, import 7%)
+
+    Isolate  7 workers spawned · ~301ms startup each (spawn + environment, per file)
+             at least ~1.80s faster with isolate: false — reuses workers across files instead of one per file

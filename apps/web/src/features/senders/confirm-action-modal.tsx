@@ -182,7 +182,7 @@ function defaultWindow(verb: ActionVerb): number | null {
 /**
  * The mandatory action preview (D226). No bulk mutation runs without
  * this confirm — it states the current match count before anything
- * happens. Gmail is resolved again by the worker at execution.
+ * happens. The worker resolves matching message IDs from the synced index at execution.
  *
  * Layout is the shared `PreviewSheet` (ADR-0042), in the same grammar as
  * Triage's `ActionSheet`: the count in the title, where the email goes in
@@ -1085,11 +1085,11 @@ export function ConfirmActionModal({
         {/* The "{Verb} anyway" button carries the consent; this says why. */}
         {protectedReason !== null ? (
           <>
-            <strong style={{ color: color.danger, fontWeight: 600 }}>Protected</strong> —{' '}
+            <strong style={{ color: color.dangerText, fontWeight: 600 }}>Protected</strong> —{' '}
             {protectionReasonClause(protectedReason)}.
           </>
         ) : (
-          <strong style={{ color: color.danger, fontWeight: 600 }}>Protected.</strong>
+          <strong style={{ color: color.dangerText, fontWeight: 600 }}>Protected.</strong>
         )}
       </p>,
     );

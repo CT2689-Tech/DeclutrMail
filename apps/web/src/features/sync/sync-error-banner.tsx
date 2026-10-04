@@ -8,7 +8,6 @@ import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { ApiError } from '@/lib/api/client';
 import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
-import { useNow } from '@/lib/use-now';
 import { useSyncNow } from './api/use-sync-now';
 
 const { color, font, text } = tokens;
@@ -27,11 +26,10 @@ const { color, font, text } = tokens;
  *
  * Visible when the most recent sync OUTCOME is an error:
  *   - `last_sync_error_at` is non-null, AND
- *   - `last_synced_at` is null OR the error is strictly newer than it —
+ *   - `last_synced_at` is null OR the error is at least as recent as it —
  *     a successful run after the failure clears the banner immediately
- *     instead of waiting the hour out, AND
- *   - a retryable error is within the last 60 minutes; an invalid Gmail
- *     grant remains visible until a later success proves reconnection.
+ *     rather than relying on age to imply recovery.
+ * An unresolved error remains visible until a newer successful outcome.
  *
  * Renders nothing while the status query is loading, and nothing for a
  * 4xx — the 409 guard states are the layout branch ladder's job, and
@@ -57,9 +55,6 @@ const { color, font, text } = tokens;
  * danger-toned strip above the shell.
  */
 
-/** How long a terminal incremental failure stays surfaced. */
-export const SYNC_ERROR_WINDOW_MS = 60 * 60_000;
-
 /**
  * True when the status READ itself failed for a reason the shell has no
  * other surface for. A 4xx is a designed state (`SELECT_MAILBOX`,
@@ -83,7 +78,6 @@ export function syncStatusReadUnavailable(
 export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell', mailboxId);
-  const now = useNow(60_000);
 
   const errorAt = status.data?.last_sync_error_at ?? null;
   const needsReconnect = syncStatusNeedsReconnect(status.data);
@@ -133,9 +127,8 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   const syncedAt = status.data?.last_synced_at ?? null;
   if (syncedAt !== null && new Date(syncedAt).getTime() > errorMs) return null;
 
-  // Retryable failures are useful while fresh. A revoked grant is a D170
-  // critical-trust state and stays surfaced until reconnection succeeds.
-  if (!needsReconnect && (now === null || now - errorMs > SYNC_ERROR_WINDOW_MS)) return null;
+  // Age does not prove recovery. Only a newer successful sync clears an
+  // unresolved error, including retryable failures.
 
   return (
     <SyncBannerFrame testId="sync-error-banner">
@@ -187,7 +180,7 @@ function SyncBannerMessage({ children }: { children: ReactNode }) {
         flex: '1 1 260px',
         fontSize: text.md,
         fontWeight: 600,
-        color: color.danger,
+        color: color.dangerText,
         minWidth: 0,
       }}
     >

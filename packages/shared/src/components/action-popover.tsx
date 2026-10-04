@@ -51,16 +51,16 @@ const MENU_CSS = `
  * tone semantic separately — the registry already declares the tone,
  * the popover resolves it once.
  *
- * `danger` resolves to `color.danger` (added Phase 0 of the D38
+ * `danger` resolves to `color.dangerText` (added Phase 0 of the D38
  * prod-ready pass; FOUNDER-FOLLOWUPS 2026-06-05). Was inlined as
  * `#DC2626` while the token was queued; now dereferences the token.
  */
 const TONE_TO_FG: Record<VerbTone, string> = {
   neutral: color.fg,
   dark: color.fg,
-  amber: color.amber,
+  amber: color.amberDeep,
   primary: color.primary,
-  danger: color.danger,
+  danger: color.dangerText,
 };
 
 export interface ActionPopoverProps {
@@ -319,9 +319,9 @@ function Row({
           fontFamily: font.sans,
           fontSize: tokens.text.base,
           fontWeight: 500,
-          color: disabled ? color.fgMuted : TONE_TO_FG[verb.tone],
+          color: disabled || dimmed ? color.fgMuted : TONE_TO_FG[verb.tone],
           cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: dimmed ? 0.55 : disabled ? 0.5 : 1,
+          opacity: disabled ? 0.5 : 1,
           textAlign: 'left',
           transition: `background ${motion.fast} ${motion.ease}`,
         }}
@@ -357,7 +357,7 @@ function VerbDot({ verb }: { verb: { id: string; tone: string } }) {
   const tone: Record<string, string> = {
     dark: color.fg,
     amber: color.amber,
-    danger: color.danger,
+    danger: color.dangerText,
     primary: color.primary,
     neutral: color.fgMuted,
   };

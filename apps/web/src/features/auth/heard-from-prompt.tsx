@@ -190,7 +190,7 @@ export function HeardFromPromptView({
         </Button>
       </div>
       {failed ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.danger }}>
+        <p role="status" style={{ margin: 0, fontSize: 12, color: color.dangerText }}>
           That didn&apos;t save. Try again.
         </p>
       ) : null}

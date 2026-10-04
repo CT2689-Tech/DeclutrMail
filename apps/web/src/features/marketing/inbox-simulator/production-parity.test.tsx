@@ -153,7 +153,7 @@ describe('inbox simulator — production parity', () => {
     // Step 3 renders `RuleStepCard`, which is genuinely demo-only — there is
     // no production "start this rule from a demo" surface to reuse. What must
     // not be demo-only is the modal behind it.
-    const preview = screen.getByRole('button', { name: /Preview the Autopilot rule/i });
+    const preview = screen.getByRole('button', { name: /Preview rule/i });
     await act(async () => {
       preview.click();
     });

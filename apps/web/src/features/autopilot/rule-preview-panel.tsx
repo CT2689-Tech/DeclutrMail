@@ -115,7 +115,7 @@ export function RulePreviewHero({
           flexWrap: 'wrap',
         }}
       >
-        <span role="alert" style={{ fontSize: text.md, color: color.danger }}>
+        <span role="alert" style={{ fontSize: text.md, color: color.dangerText }}>
           {state.message}
         </span>
         <Button tone="default" size="sm" onClick={onRetry}>

@@ -66,7 +66,7 @@ export function MailboxReconnectBanner() {
               flex: '1 1 260px',
               fontSize: 13,
               fontWeight: 600,
-              color: color.danger,
+              color: color.dangerText,
               minWidth: 0,
             }}
           >

@@ -1,0 +1,23 @@
+{
+  "reason": "Actual PR conflicts in Screener route and Later screen against new main e267f759",
+  "upstream": [
+    "b2b7caa5 optional-query presentation hydration",
+    "334c4208 cost source labeling",
+    "831a9749 Later calendar clock",
+    "e267f759 verified API driver rollout preparation"
+  ],
+  "historicalEvidence": "after/ and after-main-integration/ manifests stay byte-for-byte unchanged",
+  "newProof": [
+    "affected current-source units",
+    "all eight workspace typechecks",
+    "root lint",
+    "fresh production Web and Storybook builds",
+    "45 prerender and 51 served budget gates",
+    "two full 15-case journeys",
+    "two full 43-case hydration runs with production process restart",
+    "full70 accessibility/responsive",
+    "independent core/design current integration gates"
+  ],
+  "providerBoundary": "Upstream runtime driver defaults unchanged; no task provider changes, live credentials, provider worker, production deployment or account operations",
+  "launchSignoff": false
+}

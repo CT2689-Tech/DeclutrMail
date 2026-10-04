@@ -55,6 +55,10 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
   });
 
   describe('card variant', () => {
+    it('can follow the page h1 without skipping a heading level', () => {
+      const html = renderToStaticMarkup(<PrivacyBadge headingLevel={2} />);
+      expect(html).toMatch(/<h2[^>]*>We never fetch or store full email contents\.<\/h2>/);
+    });
     const html = renderToStaticMarkup(<PrivacyBadge variant="card" />);
 
     it('renders the locked headline string verbatim', () => {

@@ -15,7 +15,7 @@ import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl } from '../landing/urls';
 
 // The preview promise, first sentence only — the rest of the shared claim
-// (a re-check when the action runs) belongs to the preview itself.
+// (the final count can change) belongs to the preview itself.
 const PREVIEW_PROMISE = ACTION_PREVIEW_CLAIM.split(/(?<=\.)\s+/)[0];
 
 // At most one OAuth result renders. Server-rendered alerts are not announced

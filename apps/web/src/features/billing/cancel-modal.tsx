@@ -149,8 +149,11 @@ export function CancelModal({
       primary={{
         label: 'Cancel subscription',
         tone: 'danger',
-        onClick: () => onConfirm(reason === '' ? undefined : reason),
-        busyLabel: isCanceling ? 'Canceling…' : undefined,
+        onClick: () => {
+          if (!isCanceling && !isPausing) onConfirm(reason === '' ? undefined : reason);
+        },
+        disabled: isCanceling || isPausing,
+        busyLabel: isCanceling ? 'Canceling…' : isPausing ? 'Pausing…' : undefined,
       }}
       // Codex round 1 (QA-billing-20260901-06): "Keep current plan" is
       // wrong for a non-backing row — the subscription under review is NOT
@@ -202,6 +205,7 @@ export function CancelModal({
           <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
           <select
             value={reason}
+            disabled={isCanceling || isPausing}
             onChange={(e) => setReason(e.target.value as CancelReason | '')}
             style={{
               height: 40,
@@ -236,7 +240,7 @@ function ErrorLine({ children }: { children: ReactNode }) {
       style={{
         flexBasis: '100%',
         fontSize: text.sm,
-        color: color.danger,
+        color: color.dangerText,
         background: color.dangerBg,
         borderRadius: radius.md,
         padding: '10px 12px',

@@ -136,7 +136,7 @@ export function ConfirmModalFrame({
       }}
       status={
         error != null ? (
-          <span role="alert" style={{ color: color.danger }}>
+          <span role="alert" style={{ color: color.dangerText }}>
             {error}
           </span>
         ) : undefined

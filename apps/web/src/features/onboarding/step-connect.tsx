@@ -93,8 +93,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
           />
         </ConsentStep>
         <ConsentStep number="4" title="Actions you approve">
-          Every Archive, Unsubscribe, Later or Delete shows what moves and what can be undone,
-          before anything changes.
+          Archive, Later and Delete show which emails will move and what can be undone before you
+          confirm. Unsubscribe requests have a separate confirmation; a sent request cannot be
+          recalled.
         </ConsentStep>
       </ol>
 

@@ -1,0 +1,339 @@
+{
+  "method": "Full DOM/axe records archived. Representative after screenshots archived; remaining screenshot filenames identify local captures and are explicitly unarchived. Historical owner maps retain integration-time pending notes; final check ledger and final gates supersede them.",
+  "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "testCommit": "c86557eb",
+  "screenshots": 40,
+  "files": [
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/clear-rechecks.json",
+      "sha256": "c9957c638097369abdc755866858f107dfc527cccd90e2ef03148d4cd2054ee6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/core-fixes.json",
+      "sha256": "763465108f39c835969784cd485f808c78f2c00c3f7e4480e4930708572a4357"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/core-foreground-supplement.json",
+      "sha256": "ef3c5ad28ed2af1157285de3d9a5c7b18f73eaa77553cdaae4aa99b07c68cb5c"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/core-integration.json",
+      "sha256": "046996b1637f03435bce6bd4bc56b7420adeb425e93e7ab59517d573c53f52be"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/core-public-supplement.json",
+      "sha256": "7474cb2109c9d41364519634eadcc7b659d8a7614d9d85a05a3d91991c541715"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/design-gate.json",
+      "sha256": "381344cabdcbcd795cb028a00888bbeb32e1797e2092149992315e78d66eb3a2"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/e2e-readiness-fixes.json",
+      "sha256": "0b944975867305228cf5427e9c63dfc867b2fa1407a9bdde1c939fb43615b919"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/final-unit-corrections.json",
+      "sha256": "065d2492b323765d279995594c11c72255bd1f7af58e096dcde7dca37d2c7d89"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/focused-browser.json",
+      "sha256": "179115701648529da2eed98c991e28f4c27d1277ac9aa374d2cddd412b662917"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json",
+      "sha256": "ee1e5c2267676f614478eba7e18f7cb621b70dec7bec01427a4b118d19262f9a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/independent-gate.json",
+      "sha256": "bc73abd98e46d5ff9ebf9365603ff00536bcbc56779027194ed65b58c7effe89"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/a11y-responsive.log",
+      "sha256": "cb4ddeea6d397662058877e0cb9cc6c7be33ddeb2cf22ee35420f0aaa1b43a36"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log",
+      "sha256": "8bb6a8b3d49b97d5abb46f680fa97032a361d0621a837336c2fb10cd142ef1e6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/bundle-build-final.log",
+      "sha256": "7114d85e9af959ba45e7ad659c8ea3554db1873e54499598c9c247450dff99fc"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-typecheck.log",
+      "sha256": "d0c3580a0e6a51c6c9120f623a84d2a08b13493c13c2ef1bae2b7cc506358fb6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/final-unit-corrections.log",
+      "sha256": "4dcd65960aa5d7ed95fd10dfac9b62cad8ca34d0bc9a5ff8402aba83d2a316f7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/harness-tests.log",
+      "sha256": "5538583b92b892f131087833c9c41b5f1d5c713bf627cdd88dcc6c4f49fc20d6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/hydration-initial.log",
+      "sha256": "4d5a4e0390351c95e1a67d0d1f642cdb7950feae356f9c39ee544ed7812df84f"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/hydration-rerun-1.log",
+      "sha256": "77b34b3c25d0fe2cbc2be6fd866ec81f4cab846b385fe71f4882dbecf3d21ec2"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/hydration-rerun-2.log",
+      "sha256": "fa500f015d3a30248a37478ca193ab917c0930673169cdbb182e6fab15b393f5"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/journeys-5.log",
+      "sha256": "ca2e63aff4c3909ad780e19895e59c3157d2948b26e16a5a638818e465b49304"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/journeys-6.log",
+      "sha256": "e8e4022855de099786ceb8c056463f2410721461bb726fbebaf64aa36ffbdb9a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/lint-final.log",
+      "sha256": "116b5a094a37cac8da6a68397becde0512d97aa0219c2fc8c7948e84b1a8bbeb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/prerender.log",
+      "sha256": "f942a52fb9e257c2ea5ef2fa93410c996b1c8f07b2f7a93f3718753f6a210000"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/production-build.log",
+      "sha256": "9bb37921439a0f647c9e51e704a2d12a48484620c64c65106653a486ec73a4a1"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/shared-tests.log",
+      "sha256": "81fbda25053584bed5c743f9c788e2b98e38e0eaf75baedad8a2075134e35cea"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/storybook-build-final.log",
+      "sha256": "aafa4d85bbae9e8085bcefc8a1e361b0ae83e45ba15b8ab9859bcd8b58a507d5"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/typecheck-web-frozen.log",
+      "sha256": "d6327d62d4495c2b430a5bd1e820c74beef77f0cb02a2e19f970e30f8f84b57e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/logs/typecheck.log",
+      "sha256": "0b0a4c736aa108fe1824976757ebe95c8f004aac95428f8110c543c1f0d5ee89"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/public-browser.json",
+      "sha256": "abd0a49e998c14a1676ed67cd4cf273747f53b49ef31245a9b89b8c4bd87b002"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/public-demo.json",
+      "sha256": "06074967aeb1df49f8045982b9521fcd76d212571d7cef90a005c536e226f3b9"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/public-fixes.json",
+      "sha256": "ea5c48cbb448bbd437a5fd23093d5b966fcfc6763b751b81a851e2b419b2c7b6"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/public-summary.json",
+      "sha256": "6b8d74f5fc378ac37bfc98a497466e626854217b9873fcb9c91f640fa65510bb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/retained-data-fixes.json",
+      "sha256": "f799c74dd94ac2479707923f93b8c6819c314c9848dfbe12270969eec71cb39b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/root-fixes.json",
+      "sha256": "2953eb390fe8e318db0d7cb2fd5db98f4dc727fb8fea2001e2ed51c0e3ec1e4a"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
+      "sha256": "3e51be1781864d260517b1d1f7f9114447a53c7ad08bd57bc512368e0110e896"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/002-appshell-errors-globalerror--default.png",
+      "sha256": "3b782c57b9cd5d58156c0c007fc86e79df3d7122bf609355df71ad29c3f1e915"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/004-account-accountdeletion--modal-step-1.png",
+      "sha256": "4e554e2a7050b3cfaa948518c046e73b646747f29f722961b556e12eca37cc7c"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/008-features-activity-activityscreen--empty.png",
+      "sha256": "8c7b62a2e6c2dc08fa0eec6821cfc303ecebd60776e510af96642accff85a4f8"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/01-dark.png",
+      "sha256": "f9647a94dac1c1d4f6bd7c8da7b75d45b4e4a0d3ca57a957838d34a4273f459f"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/01-home.png",
+      "sha256": "6b47a96799ad0dd4fadcfb04a37867b2eca297226d12e04a4a7237cd7dd699fb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/010-senders-selectionbar--mobile-sheet-320-dark.png",
+      "sha256": "cb69d66ec3f7ae95e0db1b4559573c31303f1182ae7e538c5e30224531892806"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/011-account-accountdeletion--modal-step-1-320-dark.png",
+      "sha256": "e86cc30f9157e98dd09be82947acceb61d7c386cb21261a432c92822e2dc2c82"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/012-onboarding-stepprotectionreview--reassurance-leads-320-dark.png",
+      "sha256": "62a5c3d8b2250be797158daff1b830d713bc44669e06b3d536e4746557c9964d"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/013-onboarding-syncgate--failed-320-dark.png",
+      "sha256": "76db7eb75c1d84e3daeb0be495d3849419c61a4fb505ee2b8394c0f3e982310b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/015-appshell-errors-globalerror--default-320-dark.png",
+      "sha256": "a0b22a60bd3818660ed8012d44bee59872703d888f6b182606a63489489b9201"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/016-features-activity-activityscreen--empty-320-dark.png",
+      "sha256": "313f66f042ad56476772dcfb6319fa3a7d82bf59e9f154ee6b1fab3f58408648"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/018-home-homeview--first-review-ready-320-dark.png",
+      "sha256": "c70812a9f70dd538a45cc051da5473b7e25a726ac0c908bd0af796d2aa1f9cc7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/020-home-homeview--sync-failed-320-dark.png",
+      "sha256": "33dc561040c1394e3473f24cf67d3cdaa12ba78a53045f8811d7f025499a9fae"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/021-home-homeview--load-error-320-dark.png",
+      "sha256": "9c80b520314156cd710c2fa087fa918313c4637e3c5284bd2af6b9b37d680fa5"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/023-home-homeview--first-review-ready-320-light.png",
+      "sha256": "53094519aed81306e7377c6e147a07afd453520e03f3bedf151014254feb23ea"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/025-home-homeview--sync-failed-320-light.png",
+      "sha256": "60c56cccadec2738a4a6c682283480c416dd5530daabe38dde99a325b19c3c5e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/026-home-homeview--load-error-320-light.png",
+      "sha256": "3839bd73ee8eb64f97c5e925d8912e36dd501356902a89ed43ba0e9fe4d6add5"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/035-senders-selectionbar--mobile-sheet-320-light.png",
+      "sha256": "90db85d26404c97357e798bc1917055b9157069151ad636d6e85196db2949041"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/038-features-followups-followupsscreen--populated.png",
+      "sha256": "3c90a0feac19c0e625247fc0b9b8220093eb2578585c29c217746fec18a48c21"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/043-primitives-actionpopover--default-1440-light.png",
+      "sha256": "141e2067b45278ab18bc34eec647a99e089847f6cddcd79765e8c596b6c1116e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/044-primitives-actionpopover--dimmed-primary-1440-light.png",
+      "sha256": "95e2707d27b3753d973e86412b0280f645ad93bf8004fa771696e5d4eecf6632"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-features-activity-activityscreen--next-page-error-320-light.png",
+      "sha256": "c1550fe687c0dd11fedbe3320319a8719b108a976365f4776fb1fcc2e096f756"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-onboarding-stepprotectionreview--reassurance-leads.png",
+      "sha256": "c9758494c1b93ed619025f1ff90847f743d7868e8e5687fd4397ef4cd230d203"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/046-primitives-actionpopover--default-1440-dark.png",
+      "sha256": "afc1ec9bb4509ddd70ee8cedc05bd6013378e4479e1465b8ac400135a7cef0c3"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/047-primitives-actionpopover--dimmed-primary-1440-dark.png",
+      "sha256": "a7de215cf7a1527458719442d0ef4cc8a87b51a5dc78cb6837831abb28707d33"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/048-features-activity-activityscreen--next-page-error-320-dark.png",
+      "sha256": "af17a1647db0ed068894b3a12f4e2253180b2180dfdb282bc1e42cc200503190"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-onboarding-syncgate--failed.png",
+      "sha256": "514995342f0e21cd0fb2c5be11e8b716fd12a8a746c0f1821ecc7580ca46aaf0"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-senders-selectionbar--mobile-sheet-320-light.png",
+      "sha256": "90db85d26404c97357e798bc1917055b9157069151ad636d6e85196db2949041"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/050-senders-selectionbar--mobile-sheet-320-dark.png",
+      "sha256": "cb69d66ec3f7ae95e0db1b4559573c31303f1182ae7e538c5e30224531892806"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/25-dark.png",
+      "sha256": "06d387fd8b36897a0571b1782dd6ad3e48fd25fe86ad7d716cbad7e2b570b474"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/25-how-it-works.png",
+      "sha256": "62009ae3e714b211fe94312a6477e2122574742be03cb19429964943a90b26e1"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/33-dark.png",
+      "sha256": "669801fc5232c282b6bf64b1f14f52d8205cf15113a7c28d009e51e9a55ba91e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/33-inbox-simulator.png",
+      "sha256": "5da996408dbc19436db1240f679999d6aba00eda8cc6dd31a8c53cd7c0d08cdb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/35-dark.png",
+      "sha256": "203595356db5b52a8449413df1731d28475e02e52e0b9b4e112064c6976c4135"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/35-pricing.png",
+      "sha256": "18dd529bc923d434f754b86916a5c669527e472e59919a49254031c21671b0bd"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/36-dark.png",
+      "sha256": "04d2bf3d206208268baffd9166dcd9b878cca2aa252350646a90005034043d70"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/36-privacy.png",
+      "sha256": "b3f875cb9cf5f894b3f1caf8d6ccd216cc418b3ca8fa981d37a09352cb9f39f7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-dark.png",
+      "sha256": "511975ccfd162290b83444a14876bda8427fdf9777e0e644f043b36e16762516"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-1440-light.png",
+      "sha256": "21a8d3579d3de42f4425826ef59423b0ea2c44b6810903195d8c50ac0551f4db"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/screenshots/recheck-senders-selectionbar--mixed-selection-320-dark.png",
+      "sha256": "951a97ac4c2ba8a6fb1390e838e15daa5b710b91c84cd0a69c46a7003674be76"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/settings-fixes.json",
+      "sha256": "2804df73d2dd01a7edc5d1c2206dfce6b11c4268b1a2c8d8b6ef653b322d1291"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/story-browser.json",
+      "sha256": "3876b05146da224fb5b48012c73b1e29d73d4ce0104984d7a46746d61f7f2280"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after/story-summary.json",
+      "sha256": "82ecb743c59e063c66350de2c1f4bc9180a87b0d68013f7e3373dc897ddf1283"
+    }
+  ],
+  "logNormalization": "Workspace paths replaced; terminal ANSI escapes and trailing whitespace removed. Results/errors retained; original raw logs remain local.",
+  "evidenceNormalization": {
+    "reason": "D7 repository consumer-address guard caught escaped-newline prefixes on allowlisted existing Storybook mailbox fixtures. Decode JSON strings, project those consumer addresses to synthetic.test aliases, then serialize. No guard/allowlist change.",
+    "files": ["after/story-browser.json", "story-browser-resumed.json"],
+    "counts": {
+      "addressOccurrencesProjected": 8,
+      "distinctFixtureAddresses": 3
+    },
+    "preserved": "Story IDs, results, counts, violations, fixture/source provenance, capture scope and baseline findings unchanged. No mailbox dropdown PNG was selected in the40 archived representative captures.",
+    "date": "2026-10-03"
+  }
+}

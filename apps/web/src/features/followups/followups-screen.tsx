@@ -6,12 +6,13 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNow } from '@/lib/use-now';
 
 import {
   EmptyState,
+  Button,
   ErrorState as RecoverableErrorState,
   ScreenIntro,
   tokens,
@@ -19,6 +20,7 @@ import {
 } from '@declutrmail/shared';
 
 import type { FollowupRow } from '@/lib/api/followups';
+import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
@@ -62,6 +64,17 @@ export function FollowupsScreen() {
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useFollowups();
+  const mailboxId = auth?.me.activeMailboxId;
+  // Cache invalidation keeps data until the next response. Only retain it
+  // after an error when it was loaded for this active mailbox.
+  const loadedScope = useRef({ mailboxId, updatedAt: query.dataUpdatedAt });
+  if (query.dataUpdatedAt !== loadedScope.current.updatedAt) {
+    loadedScope.current = { mailboxId, updatedAt: query.dataUpdatedAt };
+  }
+  const retainRows =
+    (query.data?.length ?? 0) > 0 &&
+    loadedScope.current.mailboxId === mailboxId &&
+    !(query.error instanceof ApiError && query.error.status >= 400 && query.error.status < 500);
   const dismiss = useDismissFollowup();
   const qc = useQueryClient();
   const [showExcluded, setShowExcluded] = useState(false);
@@ -106,10 +119,23 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Follow-ups"
-        body="Conversations where you wrote last and haven't heard back."
+        body="Possible follow-ups from email you sent. Open the thread in Gmail to check for a reply."
       />
 
       <FollowupsScopeNote />
+      {query.isError && retainRows && (
+        <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Couldn’t refresh your follow-ups.{' '}
+          <Button
+            tone="ghost"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Try again
+          </Button>
+        </div>
+      )}
       {excludedCount > 0 && (
         <button
           type="button"
@@ -131,10 +157,11 @@ export function FollowupsScreen() {
       )}
       {query.isLoading ? (
         <LoadingState />
-      ) : query.isError ? (
+      ) : query.isError && !retainRows ? (
         <FollowupsErrorState onRetry={() => query.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
+          headingLevel={2}
           title={excludedCount > 0 ? 'No follow-ups to review' : 'No follow-ups'}
           description={
             excludedCount > 0
@@ -225,11 +252,19 @@ function groupByPriority(rows: readonly FollowupRow[]): GroupedFollowups {
  */
 function FollowupsScopeNote() {
   return (
-    <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
-      Possible follow-ups from email sent in the last 60 days. Checked about every six hours, so a
-      recent reply can still show. Check the thread in Gmail before following up. Mark resolved only
-      hides it here — nothing changes in Gmail. Counts cover shown conversations, up to 100.
-    </p>
+    <div style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
+      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.5, color: color.fg }}>
+        Review possible follow-ups from email sent in the last 60 days.
+      </p>
+      <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+        Checked about every six hours, so a recent reply can still show. Check the thread in Gmail
+        before following up.
+      </p>
+      <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+        Mark resolved only hides it here — nothing changes in Gmail. Counts cover shown
+        conversations, up to 100.
+      </p>
+    </div>
   );
 }
 
@@ -641,6 +676,7 @@ function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't load your follow-ups"
         description="Your sent email and tracked follow-ups are unchanged. Try again in a moment."
         onRetry={onRetry}

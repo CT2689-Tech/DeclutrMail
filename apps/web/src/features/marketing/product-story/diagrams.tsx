@@ -224,7 +224,10 @@ export function ActionLifecycleFigure() {
       'Choose',
       'Pick an action or approve a suggested batch. Some actions ask for a time range or return time first.',
     ],
-    ['Preview', 'See the current number of affected emails, and a sample when available.'],
+    [
+      'Preview',
+      'Before moving email, see the count and a sample when available. For Unsubscribe, review the request method.',
+    ],
     ['Confirm', 'DeclutrMail makes the Gmail change or sends the unsubscribe request.'],
     ['Activity', 'The result appears after Gmail or the sender confirms it.'],
     ['Undo', 'Reverse Archive, Later, or Delete until the deadline shown in Activity.'],
@@ -242,7 +245,8 @@ export function ActionLifecycleFigure() {
       </ol>
       <p className="dm-story-note">
         For one-click lists, the sender&rsquo;s system reports whether it accepted the request. A
-        delivered unsubscribe request cannot be undone; a paired Archive has its own Undo.
+        delivered unsubscribe request cannot be undone; a paired Archive or Delete has its own
+        Activity Undo.
       </p>
     </figure>
   );
@@ -259,17 +263,17 @@ export function AutomationBoundaryFigure() {
           <h3>Manual cleanup</h3>
           <p className="dm-story-plan">Every plan</p>
           <p>
-            Archive, Later, and Delete act on the current messages named in the preview. They do not
-            quietly turn into rules for future mail.
+            Archive, Later, and Delete act on current mail matching the scope you approve. They do
+            not quietly turn into rules for future mail.
           </p>
         </div>
         <div>
           <h3>Autopilot rules</h3>
           <p className="dm-story-plan">{AUTOPILOT_PLANS}</p>
           <p>
-            Turning a preset on shows what it would do first, then it acts on future matches. Choose
-            Watch first instead and it records what it would match, without moving mail, for your
-            approval. You can pause it again.
+            Turning a preset on shows what it would do first. Low-engagement Archive and new-sender
+            Later always collect suggestions for approval. Other presets offer Act now or Watch
+            first. Every rule can be paused.
           </p>
         </div>
       </div>

@@ -160,14 +160,16 @@ describe('SyncErrorBanner', () => {
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
   });
 
-  it('hides the banner when the error is older than 60 minutes', () => {
+  it('keeps unresolved errors visible after 60 minutes until success proves recovery', () => {
     statusCell.data = statusOf({
       last_synced_at: null,
       last_sync_error_at: minutesAgo(61),
       last_sync_error_code: 'GMAIL_HISTORY_GONE',
     });
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
-    expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
+    expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(mutateSpy).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a revoked Gmail grant visible after the retryable-error window', () => {

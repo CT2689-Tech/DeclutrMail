@@ -271,7 +271,7 @@ export function SettingsRowStatus({
   }
   return (
     <div className="dm-settings-row" style={rowStyle}>
-      <span style={{ fontSize: text.md, color: color.danger }}>{errorLabel}</span>
+      <span style={{ fontSize: text.md, color: color.dangerText }}>{errorLabel}</span>
       <Button tone="default" size="sm" onClick={state.onRetry}>
         Retry
       </Button>
@@ -282,7 +282,7 @@ export function SettingsRowStatus({
 /** Inline failed-save line under a group's rows. */
 export function SettingsSaveError({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '8px 0 0' }}>
+    <p role="alert" style={{ fontSize: text.sm, color: color.dangerText, margin: '8px 0 0' }}>
       {children}
     </p>
   );

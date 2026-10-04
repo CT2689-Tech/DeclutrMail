@@ -1,0 +1,343 @@
+{
+  "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "method": "Read-only DOM inspection; all non-GET API requests intercepted before writes; no seed/reset.",
+  "captures": [
+    {
+      "label": "mounted",
+      "globalExactTextCount": 1,
+      "elements": [
+        {
+          "visible": true,
+          "ancestors": [
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "LI",
+              "id": "",
+              "hidden": false,
+              "display": "grid",
+              "ariaLabel": null
+            },
+            {
+              "tag": "UL",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "SECTION",
+              "id": "brief-noise",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": "Noise (1 senders, 1 messages yesterday)"
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "MAIN",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            }
+          ]
+        }
+      ],
+      "accessibleNoiseRegions": 1,
+      "accessibleSelectableRows": 1,
+      "scopedRowExactTextCount": 1
+    },
+    {
+      "label": "at failing assertion",
+      "globalExactTextCount": 1,
+      "elements": [
+        {
+          "visible": true,
+          "ancestors": [
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "LI",
+              "id": "",
+              "hidden": false,
+              "display": "grid",
+              "ariaLabel": null
+            },
+            {
+              "tag": "UL",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "SECTION",
+              "id": "brief-noise",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": "Noise (1 senders, 1 messages yesterday)"
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "MAIN",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            }
+          ]
+        }
+      ],
+      "accessibleNoiseRegions": 1,
+      "accessibleSelectableRows": 1,
+      "scopedRowExactTextCount": 1
+    },
+    {
+      "label": "250ms later",
+      "globalExactTextCount": 1,
+      "elements": [
+        {
+          "visible": true,
+          "ancestors": [
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "LI",
+              "id": "",
+              "hidden": false,
+              "display": "grid",
+              "ariaLabel": null
+            },
+            {
+              "tag": "UL",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "SECTION",
+              "id": "brief-noise",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": "Noise (1 senders, 1 messages yesterday)"
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "MAIN",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            }
+          ]
+        }
+      ],
+      "accessibleNoiseRegions": 1,
+      "accessibleSelectableRows": 1,
+      "scopedRowExactTextCount": 1
+    },
+    {
+      "label": "1250ms later",
+      "globalExactTextCount": 1,
+      "elements": [
+        {
+          "visible": true,
+          "ancestors": [
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "LI",
+              "id": "",
+              "hidden": false,
+              "display": "grid",
+              "ariaLabel": null
+            },
+            {
+              "tag": "UL",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "SECTION",
+              "id": "brief-noise",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": "Noise (1 senders, 1 messages yesterday)"
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "MAIN",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "block",
+              "ariaLabel": null
+            },
+            {
+              "tag": "DIV",
+              "id": "",
+              "hidden": false,
+              "display": "flex",
+              "ariaLabel": null
+            }
+          ]
+        }
+      ],
+      "accessibleNoiseRegions": 1,
+      "accessibleSelectableRows": 1,
+      "scopedRowExactTextCount": 1
+    }
+  ],
+  "blockedWrites": []
+}

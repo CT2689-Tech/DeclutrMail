@@ -27,10 +27,16 @@ export function HomeView({
   workflows?: HomeWorkflows | undefined;
   timeZone?: string;
 }) {
+  const prioritizeReview =
+    state.kind === 'ready'
+      ? state.action.href !== '/senders' ||
+        (state.pending?.triagePending ?? 0) > 0 ||
+        (state.pending?.screenerPending ?? 0) > 0
+      : state.kind === 'empty' && !state.syncing && (state.senders?.length ?? 0) > 0;
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-home-priority={prioritizeReview ? 'review' : 'intro'}>
       <ScreenIntro id="home" title="How Home works" body="Undone actions are not counted." />
-      <header className={styles.header}>
+      <header className={`${styles.header} ${prioritizeReview ? styles.headerPriority : ''}`}>
         <div>
           <EditorialKicker>Your personal space / Home</EditorialKicker>
           <h1>
@@ -40,24 +46,47 @@ export function HomeView({
           </h1>
           <p className={styles.subtitle}>A clearer view. A little more room for what matters.</p>
         </div>
-        {state.kind === 'ready' && (
-          <section className={styles.stamp} aria-label="Your cleanup so far">
-            <span className={styles.eyebrow}>
-              The space
-              <br />
-              you’ve made
-            </span>
-            <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
-            <span>
-              {state.hero.label}
-              {state.since ? ` since ${formatSince(state.since, timeZone)}` : ''}
-            </span>
-            <small>Undone actions excluded</small>
-          </section>
+        {state.kind === 'ready' && !prioritizeReview && (
+          <CleanupStamp state={state} timeZone={timeZone} />
         )}
       </header>
-      <HomeBody state={state} tier={tier} workflows={workflows} />
+      <HomeBody
+        state={state}
+        tier={tier}
+        workflows={workflows}
+        timeZone={timeZone}
+        prioritizeReview={prioritizeReview}
+      />
     </div>
+  );
+}
+
+function CleanupStamp({
+  state,
+  timeZone,
+  deferred = false,
+}: {
+  state: Extract<HomeState, { kind: 'ready' }>;
+  timeZone: string;
+  deferred?: boolean;
+}) {
+  return (
+    <section
+      className={`${styles.stamp} ${deferred ? styles.deferredStamp : ''}`}
+      aria-label="Your cleanup so far"
+    >
+      <span className={styles.eyebrow}>
+        The space
+        <br />
+        you’ve made
+      </span>
+      <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
+      <span>
+        {state.hero.label}
+        {state.since ? ` since ${formatSince(state.since, timeZone)}` : ''}
+      </span>
+      <small>Undone actions excluded</small>
+    </section>
   );
 }
 
@@ -65,10 +94,14 @@ function HomeBody({
   state,
   tier,
   workflows,
+  timeZone,
+  prioritizeReview,
 }: {
   state: HomeState;
   tier: TierId;
   workflows?: HomeWorkflows | undefined;
+  timeZone: string;
+  prioritizeReview: boolean;
 }) {
   const hasAttention =
     state.kind === 'ready' &&
@@ -81,6 +114,7 @@ function HomeBody({
     case 'error':
       return (
         <ErrorState
+          headingLevel={2}
           title="We couldn't load Home"
           description={loadErrorDescription(state.error)}
           onRetry={state.retry}
@@ -144,17 +178,25 @@ function HomeBody({
             <div className={styles.nextStep}>
               <span className={styles.eyebrow}>A good place to start</span>
               <h2>
-                A few decisions.<span className={styles.nextLine}>A little more space.</span>
+                {state.action.href === '/triage' ? (
+                  'Your daily review is ready.'
+                ) : state.action.href === '/screener' ? (
+                  'Give new senders a first decision.'
+                ) : (
+                  <>
+                    A few decisions.<span className={styles.nextLine}>A little more space.</span>
+                  </>
+                )}
               </h2>
               <p>
                 {state.action.href === '/triage'
-                  ? 'Your daily review is ready. Take a look at these senders and decide what still belongs.'
+                  ? 'Take a look at these senders and decide what still belongs.'
                   : state.action.href === '/screener'
                     ? 'Senders awaiting a first decision are ready for your attention. Their email keeps arriving until you choose what to do.'
                     : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
               </p>
               <PrimaryLink action={state.action} />
-              <span className={styles.footnote}>Nothing changes until you confirm.</span>
+              <span className={styles.footnote}>Preview email moves before confirming.</span>
             </div>
             <div className={styles.opportunityList}>
               {state.senders && state.senders.length > 0 ? (
@@ -177,6 +219,7 @@ function HomeBody({
               )}
             </div>
           </section>
+          {prioritizeReview && <CleanupStamp state={state} timeZone={timeZone} deferred />}
           <section
             className={styles.overviewLower}
             style={!hasAttention ? { gridTemplateColumns: '1fr' } : undefined}

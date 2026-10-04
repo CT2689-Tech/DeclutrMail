@@ -124,7 +124,7 @@ export default async function BetaPage({
       {!denied && (
         <>
           <p>
-            <a href="/inbox-simulator">Try the daily review demo</a> before connecting.
+            <a href="/inbox-simulator?workspace=triage">Try Daily Triage</a> before connecting.
           </p>
           <details>
             <summary>What Google will ask you to allow</summary>

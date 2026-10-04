@@ -1881,6 +1881,7 @@ function NotFoundState({ layout, onClose }: { layout: DetailLayout; onClose?: ()
   return (
     <DetailFrame layout={layout}>
       <EmptyState
+        headingLevel={layout === 'page' ? 2 : 3}
         title="Sender not found"
         body="This sender isn't in this mailbox."
         action={
@@ -1915,6 +1916,7 @@ function SenderDetailErrorState({
   return (
     <DetailFrame layout={layout}>
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't load this sender"
         description="Nothing in your mailbox changed."
         onRetry={handleRetry}

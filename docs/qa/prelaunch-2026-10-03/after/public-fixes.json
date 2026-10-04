@@ -1,0 +1,176 @@
+{
+  "summary": {
+    "status": "implemented",
+    "implementedIds": [
+      "PUB-01",
+      "PUB-02",
+      "PUB-03",
+      "PUB-04",
+      "PUB-05",
+      "PUB-06",
+      "PUB-07",
+      "PUB-08",
+      "PUB-09",
+      "PUB-10"
+    ],
+    "sourceChanges": "Public marketing/content/demo and canonical copy only; no commits or branch changes made by this agent. Existing homepage edits preserved.",
+    "verification": {
+      "publicTests": "14 files / 230 tests passed. Final additional simulator behavior/parity run: 2 files / 54 tests passed after the last label shortening.",
+      "sharedTests": "5 canonical action-safety tests passed after both canonical changes.",
+      "negativeControls": [
+        "Unsupported Gmail-recheck canonical claim",
+        "Structured-data universal preview",
+        "Direct tour=1 workspace selection (two queries)",
+        "Inbox-cleared outcome with archived Delete and reload",
+        "Canonical archived Delete scope"
+      ],
+      "lint": "Targeted ESLint passed on edited TS/TSX files.",
+      "format": "Prettier check passed on all 21 relevant TS/TSX/CSS files after formatting.",
+      "diffCheck": "git diff --check passed.",
+      "typecheck": "Web typecheck reported concurrent non-public edits only; parent informed and owns integration recheck. Errors at time of run: global-error error/digest props, screener optional onClick, selection-bar duplicate tier, settings manifestTier, triage empty-state/readiness interfaces. No errors in public files.",
+      "browser": "CUA unavailable (no browser surfaces); root explicitly owns final purpose-built browser smoke after integration.",
+      "servedHttp": "A read-only localhost:3100 HTTP sweep timed out waiting for response; no served-body proof is claimed. Root owns server restart and final browser smoke after integration."
+    },
+    "canonicalConsumerSweep": {
+      "ACTION_PREVIEW_CLAIM": [
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/index.ts",
+        "packages/shared/src/index.ts",
+        "apps/web/src/features/marketing/auth-entry/auth-entry.tsx (first sentence unchanged)"
+      ],
+      "MANUAL_ACTION_SCOPE_CLAIM": [
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/index.ts",
+        "packages/shared/src/index.ts",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx (guided Autopilot body and completion note)"
+      ],
+      "unsupportedRenderedPublicClaimHits": 0
+    },
+    "boundaries": [
+      "No worker semantics, Gmail mutations, live payments or deployment changes.",
+      "Parent handles final full checks, browser smoke and the single PR."
+    ]
+  },
+  "fixes": [
+    {
+      "id": "PUB-01",
+      "status": "implemented",
+      "files": [
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/action-safety.test.ts",
+        "apps/web/src/app/(marketing)/terms/page.tsx",
+        "apps/web/src/app/(marketing)/pricing.md/route.ts",
+        "apps/web/public/llms.txt"
+      ],
+      "change": "Removed the unsupported provider recheck guarantee. Canonical copy now says the final count can change; Terms describes re-resolving matching mail without implying a provider read.",
+      "verification": "Canonical truth test failed before and passed after the fix; full public source sweep finds no remaining rendered Gmail-recheck claim. ACTION_PREVIEW_CLAIM consumers are auth-entry (first sentence unchanged) and package exports.",
+      "residualConcerns": "Provider worker semantics unchanged; production provider freshness is not claimed."
+    },
+    {
+      "id": "PUB-02",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/app/(marketing)/site-json-ld-description.ts",
+        "apps/web/src/app/(marketing)/layout.test.tsx",
+        "apps/web/src/app/(marketing)/pricing.md/route.ts",
+        "packages/shared/src/copy/action-safety.ts",
+        "packages/shared/src/copy/action-safety.test.ts"
+      ],
+      "change": "Structured/markdown copy separates inline Keep, unsubscribe-method confirmation, and affected-email previews for mail-moving actions; includes Delete Activity Undo. Canonical manual scope now also states explicitly selected archived Delete scope.",
+      "verification": "JSON-LD regression failed against universal-preview wording and passes on actual emitted graph. Canonical archived-scope assertion failed before and passes after. Existing pricing markdown truth/recovery tests pass.",
+      "residualConcerns": "Parent to verify final rendered/served graph; no provider behavior or recovery windows changed."
+    },
+    {
+      "id": "PUB-03",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx"
+      ],
+      "change": "Inbox-cleared outcome counts only each synthetic fixture\u2019s Inbox portion, retaining total affected count and the current v4 stored shape.",
+      "verification": "Full guide with Inbox + archived Delete reproduced 1,100 instead of 576 before fix; regression now verifies 576 and full stored Delete count, including after reload. Existing Archive/Later/unsubscribe and Undo tests pass.",
+      "residualConcerns": "Parent browser smoke pending; no persisted-state migration needed."
+    },
+    {
+      "id": "PUB-04",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx"
+      ],
+      "change": "tour=1 now selects Daily Triage plus guided mode, including when workspace=senders is also supplied.",
+      "verification": "Two direct-query regression cases failed on aria-pressed=false before the fix and now verify Daily Triage selected and visible guided progress. Existing step/deep-link/restoration tests pass.",
+      "residualConcerns": "Parent browser smoke pending."
+    },
+    {
+      "id": "PUB-05",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/learn/how-to-content.ts",
+        "apps/web/src/features/marketing/product-story/diagrams.tsx"
+      ],
+      "change": "Unsubscribe recovery explanation includes both paired Archive and Delete Activity Undo; the sent request remains irreversible and Trash remains a separate Delete fallback. Updated modified date of the changed guide.",
+      "verification": "Manual final copy review and passing learning-content, product-guide and recovery truth tests.",
+      "residualConcerns": "No live unsubscribe or Gmail recovery performed; this is copy alignment."
+    },
+    {
+      "id": "PUB-06",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/app/(marketing)/beta/page.tsx",
+        "apps/web/src/app/(marketing)/beta/page.test.tsx"
+      ],
+      "change": "Try Daily Triage uses /inbox-simulator?workspace=triage, matching its named destination.",
+      "verification": "Existing beta journey test verifies the new destination and all beta state/event tests pass.",
+      "residualConcerns": "Parent browser navigation smoke pending."
+    },
+    {
+      "id": "PUB-07",
+      "status": "implemented",
+      "files": ["apps/web/src/features/marketing/learn/how-to-content.ts"],
+      "change": "Activation preview is reviewed in the first enable step; the later review step inspects collected suggestions without enabling the same rule again. Updated guide modified date.",
+      "verification": "Read complete ordered sequence against the always-Observe preset; learning-content and all public journey tests pass.",
+      "residualConcerns": "No actual automation activated."
+    },
+    {
+      "id": "PUB-08",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/landing/sections.tsx",
+        "apps/web/src/features/marketing/landing/landing.css",
+        "apps/web/src/features/marketing/landing/homepage-sections.css",
+        "apps/web/src/app/(marketing)/page.test.tsx"
+      ],
+      "change": "Privacy section states the canonical boundary once in its lede. Distinct summary items cover stored fields, revocable access and decision controls. Collapsed inventory renders generated full lists without repeating a trust-card introduction, preserving existing layout and theme styles.",
+      "verification": "Homepage test verifies one visible canonical boundary, complete registry fields and initially collapsed inventory; homepage/public journey tests pass. CSS no longer leaves unused badge-heading overrides.",
+      "residualConcerns": "Parent visual smoke of expanded inventory pending. Shared primitive and homepage hero/design preserved."
+    },
+    {
+      "id": "PUB-09",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/learn/journey-links.ts",
+        "apps/web/src/features/marketing/comparison/comparison-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx",
+        "apps/web/src/features/marketing/inbox-simulator/production-parity.test.tsx",
+        "apps/web/src/features/marketing/landing/sections.tsx",
+        "apps/web/src/app/(marketing)/beta/page.tsx"
+      ],
+      "change": "Shortened targeted topic CTAs and demo controls to at most three words, including analogous dynamic Explore N senders. Destinations and actions are unchanged; useful conversion CTA repetition remains.",
+      "verification": "All public journey/learning/comparison tests and final simulator behavior/parity tests pass. Manually counted specified visible labels against repository budget.",
+      "residualConcerns": "Long descriptive accessibility names remain where they identify sender/domain/count; article titles remain descriptive."
+    },
+    {
+      "id": "PUB-10",
+      "status": "implemented",
+      "files": [
+        "apps/web/src/features/marketing/pricing/waitlist-form.tsx",
+        "apps/web/src/features/marketing/pricing/pricing-screen.test.tsx"
+      ],
+      "change": "Generic waitlist failure offers retry without inventing a network cause.",
+      "verification": "Existing retry-and-clear-on-edit test now covers both TypeError network failure and ApiError server rejection, with no waitlist-success telemetry on either rejection. Both cases pass.",
+      "residualConcerns": "No live waitlist submission or external message sent."
+    }
+  ]
+}

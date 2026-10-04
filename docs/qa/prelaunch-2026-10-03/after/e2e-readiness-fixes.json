@@ -1,0 +1,228 @@
+{
+  "summary": "Test-only mounted-readiness class correction across authenticated journey specs; exact Follow-ups and Later row/name uniqueness retained. Product source unchanged. Prior focused proof retained; root must rerun the complete current journeys.",
+  "productSourceFreeze": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "sourceStopped": true,
+  "productSourceChanged": false,
+  "gitOperations": [],
+  "stack": {
+    "web": "http://127.0.0.1:3104",
+    "api": "http://127.0.0.1:4104",
+    "postgres": "127.0.0.1:5404/declutrmail_e 2 e",
+    "redis": "127.0.0.1:6404/12",
+    "environmentSource": "local run artifact (not archived): run-e2e-final.py",
+    "isolatedFlag": "E 2 E_ISOLATED=1",
+    "account": "synthetic fixture enforced by requireLiveStack",
+    "provider": "No Gmail credentials or worker; no live provider actions"
+  },
+  "fixes": [
+    {
+      "id": "E2E-FOLLOWUPS-READY",
+      "file": "packages/e2e/specs/followups-dismiss.spec.ts",
+      "diagnosis": "Initial full run failed at 271 ms because generic text visibility encountered a hidden streamed occurrence followed by two exact-name matches. The original focused spec then passed; a persistent product duplicate was not established.",
+      "change": "After full navigation/reload, require one visible About this screen from ScreenIntro useEffect. Before initial interaction require exactly one accessible listitem and one exact recipient name, then visibility. Reuse the exact locator for absence assertions. No .first() or duplicate masking.",
+      "retainedAssertions": [
+        "evaluation timestamp",
+        "native Mark resolved action",
+        "tracker dismissed state and timestamp",
+        "exactly one activity audit receipt",
+        "absence after reload"
+      ],
+      "negativeControl": "Reported initial run failed; original focused rerun passed 1/1. Not a deterministic negative control.",
+      "positiveVerification": "Strengthened spec passed twice consecutively (2/2,16.3 s). This proof predates extraction of the common mounted helper; runtime verification of the current class patch is pending root.",
+      "logs": [
+        "local run artifact (not archived): journeys-1.log",
+        "local run artifact (not archived): followups-original-focused.log",
+        "local run artifact (not archived): followups-readiness-focused.log"
+      ]
+    },
+    {
+      "id": "E2E-QUIET-MOUNTED",
+      "file": "packages/e2e/specs/quiet-hours.spec.ts",
+      "diagnosis": "Second full run and original focused run both reproduced a native ArrowUp before mounted form readiness: end time remained 07:00 after second reload. SSR value/heading alone was insufficient readiness evidence.",
+      "change": "After initial navigation and every reload, use the shared mounted-screen gate (one visible About this screen registered by ScreenIntro useEffect), then the existing heading and enabled Quiet switch assertions. No force click, DOM mutation, arbitrary sleep or native control bypass.",
+      "retainedAssertions": [
+        "native ArrowUp at both end-time changes",
+        "visible Ends at 08:00 next-day text",
+        "PUT status and real API readback",
+        "rejected save leaves durable config unchanged",
+        "retry saves 08:00",
+        "disabled config survives reload",
+        "synthetic co-tenancy evidence unchanged"
+      ],
+      "negativeControl": "Original focused spec reproduced the same 07:00 failure (exit 1).",
+      "positiveVerification": "Only mounted readiness added; strengthened spec passed twice consecutively (2/2,7.6 s). This proof predates extraction of the common helper; runtime verification of the current class patch is pending root.",
+      "logs": [
+        "local run artifact (not archived): journeys-2.log",
+        "local run artifact (not archived): quiet-original-focused.log",
+        "local run artifact (not archived): quiet-original-error-context.md",
+        "local run artifact (not archived): quiet-readiness-focused.log"
+      ]
+    },
+    {
+      "id": "E2E-LATER-READY",
+      "file": "packages/e2e/specs/later-recovery.spec.ts",
+      "diagnosis": "journeys-4 failed at 533 ms: exact Fresh Finds Weekly text resolved to two streamed elements before mounted readiness. Other 14 tests passed. The source has one list item per snoozed row; a persistent product duplicate was not established.",
+      "change": "After goto and reload, require shared mounted readiness, exactly one accessible listitem containing the exact sender name, exactly one sender name, and visible sender before the existing status/control assertions.",
+      "retainedAssertions": [
+        "cancel sends zero wake requests",
+        "confirm receives queue acceptance 201 and sends exactly one wake request",
+        "pending recovery disables Change return time",
+        "durable synthetic newer worker failure is observed through polling",
+        "failure releases Bring back now and Change return time controls",
+        "Return retrying and enabled recovery survive reload"
+      ],
+      "negativeControl": "Root complete journeys-4 log records the original strict-name failure. No new DB-backed reproduction was run during root a11y/hydration gates.",
+      "positiveVerification": "Source and static checks only for this patch; complete browser journey rerun pending root.",
+      "logs": ["local run artifact (not archived): journeys-4.log"]
+    }
+  ],
+  "finalChecks": {
+    "formatLog": "local run artifact (not archived): e2e-readiness-class-format.log",
+    "lintLog": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-lint.log",
+    "typecheckLog": "docs/qa/prelaunch-2026-10-03/after/logs/e2e-readiness-class-typecheck.log",
+    "formatResult": "PASS: helper and all 12 changed specs formatted; no additional source changes needed.",
+    "lintResult": "PASS: targeted ESLint exited 0, no output/errors.",
+    "typecheckResult": "PASS: pnpm --filter @declutrmail/e2e typecheck exited 0.",
+    "runtimeRunsThisClassPatch": 0
+  },
+  "limits": [
+    "Prior original/focused proofs remain historical evidence; do not represent them as execution of the current extracted helper/class patch.",
+    "journeys-3 passed 15/15, but journeys-4 had a Later readiness failure and 14 passes. Two consecutive complete green runs are not yet established.",
+    "Root owns final complete runtime gates and portable publication. No DB-backed run/seed occurred during this source class correction.",
+    "Local durable synthetic state proves tested API/UI paths, not Gmail worker completion or provider billing."
+  ],
+  "subsequentRootValidation": {
+    "reportedBy": "root",
+    "fullCorrectedJourneys": "journeys-3:15/15passed; assert-journeys coverage passed",
+    "secondConsecutiveFullRun": "journeys-4:14/15 passed; Later exact-name strict locator failed on two streamed SSR names. Root current-class full rerun pending.",
+    "staticChecks": "E2E typecheck and targeted lint of4specs passed",
+    "logs": [
+      "local run artifact (not archived): journeys-3.log",
+      "local run artifact (not archived): journeys-3.json",
+      "local run artifact (not archived): journeys-4.log"
+    ],
+    "limits": "Root owns final aggregate gate/status and portable evidence publication."
+  },
+  "draftEditsStopped": true,
+  "dbBackedRunsComplete": true,
+  "classSweep": {
+    "id": "E2E-MOUNTED-CLASS",
+    "helper": "packages/e2e/helpers/screen-ready.ts",
+    "mechanism": "ScreenIntro publishes screenHelp only from useEffect. HelpButton returns null while no help is registered. A unique visible About this screen after a full navigation/reload proves the screen committed on the client; SSR headings/input values alone do not.",
+    "sourceEvidence": [
+      {
+        "file": "packages/shared/src/components/screen-intro.tsx",
+        "line": 35,
+        "detail": "useEffect registers help after client commit"
+      },
+      {
+        "file": "packages/shared/src/shell/help-button.tsx",
+        "line": 28,
+        "detail": "no registered help renders no button; mounted help gives About this screen"
+      }
+    ],
+    "reviewMethod": "Scoped search of every journey spec full goto/reload, then source inspection of screen help registration. No product edits or browser/DB test runs.",
+    "files": [
+      {
+        "file": "packages/e2e/specs/triage-keep.spec.ts",
+        "routes": ["/triage"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/sender-policy.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 1,
+        "scope": "synthetic core journey; sender detail excluded"
+      },
+      {
+        "file": "packages/e2e/specs/autopilot-pages.spec.ts",
+        "routes": ["/autopilot"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/brief-preview.spec.ts",
+        "routes": ["/brief"],
+        "fullNavigationsGated": 1,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/followups-dismiss.spec.ts",
+        "routes": ["/followups"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/later-recovery.spec.ts",
+        "routes": ["/later"],
+        "fullNavigationsGated": 2,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/quiet-hours.spec.ts",
+        "routes": ["/quiet"],
+        "fullNavigationsGated": 4,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/senders-search-typing.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 3,
+        "scope": "synthetic core journey"
+      },
+      {
+        "file": "packages/e2e/specs/triage-explain.spec.ts",
+        "routes": ["/triage"],
+        "fullNavigationsGated": 1,
+        "scope": "API queue contract sibling; no worker run"
+      },
+      {
+        "file": "packages/e2e/specs/undo.spec.ts",
+        "routes": ["/senders"],
+        "fullNavigationsGated": 1,
+        "scope": "provider contract fixture sibling; source-only, not run"
+      },
+      {
+        "file": "packages/e2e/specs/brief-noise-archive.spec.ts",
+        "routes": ["/brief"],
+        "fullNavigationsGated": 1,
+        "scope": "provider contract fixture sibling; source-only, not run"
+      },
+      {
+        "file": "packages/e2e/specs/billing-upgrade.spec.ts",
+        "routes": ["/senders", "/screener paid screen", "/billing"],
+        "fullNavigationsGated": 3,
+        "scope": "signed synthetic webhook contract sibling; source-only, not run"
+      }
+    ],
+    "gatedNavigations": 23,
+    "exclusions": [
+      {
+        "file": "packages/e2e/specs/sender-policy.spec.ts",
+        "route": "/senders/[id]",
+        "reason": "Sender detail has no ScreenIntro; its existing switch/UI and durable reload assertions remain."
+      },
+      {
+        "file": "packages/e2e/specs/protection-review.spec.ts",
+        "route": "/settings/senders",
+        "reason": "Protected senders has no ScreenIntro; per-row explanation/unprotect and durable policy checks remain."
+      },
+      {
+        "file": "packages/e2e/specs/billing-upgrade.spec.ts",
+        "route": "/screener Free tier gate",
+        "reason": "The tier placeholder does not register ScreenIntro; existing unique gate and API 402 assertions remain."
+      },
+      {
+        "scope": "Public/cookie-consent, render-only fixtures, a11y, responsive and hydration specs",
+        "reason": "Public/render fixtures do not use authenticated screen help. Root owns a11y/responsive/hydration gate sources; these were not edited."
+      }
+    ],
+    "preservedAssertions": "No request status, zero/one-write, native keyboard, receipt, pagination, rejection, recovery, exact row/name uniqueness or durable DB/reload assertion was removed or relaxed. No generic .first(), forced action or delay was added.",
+    "limitations": [
+      "Mounted readiness is not query freshness; each spec retains its own state/data/action assertions.",
+      "A route that lacks ScreenIntro cannot use this helper without a product change; no such product change was made.",
+      "No runtime pass is claimed for the extracted class patch before root complete journey rerun."
+    ]
+  }
+}

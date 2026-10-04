@@ -1,0 +1,385 @@
+{
+  "reviewKind": "Independent current-main source, rendered and runtime integration gate for draft fixes PR881",
+  "preparedAtUtc": "2026-10-04T00:11:50.544447+00:00",
+  "summary": {
+    "status": "PASS: scoped fixes PR integration; public launch signoff withheld",
+    "scopedPrGate": "PASS",
+    "fixesPrSignoff": true,
+    "publicLaunchSignoff": false,
+    "originalAuditFindingsClosed": 39,
+    "designRecommendationsImplemented": 2,
+    "confirmedActionableIntegrationFindings": 0,
+    "remainingPrChecks": [],
+    "sourceStopped": true,
+    "ownedBrowserContextsClosed": true,
+    "liveProviderWritesPerformed": false,
+    "remainingPrChecksScope": "Independent source/rendered/local-runtime review only. GitHub CI on the final publication commit is tracked separately by integration owner; this gate does not certify remote checks."
+  },
+  "revisionContext": {
+    "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "latestTestCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+    "journeyAndHydrationTestCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+    "mainMergeSourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "historicalProductProofCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "historicalReadinessTestCommit": "c86557eb9bd24eeca88baef37fd3a8684ae34fc2",
+    "reviewerGitWrites": [],
+    "workingTree": "No tracked local changes observed; all8 user untracked paths preserved. Root owns all commits and integration."
+  },
+  "method": {
+    "independent": "Read-only integration review, Activity conflict-test resolution retaining both regression sets, independent final Privacy server/client boundary inspection, and bounded safe Brief/a11y readiness diagnosis. Reviewed exact owner artifacts and final reports; no duplicated broad tests.",
+    "rootOwned": "Current production build, all-package static gates, served budget, normal-setup synthetic journeys/hydration/accessibility and final Privacy browser evidence.",
+    "syntheticBoundary": "Fresh tracked loopback production archive with disposable synthetic API/PostgreSQL/Redis. No provider worker, real Gmail/OAuth/payment/account-deletion or provider export completeness verified."
+  },
+  "sourceAssessment": [
+    {
+      "area": "Current-main Activity merge",
+      "result": "PASS",
+      "detail": "Only Activity test conflict required resolution. Both upstream rapid outcome/date and restored-URL/hash composition regressions remain alongside placeholder selection/keyboard Undo and recovery-verification safeguards. Auto-merged native URL composition preserves upstream behavior; stale displayed rows remain inert and all action/recovery dispatches retain guards.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
+      "file": "apps/web/src/features/activity/activity-screen.test.tsx",
+      "regressionLines": [3499, 3557, 3625, 3641]
+    },
+    {
+      "area": "TriageFocus keyboard ownership and account timezone",
+      "result": "PASS",
+      "detail": "Any mounted role=dialog, including nonmodal AccountMenu, blocks Skip/verb shortcuts; departing snapshot is inert. Shared account-zone explanation reaches Focus and agrees with List across the calendar boundary. Existing Escape ownership remains.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json"
+    },
+    {
+      "area": "Public/SYS/retained-data authority",
+      "result": "PASS in reviewed task-owned scope",
+      "detail": "Prior independent review retained billing mutation locks and provider adapters, feedback identity ownership, mailbox generation/cache reset, ready/unexpired Autopilot previews, truthful manual execution-time scope, same-mailbox retained read ownership and failed-query retry. Current main integration has no confirmed task-introduced regression. Upstream API/ops changes retain upstream provenance; this gate is not a fresh audit of every upstream change.",
+      "evidence": [
+        "local run artifact (not archived): core-independent-gate.json",
+        "local run artifact (not archived): retained-data-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
+      ]
+    },
+    {
+      "area": "Upstream pending-query and global recovery integration",
+      "result": "PASS",
+      "detail": "Native-promise normalization is restricted to transported pending snapshots; settled/newer cache ownership and browser-only retry policy are retained. Optional streams have separate deadline ownership; only the exact safe recovery marker bypasses telemetry reporting. Authenticated Autopilot is the current streamed consumer.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json",
+      "attributionLimit": "These authenticated query changes do not identify or prove a fix for original public HYDRATION-01."
+    },
+    {
+      "area": "Final static Privacy reader/control boundary",
+      "result": "PASS independently reviewed05af versusf21",
+      "evidence": [
+        {
+          "file": "apps/web/src/app/(app)/settings/privacy/page.tsx",
+          "line": 22,
+          "detail": "Server page supplies actual PrivacyDataContent ReactNode and canonical serializable export display strings."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-content.tsx",
+          "line": 21,
+          "detail": "Exhaustive format display projection carries no registry dataset IDs; actual native disclosure content is rendered from canonical inventory."
+        },
+        {
+          "file": "apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx",
+          "line": 23,
+          "detail": "Static content import is type-only. Auth, billing, export mutation/controller callbacks, errors, pending controls and receipt lifecycle remain client-owned and unchanged."
+        },
+        {
+          "file": "packages/shared/src/components/privacy-badge.tsx",
+          "line": 1,
+          "detail": "Only unnecessary client directive removed from pure JSX; no hooks, browser storage, time, handlers or lifecycle moved."
+        }
+      ],
+      "detail": "SettingsGroup receives static children and preserves inventory ID. Native details remains browser-native; registry copy/CSS moved intact. No export hook/controller/download, retention, provider, deletion or billing behavior change.",
+      "regressionEvidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
+      ]
+    }
+  ],
+  "currentChecks": [
+    {
+      "gate": "Affected upstream integration unit suites",
+      "status": "PASS",
+      "detail": "Core: 8 suites/325 tests; stream: 7 files/83 tests; counts overlap original phase and are not summed as distinct total.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
+      ]
+    },
+    {
+      "gate": "Privacy static-content/export regression and copy contracts",
+      "status": "PASS",
+      "detail": "Web: 3 files/34 tests; Shared: 2 files/14 tests; whole HTML equality in 8 states; native disclosure state survives export lifecycle.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
+      ]
+    },
+    {
+      "gate": "Full workspace typecheck",
+      "status": "PASS",
+      "detail": "All 8 workspace packages at final source.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
+    },
+    {
+      "gate": "Root lint",
+      "status": "PASS",
+      "detail": "Zero errors; 6 existing unused-disable warnings.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
+    },
+    {
+      "gate": "Production web + Storybook builds",
+      "status": "PASS",
+      "detail": "Fresh tracked production archive at 05af47e8; no inherited dotenv/credentials.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log"
+      ]
+    },
+    {
+      "gate": "Prerender",
+      "status": "PASS",
+      "detail": "45 public routes.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log"
+    },
+    {
+      "gate": "Served bundle budgets",
+      "status": "PASS",
+      "detail": "51 templates (34 public + 17 authed), 1 redirect; Privacy 259.5/262 kB.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
+    },
+    {
+      "gate": "Final synthetic journeys",
+      "status": "PASS",
+      "detail": "Two consecutive full 15-case runs after entity-scoped Brief locator correction; both coverage contracts pass; no skipped, unexpected or flaky tests.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+      ]
+    },
+    {
+      "gate": "Final E2E test static checks",
+      "status": "PASS",
+      "detail": "E2E typecheck and scoped Brief ESLint pass after test-only change. Workspace/root source gates remain at unchanged product05af.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log"
+      ]
+    },
+    {
+      "gate": "Final production hydration",
+      "status": "PASS",
+      "detail": "Both exact full 43-case runs passed; API/web process restart between them, same frozen product source, no retries/skips/flaky. Initial public errors remain untraced.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
+      ]
+    },
+    {
+      "gate": "Final accessibility/responsive",
+      "status": "PASS",
+      "detail": "70/70; 0 skipped, unexpected or flaky. Initial68/70/native-listener readiness failure preserved; four mounted-marker waits added only to test source.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+      ]
+    },
+    {
+      "gate": "Final accessibility test static checks",
+      "status": "PASS",
+      "detail": "E2E typecheck and scoped ESLint after final test-only mounted-marker change.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log"
+      ]
+    },
+    {
+      "gate": "Final production Privacy browser",
+      "status": "PASS",
+      "detail": "Desktop 1440 px and phone 390 px: native disclosure survives pending/prepared intercepted export; download handoff and consent controls work, no overflow/hydration errors, zero main axe violations. Synthetic bytes only; no provider export completeness claim. Captures are selected scrolled viewports with the existing first-heard survey visible.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json"
+    },
+    {
+      "gate": "Final independent design review",
+      "status": "PASS",
+      "detail": "Source hashes, current final runtime records and selected rendered viewports independently reviewed; scoped fixes PR approved, public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
+    },
+    {
+      "gate": "Independent current-main design/source gate",
+      "status": "PASS",
+      "detail": "Independent reviewer source assessment has no findings; final current-source evidence is supplied by root, historical full public/Storybook proof remains distinguished.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
+    }
+  ],
+  "currentRuntime": {
+    "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "latestTestCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+    "finalRuns": [
+      {
+        "id": "journeys-final-1",
+        "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+        "passed": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "durationSeconds": 24.3,
+        "report": "local run artifact (not archived): journeys-final-1.json",
+        "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log"
+      },
+      {
+        "id": "journeys-final-2",
+        "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+        "passed": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "durationSeconds": 23.7,
+        "report": "local run artifact (not archived): journeys-final-2.json",
+        "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log"
+      },
+      {
+        "id": "hydration-final-1",
+        "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+        "passed": 43,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "durationSeconds": 40.7,
+        "report": "local run artifact (not archived): hydration-final-1.json",
+        "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log"
+      },
+      {
+        "id": "hydration-final-2",
+        "testCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+        "passed": 43,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "durationSeconds": 41.9,
+        "report": "local run artifact (not archived): hydration-final-2.json",
+        "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
+      },
+      {
+        "id": "a11y-responsive-final",
+        "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+        "passed": 70,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "durationSeconds": 60.6,
+        "report": "local run artifact (not archived): a11y-responsive-final.json",
+        "log": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log"
+      }
+    ],
+    "normalGlobalSetup": true,
+    "coverageContracts": "PASS; root reports normal coverage/assert-e2e-ran contracts",
+    "hydrationColdRestart": "Full API and web process restart between final43-case hydration runs; same frozen source, no retries/skips/diagnostic suppression.",
+    "finalExecutions": 186,
+    "finalPasses": 186,
+    "finalSkipped": 0,
+    "finalUnexpected": 0,
+    "finalFlaky": 0,
+    "countLimit": "186 is repeated test executions, not186 unique scenarios; unit suite counts overlap historical proof and are not summed as distinct total.",
+    "authoritativeSummary": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-runtime-summary.json"
+  },
+  "currentPrivacyBrowser": {
+    "result": "PASS in named bounded checks",
+    "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "viewports": [
+      {
+        "width": 1440,
+        "height": 1000
+      },
+      {
+        "width": 390,
+        "height": 844
+      }
+    ],
+    "verified": [
+      "Native inventory disclosure opens and preserves the same opened state through pending and prepared export",
+      "Export controls disabled during preparation",
+      "Synthetic browser download handoff",
+      "Consent controls visible",
+      "No page overflow, hydration errors or main axe violations"
+    ],
+    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json",
+    "limits": [
+      "Export response intercepted with synthetic bytes; provider export was not executed or assessed for completeness.",
+      "Axe aria-valid-attr-value and color-contrast incomplete checks retained; this is not exhaustive WCAG certification.",
+      "Screenshots show a scrolled internal AppShell viewport; DOM and behavior checks cover the named controls separately."
+    ]
+  },
+  "preliminaryFailures": [
+    {
+      "id": "QA-BRIEF-LOCATOR",
+      "status": "Resolved test-only semantic locator defect; two fresh full15-case suites pass",
+      "initial": "Final-source preliminary journeys14/15: whole-document exact text matched2DOMelements.",
+      "change": "Assert the frozen count within exactly one accessible Noise listitem containing the exact selected seeded-sender checkbox. Archive2, cancel zero writes and API preview count2 remain.",
+      "diagnosisLimit": "Hidden streaming twin was consistent with failure/source but did not recur in bounded DOM inspection. No visible product duplicate or production correction claimed.",
+      "preservedEvidence": [
+        "local run artifact (not archived): journeys-final-before-brief-locator-fix.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-before-brief-locator-fix.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-error-context.md"
+      ],
+      "mapping": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+    },
+    {
+      "id": "QA-A11Y-MOUNTED-READINESS",
+      "status": "Resolved test-only listener-readiness gap; focused6/6 and fresh normal-setup full70/70 pass",
+      "initial": "Preliminary accessibility68/70: desktop and phone native-focus question-mark shortcut timed out after awaiting only SSR heading.",
+      "evidence": "CPU6x diagnosis in both viewports showed SSR heading/native Filter focus before mounted About marker and any question-mark effect listeners. After shared mounted marker, actual dialog open, bidirectional focus trap and exact Escape restoration passed.",
+      "change": "Use existing expectScreenMounted in interactive Activity Filter, native shortcuts and Privacy export/reload cases. Original assertions are retained; no first/force/retries/skips/suppression or DOM readiness bypass.",
+      "diagnosisLimit": "Complete ungated timeout did not recur in bounded instrumented check because keypress timing crossed listener registration; original failure remains the negative control. No post-mount production keyboard defect or product change claimed.",
+      "preservedEvidence": [
+        "local run artifact (not archived): a11y-before-mounted-readiness.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-before-mounted-readiness.log"
+      ],
+      "mapping": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+    }
+  ],
+  "historicalEvidence": {
+    "productSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "scope": "Historical39-finding closure and both design recommendations, full public and Storybook review, shared726 and affected Web1089 assertions, supplemental foreground light/dark and retained-data mechanisms.",
+    "publicSweep": "48public routes with bounded light/dark captures; all48light axe and10representative dark axe scans.",
+    "storyCoverage": "121baseline states across68app groups plus50effective focused captures and3Clear recaptures;130distinct story IDs reviewed.",
+    "notRelabeled": "This broad historical browser proof was not rerun in full at05af. Current-source runtime70cases plus final Privacy2viewports, integration suites and build/static gates are recorded separately.",
+    "evidence": [
+      "local run artifact (not archived): core-independent-gate.json",
+      "local run artifact (not archived): core-foreground-supplement.json",
+      "local run artifact (not archived): core-integration.json"
+    ]
+  },
+  "residualRisks": [
+    {
+      "id": "HYDRATION-01",
+      "priority": "P1 public launch risk",
+      "status": "OPEN: initially reproduced, subsequently unreproduced; cause untraced and no source fix claimed",
+      "initialSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+      "initial": "Initial exact full suite40/43: accepted-analytics returning dark visits to /, /compare and /faq emitted React#418 HTML mismatch and recovered without the seeded theme.",
+      "preservedEvidence": [
+        "local run artifact (not archived): hydration-initial.json",
+        "local run artifact (not archived): hydration-initial.log"
+      ],
+      "diagnosis": "79bounded public diagnostics, including6CPU/network-throttled cold development visits, were clean. No concrete source cause, expanded development DOM diff or localized SSR correction established.",
+      "currentEvidence": "Current05af exact normal-setup full43 hydration passed twice with full API/web restart between them; these clean runs satisfy the scoped current PR runtime gate and do not establish that the original cause was fixed.",
+      "attributionExcluded": [
+        "Upstream authenticated pending-query normalization/global recovery",
+        "Static Privacy server-reader optimization",
+        "Test-only Brief semantic locator and a11y mounted-listener readiness corrections"
+      ],
+      "releaseRequirement": "Rehearse the exact prospective deployment with accepted analytics plus persisted dark theme, fresh/essential-only states and authenticated hydration. Preserve the initial evidence and investigate any recurrence with a concrete DOM diff before public release.",
+      "investigation": "local run artifact (not archived): core-hydration-investigation.json",
+      "publicLaunchSignoff": false
+    },
+    {
+      "id": "PROVIDER-LAUNCH-REHEARSAL",
+      "status": "UNVERIFIED: outside synthetic fixes PR proof",
+      "detail": "Real Gmail/OAuth/provider worker outcomes, account deletion and Paddle/Razorpay production cutover are not exercised. Synthetic download verifies browser handoff rather than actual provider export completeness.",
+      "releaseRequirement": "Complete separately authorized provider and sandbox/cutover release rehearsals before claiming public launch readiness.",
+      "publicLaunchSignoff": false
+    }
+  ],
+  "conclusion": "Current-main fixes PR source/render/runtime integration is PASS with no confirmed actionable integration defect and no remaining scoped PR check. Public launch signoff remains false for the explicit untraced original hydration signal and unverified provider release rehearsal. All reviewer source edits are stopped and owned browser contexts are closed.",
+  "parallelIndependentDesignEvidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
+}

@@ -1,0 +1,54 @@
+{
+  "baselineRevision": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+  "method": "renderToStaticMarkup of untouched archived before view against new view with actual server content and canonical copy; exact complete HTML comparison, no whitespace normalization",
+  "states": [
+    {
+      "state": "ready",
+      "equal": true,
+      "sha256": "808ac990265480788c877879471057a05dc7e686d0bfa6ec73ab3dfb686fe244",
+      "bytes": 46267
+    },
+    {
+      "state": "no-mailboxes",
+      "equal": true,
+      "sha256": "3064b0939f33a3daef9c7c5cace20795cf9c5529ef56d19580432b52c9b678e0",
+      "bytes": 45900
+    },
+    {
+      "state": "tier-unknown",
+      "equal": true,
+      "sha256": "df27423f98c75b982821e2f9184b74a068cc9a9cebc32a807d86b27df3ba8c2f",
+      "bytes": 46231
+    },
+    {
+      "state": "export-pending",
+      "equal": true,
+      "sha256": "bfb98b0c6e4110bf04ef80c44641b5684df5070814db868d4e398be390f0b308",
+      "bytes": 46338
+    },
+    {
+      "state": "export-failed",
+      "equal": true,
+      "sha256": "1e8e0d36e614b75adb8dc5afa97c1915e88b6b6757d0d3c244abbb12a6a88df2",
+      "bytes": 46461
+    },
+    {
+      "state": "export-429",
+      "equal": true,
+      "sha256": "124ba464671bbf4318bd3cdfa06d59aac040432057d04c31fdf6317d122c1adf",
+      "bytes": 46461
+    },
+    {
+      "state": "export-401",
+      "equal": true,
+      "sha256": "969fe4610a829c05a32375ac5e54e305535a5447cade462f95b660e84f28c9d7",
+      "bytes": 46422
+    },
+    {
+      "state": "export-prepared",
+      "equal": true,
+      "sha256": "33a263eda85cc11f52f882472314c2d170d3490924e0a24e3162b71c68d2529d",
+      "bytes": 46345
+    }
+  ]
+}

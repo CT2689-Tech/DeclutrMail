@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { applyJourneySeed } from '../helpers/seed-journeys';
@@ -74,10 +75,16 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
 
   // ---- The seeded row renders in the awaiting list.
   await page.goto('/followups');
-  await expect(page.getByText(RECIPIENT_NAME)).toBeVisible({ timeout: 30_000 });
+  await expectScreenMounted(page);
+  const recipient = page.getByText(RECIPIENT_NAME, { exact: true });
+  const row = page.getByRole('listitem').filter({ has: recipient });
+  // Wait for the accessible row and a unique exact name: streamed HTML can
+  // briefly retain a hidden copy during hydration. Persistent duplicates fail.
+  await expect(row).toHaveCount(1, { timeout: 30_000 });
+  await expect(recipient).toHaveCount(1, { timeout: 30_000 });
+  await expect(recipient).toBeVisible({ timeout: 30_000 });
   const essential = page.getByRole('button', { name: 'Essential only', exact: true });
   if (await essential.isVisible()) await essential.click();
-  const row = page.getByRole('listitem').filter({ hasText: RECIPIENT_NAME });
   await row.getByText('Evaluation', { exact: true }).click();
   await expect(row.locator(`time[datetime="${evaluatedAt}"]`)).toBeVisible();
   await expect(row).toContainText('from indexed mail. New replies may still be syncing.');
@@ -87,7 +94,7 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   await page
     .getByRole('button', { name: `Mark resolved in DeclutrMail — ${RECIPIENT_NAME}` })
     .click();
-  await expect(page.getByText(RECIPIENT_NAME)).toBeHidden({ timeout: 15_000 });
+  await expect(recipient).toBeHidden({ timeout: 15_000 });
 
   // ---- Durable write: tracker row flipped + activity audit row.
   await expect
@@ -112,10 +119,11 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
 
   // ---- D86: dismissed rows stay gone after a full reload.
   await page.reload();
-  // The screen has settled (header rendered) before asserting absence —
-  // a bare toBeHidden would pass against a still-loading page.
+  await expectScreenMounted(page);
+  // Keep the screen-specific heading assertion as well as mounted readiness
+  // before checking durable absence after the full navigation.
   await expect(page.getByRole('heading', { level: 1, name: 'Follow-ups' })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText(RECIPIENT_NAME)).toBeHidden();
+  await expect(recipient).toBeHidden();
 });

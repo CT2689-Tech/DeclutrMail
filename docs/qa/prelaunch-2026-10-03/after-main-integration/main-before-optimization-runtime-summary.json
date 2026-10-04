@@ -1,0 +1,995 @@
+{
+  "phase": "current main before Privacy static-content optimization",
+  "sourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+  "runs": [
+    {
+      "id": "journeys-main-1",
+      "stats": {
+        "startTime": "2026-10-03T23:42:47.800Z",
+        "duration": 24454.495,
+        "expected": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "autopilot-pages.spec.ts",
+          "title": "review pages cover the backlog and recover when the older page is exhausted",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1942,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "brief-preview.spec.ts",
+          "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 385,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 2413,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 4178,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "followups-dismiss.spec.ts",
+          "title": "Mark resolved dismisses the row, audits it, and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 716,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "later-recovery.spec.ts",
+          "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 3129,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "protection-review.spec.ts",
+          "title": "protected senders show the exact reason, and Unprotect works in place",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 360,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1457,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 530,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "quiet-hours.spec.ts",
+          "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1813,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "sender-policy.spec.ts",
+          "title": "Protect toggle persists across reload and restores on toggle-back",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 717,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "typing a multi-word query keeps every keystroke",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1604,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1593,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "backspacing to empty restores the unfiltered list",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1162,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "triage-keep.spec.ts",
+          "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 766,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "journeys-main-2",
+      "stats": {
+        "startTime": "2026-10-03T23:43:17.461Z",
+        "duration": 23884.339,
+        "expected": 15,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "autopilot-pages.spec.ts",
+          "title": "review pages cover the backlog and recover when the older page is exhausted",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1726,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "brief-preview.spec.ts",
+          "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 346,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 2348,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "cookie-consent.spec.ts",
+          "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 4190,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "followups-dismiss.spec.ts",
+          "title": "Mark resolved dismisses the row, audits it, and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 715,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "later-recovery.spec.ts",
+          "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 3146,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "protection-review.spec.ts",
+          "title": "protected senders show the exact reason, and Unprotect works in place",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 336,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1477,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "public-journeys.spec.ts",
+          "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 519,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "quiet-hours.spec.ts",
+          "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1833,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "sender-policy.spec.ts",
+          "title": "Protect toggle persists across reload and restores on toggle-back",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 684,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "typing a multi-word query keeps every keystroke",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1606,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1661,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "senders-search-typing.spec.ts",
+          "title": "backspacing to empty restores the unfiltered list",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1106,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "triage-keep.spec.ts",
+          "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 792,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hydration-main-before-optimization",
+      "stats": {
+        "startTime": "2026-10-03T23:43:46.405Z",
+        "duration": 41075.825999999994,
+        "expected": 43,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 962,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 882,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 892,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 887,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 882,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 875,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 863,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 899,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "public route mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 879,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 918,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 883,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 877,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 895,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 884,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 886,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 870,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 934,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 927,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 990,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /pricing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 923,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /inbox-simulator",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 894,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /compare",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1095,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 959,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 916,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 907,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /how-it-works",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 937,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke-public.spec.ts",
+          "title": "returning visitor (essential only) mounts without hydration recovery: /faq",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 907,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /home",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 908,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 1827,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /triage",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 872,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /activity",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 932,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /autopilot",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 936,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /billing",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 922,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /brief",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 875,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /followups",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 873,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /later",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 870,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /quiet",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 882,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /screener",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 880,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 897,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/privacy",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 901,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /settings/senders",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 892,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /onboarding",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 897,
+              "errors": []
+            }
+          ]
+        },
+        {
+          "file": "hydration-smoke.spec.ts",
+          "title": "server-hydrated route mounts without recovery: /admin/security",
+          "project": "default",
+          "status": "expected",
+          "results": [
+            {
+              "status": "passed",
+              "durationMs": 899,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limits": "Synthetic loopback API/database only; no worker/provider/payment/account-deletion operations. Historical HYDRATION-01 remains unexplained."
+}

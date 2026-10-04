@@ -141,7 +141,7 @@ export function rowStatusLabel(activity: SenderRowActivity): string {
 
 /** Text colour for the button-slot status. Body-strength, never faded. */
 export function rowStatusColor(activity: SenderRowActivity): string {
-  if (activity.phase === 'failed') return color.danger;
+  if (activity.phase === 'failed') return color.dangerText;
   if (activity.phase === 'done' && activity.affectedCount !== 0) return color.primary;
   return color.fg;
 }
@@ -225,7 +225,7 @@ export const isRowBusy = (activity: SenderRowActivity | undefined): boolean =>
 export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
   const tone =
     activity.phase === 'failed'
-      ? { fg: color.danger, bg: color.dangerBg, border: color.dangerBorder }
+      ? { fg: color.dangerText, bg: color.dangerBg, border: color.dangerBorder }
       : activity.phase === 'mixed'
         ? // Part of the bulk failed — a caution. Body-colour text keeps contrast.
           { fg: color.fg, bg: color.amberBg, border: color.amber }

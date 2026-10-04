@@ -4,14 +4,10 @@
 // to a system font stack (the layout's Geist/JetBrains Mono vars are
 // unavailable when the layout crashed).
 //
-// Caveat: rendering an <html> element inside Storybook's already-
-// present <html> emits a React hydration warning. The story still
-// renders correctly. When the seed lands (D210) and we run real
-// Storybook, switch the `render` to mount into an iframe (Storybook
-// supports `parameters.docs.story.inline = false`) to silence it.
+// Storybook renders the same fallback content inside its existing document.
 
 import type { ComponentProps } from 'react';
-import GlobalError from './global-error';
+import { GlobalErrorContent } from './global-error';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -26,19 +22,16 @@ type Story<C extends (props: never) => unknown> = {
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
-const meta: StoryMeta<typeof GlobalError> = {
+const meta: StoryMeta<typeof GlobalErrorContent> = {
   title: 'AppShell/Errors/GlobalError',
-  component: GlobalError,
+  component: GlobalErrorContent,
   parameters: {
     layout: 'fullscreen',
     docs: {
       description: {
         component:
-          'Outer error boundary mounted when the root layout crashes (D167). Includes its own <html>/<body>. Auto-fires Sentry with `boundary: app-router-global-error`.',
+          'Fallback content used by the outer error boundary when the root layout crashes (D167). The production boundary supplies its own document.',
       },
-      // Render in an iframe once Storybook is seeded, to avoid the
-      // nested <html> hydration warning.
-      story: { inline: false },
     },
   },
   tags: ['autodocs'],
@@ -46,19 +39,17 @@ const meta: StoryMeta<typeof GlobalError> = {
 
 export default meta;
 
-type GlobalErrArgs = ComponentProps<typeof GlobalError>;
+type GlobalErrArgs = ComponentProps<typeof GlobalErrorContent>;
 
 const noopReset = () => {
   /* Storybook no-op — real reset is wired by Next.js at runtime. */
 };
 
 /** Default — fallback render when the root layout itself errored. */
-export const Default: Story<typeof GlobalError> = {
+export const Default: Story<typeof GlobalErrorContent> = {
   render: (_args: GlobalErrArgs) => (
-    <GlobalError
-      error={Object.assign(new Error('Layout crashed'), {
-        digest: '7f2a9100deadbeef',
-      })}
+    <GlobalErrorContent
+      error={Object.assign(new Error('Layout crashed'), { digest: '7f2a9100deadbeef' })}
       reset={noopReset}
     />
   ),

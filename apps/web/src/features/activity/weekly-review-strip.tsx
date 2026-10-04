@@ -164,7 +164,7 @@ export function WeeklyReviewStrip({
                   letterSpacing: '-0.02em',
                   lineHeight: 1.15,
                   fontVariantNumeric: 'tabular-nums',
-                  color: isFailed ? color.danger : count === 0 ? color.fgMuted : color.fg,
+                  color: isFailed ? color.dangerText : count === 0 ? color.fgMuted : color.fg,
                 }}
               >
                 {count.toLocaleString('en-US')}
@@ -182,7 +182,7 @@ export function WeeklyReviewStrip({
                 {label}
                 {/* The tile already opens the failed records; the word says so. */}
                 {isFailed && !isActive && (
-                  <span style={{ fontWeight: 600, color: color.danger }}>Review</span>
+                  <span style={{ fontWeight: 600, color: color.dangerText }}>Review</span>
                 )}
               </span>
             </Link>

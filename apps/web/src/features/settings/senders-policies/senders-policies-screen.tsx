@@ -213,6 +213,7 @@ export function SendersPoliciesScreen() {
         ) : protectedSenders.length === 0 ? (
           <div style={{ padding: `${space[5]}px 0` }}>
             <EmptyState
+              headingLevel={2}
               title={query ? 'No protected senders match your search' : 'No protected senders yet'}
               /* Must not say protection is something you set by hand:
                  three of the four reasons are AUTOMATIC, and this is the
@@ -496,6 +497,7 @@ function PoliciesErrorState({ onRetry }: { onRetry: () => void }) {
       }}
     >
       <RecoverableErrorState
+        headingLevel={2}
         title="We couldn't load protected senders"
         description="Your existing policies remain active. Try again in a moment."
         onRetry={onRetry}

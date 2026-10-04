@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
+import type { MeMailbox } from '@/features/auth/api/use-me';
 
 const { color, font, radius, text } = tokens;
 const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
@@ -31,7 +32,7 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
  *
  *   3. A subtle upgrade nudge — tier-gated per D17–D21:
  *        free → "See Plus" (lifts the A3 50/month cleanup cap)
- *        plus → "Pro could do this for you automatically" (D33 quote)
+ *        plus → "Compare Pro features" (Autopilot is already included in Plus)
  *        pro  → no nudge; D33 explicitly hides it for Pro users.
  *      `freeRemaining` is the MONTHLY remainder (config-driven via
  *      the BE; replaced the old 25/day display counter), so the nudge
@@ -44,22 +45,15 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 export function TriageEmptyState({
   stats,
   onOpenUpgrade,
-  syncFailed = false,
+  readiness = 'ready',
   syncNeedsReconnect = false,
   footnote,
 }: {
   stats: TriageSessionStats;
   onOpenUpgrade?: () => void;
-  /**
-   * QA-sync-20260831-01: the active mailbox's INITIAL sync has
-   * terminally failed (`readiness_status === 'failed'`) — not merely
-   * `queued`/`syncing`. Triage otherwise has zero sync awareness at all,
-   * so a resting-queue read during a broken sync renders the same
-   * confident "nothing to do" claim as a genuinely caught-up mailbox.
-   */
-  syncFailed?: boolean;
-  /** The failed mailbox needs reconnecting — Settings offers no retry for it. */
-  syncNeedsReconnect?: boolean;
+  readiness?: MeMailbox['readiness'] | undefined;
+  /** Failed readiness needs OAuth reconnection instead of a scan retry. */
+  syncNeedsReconnect?: boolean | undefined;
   /** One muted line under the completion numerals (the D214 "today" fact). */
   footnote?: ReactNode;
 }) {
@@ -71,32 +65,53 @@ export function TriageEmptyState({
   // D212 EmptyState instead: calm, mental-model copy, one next step.
   // The single editorial phrase is the ADR-0011 allowance for
   // first-class empty states.
-  if (stats.decidedToday === 0 && syncFailed) {
-    // "Nothing needs a decision" is a claim about the queue having been
-    // checked; a failed scan means it hasn't been. The button goes where
-    // the copy points — Settings → Gmail accounts.
+  if (readiness !== 'ready') {
+    const failed = readiness === 'failed';
+    const unknown = readiness == null;
+    const title = failed
+      ? "This mailbox's last scan didn't finish."
+      : unknown
+        ? 'Mailbox scan status is unavailable.'
+        : readiness === 'queued'
+          ? 'Your mailbox scan is queued.'
+          : 'Your mailbox scan is still in progress.';
     return (
-      <EmptyState
-        title="This mailbox's last scan didn't finish."
-        // `failedScanSettingsStep`'s two sentences, inline: importing
-        // mailbox-health put Triage over its bundle budget. A test pins
-        // them equal to the helper.
-        description={
-          syncNeedsReconnect
-            ? 'Reconnect it in Settings → Gmail accounts.'
-            : 'Scan again in Settings → Gmail accounts.'
-        }
-        action={
-          <a href="/settings#mailboxes" style={LINK_BUTTON}>
-            Open Settings
-          </a>
-        }
-      />
+      <>
+        <EmptyState
+          headingLevel={2}
+          title={title}
+          description={
+            failed
+              ? syncNeedsReconnect
+                ? 'Reconnect it in Settings → Gmail accounts.'
+                : 'Scan again in Settings → Gmail accounts.'
+              : unknown
+                ? 'Check your Gmail account in Settings.'
+                : 'Review work appears as the scan progresses.'
+          }
+          {...(failed || unknown
+            ? {
+                action: (
+                  <a href="/settings#mailboxes" style={LINK_BUTTON}>
+                    Open Settings
+                  </a>
+                ),
+              }
+            : {})}
+        />
+        {stats.decidedToday > 0 && (
+          <p style={{ color: color.fgMuted, textAlign: 'center', fontSize: text.sm }}>
+            {stats.decidedToday.toLocaleString('en-US')} decided today
+          </p>
+        )}
+        {footnote}
+      </>
     );
   }
   if (stats.decidedToday === 0) {
     return (
       <EmptyState
+        headingLevel={2}
         title="Nothing needs a decision right now."
         description="New decisions appear as senders send again."
         action={
@@ -249,7 +264,7 @@ export function TriageEmptyState({
             textUnderlineOffset: 3,
           }}
         >
-          See Pro automation
+          Compare Pro features
         </button>
       )}
     </div>

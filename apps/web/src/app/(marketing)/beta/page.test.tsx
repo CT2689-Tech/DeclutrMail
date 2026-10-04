@@ -64,9 +64,9 @@ describe('/beta page — F7 beta status page', () => {
       'href',
       expect.stringMatching(/^mailto:/),
     );
-    expect(screen.getByRole('link', { name: /try the daily review demo/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /try daily triage/i })).toHaveAttribute(
       'href',
-      '/inbox-simulator',
+      '/inbox-simulator?workspace=triage',
     );
     expect(document.querySelector('a[href*="/api/auth/google/start"]')).toBeNull();
     // The Team-tier waitlist CTA is gone — signup is open (2026-07-07).

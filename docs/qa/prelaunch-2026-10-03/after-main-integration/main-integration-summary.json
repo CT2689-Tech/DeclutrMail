@@ -1,0 +1,156 @@
+{
+  "phase": "current-main integration and Privacy static-content optimization",
+  "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+  "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+  "initialProofSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "initialProofTestCommit": "c86557eb",
+  "mainMergeSourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+  "mergeResolution": "Only Activity test conflict; both original stale-action regressions and upstream overlapping-filter regressions retained. Production files auto-merged.",
+  "optimization": {
+    "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "result": "Static Privacy badge/inventory and canonical export-label projection render on server; existing client controls/lifecycle retained.",
+    "servedPrivacyGzipKB": 259.5,
+    "beforeRoundedGzipKB": 262.0,
+    "budgetKB": 262,
+    "checkerAndBudgetsUnchanged": true,
+    "exactCompleteHtmlEqualStates": 8
+  },
+  "checks": [
+    {
+      "gate": "Affected upstream integration unit suites",
+      "status": "PASS",
+      "detail": "Core: 8 suites/325 tests; stream: 7 files/83 tests; counts overlap original phase and are not summed as distinct total.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
+      ]
+    },
+    {
+      "gate": "Privacy static-content/export regression and copy contracts",
+      "status": "PASS",
+      "detail": "Web: 3 files/34 tests; Shared: 2 files/14 tests; whole HTML equality in 8 states; native disclosure state survives export lifecycle.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
+      ]
+    },
+    {
+      "gate": "Full workspace typecheck",
+      "status": "PASS",
+      "detail": "All 8 workspace packages at final source.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
+    },
+    {
+      "gate": "Root lint",
+      "status": "PASS",
+      "detail": "Zero errors; 6 existing unused-disable warnings.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
+    },
+    {
+      "gate": "Production web + Storybook builds",
+      "status": "PASS",
+      "detail": "Fresh tracked production archive at 05af47e8; no inherited dotenv/credentials.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log"
+      ]
+    },
+    {
+      "gate": "Prerender",
+      "status": "PASS",
+      "detail": "45 public routes.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log"
+    },
+    {
+      "gate": "Served bundle budgets",
+      "status": "PASS",
+      "detail": "51 templates (34 public + 17 authed), 1 redirect; Privacy 259.5/262 kB.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
+    },
+    {
+      "gate": "Final synthetic journeys",
+      "status": "PASS",
+      "detail": "Two consecutive full 15-case runs after entity-scoped Brief locator correction; both coverage contracts pass; no skipped, unexpected or flaky tests.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+      ]
+    },
+    {
+      "gate": "Final E2E test static checks",
+      "status": "PASS",
+      "detail": "E2E typecheck and scoped Brief ESLint pass after test-only change. Workspace/root source gates remain at unchanged product05af.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log"
+      ]
+    },
+    {
+      "gate": "Final production hydration",
+      "status": "PASS",
+      "detail": "Both exact full 43-case runs passed; API/web process restart between them, same frozen product source, no retries/skips/flaky. Initial public errors remain untraced.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
+      ]
+    },
+    {
+      "gate": "Final accessibility/responsive",
+      "status": "PASS",
+      "detail": "70/70; 0 skipped, unexpected or flaky. Initial68/70/native-listener readiness failure preserved; four mounted-marker waits added only to test source.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+      ]
+    },
+    {
+      "gate": "Final accessibility test static checks",
+      "status": "PASS",
+      "detail": "E2E typecheck and scoped ESLint after final test-only mounted-marker change.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log"
+      ]
+    },
+    {
+      "gate": "Final production Privacy browser",
+      "status": "PASS",
+      "detail": "Desktop 1440 px and phone 390 px: native disclosure survives pending/prepared intercepted export; download handoff and consent controls work, no overflow/hydration errors, zero main axe violations. Synthetic bytes only; no provider export completeness claim. Captures are selected scrolled viewports with the existing first-heard survey visible.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json"
+    },
+    {
+      "gate": "Final independent design review",
+      "status": "PASS",
+      "detail": "Source hashes, current final runtime records and selected rendered viewports independently reviewed; scoped fixes PR approved, public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
+    },
+    {
+      "gate": "Final independent core source/runtime review",
+      "status": "PASS",
+      "detail": "All original findings and final source/rendered/runtime evidence independently reviewed; scoped fixes PR approved, public launch hold retained. Remote CI on publication head remains separately tracked.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-independent-gate.json"
+    }
+  ],
+  "launchSignoff": false,
+  "publicHydrationSignal": "Original three public HTML recovery errors remain unexplained. Upstream native-promise repair is specific to Autopilot streaming and does not establish the cause of public failures.",
+  "providerBoundary": "No live Gmail/OAuth/provider worker/payment/account-deletion operations. Disposable synthetic PostgreSQL/Redis and loopback URLs only.",
+  "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+  "testOnlyReadinessCorrection": {
+    "file": "packages/e2e/specs/brief-preview.spec.ts",
+    "change": "Count assertion belongs to exactly one accessible Noise list item containing the seeded sender checkbox. Preview/cancel/API count checks retained.",
+    "failurePreserved": "journeys-final-before-brief-locator-fix",
+    "diagnosisLimit": "Global exact text matched two DOM elements; a hidden streaming twin was inferred but did not recur in bounded inspection.",
+    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+  },
+  "journeyAndHydrationTestCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+  "accessibilityTestOnlyReadinessCorrection": {
+    "file": "packages/e2e/specs/a11y-smoke.spec.ts",
+    "change": "Shared mounted-screen marker before native focus/keyboard and the interactive Activity/Privacy scenarios, including post-reload. All original assertions retained.",
+    "failurePreserved": "a11y-before-mounted-readiness",
+    "diagnosis": "Under CPU6x in both viewports, SSR heading/native Filter focus could precede About marker and all question-mark listeners. Gated actual dialog/trap/restore passed. Full original timeout did not recur during bounded instrumented diagnosis.",
+    "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+  },
+  "fixesPrSignoff": true,
+  "remoteCi": "Not certified by local gates; pending final publication head check."
+}

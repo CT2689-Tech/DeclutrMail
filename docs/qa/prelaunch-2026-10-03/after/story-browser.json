@@ -1,0 +1,4805 @@
+[
+  {
+    "id": "appshell-errors-apperror--default",
+    "title": "AppShell/Errors/AppError",
+    "name": "Default",
+    "source": "./src/app/error.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "!\nWe couldn\u2019t show this page.\n\nTry again, or head back to Triage.\n\nTry again\nBack to Triage",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We couldn\u2019t show this page."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=appshell-errors-apperror--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "001-appshell-errors-apperror--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "appshell-errors-globalerror--default",
+    "title": "AppShell/Errors/GlobalError",
+    "name": "Default",
+    "source": "./src/app/global-error.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "SOMETHING INTERRUPTED\nWe couldn\u2019t load DeclutrMail.\n\nTry again to continue.\n\nShow support reference\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We couldn\u2019t load DeclutrMail."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=appshell-errors-globalerror--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 78,
+        "incomplete": 0,
+        "passes": 10,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/002-appshell-errors-globalerror--default.png"
+  },
+  {
+    "id": "appshell-errors-notfound--authed",
+    "title": "AppShell/Errors/NotFound",
+    "name": "Authed",
+    "source": "./src/app/not-found.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "404\nWe can\u2019t find that page.\n\nThat link may be out of date, or the page may have moved.\n\nBack to Triage\nOpen Senders",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We can\u2019t find that page."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=appshell-errors-notfound--authed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "003-appshell-errors-notfound--authed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "account-accountdeletion--modal-step-1",
+    "title": "Account/AccountDeletion",
+    "name": "Modal Step 1",
+    "source": "./src/features/account-deletion/account-deletion.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Delete your DeclutrMail account?\n\nDeleting your DeclutrMail account does not delete emails in Gmail.\n\nWhat gets permanently deleted\nSaved Gmail details (senders, subjects, snippets, labels, dates)\nSender decisions and Screener history\nAutomation rules\nUndo history\nYour DeclutrMail account and workspace\nWhat is retained under policy\nNarrowly scoped pseudonymous security and deletion evidence, without message bodies or attachments\nI understand this permanently deletes my DeclutrMail account, does not delete my Gmail email, and retains the security and deletion evidence listed above.\n\nNothing is deleted yet.\n\nReview deletion timing\nKeep my account\nStep 1 of 2",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Delete your DeclutrMail account?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=account-accountdeletion--modal-step-1&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/004-account-accountdeletion--modal-step-1.png"
+  },
+  {
+    "id": "activity-actionrecoverydialog--ready",
+    "title": "Activity/ActionRecoveryDialog",
+    "name": "Ready",
+    "source": "./src/features/activity/action-recovery-dialog.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Review this failed Delete\n\nWe check Gmail first, so nothing changes until you confirm.\n\n42\nStill to do\n0\nAlready done in Gmail\n0\nGone from Gmail\n42\nChecked\nThey move to Gmail Trash. You can undo it from Activity.\nClose\nDelete 42",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Review this failed Delete"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=activity-actionrecoverydialog--ready&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "005-activity-actionrecoverydialog--ready.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-activity-filterdialog--desktop",
+    "title": "Features/Activity/FilterDialog",
+    "name": "Desktop",
+    "source": "./src/features/activity/activity-filter-dialog.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Source\nAll\nTriage\nAutopilot\nScreener\nManual\nOutcome\nCompleted\nDismissed by you\nFailed\nFixed on retry\nSkipped for Protected\nTime\n7 days\n30 days\n90 days\nAll\nFrom\nTo\nView\nGroup by sender",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transf"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "SourceAllTriageAutopilotScreenerManualOutcomeCompletedDismissed by youFailedFixed on retrySkipped fo"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "SourceAllTriageAutopilotScreenerManual"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Source"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "AllTriageAutopilotScreenerManual"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "Screener"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "OutcomeCompletedDismissed by youFailedFixed on retrySkipped for Protected"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Outcome"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "CompletedDismissed by youFailedFixed on retrySkipped for Protected"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "Failed"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "Skipped for Protected"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "Time7 days30 days90 daysAllFromTo"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-filterdialog--desktop&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "006-features-activity-filterdialog--desktop.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-activity-activityscreen--populated",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Populated",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n\nHistory \u00b7 Last 30 days \u00b7 Active mailbox\n\nLast 30 days\nArchived\n8,420\nemails\nfrom 47 senders\nIn the last 30 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 30 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n10\nsenders\nIn the last 30 days\nAll time: 74 senders\nLater\n96\nemails\nfrom 3 senders\nIn the last 30 days\nAll time: 731 emails\nfrom 19 senders\nKept\n7\nsenders\nIn the last 30 days\nAll time: 35 senders\n\nTotals from every source. Undone actions aren\u2019t counted.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nSun, May 24\nN\nNewsletter Daily\ndaily.example\n11:00 PM\nArchived12 emails\nBy Autopilot \u00b7 Newsletter graveyard\nUndo\n\u21ba\nO\nOld Navy\noldnavy.example\n5:00 PM\nUnsubscribe request recorded1 email\nBy you\nO\nOld Navy\noldnavy.example\n6:00 PM\nUnsubscribe request accepted\nBy you\nSat, May 23\nB\nBig Boss\nexample.com\n1:00 PM\nKeep decision saved\nVia Triage\nFri, May 22\nV\nVendor Co\nvendor.example\n1:00 AM\nArchived7 emails\nBy Autopilot\nUndone\nWed, May 13\nO\nOlder Sender\nexample.com\n1:00 AM\nArchived3 emails\nBy you\nExpired\nEnd of activity \u00b7 6 actions shown\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n23\nCompleted\n0\nDismissed by you\n1\nFailed\nReview\n2\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "Sun, May 24"
+        },
+        {
+          "tag": "H2",
+          "text": "Sat, May 23"
+        },
+        {
+          "tag": "H2",
+          "text": "Fri, May 22"
+        },
+        {
+          "tag": "H2",
+          "text": "Wed, May 13"
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 60,
+        "incomplete": 1,
+        "passes": 28,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "007-features-activity-activityscreen--populated.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-activity-activityscreen--empty",
+    "title": "Features/Activity/ActivityScreen",
+    "name": "Empty",
+    "source": "./src/features/activity/activity-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR HISTORY / EVERY OUTCOME IN VIEW\n\nActivity\nFilter\n1\n\nHistory \u00b7 Last 7 days \u00b7 Active mailbox\n\nLast 7 days\n\u2715\nClear\nLast 7 days\nArchived\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 41,850 emails\nfrom 975 senders\nMoved to Trash\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 9,642 emails\nfrom 184 senders\nUnsubscribe requests\n0\nsenders\nIn the last 7 days\nAll time: 74 senders\nLater\n0\nemails\nfrom 0 senders\nIn the last 7 days\nAll time: 731 emails\nfrom 19 senders\nKept\n0\nsenders\nIn the last 7 days\nAll time: 35 senders\n\nTotals from every source.\n\nView action counts\nAll\nArchived\nDeleted\nUnsubscribes\nLater\nKept\nFollow-ups\nNo activity in the last 7 days.\n\nOlder activity, if there is any, is one step away.\n\nShow all activity\n\nWeekly overview \u00b7 Separate from the selected date window\n\nLast 7 days\n0\nCompleted\n0\nDismissed by you\n0\nFailed\n0\nFixed on retry\n0\nSkipped for Protected\nNeed help investigating an outcome?\nExport support bundle",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Activity"
+        },
+        {
+          "tag": "H2",
+          "text": "No activity in the last 7 days."
+        },
+        {
+          "tag": "H2",
+          "text": "Last 7 days"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-activity-activityscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/008-features-activity-activityscreen--empty.png"
+  },
+  {
+    "id": "admin-security-events--populated",
+    "title": "Admin / Security events",
+    "name": "Populated",
+    "source": "./src/features/admin-security/security-events-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "OPERATOR WORKSPACE / AUDIT LOG\n\nSecurity events\nSEVERITY\nAll\nCritical\nWarning\nInfo\nEVENT TYPE\nFROM\nTO\nClear filters\nOCCURRED\tSEVERITY\tEVENT TYPE\tSOURCE IP\tUSER AGENT\tPAYLOAD\n2026-05-29 20:00:00Z\twarning\tlogin.failure\t203.0.113.7\tcurl/8\t{\"provider\":\"google\",\"reason\":\"invalid_state\"}\n2026-05-29 20:00:00Z\tcritical\trate_limit.breach\t198.51.100.42\tMozilla/5.0 (suspected bot)\t{\"bucket\":\"auth\"}\n2026-05-29 20:00:00Z\twarning\twebhook.signature_failure\t\u2014\t\u2014\t{\"source\":\"pubsub.gmail\",\"reason\":\"oidc_verify_failed\",\"step\":2,\"subReason\":\"signature_invalid\"}\n2026-05-29 20:00:00Z\tinfo\toauth.refresh_failed\t203.0.113.7\tcurl/8\t{\"provider\":\"google\",\"reason\":\"transient_failure\",\"mailboxAccountId\":\"mb-abc\"}\n2026-05-29 20:00:00Z\tcritical\tkms.access_error\t203.0.113.7\tcurl/8\t{\"provider\":\"gcp\",\"operation\":\"decrypt\",\"reason\":\"kms_call_failed\",\"keyResource\":\"projects/p/locations/l/keyRings/r/cryptoKeys/k\"}\nCouldn't refresh security events. The events already shown are still available and may be out of date.\nRetry refresh",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Security events"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=admin-security-events--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "009-admin-security-events--populated.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "admin-security-events--empty",
+    "title": "Admin / Security events",
+    "name": "Empty",
+    "source": "./src/features/admin-security/security-events-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "OPERATOR WORKSPACE / AUDIT LOG\n\nSecurity events\nSEVERITY\nAll\nCritical\nWarning\nInfo\nEVENT TYPE\nFROM\nTO\nClear filters\nNo events match these filters.\n\nAdjust severity, event type, or time range \u2014 or clear filters to see everything.\n\nCouldn't refresh security events. The events already shown are still available and may be out of date.\nRetry refresh",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Security events"
+        },
+        {
+          "tag": "H2",
+          "text": "No events match these filters."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=admin-security-events--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 0,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "010-admin-security-events--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "admin-security-events--loading",
+    "title": "Admin / Security events",
+    "name": "Loading",
+    "source": "./src/features/admin-security/security-events-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "OPERATOR WORKSPACE / AUDIT LOG\n\nSecurity events\nSEVERITY\nAll\nCritical\nWarning\nInfo\nEVENT TYPE\nFROM\nTO\nClear filters\n!\nCouldn't load security events\n\nThe audit log is unavailable right now. Try again to refresh it.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Security events"
+        },
+        {
+          "tag": "H2",
+          "text": "Couldn't load security events"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=admin-security-events--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 67,
+        "incomplete": 0,
+        "passes": 21,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "011-admin-security-events--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "auth-heardfromprompt--idle",
+    "title": "Auth/HeardFromPrompt",
+    "name": "Idle",
+    "source": "./src/features/auth/heard-from-prompt.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "How did you first hear about us?\n\nHacker News\nProduct Hunt\nReddit\nInbox simulator\nX\nLinkedIn\nFriend or colleague\nSomething else\nSkip\nSend",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=auth-heardfromprompt--idle&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "012-auth-heardfromprompt--idle.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "auth-heardfromprompt--failed",
+    "title": "Auth/HeardFromPrompt",
+    "name": "Failed",
+    "source": "./src/features/auth/heard-from-prompt.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "How did you first hear about us?\n\nHacker News\nProduct Hunt\nReddit\nInbox simulator\nX\nLinkedIn\nFriend or colleague\nSomething else\nSkip\nSend\n\nThat didn't save. Try again.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=auth-heardfromprompt--failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "013-auth-heardfromprompt--failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-activaterulemodal--enable-with-watch-first",
+    "title": "Autopilot/ActivateRuleModal",
+    "name": "Enable With Watch First",
+    "source": "./src/features/autopilot/activate-rule-modal.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Turn on Newsletter graveyard?\n\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send. Existing email stays where it is.\n\nCurrent preview\n10\nsenders actionable now\nHow this rule runs\nWatch first\nNo unsubscribe requests until you approve each match.\nAct now\nStarts unsubscribe requests for matching senders automatically.\n\n3 Protected senders are skipped. Unsubscribe requests can\u2019t be undone.\n\nDetails\nTurn on\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Turn on Newsletter graveyard?"
+        },
+        {
+          "tag": "H3",
+          "text": "Matching senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-activaterulemodal--enable-with-watch-first&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 66,
+        "incomplete": 1,
+        "passes": 22,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "014-autopilot-activaterulemodal--enable-with-watch-first.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-activaterulemodal--enable-review-only",
+    "title": "Autopilot/ActivateRuleModal",
+    "name": "Enable Review Only",
+    "source": "./src/features/autopilot/activate-rule-modal.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Turn on Review low-engagement senders for Archive?\n\nMatches become suggestions. You decide which email to act on.\n\nCurrent preview\n10\nsenders ready for review\nNothing moves until you approve each match.\n\n3 Protected senders are skipped. No mail moves until you approve a suggestion.\n\nDetails\nTurn on\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Turn on Review low-engagement senders for Archive?"
+        },
+        {
+          "tag": "H3",
+          "text": "Matching senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-activaterulemodal--enable-review-only&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 0,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "015-autopilot-activaterulemodal--enable-review-only.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-autopilotscreen--default",
+    "title": "Autopilot/AutopilotScreen",
+    "name": "Default",
+    "source": "./src/features/autopilot/autopilot-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "AUTOMATIONS / YOUR RULES\n\nAutopilot\nPause all\nAutopilot has collected matches for a week.\nNewsletter graveyard \u2014 would have requested unsubscribe from 34 senders in the last 7 days. Approve or dismiss them below.\nNot now\nRun without asking \u2192 Plus\nREVIEW FIRST\n3 suggestions\nPreview before approving, or skip \u2192\nWATCH FIRST\n4 watching\nMatches wait for your approval \u2192\nACTING\n0 running\nNo rules change mail on their own \u2192\nAll rules \u00b7 5\nWatch first \u00b7 4\nActing \u00b7 0\nPaused or inactive \u00b7 1\nRules\nReview low-engagement senders for Archive\nWatch first\n\nArchives \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nAuto-unsubscribe noisy senders\nWatch first\n\nUnsubscribes \u00b7 Matches become suggestions for your approval.\n\nDetails\nReview new senders for Later\nWatch first\n\nMoves to Later \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nNewsletter graveyard\nWatch first\n\nUnsubscribes \u00b7 Matches become suggestions for your approval.\n\nDetails\nLong-dormant unsubscribe\n\nUnsubscribes\n\nDetails\nPending suggestions\n3 waiting\nFrom \u201cReview low-engagement senders for Archive\u201d\n2 waiting\nBargain Bulletin\nwould archive\nnoreply@bargainbulletin.example\nWhy suggested: Matches this rule's recorded conditions.\nShow recorded match details\nMatched 2026-05-24 UTC\nSkip suggestion\nQuarterly Recap\nwould archive\nteam@quarterly-recap.example\nWhy suggested: Matches this rule's recorded conditions.\nShow recorded match details\nMatched 2026-05-24 UTC\nSkip suggestion\nReview selected\nReview all 2\nFrom \u201cNewsletter graveyard\u201d \u00b7 Watch first review ready\n1 waiting\nSender details still syncing\nwould unsubscribe\nWhy suggested: Matches this rule's recorded conditions.\nShow recorded match details\nMatched 2026-05-19 UTC\nSkip suggestion\nReview selected\nReview all 1",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Autopilot"
+        },
+        {
+          "tag": "H2",
+          "text": "Rules"
+        },
+        {
+          "tag": "H2",
+          "text": "Pending suggestions"
+        },
+        {
+          "tag": "H3",
+          "text": "From \u201cReview low-engagement senders for Archive\u201d"
+        },
+        {
+          "tag": "H3",
+          "text": "From \u201cNewsletter graveyard\u201d \u00b7 Watch first review ready"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-autopilotscreen--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 0,
+        "passes": 25,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "016-autopilot-autopilotscreen--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-autopilotscreen--empty",
+    "title": "Autopilot/AutopilotScreen",
+    "name": "Empty",
+    "source": "./src/features/autopilot/autopilot-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "AUTOMATIONS / YOUR RULES\n\nAutopilot\nPause all\nAutopilot has collected matches for a week.\nNewsletter graveyard \u2014 would have requested unsubscribe from 34 senders in the last 7 days. Approve or dismiss them below.\nNot now\nRun without asking \u2192 Plus\nREVIEW FIRST\n0 suggestions\nPreview before approving, or skip \u2192\nWATCH FIRST\n3 watching\nMatches wait for your approval \u2192\nACTING\n0 running\nNo rules change mail on their own \u2192\nAll rules \u00b7 3\nWatch first \u00b7 3\nActing \u00b7 0\nPaused or inactive \u00b7 0\nRules\nReview low-engagement senders for Archive\nWatch first\n\nArchives \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nNewsletter graveyard\nWatch first\n\nUnsubscribes \u00b7 Matches become suggestions for your approval.\n\nDetails\nReview new senders for Later\nWatch first\n\nMoves to Later \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails\nPending suggestions\nNo pending suggestions\n\nNew matches from your rules appear here.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Autopilot"
+        },
+        {
+          "tag": "H2",
+          "text": "Rules"
+        },
+        {
+          "tag": "H2",
+          "text": "Pending suggestions"
+        },
+        {
+          "tag": "H3",
+          "text": "No pending suggestions"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-autopilotscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 67,
+        "incomplete": 0,
+        "passes": 21,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "017-autopilot-autopilotscreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-autopilotscreen--activate-confirm-open",
+    "title": "Autopilot/AutopilotScreen",
+    "name": "Activate Confirm Open",
+    "source": "./src/features/autopilot/autopilot-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Watch Review low-engagement senders for Archive?\n\nMatches become suggestions. You decide which email to act on.\n\nCurrent preview\n10\nsenders ready for review\nNothing moves until you approve each match.\n\n3 Protected senders are skipped. No mail moves until you approve a suggestion.\n\nDetails\nWatch\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Watch Review low-engagement senders for Archive?"
+        },
+        {
+          "tag": "H3",
+          "text": "Matching senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-autopilotscreen--activate-confirm-open&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 0,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "018-autopilot-autopilotscreen--activate-confirm-open.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-autopilotscreen--loading",
+    "title": "Autopilot/AutopilotScreen",
+    "name": "Loading",
+    "source": "./src/features/autopilot/autopilot-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "AUTOMATIONS / YOUR RULES\n\nAutopilot\nPause all\nRules\nLoading Autopilot rules\nPending suggestions\nLoading Autopilot suggestions",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading Autopilot rules"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading Autopilot suggestions"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Autopilot"
+        },
+        {
+          "tag": "H2",
+          "text": "Rules"
+        },
+        {
+          "tag": "H2",
+          "text": "Pending suggestions"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-autopilotscreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 0,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "019-autopilot-autopilotscreen--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-matchreasoncopy--archive",
+    "title": "Autopilot/MatchReasonCopy",
+    "name": "Archive",
+    "source": "./src/features/autopilot/match-reason-copy.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Why suggested: At matching: Archive suggestion exceeded the rule's confidence threshold.\nShow recorded match details",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-matchreasoncopy--archive&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 84,
+        "incomplete": 0,
+        "passes": 4,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "020-autopilot-matchreasoncopy--archive.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-observewindowbanner--one-rule",
+    "title": "Autopilot/ObserveWindowBanner",
+    "name": "One Rule",
+    "source": "./src/features/autopilot/observe-window-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Autopilot has collected matches for a week.\nReview low-engagement senders for Archive \u2014 34 senders matched in the last 7 days \u00b7 212 emails could be archived if you approve them. Activate?\nNot now\nSwitch to Active\u2026",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-observewindowbanner--one-rule&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "021-autopilot-observewindowbanner--one-rule.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "autopilot-rulecard--observe-window-complete",
+    "title": "Autopilot/RuleCard",
+    "name": "Observe Window Complete",
+    "source": "./src/features/autopilot/rule-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Review low-engagement senders for Archive\nWatch first\n\nArchives \u00b7 Matches wait for your approval; no mail moves on its own.\n\nDetails",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=autopilot-rulecard--observe-window-complete&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "022-autopilot-rulecard--observe-window-complete.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-billingscreen--free-tier",
+    "title": "Features/Billing/BillingScreen",
+    "name": "Free Tier",
+    "source": "./src/features/billing/billing-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / PLAN & BILLING\n\nPlan & billing\n\nApplies to this workspace and its connected inboxes.\n\nCurrent plan\nFree\n$0\n\nFree forever \u2014 no card on file. 3 of 50 cleanup actions left.\n\nYour plan includes\n1 of 1 connected inboxes \u00b7 Manage inboxes\n50 cleanup actions per month. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.\nSenders\nPlans\nMonthly\nAnnual \u2014 2 months free\nFree\nCurrent\n$0\nReview and clean up senders in one Gmail inbox.\nPlus\n$90/yr \u00b7 $7.50/mo effective\nClear a larger backlog and set rules for future mail.\nUpgrade to Plus\nPro\n$190/yr \u00b7 $15.83/mo effective\nStay on top of your Gmail inboxes with Brief and Follow-ups.\nFounding Pro: $129/yr for the first 250 \u2014 confirmed at checkout.\nUpgrade to Pro\nCompare included features\nCompare plans\n\nBilling help \u00b7 Refund policy",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Plan & billing"
+        },
+        {
+          "tag": "H2",
+          "text": "Your plan includes"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-billingscreen--free-tier&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "023-features-billing-billingscreen--free-tier.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-billingscreen--billing-disabled",
+    "title": "Features/Billing/BillingScreen",
+    "name": "Billing Disabled",
+    "source": "./src/features/billing/billing-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / PLAN & BILLING\n\nPlan & billing\n\nApplies to this workspace and its connected inboxes.\n\nBilling isn\u2019t live yet. Checkout and subscription management open here once it is \u2014 the plans below are final, and nothing about your account changes until you choose one.\nCurrent plan\nFree\n$0\n\nFree forever \u2014 no card on file. 5 of 50 cleanup actions left.\n\nYour plan includes\n1 of 1 connected inboxes \u00b7 Manage inboxes\n50 cleanup actions per month. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.\nSenders\nPlans\nMonthly\nAnnual \u2014 2 months free\nFree\nCurrent\n$0\nReview and clean up senders in one Gmail inbox.\nPlus\n$90/yr \u00b7 $7.50/mo effective\nClear a larger backlog and set rules for future mail.\nPro\n$190/yr \u00b7 $15.83/mo effective\nStay on top of your Gmail inboxes with Brief and Follow-ups.\nFounding Pro: $129/yr for the first 250 \u2014 confirmed at checkout.\nCompare included features\nCompare plans\n\nBilling help \u00b7 Refund policy",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Plan & billing"
+        },
+        {
+          "tag": "H2",
+          "text": "Your plan includes"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-billingscreen--billing-disabled&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "024-features-billing-billingscreen--billing-disabled.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-billingscreen--payment-unconfirmed",
+    "title": "Features/Billing/BillingScreen",
+    "name": "Payment Unconfirmed",
+    "source": "./src/features/billing/billing-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Checkout reported completion \u2014 your plan upgrade hasn\u2019t come through yet.\nWhat we know\nCheckout reported completion. Our server has not yet confirmed your new plan.\nWhat happens next\nThis page keeps checking automatically. Billing changes stay paused to avoid charging you twice. You can wait here or return later.\n\nNeed help? Contact billing support.\n\nReview before resuming checkout",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Checkout reported completion \u2014 your plan upgrade hasn\u2019t come through yet."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-billingscreen--payment-unconfirmed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 0,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "025-features-billing-billingscreen--payment-unconfirmed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-billingscreen--past-due",
+    "title": "Features/Billing/BillingScreen",
+    "name": "Past Due",
+    "source": "./src/features/billing/billing-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / PLAN & BILLING\n\nPlan & billing\n\nApplies to this workspace and its connected inboxes.\n\nPayment method\n\nManaged securely by Paddle. Update your payment method in their secure form.\n\nYour last payment didn\u2019t go through. Updating your card is what restores the plan \u2014 the provider retries automatically once it succeeds.\n\nUpdate payment method\nCurrent plan\nPro\nPlan price: $19/mo\nNext renewal Aug 15, 2026\n\nPayment past due \u2014 update your payment method below to keep your plan.\n\nManage plan\nReview cancellation\nYour plan includes\n1 of 5 connected inboxes \u00b7 Manage inboxes\nUnlimited cleanup. One cleanup action counts one sender acted on, not one email. Keep and Unarchive do not use this allowance.\nSenders\nScreener\nAutopilot\nQuiet hours\nDaily Brief\nFollow-ups\nInvoices\n!\nWe couldn't load your invoices\n\nTry again to load your invoices.\n\nTry again\nPlans\nMonthly\nAnnual \u2014 2 months free\nFree\n$0\nReview and clean up senders in one Gmail inbox.\nPlus\n$90/yr \u00b7 $7.50/mo effective\nClear a larger backlog and set rules for future mail.\nPro\n$190/yr \u00b7 $15.83/mo effective\nStay on top of your Gmail inboxes with Brief and Follow-ups.\nCompare included features\nCompare plans\n\nBilling help \u00b7 Refund policy",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Plan & billing"
+        },
+        {
+          "tag": "H2",
+          "text": "Your plan includes"
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load your invoices"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-billingscreen--past-due&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "026-features-billing-billingscreen--past-due.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "billing-invoices-payment-method--with-invoices",
+    "title": "Billing/Invoices & payment method",
+    "name": "With Invoices",
+    "source": "./src/features/billing/invoice-history.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Invoices\nStatus\nAll statuses\nPaid invoices\nDue invoices\nCanceled invoices\nUnknown status\nFrom\nThrough\n\n2 of 2 loaded invoices. Filters apply to this loaded history only.\n\nMay 1, 2026\n$19.00\nPaid\nDownload\nApr 1, 2026\n\u20b9999.00\nPaid\nView invoice",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=billing-invoices-payment-method--with-invoices&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 66,
+        "incomplete": 0,
+        "passes": 22,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "027-billing-invoices-payment-method--with-invoices.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "billing-invoices-payment-method--loading",
+    "title": "Billing/Invoices & payment method",
+    "name": "Loading",
+    "source": "./src/features/billing/invoice-history.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Invoices\nLoading invoices",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading invoices"
+        }
+      ],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=billing-invoices-payment-method--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "028-billing-invoices-payment-method--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "billing-invoices-payment-method--read-failed",
+    "title": "Billing/Invoices & payment method",
+    "name": "Read Failed",
+    "source": "./src/features/billing/invoice-history.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Invoices\n!\nWe couldn't load your invoices\n\nTry again to load your invoices.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "We couldn't load your invoices"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=billing-invoices-payment-method--read-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "029-billing-invoices-payment-method--read-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-tiergate--under-tier",
+    "title": "Features/Billing/TierGate",
+    "name": "Under Tier",
+    "source": "./src/features/billing/tier-gate.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Your Morning Brief\n\nA daily summary of yesterday's email, in-app, at an hour you choose.\n\nUpgrade to Pro\n$19/mo\nCompare plans\n\n30-day money-back guarantee",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Your Morning Brief"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-tiergate--under-tier&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "030-features-billing-tiergate--under-tier.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-billing-upgrademodal--closed",
+    "title": "Features/Billing/UpgradeModal",
+    "name": "Closed",
+    "source": "./src/features/billing/upgrade-modal.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-billing-upgrademodal--closed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 87,
+        "incomplete": 0,
+        "passes": 1,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "031-features-billing-upgrademodal--closed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-brief-briefscreen--populated",
+    "title": "Features/Brief/BriefScreen",
+    "name": "Populated",
+    "source": "./src/features/brief/brief-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / YOUR DAILY EDITION\n\nDaily Brief\nSat, May 23\n\nPrepared in the morning. See what changed\n\nSTART HERE\n2 to review\nCheck each message before responding \u2192\nFOR YOUR INFORMATION\n1 highlight\nWorth a glance when you have time \u2192\nREVIEW POSSIBLE NOISE\n2 senders\nReview the selection before archiving \u2192\nRead generated note\nReview\n\u00b7 2\n\nThese may need attention. Read the message before deciding whether to reply.\n\nB\nBig Boss\nexample.com\nQ4 plans \u2014 please review when you get a chance\nReview sender\nV\nVendor Finance\nvendor.io\nInvoice #4471 \u2014 net-30 question\nReview sender\nFYI\n\u00b7 1\nF\nFirst National\nfirst.example\nMay statement is ready\nReview sender\nNoise\n\u00b7 2\n\u00b7 7 messages yesterday\n\nSelected senders are ready for one Archive preview. The preview shows what is in your Inbox now before anything moves.\n\nArchive 2 senders\nN\nNewsletter Daily\n4 messages yesterday\nReview sender\nO\nOld Navy\n3 messages yesterday\nReview sender\nHow was this Brief?\nUseful\nNot useful\nSomething looks wrong",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Daily Brief"
+        },
+        {
+          "tag": "H2",
+          "text": "Review\u00b7 2"
+        },
+        {
+          "tag": "H2",
+          "text": "FYI\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "Noise\u00b7 2\u00b7 7 messages yesterday"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-brief-briefscreen--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "032-features-brief-briefscreen--populated.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-brief-noisearchivebar--ready",
+    "title": "Features/Brief/NoiseArchiveBar",
+    "name": "Ready",
+    "source": "./src/features/brief/noise-archive-bar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Archive 4 senders",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-brief-noisearchivebar--ready&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 84,
+        "incomplete": 0,
+        "passes": 4,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "033-features-brief-noisearchivebar--ready.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-brief-noisearchivebar--failed",
+    "title": "Features/Brief/NoiseArchiveBar",
+    "name": "Failed",
+    "source": "./src/features/brief/noise-archive-bar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Archive failed \u2014 check Activity before retrying.\nArchive 4 senders",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-brief-noisearchivebar--failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "034-features-brief-noisearchivebar--failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-brief-noisearchivesheet--counting-inbox",
+    "title": "Features/Brief/NoiseArchiveSheet",
+    "name": "Counting Inbox",
+    "source": "./src/features/brief/noise-archive-sheet.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Gmail account\nyou@example.com\nArchive email from 3 senders?\n\nArchives all email from these senders in your inbox now, including email outside this Brief.\n\nDetails\nArchive\nCancel\n\nCounting the inbox\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive email from 3 senders?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-brief-noisearchivesheet--counting-inbox&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 69,
+        "incomplete": 1,
+        "passes": 19,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "035-features-brief-noisearchivesheet--counting-inbox.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "consent-cookieconsentbanner--first-visit",
+    "title": "Consent/CookieConsentBanner",
+    "name": "First Visit",
+    "source": "./src/features/consent/cookie-consent-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "\u00d7\n\nWe use essential cookies for sign-in and billing.\n\nHelp us improve DeclutrMail? We use PostHog to understand which features matter. PostHog receives product-usage events, never Gmail message data.\n\nAccept all\nEssential only",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=consent-cookieconsentbanner--first-visit&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 78,
+        "incomplete": 0,
+        "passes": 10,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "036-consent-cookieconsentbanner--first-visit.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "consent-cookiepreferences--no-choice-yet",
+    "title": "Consent/CookiePreferences",
+    "name": "No Choice Yet",
+    "source": "./src/features/consent/cookie-preferences.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Cookie preferences\n\nEssential cookies for sign-in and billing are always on \u2014 the service does not work without them. This setting covers optional analytics only.\n\nAccept all \u2014 Also allow PostHog analytics so we can see which features matter. PostHog receives product-usage events, never Gmail message data.\nEssential only \u2014 No PostHog analytics \u2014 only the cookies needed for sign-in and billing.\n\nChanges apply immediately and are saved on this device. Switching to Essential only stops PostHog and clears its ID.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H3",
+          "text": "Cookie preferences"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=consent-cookiepreferences--no-choice-yet&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "037-consent-cookiepreferences--no-choice-yet.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-followups-followupsscreen--populated",
+    "title": "Features/Followups/FollowupsScreen",
+    "name": "Populated",
+    "source": "./src/features/followups/followups-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / CONVERSATIONS\n\nFollow-ups\n\nReview possible follow-ups from email sent in the last 60 days.\n\nChecked about every six hours, so a recent reply can still show. Check the thread in Gmail before following up.\n\nMark resolved only hides it here \u2014 nothing changes in Gmail. Counts cover shown conversations, up to 100.\n\nREVIEW FIRST\n2 over a week\nOpen the conversation before nudging \u2192\nKEEP AN EYE ON\n2 more recent\nThey may still reply without a nudge \u2192\nOver a week\n\u00b7 2\nBig Boss\nexample.com\nQ4 plans \u2014 please review when you get a chance\nSent 10d ago\nEvaluation\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\nVendor Finance\nvendor.io\nInvoice #4471 \u2014 terms question\nSent 9d ago\nEvaluation\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\n3\u20137 days\n\u00b7 1\nStartup PM\nstartup.co\nRe: Tuesday sync prep\nSent 4d ago\nEvaluation\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up\n1\u20133 days\n\u00b7 1\nPeer\nexample.com\nLunch?\nSent 2d ago\nEvaluation\nMark resolved\nIs this a useful follow-up?\nUseful\nNot a follow-up",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Follow-ups"
+        },
+        {
+          "tag": "H2",
+          "text": "Over a week\u00b7 2"
+        },
+        {
+          "tag": "H2",
+          "text": "3\u20137 days\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "1\u20133 days\u00b7 1"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-followups-followupsscreen--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 67,
+        "incomplete": 0,
+        "passes": 21,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/038-features-followups-followupsscreen--populated.png"
+  },
+  {
+    "id": "features-followups-followupsscreen--empty",
+    "title": "Features/Followups/FollowupsScreen",
+    "name": "Empty",
+    "source": "./src/features/followups/followups-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / CONVERSATIONS\n\nFollow-ups\n\nReview possible follow-ups from email sent in the last 60 days.\n\nChecked about every six hours, so a recent reply can still show. Check the thread in Gmail before following up.\n\nMark resolved only hides it here \u2014 nothing changes in Gmail. Counts cover shown conversations, up to 100.\n\nNo follow-ups\n\nNo tracked conversation is waiting on a reply.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Follow-ups"
+        },
+        {
+          "tag": "H2",
+          "text": "No follow-ups"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-followups-followupsscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 84,
+        "incomplete": 0,
+        "passes": 4,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "039-features-followups-followupsscreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--cleared",
+    "title": "Home/HomeView",
+    "name": "Cleared",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\nA GOOD PLACE TO START\nYour daily review is ready.\n\nYour daily review is ready. Take a look at these senders and decide what still belongs.\n\nReview 8 today\n\u2197\nPreview email moves before confirming.\nSENDER\nIN INBOX NOW\nT\nThe Sunday Journal\njournal.example\n28\nemails\n\u2197\nS\nStudio Notes\nstudio.example\n16\nemails\n\u2197\nD\nDesign Dispatch\ndispatch.example\n42\nemails\n\u2197\n\nFrom your daily review queue. Preview confirms the exact scope.\n\nTHE SPACE\nYOU\u2019VE MADE\n12,480\nemails cleared since Mar 2026\nUndone actions excluded\nA little attention.\n\u2197\n3 unreviewed senders\nGive each sender a first decision on your terms.\n\u2192\n\u2197\nSee your senders\nRevisit the senders that have a place in your inbox.\n\u2192\nSMALL DECISIONS ADD UP\nMore space.\nLess second-guessing.\n\nYour cleanup history keeps every outcome in view, with Undo available for supported actions.\n\nSee your activity\n\u2197\nYOUR WORKSPACE\nThe rest of your day, in view.\n\nPick up a conversation, check what will return, or let a rule handle the repeat work.\n\nCATCH UP\nDaily Brief\nIncluded with Pro\n\u2197\nFollow-ups\nIncluded with Pro\n\u2197\nLater\nSee what is set to return\n\u2197\nKEEP IT CLEAR\nAutopilot\nIncluded with Plus\n\u2197\nQuiet Hours\nIncluded with Plus\n\u2197\nActivity & Undo\nSee decisions and recover supported actions\n\u2197\nEmails archived\n11,932\nEmails deleted\n548\nSenders decided\n86\n\nA considered inbox, one decision at a time.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "Your daily review is ready."
+        },
+        {
+          "tag": "H2",
+          "text": "A little attention."
+        },
+        {
+          "tag": "H2",
+          "text": "More space.Less second-guessing."
+        },
+        {
+          "tag": "H2",
+          "text": "The rest of your day, in view."
+        },
+        {
+          "tag": "H3",
+          "text": "Catch up"
+        },
+        {
+          "tag": "H3",
+          "text": "Keep it clear"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--cleared&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "040-home-homeview--cleared.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--load-error",
+    "title": "Home/HomeView",
+    "name": "Load Error",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.\n\n!\nWe couldn't load Home\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load Home"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--load-error&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "041-home-homeview--load-error.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "home-homeview--loading",
+    "title": "Home/HomeView",
+    "name": "Loading",
+    "source": "./src/features/home/home-view.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR PERSONAL SPACE / HOME\n\nA little room\nfor a clearer day.\n\nA clearer view. A little more room for what matters.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "A little roomfor a clearer day."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=home-homeview--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "042-home-homeview--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "mailboxes-mailboxreconnectbanner--visible",
+    "title": "Mailboxes/MailboxReconnectBanner",
+    "name": "Visible",
+    "source": "./src/features/mailboxes/mailbox-reconnect-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Google isn't granting access to second@example.com \u2014 reconnect and allow Gmail access.\nReconnect\n\nThe non-active mailbox is named, because \"Reconnect Gmail\" is ambiguous with two connected.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=mailboxes-mailboxreconnectbanner--visible&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "043-mailboxes-mailboxreconnectbanner--visible.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "mailboxes-noactivemailbox--reconnect",
+    "title": "Mailboxes/NoActiveMailbox",
+    "name": "Reconnect",
+    "source": "./src/features/mailboxes/no-active-mailbox.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "\ud83d\udced\nNo active mailbox\n\nyou@example.com\nReconnect to pick up where you left off. Your sender history is preserved.\n\nReconnect Gmail\nConnect a different Gmail account\n\nNot reconnecting?\nManage account\n\u00b7\nBilling\n\nSign out",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H3",
+          "text": "No active mailbox"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=mailboxes-noactivemailbox--reconnect&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 1,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "044-mailboxes-noactivemailbox--reconnect.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "onboarding-stepprotectionreview--reassurance-leads",
+    "title": "Onboarding/StepProtectionReview",
+    "name": "Reassurance Leads",
+    "source": "./src/features/onboarding/step-protection-review.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Connect\nScan\nFirst decision\nWe protected 460 senders you write back to.\n\nSenders you write back to stay out of bulk and automatic cleanup. 55 senders are protected by one star or a Gmail importance flag \u2014 one-way signals, and worth a look. Here are the 2 shielding the most unread email.\n\nFinish for today\nR\nRobert from God of Prompt\ngroupon.com\nProtected\nProtected \u00b7 you starred a message \u00b7 shielding 145 unread\nKeep\n\u203a\nBulk and automatic cleanup skip this sender.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.\nG\nGetYourGuide\nlinkedin.com\nProtected\nProtected \u00b7 you starred a message \u00b7 shielding 33 unread\nKeep\n\u203a\nBulk and automatic cleanup skip this sender.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "We protected 460 senders you write back to."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-stepprotectionreview--reassurance-leads&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/045-onboarding-stepprotectionreview--reassurance-leads.png"
+  },
+  {
+    "id": "onboarding-stepprotectionreview--load-failed",
+    "title": "Onboarding/StepProtectionReview",
+    "name": "Load Failed",
+    "source": "./src/features/onboarding/step-protection-review.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Connect\nScan\nFirst decision\n!\nCouldn't load your protection summary\n\nWe couldn't read which senders are protected. Try again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Couldn't load your protection summary"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-stepprotectionreview--load-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 67,
+        "incomplete": 0,
+        "passes": 21,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "046-onboarding-stepprotectionreview--load-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "onboarding-stepprotectionreview--loading",
+    "title": "Onboarding/StepProtectionReview",
+    "name": "Loading",
+    "source": "./src/features/onboarding/step-protection-review.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Connect\nScan\nFirst decision\n\nChecking what we protected\u2026",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-stepprotectionreview--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "047-onboarding-stepprotectionreview--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "onboarding-syncgate--queued",
+    "title": "Onboarding/SyncGate",
+    "name": "Queued",
+    "source": "./src/features/onboarding/sync-gate.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Connect\nScan\nFirst decision\nReading your Gmail\u2026\n\nYou can close this tab \u2014 we\u2019ll email you when your inbox is ready.\n\nWaiting to start.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Reading your Gmail\u2026"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-syncgate--queued&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 0,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "048-onboarding-syncgate--queued.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "onboarding-syncgate--failed",
+    "title": "Onboarding/SyncGate",
+    "name": "Failed",
+    "source": "./src/features/onboarding/sync-gate.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Connect\nScan\nFirst decision\nYour inbox is partly ready\n\nWe already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what\u2019s ready if that control is shown.\n\nFinish sync\nDisconnect Gmail\nSign out",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Your inbox is partly ready"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-syncgate--failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": "docs/qa/prelaunch-2026-10-03/after/screenshots/049-onboarding-syncgate--failed.png"
+  },
+  {
+    "id": "quiet-quiethourscard--unconfigured",
+    "title": "Quiet/QuietHoursCard",
+    "name": "Unconfigured",
+    "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "fixture-mailbox-1@synthetic.test\nQuiet hours\nStart\nEnd\nTimezone\nAmerica/Los_Angeles\nEnds at 07:00 the next day.\nSave quiet hours",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=quiet-quiethourscard--unconfigured&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "050-quiet-quiethourscard--unconfigured.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "quiet-quiethourscard--error-state",
+    "title": "Quiet/QuietHoursCard",
+    "name": "Error State",
+    "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "fixture-mailbox-1@synthetic.test\nWe couldn't load quiet hours right now.\nRetry",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=quiet-quiethourscard--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "051-quiet-quiethourscard--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "quiet-quiethourscard--loading",
+    "title": "Quiet/QuietHoursCard",
+    "name": "Loading",
+    "source": "./src/features/quiet/quiet-hours-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "fixture-mailbox-1@synthetic.test",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=quiet-quiethourscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "052-quiet-quiethourscard--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-routeplaceholder--brief",
+    "title": "Features/RoutePlaceholder",
+    "name": "Brief",
+    "source": "./src/features/route-placeholder/route-placeholder.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "PLANNED FOR V2.1\nDaily Brief\n\nA 60-second summary of yesterday's mail \u2014 Reply, FYI, and Noise \u2014 ready every morning at 8am local.\n\nOpen Triage",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H3",
+          "text": "Daily Brief"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-routeplaceholder--brief&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "053-features-routeplaceholder--brief.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--default",
+    "title": "Screener/ScreenerScreen",
+    "name": "Default",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / FIRST DECISIONS\n\nScreener\n\nThese senders are waiting for your first decision. Some may have been in your inbox for a while; their email keeps arriving in Gmail until you decide.\n\nShow\nAll loaded\nMore than one email\nCan unsubscribe\nProtected\nSort\nRecently queued\nMost email received\nFirst seen longest ago\nShowing 3 of 3 loaded senders\nL\nLumen Field Updates\nlumenfield.example\nFirst seen 8 min ago\nWelcome \u2014 confirm your seat preferences\nArchive\n\u00b7 likely\n\u203a\nD\nDr. Mehta Clinic\nmehtaclinic.example\nFirst seen Yesterday\nYour appointment on Friday, 10:30\nKeep\n\u00b7 unsure\n\u203a\nN\nNimbus Deals\nnimbus.example\nFirst seen 3 days ago\n48 hours only: everything 40% off\nNew\n\u203a",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Screener"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 66,
+        "incomplete": 1,
+        "passes": 22,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "054-screener-screenerscreen--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--error-state",
+    "title": "Screener/ScreenerScreen",
+    "name": "Error State",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / FIRST DECISIONS\n\nScreener\n\nThese senders are waiting for your first decision. Some may have been in your inbox for a while; their email keeps arriving in Gmail until you decide.\n\n!\nYour pending senders didn't load\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Screener"
+        },
+        {
+          "tag": "H2",
+          "text": "Your pending senders didn't load"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "055-screener-screenerscreen--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--empty",
+    "title": "Screener/ScreenerScreen",
+    "name": "Empty",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / FIRST DECISIONS\n\nScreener\n\nThese senders are waiting for your first decision. Some may have been in your inbox for a while; their email keeps arriving in Gmail until you decide.\n\nNo senders awaiting review\nSenders needing a first decision will appear here.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Screener"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "056-screener-screenerscreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--protected-override-preview",
+    "title": "Screener/ScreenerScreen",
+    "name": "Protected Override Preview",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "D\nDr. Mehta Clinic\nmehtaclinic.example\nFirst seen Yesterday\nYour appointment on Friday, 10:30\nKeep\n\u00b7 unsure\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: Yesterday \u00b7 Messages received: 2 \u00b7 2 in inbox\nWhy this is suggested: Too new to judge \u2014 looks personal, so keeping is the safe call.\nOpen sender\n\n3 emails from Dr. Mehta Clinic. They move to Gmail Trash.\n\nUndo from Activity for 30 days. Future email is unchanged.\n\nThis sender is Protected because you starred a message. It stays Protected.\n\nDetails\nDelete anyway\nCancel",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--protected-override-preview&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "057-screener-screenerscreen--protected-override-preview.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--preview-pending",
+    "title": "Screener/ScreenerScreen",
+    "name": "Preview Pending",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLumen Field Updates\nlumenfield.example\nFirst seen 8 min ago\nWelcome \u2014 confirm your seat preferences\nArchive\n\u00b7 likely\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: 8 min ago \u00b7 Messages received: 1 \u00b7 1 in inbox\nWhy this is suggested: Brand-new sender with a marketing footprint \u2014 archive keeps it reversible.\nOpen sender\n\n4 emails from Lumen Field Updates. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 4\nCancel",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--preview-pending&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "058-screener-screenerscreen--preview-pending.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--delete-preview",
+    "title": "Screener/ScreenerScreen",
+    "name": "Delete Preview",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLumen Field Updates\nlumenfield.example\nFirst seen 8 min ago\nWelcome \u2014 confirm your seat preferences\nArchive\n\u00b7 likely\n\u203a\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nFirst seen: 8 min ago \u00b7 Messages received: 1 \u00b7 1 in inbox\nWhy this is suggested: Brand-new sender with a marketing footprint \u2014 archive keeps it reversible.\nOpen sender\n\n2 emails from Lumen Field Updates. They move to Gmail Trash.\n\nUndo from Activity for 30 days. Future email is unchanged.\n\nDetails\nDelete 2\nCancel",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--delete-preview&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "059-screener-screenerscreen--delete-preview.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "screener-screenerscreen--loading",
+    "title": "Screener/ScreenerScreen",
+    "name": "Loading",
+    "source": "./src/features/screener/screener-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / FIRST DECISIONS\n\nScreener\n\nThese senders are waiting for your first decision. Some may have been in your inbox for a while; their email keeps arriving in Gmail until you decide.\n\nLoading the Screener queue",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading the Screener queue"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Screener"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=screener-screenerscreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "060-screener-screenerscreen--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-confirmactionmodal--archive-one-sender",
+    "title": "Senders/ConfirmActionModal",
+    "name": "Archive One Sender",
+    "source": "./src/features/senders/confirm-action-modal.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "M\nGmail account\nfixture-mailbox-2@synthetic.test\nArchive 174 emails?\n\nFrom Macy\u2019s. They leave your inbox and stay in Gmail.\n\nHow far back\nAll inbox \u00b7 174\n30 days+ \u00b7 120\n3 months+ \u00b7 64\n6 months+ \u00b7 31\n1 year+ \u00b7 9\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 174\nCancel\nUses 1 of your 34 cleanup actions left this month.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive 174 emails?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-confirmactionmodal--archive-one-sender&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 66,
+        "incomplete": 1,
+        "passes": 22,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "061-senders-confirmactionmodal--archive-one-sender.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-detail-actiontoolbar--idle",
+    "title": "Senders/Detail/ActionToolbar",
+    "name": "Idle",
+    "source": "./src/features/senders/detail/action-toolbar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Keep\nArchive\nUnsubscribe\nLater\nDelete",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-detail-actiontoolbar--idle&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "062-senders-detail-actiontoolbar--idle.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-detail-actiontoolbar--failed",
+    "title": "Senders/Detail/ActionToolbar",
+    "name": "Failed",
+    "source": "./src/features/senders/detail/action-toolbar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Keep\nArchive\nUnsubscribe\nLater\nDelete\nDelete failed",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-detail-actiontoolbar--failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "063-senders-detail-actiontoolbar--failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-detail-recommendationbanner--recent",
+    "title": "senders/detail/RecommendationBanner",
+    "name": "Scored recently",
+    "source": "./src/features/senders/detail/recommendation-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Suggestion \u00b7 Keep \u00b7 Last checked 2 days ago",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-detail-recommendationbanner--recent&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "064-senders-detail-recommendationbanner--recent.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--default",
+    "title": "Senders/SenderDetailPage",
+    "name": "Default",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLinkedIn\nnoreply@linkedin.com\nProtected\nNOW \u00b7 CURRENT MAIL\n\u2014\n\nCurrently in your inbox\n\n\u2014\n\nCurrently archived\n\nYOUR NEXT DECISION\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nSuggestion \u00b7 Archive \u2014 highlighted button is Keep\nPATTERN \u00b7 YOUR HISTORY\n64\n\nemails in the last 90 days \u00b7 2,432 received \u00b7 all time\n\nMarked read\n0% \u00b7 90 days\n12-month trend\nMonthly values\nLast seen\ntoday\nYou wrote\n0\u00d7\nRecent messages\nInbox + archived\nInbox\nArchived\n3 people viewed your profile\nTop posts in your network, hand-picked based on what people like you are reading.\ntoday\n36KB\nTrending in your network\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\nyesterday\n10KB\nNew connection request\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n2d ago\n19KB\nWeekly digest\nTop posts in your network, hand-picked based on what people like you are reading.\n3d ago\n32KB\nYou have 5 new notifications\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n4d ago\n9KB\n3 people viewed your profile\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n5d ago\n11KB\nTrending in your network\nTop posts in your network, hand-picked based on what people like you are reading.\n6d ago\n5KB\nNew connection request\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n1w ago\n16KB\nDecision timeline\nView in Activity \u2192\nTriage \u00b7 Archived \u00b7 384 messages\n2d ago\nTriage \u00b7 Keep decision saved\n1w ago\nAutopilot \u00b7 Moved to Later \u00b7 64 messages\n3w ago\nScreener \u00b7 Keep decision saved\n3w ago\nYou \u00b7 Restored\n4w ago\nYou \u00b7 Protected\n1mo ago\nYou \u00b7 Unprotected\n2mo ago\nTriage \u00b7 Archived \u00b7 192 messages\n2mo ago",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "LinkedIn"
+        },
+        {
+          "tag": "H2",
+          "text": "Recent messages"
+        },
+        {
+          "tag": "H2",
+          "text": "Decision timeline"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "065-senders-senderdetailpage--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--error-state",
+    "title": "Senders/SenderDetailPage",
+    "name": "Error State",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "!\nWe couldn't load this sender\n\nNothing in your mailbox changed.\n\nTry again\nBack to Senders",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "We couldn't load this sender"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "066-senders-senderdetailpage--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--empty",
+    "title": "Senders/SenderDetailPage",
+    "name": "Empty",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "S\nSarah Chen\nnoreply@google.com\nProtected\nNOW \u00b7 CURRENT MAIL\n\u2014\n\nCurrently in your inbox\n\n\u2014\n\nCurrently archived\n\nYOUR NEXT DECISION\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nPATTERN \u00b7 YOUR HISTORY\n17\n\nemails in the last 90 days \u00b7 306 received \u00b7 all time\n\nMarked read\n100% \u00b7 90 days\n12-month trend\nMonthly values\nLast seen\ntoday\nYou wrote\n0\u00d7\nRecent messages\nInbox + archived\nInbox\nArchived\nNo recent messages\n\nNo current Inbox or archived mail from this sender.\n\nDecision timeline\nView in Activity \u2192\nNothing decided yet\n\nYour decisions will appear here.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Sarah Chen"
+        },
+        {
+          "tag": "H2",
+          "text": "Recent messages"
+        },
+        {
+          "tag": "H3",
+          "text": "No recent messages"
+        },
+        {
+          "tag": "H2",
+          "text": "Decision timeline"
+        },
+        {
+          "tag": "H3",
+          "text": "Nothing decided yet"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 64,
+        "incomplete": 1,
+        "passes": 24,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "067-senders-senderdetailpage--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--mobile-narrow",
+    "title": "Senders/SenderDetailPage",
+    "name": "Mobile Narrow",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLinkedIn\nnoreply@linkedin.com\nProtected\nNOW \u00b7 CURRENT MAIL\n\u2014\n\nCurrently in your inbox\n\n\u2014\n\nCurrently archived\n\nYOUR NEXT DECISION\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nSuggestion \u00b7 Archive \u2014 highlighted button is Keep\nPATTERN \u00b7 YOUR HISTORY\n64\n\nemails in the last 90 days \u00b7 2,432 received \u00b7 all time\n\nMarked read\n0% \u00b7 90 days\n12-month trend\nMonthly values\nLast seen\ntoday\nYou wrote\n0\u00d7\nRecent messages\nInbox + archived\nInbox\nArchived\n3 people viewed your profile\nTop posts in your network, hand-picked based on what people like you are reading.\ntoday\n36KB\nTrending in your network\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\nyesterday\n10KB\nNew connection request\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n2d ago\n19KB\nWeekly digest\nTop posts in your network, hand-picked based on what people like you are reading.\n3d ago\n32KB\nYou have 5 new notifications\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n4d ago\n9KB\n3 people viewed your profile\nYou appeared in 3 searches this week. Recruiters from 2 companies viewed your profile.\n5d ago\n11KB\nTrending in your network\nTop posts in your network, hand-picked based on what people like you are reading.\n6d ago\n5KB\nNew connection request\nSee what 5 people have done in your network this week, plus 12 new updates from people you follow.\n1w ago\n16KB\nDecision timeline\nView in Activity \u2192\nTriage \u00b7 Archived \u00b7 384 messages\n2d ago\nTriage \u00b7 Keep decision saved\n1w ago\nAutopilot \u00b7 Moved to Later \u00b7 64 messages\n3w ago\nScreener \u00b7 Keep decision saved\n3w ago\nYou \u00b7 Restored\n4w ago\nYou \u00b7 Protected\n1mo ago\nYou \u00b7 Unprotected\n2mo ago\nTriage \u00b7 Archived \u00b7 192 messages\n2mo ago",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "LinkedIn"
+        },
+        {
+          "tag": "H2",
+          "text": "Recent messages"
+        },
+        {
+          "tag": "H2",
+          "text": "Decision timeline"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--mobile-narrow&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 62,
+        "incomplete": 1,
+        "passes": 26,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "068-senders-senderdetailpage--mobile-narrow.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderdetailpage--loading",
+    "title": "Senders/SenderDetailPage",
+    "name": "Loading",
+    "source": "./src/features/senders/detail/sender-detail-page.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Loading sender details",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading sender details"
+        }
+      ],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderdetailpage--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "069-senders-senderdetailpage--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-filters--default-header",
+    "title": "Senders/Filters",
+    "name": "Default Header",
+    "source": "./src/features/senders/filters.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Filter\nSort:\nMost received",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-filters--default-header&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 78,
+        "incomplete": 0,
+        "passes": 10,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "070-senders-filters--default-header.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-firstcleanupnudge--default",
+    "title": "Senders/FirstCleanupNudge",
+    "name": "Default",
+    "source": "./src/features/senders/first-cleanup-nudge.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Pick one sender\n\nOpen a sender you recognize and finish your first cleanup.\n\nOpen a sender",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-firstcleanupnudge--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "071-senders-firstcleanupnudge--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-senders-keyboardcheatsheet--open",
+    "title": "Features/Senders/KeyboardCheatsheet",
+    "name": "Open",
+    "source": "./src/features/senders/keyboard-cheatsheet.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Keyboard shortcuts\nSelected senders\nKeep\nK\nArchive\nA\nUnsubscribe\nU\nLater\nL\nDelete\nD\nSender list\nNext sender\nJ / \u2193\nPrevious sender\nK / \u2191\nClose sender details\nEsc\nIn a preview\nConfirm the action\n\u2318\u23ce\nCancel / close\nEsc\nToggle this cheatsheet\n?",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Keyboard shortcuts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-senders-keyboardcheatsheet--open&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "072-features-senders-keyboardcheatsheet--open.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-selectionbar--mixed-selection",
+    "title": "Senders/SelectionBar",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "3\nsenders selected\nClear\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "3senders selectedClearKeep3Archive3Unsubscribe3Later3Delete3"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mixed-selection&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "073-senders-selectionbar--mixed-selection.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-selectionbar--mobile-sheet",
+    "title": "Senders/SelectionBar",
+    "name": "Mobile Sheet",
+    "source": "./src/features/senders/selection-bar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "3\nsenders selected\nClear selection\nKeep\n3\nArchive\n3\nUnsubscribe\n3\nLater\n3\nDelete\n3",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-selectionbar--mobile-sheet&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 1,
+        "passes": 9,
+        "violations": 1
+      },
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 1.09 (foreground color: #ffffff, background color: #f7f4ee, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button aria-label=\"Keep 3 senders\" title=\"Keep 3 senders (K)\" aria-keyshortcuts=\"K\" style=\"display: flex; flex-...\">",
+              "target": ["button[aria-label=\"Keep 3 senders\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 1.09 (foreground color: #ffffff, background color: #f7f4ee, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button aria-label=\"Archive 3 senders\" title=\"Archive 3 senders (A...\" aria-keyshortcuts=\"A\" style=\"display: flex; flex-...\">",
+              "target": ["button[aria-label=\"Archive 3 senders\"]"]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 1.09 (foreground color: #ffffff, background color: #f7f4ee, font size: 11.3pt (15px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button aria-label=\"Later 3 senders\" title=\"Later 3 senders (L)\" aria-keyshortcuts=\"L\" style=\"display: flex; flex-...\">",
+              "target": ["button[aria-label=\"Later 3 senders\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": null,
+    "localScreenshotFile": "074-senders-selectionbar--mobile-sheet.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderlist--default",
+    "title": "Senders/SenderList",
+    "name": "Default",
+    "source": "./src/features/senders/sender-list.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n128 in inbox\n8% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef\nC\nChase\nalerts@chase.com\n42 in inbox\n88% marked read \u00b7 90d\n312\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nO\nOld Navy\nRequest accepted\ndeals@oldnavy.com\n20% marked read \u00b7 90d\n88\nemails\nreceived \u00b7 all time\nKeep\n\u22ef\nlinkedin.com\n3 senders\n930\nemails\nreceived \u00b7 retained",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Chase",
+          "width": 28
+        },
+        {
+          "height": 28,
+          "text": "Select Old Navy",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderlist--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 1
+      },
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 3,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.06 (foreground color: #b45309, background color: #eae7e0, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" style=\"display: inline-flex...\">",
+              "target": [
+                "div[data-testid=\"sender-row-s1\"] > ._rowActions_1pd1l_503 > div > button[data-dm-button=\"\"][type=\"button\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #047857, background color: #eae7e0, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" style=\"display: inline-flex...\">",
+              "target": [
+                "div[data-testid=\"sender-row-s2\"] > ._rowActions_1pd1l_503 > div > button[data-dm-button=\"\"][type=\"button\"]"
+              ]
+            },
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.44 (foreground color: #047857, background color: #eae7e0, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" style=\"display: inline-flex...\">",
+              "target": [
+                "div[data-testid=\"sender-row-s3\"] > ._rowActions_1pd1l_503 > div > button[data-dm-button=\"\"][type=\"button\"]"
+              ]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": null,
+    "localScreenshotFile": "075-senders-senderlist--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-senderrow--rest",
+    "title": "Senders/SenderRow",
+    "name": "Rest",
+    "source": "./src/features/senders/sender-row.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "S\nSubstack\nno-reply@substack.com\n20% marked read \u00b7 90d\n1,204\nemails\nreceived \u00b7 all time\nUnsubscribe\n\u22ef",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 28,
+          "text": "Select Substack",
+          "width": 28
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-senderrow--rest&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 1
+      },
+      "violations": [
+        {
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/color-contrast?application=axeAPI",
+          "id": "color-contrast",
+          "impact": "serious",
+          "nodeCount": 1,
+          "nodes": [
+            {
+              "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 4.06 (foreground color: #b45309, background color: #eae7e0, font size: 9.8pt (13px), font weight: normal). Expected contrast ratio of 4.5:1",
+              "html": "<button type=\"button\" data-dm-button=\"\" style=\"display: inline-flex...\">",
+              "target": ["button[data-dm-button=\"\"]"]
+            }
+          ],
+          "tags": [
+            "cat.color",
+            "wcag2aa",
+            "wcag143",
+            "TTv5",
+            "TT13.c",
+            "EN-301-549",
+            "EN-9.1.4.3",
+            "ACT",
+            "RGAAv4",
+            "RGAA-3.2.1"
+          ]
+        }
+      ]
+    },
+    "screenshot": null,
+    "localScreenshotFile": "076-senders-senderrow--rest.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-unsubbatchreceipt--mixed-selection",
+    "title": "Senders/UnsubBatchReceipt",
+    "name": "Mixed Selection",
+    "source": "./src/features/senders/unsub-batch-receipt.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "\u2713\nUnsubscribe requests \u00b7 8 senders\n6 requests accepted \u00b7 1 request sent, result unconfirmed \u00b7 1 request failed\nNot sent: 4 senders need an email you send yourself \u00b7 2 senders offer no unsubscribe \u00b7 1 sender we haven't checked yet\nAccepted means the sender took the request. Whether their email stops is up to them.\n\u00d7",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [
+        {
+          "height": 17,
+          "text": "Dismiss unsubscribe result",
+          "width": 18.28125
+        }
+      ],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-unsubbatchreceipt--mixed-selection&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 1,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "077-senders-unsubbatchreceipt--mixed-selection.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "senders-uplift-d-decisiontimeline--default",
+    "title": "senders/uplift-d/DecisionTimeline",
+    "name": "Default \u2014 V1 detail-page timeline",
+    "source": "./src/features/senders/uplift-d/decision-timeline/decision-timeline.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Decision timeline\nEngine recommends Unsubscribe \u00b7 89% confidence\ntoday\nYou chose to Keep \u00b7 manual\n3w ago\nEngine recommended Archive \u2014 you accepted \u00b7 7 messages affected\n2mo ago\nFirst message received \u00b7 Mar 2024\n2yr ago",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Decision timeline"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=senders-uplift-d-decisiontimeline--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "078-senders-uplift-d-decisiontimeline--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-privacydata--two-mailboxes",
+    "title": "Settings/PrivacyData",
+    "name": "Two Mailboxes",
+    "source": "./src/features/settings/privacy-data/privacy-data-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / PRIVACY & DATA\n\nPrivacy & data\n\nReview access and stored data for all connected inboxes, export your records, or manage retention and deletion. Connection status is separate from sync health in Settings.\n\nConnected inboxes\nData inventory\nRecovery\nExport\nCookies\nDisconnect or delete\nPolicies\nWe never fetch or store full email contents.\n\nDeclutrMail uses only the Gmail details listed below.\n\nGmail details DeclutrMail stores:\nGmail message and conversation IDs\nSender name and email address\nSubject line\nGmail preview snippet (the short text shown in your inbox list)\nDate received\nGmail labels\nYour Gmail label names\nRead or unread state\nWhether a message was sent by you\nRecipient email addresses from To and Cc on email you sent\nUnsubscribe links and whether one-click unsubscribe is supported\nEstimated Gmail message size\nDeclutrMail never fetches or stores:\nFull email contents\nEmail HTML\nAttachments\nImages embedded in emails\nRaw email source\nEmail headers other than From, Subject, To, Cc, and unsubscribe information\nGmail data inventory\nAccess granted\nConnection and sync data\nMessage data\nDerived product data\nRecords we keep to investigate problems\n\nAnthropic only ever sees the items marked above for Brief summaries or optional sender explanations. Anthropic states that standard API inputs and outputs are deleted within 30 days, except where longer retention is required for usage-policy enforcement or law, or different contract terms apply.\n\nBrandfetch receives a sender\u2019s email domain and nothing else about you \u2014 never your address, your account, or any message. Brandfetch's privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period. Brandfetch\u2019s privacy policy.\n\nConnected mailboxes\nprimary@example.invalid\ndata saved\nsecondary@example.invalid\ndata saved\nUndo retention\n\nArchive, Later, and archived unsubscribe email can be undone from Activity for 30 days on your plan. Delete also uses the 30-day Activity Undo window. Gmail Trash recovery is separate and lasts up to 30 days; a delivered unsubscribe request cannot be recalled. Account deletion waits for open undo windows unless you waive them.\n\nExport my data\n\nThese downloads are portable views of the listed datasets, not a complete copy of every DeclutrMail record. OAuth credentials are never exported. Current JSON includes mailbox addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels, and read state), Activity history, and product feedback. The CSVs each cover the dataset named on the button. App preferences and billing records are not included.\n\nDownload selected data\nMessages CSV\nSenders CSV\nDecisions CSV\n\nCookie preferences\n\nEssential cookies for sign-in and billing are always on \u2014 the service does not work without them. This setting covers optional analytics only.\n\nAccept all \u2014 Also allow PostHog analytics so we can see which features matter. PostHog receives product-usage events, never Gmail message data.\nEssential only \u2014 No PostHog analytics \u2014 only the cookies needed for sign-in and billing.\n\nChanges apply immediately and are saved on this device. Switching to Essential only stops PostHog and clears its ID.\n\nLeave cleanly\nDisconnect a mailbox\nRemoves DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail ",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Privacy & data"
+        },
+        {
+          "tag": "H2",
+          "text": "We never fetch or store full email contents."
+        },
+        {
+          "tag": "H2",
+          "text": "Gmail data inventory"
+        },
+        {
+          "tag": "H2",
+          "text": "Connected mailboxes"
+        },
+        {
+          "tag": "H2",
+          "text": "Undo retention"
+        },
+        {
+          "tag": "H2",
+          "text": "Export my data"
+        },
+        {
+          "tag": "H3",
+          "text": "Cookie preferences"
+        },
+        {
+          "tag": "H2",
+          "text": "Leave cleanly"
+        },
+        {
+          "tag": "H2",
+          "text": "Legal & evidence"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-privacydata--two-mailboxes&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 61,
+        "incomplete": 0,
+        "passes": 27,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "079-settings-privacydata--two-mailboxes.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-selectwell--default",
+    "title": "Settings/SelectWell",
+    "name": "Default",
+    "source": "./src/features/settings/select-well.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "7:00 AM\n8:00 AM\n9:00 AM",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-selectwell--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "080-settings-selectwell--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-senderspoliciesscreen--protected-list",
+    "title": "Settings/SendersPoliciesScreen",
+    "name": "Protected List",
+    "source": "./src/features/settings/senders-policies/senders-policies-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / SENDER POLICIES\n\nProtected senders\n4 senders\n\nBulk and automatic actions skip these senders; an action you take on one sender yourself still applies.\n\nSearch all protected senders in this inbox\nSearch\nOpen protected senders with all filters \u2192\nR\nRobert from God of Prompt\nProtected \u00b7 you starred a message \u00b7 shielding 145 unread\nexample.com \u00b7 12 in last 90d\nUnprotect\nManage\nG\nGetYourGuide\nProtected \u00b7 Gmail marks it important \u00b7 shielding 33 unread\nexample.com \u00b7 12 in last 90d\nUnprotect\nManage\nM\nMeera (Accounts)\nProtected \u00b7 you wrote to them at least 3 times \u00b7 shielding 2 unread\nexample.com \u00b7 12 in last 90d\nUnprotect\nManage\nF\nFirst National Bank\nProtected \u00b7 you marked it Protected\nexample.com \u00b7 12 in last 90d\nUnprotect\nManage",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Protected senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-senderspoliciesscreen--protected-list&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 63,
+        "incomplete": 1,
+        "passes": 25,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "081-settings-senderspoliciesscreen--protected-list.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-senderspoliciesscreen--load-failed",
+    "title": "Settings/SendersPoliciesScreen",
+    "name": "Load Failed",
+    "source": "./src/features/settings/senders-policies/senders-policies-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / SENDER POLICIES\n\nProtected senders\nUnavailable\n\nBulk and automatic actions skip these senders; an action you take on one sender yourself still applies.\n\nSearch all protected senders in this inbox\nSearch\nOpen protected senders with all filters \u2192\n!\nWe couldn't load protected senders\n\nYour existing policies remain active. Try again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Protected senders"
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load protected senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-senderspoliciesscreen--load-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "082-settings-senderspoliciesscreen--load-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-senderspoliciesscreen--empty",
+    "title": "Settings/SendersPoliciesScreen",
+    "name": "Empty",
+    "source": "./src/features/settings/senders-policies/senders-policies-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / SENDER POLICIES\n\nProtected senders\n0 senders\n\nBulk and automatic actions skip these senders; an action you take on one sender yourself still applies.\n\nSearch all protected senders in this inbox\nSearch\nOpen protected senders with all filters \u2192\nNo protected senders yet\n\nSenders you've written to at least three times, starred, or that Gmail keeps marking important are protected automatically.\n\nBrowse senders",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Protected senders"
+        },
+        {
+          "tag": "H2",
+          "text": "No protected senders yet"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-senderspoliciesscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "083-settings-senderspoliciesscreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-senderspoliciesscreen--loading",
+    "title": "Settings/SendersPoliciesScreen",
+    "name": "Loading",
+    "source": "./src/features/settings/senders-policies/senders-policies-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "YOUR WORKSPACE / SENDER POLICIES\n\nProtected senders\nLoading\u2026\n\nBulk and automatic actions skip these senders; an action you take on one sender yourself still applies.\n\nSearch all protected senders in this inbox\nSearch\nOpen protected senders with all filters \u2192\nLoading protected senders",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading protected senders"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Protected senders"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-senderspoliciesscreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 65,
+        "incomplete": 0,
+        "passes": 23,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "084-settings-senderspoliciesscreen--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-actionsheetprefscard--defaults",
+    "title": "Settings/ActionSheetPrefsCard",
+    "name": "Defaults",
+    "source": "./src/features/settings/settings-index/action-sheet-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Action previews\nArchive preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window\nUnsubscribe preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window\nLater preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Action previews"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-actionsheetprefscard--defaults&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "085-settings-actionsheetprefscard--defaults.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-actionsheetprefscard--error-state",
+    "title": "Settings/ActionSheetPrefsCard",
+    "name": "Error State",
+    "source": "./src/features/settings/settings-index/action-sheet-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Action previews\nCould not load action preferences.\nRetry",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Action previews"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-actionsheetprefscard--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "086-settings-actionsheetprefscard--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-actionsheetprefscard--save-failed",
+    "title": "Settings/ActionSheetPrefsCard",
+    "name": "Save Failed",
+    "source": "./src/features/settings/settings-index/action-sheet-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Action previews\nArchive preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window\nUnsubscribe preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window\nLater preview in the row\nThe preview always appears. Choose inline in the sender row or in a separate window.\nSeparate window\n\nCould not save the preference. Try again.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Action previews"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-actionsheetprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 0,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "087-settings-actionsheetprefscard--save-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-actionsheetprefscard--loading",
+    "title": "Settings/ActionSheetPrefsCard",
+    "name": "Loading",
+    "source": "./src/features/settings/settings-index/action-sheet-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Action previews\nLoading action preferences\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Action previews"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-actionsheetprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "088-settings-actionsheetprefscard--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-briefprefscard--default",
+    "title": "Settings/BriefPrefsCard",
+    "name": "Default",
+    "source": "./src/features/settings/settings-index/brief-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Daily Brief ready at\nAmerica/Los_Angeles\n12:00 AM\n1:00 AM\n2:00 AM\n3:00 AM\n4:00 AM\n5:00 AM\n6:00 AM\n7:00 AM\n8:00 AM\n9:00 AM\n10:00 AM\n11:00 AM\n12:00 PM\n1:00 PM\n2:00 PM\n3:00 PM\n4:00 PM\n5:00 PM\n6:00 PM\n7:00 PM\n8:00 PM\n9:00 PM\n10:00 PM\n11:00 PM",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "089-settings-briefprefscard--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-briefprefscard--save-failed",
+    "title": "Settings/BriefPrefsCard",
+    "name": "Save Failed",
+    "source": "./src/features/settings/settings-index/brief-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Daily Brief ready at\nAmerica/Los_Angeles\n12:00 AM\n1:00 AM\n2:00 AM\n3:00 AM\n4:00 AM\n5:00 AM\n6:00 AM\n7:00 AM\n8:00 AM\n9:00 AM\n10:00 AM\n11:00 AM\n12:00 PM\n1:00 PM\n2:00 PM\n3:00 PM\n4:00 PM\n5:00 PM\n6:00 PM\n7:00 PM\n8:00 PM\n9:00 PM\n10:00 PM\n11:00 PM\n\nCould not save the delivery time. Try again.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "090-settings-briefprefscard--save-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-briefprefscard--loading",
+    "title": "Settings/BriefPrefsCard",
+    "name": "Loading",
+    "source": "./src/features/settings/settings-index/brief-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Loading Brief preferences\u2026",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-briefprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "091-settings-briefprefscard--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-emailprefscard--defaults",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Defaults",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Notifications\nSync completion alerts\nOn\nReminder emails\nOn\nWeekly value receipt\nPlus and Pro: new senders in Screener.\nOff\nAccount notices\nDeletion confirmations and receipts.\nAlways on",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--defaults&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "092-settings-emailprefscard--defaults.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-emailprefscard--save-failed",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Save Failed",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Notifications\nSync completion alerts\nOn\nReminder emails\nOn\nWeekly value receipt\nPlus and Pro: new senders in Screener.\nOff\nAccount notices\nDeletion confirmations and receipts.\nAlways on\n\nCould not save the preference. Try again.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--save-failed&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 71,
+        "incomplete": 1,
+        "passes": 17,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "093-settings-emailprefscard--save-failed.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-emailprefscard--loading",
+    "title": "Settings/EmailPrefsCard",
+    "name": "Loading",
+    "source": "./src/features/settings/settings-index/email-prefs-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Notifications\nLoading email preferences\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Notifications"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-emailprefscard--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "094-settings-emailprefscard--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-mailboxescard--two-connected",
+    "title": "Settings/MailboxesCard",
+    "name": "Two Connected",
+    "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Gmail accounts\nC\nfixture-mailbox-1@synthetic.test\nSynced 4m ago\nActive\nReady\nC\nfixture-mailbox-3@synthetic.test\nSynced 3h ago\nReady\nAdd Gmail account",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Gmail accounts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--two-connected&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "095-settings-mailboxescard--two-connected.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-mailboxescard--empty",
+    "title": "Settings/MailboxesCard",
+    "name": "Empty",
+    "source": "./src/features/settings/settings-index/mailboxes-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Gmail accounts\n\nNo mailboxes connected yet.\n\nConnect Gmail",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Gmail accounts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-mailboxescard--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "096-settings-mailboxescard--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-verbtourcard--default",
+    "title": "Settings/VerbTourCard",
+    "name": "Default",
+    "source": "./src/features/settings/settings-index/verb-tour-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "What the five decisions do\nReplay the tour",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-verbtourcard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 84,
+        "incomplete": 0,
+        "passes": 4,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "097-settings-verbtourcard--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "settings-switch--off",
+    "title": "Settings/Switch",
+    "name": "Off",
+    "source": "./src/features/settings/switch.stories.tsx",
+    "renderedContent": false,
+    "verificationGap": "No rendered content after readiness retry; inspect blank/intentional state.",
+    "mobile": {
+      "bodyText": "",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=settings-switch--off&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "098-settings-switch--off.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "shell-bannerslot--empty",
+    "title": "Shell/BannerSlot",
+    "name": "Empty",
+    "source": "./src/features/shell/banner-slot.stories.tsx",
+    "renderedContent": false,
+    "verificationGap": "No rendered content after readiness retry; inspect blank/intentional state.",
+    "mobile": {
+      "bodyText": "",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=shell-bannerslot--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 82,
+        "incomplete": 0,
+        "passes": 6,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "099-shell-bannerslot--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-later-laterscreen--populated",
+    "title": "Features/Later/LaterScreen",
+    "name": "Populated",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nLater today\n\u00b7 1\nDaily Digest\nnews.example.com\n12 in Later\nReturns Today 6:41 PM\n\u201cafter launch week\u201d\nChange return time\nBring back now\nTomorrow\n\u00b7 1\nDeals & Offers\nshop.example.com\n47 in Later\nReturns Tomorrow 9:41 PM\nChange return time\nBring back now\nThis week\n\u00b7 1\nConference Updates\nconf.example.com\n5 in Later\nReturns Thu 3:41 PM\n\u201cuntil the schedule is final\u201d\nChange return time\nBring back now\nEventually\n\u00b7 1\nQuarterly Newsletter\ncorp.example.com\n3 in Later\nReturns Nov 2\nChange return time\nBring back now",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H2",
+          "text": "Later today\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "Tomorrow\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "This week\u00b7 1"
+        },
+        {
+          "tag": "H2",
+          "text": "Eventually\u00b7 1"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--populated&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "100-features-later-laterscreen--populated.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-later-laterscreen--error-state",
+    "title": "Features/Later/LaterScreen",
+    "name": "Error State",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\n!\nWe couldn't load Later\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H2",
+          "text": "We couldn't load Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "101-features-later-laterscreen--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-later-laterscreen--empty",
+    "title": "Features/Later/LaterScreen",
+    "name": "Empty",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nNothing in Later\n\nSend a sender to Later from Triage or Senders.\nBrowse senders \u2192",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        },
+        {
+          "tag": "H2",
+          "text": "Nothing in Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 83,
+        "incomplete": 0,
+        "passes": 5,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "102-features-later-laterscreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "features-later-laterscreen--loading",
+    "title": "Features/Later/LaterScreen",
+    "name": "Loading",
+    "source": "./src/features/snoozed/snoozed-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CATCH UP / COMING BACK TO YOU\n\nLater\n\nReturn times for the active inbox \u00b7 America/Los_Angeles\n\nLoading Later senders",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading Later senders"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Later"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=features-later-laterscreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "103-features-later-laterscreen--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "sync-syncerrorbanner--visible",
+    "title": "Sync/SyncErrorBanner",
+    "name": "Visible",
+    "source": "./src/features/sync/sync-error-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "New email isn't syncing \u2014 the last attempt failed.\nTry again\n\nError stamped 5 minutes ago, last success 30 minutes ago \u2014 the banner surfaces.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncerrorbanner--visible&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "104-sync-syncerrorbanner--visible.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "sync-syncerrorbanner--unresolved-failure",
+    "title": "Sync/SyncErrorBanner",
+    "name": "Unresolved Failure",
+    "source": "./src/features/sync/sync-error-banner.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "New email isn't syncing \u2014 the last attempt failed.\nTry again\n\nError stamped 90 minutes ago \u2014 no successful sync has proved recovery.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncerrorbanner--unresolved-failure&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 0,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "105-sync-syncerrorbanner--unresolved-failure.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "sync-syncnowbutton--idle",
+    "title": "Sync/SyncNowButton",
+    "name": "Idle",
+    "source": "./src/features/sync/sync-now-button.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Synced 12m ago \u00b7 Sync now\n10/3/2026, 3:29:30 PM\n\nReady, synced 12 minutes ago \u2014 the ordinary \"Sync now\" control.",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=sync-syncnowbutton--idle&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 72,
+        "incomplete": 0,
+        "passes": 16,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "106-sync-syncnowbutton--idle.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "onboarding-verbtour--first-run",
+    "title": "Onboarding/VerbTour",
+    "name": "First Run",
+    "source": "./src/features/tour/verb-tour.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "HOW DECIDING WORKS \u00b7 1 OF 3\nFive decisions, one sender at a time\n\nEach sender gets one of these. Press the letter or use the buttons.\n\nK\nKeep \u2014 This sender stops coming up in Triage.\nA\nArchive \u2014 Moves out of your inbox, stays in Gmail.\nU\nUnsubscribe \u2014 DeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nL\nLater \u2014 Moves to Gmail's DeclutrMail/Later label until the time you pick.\nD\nDelete \u2014 Email in Inbox moves to Gmail Trash.\nNext\nSkip for now",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Five decisions, one sender at a time"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=onboarding-verbtour--first-run&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "107-onboarding-verbtour--first-run.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-actiontoolbar--highlighted-recommendation",
+    "title": "Triage/ActionToolbar",
+    "name": "Highlighted Recommendation",
+    "source": "./src/features/triage/action-toolbar.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Keep\nK\nKeep\nThis sender stops coming up in Triage.\nArchive\nA\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nU\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nL\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nD\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "KeepKKeepThis sender stops coming up in Triage.ArchiveAArchiveMoves out of your inbox, stays in Gmai"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnsubscribeUUnsubscribeDeclutrMail sends a supported one-click request, or opens a prefilled Gmail d"
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "UnsubscribeU"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "U"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Unsubscribe"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "LaterLLaterMoves to Gmail's DeclutrMail/Later label until the time you pick."
+        },
+        {
+          "cls": "",
+          "tag": "BUTTON",
+          "text": "LaterL"
+        },
+        {
+          "cls": "",
+          "tag": "KBD",
+          "text": "L"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-actiontoolbar--highlighted-recommendation&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "108-triage-actiontoolbar--highlighted-recommendation.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-batchactionsheet--archive-loaded",
+    "title": "Triage/BatchActionSheet",
+    "name": "Archive Loaded",
+    "source": "./src/features/triage/batch-action-sheet.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "A\nA\nA\nArchive 288 emails from 3 senders?\n\nFrom amazon.com. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 288\nCancel",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive 288 emails from 3 senders?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--archive-loaded&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "109-triage-batchactionsheet--archive-loaded.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-batchactionsheet--loading",
+    "title": "Triage/BatchActionSheet",
+    "name": "Loading",
+    "source": "./src/features/triage/batch-action-sheet.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "A\nA\nA\nArchive email from 3 senders?\n\nFrom amazon.com. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive\nCancel\n\nCounting the inbox\u2026",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Archive email from 3 senders?"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-batchactionsheet--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "110-triage-batchactionsheet--loading.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-domainbatchcard--default",
+    "title": "Triage/DomainBatchCard",
+    "name": "Default",
+    "source": "./src/features/triage/domain-batch-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "4 senders from amazon.com\nArchive all\nLater for all\nDecide one by one\nShow senders",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-domainbatchcard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 79,
+        "incomplete": 0,
+        "passes": 9,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "111-triage-domainbatchcard--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-focuscard--default",
+    "title": "Triage/FocusCard",
+    "name": "Default",
+    "source": "./src/features/triage/focus-card.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLinkedIn\nnotifications-noreply@linkedin.com\nSender details\n192\nemails in 90 days\n\nNone marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "LinkedIn"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-focuscard--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "112-triage-focuscard--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-inlinepreview--archive",
+    "title": "Triage/InlinePreview",
+    "name": "Archive",
+    "source": "./src/features/triage/inline-preview.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "47 emails from Groupon. They leave your inbox and stay in Gmail.\n\nUndo from Activity for 30 days.\n\nDetails\nArchive 47\nPress A again to confirm \u00b7 Esc cancels",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail.Undo from Activity for 30 days.Detai"
+        },
+        {
+          "cls": "",
+          "tag": "P",
+          "text": "47 emails from Groupon. They leave your inbox and stay in Gmail."
+        },
+        {
+          "cls": "",
+          "tag": "P",
+          "text": "Undo from Activity for 30 days."
+        },
+        {
+          "cls": "",
+          "tag": "DETAILS",
+          "text": "DetailsCountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "SUMMARY",
+          "text": "Details"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DL",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "CountInbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DD",
+          "text": "Inbox now, rechecked when it runs"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "Archive 47Press A again to confirm \u00b7 Esc cancels"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-inlinepreview--archive&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 0,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "113-triage-inlinepreview--archive.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-keyboardhelp--open",
+    "title": "Triage/KeyboardHelp",
+    "name": "Open",
+    "source": "./src/features/triage/keyboard-help.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "Keyboard shortcuts\nDecide\nKeep this sender\nK\nArchive this sender\nA\nUnsubscribe from this sender\nU\nMove this sender to Later\nL\nMove this sender\u2019s inbox email to Gmail Trash\nD\nNavigate\nSkip to the next sender\n\u2192\nOpen or close a list row\nEnter / Space\nUndo the last decision\nZ\nIn a preview\nConfirm the preview\n\u2318\u23ce\nCancel the sheet / dismiss an inline preview\nEsc\nToggle this overlay\n?\nOn touch\nKeep\nSwipe \u2192\nArchive\nSwipe \u2190\nLater\nSwipe \u2191",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H2",
+          "text": "Keyboard shortcuts"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-keyboardhelp--open&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 70,
+        "incomplete": 1,
+        "passes": 18,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "114-triage-keyboardhelp--open.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-protectedactionnotice--on-archive",
+    "title": "Triage/ProtectedActionNotice",
+    "name": "On Archive",
+    "source": "./src/features/triage/protected-notice.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.\nUnprotect\nNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand.",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it.UnprotectNothing mo"
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "This sender stays Protected, so bulk and automatic cleanup will keep skipping it."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "UnprotectNothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand."
+        },
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Nothing moves. Automatic protection won\u2019t re-apply; you can protect this sender by hand."
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-protectedactionnotice--on-archive&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 80,
+        "incomplete": 1,
+        "passes": 8,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "115-triage-protectedactionnotice--on-archive.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-sessionprogress--focus-position",
+    "title": "Triage/SessionProgress",
+    "name": "Focus Position",
+    "source": "./src/features/triage/session-progress.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "2 decided\n\u00b7\nReviewing 3 of 12",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "2 decided\u00b7Reviewing 3 of 12"
+        },
+        {
+          "cls": "",
+          "tag": "DIV",
+          "text": "2 decided\u00b7Reviewing 3 of 12"
+        }
+      ],
+      "headings": [],
+      "overflow": true,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-sessionprogress--focus-position&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 76,
+        "incomplete": 0,
+        "passes": 12,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "116-triage-sessionprogress--focus-position.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-row--default",
+    "title": "Triage/Row",
+    "name": "Default",
+    "source": "./src/features/triage/triage-row.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "L\nLinkedIn\nlinkedin.com\nNone marked read in 90d \u00b7 192 emails\nUnsubscribe\n\u203a",
+      "escaped": [],
+      "headings": [],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-row--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 73,
+        "incomplete": 1,
+        "passes": 15,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "117-triage-row--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-triagescreen--default",
+    "title": "Triage/TriageScreen",
+    "name": "Default",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n0 decided\n\u00b7\nReviewing 1 of 3\nFocus\nList\nG\nGroupon\nnoreply@groupon.com\nSender details\n156\nemails in 90 days\n\n30% marked read in 90d\n\nWhy?\nKeep\nKeep\nThis sender stops coming up in Triage.\nArchive\nArchive\nMoves out of your inbox, stays in Gmail.\nUnsubscribe\nUnsubscribe\nDeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.\nLater\nLater\nMoves to Gmail's DeclutrMail/Later label until the time you pick.\nDelete\nDelete\nEmail in Inbox moves to Gmail Trash.\nSkip\nNow deciding Groupon",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Now deciding Groupon"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "Groupon"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--default&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 68,
+        "incomplete": 1,
+        "passes": 20,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "118-triage-triagescreen--default.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-triagescreen--error-state",
+    "title": "Triage/TriageScreen",
+    "name": "Error State",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\n!\nYour queue didn't load\n\nTry again in a moment.\n\nTry again",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "Your queue didn't load"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--error-state&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 77,
+        "incomplete": 0,
+        "passes": 11,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "119-triage-triagescreen--error-state.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-triagescreen--empty",
+    "title": "Triage/TriageScreen",
+    "name": "Empty",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\nYou\u2019re done for now.\n\nNew decisions appear as senders send again.\n\n14 decided\n6 archived\n3 unsubscribes\n2 to Later\n\nCompare Pro features",
+      "escaped": [],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        },
+        {
+          "tag": "H2",
+          "text": "You\u2019re done for now."
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--empty&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 75,
+        "incomplete": 0,
+        "passes": 13,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "120-triage-triagescreen--empty.png",
+    "screenshotArchived": false
+  },
+  {
+    "id": "triage-triagescreen--loading",
+    "title": "Triage/TriageScreen",
+    "name": "Loading",
+    "source": "./src/features/triage/triage-screen.stories.tsx",
+    "renderedContent": true,
+    "mobile": {
+      "bodyText": "CLEAN UP / A CONSIDERED DECISION\n\nTriage\n\nToday\u2019s review queue \u00b7 One decision per sender\n\nLoading triage queue",
+      "escaped": [
+        {
+          "cls": "",
+          "tag": "SPAN",
+          "text": "Loading triage queue"
+        }
+      ],
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Triage"
+        }
+      ],
+      "overflow": false,
+      "root": true,
+      "smallButtons": [],
+      "storyError": false,
+      "theme": "light",
+      "url": "http://localhost:6006/iframe.html?id=triage-triagescreen--loading&viewMode=story&globals=theme%3Alight",
+      "width": 320
+    },
+    "accessibility": {
+      "counts": {
+        "inapplicable": 74,
+        "incomplete": 0,
+        "passes": 14,
+        "violations": 0
+      },
+      "violations": []
+    },
+    "screenshot": null,
+    "localScreenshotFile": "121-triage-triagescreen--loading.png",
+    "screenshotArchived": false
+  }
+]

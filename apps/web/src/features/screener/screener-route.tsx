@@ -53,6 +53,11 @@ function ScreenerQueueRoute() {
   // The sidebar can populate this shared count before the route hydrates.
   // SSR and the matching first browser render must both omit the live total.
   return (
-    <ScreenerScreen state={state} totalPending={hydrated ? (count.data?.pending ?? null) : null} />
+    <ScreenerScreen
+      state={state}
+      totalPending={hydrated ? (count.data?.pending ?? null) : null}
+      refreshFailed={queue.isError && queue.data !== undefined}
+      onRefresh={() => void queue.refetch()}
+    />
   );
 }

@@ -229,6 +229,8 @@ const ZERO_STATS: ActivityStatsWire = {
   deleted: 0,
   emailCounts: { archived: 0, deleted: 0, later: 0 },
   senderCounts: { archived: 0, deleted: 0, later: 0, unsubscribed: 0, kept: 0 },
+  followupsDismissed: 0,
+  needsAttention: 0,
 };
 
 function makeClient(
@@ -257,10 +259,10 @@ function makeClient(
     window: '7d',
     from: isoHoursAgo(168),
     to: isoHoursAgo(0),
-    completed: 23,
+    completed: rows?.length === 0 && source === 'all' ? 0 : 23,
     skipped: 0,
-    failed: 1,
-    recovered: 2,
+    failed: rows?.length === 0 && source === 'all' ? 0 : 1,
+    recovered: rows?.length === 0 && source === 'all' ? 0 : 2,
     protected: 0,
   });
   if (rows) {
@@ -280,6 +282,7 @@ function makeClient(
             senderQuery: '',
             dateFrom: null,
             dateTo: null,
+            outcomes: [],
           },
         },
       ],
@@ -324,7 +327,11 @@ export const Populated: Story<typeof ActivityScreen> = {
 
 /** Empty — D212 empty state with widen-window suggestion. */
 export const Empty: Story<typeof ActivityScreen> = {
-  render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient([], '7d', 'all')),
+  parameters: {
+    nextjs: { appDirectory: true, navigation: { pathname: '/activity', query: { window: '7d' } } },
+  },
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(makeClient([], '7d', 'all', undefined, ZERO_STATS)),
 };
 
 /**

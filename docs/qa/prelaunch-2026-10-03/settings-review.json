@@ -1,0 +1,785 @@
+{
+  "summary": "Read-only source review completed for all 12 assigned routes, plus account-deletion, mailbox-data and billing dialogs. 13 actionable findings: 9 P2 and 4 P3; no confirmed P1 was established in this source-only pass. Primary launch concerns are subscription mutation locking, scoped feedback state, connection recovery, entitlement-derived mailbox capacity, truthful historical/billing copy, and destructive-dialog focus. Existing tests/stories were inspected for states, not run; rendered accessibility and fixture execution are independently covered by the parent. No repository source was modified, and no live APIs, payments, Gmail or account writes were performed.",
+  "coverage": [
+    {
+      "route": "/sign-in",
+      "screen": "Google sign-in entry",
+      "statesReviewed": [
+        "Unauthenticated default",
+        "inbox_limit auth result",
+        "validated billing returnTo",
+        "untrusted return destination dropped",
+        "OAuth/data disclosure",
+        "demo alternative"
+      ],
+      "method": "Route, AuthEntry, shared OAuth disclosure and sign-in test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/onboarding",
+      "screen": "Entry and step machine",
+      "statesReviewed": [
+        "Session loading",
+        "unauthenticated promise",
+        "Connect Gmail disclosure",
+        "authenticated state loading/error",
+        "already onboarded redirect",
+        "validated billing returnTo",
+        "skip presets/first review",
+        "completion POST pending/error/success"
+      ],
+      "method": "onboarding/page.tsx, derive-step.ts, step-promise.tsx, step-connect.tsx, page/derive-step test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/onboarding",
+      "screen": "Initial and secondary sync gate",
+      "statesReviewed": [
+        "Queued",
+        "syncing and worker stage/progress",
+        "nonfinite progress",
+        "readiness ready",
+        "terminal failure",
+        "auth-expired reconnect",
+        "retry bound to watched mailbox",
+        "first-run disconnect/start over",
+        "sign out",
+        "secondary mailbox escape",
+        "target reconnect Settings result",
+        "inactive target/no active mailbox",
+        "transient status error"
+      ],
+      "method": "SyncGate, sync status query, secondary-flow source, sync-gate story/test inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/onboarding",
+      "screen": "Goal and preset selection",
+      "statesReviewed": [
+        "Free first-sender review",
+        "Plus/Pro preset picker",
+        "goal not selected",
+        "rules seeded",
+        "seed polling",
+        "seed read error/poll cap",
+        "selected presets",
+        "submission pending/error"
+      ],
+      "method": "step-preset-pick.tsx and onboarding API/source contracts",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/onboarding",
+      "screen": "First relief and protection review",
+      "statesReviewed": [
+        "Loading",
+        "generic read failure",
+        "mailbox-scope 409",
+        "active review",
+        "finite goal target",
+        "stop for today",
+        "skip setup",
+        "empty candidates",
+        "all decided",
+        "protection split absent",
+        "strong/weak/stale/manual/no protections",
+        "missing showable rows",
+        "unknown counts",
+        "completion failure/retry"
+      ],
+      "method": "StepFirstTriage, StepProtectionReview, hooks and protection/first-triage story/test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/autopilot",
+      "screen": "Entitlement and rule workspace",
+      "statesReviewed": [
+        "Free read-only catalog/preview",
+        "Free catalog loading/error/empty",
+        "Plus/Pro capabilities",
+        "loading/cold query error",
+        "no rules/pending suggestions",
+        "Observe/Active/Paused/Off",
+        "under-tier leftover Active rule",
+        "review-only presets",
+        "observe prompt dismissal",
+        "pattern suggestion acceptance/dismissal",
+        "capped pending buffer",
+        "threshold edit and rollback",
+        "rule preview loading/error/ready"
+      ],
+      "method": "Route, AutopilotEntitlementSurface, AutopilotScreen, RuleCard/preview helpers and story/test-source inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/autopilot",
+      "screen": "Activation, approval and pause dialogs",
+      "statesReviewed": [
+        "Enable rule with preview",
+        "Watch first versus Act now",
+        "promote Observe",
+        "review-only enable",
+        "dry-run loading/error/retry",
+        "protected exclusions",
+        "backlog effect",
+        "busy/failed mutation",
+        "pause-all confirmation",
+        "uncapped Approve all versus selected/loaded subset",
+        "manual mailto versus one-click unsubscribe"
+      ],
+      "method": "ActivateRuleModal, ConfirmModalFrame, ApproveConfirmModal, PauseConfirmModal and caller source; parent also rendered isolated activation story",
+      "limitations": "This reviewer verified source only. The parent reported the review-only contradiction in an isolated Storybook story. Current production caller separately withholds the acting option for review-only presets. No rules were changed."
+    },
+    {
+      "route": "/quiet",
+      "screen": "Per-mailbox quiet hours",
+      "statesReviewed": [
+        "Under-tier gate",
+        "no mailboxes",
+        "active and disconnected mailbox cards",
+        "loading/read error/retry",
+        "unconfigured",
+        "configured",
+        "quiet now/zero held",
+        "held actions with release time",
+        "indefinite hold",
+        "quiet off",
+        "cross-midnight",
+        "invalid zero-length schedule",
+        "timezone defaults/catalog",
+        "dirty/save pending/save error/server adoption"
+      ],
+      "method": "Route, QuietRoute, QuietHoursCard, query/mutation source and story/test inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/brief",
+      "screen": "Today and historical editions",
+      "statesReviewed": [
+        "Under-tier gate",
+        "loading",
+        "not-yet-generated 404",
+        "generic error/retry",
+        "latest edition",
+        "historical selection",
+        "history read failure/single edition",
+        "empty sections",
+        "section truncation totals",
+        "bounded/retired generated note",
+        "template indicator",
+        "Gmail/sender/Activity exits",
+        "mark-opened latest only",
+        "feedback initial/save/pending/error",
+        "edition change after feedback"
+      ],
+      "method": "Route, BriefScreen, history/today query source, InlineFeedback and tests/stories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/brief",
+      "screen": "Noise selection, archive preview and result",
+      "statesReviewed": [
+        "Short default selection",
+        "long explicit selection",
+        "protected/unresolved exclusion",
+        "nothing selected",
+        "preview loading/unavailable/retry/scope conflict",
+        "zero live count",
+        "protection changed",
+        "single/multiple sender scope",
+        "current inbox count versus frozen edition count",
+        "archive busy",
+        "archived receipt",
+        "undo available/expired/unavailable",
+        "reverted",
+        "partial failure",
+        "failed",
+        "unconfirmed",
+        "overdue parked action"
+      ],
+      "method": "NoiseSection/NoiseRow, NoiseArchiveSheet, useNoiseArchive, story and noise-archive test-source inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/followups",
+      "screen": "Possible follow-ups",
+      "statesReviewed": [
+        "Under-tier gate",
+        "loading",
+        "read failure/retry",
+        "empty",
+        "populated grouped priorities",
+        "recent reply caveat",
+        "long subject disclosure",
+        "Gmail exit",
+        "Mark resolved optimistic removal",
+        "dismiss failure rollback",
+        "saved feedback",
+        "hidden Not a follow-up rows/show toggle"
+      ],
+      "method": "Route, FollowupsScreen, useDismissFollowup, InlineFeedback and story/test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/billing",
+      "screen": "Plan state and billing recovery",
+      "statesReviewed": [
+        "Loading",
+        "cold read failure",
+        "schema-unknown payload",
+        "billing disabled",
+        "Free/Plus/Pro",
+        "paid entitlement without subscription",
+        "backing active/past_due/cancel scheduled",
+        "nonbacking paused/mismatched/canceled",
+        "Razorpay paused",
+        "founding price",
+        "scheduled downgrade pending/scheduled/restoring",
+        "refund pending/unconfirmed",
+        "checkout processing/slow/unconfirmed",
+        "cross-tab/server reservation",
+        "confirmed release",
+        "provider resume",
+        "renewal restoration"
+      ],
+      "method": "BillingScreen, billing-model, pending/intent behavior, subscription APIs and billing-screen model/test/story-source inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/billing",
+      "screen": "Checkout, plan change, cancellation and upgrade gates",
+      "statesReviewed": [
+        "Monthly/annual picker",
+        "validated intent opens confirm",
+        "Free/Plus/Pro selector",
+        "disabled/unprovisioned providers",
+        "Founding opt-in",
+        "exact rail/currency preview",
+        "checkout error/ambiguous outcome",
+        "prorated immediate quote loading/error/expiration",
+        "deferred downgrade",
+        "cancel reason optional",
+        "pause instead of cancel",
+        "mutation pending/failure",
+        "Free cap partial/full",
+        "inbox limit Plus/Pro",
+        "action-tier gate"
+      ],
+      "method": "PlanPicker, ConfirmPanel, ChangePlanPanel, CancelModal, TierGate, UpgradeModal and provider-gate/test/story-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/billing",
+      "screen": "Payment method and invoice history",
+      "statesReviewed": [
+        "Paddle portal",
+        "past due",
+        "Razorpay unsupported support path",
+        "provider unsupported response",
+        "money-action lock",
+        "portal error",
+        "invoice loading/error/empty",
+        "partial provider history",
+        "omitted/unrenderable rows",
+        "truncated history",
+        "status/date filters",
+        "unknown invoice status",
+        "signed download pending/error",
+        "hosted document/ unavailable document"
+      ],
+      "method": "PaymentMethodCard, InvoiceHistory, invoice/payment-method hooks and invoice story/test-source inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/settings",
+      "screen": "Settings sections and mailbox/account states",
+      "statesReviewed": [
+        "No active mailbox",
+        "settings loading/error/per-card retry",
+        "billing disabled/read error/retry",
+        "known auth tier",
+        "mailbox at limit/under limit",
+        "active/disconnected/needs reconnect",
+        "syncing/scan failed/not synced/ready",
+        "indexed deletion pending/deleting/delayed/deleted",
+        "target reconnect result/scrub/announce/highlight/fallback",
+        "preview preference controls",
+        "email preferences",
+        "Brief entitlement/delivery hour",
+        "replay verb tour",
+        "account section deep link"
+      ],
+      "method": "SettingsScreen, MailboxesCard, ActionSheetPrefsCard, EmailPrefsCard, BriefPrefsCard and settings/mailbox story/test-source inventories",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/settings/privacy",
+      "screen": "Privacy, retention, data export and cookie control",
+      "statesReviewed": [
+        "Active/disconnected/no mailboxes",
+        "registry-generated fetched/stored/exported/retained inventory",
+        "external processor disclosures",
+        "unknown/tier-resolved undo window",
+        "export formats/limits",
+        "export pending/error",
+        "cookie no choice/all/essential/withdrawal",
+        "disconnect/one-mailbox deletion/account deletion destinations",
+        "Privacy/Terms legal exits"
+      ],
+      "method": "PrivacyDataScreen, shared inventory and CookiePreferences, export hook, privacy/cookie test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/settings/senders",
+      "screen": "Standing protection settings",
+      "statesReviewed": [
+        "Loading/cold read error/retry",
+        "empty",
+        "populated reason/current evidence",
+        "unknown cadence/shield counts",
+        "search/clear/no match",
+        "placeholder previous-result inert state",
+        "query-wide totals",
+        "Show more/pagination failure retaining list",
+        "Unprotect pending/success/error",
+        "Manage sender exit"
+      ],
+      "method": "SendersPoliciesScreen, standing-policy mutation and test/story-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/settings/help",
+      "screen": "Glossary and contact support",
+      "statesReviewed": [
+        "Canonical glossary terms/high-risk recovery distinctions",
+        "search/matching/no terms/clear",
+        "Help/FAQ and Activity exits",
+        "support required fields/native length bounds",
+        "submitting",
+        "confirmed",
+        "error retaining typed text",
+        "support mailto fallback"
+      ],
+      "method": "Help route, ProductGlossary, glossary-content, ContactSupportForm and their test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    },
+    {
+      "route": "/admin/security",
+      "screen": "Operator audit log",
+      "statesReviewed": [
+        "Nonallowlisted 404 without page-purpose intro",
+        "loading",
+        "cold read error/retry",
+        "populated table",
+        "no results",
+        "severity/event type/date filters",
+        "clear filters",
+        "pagination",
+        "next-page failure retaining rows",
+        "background refresh failure retaining context"
+      ],
+      "method": "Route and SecurityEventsScreen, paginated query, story/test-source inspection",
+      "limitations": "Source-only; operator authorization was not exercised against a live endpoint, payload producer guarantees were not security-audited, and no operator API was called."
+    },
+    {
+      "route": "/settings#account",
+      "screen": "Account deletion and grace period",
+      "statesReviewed": [
+        "Status loading/error",
+        "no deletion request",
+        "step 1 acknowledgment",
+        "scheduled default and DELETE phrase",
+        "immediate waiver and DELETE AND WAIVE UNDO",
+        "typed mismatch",
+        "undo-window extension/unknown projection",
+        "submitting/error",
+        "pending scheduled grace/waived deadline",
+        "cancel deletion pending/error",
+        "executing no cancel",
+        "grace banner"
+      ],
+      "method": "AccountDeletionSection, DeleteAccountModal, GracePeriodBanner, status/request/cancel hook and modal/banner test-source inventories",
+      "limitations": "Source-only; no deletion request or cancellation was made. Parent reports isolated deletion modal stories fail because their QueryClient provider is missing, so those rendered fixtures are unverified."
+    },
+    {
+      "route": "/settings; global account menu",
+      "screen": "One-mailbox disconnect and saved-data deletion dialogs",
+      "statesReviewed": [
+        "Active mailbox disconnect retaining history",
+        "disconnected mailbox retained data",
+        "inventory disclosures",
+        "mailbox-specific destructive phrase",
+        "mismatch",
+        "disconnect/delete busy",
+        "error",
+        "cancel/scrim/Escape locked while busy",
+        "reconnect restrictions after deletion"
+      ],
+      "method": "AccountMenu, MailboxDataControlsDialog, mailbox mutation hooks, dialog test-source inspection",
+      "limitations": "Source inspection only; tests and Storybook states were inspected as coverage inventories, not executed by this reviewer. No authenticated API, account, Gmail, or payment operations were performed. Rendered desktop/mobile verification belongs to the parent review."
+    }
+  ],
+  "findings": [
+    {
+      "id": "SYS-01",
+      "priority": "P2",
+      "route": "/settings",
+      "state": "Known entitlement tier while billing is disabled or unavailable",
+      "title": "Mailbox limit disappears when the optional billing read fails",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/settings/settings-index/settings-screen.tsx",
+          "line": 300,
+          "detail": "The mailbox allowance is derived only from billing.data?.tier, with null on BILLING_DISABLED/read failure, although useTier supplies the known auth entitlement immediately below."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/settings/settings-index/settings-screen.tsx",
+          "line": 372,
+          "detail": "MailboxesCard receives null inboxLimit when billing has no data."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/settings/settings-index/mailboxes-card.tsx",
+          "line": 54,
+          "detail": "atLimit is false for a null limit, so Add Gmail remains enabled at line 71 and disconnected reactivation loses its plan-limit guard at line 124."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/common/entitlements/entitlements.service.ts",
+          "line": 452,
+          "detail": "The API independently rejects connection when connected >= the actual tier limit, creating a predictable refused path."
+        }
+      ],
+      "recommendation": "Use the auth entitlement from useTier for mailbox capacity, as Brief settings and AccountMenu already do. Reserve the billing read for subscription facts.",
+      "verification": "Source-confirmed; not runtime-tested. Mock Free with one active mailbox and billing 503 BILLING_DISABLED/read failure, and assert Add Gmail plus disconnected reactivation are limit-disabled while existing-mailbox reauthorization remains available.",
+      "launchImpact": "A billing-disabled launch currently offers plan-ineligible connection actions and removes the explanation/upgrade path."
+    },
+    {
+      "id": "SYS-02",
+      "priority": "P2",
+      "route": "/billing",
+      "state": "Pause request in flight inside cancellation dialog",
+      "title": "Pause and cancellation can be submitted concurrently",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/cancel-modal.tsx",
+          "line": 149,
+          "detail": "The primary cancellation action is marked busy only by isCanceling; isPausing does not disable it or lock the sheet."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/cancel-modal.tsx",
+          "line": 194,
+          "detail": "The Pause button correctly disables for either mutation, showing the asymmetric lock."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/components/preview-sheet/preview-sheet.tsx",
+          "line": 68,
+          "detail": "Sheet busy/dismissal protection is derived from primary.busyLabel; therefore an in-flight pause still permits cancel, Escape, scrim and Keep current plan."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/billing-screen.tsx",
+          "line": 810,
+          "detail": "Pause runs a separate mutation from cancellation, without a parent guard against cancellation during that request."
+        }
+      ],
+      "recommendation": "Apply one busy state for isPausing || isCanceling to the primary action and the sheet dismissal lifecycle. Keep the correct pending label for the action that actually started.",
+      "verification": "Source-confirmed; deferred-provider outcome not exercised. Use a mocked unresolved pause promise and assert cancellation and all dismiss paths stay unavailable until the pause settles.",
+      "launchImpact": "Conflicting subscription instructions can be sent from the same review dialog; resolve before allowing public billing changes."
+    },
+    {
+      "id": "SYS-03",
+      "priority": "P2",
+      "route": "/brief",
+      "state": "Historical edition selected after feedback saves, or while a feedback request is unresolved",
+      "title": "Feedback selection and success receipt carry across Brief editions",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/feedback/inline-feedback.tsx",
+          "line": 62,
+          "detail": "selected and savedNow are local state; the only reset effect at line 66 depends on initialRating, not referenceId/surface. Successful mutation sets savedNow=true at line 72."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/brief/brief-screen.tsx",
+          "line": 325,
+          "detail": "InlineFeedback is reused without key={brief.id} when the historical switcher changes its referenceId, unlike the explicitly keyed NoiseSection above."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/feedback/inline-feedback.test.tsx",
+          "line": 23,
+          "detail": "Existing tests cover initial value, successful save and failure, but no reference-change case."
+        }
+      ],
+      "recommendation": "Reset selection, receipt and mutation state when the observation identity changes; prevent a late response for the prior reference from marking the new edition saved. A keyed Brief feedback instance can provide the immediate scope boundary.",
+      "verification": "Source-confirmed; not executed. Save Useful on an edition whose initialRating is null, switch to another null-rated edition and assert no selection or saved receipt carries over. Repeat with the first request resolving after the switch.",
+      "launchImpact": "Users are shown feedback as saved for an edition they have not rated, weakening the trustworthiness of observation feedback."
+    },
+    {
+      "id": "SYS-04",
+      "priority": "P2",
+      "route": "/onboarding",
+      "state": "First cleanup review receives CurrentMailboxGuard 409 after the connection changes",
+      "title": "Cleanup onboarding retries a connection conflict instead of reconciling it",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-first-triage.tsx",
+          "line": 83,
+          "detail": "Every read error, including ApiError scope 409s, becomes an EmptyState with Try again invoking the same firstTriage.refetch at line 95."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/onboarding/onboarding.controller.ts",
+          "line": 97,
+          "detail": "The first-triage endpoint is explicitly protected by CurrentMailboxGuard."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-protection-review.tsx",
+          "line": 110,
+          "detail": "The sibling protection review already handles mailbox scope conflicts with Refresh connection and resetMailboxScopedCache, which updates me and re-derives onboarding."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/onboarding/page.tsx",
+          "line": 220,
+          "detail": "The remaining corner escape writes skipped:true, so it abandons onboarding rather than repairs the connection state."
+        }
+      ],
+      "recommendation": "Apply the protection review's designed connection-conflict recovery to the first cleanup review and use ErrorState for failed reads.",
+      "verification": "Source-confirmed; not executed. Return SELECT_MAILBOX/NO_ACTIVE_MAILBOX for the first cleanup read while cached me still has an active mailbox, and assert Refresh connection re-derives the appropriate step without writing skipped:true.",
+      "launchImpact": "A stale connection can strand new users in a retry loop unless they skip onboarding."
+    },
+    {
+      "id": "SYS-05",
+      "priority": "P2",
+      "route": "/brief",
+      "state": "Viewing a historical Brief containing Noise senders",
+      "title": "Historical Noise rows and archive preview still say yesterday",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/brief/brief-screen.tsx",
+          "line": 320,
+          "detail": "The edition-aware dayWord reaches NoiseSection, but line 743 renders NoiseRow without passing it."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/brief/brief-screen.tsx",
+          "line": 1119,
+          "detail": "NoiseRow always formats the frozen count as messages yesterday."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/brief/noise-archive-sheet.tsx",
+          "line": 118,
+          "detail": "The shared preview always describes its scope as not only yesterday's mail, even when opened from a historical edition."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/brief/brief-screen.test.tsx",
+          "line": 643,
+          "detail": "The historical-language regression test checks heading and screen-help only; it does not cover rows or the archive sheet."
+        }
+      ],
+      "recommendation": "Thread the edition's covered-date wording through every frozen-count label. Describe the action's wider scope as all inbox mail now versus email in this Brief, so the preview is truthful for every edition.",
+      "verification": "Source-confirmed; not executed. Select a historical edition with Noise, assert its rows use that covered date, then open the archive preview and assert no stale yesterday qualifier remains.",
+      "launchImpact": "Date labels contradict the selected edition at the mail-changing decision point."
+    },
+    {
+      "id": "SYS-06",
+      "priority": "P2",
+      "route": "/billing",
+      "state": "Cold subscription read failure without a local pending-payment record",
+      "title": "A failed billing read asserts that no charge or plan change occurred",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/billing-screen.tsx",
+          "line": 2094,
+          "detail": "BillingErrorState says No charge or plan change was made. A failed read cannot establish the transaction or webhook outcome, including activity on another device."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/billing-screen.tsx",
+          "line": 2121,
+          "detail": "The schema-unknown sibling correctly scopes its assurance to Loading this page made no charge or plan change."
+        }
+      ],
+      "recommendation": "Scope the reassurance to the read operation, or state that billing details could not be confirmed. Preserve the distinction between an unavailable read and an actual transaction outcome.",
+      "verification": "Source-confirmed copy issue; not runtime-tested. Render the cold read-failure fixture and assert it does not claim an account-wide no-charge outcome.",
+      "launchImpact": "The error surface can mislead users who are checking whether a recent payment succeeded."
+    },
+    {
+      "id": "SYS-07",
+      "priority": "P2",
+      "route": "/autopilot",
+      "state": "Free tier's read-only rule catalog fails to load",
+      "title": "Read-only Autopilot tells users to retry but offers no retry control",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/autopilot-entitlement-surface.tsx",
+          "line": 118,
+          "detail": "The rules.isError branch renders Couldn't load your preset rules / Try again in a moment, with no action or refetch handler."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/api/use-autopilot-rules.ts",
+          "line": 13,
+          "detail": "The hook returns the normal query result, including refetch; the surface could expose a real recovery action."
+        }
+      ],
+      "recommendation": "Use the standard recoverable ErrorState and wire Retry to rules.refetch. Keep the read-only preview and upgrade messaging independent from catalog recovery.",
+      "verification": "Source-confirmed; not executed. Reject the catalog GET once, then succeed; assert a visible retry control recovers the rule list without upgrading or navigating away.",
+      "launchImpact": "A failed first impression of paid value has no in-product recovery path."
+    },
+    {
+      "id": "SYS-08",
+      "priority": "P2",
+      "route": "/billing",
+      "state": "Past-due payment method cannot be changed through the self-service provider path",
+      "title": "Support-assisted payment copy promises access beyond the enforced dunning deadline",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/billing/payment-method-card.tsx",
+          "line": 117,
+          "detail": "For showSupportPath plus isPastDue the card states Your plan stays active while we sort this out with you, without a time or entitlement boundary."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/billing/billing-webhook.service.ts",
+          "line": 677,
+          "detail": "past_due gets an entitlement deadline derived from the period end plus the dunning window."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/api/src/billing/billing-reconciliation.sweep.ts",
+          "line": 86,
+          "detail": "The sweep changes expired past_due subscriptions to canceled once entitlement_ends_at passes; support correspondence does not suspend that guard."
+        }
+      ],
+      "recommendation": "Use neutral support-next-step copy and, when known, the actual access deadline. Do not imply contacting support guarantees continued paid access.",
+      "verification": "Source-confirmed policy/copy mismatch; no provider calls made. Render the Razorpay/unsupported past_due variant and assert its assurance respects the recorded entitlement deadline or makes no indefinite access promise.",
+      "launchImpact": "Customers can rely on an access promise that the billing service does not enforce."
+    },
+    {
+      "id": "SYS-09",
+      "priority": "P2",
+      "route": "/settings#account",
+      "state": "Keyboard focus in the typed account-deletion confirmation field",
+      "title": "Account deletion removes the visible keyboard focus ring",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/account-deletion/delete-account-modal.tsx",
+          "line": 242,
+          "detail": "The typed-confirm input sets inline outline:none. Its boxShadow at line 239 changes only for an exact phrase match, not focus."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/packages/shared/src/styles/tokens.css",
+          "line": 338,
+          "detail": "The shared :focus-visible rule supplies the normal outline; an inline outline:none overrides it."
+        }
+      ],
+      "recommendation": "Remove the inline outline reset or add a dedicated visible focus style independent of phrase validity.",
+      "verification": "Source-confirmed style override; rendered keyboard verification remains needed because the parent reports the modal Storybook fixture lacks a QueryClient provider. Tab into the field with an incomplete phrase and confirm a visible ring in both themes.",
+      "launchImpact": "The keyboard focus location is hidden during a consequential destructive confirmation."
+    },
+    {
+      "id": "SYS-10",
+      "priority": "P3",
+      "route": "/onboarding",
+      "state": "First review completed or no candidates found",
+      "title": "Continue to Senders actually opens Overview or the retained billing destination",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-first-triage.tsx",
+          "line": 157,
+          "detail": "The completion button reads Continue to Senders."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-protection-review.tsx",
+          "line": 192,
+          "detail": "The protection completion button repeats Continue to Senders; the unknown-split body at line 427 also promises that destination."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/app/onboarding/page.tsx",
+          "line": 205,
+          "detail": "Successful completion executes router.replace(returnTo ?? '/home'), not /senders."
+        }
+      ],
+      "recommendation": "Use a destination-neutral completion label such as Open workspace, or derive the destination label from the same routing decision. Update both completion panels and their matching copy/tests.",
+      "verification": "Source-confirmed; not executed. Complete each first-review goal with no returnTo and with a validated billing intent, checking that the CTA truth matches the resulting destination.",
+      "launchImpact": "Small but visible mismatch at the handoff into the product."
+    },
+    {
+      "id": "SYS-11",
+      "priority": "P3",
+      "route": "/quiet",
+      "state": "Mailbox has no saved quiet-hours configuration",
+      "title": "Default quiet-hours draft is labelled Saved before any save exists",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/quiet/quiet-hours-card.tsx",
+          "line": 131,
+          "detail": "A null server config is replaced by DEFAULT_DRAFT and useBrowserDefault=true."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/quiet/quiet-hours-card.tsx",
+          "line": 159,
+          "detail": "The default draft is also used as baseline; browser timezone initialization updates both baseline and draft, so dirty stays false."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/quiet/quiet-hours-card.tsx",
+          "line": 292,
+          "detail": "Any nondirty form displays Saved, including the null-config state."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/quiet/quiet-hours-card.stories.tsx",
+          "line": 62,
+          "detail": "The Unconfigured story explicitly supplies a ready state with config:null."
+        }
+      ],
+      "recommendation": "Show Off/unconfigured, or omit the receipt until an actual persisted configuration exists. Keep the disabled-by-default behavior.",
+      "verification": "Source-confirmed; not rendered by this reviewer. Inspect Unconfigured and save a mocked first configuration; Saved should appear only for the latter.",
+      "launchImpact": "Minor persistence-status overclaim for first-time Quiet users."
+    },
+    {
+      "id": "SYS-12",
+      "priority": "P3",
+      "route": "/onboarding",
+      "state": "Preset rule read fails or reaches its polling cap",
+      "title": "Preset selection still claims preparation after the status read has stopped",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-preset-pick.tsx",
+          "line": 108,
+          "detail": "Rule polling stops immediately on query error and after RULES_SEED_MAX_POLLS at line 110."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/onboarding/step-preset-pick.tsx",
+          "line": 248,
+          "detail": "Every not-loading/unseeded state still renders Your suggestions are still being prepared, without distinguishing a failed read or capped wait."
+        }
+      ],
+      "recommendation": "Distinguish a loading/waiting response from inability to confirm preparation. Keep the valid ability to save selections, and expose recovery when the catalog read failed.",
+      "verification": "Source-confirmed; not executed. Exercise a cold rule-read failure and repeated empty 200 responses to the cap, confirming neither makes an unverified preparation promise.",
+      "launchImpact": "Minor recovery/truth issue; setup itself remains continuable."
+    },
+    {
+      "id": "SYS-13",
+      "priority": "P3",
+      "route": "/autopilot; isolated ActivateRuleModal story",
+      "state": "Review-only preset with intent=enable and default canRunUnattended=true",
+      "title": "Review-only activation component can display an automatic-action choice",
+      "evidence": [
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/activate-rule-modal.tsx",
+          "line": 132,
+          "detail": "reviewOnly is computed, but offersChoice at line 139 does not include !reviewOnly."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/activate-rule-modal.tsx",
+          "line": 236,
+          "detail": "The displayed Act now option is accompanied at line 242 by Acts on matching email now and as it arrives, contradicting the review-only subtitle and note."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/activate-rule-modal.stories.tsx",
+          "line": 54,
+          "detail": "The fixture uses AUTO_ARCHIVE_LOW_ENGAGEMENT, a review-only preset, and EnableWithWatchFirst at line 75 omits canRunUnattended, taking its true default."
+        },
+        {
+          "file": "/Users/chintant/projects/DeclutrMail/apps/web/src/features/autopilot/autopilot-screen.tsx",
+          "line": 1058,
+          "detail": "The current production caller correctly passes false for review-only presets, so the live route is presently protected from this contradictory choice."
+        }
+      ],
+      "recommendation": "Enforce the review-only invariant inside ActivateRuleModal as well as its caller. Correct the story to represent the current preset behavior, with a separate non-review-only fixture for the Watch/Act choice.",
+      "verification": "Parent observed the contradiction in mobile Storybook; this reviewer independently confirmed source. Add an isolated component case that cannot render Act now for either review-only preset, regardless of omitted canRunUnattended.",
+      "launchImpact": "Component/story contract inconsistency; not evidence that the current production caller executes review-only matches automatically."
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "completedAtUtc": "2026-10-03T22:56:45.357200+00:00",
+  "publicRoutes": 48,
+  "desktopLight": "1440x1000",
+  "mobileLightAndDark": "320x844",
+  "lightMainAxeScans": 48,
+  "darkMainAxeScans": 10,
+  "frameworkOverlays": 0,
+  "missingMain": 0,
+  "pageOverflows": 0,
+  "brokenVisibleImages": 0,
+  "invalidLocalAnchors": 0,
+  "axeViolations": 0,
+  "limitations": [
+    "Main-content automated axe checks are bounded; incomplete color checks for decorative pseudo-element backgrounds remain in the raw records.",
+    "All 48 dark DOM checks and screenshots were captured; only 10 representative dark pages received axe checks.",
+    "Selected viewport captures are not exhaustive interactions or complete WCAG certification."
+  ],
+  "evidence": "public-browser-final.json"
+}

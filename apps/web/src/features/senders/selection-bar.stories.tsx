@@ -53,6 +53,7 @@ const sender: typeof makeSender = (overrides = {}) =>
     displayName: overrides.id ?? 'story-sender',
     domain: 'acme.com',
     gmailCategory: 'promotions',
+    unsubscribeMethod: 'one_click',
     lastDays: 4,
     ...overrides,
   });
@@ -67,8 +68,15 @@ const PROTECTED = {
 /** Frame the bar against the page background so the dark pill reads correctly. */
 function frame(args: BarArgs) {
   return (
-    <div style={{ background: color.bg, padding: 24, maxWidth: 1180 }}>
-      <SelectionBar {...args} />
+    <div
+      style={{
+        background: color.bg,
+        padding: 24,
+        maxWidth: 1180,
+        minWidth: args.variant === 'sheet' ? undefined : 760,
+      }}
+    >
+      <SelectionBar {...args} tier={args.tier ?? 'pro'} />
     </div>
   );
 }
@@ -177,4 +185,19 @@ export const Busy: Story<typeof SelectionBar> = {
     busy: true,
   },
   render: frame,
+};
+
+/** The production mobile selection controls use a sheet, not the desktop bar. */
+export const MobileSheet: Story<typeof SelectionBar> = {
+  args: { ...MixedSelection.args, variant: 'sheet' },
+  render: frame,
+  parameters: {
+    viewport: { defaultViewport: 'mobile1' },
+    docs: {
+      description: {
+        story:
+          'Phone presentation: the same selected senders in the production action sheet. Desktop bar stories require a desktop viewport.',
+      },
+    },
+  },
 };

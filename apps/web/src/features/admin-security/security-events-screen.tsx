@@ -120,6 +120,7 @@ function Body({
   if (query.error && query.data == null) {
     return (
       <ErrorState
+        headingLevel={2}
         title="Couldn't load security events"
         description="The audit log is unavailable right now. Try again to refresh it."
         onRetry={() => void query.refetch()}
@@ -133,6 +134,7 @@ function Body({
     <>
       {rows.length === 0 ? (
         <EmptyState
+          headingLevel={2}
           title="No events match these filters."
           description="Adjust severity, event type, or time range — or clear filters to see everything."
         />
@@ -305,6 +307,9 @@ function FilterBar(props: FilterBarProps): ReactElement {
 function EventsTable({ rows }: { rows: SecurityEventWire[] }): ReactElement {
   return (
     <div
+      role="region"
+      aria-label="Security events table"
+      tabIndex={0}
       style={{
         overflowX: 'auto',
         border: `1px solid ${color.border}`,

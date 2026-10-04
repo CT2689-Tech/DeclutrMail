@@ -16,8 +16,8 @@
  *     status, sustained poll error, Keep POST failure, the
  *     unsubscribe-then-archive partial failure, and the global
  *     single-in-flight re-entry guard. Each must warn-toast, release
- *     the busy latch, and leave the queue un-invalidated (except the
- *     partial-failure case, where the intent's success DID invalidate).
+ *     the busy latch, and reconcile uncertain intent writes. A terminal job
+ *     failure stays visible instead of assuming it changed nothing.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1141,7 +1141,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
   });
 
-  it('Keep failure: warn toast, row un-busies, no invalidation', async () => {
+  it('Keep uncertainty: neutral warning, reconciliation, no optimistic removal or success', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1159,14 +1159,19 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        expect.stringContaining(`Couldn't save Keep for ${GROUPON.senderName}`),
+        expect.stringContaining(`Couldn't confirm Keep for ${GROUPON.senderName}`),
         'warn',
       ),
     );
     // `onSettled` releases the intent latch — the row is decidable again.
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
-    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
+    expect(h.toast).not.toHaveBeenCalledWith(expect.anything(), 'success');
+    expect(h.toast).not.toHaveBeenCalledWith(
+      expect.stringMatching(/nothing changed/i),
+      expect.anything(),
+    );
   });
 
   /** A failure the API wrote itself (`AllExceptionsFilter` always sets a code). */
@@ -1782,6 +1787,30 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expect(useTriageStore.getState().expandedRowId).toBe(GROUPON.id);
     // No mutation ever fired.
     expect(enqueues).toHaveLength(0);
+  });
+
+  it('keeps its inline preview when a nonmodal account dialog owns Escape', async () => {
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await screen.findByRole('region', { name: /^Preview · Archive / });
+    const accountDialog = document.createElement('div');
+    accountDialog.setAttribute('role', 'dialog');
+    accountDialog.setAttribute('aria-label', 'Gmail accounts');
+    document.body.append(accountDialog);
+    try {
+      fireEvent.keyDown(accountDialog, { key: 'Escape' });
+      expect(useTriageStore.getState().pendingAction).toMatchObject({
+        surface: 'inline',
+        verb: 'Archive',
+      });
+      accountDialog.remove();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(useTriageStore.getState().pendingAction).toBeNull();
+    } finally {
+      accountDialog.remove();
+    }
   });
 
   it('Escape inside an input is ignored (typing convention)', async () => {

@@ -82,6 +82,33 @@ function zonedInstant(y: number, m0: number, d: number, hour: number, timeZone: 
   return new Date(ts);
 }
 
+/** Resolve a datetime-local wall time without borrowing the device timezone. */
+export function parseSnoozeWallTime(
+  value: string,
+  timeZone: string,
+): { kind: 'valid'; at: Date } | { kind: 'invalid' | 'missing' | 'ambiguous' } {
+  const fields = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!fields) return { kind: 'invalid' };
+  const [, y, m, d, h, minute] = fields;
+  const wall = Date.UTC(Number(y), Number(m) - 1, Number(d), Number(h), Number(minute));
+  if (new Date(wall).toISOString().slice(0, 16) !== value) return { kind: 'invalid' };
+  // Sample either side of a clock change, then check each possible offset.
+  // A gap has no matching instant; a repeated hour has two. Neither is
+  // silently moved or guessed when scheduling mail to return.
+  const offsets = new Set(
+    [-36, 0, 36].map((hours) => {
+      const sample = wall + hours * 3_600_000;
+      return wallClockAsUtcMs(sample, timeZone) - sample;
+    }),
+  );
+  const matches = [...offsets]
+    .map((offset) => wall - offset)
+    .filter((instant) => wallClockAsUtcMs(instant, timeZone) === wall);
+  if (matches.length === 0) return { kind: 'missing' };
+  if (matches.length > 1) return { kind: 'ambiguous' };
+  return { kind: 'valid', at: new Date(matches[0]!) };
+}
+
 /** D80 — bucket a wake time relative to `now` (calendar days in `timeZone`). */
 export function wakeBucket(snoozedUntil: string, now: Date, timeZone: string): WakeBucket {
   const wake = new Date(snoozedUntil);

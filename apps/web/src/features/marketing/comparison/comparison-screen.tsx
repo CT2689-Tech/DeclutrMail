@@ -209,7 +209,7 @@ export function ComparisonIndexScreen() {
               change, then check the outcome in Activity.
             </p>
             <Link href="/inbox-simulator?workspace=senders">
-              Try a sender review <span aria-hidden="true">→</span>
+              Try Senders <span aria-hidden="true">→</span>
             </Link>
           </div>
           <div className="dm-compare-fit-options">

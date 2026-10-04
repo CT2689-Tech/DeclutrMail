@@ -201,12 +201,9 @@ export function DecidePreview({
         : `${liveCount === null ? 'Email' : emailsLabel(liveCount)} from ${name}. ${destination ?? ''}`.trim();
 
   // ── One muted line: how to undo it ──────────────────────────────────
-  // Zero matches: nothing moves, but Confirm is still live — it resolves
-  // the quarantine row (`ScreenerService.decide` sets `decided_at` even on
-  // a 0-message enqueue), so the sender leaves this queue. Say that; a
-  // live button over "Nothing to move" otherwise reads as a no-op.
+  // Keep records an app-only decision when there is no email to move.
   const note = zero
-    ? `Confirming records your decision and removes ${name} from the Screener.`
+    ? 'Choose Keep to record a decision without moving email.'
     : [
         primary.activityUndo.summary,
         // Delete is the one verb where the reader plausibly fears the
@@ -432,7 +429,9 @@ export function DecidePreview({
           reader hears it when the preview opens. */}
       {overriding && (
         <p role="status" style={{ ...mutedLine, marginTop: space[3], color: color.fgSoft }}>
-          <strong style={{ fontWeight: 600, color: color.danger }}>This sender is Protected</strong>{' '}
+          <strong style={{ fontWeight: 600, color: color.dangerText }}>
+            This sender is Protected
+          </strong>{' '}
           because {screenerProtectionClause(row.protectionReason)}. It stays Protected.
         </p>
       )}
@@ -450,7 +449,15 @@ export function DecidePreview({
         </details>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: space[2], marginTop: space[3] }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: space[2],
+          marginTop: space[3],
+        }}
+      >
         <Button
           size="md"
           tone={verb === 'delete' ? 'danger' : verb === 'unsubscribe' ? 'warn' : 'primary'}

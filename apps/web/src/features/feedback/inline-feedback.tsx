@@ -59,6 +59,10 @@ const CONFIG = {
 
 /** Accessible, bounded feedback for one canonical product observation. */
 export function InlineFeedback(props: InlineFeedbackProps) {
+  return <ObservationFeedback key={`${props.surface}:${props.referenceId}`} {...props} />;
+}
+
+function ObservationFeedback(props: InlineFeedbackProps) {
   const [selected, setSelected] = useState<ProductFeedbackRating | null>(props.initialRating);
   const [savedNow, setSavedNow] = useState(false);
   const config = CONFIG[props.surface];
@@ -136,7 +140,7 @@ export function InlineFeedback(props: InlineFeedbackProps) {
         style={{ minHeight: 14, fontSize: 11, color: color.fgMuted }}
       >
         {mutation.isError
-          ? "Couldn't save feedback. Nothing changed — try again."
+          ? "We couldn't confirm your feedback was saved. Try again."
           : savedNow
             ? 'Feedback saved.'
             : ''}

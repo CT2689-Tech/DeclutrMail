@@ -107,6 +107,9 @@ describe('AdminSecurityEventsScreen — render states', () => {
     // Severity pills present
     expect(screen.getByText('warning')).toBeInTheDocument();
     expect(screen.getByText('critical')).toBeInTheDocument();
+    const region = screen.getByRole('region', { name: 'Security events table' });
+    region.focus();
+    expect(region).toHaveFocus();
   });
 
   it('renders the empty state when no events match', async () => {
@@ -117,6 +120,7 @@ describe('AdminSecurityEventsScreen — render states', () => {
     await waitFor(() => {
       expect(screen.getByText(/No events match these filters/i)).toBeInTheDocument();
     });
+    expect(screen.getByRole('heading', { level: 2, name: /No events match/ })).toBeInTheDocument();
   });
 
   it('renders the 404-as-not-found surface for non-allowlisted users, with NO ScreenIntro/filters above', async () => {

@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { renderToString } from 'react-dom/server';
 import { hydrateRoot } from 'react-dom/client';
@@ -893,7 +893,7 @@ describe('ActivityScreen — weekly review (D246)', () => {
     // The Failed tile is the one number in danger, and says "Review".
     expect(failed).toHaveAccessibleName(/Review/);
     expect(strip.querySelector<HTMLElement>('[data-outcome-count="failed"]')?.style.color).toBe(
-      'var(--dm-danger)',
+      'var(--dm-danger-text)',
     );
     expect(strip.querySelector<HTMLElement>('[data-outcome-count="completed"]')?.style.color).toBe(
       'var(--dm-fg)',
@@ -1680,7 +1680,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() => expect(container.querySelectorAll('[data-action-rail]')).toHaveLength(2));
     const rail = (action: string) =>
       container.querySelector<HTMLElement>(`[data-action-rail="${action}"]`);
-    expect(rail('delete')?.style.background).toBe('var(--dm-danger)');
+    expect(rail('delete')?.style.background).toBe('var(--dm-danger-text)');
     expect(rail('marked_protected')?.style.background).toBe('var(--dm-primary)');
   });
 
@@ -1775,7 +1775,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
 
 describe('ActivityScreen — pure helpers', () => {
   it('activityActionDot takes the verb registry tone, and outlines protection', () => {
-    expect(activityActionDot('delete')).toEqual({ color: 'var(--dm-danger)', outline: false });
+    expect(activityActionDot('delete')).toEqual({ color: 'var(--dm-danger-text)', outline: false });
     expect(activityActionDot('archive')).toEqual({ color: 'var(--dm-fg)', outline: false });
     expect(activityActionDot('unsubscribe_failed').color).toBe('var(--dm-amber)');
     expect(activityActionDot('later').color).toBe('var(--dm-primary)');
@@ -3438,11 +3438,13 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
       container.querySelectorAll<HTMLElement>('[data-row-result]'),
       (el) => el.style.color,
     );
-    expect(colours).toEqual(['var(--dm-danger)', 'var(--dm-amber)']);
+    expect(colours).toEqual(['var(--dm-danger-text)', 'var(--dm-amber)']);
   });
 
   it('activityResultColor: failure danger, unsettled amber, settled unsubscribe primary', () => {
-    expect(activityResultColor(row({ action: 'unsubscribe_failed' }))).toBe('var(--dm-danger)');
+    expect(activityResultColor(row({ action: 'unsubscribe_failed' }))).toBe(
+      'var(--dm-danger-text)',
+    );
     expect(
       activityResultColor(
         row({
@@ -3450,7 +3452,7 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
           executionState: { kind: 'failed' } as ActivityRowWire['executionState'],
         }),
       ),
-    ).toBe('var(--dm-danger)');
+    ).toBe('var(--dm-danger-text)');
     expect(activityResultColor(row({ action: 'unsubscribe_action_required' }))).toBe(
       'var(--dm-amber)',
     );
@@ -3487,11 +3489,136 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
     const tone = (key: string) =>
       second.container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
     expect(tone('archived')).toBe('var(--dm-fg)');
-    expect(tone('deleted')).toBe('var(--dm-danger)');
+    expect(tone('deleted')).toBe('var(--dm-danger-text)');
     expect(tone('unsubscribed')).toBe('var(--dm-primary)');
     expect(tone('later')).toBe('var(--dm-primary)');
     expect(tone('kept')).toBe('var(--dm-fg-muted)');
   });
+});
+
+it('suspends keyboard Undo and selection while earlier-filter rows are placeholders', async () => {
+  let undoPosts = 0;
+  let release: ((value: Response) => void) | undefined;
+  installFetchStub([
+    {
+      method: 'GET',
+      path: '/api/activity',
+      respond: (req) =>
+        new URL(req.url).searchParams.get('source') === 'autopilot'
+          ? new Promise<Response>((resolve) => {
+              release = resolve;
+            })
+          : jsonOk({
+              data: [
+                row({
+                  undoState: {
+                    kind: 'available',
+                    token: '11111111-1111-4111-8111-111111111111',
+                    expiresAt: '2099-01-01T00:00:00Z',
+                  },
+                }),
+              ],
+              meta: META_BASE,
+            }),
+    },
+    {
+      method: 'POST',
+      path: /undo/,
+      respond: () => {
+        undoPosts += 1;
+        return jsonOk({ data: {} });
+      },
+    },
+  ]);
+  const view = renderScreen();
+  await screen.findByText('Sender One');
+  const undo = screen.getByRole('button', { name: 'Undo' });
+  undo.focus();
+  expect(undo).toBeEnabled();
+  currentSearch = 'source=autopilot';
+  view.rerender(
+    <QueryWrapper client={view.client}>
+      <ActivityScreen />
+    </QueryWrapper>,
+  );
+  await waitFor(() => expect(undo).toBeDisabled());
+  expect(undo.closest('[inert]')).not.toBeNull();
+  fireEvent.click(undo);
+  fireEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
+  await userEvent.keyboard('{Enter}');
+  expect(undoPosts).toBe(0);
+  expect(screen.queryByRole('region', { name: 'Bulk actions' })).not.toBeInTheDocument();
+  await act(async () =>
+    release?.(jsonOk({ data: [], meta: { ...META_BASE, source: 'autopilot' } })),
+  );
+  await waitFor(() => expect(screen.queryByText('Sender One')).not.toBeInTheDocument());
+});
+
+it('suspends recovery verification while the dialog belongs to earlier-filter placeholders', async () => {
+  let recoveryPosts = 0;
+  let release: ((value: Response) => void) | undefined;
+  const failedAction = row({
+    executionState: {
+      kind: 'failed',
+      actionId: '11111111-1111-1111-1111-111111111111',
+      rootActionId: '11111111-1111-1111-1111-111111111111',
+      requestedCount: 3,
+      errorCode: 'GMAIL_RATE_LIMITED',
+      resolution: 'review',
+    },
+  });
+  installFetchStub([
+    {
+      method: 'GET',
+      path: '/api/activity',
+      respond: (req) =>
+        new URL(req.url).searchParams.get('source') === 'autopilot'
+          ? new Promise<Response>((resolve) => {
+              release = resolve;
+            })
+          : jsonOk({ data: [failedAction], meta: META_BASE }),
+    },
+    {
+      method: 'POST',
+      path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+      respond: () => {
+        recoveryPosts += 1;
+        return jsonOk({ data: recoveryPreview({ status: 'verifying', outcome: null }) });
+      },
+    },
+    {
+      method: 'GET',
+      path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+      respond: () =>
+        jsonOk({
+          data: recoveryPreview({
+            status: 'failed',
+            outcome: 'uncertain',
+            errorCode: 'GMAIL_RATE_LIMITED',
+          }),
+        }),
+    },
+  ]);
+  const view = renderScreen();
+  await userEvent.click(await screen.findByRole('button', { name: 'Check and retry' }));
+  const dialog = await screen.findByRole('dialog');
+  const retry = await within(dialog).findByRole('button', { name: 'Check Gmail again' });
+  expect(recoveryPosts).toBe(1);
+  currentSearch = 'source=autopilot';
+  view.rerender(
+    <QueryWrapper client={view.client}>
+      <ActivityScreen />
+    </QueryWrapper>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Check and retry' })).toBeDisabled(),
+  );
+  await userEvent.click(retry);
+  expect(recoveryPosts).toBe(1);
+  await act(async () =>
+    release?.(jsonOk({ data: [], meta: { ...META_BASE, source: 'autopilot' } })),
+  );
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 });
 
 describe('Activity filters — overlapping edits', () => {

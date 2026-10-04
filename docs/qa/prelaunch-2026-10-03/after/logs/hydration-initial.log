@@ -1,0 +1,138 @@
+
+> @declutrmail/e2e@0.0.0 e2e:hydration [workspace]/packages/e2e
+> playwright test hydration-smoke --project=default
+
+
+Running 43 tests using 1 worker
+
+  ✓   1 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: / (2.3s)
+  ✓   2 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /pricing (1.5s)
+  ✓   3 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /inbox-simulator (1.5s)
+  ✓   4 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /compare (1.4s)
+  ✓   5 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /vs/unroll-me (1.5s)
+  ✓   6 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /how-to/clean-gmail-by-sender (1.3s)
+  ✓   7 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /security (1.4s)
+  ✓   8 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /how-it-works (1.6s)
+  ✓   9 [default] › specs/hydration-smoke-public.spec.ts:116:3 › public route mounts without hydration recovery: /faq (1.4s)
+  ✘  10 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: / (1.4s)
+  ✓  11 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing (3.6s)
+  ✓  12 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator (2.0s)
+  ✘  13 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare (1.7s)
+  ✓  14 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me (2.1s)
+  ✓  15 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender (1.6s)
+  ✓  16 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security (1.5s)
+  ✓  17 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works (1.6s)
+  ✘  18 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq (1.7s)
+  ✓  19 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: / (2.3s)
+  ✓  20 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /pricing (3.6s)
+  ✓  21 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /inbox-simulator (3.9s)
+  ✓  22 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /compare (3.7s)
+  ✓  23 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me (2.8s)
+  ✓  24 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender (3.3s)
+  ✓  25 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /security (2.8s)
+  ✓  26 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /how-it-works (4.1s)
+  ✓  27 [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (essential only) mounts without hydration recovery: /faq (2.7s)
+  ✓  28 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /home (7.5s)
+  ✓  29 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /senders (8.3s)
+  ✓  30 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /triage (3.0s)
+  ✓  31 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /activity (4.6s)
+  ✓  32 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /autopilot (2.1s)
+  ✓  33 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /billing (2.6s)
+  ✓  34 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /brief (3.1s)
+  ✓  35 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /followups (1.8s)
+  ✓  36 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /later (3.4s)
+  ✓  37 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /quiet (2.2s)
+  ✓  38 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /screener (5.6s)
+  ✓  39 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /settings (3.0s)
+  ✓  40 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /settings/privacy (2.7s)
+  ✓  41 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /settings/senders (3.5s)
+  ✓  42 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /onboarding (4.1s)
+  ✓  43 [default] › specs/hydration-smoke.spec.ts:107:3 › server-hydrated route mounts without recovery: /admin/security (3.3s)
+
+
+  1) [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /
+
+    Error: / hydration diagnostics
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.",
+    + ]
+
+      110 |     `${route} framework overlay`,
+      111 |   ).toHaveCount(0);
+    > 112 |   expect(hydrationErrors, `${route} hydration diagnostics`).toEqual([]);
+          |                                                             ^
+      113 | }
+      114 |
+      115 | for (const route of PUBLIC_HYDRATED_ROUTES) {
+        at expectRouteHydrates ([workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:112:61)
+        at [workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:168:7
+
+    Error Context: test-results/hydration-smoke-public-ret-1d8be-without-hydration-recovery--default/error-context.md
+
+  2) [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare
+
+    Error: /compare hydration diagnostics
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.",
+    + ]
+
+      110 |     `${route} framework overlay`,
+      111 |   ).toHaveCount(0);
+    > 112 |   expect(hydrationErrors, `${route} hydration diagnostics`).toEqual([]);
+          |                                                             ^
+      113 | }
+      114 |
+      115 | for (const route of PUBLIC_HYDRATED_ROUTES) {
+        at expectRouteHydrates ([workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:112:61)
+        at [workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:168:7
+
+    Error Context: test-results/hydration-smoke-public-ret-46912--hydration-recovery-compare-default/error-context.md
+
+  3) [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq
+
+    Error: /faq hydration diagnostics
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 3
+
+    - Array []
+    + Array [
+    +   "Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= for the full message or use the non-minified dev environment for full errors and additional helpful warnings.",
+    + ]
+
+      110 |     `${route} framework overlay`,
+      111 |   ).toHaveCount(0);
+    > 112 |   expect(hydrationErrors, `${route} hydration diagnostics`).toEqual([]);
+          |                                                             ^
+      113 | }
+      114 |
+      115 | for (const route of PUBLIC_HYDRATED_ROUTES) {
+        at expectRouteHydrates ([workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:112:61)
+        at [workspace]/packages/e2e/specs/hydration-smoke-public.spec.ts:168:7
+
+    Error Context: test-results/hydration-smoke-public-ret-1ccb8-hout-hydration-recovery-faq-default/error-context.md
+
+  3 failed
+    [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /
+    [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare
+    [default] › specs/hydration-smoke-public.spec.ts:151:5 › returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq
+  40 passed (3.5m)
+[workspace]/packages/e2e:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @declutrmail/e2e@0.0.0 e2e:hydration: `playwright test hydration-smoke --project=default`
+Exit status 1

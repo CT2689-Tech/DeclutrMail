@@ -377,7 +377,8 @@ function MailboxAvatar({ email, tone }: { email: string; tone: 'primary' | 'mute
         justifyContent: 'center',
         background:
           tone === 'primary' ? color.primarySoft : tone === 'danger' ? color.redBg : color.fill,
-        color: tone === 'primary' ? color.primary : tone === 'danger' ? color.red : color.fgMuted,
+        color:
+          tone === 'primary' ? color.primary : tone === 'danger' ? color.dangerText : color.fgMuted,
         fontFamily: font.sans,
         fontSize: text.md,
         fontWeight: 600,

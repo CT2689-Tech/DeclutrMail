@@ -1,0 +1,125 @@
+{
+  "summary": "PASS: production guided demo, persisted counts, Undo, Beta destination and homepage privacy disclosure. No source changes. Own browser session closed.",
+  "freezeCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "capturedAtUtc": "2026-10-03T23:01:27.195442+00:00",
+  "method": {
+    "server": "Local production server",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "browserSession": "prelaunch-final-demo",
+    "sessionClosed": true,
+    "scope": "Public UI and its own fictional browser-local demo state only. No account/API/Gmail/payment actions."
+  },
+  "checks": [
+    {
+      "id": "PUB-04",
+      "name": "Both direct tour queries select guided Daily Triage",
+      "result": "PASS",
+      "routes": ["/inbox-simulator?tour=1", "/inbox-simulator?workspace=senders&tour=1"],
+      "observed": {
+        "triageAriaPressed": "true",
+        "guidedStart": "Guided decision 1 of 4",
+        "guidedProgressListPresent": true
+      }
+    },
+    {
+      "id": "PREVIEW-CONTRACT",
+      "name": "Archive and Delete record no decision before confirmation",
+      "result": "PASS",
+      "observed": {
+        "archivePreviewCount": 420,
+        "archivePreConfirmDecisions": 0,
+        "deleteDefaultInboxPreview": 156,
+        "deleteAllMailPreview": 680,
+        "deletePreConfirmDecisionsForSender": 0
+      }
+    },
+    {
+      "id": "RULE-REVIEW-ONLY",
+      "name": "Guided preset remains review-only",
+      "result": "PASS",
+      "observed": {
+        "activationPreviewSaysNothingMovesUntilApproval": true,
+        "actNowOffered": false,
+        "storedRuleDecision": "observe"
+      }
+    },
+    {
+      "id": "PUB-03",
+      "name": "Completion separates Inbox cleared from full Delete scope and survives reload",
+      "result": "PASS",
+      "observed": {
+        "completedBeforeReload": true,
+        "completedAfterReload": true,
+        "clearedFromInbox": 576,
+        "fullDeleteAffectedCount": 680,
+        "undoableActions": 5,
+        "irreversibleRequests": 1
+      }
+    },
+    {
+      "id": "DEMO-UNDO",
+      "name": "Delete Undo restores guide progress and persists without recalling sent request",
+      "result": "PASS",
+      "observed": {
+        "guidedDecision": 4,
+        "completedDecisions": 3,
+        "completionSummaryHidden": true,
+        "deletedSenderDecisionRemoved": true,
+        "remainingArchiveCount": 420,
+        "remainingIrreversibleRequest": true,
+        "remainingReviewOnlyRule": "observe",
+        "reloadRetainsExactRemainingDecisions": true
+      }
+    },
+    {
+      "id": "PUB-06",
+      "name": "Beta Try Daily Triage opens the named workspace",
+      "result": "PASS",
+      "observed": {
+        "label": "Try Daily Triage",
+        "href": "/inbox-simulator?workspace=triage",
+        "navigatedPath": "/inbox-simulator?workspace=triage",
+        "triageAriaPressed": "true"
+      }
+    },
+    {
+      "id": "PUB-08",
+      "name": "Homepage privacy boundary appears once and full inventory is collapsed until opened",
+      "result": "PASS",
+      "route": "/#privacy",
+      "observed": {
+        "canonicalVisibleOccurrences": 1,
+        "canonicalSectionOccurrences": 1,
+        "inventoryInitiallyOpen": false,
+        "inventoryOpensThroughSummary": true,
+        "storedItems": 12,
+        "neverFetchedItems": 6,
+        "allInventoryItemsPresentAndShownWhenExpanded": true,
+        "inventoryRecollapses": true,
+        "horizontalOverflow": false
+      }
+    }
+  ],
+  "errors": {
+    "browserRuntimeErrors": [],
+    "browserConsoleErrors": []
+  },
+  "findings": [],
+  "artifacts": {
+    "completionBeforeReload": "completion-before-reload.json",
+    "completionAfterReload": "completion-after-reload.json",
+    "undoBeforeReload": "undo-before-reload.json",
+    "undoAfterReload": "undo-after-reload.json",
+    "privacyCollapsed": "privacy-collapsed.json",
+    "privacyExpanded": "privacy-expanded.json",
+    "rulePreview": "rule-preview.json",
+    "screenshots": ["guided-complete.png", "privacy-expanded.png"]
+  },
+  "limitations": [
+    "The demo uses fictional in-browser data. This verifies the public demo, not live Gmail actions.",
+    "Production synthetic app E2E and the full public route sweep are separately root-owned gates."
+  ]
+}

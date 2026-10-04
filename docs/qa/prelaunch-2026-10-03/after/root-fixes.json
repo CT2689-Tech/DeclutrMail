@@ -1,0 +1,34 @@
+{
+  "UI-04": {
+    "files": [
+      "packages/shared/src/components/empty-state/empty-state.tsx",
+      "packages/shared/src/components/error-state/error-state.tsx",
+      "packages/shared/src/components/privacy-badge.tsx"
+    ],
+    "verification": "Shared heading-level SSR regressions fail against baseline, pass against implementation; all page consumers reviewed by their owners."
+  },
+  "UI-05": {
+    "files": [
+      "apps/web/src/features/admin-security/security-events-screen.tsx",
+      "packages/shared/src/components/pill.tsx"
+    ],
+    "verification": "Admin keyboard-focus regression fails against baseline, passes against implementation; 320px light browser axe reports zero violations."
+  },
+  "UI-06": {
+    "files": [
+      "packages/shared/src/styles/tokens.css",
+      "packages/shared/src/tokens/tokens.ts",
+      "packages/shared/src/components/action-popover.tsx"
+    ],
+    "verification": "Dedicated foreground token preserves filled danger button palette; browser contrast recheck pending."
+  },
+  "QA-01-global": {
+    "files": ["apps/web/src/app/global-error.stories.tsx"],
+    "verification": "Fixture renders the same pure fallback content as production; runtime recheck pending."
+  },
+  "UI-07": {
+    "files": ["packages/shared/src/components/undo-tray/undo-tray.tsx"],
+    "change": "The recovered protection-review fixture exposed an invalid aside alert role; error-only Undo tray now uses a div live region.",
+    "verification": "Negative control fails against baseline. Shared Undo tests and browser checks will cover the integrated implementation."
+  }
+}

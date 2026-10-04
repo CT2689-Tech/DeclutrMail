@@ -1,9 +1,5 @@
 // Storybook CSF3 stories for the account-deletion surfaces (D216, D232).
 //
-// Storybook is seeded in PR 3 (D210); this file uses the same
-// lightweight CSF shims as the other feature stories — swap for real
-// `@storybook/react` imports when the seed lands.
-//
 // Variants (D211 edge-state coverage):
 //   • ModalStep1            — acknowledgment step (what's deleted / not)
 //   • ModalFlatGrace        — step 2, 7-day schedule, no undo tokens
@@ -14,6 +10,7 @@
 //   • BannerExecuting       — point of no return (no cancel)
 
 import type { ComponentProps, ReactNode } from 'react';
+import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import type {
@@ -23,22 +20,11 @@ import type {
 import { DeleteAccountModal } from './delete-account-modal';
 import { GracePeriodBanner } from './grace-period-banner';
 import { ACCOUNT_DELETION_QUERY_KEY } from './api/use-account-deletion';
+import { ME_QUERY_KEY } from '@/features/auth/api/me-contract';
 
 const { color } = tokens;
 
-type StoryMeta<C extends (...args: never) => unknown> = {
-  title: string;
-  component: C;
-  parameters?: Record<string, unknown>;
-  tags?: readonly string[];
-};
-
-type Story<C extends (props: never) => unknown> = {
-  args?: Partial<Parameters<C>[0]>;
-  render?: (args: Parameters<C>[0]) => ReturnType<C>;
-};
-
-const meta: StoryMeta<typeof DeleteAccountModal> = {
+const meta: Meta<typeof DeleteAccountModal> = {
   title: 'Account/AccountDeletion',
   component: DeleteAccountModal,
   parameters: {
@@ -86,30 +72,39 @@ const baseModalArgs: ModalArgs = {
   submitError: null,
 };
 
-function frame(children: ReactNode) {
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+function frame(children: ReactNode, status?: AccountDeletionStatus) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  client.setQueryData(ME_QUERY_KEY, { user: { timezone: 'UTC' } });
+  if (status) client.setQueryData(ACCOUNT_DELETION_QUERY_KEY, status);
+  return (
+    <QueryClientProvider client={client}>
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 /** Step 1 — acknowledgment: what's deleted vs. what's never touched. */
-export const ModalStep1: Story<typeof DeleteAccountModal> = {
+export const ModalStep1: StoryObj<typeof DeleteAccountModal> = {
   args: baseModalArgs,
   render: (args) => frame(<DeleteAccountModal {...args} />),
 };
 
 /** Step 2 (reach via Continue) — flat 7-day grace, no undo tokens. */
-export const ModalFlatGrace: Story<typeof DeleteAccountModal> = {
+export const ModalFlatGrace: StoryObj<typeof DeleteAccountModal> = {
   args: baseModalArgs,
   render: (args) => frame(<DeleteAccountModal {...args} />),
 };
 
 /** Step 2 with the D232 undo-window extension + waiver copy. */
-export const ModalUndoWindow: Story<typeof DeleteAccountModal> = {
+export const ModalUndoWindow: StoryObj<typeof DeleteAccountModal> = {
   args: { ...baseModalArgs, projection: UNDO_PROJECTION },
   render: (args) => frame(<DeleteAccountModal {...args} />),
 };
 
 /** Server rejected the phrase (DELETION_CONFIRM_MISMATCH). */
-export const ModalSubmitError: Story<typeof DeleteAccountModal> = {
+export const ModalSubmitError: StoryObj<typeof DeleteAccountModal> = {
   args: {
     ...baseModalArgs,
     submitError: 'The confirmation phrase did not match. Type it exactly to continue.',
@@ -118,17 +113,11 @@ export const ModalSubmitError: Story<typeof DeleteAccountModal> = {
 };
 
 function bannerWith(status: AccountDeletionStatus) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(ACCOUNT_DELETION_QUERY_KEY, status);
-  return frame(
-    <QueryClientProvider client={client}>
-      <GracePeriodBanner />
-    </QueryClientProvider>,
-  );
+  return frame(<GracePeriodBanner />, status);
 }
 
 /** Grace banner — flat 7-day schedule, cancellable. */
-export const BannerFlatGrace: Story<typeof GracePeriodBanner> = {
+export const BannerFlatGrace: StoryObj<typeof GracePeriodBanner> = {
   render: () =>
     bannerWith({
       projection: FLAT_PROJECTION,
@@ -144,7 +133,7 @@ export const BannerFlatGrace: Story<typeof GracePeriodBanner> = {
 };
 
 /** Grace banner — D232 undo-window extension explained. */
-export const BannerUndoWindow: Story<typeof GracePeriodBanner> = {
+export const BannerUndoWindow: StoryObj<typeof GracePeriodBanner> = {
   render: () =>
     bannerWith({
       projection: UNDO_PROJECTION,
@@ -160,7 +149,7 @@ export const BannerUndoWindow: Story<typeof GracePeriodBanner> = {
 };
 
 /** Executing — past the point of no return; no cancel affordance. */
-export const BannerExecuting: Story<typeof GracePeriodBanner> = {
+export const BannerExecuting: StoryObj<typeof GracePeriodBanner> = {
   render: () =>
     bannerWith({
       projection: FLAT_PROJECTION,

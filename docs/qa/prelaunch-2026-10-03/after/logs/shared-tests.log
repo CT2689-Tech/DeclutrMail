@@ -1,0 +1,12 @@
+
+ RUN  v5.0.1 [workspace]/packages/shared
+
+
+ Test Files  63 passed (63)
+      Tests  726 passed (726)
+   Start at  15:10:32
+   Duration  71.86s (import 42%, transform 29%, tests 26%, worker 3%)
+
+  Transform  transforming modules took 28.86s · 29% of tracked time, re-done on every run
+             persist transforms across runs with fsModuleCache: true
+             learn more: https://vitest.dev/guide/improving-performance#caching-between-reruns

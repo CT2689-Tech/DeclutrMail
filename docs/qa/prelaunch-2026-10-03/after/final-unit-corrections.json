@@ -1,0 +1,43 @@
+{
+  "summary": "Four obsolete expectations corrected; all three affected suites passed on integrated main.",
+  "sourceStopped": true,
+  "productSourceChanged": false,
+  "gitOperations": [],
+  "initialRun": {
+    "log": "docs/qa/prelaunch-2026-10-03/after/logs/affected-web-tests.log",
+    "files": 44,
+    "passed": 1085,
+    "failed": 4
+  },
+  "corrections": [
+    {
+      "file": "apps/web/src/features/mailboxes/account-menu.test.tsx",
+      "tests": 2,
+      "rootError": "Expected Couldn't confirm...; actual dialog says Could not confirm... and provides account-status recovery.",
+      "correction": "Pin neutral operation/email/next-action fragments; reject nothing-deleted/nothing-changed and any success toast."
+    },
+    {
+      "file": "apps/web/src/features/triage/triage-screen.actions.test.tsx",
+      "tests": 1,
+      "rootError": "Old Keep test expected Couldn't save and no invalidation; source now truthfully says Couldn't confirm and reconciles an uncertain write.",
+      "correction": "Require neutral warning and queue invalidation; preserve released busy latch and visible row; reject success/nothing-changed claims."
+    },
+    {
+      "file": "apps/web/src/features/snoozed/snoozed-screen.test.tsx",
+      "tests": 1,
+      "rootError": "Old background-read assertion expected full Couldn't load Later error; source preserves cached row and pending restore.",
+      "correction": "Require compact Couldn't refresh Later feedback, cached Daily Digest, Bringing back status and disabled controls; preserve existing stale/older versus newer failed-attempt recovery checks."
+    }
+  ],
+  "verification": {
+    "command": "pnpm --filter @declutrmail/web test src/features/mailboxes/account-menu.test.tsx src/features/triage/triage-screen.actions.test.tsx src/features/snoozed/snoozed-screen.test.tsx --maxWorkers=1",
+    "log": "docs/qa/prelaunch-2026-10-03/after/logs/final-unit-corrections.log",
+    "result": "3 files passed; 89 tests passed; exit 0",
+    "formatLog": "local run artifact (not archived): final-unit-corrections-format.log",
+    "formatResult": "All 3 edited test files passed Prettier."
+  },
+  "limitations": [
+    "The other 41 suites were already green in the parent run and were not repeated.",
+    "No live provider actions or source behavior changes."
+  ]
+}

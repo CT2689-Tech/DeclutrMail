@@ -23,6 +23,6 @@ export function useDisconnectMailbox() {
       const env = await apiDelete<MeMailbox>(`/api/mailboxes/${mailboxId}`);
       return env.data;
     },
-    onSuccess: () => resetMailboxScopedCache(qc),
+    onSettled: () => resetMailboxScopedCache(qc),
   });
 }

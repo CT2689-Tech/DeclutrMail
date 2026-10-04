@@ -84,14 +84,18 @@ export function SelectionBar({
         flexShrink: 0,
         flexWrap: variant === 'sheet' ? 'wrap' : undefined,
         whiteSpace: variant === 'bar' ? 'nowrap' : undefined,
-        color: color.fgInverseSoft,
+        color: variant === 'sheet' ? color.fgSoft : color.fgInverseSoft,
         fontSize: text.sm,
       }}
     >
       Multi-sender actions require {multiSenderPlanName()}.
       <Link
         href="/billing"
-        style={{ color: color.fgInverse, fontWeight: 700, textUnderlineOffset: 3 }}
+        style={{
+          color: variant === 'sheet' ? color.fg : color.fgInverse,
+          fontWeight: 700,
+          textUnderlineOffset: 3,
+        }}
       >
         See plans
       </Link>
@@ -175,8 +179,14 @@ export function SelectionBar({
           height: stretch ? 44 : 32,
           padding: stretch ? '0 16px' : '0 14px',
           width: stretch ? '100%' : undefined,
-          background: danger ? color.danger : primary ? color.amber : color.lineInverse,
-          color: color.fgInverse,
+          background: danger
+            ? color.danger
+            : primary
+              ? color.amber
+              : stretch
+                ? color.fill
+                : color.lineInverse,
+          color: stretch && !danger && !primary ? color.fg : color.fgInverse,
           border: 'none',
           borderRadius: radius.pill,
           fontFamily: font.sans,
@@ -192,7 +202,7 @@ export function SelectionBar({
             fontSize: stretch ? text.sm : text.xs,
             flexShrink: 0,
             fontVariantNumeric: 'tabular-nums',
-            opacity: 0.8,
+            opacity: primary ? 1 : 0.8,
           }}
         >
           {countLabel}
@@ -300,7 +310,7 @@ export function SelectionBar({
           style={{
             background: 'transparent',
             border: 'none',
-            color: color.fgInverseMuted,
+            color: color.fgInverseSoft,
             fontFamily: font.sans,
             fontSize: text.sm,
             cursor: 'pointer',

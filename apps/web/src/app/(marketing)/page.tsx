@@ -2,6 +2,7 @@ import { ProductJourney } from '@/features/marketing/landing/product-journey';
 import type { Metadata } from 'next';
 
 import '@/features/marketing/landing/landing.css';
+import '@/features/marketing/landing/homepage-sections.css';
 import { Hero } from '@/features/marketing/landing/hero';
 import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
 import { PricingTeaserView } from '@/features/marketing/landing/pricing-teaser-view';
@@ -65,14 +66,28 @@ export default function LandingPage() {
   return (
     <div className="dm-mkt dm-mkt-landing">
       <Hero />
-      <div className="dm-mkt-values-strip dm-mkt-shell" aria-label="Product principles">
+      <div
+        className="dm-mkt-values-strip dm-mkt-shell"
+        role="group"
+        aria-label="Product principles"
+      >
         <span>See the whole sender</span>
         <span>Preview before moving mail</span>
         <span>Keep the final say</span>
       </div>
+      <nav className="dm-mkt-page-nav dm-mkt-shell" aria-label="Homepage sections">
+        <p>On this page</p>
+        <div className="dm-mkt-page-nav-links">
+          <a href="#product-tour">Product tour</a>
+          <a href="#how-it-works">Works with Gmail</a>
+          <a href="#everyday-tools">Everyday tools</a>
+          <a href="#privacy">Privacy &amp; control</a>
+          <a href="#plans">Pricing</a>
+        </div>
+      </nav>
       <ProductJourney />
-      <ProductBreadth />
       <HowItWorks />
+      <ProductBreadth />
       <PrivacyDesk />
       <PricingTeaserView provider="paddle" />
       <FinalCta />

@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Request } from '@playwright/test';
+import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { applyJourneySeed } from '../helpers/seed-journeys';
@@ -73,6 +74,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   // "See all" — and find its row. The header's accessible name flips
   // expand ↔ collapse with state, so match both.
   await page.goto('/triage');
+  await expectScreenMounted(page);
   await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
   // Reading a complete sender identity owns Enter; it must not decide or skip.
   const focus = page.getByRole('region', { name: 'Current decision' });
@@ -100,6 +102,25 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await rowHeader.click();
   const toolbar = page.getByRole('toolbar', { name: `Decide on ${senderName}` });
   await expect(toolbar).toBeVisible();
+
+  // Help owns the keyboard: no second preview or Keep may run behind it.
+  const blockedActions: string[] = [];
+  const observeAction = (request: Request) => {
+    if (request.method() === 'POST' && /\/api\/(actions|triage)/.test(request.url())) {
+      blockedActions.push(request.url());
+    }
+  };
+  page.on('request', observeAction);
+  await page.keyboard.press('?');
+  const help = page.getByRole('dialog');
+  await expect(help).toBeVisible();
+  for (const key of ['k', 'a', 'u', 'l', 'd']) await page.keyboard.press(key);
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(rowHeader).toBeVisible();
+  expect(blockedActions).toEqual([]);
+  page.off('request', observeAction);
+  await page.keyboard.press('Escape');
+  await expect(help).toBeHidden();
 
   // ---- D226 leg: `A` opens the action sheet with the MANDATORY
   // preview; Escape cancels; nothing mutates.
@@ -148,6 +169,7 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   `;
   expect(Number(events[0]?.count)).toBe(1);
   await page.reload();
+  await expectScreenMounted(page);
   await expect(page.getByRole('heading', { level: 1, name: 'Triage' })).toBeVisible();
   expect(
     (await api.get<TriageQueueRow[]>('/api/triage/queue')).some(
