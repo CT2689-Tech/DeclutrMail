@@ -28,10 +28,13 @@ import type { PaymentMethodSession } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 import { BillingPayloadError } from '../billing-payload-error';
 
 export function usePaymentMethodSession() {
   return useMutation<PaymentMethodSession, Error, void>({
+    onError: billingMutationFailure('payment-method'),
     mutationFn: async () => {
       const envelope = await apiPost<unknown>('/api/billing/payment-method/session', {});
       const parsed = PaymentMethodSessionSchema.safeParse(envelope.data);

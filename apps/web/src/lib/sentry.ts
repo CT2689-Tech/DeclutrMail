@@ -24,6 +24,7 @@ export interface FeatureExceptionContext {
     // key's first segment only — never the full hash, which can carry
     // filter text (D7/D228).
     | 'query'
+    | 'billing'
     | 'sync'
     | 'senders'
     | 'activity'

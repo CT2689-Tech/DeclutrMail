@@ -17,8 +17,11 @@ import type { CheckoutRequest, CheckoutSession } from '@declutrmail/shared/contr
 
 import { apiPost } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 export function useCheckout() {
   return useMutation<CheckoutSession, Error, CheckoutRequest>({
+    onError: billingMutationFailure('checkout'),
     mutationFn: async (body) => {
       const envelope = await apiPost<CheckoutSession>('/api/billing/checkout', body);
       return envelope.data;

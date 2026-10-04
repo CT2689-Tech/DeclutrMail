@@ -12,8 +12,11 @@ import type { BillingSubscription } from '@declutrmail/shared/contracts';
 
 import { apiPost } from '@/lib/api/client';
 
+import { billingMutationFailure } from './mutation-failure';
+
 export function useResumeSubscription() {
   return useMutation<BillingSubscription, Error, void>({
+    onError: billingMutationFailure('resume'),
     mutationFn: async () => {
       const envelope = await apiPost<BillingSubscription>('/api/billing/resume', {});
       return envelope.data;
