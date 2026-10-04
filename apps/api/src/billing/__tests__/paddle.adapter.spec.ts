@@ -256,6 +256,26 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
     ).toMatchObject({ kind: 'ignored' });
   });
 
+  it('recognizes a full transaction refund with a partial prorated item while pending', () => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentCreated({ adjustmentType: 'full', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind: 'cancellation_scheduled', reason: 'refund' });
+  });
+
+  it.each([
+    ['approved', 'refund_settled'],
+    ['rejected', 'cancellation_revoked'],
+    ['pending_approval', 'ignored'],
+  ] as const)('maps %s full prorated refund updates to %s', (status, kind) => {
+    expect(
+      adapter.mapWebhookEvent(
+        paddleAdjustmentUpdated({ status, adjustmentType: 'full', itemTypes: ['partial'] }),
+      ),
+    ).toMatchObject({ kind });
+  });
+
   it('settles an approved full refund and lifts a rejected one on adjustment.updated', () => {
     expect(adapter.mapWebhookEvent(paddleAdjustmentUpdated({ status: 'approved' }))).toMatchObject({
       kind: 'refund_settled',
@@ -283,7 +303,7 @@ describe('PaddleAdapter.mapWebhookEvent', () => {
   it('a full refund still revokes — including the dashboard shape and an unreadable one', () => {
     // Paddle's adjustment-level `type` defaults to `partial`, and a
     // dashboard full-amount refund can arrive as `partial` with every
-    // ITEM marked `full` — which is why the item types decide.
+    // ITEM marked `full` — retained as the fallback for this shape.
     expect(
       adapter.mapWebhookEvent(
         paddleAdjustmentCreated({ action: 'refund', itemTypes: ['full', 'full'] }),
@@ -543,6 +563,20 @@ describe('PaddleAdapter checkout + cancel', () => {
         refuted: { refund: true, chargeback: false },
       });
     });
+
+    it.each([
+      ['approved', 'refund', false],
+      ['pending_approval', null, false],
+      ['rejected', null, true],
+      ['reversed', null, true],
+    ] as const)(
+      'reads %s full prorated refunds consistently with webhooks',
+      async (status, settled, refuted) => {
+        expect(
+          await facts([{ action: 'refund', type: 'full', status, items: [{ type: 'partial' }] }]),
+        ).toEqual({ settled, refuted: { refund: refuted, chargeback: false } });
+      },
+    );
 
     it('an approved PARTIAL refund is not an exit — same rule as the webhook mapping', async () => {
       expect(

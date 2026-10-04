@@ -644,10 +644,19 @@ describe('BillingWebhookService.process', () => {
   it('a rejected Paddle refund update lifts the pending verdict promptly', async () => {
     const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_rejected_1' });
     await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
-    const refund = paddleAdjustmentCreated({ eventId: 'evt_rejected_2' });
+    const refund = paddleAdjustmentCreated({
+      eventId: 'evt_rejected_2',
+      adjustmentType: 'full',
+      itemTypes: ['partial'],
+    });
     await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
 
-    const rejected = paddleAdjustmentUpdated({ eventId: 'evt_rejected_3', status: 'rejected' });
+    const rejected = paddleAdjustmentUpdated({
+      eventId: 'evt_rejected_3',
+      status: 'rejected',
+      adjustmentType: 'full',
+      itemTypes: ['partial'],
+    });
     expect(await service.process('paddle', paddle.mapWebhookEvent(rejected), rejected)).toEqual({
       kind: 'processed',
       effect: 'cancellation_revoked:refund_rejected',
@@ -988,7 +997,12 @@ describe('BillingWebhookService.process', () => {
 
     it('an approved Paddle update ends entitlement without waiting for reconciliation', async () => {
       await seedRefunded();
-      const approved = paddleAdjustmentUpdated({ eventId: 'evt_rs_approved', status: 'approved' });
+      const approved = paddleAdjustmentUpdated({
+        eventId: 'evt_rs_approved',
+        status: 'approved',
+        adjustmentType: 'full',
+        itemTypes: ['partial'],
+      });
       expect(await service.process('paddle', paddle.mapWebhookEvent(approved), approved)).toEqual({
         kind: 'processed',
         effect: 'refund_settled',
