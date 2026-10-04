@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "reportKind": "prelaunch-audit-resolution",
   "reviewDate": "2026-10-03",
-  "preparedAtUtc": "2026-10-04T00:12:25.917896+00:00",
-  "reviewedCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+  "preparedAtUtc": "2026-10-04T00:24:59.992286+00:00",
+  "reviewedCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
   "publication": {
     "draftOnly": false,
     "reportPath": "docs/qa/prelaunch-product-review-closure-2026-10-03.md",
@@ -12,7 +12,8 @@
     "portableEvidenceArchivalPending": false,
     "evidenceManifest": "docs/qa/prelaunch-2026-10-03/after/evidence-manifest.json",
     "ownerSnapshotsHistorical": true,
-    "integrationEvidenceManifest": "docs/qa/prelaunch-2026-10-03/after-main-integration/evidence-manifest.json"
+    "integrationEvidenceManifest": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/evidence-manifest.json",
+    "previousIntegrationEvidenceManifest": "docs/qa/prelaunch-2026-10-03/after-main-integration/evidence-manifest.json"
   },
   "baseline": {
     "reportPath": "docs/qa/prelaunch-product-review-2026-10-03.md",
@@ -36,7 +37,7 @@
     "designRecommendationsImplemented": 2,
     "postReviewEntries": 16,
     "launchSignoff": false,
-    "status": "39 original findings resolved; six fixtures repaired; two design recommendations implemented; final current-main scoped fix-PR gates pass; unexplained initial hydration residual and provider rehearsal keep public launch withheld",
+    "status": "39 original findings corrected; six fixtures repaired; two design recommendations implemented; actual latest-main conflicts resolved; scoped local PR gates pass; public launch withheld for untraced historical hydration signal and provider rehearsal",
     "openFinalProof": [
       "HYDRATION-01 initial intermittent HTML recovery signal remains untraced; unchanged full gate subsequently passed twice",
       "Authenticated provider release rehearsal: OAuth/Gmail action/Undo/worker, billing purchase/webhook/refund and account lifecycle outcomes"
@@ -3136,8 +3137,3142 @@
       "finalReviewedRevision": null
     }
   ],
-  "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+  "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
   "runtimeVerificationSnapshot": {
+    "sourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "environment": "Fresh tracked production archive; disposable synthetic loopback API/PostgreSQL/Redis; no provider worker or live account operations.",
+    "finalRuns": [
+      {
+        "id": "journeys-latest-1",
+        "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "stats": {
+          "startTime": "2026-10-04T00:19:02.882Z",
+          "duration": 24287.103000000003,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "tests": [
+          {
+            "file": "autopilot-pages.spec.ts",
+            "title": "review pages cover the backlog and recover when the older page is exhausted",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1799,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "brief-preview.spec.ts",
+            "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 353,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "cookie-consent.spec.ts",
+            "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 2277,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "cookie-consent.spec.ts",
+            "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 4132,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "followups-dismiss.spec.ts",
+            "title": "Mark resolved dismisses the row, audits it, and survives reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 981,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "later-recovery.spec.ts",
+            "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 3223,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "protection-review.spec.ts",
+            "title": "protected senders show the exact reason, and Unprotect works in place",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 295,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "public-journeys.spec.ts",
+            "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1440,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "public-journeys.spec.ts",
+            "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 486,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "quiet-hours.spec.ts",
+            "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 2206,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "sender-policy.spec.ts",
+            "title": "Protect toggle persists across reload and restores on toggle-back",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 598,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "typing a multi-word query keeps every keystroke",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1495,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1658,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "backspacing to empty restores the unfiltered list",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1093,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "triage-keep.spec.ts",
+            "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 730,
+                "errors": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "journeys-latest-2",
+        "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "stats": {
+          "startTime": "2026-10-04T00:19:34.488Z",
+          "duration": 22768.973,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "tests": [
+          {
+            "file": "autopilot-pages.spec.ts",
+            "title": "review pages cover the backlog and recover when the older page is exhausted",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1549,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "brief-preview.spec.ts",
+            "title": "Brief separates yesterday from current-inbox preview and cancel never enqueues",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 307,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "cookie-consent.spec.ts",
+            "title": "decline is the default: \"Essential only\" persists and PostHog stays fully silent",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 2289,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "cookie-consent.spec.ts",
+            "title": "\"Accept all\" initializes PostHog and page_viewed reaches the wire",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 4145,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "followups-dismiss.spec.ts",
+            "title": "Mark resolved dismisses the row, audits it, and survives reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 662,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "later-recovery.spec.ts",
+            "title": "Later failed return restores recovery controls after queue acceptance and survives reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 3064,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "protection-review.spec.ts",
+            "title": "protected senders show the exact reason, and Unprotect works in place",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 277,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "public-journeys.spec.ts",
+            "title": "guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1418,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "public-journeys.spec.ts",
+            "title": "comparison visitor checks sources and refund terms before permission-aware signup",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 502,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "quiet-hours.spec.ts",
+            "title": "Quiet hours save, rejected save, retry and disable survive real API reads and reload",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1709,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "sender-policy.spec.ts",
+            "title": "Protect toggle persists across reload and restores on toggle-back",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 615,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "typing a multi-word query keeps every keystroke",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1578,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "picking a suggestion mid-typing is not undone by the pending notify timer",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1571,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "senders-search-typing.spec.ts",
+            "title": "backspacing to empty restores the unfiltered list",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1204,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "triage-keep.spec.ts",
+            "title": "Keep via K: preview-on-cancel leaves queue intact; Keep removes the row server-confirmed",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 717,
+                "errors": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hydration-latest-1",
+        "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "stats": {
+          "startTime": "2026-10-04T00:20:00.810Z",
+          "duration": 39720.502,
+          "expected": 43,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "tests": [
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 935,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 897,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 869,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 872,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 875,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 877,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 887,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 863,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 907,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 884,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 880,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 879,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 876,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 876,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 851,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 893,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 871,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 898,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 872,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 866,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 871,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 866,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 873,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 867,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 885,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /home",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 884,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /senders",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1759,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /triage",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 862,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /activity",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 890,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /autopilot",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 914,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /billing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 890,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /brief",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 885,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /followups",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 887,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /later",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 875,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /quiet",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 873,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /screener",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 869,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 910,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings/privacy",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 903,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings/senders",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 887,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /onboarding",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 858,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /admin/security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 882,
+                "errors": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hydration-latest-2",
+        "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "stats": {
+          "startTime": "2026-10-04T00:20:58.191Z",
+          "duration": 39915.758,
+          "expected": 43,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "tests": [
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 936,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 880,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 873,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 873,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 873,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 871,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 888,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "public route mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 877,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 897,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 882,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 872,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 878,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 874,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 886,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 857,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 880,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (accepted analytics, dark theme) mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 867,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 896,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /pricing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 861,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /inbox-simulator",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 864,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /compare",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 880,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /vs/unroll-me",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 862,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /how-to/clean-gmail-by-sender",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 866,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /how-it-works",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 881,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke-public.spec.ts",
+            "title": "returning visitor (essential only) mounts without hydration recovery: /faq",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 866,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /home",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 897,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /senders",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1789,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /triage",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 883,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /activity",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 911,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /autopilot",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 914,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /billing",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 893,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /brief",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 878,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /followups",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 880,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /later",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 896,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /quiet",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 889,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /screener",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 925,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 883,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings/privacy",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 900,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /settings/senders",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 896,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /onboarding",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 852,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "hydration-smoke.spec.ts",
+            "title": "server-hydrated route mounts without recovery: /admin/security",
+            "project": "default",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 926,
+                "errors": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "a11y-responsive-latest",
+        "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "stats": {
+          "startTime": "2026-10-04T00:21:39.017Z",
+          "duration": 53001.326,
+          "expected": 70,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "tests": [
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/ passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 716,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/pricing passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 656,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/inbox-simulator passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 459,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/compare passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 577,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/vs/unroll-me passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 570,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/alternatives/clean-email passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 580,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 573,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/security passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 497,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/privacy passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 575,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/how-it-works passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 641,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/faq passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 474,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/contact passes the public accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 433,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "the public shell exposes a working skip link as the first tab stop",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 173,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/ passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 643,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/pricing passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 667,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/inbox-simulator passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 447,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/compare passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 563,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/vs/unroll-me passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 558,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/alternatives/clean-email passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 564,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/how-to/clean-gmail-by-sender passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 527,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/security passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 468,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/privacy passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 549,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/how-it-works passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 614,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/faq passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 457,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "/contact passes the public accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 427,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-public.spec.ts",
+            "title": "the public shell exposes a working skip link as the first tab stop",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 160,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/senders passes the authenticated accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 597,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/triage passes the authenticated accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1335,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/activity passes the authenticated accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 483,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/settings/privacy passes the authenticated accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 736,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/billing passes the authenticated accessibility smoke",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 786,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "Activity filters load on first open and restore focus",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1689,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "keyboard shortcut dialog traps and restores focus",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 458,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+            "project": "a11y-desktop",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1477,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/senders passes the authenticated accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 813,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/triage passes the authenticated accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1318,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/activity passes the authenticated accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 473,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/settings/privacy passes the authenticated accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 816,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "/billing passes the authenticated accessibility smoke",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 773,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "Activity filters load on first open and restore focus",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1692,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "keyboard shortcut dialog traps and restores focus",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 458,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "a11y-smoke.spec.ts",
+            "title": "Privacy export distinguishes failures, announces preparation and permits a retry",
+            "project": "a11y-mobile-reduced-motion",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 1445,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/home stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 918,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/senders stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 686,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/triage stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 864,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/screener stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 869,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/autopilot stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 862,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/quiet stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/brief stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 868,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/followups stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 870,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/later stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 867,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/activity stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 872,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/billing stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 867,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/settings stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 853,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/settings/privacy stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 865,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/settings/help stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 870,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/settings/senders stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 867,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/senders/e2eb1111-0000-4000-8000-00000000000a stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 910,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/admin/security stays inside the compact authenticated viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 863,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/ stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 664,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/pricing stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 644,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/inbox-simulator stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 647,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/compare stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 645,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/vs/unroll-me stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 637,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/alternatives/clean-email stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 637,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/how-to/clean-gmail-by-sender stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 639,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/privacy stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 638,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/how-it-works stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 647,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "/faq stays inside the compact public viewport",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 633,
+                "errors": []
+              }
+            ]
+          },
+          {
+            "file": "responsive-layout.spec.ts",
+            "title": "the compact navigation drawer remains fully reachable",
+            "project": "responsive-phone",
+            "status": "expected",
+            "results": [
+              {
+                "status": "passed",
+                "retry": 0,
+                "durationMs": 792,
+                "errors": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "finalExecutions": 186,
+    "finalPasses": 186,
+    "finalSkipped": 0,
+    "finalUnexpected": 0,
+    "finalFlaky": 0,
+    "finalProcessRestart": "API/web restart between hydration-latest-1 and hydration-latest-2; same frozen product source.",
+    "originalHydrationResidual": "Original three public React418 failures at1b source remain untraced; authenticated optional-query fixes do not establish their cause.",
+    "limits": "Repeated runs count as executions, not distinct tests; selected automated axe/responsive checks do not certify all states or fullWCAG.",
+    "initialFocusedUnitFailure": {
+      "passed": 296,
+      "failed": 3,
+      "disposition": "Obsolete Custom input label and browser-zone fixtures corrected to exact account-zone label and explicit minute-precision wall time/ISO. Expiry no-PATCH and valid-time exactPATCH assertions retained. No production change for test-only correction.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log"
+    }
+  },
+  "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "residualSignals": [
+    {
+      "id": "HYDRATION-01",
+      "status": "unreproduced and untraced; no source fix claimed",
+      "initialEvidence": "Three returning all-consent/dark React#418HTML recovery errors on/,/compare,/faq at frozen1b source",
+      "latestEvidence": "Two exact full43/43passes on unchanged source, including a process restart;79controlled diagnostics clean",
+      "releaseDisposition": "Public launch signoff withheld; preserve/regress the initial signal in release rehearsal",
+      "artifacts": [
+        "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json",
+        "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json"
+      ]
+    }
+  ],
+  "initialProductSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+  "initialTestCommit": "c86557eb",
+  "initialRuntimeVerificationSnapshot": {
+    "primaryEvidence": "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
+    "recommendedPortableEvidencePath": "docs/qa/prelaunch-2026-10-03/runtime-verification-summary.json",
+    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "testCommit": "c86557eb",
+    "environment": "Disposable loopback production web + synthetic API/PostgreSQL/Redis; no provider worker or live Gmail/payment/account operations.",
+    "executionCount": 143,
+    "passedExecutions": 140,
+    "failedExecutions": 3,
+    "skippedExecutions": 0,
+    "flakyExecutions": 0,
+    "runs": [
+      {
+        "id": "journeys-5",
+        "stats": {
+          "startTime": "2026-10-03T23:10:19.670Z",
+          "duration": 26987.93,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-journeys passed"
+      },
+      {
+        "id": "journeys-6",
+        "stats": {
+          "startTime": "2026-10-03T23:13:58.896Z",
+          "duration": 24990.396,
+          "expected": 15,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-journeys passed"
+      },
+      {
+        "id": "a11y-responsive",
+        "stats": {
+          "startTime": "2026-10-03T23:02:52.575Z",
+          "duration": 157447.568,
+          "expected": 70,
+          "skipped": 0,
+          "unexpected": 0,
+          "flaky": 0
+        },
+        "coverageContract": "assert-e2e-ran passed"
+      },
+      {
+        "id": "hydration",
+        "stats": {
+          "startTime": "2026-10-03T23:05:39.381Z",
+          "duration": 208830.80500000002,
+          "expected": 40,
+          "skipped": 0,
+          "unexpected": 3,
+          "flaky": 0
+        },
+        "coverageContract": "failed, unresolved hydration diagnostics"
+      }
+    ],
+    "limits": "143 executions includes repeating the same 15 journeys twice; it is neither 143 distinct tests nor 143 passes. 140 passed and 3 hydration failures remain open. Sanitized thin summary is prepared locally; repository archival is pending root."
+  },
+  "currentMainIntegration": {
+    "phase": "Latest actual-conflict resolution and final current-source proof",
+    "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "integratedMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
+    "priorMainIntegrationProductSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "priorPublicationCommit": "b6dad6648c9f3c49e2875ab4eec8deadfe462842",
+    "mergeResolution": "Only Screener route and Later screen production conflicts; hydration presentation/clock merged with retained-data retry, account-zone/DST parsing and foregrounds. Three upstream clock test fixtures aligned with existing exact account-zone label and minute-precision ISO; no assertions removed.",
+    "sourceDiffScope": "No task diff against current main in API/worker/schema/provider/deploy paths; upstream changes preserve provenance.",
+    "checks": [
+      {
+        "gate": "Latest-main source integration units",
+        "status": "PASS",
+        "detail": "14 files/299 assertions; original296pass/3obsolete-label failures preserved; no production changes for test alignment.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log"
+        ]
+      },
+      {
+        "gate": "Workspace and final affected types",
+        "status": "PASS",
+        "detail": "All eight packages before test-only fixture update; scoped Web after final test-only update.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-typecheck.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log"
+        ]
+      },
+      {
+        "gate": "Lint and format",
+        "status": "PASS",
+        "detail": "Root zero errors/six existing warnings; final changed production/test paths zero warnings; commit hook Prettier check passes.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-lint.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log"
+        ]
+      },
+      {
+        "gate": "Fresh production Web and Storybook builds",
+        "status": "PASS",
+        "detail": "Frozen tracked archive at latest combined source.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-production-build.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log"
+        ]
+      },
+      {
+        "gate": "Prerender",
+        "status": "PASS",
+        "detail": "45 public routes.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-prerender.log"
+      },
+      {
+        "gate": "Served bundle budgets",
+        "status": "PASS",
+        "detail": "51 route templates +1 declared redirect, unchanged caps/checker; Privacy259.5/262kB.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-bundle-build.log"
+      },
+      {
+        "gate": "Full journeys twice",
+        "status": "PASS",
+        "detail": "15/15 twice, both required journey contracts PASS; no skips/unexpected/flaky/retries.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-1.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-2.log"
+        ]
+      },
+      {
+        "gate": "Full hydration twice",
+        "status": "PASS",
+        "detail": "43/43 twice, API/web process restart between; same source, no retries/skips/flaky. Originalpublic3 remain untraced.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-2.log"
+        ]
+      },
+      {
+        "gate": "Full accessibility/responsive",
+        "status": "PASS",
+        "detail": "70/70; existing serious/critical axe gate, responsive/native interaction checks; no skips/unexpected/flaky/retries.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log"
+      },
+      {
+        "gate": "Current production Privacy browser",
+        "status": "PASS",
+        "detail": "1440/390native disclosure across pending/prepared synthetic export, browser download handoff, consent controls, no overflow/hydrationerrors; bounded zero main axe violations.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json"
+      },
+      {
+        "gate": "Independent core current-source/runtime gate",
+        "status": "PASS",
+        "detail": "PASS for scoped fixes PR; public launch hold retained.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json"
+      },
+      {
+        "gate": "Independent design current-source/runtime gate",
+        "status": "PASS",
+        "detail": "PASS for scoped fixes PR; public launch hold retained.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-design-gate.json"
+      }
+    ],
+    "fixesPrSignoff": true,
+    "launchSignoff": false,
+    "publicHydrationSignal": "Originalthree public HTML recovery failures remain unexplained. New upstream fixes concern authenticated optional-query presentation and Later account clock; neither establishes cause of originalpublic3.",
+    "providerBoundary": "Disposable synthetic loopback API/PostgreSQL/Redis only; no provider worker/live OAuth/Gmail/billing/account deletion/export-completeness verification.",
+    "screenshots": "Selected scrolled Privacy viewports with fresh-user survey visible; named control/DOM behavior separately tested.",
+    "remoteCi": "Not certified by local gates; status on publication head tracked separately."
+  },
+  "integrationCheckLedger": [
+    {
+      "gate": "Latest-main source integration units",
+      "status": "PASS",
+      "detail": "14 files/299 assertions; original296pass/3obsolete-label failures preserved; no production changes for test alignment.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log"
+      ]
+    },
+    {
+      "gate": "Workspace and final affected types",
+      "status": "PASS",
+      "detail": "All eight packages before test-only fixture update; scoped Web after final test-only update.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-typecheck.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log"
+      ]
+    },
+    {
+      "gate": "Lint and format",
+      "status": "PASS",
+      "detail": "Root zero errors/six existing warnings; final changed production/test paths zero warnings; commit hook Prettier check passes.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-lint.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log"
+      ]
+    },
+    {
+      "gate": "Fresh production Web and Storybook builds",
+      "status": "PASS",
+      "detail": "Frozen tracked archive at latest combined source.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-production-build.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log"
+      ]
+    },
+    {
+      "gate": "Prerender",
+      "status": "PASS",
+      "detail": "45 public routes.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-prerender.log"
+    },
+    {
+      "gate": "Served bundle budgets",
+      "status": "PASS",
+      "detail": "51 route templates +1 declared redirect, unchanged caps/checker; Privacy259.5/262kB.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-bundle-build.log"
+    },
+    {
+      "gate": "Full journeys twice",
+      "status": "PASS",
+      "detail": "15/15 twice, both required journey contracts PASS; no skips/unexpected/flaky/retries.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-2.log"
+      ]
+    },
+    {
+      "gate": "Full hydration twice",
+      "status": "PASS",
+      "detail": "43/43 twice, API/web process restart between; same source, no retries/skips/flaky. Originalpublic3 remain untraced.",
+      "evidence": [
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log",
+        "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-2.log"
+      ]
+    },
+    {
+      "gate": "Full accessibility/responsive",
+      "status": "PASS",
+      "detail": "70/70; existing serious/critical axe gate, responsive/native interaction checks; no skips/unexpected/flaky/retries.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log"
+    },
+    {
+      "gate": "Current production Privacy browser",
+      "status": "PASS",
+      "detail": "1440/390native disclosure across pending/prepared synthetic export, browser download handoff, consent controls, no overflow/hydrationerrors; bounded zero main axe violations.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json"
+    },
+    {
+      "gate": "Independent core current-source/runtime gate",
+      "status": "PASS",
+      "detail": "PASS for scoped fixes PR; public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json"
+    },
+    {
+      "gate": "Independent design current-source/runtime gate",
+      "status": "PASS",
+      "detail": "PASS for scoped fixes PR; public launch hold retained.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-design-gate.json"
+    }
+  ],
+  "previousMainIntegration": {
+    "phase": "current-main integration and Privacy static-content optimization",
+    "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "initialProofSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
+    "initialProofTestCommit": "c86557eb",
+    "mainMergeSourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
+    "mergeResolution": "Only Activity test conflict; both original stale-action regressions and upstream overlapping-filter regressions retained. Production files auto-merged.",
+    "optimization": {
+      "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+      "result": "Static Privacy badge/inventory and canonical export-label projection render on server; existing client controls/lifecycle retained.",
+      "servedPrivacyGzipKB": 259.5,
+      "beforeRoundedGzipKB": 262.0,
+      "budgetKB": 262,
+      "checkerAndBudgetsUnchanged": true,
+      "exactCompleteHtmlEqualStates": 8
+    },
+    "checks": [
+      {
+        "gate": "Affected upstream integration unit suites",
+        "status": "PASS",
+        "detail": "Core: 8 suites/325 tests; stream: 7 files/83 tests; counts overlap original phase and are not summed as distinct total.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
+        ]
+      },
+      {
+        "gate": "Privacy static-content/export regression and copy contracts",
+        "status": "PASS",
+        "detail": "Web: 3 files/34 tests; Shared: 2 files/14 tests; whole HTML equality in 8 states; native disclosure state survives export lifecycle.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
+        ]
+      },
+      {
+        "gate": "Full workspace typecheck",
+        "status": "PASS",
+        "detail": "All 8 workspace packages at final source.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
+      },
+      {
+        "gate": "Root lint",
+        "status": "PASS",
+        "detail": "Zero errors; 6 existing unused-disable warnings.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
+      },
+      {
+        "gate": "Production web + Storybook builds",
+        "status": "PASS",
+        "detail": "Fresh tracked production archive at 05af47e8; no inherited dotenv/credentials.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log"
+        ]
+      },
+      {
+        "gate": "Prerender",
+        "status": "PASS",
+        "detail": "45 public routes.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log"
+      },
+      {
+        "gate": "Served bundle budgets",
+        "status": "PASS",
+        "detail": "51 templates (34 public + 17 authed), 1 redirect; Privacy 259.5/262 kB.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
+      },
+      {
+        "gate": "Final synthetic journeys",
+        "status": "PASS",
+        "detail": "Two consecutive full 15-case runs after entity-scoped Brief locator correction; both coverage contracts pass; no skipped, unexpected or flaky tests.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+        ]
+      },
+      {
+        "gate": "Final E2E test static checks",
+        "status": "PASS",
+        "detail": "E2E typecheck and scoped Brief ESLint pass after test-only change. Workspace/root source gates remain at unchanged product05af.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log"
+        ]
+      },
+      {
+        "gate": "Final production hydration",
+        "status": "PASS",
+        "detail": "Both exact full 43-case runs passed; API/web process restart between them, same frozen product source, no retries/skips/flaky. Initial public errors remain untraced.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
+        ]
+      },
+      {
+        "gate": "Final accessibility/responsive",
+        "status": "PASS",
+        "detail": "70/70; 0 skipped, unexpected or flaky. Initial68/70/native-listener readiness failure preserved; four mounted-marker waits added only to test source.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+        ]
+      },
+      {
+        "gate": "Final accessibility test static checks",
+        "status": "PASS",
+        "detail": "E2E typecheck and scoped ESLint after final test-only mounted-marker change.",
+        "evidence": [
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
+          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log"
+        ]
+      },
+      {
+        "gate": "Final production Privacy browser",
+        "status": "PASS",
+        "detail": "Desktop 1440 px and phone 390 px: native disclosure survives pending/prepared intercepted export; download handoff and consent controls work, no overflow/hydration errors, zero main axe violations. Synthetic bytes only; no provider export completeness claim. Captures are selected scrolled viewports with the existing first-heard survey visible.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json"
+      },
+      {
+        "gate": "Final independent design review",
+        "status": "PASS",
+        "detail": "Source hashes, current final runtime records and selected rendered viewports independently reviewed; scoped fixes PR approved, public launch hold retained.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
+      },
+      {
+        "gate": "Final independent core source/runtime review",
+        "status": "PASS",
+        "detail": "All original findings and final source/rendered/runtime evidence independently reviewed; scoped fixes PR approved, public launch hold retained. Remote CI on publication head remains separately tracked.",
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-independent-gate.json"
+      }
+    ],
+    "launchSignoff": false,
+    "publicHydrationSignal": "Original three public HTML recovery errors remain unexplained. Upstream native-promise repair is specific to Autopilot streaming and does not establish the cause of public failures.",
+    "providerBoundary": "No live Gmail/OAuth/provider worker/payment/account-deletion operations. Disposable synthetic PostgreSQL/Redis and loopback URLs only.",
+    "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+    "testOnlyReadinessCorrection": {
+      "file": "packages/e2e/specs/brief-preview.spec.ts",
+      "change": "Count assertion belongs to exactly one accessible Noise list item containing the seeded sender checkbox. Preview/cancel/API count checks retained.",
+      "failurePreserved": "journeys-final-before-brief-locator-fix",
+      "diagnosisLimit": "Global exact text matched two DOM elements; a hidden streaming twin was inferred but did not recur in bounded inspection.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
+    },
+    "journeyAndHydrationTestCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
+    "accessibilityTestOnlyReadinessCorrection": {
+      "file": "packages/e2e/specs/a11y-smoke.spec.ts",
+      "change": "Shared mounted-screen marker before native focus/keyboard and the interactive Activity/Privacy scenarios, including post-reload. All original assertions retained.",
+      "failurePreserved": "a11y-before-mounted-readiness",
+      "diagnosis": "Under CPU6x in both viewports, SSR heading/native Filter focus could precede About marker and all question-mark listeners. Gated actual dialog/trap/restore passed. Full original timeout did not recur during bounded instrumented diagnosis.",
+      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
+    },
+    "fixesPrSignoff": true,
+    "remoteCi": "Not certified by local gates; pending final publication head check."
+  },
+  "previousMainIntegrationRuntimeSnapshot": {
     "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
     "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
     "environment": "Fresh tracked production web archive + disposable synthetic loopback API/PostgreSQL/Redis; no provider worker or live Gmail/payment/account operations.",
@@ -6782,357 +9917,5 @@
     "finalSkipped": 0,
     "finalUnexpected": 0,
     "finalFlaky": 0
-  },
-  "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
-  "residualSignals": [
-    {
-      "id": "HYDRATION-01",
-      "status": "unreproduced and untraced; no source fix claimed",
-      "initialEvidence": "Three returning all-consent/dark React#418HTML recovery errors on/,/compare,/faq at frozen1b source",
-      "latestEvidence": "Two exact full43/43passes on unchanged source, including a process restart;79controlled diagnostics clean",
-      "releaseDisposition": "Public launch signoff withheld; preserve/regress the initial signal in release rehearsal",
-      "artifacts": [
-        "docs/qa/prelaunch-2026-10-03/after/hydration-investigation.json",
-        "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json"
-      ]
-    }
-  ],
-  "initialProductSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
-  "initialTestCommit": "c86557eb",
-  "initialRuntimeVerificationSnapshot": {
-    "primaryEvidence": "docs/qa/prelaunch-2026-10-03/after/runtime-summary.json",
-    "recommendedPortableEvidencePath": "docs/qa/prelaunch-2026-10-03/runtime-verification-summary.json",
-    "sourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
-    "testCommit": "c86557eb",
-    "environment": "Disposable loopback production web + synthetic API/PostgreSQL/Redis; no provider worker or live Gmail/payment/account operations.",
-    "executionCount": 143,
-    "passedExecutions": 140,
-    "failedExecutions": 3,
-    "skippedExecutions": 0,
-    "flakyExecutions": 0,
-    "runs": [
-      {
-        "id": "journeys-5",
-        "stats": {
-          "startTime": "2026-10-03T23:10:19.670Z",
-          "duration": 26987.93,
-          "expected": 15,
-          "skipped": 0,
-          "unexpected": 0,
-          "flaky": 0
-        },
-        "coverageContract": "assert-journeys passed"
-      },
-      {
-        "id": "journeys-6",
-        "stats": {
-          "startTime": "2026-10-03T23:13:58.896Z",
-          "duration": 24990.396,
-          "expected": 15,
-          "skipped": 0,
-          "unexpected": 0,
-          "flaky": 0
-        },
-        "coverageContract": "assert-journeys passed"
-      },
-      {
-        "id": "a11y-responsive",
-        "stats": {
-          "startTime": "2026-10-03T23:02:52.575Z",
-          "duration": 157447.568,
-          "expected": 70,
-          "skipped": 0,
-          "unexpected": 0,
-          "flaky": 0
-        },
-        "coverageContract": "assert-e2e-ran passed"
-      },
-      {
-        "id": "hydration",
-        "stats": {
-          "startTime": "2026-10-03T23:05:39.381Z",
-          "duration": 208830.80500000002,
-          "expected": 40,
-          "skipped": 0,
-          "unexpected": 3,
-          "flaky": 0
-        },
-        "coverageContract": "failed, unresolved hydration diagnostics"
-      }
-    ],
-    "limits": "143 executions includes repeating the same 15 journeys twice; it is neither 143 distinct tests nor 143 passes. 140 passed and 3 hydration failures remain open. Sanitized thin summary is prepared locally; repository archival is pending root."
-  },
-  "currentMainIntegration": {
-    "phase": "current-main integration and Privacy static-content optimization",
-    "productSourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
-    "integratedMainCommit": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
-    "initialProofSourceCommit": "1b5c9f930e991dd879ddb81c70be3fa28c22e9b7",
-    "initialProofTestCommit": "c86557eb",
-    "mainMergeSourceCommit": "f21ecdfe3e7f104bd52a9c860fb7f5d8a8d88470",
-    "mergeResolution": "Only Activity test conflict; both original stale-action regressions and upstream overlapping-filter regressions retained. Production files auto-merged.",
-    "optimization": {
-      "sourceCommit": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
-      "result": "Static Privacy badge/inventory and canonical export-label projection render on server; existing client controls/lifecycle retained.",
-      "servedPrivacyGzipKB": 259.5,
-      "beforeRoundedGzipKB": 262.0,
-      "budgetKB": 262,
-      "checkerAndBudgetsUnchanged": true,
-      "exactCompleteHtmlEqualStates": 8
-    },
-    "checks": [
-      {
-        "gate": "Affected upstream integration unit suites",
-        "status": "PASS",
-        "detail": "Core: 8 suites/325 tests; stream: 7 files/83 tests; counts overlap original phase and are not summed as distinct total.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
-        ]
-      },
-      {
-        "gate": "Privacy static-content/export regression and copy contracts",
-        "status": "PASS",
-        "detail": "Web: 3 files/34 tests; Shared: 2 files/14 tests; whole HTML equality in 8 states; native disclosure state survives export lifecycle.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
-        ]
-      },
-      {
-        "gate": "Full workspace typecheck",
-        "status": "PASS",
-        "detail": "All 8 workspace packages at final source.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
-      },
-      {
-        "gate": "Root lint",
-        "status": "PASS",
-        "detail": "Zero errors; 6 existing unused-disable warnings.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
-      },
-      {
-        "gate": "Production web + Storybook builds",
-        "status": "PASS",
-        "detail": "Fresh tracked production archive at 05af47e8; no inherited dotenv/credentials.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log"
-        ]
-      },
-      {
-        "gate": "Prerender",
-        "status": "PASS",
-        "detail": "45 public routes.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log"
-      },
-      {
-        "gate": "Served bundle budgets",
-        "status": "PASS",
-        "detail": "51 templates (34 public + 17 authed), 1 redirect; Privacy 259.5/262 kB.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
-      },
-      {
-        "gate": "Final synthetic journeys",
-        "status": "PASS",
-        "detail": "Two consecutive full 15-case runs after entity-scoped Brief locator correction; both coverage contracts pass; no skipped, unexpected or flaky tests.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
-        ]
-      },
-      {
-        "gate": "Final E2E test static checks",
-        "status": "PASS",
-        "detail": "E2E typecheck and scoped Brief ESLint pass after test-only change. Workspace/root source gates remain at unchanged product05af.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log"
-        ]
-      },
-      {
-        "gate": "Final production hydration",
-        "status": "PASS",
-        "detail": "Both exact full 43-case runs passed; API/web process restart between them, same frozen product source, no retries/skips/flaky. Initial public errors remain untraced.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
-        ]
-      },
-      {
-        "gate": "Final accessibility/responsive",
-        "status": "PASS",
-        "detail": "70/70; 0 skipped, unexpected or flaky. Initial68/70/native-listener readiness failure preserved; four mounted-marker waits added only to test source.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
-        ]
-      },
-      {
-        "gate": "Final accessibility test static checks",
-        "status": "PASS",
-        "detail": "E2E typecheck and scoped ESLint after final test-only mounted-marker change.",
-        "evidence": [
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
-          "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log"
-        ]
-      },
-      {
-        "gate": "Final production Privacy browser",
-        "status": "PASS",
-        "detail": "Desktop 1440 px and phone 390 px: native disclosure survives pending/prepared intercepted export; download handoff and consent controls work, no overflow/hydration errors, zero main axe violations. Synthetic bytes only; no provider export completeness claim. Captures are selected scrolled viewports with the existing first-heard survey visible.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json"
-      },
-      {
-        "gate": "Final independent design review",
-        "status": "PASS",
-        "detail": "Source hashes, current final runtime records and selected rendered viewports independently reviewed; scoped fixes PR approved, public launch hold retained.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
-      },
-      {
-        "gate": "Final independent core source/runtime review",
-        "status": "PASS",
-        "detail": "All original findings and final source/rendered/runtime evidence independently reviewed; scoped fixes PR approved, public launch hold retained. Remote CI on publication head remains separately tracked.",
-        "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-independent-gate.json"
-      }
-    ],
-    "launchSignoff": false,
-    "publicHydrationSignal": "Original three public HTML recovery errors remain unexplained. Upstream native-promise repair is specific to Autopilot streaming and does not establish the cause of public failures.",
-    "providerBoundary": "No live Gmail/OAuth/provider worker/payment/account-deletion operations. Disposable synthetic PostgreSQL/Redis and loopback URLs only.",
-    "testCommit": "adb41ab263cbfca2de0ea6266aff9560571c6706",
-    "testOnlyReadinessCorrection": {
-      "file": "packages/e2e/specs/brief-preview.spec.ts",
-      "change": "Count assertion belongs to exactly one accessible Noise list item containing the seeded sender checkbox. Preview/cancel/API count checks retained.",
-      "failurePreserved": "journeys-final-before-brief-locator-fix",
-      "diagnosisLimit": "Global exact text matched two DOM elements; a hidden streaming twin was inferred but did not recur in bounded inspection.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
-    },
-    "journeyAndHydrationTestCommit": "4af1d9724f38bfb45ab8f297d28fff081816fc4f",
-    "accessibilityTestOnlyReadinessCorrection": {
-      "file": "packages/e2e/specs/a11y-smoke.spec.ts",
-      "change": "Shared mounted-screen marker before native focus/keyboard and the interactive Activity/Privacy scenarios, including post-reload. All original assertions retained.",
-      "failurePreserved": "a11y-before-mounted-readiness",
-      "diagnosis": "Under CPU6x in both viewports, SSR heading/native Filter focus could precede About marker and all question-mark listeners. Gated actual dialog/trap/restore passed. Full original timeout did not recur during bounded instrumented diagnosis.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
-    },
-    "fixesPrSignoff": true,
-    "remoteCi": "Not certified by local gates; pending final publication head check."
-  },
-  "integrationCheckLedger": [
-    {
-      "gate": "Affected upstream integration unit suites",
-      "status": "PASS",
-      "detail": "Core: 8 suites/325 tests; stream: 7 files/83 tests; counts overlap original phase and are not summed as distinct total.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-core.json",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-stream.json"
-      ]
-    },
-    {
-      "gate": "Privacy static-content/export regression and copy contracts",
-      "status": "PASS",
-      "detail": "Web: 3 files/34 tests; Shared: 2 files/14 tests; whole HTML equality in 8 states; native disclosure state survives export lifecycle.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-server-content-fixes.json",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-html-equivalence.json"
-      ]
-    },
-    {
-      "gate": "Full workspace typecheck",
-      "status": "PASS",
-      "detail": "All 8 workspace packages at final source.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-typecheck.log"
-    },
-    {
-      "gate": "Root lint",
-      "status": "PASS",
-      "detail": "Zero errors; 6 existing unused-disable warnings.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/main-integration-lint.log"
-    },
-    {
-      "gate": "Production web + Storybook builds",
-      "status": "PASS",
-      "detail": "Fresh tracked production archive at 05af47e8; no inherited dotenv/credentials.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/production-build.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/storybook-build-final.log"
-      ]
-    },
-    {
-      "gate": "Prerender",
-      "status": "PASS",
-      "detail": "45 public routes.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/prerender.log"
-    },
-    {
-      "gate": "Served bundle budgets",
-      "status": "PASS",
-      "detail": "51 templates (34 public + 17 authed), 1 redirect; Privacy 259.5/262 kB.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/bundle-build-final.log"
-    },
-    {
-      "gate": "Final synthetic journeys",
-      "status": "PASS",
-      "detail": "Two consecutive full 15-case runs after entity-scoped Brief locator correction; both coverage contracts pass; no skipped, unexpected or flaky tests.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-1.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/journeys-final-2.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/brief-locator-fix.json"
-      ]
-    },
-    {
-      "gate": "Final E2E test static checks",
-      "status": "PASS",
-      "detail": "E2E typecheck and scoped Brief ESLint pass after test-only change. Workspace/root source gates remain at unchanged product05af.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-typecheck.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/brief-locator-lint.log"
-      ]
-    },
-    {
-      "gate": "Final production hydration",
-      "status": "PASS",
-      "detail": "Both exact full 43-case runs passed; API/web process restart between them, same frozen product source, no retries/skips/flaky. Initial public errors remain untraced.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-1.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/hydration-final-2.log"
-      ]
-    },
-    {
-      "gate": "Final accessibility/responsive",
-      "status": "PASS",
-      "detail": "70/70; 0 skipped, unexpected or flaky. Initial68/70/native-listener readiness failure preserved; four mounted-marker waits added only to test source.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-responsive-final.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/a11y-readiness-fix.json"
-      ]
-    },
-    {
-      "gate": "Final accessibility test static checks",
-      "status": "PASS",
-      "detail": "E2E typecheck and scoped ESLint after final test-only mounted-marker change.",
-      "evidence": [
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-typecheck.log",
-        "docs/qa/prelaunch-2026-10-03/after-main-integration/logs/a11y-readiness-lint.log"
-      ]
-    },
-    {
-      "gate": "Final production Privacy browser",
-      "status": "PASS",
-      "detail": "Desktop 1440 px and phone 390 px: native disclosure survives pending/prepared intercepted export; download handoff and consent controls work, no overflow/hydration errors, zero main axe violations. Synthetic bytes only; no provider export completeness claim. Captures are selected scrolled viewports with the existing first-heard survey visible.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/privacy-final-browser.json"
-    },
-    {
-      "gate": "Final independent design review",
-      "status": "PASS",
-      "detail": "Source hashes, current final runtime records and selected rendered viewports independently reviewed; scoped fixes PR approved, public launch hold retained.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-design-gate.json"
-    },
-    {
-      "gate": "Final independent core source/runtime review",
-      "status": "PASS",
-      "detail": "All original findings and final source/rendered/runtime evidence independently reviewed; scoped fixes PR approved, public launch hold retained. Remote CI on publication head remains separately tracked.",
-      "evidence": "docs/qa/prelaunch-2026-10-03/after-main-integration/main-integration-independent-gate.json"
-    }
-  ]
+  }
 }

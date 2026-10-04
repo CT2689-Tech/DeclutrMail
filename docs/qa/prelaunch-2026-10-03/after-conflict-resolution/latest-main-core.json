@@ -1,0 +1,526 @@
+{
+  "reviewKind": "Latest-main CORE merge resolution and bounded source/unit integration assessment",
+  "preparedAtUtc": "2026-10-04T00:18:57.070039+00:00",
+  "summary": {
+    "status": "PASS: latest-main scoped fixes PR source, build, rendered and runtime integration gate; public launch signoff withheld",
+    "sourceStopped": true,
+    "confirmedActionableSourceFindings": 0,
+    "liveProviderWrites": false,
+    "browserOrServerSessionsStarted": false,
+    "gitMutationsByReviewer": false,
+    "publicLaunchSignoff": false,
+    "scopedPrGate": "PASS",
+    "fixesPrSignoff": true,
+    "originalAuditFindingsAddressed": 39,
+    "designRecommendationsImplemented": 2,
+    "remainingLocalPrChecks": [],
+    "remoteCiVerified": false
+  },
+  "revisionContext": {
+    "latestMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
+    "reviewedHead": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "reviewedTree": "Root frozen latest-main merge3d3272d1 integrating e267f759. All10independently reviewed source/test hashes remain unchanged; current root production proof below was read back at this exact source.",
+    "priorIntegratedMain": "61f71ee8bdd2a2f9c3fcfb7c8921c4482ccc5bf0",
+    "priorProductProof": "05af47e88831289ef0a9d86d7d17d5db4ad34228",
+    "priorTestProof": "adb41ab263cbfca2de0ea6266aff9560571c6706",
+    "historicalBoundary": "Earlier05af/61f builds,186production executions, native Privacy captures and independent PASS gates remain historical. They are not proof of this newly integrated e267 source.",
+    "newUpstream": [
+      "b2b7caa5: authenticated optional-query first hydration markup(#880)",
+      "334c4208: cost availability(#883)",
+      "831a9749: Later calendar clock and click-time validation(#882)",
+      "e267f759: API database driver rollout(#884)"
+    ],
+    "sourceSha256": {
+      "apps/web/src/features/screener/screener-route.tsx": "90424fe0c0ab625d1f864c141d6949d0cff8555d06cbff4ca141dc4fb565abc0",
+      "apps/web/src/features/snoozed/snoozed-screen.tsx": "5fa4f796c6ef7d46403239696fbef6082215c69f518cf24986696f361f23737f",
+      "apps/web/src/features/snoozed/snoozed-clock.test.tsx": "4734dccedf218d103f1531b1f3ccde4eb5b26f61abbca656a337a94e3838ee8f",
+      "apps/web/src/features/screener/screener-screen.tsx": "09a1094eb9b5eda34d8c7fca22c4687a657a00951f7e025b9c34a59223c78a77",
+      "apps/web/src/features/senders/senders-screen.tsx": "8a10ebcf21e9bab427817b2f3886c573e096912bb393d1f1b29983ba32e9782d",
+      "apps/web/src/features/autopilot/autopilot-screen.tsx": "438a6f24a1bb134aaa90f90434154b32b1ba3b9a5a0586ee481bfdfc279a677f",
+      "apps/web/src/features/triage/triage-screen.tsx": "2e607ebe9c014da494aa889b0494949447f82cfc33dded69698d58a5664a669f",
+      "apps/web/src/lib/use-hydrated.ts": "aa7924f34216efc1194372eb6e76d03fd72ae8a39f7f8407aba418b654c745bb",
+      "apps/web/src/lib/use-now.ts": "8fde151e2f03d5c06cb1b33ab7f658efbad4ac5a8207b204c376a1d1da8fc201",
+      "apps/web/src/app/(app)/later/page.tsx": "2e64a9ba8761eff7af6f47df8300e2c55872a19cca06c46b7e1967bfb519f463"
+    },
+    "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+    "sourceHashesMatchFrozenTree": true
+  },
+  "filesEdited": [
+    "apps/web/src/features/screener/screener-route.tsx",
+    "apps/web/src/features/snoozed/snoozed-screen.tsx",
+    "apps/web/src/features/snoozed/snoozed-clock.test.tsx"
+  ],
+  "conflictResolutions": [
+    {
+      "file": "apps/web/src/features/screener/screener-route.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 43,
+          "detail": "Existing useHydrated server/initial-client false snapshot guards only optional shared-count presentation."
+        },
+        {
+          "line": 58,
+          "detail": "totalPending adopts the existing count only after hydration."
+        },
+        {
+          "line": 59,
+          "detail": "Retained queue refresh failure continues to reach the compact recovery notice."
+        },
+        {
+          "line": 60,
+          "detail": "Try again retains its actual queue-refetch callback."
+        }
+      ],
+      "preserved": "TierGate and query mounting, queue state composition, retained rows and refresh recovery unchanged. Hydration count adoption and original recovery controls coexist."
+    },
+    {
+      "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 89,
+          "detail": "Server initialNow is threaded into mailbox-keyed screen state."
+        },
+        {
+          "line": 98,
+          "detail": "One post-mount minute clock drives buckets, relative labels, presets and displayed custom validity; initial server timestamp preserves first markup."
+        },
+        {
+          "line": 220,
+          "detail": "One keyed Later senders list retains row draft/focus/mutation observers when a sender changes calendar buckets."
+        },
+        {
+          "line": 619,
+          "detail": "Custom input still resolves in the account timezone with missing/ambiguous DST rejection; validity compares parsed instant to the shared presentation clock."
+        },
+        {
+          "line": 695,
+          "detail": "Custom command rechecks parsed account-zone target against current Date.now before any mutation; expired time surfaces a recovery alert."
+        },
+        {
+          "line": 738,
+          "detail": "New expired-preset and retained save-error alerts both use established dangerText foreground."
+        }
+      ],
+      "preserved": "Upstream presets re-resolve at actual click time. Existing account-zone/DST parser, canonical Custom zone label, wake preview/waiting/failed state, retained-refresh retry, heading levels and danger foregrounds remain. No browser-local Date(custom) interpretation restored; no worker/API scheduling semantics changed."
+    }
+  ],
+  "autoMergedSiblingAssessment": [
+    {
+      "file": "apps/web/src/features/screener/screener-screen.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 552,
+          "detail": "Verb-intent callback continues to read live shared sender-lock membership even when busy presentation is hydration-gated."
+        },
+        {
+          "line": 582,
+          "detail": "Preview confirmation also refuses live shared lock, busy/held row and pending mutation."
+        },
+        {
+          "line": 730,
+          "detail": "Any mounted dialog/menu owns keyboard input, including nonmodal AccountMenu."
+        },
+        {
+          "line": 928,
+          "detail": "Only optional shared-lock busy presentation defers to post-hydration."
+        }
+      ],
+      "proof": "Real SSR/renderToString followed by pre-hydration count/in-flight cache updates; zero recoverable errors, adopted count/busy state,12locked/unlocked replay/first-commit intent controls preserve no dispatch while locked."
+    },
+    {
+      "file": "apps/web/src/features/senders/senders-screen.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 413,
+          "detail": "Hydration marker is an unconditional hook before read-state branches."
+        },
+        {
+          "line": 426,
+          "detail": "Retained rows remain gated by the ownership of the actually displayed narrow/widened query, current mailbox, non-placeholder and non4xx failure."
+        },
+        {
+          "line": 482,
+          "detail": "Only optional shared-summary first-cleanup nudge presentation waits for hydration."
+        },
+        {
+          "line": 648,
+          "detail": "Stale/failed displayed reads still block mutations; failed-query retry and next-page retry path remain."
+        },
+        {
+          "line": 1180,
+          "detail": "Reachable dialog/menu keyboard ownership remains."
+        }
+      ],
+      "proof": "Real SSR/cache-update/hydrateRoot shared-summary controls passed; retention/mutation mechanism reviewed read-only, not relabeled as a new full Senders runtime sweep."
+    },
+    {
+      "file": "apps/web/src/features/autopilot/autopilot-screen.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 118,
+          "detail": "Mailbox cursor ownership still resolves synchronously before querying/rendering a switched account."
+        },
+        {
+          "line": 142,
+          "detail": "Optional suggestions and pattern data wait for hydration; primary rules stay on their original reader path."
+        },
+        {
+          "line": 176,
+          "detail": "Optional pagination totals/next availability adopt after hydration."
+        },
+        {
+          "line": 188,
+          "detail": "Section loading/error state is deterministic before hydration and then adopts the real reader state."
+        }
+      ],
+      "proof": "Real pending optional promise finishes before hydrateRoot; exact route adopts suggestions/pattern with no recoverable error. Existing screen mutation/preview suite passes; capability/approval/preview locks retain their current behavior."
+    },
+    {
+      "file": "apps/web/src/features/triage/triage-screen.tsx",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 1568,
+          "detail": "Inline Escape still respects existing dialog ownership."
+        },
+        {
+          "line": 1676,
+          "detail": "Optional Focus progress position now shares the existing modeReady boundary, matching initial layout."
+        }
+      ],
+      "proof": "Real route initial hydration and action cases plus action-toolbar ownership regressions pass; readiness does not weaken mutation/preview/keyboard guards."
+    },
+    {
+      "file": "apps/web/src/lib/use-hydrated.ts",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 10,
+          "detail": "useSyncExternalStore uses fixed false server/first hydration snapshot and true client snapshot; no browser storage or query ownership moved into the marker."
+        }
+      ],
+      "scope": "Production hook consumers are authenticated Screener route/screen, Senders and Autopilot only; Triage uses existing modeReady boundary."
+    },
+    {
+      "file": "apps/web/src/lib/use-now.ts",
+      "result": "PASS",
+      "evidence": [
+        {
+          "line": 20,
+          "detail": "Null server/first-client snapshot, mount wall-clock sample and cleanup-owned optional interval remain unchanged."
+        }
+      ],
+      "scope": "Later adds one minute consumer and serialized server fallback without changing the shared hook or scheduling worker."
+    }
+  ],
+  "upstreamTestAlignment": {
+    "file": "apps/web/src/features/snoozed/snoozed-clock.test.tsx",
+    "authorization": "Root authorized only necessary upstream assertion/fixture alignment after initial focused batch failed on old Custom accessible label.",
+    "changes": [
+      "Use exact Custom \u00b7 America/Los_Angeles accessible label in open-draft and command cases.",
+      "Replace device-local Date fields/seconds fixture with explicit minute-precision account-zone wall time and independently specified ISO expected instant."
+    ],
+    "expiryFixture": "At account23:59:40, choose00:00(20seconds ahead),advance30seconds before the next minute tick,click Set: zeroPATCH and actionable expired-time alert.",
+    "futureFixture": "Choose account01:00,advance30seconds,click Set: exactly onePATCH and exact2026-10-04T08:00:00.000Z instant.",
+    "preserved": [
+      "Clock crosses account midnight and updates grouping/labels without changed cached rows",
+      "Real server-to-client hydration across account midnight has zero recoverable errors",
+      "Open draft/input identity and focus retained across regrouping",
+      "Pending save failure and wake observer/callback retained across regrouping",
+      "Draft closes on mailbox switch",
+      "Tomorrow recomputes at click before minute tick",
+      "Expired Later today preset sends no PATCH",
+      "Expired custom time sends no PATCH; future custom time sends exact account instant"
+    ],
+    "noBypass": "No tests skipped/retried, first/force or assertion suppression; production source was not reverted to obsolete labels or device-zone input behavior."
+  },
+  "verification": {
+    "focusedUnits": {
+      "result": "PASS",
+      "filesPassed": 14,
+      "testsPassed": 299,
+      "durationSeconds": 15.02,
+      "maxWorkers": 1,
+      "fileParallelism": false,
+      "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests.log",
+      "scope": "Four route hydration suites plus Screener screen/keyboard/composition, Autopilot screen, Triage actions/toolbar, Later screen/clock/date and shared Web clock."
+    },
+    "initialBatch": {
+      "result": "296passed/3failed; all3stopped at old Custom accessible-label lookup",
+      "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log",
+      "interpretation": "Preserved test-contract mismatch evidence. It is not a new production failure or proof against the corrected click-time production guard."
+    },
+    "scopedWebTypecheck": {
+      "result": "PASS after test alignment",
+      "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log"
+    },
+    "productionScopeLint": {
+      "result": "PASS0errors/warnings",
+      "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log"
+    },
+    "alignedTestLint": {
+      "result": "PASS0errors/warnings",
+      "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log"
+    },
+    "format": "PrettierPASS unchanged for all3edited paths",
+    "diffCheck": "PASS scoped; no conflict markers in resolved working source",
+    "rootFullStatic": "Root reports all8workspace typechecksPASS and rootlintPASS0errors/6knownwarnings before the authorized test-only update; scopedWebtypecheck covers that final update.",
+    "limits": [
+      "Final focused units had socket teardown warnings but zero failed/skipped assertions; stderr retained without suppression.",
+      "No new owned runtime/browser/server/DB/provider session started in final review; root current production evidence was independently read back.",
+      "No new negative-control source revert performed for upstream fixes; their named real hydration/calendar regressions and initial integration-label failure retain distinct scope.",
+      "Current source/build/runtime local proof does not certify future publication-head remoteCI or public launch/provider behavior."
+    ],
+    "rootCurrentFinal": {
+      "method": "Independent inspection of exact current-source records/logs and native Privacy PNGs supplied by root; no test/browser/build rerun by reviewer.",
+      "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+      "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+      "buildIsolation": {
+        "root": "local run artifact (not archived): declutrmail-prelaunch-build-1_bkpubu",
+        "commit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "environment": "fresh tracked archive; no dotenv or inherited credentials; synthetic API URL/dummy intercepted telemetry key"
+      },
+      "checks": [
+        {
+          "gate": "Full workspace typecheck",
+          "result": "PASS",
+          "packages": 8,
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-typecheck.log"
+        },
+        {
+          "gate": "Root lint",
+          "result": "PASS",
+          "errors": 0,
+          "knownWarnings": 6,
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-lint.log"
+        },
+        {
+          "gate": "Scoped Web typecheck after clock test alignment",
+          "result": "PASS",
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log"
+        },
+        {
+          "gate": "Scoped production and aligned-test lint",
+          "result": "PASS",
+          "errors": 0,
+          "warnings": 0,
+          "evidence": [
+            "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log",
+            "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log"
+          ]
+        },
+        {
+          "gate": "Fresh production Web build",
+          "result": "PASS",
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-production-build.log"
+        },
+        {
+          "gate": "Fresh Storybook build",
+          "result": "PASS",
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log"
+        },
+        {
+          "gate": "Prerender",
+          "result": "PASS",
+          "publicRoutes": 45,
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-prerender.log"
+        },
+        {
+          "gate": "Served bundle budgets",
+          "result": "PASS",
+          "templates": 51,
+          "public": 34,
+          "authenticated": 17,
+          "verifiedRedirects": 1,
+          "privacyGzipKB": 259.5,
+          "privacyBudgetKB": 262,
+          "capsAndCheckerChanged": false,
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-bundle-build.log"
+        },
+        {
+          "gate": "Synthetic journeys",
+          "result": "PASS twice;15each;coverage contracts pass",
+          "evidence": ["journeys-latest-1.json", "journeys-latest-2.json"]
+        },
+        {
+          "gate": "Exact production hydration",
+          "result": "PASS twice;43each;API/web process restart between runs",
+          "evidence": ["hydration-latest-1.json", "hydration-latest-2.json"]
+        },
+        {
+          "gate": "Accessibility/responsive",
+          "result": "PASS70/70",
+          "evidence": "a11y-responsive-latest.json"
+        },
+        {
+          "gate": "Native Privacy browser",
+          "result": "PASS named1440desktop/390phone checks",
+          "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json"
+        }
+      ],
+      "runtime": {
+        "environment": "Fresh tracked production archive; disposable synthetic loopback API/PostgreSQL/Redis; no provider worker or live account operations.",
+        "finalRuns": [
+          {
+            "id": "journeys-latest-1",
+            "sourceAndTestCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+            "passed": 15,
+            "durationSeconds": 24.3,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+            "singlePassedResultPerCase": true,
+            "report": "local run artifact (not archived): journeys-latest-1.json",
+            "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-1.log"
+          },
+          {
+            "id": "journeys-latest-2",
+            "sourceAndTestCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+            "passed": 15,
+            "durationSeconds": 22.8,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+            "singlePassedResultPerCase": true,
+            "report": "local run artifact (not archived): journeys-latest-2.json",
+            "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-2.log"
+          },
+          {
+            "id": "hydration-latest-1",
+            "sourceAndTestCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+            "passed": 43,
+            "durationSeconds": 39.7,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+            "singlePassedResultPerCase": true,
+            "report": "local run artifact (not archived): hydration-latest-1.json",
+            "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log"
+          },
+          {
+            "id": "hydration-latest-2",
+            "sourceAndTestCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+            "passed": 43,
+            "durationSeconds": 39.9,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+            "singlePassedResultPerCase": true,
+            "report": "local run artifact (not archived): hydration-latest-2.json",
+            "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-2.log"
+          },
+          {
+            "id": "a11y-responsive-latest",
+            "sourceAndTestCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+            "passed": 70,
+            "durationSeconds": 53.0,
+            "skipped": 0,
+            "unexpected": 0,
+            "flaky": 0,
+            "singlePassedResultPerCase": true,
+            "report": "local run artifact (not archived): a11y-responsive-latest.json",
+            "log": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log"
+          }
+        ],
+        "finalExecutions": 186,
+        "finalPasses": 186,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "retries": 0,
+        "processRestart": "API/web restart between hydration-latest-1 and hydration-latest-2; same frozen product source.",
+        "coverageContracts": "PASS reported by root; original normal globalsetup/coverage contracts retained.",
+        "countLimit": "186is repeated test executions, not186unique scenarios. No unit/historical execution totals are summed into this current runtime count.",
+        "summaryEvidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-runtime-summary.json"
+      },
+      "nativePrivacy": {
+        "productSourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+        "viewports": [
+          {
+            "width": 1440,
+            "height": 1000
+          },
+          {
+            "width": 390,
+            "height": 844
+          }
+        ],
+        "verified": [
+          "Native inventory disclosure opens and stays open through pending/prepared export",
+          "Export buttons disabled while preparing",
+          "Synthetic browser download handoff",
+          "Consent controls visible",
+          "No page overflow, hydration errors or main axe violations"
+        ],
+        "browserOwner": "root; no new browser session by this reviewer",
+        "independentScreenshotInspection": "Both1440x1000 and390x844 PNGs viewed. They show the selected scrolled native inventory within AppShell and the fresh-user first-heard survey overlay covering part of the lower viewport; no whole-page or all-control visual claim.",
+        "screenshots": [
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/screenshots/privacy-latest-desktop.png",
+          "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/screenshots/privacy-latest-mobile.png"
+        ],
+        "evidence": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json",
+        "limits": [
+          "AppShell internal scroller and survey overlay bound screenshots; named controls verified separately by root DOM/behavior records.",
+          "Export response intercepted with synthetic bytes; provider export not executed and completeness not verified.",
+          "Axe aria-valid-attr-value and color-contrast incomplete checks retained; this is not a fullWCAG/accessibility certification."
+        ]
+      }
+    }
+  },
+  "publicHydrationAttribution": {
+    "id": "HYDRATION-01",
+    "status": "OPEN; original public3untraced; no cause/fix claim from#880",
+    "originalRoutes": ["/", "/compare", "/faq"],
+    "originalState": "Accepted analytics with persisted dark theme; React#418HTMLmismatch/recovery observed on historical1b source.",
+    "sourceTrace": "#880changes optional authenticated Screener/Senders/Autopilot shared-cache presentation and Triage mode progress. Production useHydrated callsite search found no marketing/theme/consent consumer. No changed public route reader supplied a causal explanation.",
+    "limits": "These regressions prove their named authenticated cache/hydration cases; they do not establish the cause of the historical public mismatch. Indirect build/timing changes are not treated as a fix without concrete reproduction/evidence.",
+    "preservedEvidence": [
+      "local run artifact (not archived): hydration-initial.json",
+      "local run artifact (not archived): hydration-initial.log",
+      "local run artifact (not archived): core-hydration-investigation.json"
+    ],
+    "releaseRequirement": "Exact prospective deployment rehearsal, accepted-analytics/dark/fresh/essential-only/authenticated hydration and investigation of any recurrence remain required before public launch.",
+    "publicLaunchSignoff": false,
+    "currentExactRuntime": "At3d3272d1 exact full43 passes twice with API/web restart and no retries/skips/unexpected/flaky results. These runs pass the current scoped PR gate; original public3cause remains untraced and no source correction attribution is claimed."
+  },
+  "pendingRootGates": [],
+  "preservation": "All8user untracked paths preserved; no provider/billing/deletion/API/worker changes made by CORE reviewer. Upstream ops/database-driver changes are outside this assigned CORE source review.",
+  "finalizedAtUtc": "2026-10-04T00:24:46.738098+00:00",
+  "publicationVerification": {
+    "status": "PENDING_REMOTE_CI_AT_PUBLICATION_HEAD",
+    "publicationHead": null,
+    "separateFrom": "Scoped local independent PR integration signoff at frozen product3d3272d1.",
+    "requirement": "Root publishes final evidence/source and checks remoteCI for the exact published head before treating remote checks as verified. No remoteCI success inferred from local gates or earlier publication.",
+    "gitOrExternalActionsByReviewer": false
+  },
+  "residualRisks": [
+    {
+      "id": "HYDRATION-01",
+      "priority": "P1 public launch risk",
+      "status": "OPEN: initially reproduced, subsequently unreproduced; cause untraced and no fix claimed",
+      "initial": "Historical1b40/43suite: accepted-analytics/dark returning /,/compare,/faq emitted real React#418HTMLmismatch and recovered without seededtheme.",
+      "preservedEvidence": [
+        "local run artifact (not archived): hydration-initial.json",
+        "local run artifact (not archived): hydration-initial.log",
+        "local run artifact (not archived): core-hydration-investigation.json"
+      ],
+      "currentEvidence": "Current3d43x2clean including fullAPI/web restart; no retry/skip/diagnostic suppression. #880authenticated optional-query regression fixes do not establish this public cause.",
+      "releaseRequirement": "Exact prospective deployment rehearsal across accepted-analytics/persisted-dark,fresh/essential-only and authenticated hydration. Preserve original failures and investigate any recurrence with concrete source/DOM evidence.",
+      "nonblockingForScopedFixesPr": true,
+      "publicLaunchHeld": true
+    },
+    {
+      "id": "PROVIDER-LAUNCH-REHEARSAL",
+      "status": "UNVERIFIED: outside synthetic scoped fixes PR proof",
+      "detail": "Real Gmail/OAuth/provider worker completion, full provider export, account deletion, Paddle/Razorpay purchase/webhook/refund and applicable authorized cutover rehearsals are not established by these synthetic checks.",
+      "releaseRequirement": "Complete separately authorized provider/sandbox/cutover release rehearsal before public-launch readiness claim.",
+      "publicLaunchHeld": true
+    }
+  ],
+  "finalConclusion": "Scoped fixes PR integration PASS at frozen3d3272d1/main e267f759. All assigned source corrections and current local build/static/render/runtime gates pass, no confirmed actionable integration finding or pending local PR check. RemoteCI remains separately unverified at the future publication head. Public launch signoff remainsfalse for initial untraced public hydration signal and unverified provider rehearsal. Source stopped; no reviewer source/Git/provider actions during final evidence inspection."
+}

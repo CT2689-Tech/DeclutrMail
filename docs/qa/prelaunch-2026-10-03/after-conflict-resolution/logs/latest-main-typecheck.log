@@ -1,0 +1,21 @@
+
+> declutrmail@0.0.0 typecheck [workspace]
+> pnpm -r --parallel typecheck
+
+Scope: 8 of 9 workspace projects
+apps/api typecheck$ tsc --noEmit
+apps/web typecheck$ tsc --noEmit
+packages/config typecheck$ tsc --noEmit
+packages/db typecheck$ tsc --noEmit
+packages/e2e typecheck$ tsc --noEmit
+packages/events typecheck$ tsc --noEmit
+packages/shared typecheck$ tsc --noEmit
+packages/workers typecheck$ tsc --noEmit
+packages/config typecheck: Done
+packages/events typecheck: Done
+packages/e2e typecheck: Done
+packages/shared typecheck: Done
+packages/db typecheck: Done
+apps/web typecheck: Done
+packages/workers typecheck: Done
+apps/api typecheck: Done

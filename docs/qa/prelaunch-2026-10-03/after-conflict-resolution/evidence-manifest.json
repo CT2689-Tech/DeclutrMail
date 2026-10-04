@@ -1,0 +1,110 @@
+{
+  "phase": "Actual conflict resolution against main e267f759; prior evidence manifests unchanged",
+  "sourceCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "testCommit": "3d3272d1d8ad43cafc3d4172972364ddf6640e6e",
+  "integratedMainCommit": "e267f7597d9bcf7adc297fa601cac98432c674bc",
+  "logNormalization": "ANSI, trailing whitespace and trailing blank lines removed; workspace paths normalized; no result lines removed.",
+  "screenshots": "Selected scrolled Privacy inventory viewports; existing fresh-user first-heard survey may cover lower area; behavior/DOM records separately cover named controls.",
+  "files": [
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-core.json",
+      "sha256": "fec25a75297982d76cb3c6915a1e8a7a8e75c0126b560dfa451eb8778cbed97f"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-design-gate.json",
+      "sha256": "5646e4294151055030765225d67a07bf27cb50fe0c8612ae1bc728a81e9c1f98"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-runtime-summary.json",
+      "sha256": "735c42d8492f193cfa607adc49dca236b0837d9406363fcae06f3cfd87135aa3"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-main-summary.json",
+      "sha256": "db4e9113432bc855c97ec0f8213297166901b5283b89c783aa5f2c37d66f9583"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/latest-proof-plan.json",
+      "sha256": "7e9b133d0ab2faeb3790fdd8aafacc11d22c9efbb8cc6d41cab405ceb8864546"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/a11y-responsive-latest.log",
+      "sha256": "555f0d58bcb5822f416788e08404ac8cc91876bd0fe7d08d44c1655a1ba98fc2"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-1.log",
+      "sha256": "740760d75e7d8e64a7f91a3e15fbaaa5b90fdf81f227503637866495c1943b20"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/hydration-latest-2.log",
+      "sha256": "ddf2e084d13814f6f9ebc1f17451eefed088014099a8abaec63475d4208ba7b7"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-1.log",
+      "sha256": "8d8d993d4a5ddf75e8165d387f6adf8ffd478c2d51bc281edd893fce0e78cbee"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/journeys-latest-2.log",
+      "sha256": "c8dfd5dc13c85b5e4b19dd9c08c2e1f567ee7a4eefd09cc94eb4c8646eaeeddb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-bundle-build.log",
+      "sha256": "702a44ba8e15c211e03d96f3105579284f8603c1c69f4df4c7a6003e99c263bc"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-test-lint.log",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests-initial.log",
+      "sha256": "099f4ca66eb3c80faabcce370282bdf10d7021fb8607a1c4f7463cad5f57084e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-tests.log",
+      "sha256": "ce5938324fadfc967441a28fa9770a1b63161d7f4e2b9119a68fe63938da02a1"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-core-web-typecheck.log",
+      "sha256": "d6327d62d4495c2b430a5bd1e820c74beef77f0cb02a2e19f970e30f8f84b57e"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-lint.log",
+      "sha256": "116b5a094a37cac8da6a68397becde0512d97aa0219c2fc8c7948e84b1a8bbeb"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-main-typecheck.log",
+      "sha256": "b4fa97df7edd75c75a15f0f2d9238c82c566723d30f4cd787448e49eacc42c11"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-prerender.log",
+      "sha256": "f942a52fb9e257c2ea5ef2fa93410c996b1c8f07b2f7a93f3718753f6a210000"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-production-build.log",
+      "sha256": "ca5990396f2344d61f1819ee18e76ba9ddf08f1bd4d53c128039ab5cab74e739"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/latest-storybook-build.log",
+      "sha256": "516f15f07b32855bd84aad1072bf9bd9b339b0afe26172af30eded1f72856207"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/logs/privacy-latest-browser.log",
+      "sha256": "e29923f80e5a33b5cc7231929dc3e8be7494ef178e66d9d617e444c46c126eb1"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/privacy-latest-browser.json",
+      "sha256": "8eb0258dea510d74b0d9fa73a8a44e113a27dceea4383c47fcd21538e085e774"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/screenshots/privacy-latest-desktop.png",
+      "sha256": "7ba18a593a71c49f7242a7807d376ec69e0a57fa3f70ce38a0a4c21319a39a48"
+    },
+    {
+      "path": "docs/qa/prelaunch-2026-10-03/after-conflict-resolution/screenshots/privacy-latest-mobile.png",
+      "sha256": "553675c415826693680e6191b375dc23c7c1a1c4ff249b764b339c3fe136e336"
+    }
+  ]
+}

@@ -1,0 +1,326 @@
+
+ RUN  v5.0.1 [workspace]/apps/web
+
+ ❯ src/features/snoozed/snoozed-clock.test.tsx (10 tests | 3 failed) 199ms
+   ❯ Later account calendar clock (10)
+     × refreshes Tomorrow in an already open return-time menu 19ms
+     × validates custom time at submission (10000 ms ahead) 9ms
+     × validates custom time at submission (3600000 ms ahead) 9ms
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+Error: socket hang up
+    at _destroy (node:_http_client:951:15)
+    at onSocketNT (node:_http_client:974:5)
+    at processTicksAndRejections (node:internal/process/task_queues:91:21) {
+  code: 'ECONNRESET'
+}
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/features/snoozed/snoozed-clock.test.tsx > Later account calendar clock > refreshes Tomorrow in an already open return-time menu
+TestingLibraryElementError: Unable to find a label with the text of: Custom
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <div
+      style="width: 100%; min-width: 0; box-sizing: border-box; max-width: 1120px; margin: 0px auto; font-family: var(--dm-font-sans); display: flex; flex-direction: column; gap: 32px;"
+    >
+      <p
+        class="_kicker_34b188"
+      >
+        Catch up / Coming back to you
+      </p>
+      <h1
+        style="margin: 0px; font-family: var(--dm-font-display); font-weight: 400; line-height: 1.12; letter-spacing: -0.035em; color: var(--dm-fg); overflow-wrap: anywhere;"
+      >
+        Later
+      </h1>
+      <p
+        class="_description_34b188"
+      >
+        Return times for the active inbox ·
+        America/Los_Angeles
+      </p>
+      <ul
+        aria-label="Later senders"
+        style="list-style: none; margin: 0px; padding: 0px;"
+      >
+        <li
+          role="presentation"
+          style="padding-top: 0px; padding-bottom: 8px;"
+        >
+          <h2
+            style="display: flex; align-items: baseline; gap: 6px; margin: 0px; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; color: var(--dm-fg);"
+          >
+            Tomorrow
+            <span
+              style="color: var(--dm-fg-muted); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums;"
+            >
+              ·
+              1
+            </span>
+          </h2>
+        </li>
+        <li
+          class="dm-later-row"
+          style="display: flex; flex-direction: column; gap: 0; font-family: var(--dm-font-sans);"
+        >
+          <div
+            style="display: grid; grid-template-columns: minmax(180px, 1.4fr) auto minmax(140px, 1fr) auto; align-items: center; gap: 16px; min-height: 64px; box-sizing: border-box; padding: 12px 0px;"
+          >
+            <div
+              style="min-width: 0;"
+            >
+              <div
+                style="font-size: 15px; font-weight: 600; color: var(--dm-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+              >
+                Synthetic Digest
+              </div>
+              <div
+                style="font-size: 13px; color: var(--dm-fg-muted); margin-top: 2px;"
+              >
+                synthetic.test
+              </div>
+            </div>
+            <span
+              style="font-size: 13px; font-weight: 600; color: var(--dm-fg-soft); font-variant-numeric: tabular-nums; white-space: nowrap;"
+            >
+              12 in Later
+            </span>
+            <div
+              style="min-width: 0;"
+            >
+              <div
+                style="font-size: 13px; color: var(--dm-fg); white-space: nowrap; font-variant-numeric: tabular-nums;"
+              >
+                Returns Tomorrow 9:00 AM
+              </div>
+            </div>
+            <div
+              style="display: flex; gap: 8px; white-space: nowrap;"
+            >
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Change return time
+              </button>
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Bring back now
+              </button>
+            </div>
+          </div>
+          <div
+            style="padding: 4px 0px 14px; display: flex; flex-direction: column; gap: 10px;"
+          >
+            <div
+              style="display: flex; gap: 8px; flex-wrap: wrap;"
+            >
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Tomorrow (9:00 AM)
+              </button>
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                ty...
+ ❯ Object.getElementError ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ getAllByLabelText ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/queries/label-text.js:111:38
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/features/snoozed/snoozed-clock.test.tsx:133:29
+    131|       fireEvent.click(screen.getByRole('button', { name: /Change retur…
+    132|       const note = screen.getByPlaceholderText('Note (optional)');
+    133|       const custom = screen.getByLabelText('Custom');
+       |                             ^
+    134|       fireEvent.change(note, { target: { value: 'read after the weeken…
+    135|       fireEvent.change(custom, { target: { value: '2026-10-05T10:00' }…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  src/features/snoozed/snoozed-clock.test.tsx > Later account calendar clock > validates custom time at submission (10000 ms ahead)
+ FAIL  src/features/snoozed/snoozed-clock.test.tsx > Later account calendar clock > validates custom time at submission (3600000 ms ahead)
+TestingLibraryElementError: Unable to find a label with the text of: Custom
+
+Ignored nodes: comments, script, style
+<body>
+  <div>
+    <div
+      style="width: 100%; min-width: 0; box-sizing: border-box; max-width: 1120px; margin: 0px auto; font-family: var(--dm-font-sans); display: flex; flex-direction: column; gap: 32px;"
+    >
+      <p
+        class="_kicker_34b188"
+      >
+        Catch up / Coming back to you
+      </p>
+      <h1
+        style="margin: 0px; font-family: var(--dm-font-display); font-weight: 400; line-height: 1.12; letter-spacing: -0.035em; color: var(--dm-fg); overflow-wrap: anywhere;"
+      >
+        Later
+      </h1>
+      <p
+        class="_description_34b188"
+      >
+        Return times for the active inbox ·
+        America/Los_Angeles
+      </p>
+      <ul
+        aria-label="Later senders"
+        style="list-style: none; margin: 0px; padding: 0px;"
+      >
+        <li
+          role="presentation"
+          style="padding-top: 0px; padding-bottom: 8px;"
+        >
+          <h2
+            style="display: flex; align-items: baseline; gap: 6px; margin: 0px; font-size: 17px; font-weight: 650; letter-spacing: -0.01em; color: var(--dm-fg);"
+          >
+            Tomorrow
+            <span
+              style="color: var(--dm-fg-muted); font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums;"
+            >
+              ·
+              1
+            </span>
+          </h2>
+        </li>
+        <li
+          class="dm-later-row"
+          style="display: flex; flex-direction: column; gap: 0; font-family: var(--dm-font-sans);"
+        >
+          <div
+            style="display: grid; grid-template-columns: minmax(180px, 1.4fr) auto minmax(140px, 1fr) auto; align-items: center; gap: 16px; min-height: 64px; box-sizing: border-box; padding: 12px 0px;"
+          >
+            <div
+              style="min-width: 0;"
+            >
+              <div
+                style="font-size: 15px; font-weight: 600; color: var(--dm-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+              >
+                Synthetic Digest
+              </div>
+              <div
+                style="font-size: 13px; color: var(--dm-fg-muted); margin-top: 2px;"
+              >
+                synthetic.test
+              </div>
+            </div>
+            <span
+              style="font-size: 13px; font-weight: 600; color: var(--dm-fg-soft); font-variant-numeric: tabular-nums; white-space: nowrap;"
+            >
+              12 in Later
+            </span>
+            <div
+              style="min-width: 0;"
+            >
+              <div
+                style="font-size: 13px; color: var(--dm-fg); white-space: nowrap; font-variant-numeric: tabular-nums;"
+              >
+                Returns Tomorrow 9:00 AM
+              </div>
+            </div>
+            <div
+              style="display: flex; gap: 8px; white-space: nowrap;"
+            >
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Change return time
+              </button>
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Bring back now
+              </button>
+            </div>
+          </div>
+          <div
+            style="padding: 4px 0px 14px; display: flex; flex-direction: column; gap: 10px;"
+          >
+            <div
+              style="display: flex; gap: 8px; flex-wrap: wrap;"
+            >
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                type="button"
+              >
+                Tomorrow (9:00 AM)
+              </button>
+              <button
+                data-dm-button=""
+                style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0px 14px; background: var(--dm-fill); color: var(--dm-fg); border: none none; border-radius: 10px; box-shadow: none; font-family: var(--dm-font-sans); font-size: 13px; font-weight: 600; letter-spacing: -0.006em; cursor: pointer; opacity: 1; white-space: nowrap; transition: background 120ms cubic-bezier(0.2, 0, 0, 1), transform 120ms cubic-bezier(0.2, 0, 0, 1);"
+                ty...
+ ❯ Object.getElementError ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/config.js:37:19
+ ❯ getAllByLabelText ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/queries/label-text.js:111:38
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:52:17
+ ❯ ../../node_modules/.pnpm/@testing-library+dom@10.4.2/node_modules/@testing-library/dom/dist/query-helpers.js:95:19
+ ❯ src/features/snoozed/snoozed-clock.test.tsx:408:33
+    406|       try {
+    407|         fireEvent.click(screen.getByRole('button', { name: /Change ret…
+    408|         fireEvent.change(screen.getByLabelText('Custom'), { target: { …
+       |                                 ^
+    409|         expect(screen.getByRole('button', { name: 'Set' })).toBeEnable…
+    410|         await act(async () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  1 failed | 13 passed (14)
+      Tests  3 failed | 296 passed (299)
+   Start at  17:15:44
+   Duration  15.32s (tests 57%, environment 13%, transform 11%, import 11%, setup 8%)
+
+    Isolate  14 workers spawned · ~203ms startup each (spawn + environment, per file)
+             at least ~2.64s faster with isolate: false — reuses workers across files instead of one per file
+
+undefined
+[workspace]/apps/web:
+ ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command failed with exit code 1: vitest run src/features/screener/screener-route.hydration.test.tsx src/features/screener/screener-screen.test.tsx src/features/screener/screener-keyboard.test.tsx src/features/screener/compose-state.test.ts src/features/senders/senders-screen.hydration.test.tsx src/features/autopilot/autopilot-route-hydration.test.tsx src/features/autopilot/autopilot-screen.test.tsx src/features/triage/triage-route.hydration.test.tsx src/features/triage/triage-screen.actions.test.tsx src/features/triage/action-toolbar.test.tsx src/features/snoozed/snoozed-screen.test.tsx src/features/snoozed/snoozed-clock.test.tsx src/features/snoozed/snooze-times.test.ts src/lib/use-now.test.tsx --maxWorkers=1 --no-file-parallelism
