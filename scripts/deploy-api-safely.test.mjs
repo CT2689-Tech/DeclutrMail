@@ -330,12 +330,12 @@ test('serving traffic changes during smoke cannot be overwritten by promotion', 
   assert.ok(!h.calls.some((c) => c.some((a) => a.startsWith('--to-revisions='))));
 });
 
-test('workflow keeps explicit default and runs driver preflight before build and worker release', () => {
+test('workflow keeps the verified API selector and runs preflight before build and worker release', () => {
   const workflow = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
   );
-  assert.match(workflow, /API_DB_DRIVER: postgres-js/);
+  assert.match(workflow, /API_DB_DRIVER: node-postgres/);
   assert.match(workflow, /API_DB_DRIVER=\$API_DB_DRIVER/);
   assert.ok(workflow.indexOf('--check-driver=') < workflow.indexOf('docker build --platform'));
   assert.ok(
