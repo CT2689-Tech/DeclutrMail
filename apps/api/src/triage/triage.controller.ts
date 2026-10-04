@@ -206,18 +206,30 @@ export class TriageController {
     }>
   > {
     const targetSize = await this.triage.getQueueSize(mailbox.id);
-    const data = await this.reads.getBootstrap({
+    const reads = this.reads.startBootstrapReads({
       mailboxAccountId: mailbox.id,
       limit: targetSize,
     });
-    const marks = await this.brandMarksFor(data.queue.map((row) => row.senderDomain));
+    let readFailed = false;
+    const marksRead = reads.queue.then((queue) =>
+      readFailed ? new Set<string>() : this.brandMarksFor(queue.map((row) => row.senderDomain)),
+    );
+    const [queue, stats, todaySummary, marks] = await Promise.all([
+      reads.queue,
+      reads.stats,
+      reads.todaySummary,
+      marksRead,
+    ]).catch((error: unknown) => {
+      readFailed = true;
+      throw error;
+    });
     return ok({
-      queue: data.queue.map((row) => ({
+      queue: queue.map((row) => ({
         ...row,
         brandMark: marks.has(row.senderDomain),
       })),
-      stats: data.stats,
-      todaySummary: data.todaySummary,
+      stats,
+      todaySummary,
     });
   }
 

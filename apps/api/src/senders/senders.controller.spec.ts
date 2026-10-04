@@ -183,6 +183,124 @@ describe('SendersController', () => {
   });
 
   describe('list — envelope + cursor', () => {
+    it('starts page marks while first-page metadata is still pending', async () => {
+      const { ctrl, reads, icons } = buildController();
+      const row = makeSenderRow();
+      const extra = makeSenderRow({
+        id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        domain: 'extra.test',
+      });
+      reads.listSenders.mockResolvedValue([row, extra]);
+      let finishMeta!: (value: typeof DEFAULT_QUERY_META) => void;
+      reads.getSenderListQueryMeta.mockReturnValue(
+        new Promise((resolve) => {
+          finishMeta = resolve;
+        }),
+      );
+      icons.marksFor.mockResolvedValue(new Set([row.domain]));
+      const args: Parameters<SendersController['list']> = [
+        MAILBOX,
+        undefined,
+        '1',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ];
+      let settled = false;
+      const pending = ctrl.list(...args).then((result) => {
+        settled = true;
+        return result;
+      });
+      try {
+        // Drain completed row-read continuations without completing the metadata read.
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(icons.marksFor).toHaveBeenCalledWith([row.domain], { mayEnqueue: true });
+        expect(settled).toBe(false);
+      } finally {
+        finishMeta(DEFAULT_QUERY_META);
+        await pending;
+      }
+      const result = await pending;
+      expect(result.data).toEqual([{ ...row, brandMark: true }]);
+      expect(result.meta.query).toEqual(DEFAULT_QUERY_META);
+      expect(result.meta.pagination.hasMore).toBe(true);
+    });
+
+    it('does not start marks after metadata failed while rows were pending', async () => {
+      const { ctrl, reads, icons } = buildController();
+      let finishRows!: (rows: SenderFacts[]) => void;
+      reads.listSenders.mockReturnValue(
+        new Promise((resolve) => {
+          finishRows = resolve;
+        }),
+      );
+      const failure = new Error('metadata unavailable');
+      reads.getSenderListQueryMeta.mockRejectedValue(failure);
+      const args: Parameters<SendersController['list']> = [
+        MAILBOX,
+        undefined,
+        '1',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ];
+      await expect(ctrl.list(...args)).rejects.toBe(failure);
+      finishRows([makeSenderRow()]);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).not.toHaveBeenCalled();
+    });
+
+    it('observes a late metadata failure after the row branch rejected', async () => {
+      const { ctrl, reads, icons } = buildController();
+      let failMeta!: (reason: Error) => void;
+      reads.getSenderListQueryMeta.mockReturnValue(
+        new Promise((_, reject) => {
+          failMeta = reject;
+        }),
+      );
+      const failure = new Error('rows unavailable');
+      reads.listSenders.mockRejectedValue(failure);
+      const args: Parameters<SendersController['list']> = [
+        MAILBOX,
+        undefined,
+        '1',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ];
+      await expect(ctrl.list(...args)).rejects.toBe(failure);
+      failMeta(new Error('metadata also unavailable'));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(icons.marksFor).not.toHaveBeenCalled();
+    });
+
     it('applies current-mail scope to both rows and matching counts', async () => {
       reads.listSenders.mockResolvedValue([]);
       await ctrl.list(

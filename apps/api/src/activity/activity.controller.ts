@@ -211,7 +211,7 @@ export class ActivityController {
       throw new BadRequestException('Invalid cursor.');
     }
 
-    const { rows, stats, allTimeStats } = await this.reads.listActivity({
+    const reads = this.reads.startActivityReads({
       mailboxAccountId: accountId,
       userId: principal.userId,
       window: filters.window,
@@ -226,19 +226,26 @@ export class ActivityController {
       nowMs: Date.now(),
     });
 
-    const { page, nextCursor } = takePage(rows, limit, (row) =>
-      encodeCursor({ key: row.occurredAt, id: row.id }),
+    const pageRead = reads.rows.then((rows) =>
+      takePage(rows, limit, (row) => encodeCursor({ key: row.occurredAt, id: row.id })),
     );
-
-    // ADR-0034 — resolve brand-mark availability for the page in ONE
-    // batched read, so `Avatar` can skip the request for senders we hold
-    // no mark for. Without it the screen fires one `/api/icons/:domain`
-    // per distinct sender and each unresolved domain costs a round trip
-    // to be answered 204. Decorated here, not in the read service, so
-    // that service keeps selecting only activity-owned tables (D204).
-    const marks = await this.brandMarksFor(
-      page.flatMap((row) => (row.sender ? [row.sender.domain] : [])),
+    // Marks use page domains only; overlap them with independent aggregates.
+    // Existing lineage capture still precedes persisted feed reads in the service.
+    let readFailed = false;
+    const marksRead = pageRead.then(({ page }) =>
+      readFailed
+        ? new Set<string>()
+        : this.brandMarksFor(page.flatMap((row) => (row.sender ? [row.sender.domain] : []))),
     );
+    const [{ page, nextCursor }, stats, allTimeStats, marks] = await Promise.all([
+      pageRead,
+      reads.stats,
+      reads.allTimeStats,
+      marksRead,
+    ]).catch((error: unknown) => {
+      readFailed = true;
+      throw error;
+    });
     const decorated: ActivityRow[] = page.map((row) => ({
       ...row,
       sender: row.sender ? { ...row.sender, brandMark: marks.has(row.sender.domain) } : null,
