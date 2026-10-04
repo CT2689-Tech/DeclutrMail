@@ -270,6 +270,10 @@ const SAFE_DIGEST = /^(?:\d{1,20}|[a-f0-9]{8,64})$/;
 const SAFE_RELEASE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:@[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$/;
 const TRUSTED_NEXT_ASSET =
   /^\/_next\/static\/(chunks|css)\/.*(?:-|\.)([a-f0-9]{8,64})\.(js|css)$/iu;
+// Already-normalized assets must survive another scrub pass. Only the same
+// closed asset kind and content hash are retained; no route or origin returns.
+const CANONICAL_NEXT_ASSET = /^\/_next\/static\/(chunks|css)\/([a-f0-9]{8,64})\.(js|css)$/iu;
+
 /**
  * A server stack frame's source path.
  *
@@ -330,7 +334,11 @@ function sanitizeFrameUrl(value: unknown, profile: SentryScrubProfile): string |
     // host, userinfo, query, or fragment is reduced to its pathname here,
     // so those can never ride along even if the charset would allow them.
     const parsed = new URL(value, 'https://declutrmail.invalid');
-    const match = TRUSTED_NEXT_ASSET.exec(parsed.pathname);
+    const canonicalMatch =
+      parsed.protocol === 'app:' && parsed.host === '' && parsed.search === '' && parsed.hash === ''
+        ? CANONICAL_NEXT_ASSET.exec(parsed.pathname)
+        : null;
+    const match = TRUSTED_NEXT_ASSET.exec(parsed.pathname) ?? canonicalMatch;
     if (match) {
       const [, kind, hash, extension] = match;
       if (!kind || !hash || !extension) return undefined;

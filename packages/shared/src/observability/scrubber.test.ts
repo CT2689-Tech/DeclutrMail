@@ -594,6 +594,64 @@ describe('scrubSentryEvent (deny-by-default browser wire policy)', () => {
     expect(JSON.stringify(out)).not.toContain(LEAK);
   });
 
+  it.each(['browser', 'server'] as const)(
+    'preserves safe asset identity through repeated %s sanitization',
+    (profile) => {
+      const event = {
+        exception: {
+          values: [
+            {
+              type: 'TypeError',
+              stacktrace: {
+                frames: [
+                  {
+                    filename:
+                      'https://preview.example/_next/static/chunks/app/private/page-fa91c3129743905c.js?token=private-token',
+                    lineno: 42,
+                    colno: 7,
+                    debug_id: 'abcdef01-2345-6789-abcd-ef0123456789',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        debug_meta: {
+          images: [
+            {
+              type: 'sourcemap',
+              debug_id: 'abcdef01-2345-6789-abcd-ef0123456789',
+              code_file:
+                'https://preview.example/_next/static/chunks/app/private/page-fa91c3129743905c.js?token=private-token',
+            },
+          ],
+        },
+      };
+      const first = scrubSentryEvent(event, profile);
+      expect(JSON.stringify(first)).toContain('app:///_next/static/chunks/fa91c3129743905c.js');
+      expect(JSON.stringify(first)).not.toContain('private');
+      expect(scrubSentryEvent(first!, profile)).toEqual(first);
+    },
+  );
+
+  it.each([
+    'app:///_next/static/chunks/private-token.js',
+    'app:///_next/static/chunks/abcdef0.js',
+    'app:///_next/static/chunks/private/abcdef0123456789.js',
+    'app:///private/abcdef0123456789.js',
+    'https://example.com/_next/static/chunks/abcdef0123456789.js',
+    'app://private-host/_next/static/chunks/abcdef0123456789.js',
+    'app:///_next/static/chunks/abcdef0123456789.js?token=private-token',
+    'app:///_next/static/chunks/abcdef0123456789.js#private-token',
+  ])('drops unsafe browser asset lookalike %s', (filename) => {
+    const out = scrubSentryEvent({
+      exception: {
+        values: [{ type: 'TypeError', stacktrace: { frames: [{ filename, lineno: 1 }] } }],
+      },
+    });
+    expect(JSON.stringify(out)).not.toContain('"filename"');
+  });
+
   it('retains only syntactically valid identities, tags, levels, and digests', () => {
     expect(
       scrubSentryEvent({
