@@ -27,7 +27,13 @@ import {
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
 import type { RazorpayAdapter } from '../razorpay.adapter.js';
-import { TEST_PRICE_IDS } from './fixtures.js';
+import {
+  TEST_PRICE_IDS,
+  TEST_PADDLE_WEBHOOK_SECRET,
+  paddleSubscriptionActivated,
+  paddleAdjustmentCreated,
+  paddleAdjustmentUpdated,
+} from './fixtures.js';
 
 /**
  * BillingReconciliationService integration tests (D249).
@@ -992,8 +998,8 @@ describe('BillingReconciliationService (D249)', () => {
     );
 
     await svc.enforceLocalVerdicts(0);
-    // Second pass: the row is `canceled` now, so the verdict selector no
-    // longer returns it at all. Nothing to settle, nothing to write, and
+    // Second pass: the terminal row is checked for renewal convergence.
+    // Its provider cancel is already scheduled: nothing to write, and
     // exactly one ledger row for the settlement.
     const second = await svc.enforceLocalVerdicts(0);
     expect(second.settled).toBe(0);
@@ -1154,7 +1160,7 @@ describe('BillingReconciliationService (D249)', () => {
 
   // ── D253 — the flipped row stays watched ──────────────────────────
   //
-  // Flipping to `canceled` makes every other pass lose interest, and the
+  // Flipping to `canceled` excludes drift/workspace projection, and the
   // terminal-canceled floor discards any later granting payload. So if
   // the provider's cancel is cleared or never sticks, it keeps charging
   // a customer we hold on Free and nothing notices — strictly worse than
@@ -1177,6 +1183,193 @@ describe('BillingReconciliationService (D249)', () => {
       entitlementEndsAt: new Date(),
     });
   }
+
+  it('webhook-settled refunds still stop the exact old renewal after repurchase', async () => {
+    const webhook = new BillingWebhookService(db, testCatalog(), new AutopilotReadService(db));
+    const adapter = new (await import('../paddle.adapter.js')).PaddleAdapter({
+      PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
+    });
+    for (const event of [
+      paddleSubscriptionActivated({
+        workspaceId,
+        eventId: 'evt_old_active',
+        periodEndsAt: new Date(Date.now() + 20 * 24 * 3600 * 1000).toISOString(),
+      }),
+      paddleAdjustmentCreated({ eventId: 'evt_old_refund' }),
+      paddleAdjustmentUpdated({ eventId: 'evt_old_approved', status: 'approved' }),
+      paddleSubscriptionActivated({
+        workspaceId,
+        subscriptionId: 'sub_repurchase',
+        eventId: 'evt_repurchase',
+        periodEndsAt: new Date(Date.now() + 20 * 24 * 3600 * 1000).toISOString(),
+      }),
+    ])
+      await webhook.process('paddle', adapter.mapWebhookEvent(event), event);
+
+    const before = await db.select().from(subscriptions);
+    expect(before.find((r) => r.providerSubscriptionId === 'sub_01paddle000001')).toMatchObject({
+      status: 'canceled',
+      cancelSource: 'refund',
+    });
+    expect(before.find((r) => r.providerSubscriptionId === 'sub_repurchase')).toMatchObject({
+      status: 'active',
+    });
+
+    const canceled: string[] = [];
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => {
+          asked.push(id);
+          return {
+            kind: 'found',
+            subscription: {
+              ...activePlusSub(id, new Date()),
+              cancelAtPeriodEnd: canceled.includes(id),
+            },
+          };
+        },
+        providerCancellationFacts: async () => SETTLED_REFUND,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+    const first = await svc.enforceLocalVerdicts(0);
+    expect(canceled).toEqual(['sub_01paddle000001']);
+    expect(first).toMatchObject({ enforced: 1, settled: 0 });
+    await svc.enforceLocalVerdicts(0);
+    expect(canceled).toEqual(['sub_01paddle000001']);
+    expect(asked).toEqual(['sub_01paddle000001', 'sub_01paddle000001']);
+    const rows = await db.select().from(subscriptions);
+    expect(rows.find((r) => r.providerSubscriptionId === 'sub_01paddle000001')).toMatchObject({
+      status: 'canceled',
+      cancelSource: 'refund',
+    });
+    expect(rows.find((r) => r.providerSubscriptionId === 'sub_repurchase')).toMatchObject({
+      status: 'active',
+    });
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
+  });
+
+  it.each([
+    ['unreadable', null],
+    ['pending or partial', { settled: null, refuted: { refund: false, chargeback: false } }],
+    ['refuted', REFUTED_REFUND],
+    ['chargeback', SETTLED_CHARGEBACK],
+  ] as const)('webhook-settled %s facts cannot mutate a terminal refund', async (_name, facts) => {
+    await seedFlippedRefundRow({ currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000) });
+    const canceled: string[] = [];
+    const asked: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => {
+          asked.push(id);
+          return { kind: 'found', subscription: activePlusSub(id, new Date()) };
+        },
+        providerCancellationFacts: async () => facts,
+        cancelSubscription: async (id) => {
+          canceled.push(id);
+        },
+      }),
+    );
+    await svc.enforceLocalVerdicts(0);
+    expect(asked).toEqual(['sub_flipped']);
+    expect(canceled).toEqual([]);
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({ status: 'canceled', cancelSource: 'refund' });
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
+  it.each([false, true])(
+    'terminal refund cancel retry handles provider acceptance=%s',
+    async (accepted) => {
+      await seedFlippedRefundRow({
+        currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000),
+      });
+      let scheduled = false;
+      let attempts = 0;
+      const svc = service(
+        fakeAdapter({
+          fetchSubscription: async () => ({
+            kind: 'found',
+            subscription: {
+              ...activePlusSub('sub_flipped', new Date()),
+              cancelAtPeriodEnd: scheduled,
+            },
+          }),
+          providerCancellationFacts: async () => SETTLED_REFUND,
+          cancelSubscription: async () => {
+            attempts += 1;
+            if (attempts === 1) {
+              scheduled = accepted;
+              throw new Error('Ambiguous provider timeout');
+            }
+            scheduled = true;
+          },
+        }),
+      );
+      expect(await svc.enforceLocalVerdicts(0)).toEqual({
+        enforced: 0,
+        unenforced: 1,
+        refuted: 0,
+        settled: 0,
+      });
+      expect(await svc.enforceLocalVerdicts(0)).toEqual({
+        enforced: accepted ? 0 : 1,
+        unenforced: 0,
+        refuted: 0,
+        settled: 0,
+      });
+      expect(scheduled).toBe(true);
+      expect(attempts).toBe(accepted ? 1 : 2);
+      const [row] = await db.select().from(subscriptions);
+      expect(row).toMatchObject({ status: 'canceled', cancelSource: 'refund' });
+      expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+    },
+  );
+
+  it.each(['known boundary', 'fallback', 'ordinary cancellation'] as const)(
+    'terminal enforcement excludes expired or unrelated rows: %s',
+    async (scenario) => {
+      await seedFlippedRefundRow({
+        currentPeriodEnd: new Date(Date.now() - 60 * 24 * 3600 * 1000),
+      });
+      if (scenario === 'fallback')
+        await db.update(subscriptions).set({
+          currentPeriodEnd: null,
+          entitlementEndsAt: new Date(Date.now() - 60 * 24 * 3600 * 1000),
+        });
+      if (scenario === 'ordinary cancellation')
+        await db.update(subscriptions).set({
+          currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000),
+          cancelSource: 'provider',
+        });
+      const asked: string[] = [];
+      const canceled: string[] = [];
+      const svc = service(
+        fakeAdapter({
+          fetchSubscription: async (id) => {
+            asked.push(id);
+            return { kind: 'found', subscription: activePlusSub(id, new Date()) };
+          },
+          providerCancellationFacts: async () => SETTLED_REFUND,
+          cancelSubscription: async (id) => {
+            canceled.push(id);
+          },
+        }),
+      );
+      expect(await svc.enforceLocalVerdicts(0)).toEqual({
+        enforced: 0,
+        unenforced: 0,
+        refuted: 0,
+        settled: 0,
+      });
+      expect(asked).toEqual([]);
+      expect(canceled).toEqual([]);
+    },
+  );
 
   it('a flipped row the provider is still set to RENEW raises the alert', async () => {
     await seedFlippedRefundRow({ currentPeriodEnd: new Date(Date.now() + 20 * 24 * 3600 * 1000) });

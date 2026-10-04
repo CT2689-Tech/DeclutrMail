@@ -38,7 +38,7 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { pendingCheckouts, subscriptions, users } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
@@ -192,6 +192,18 @@ const REFUND_WATCH_FALLBACK_DAYS = 45;
 /** Grace past the renewal date. The alert is "the provider still intends
  *  to bill", so the window has to outlast the moment it would. */
 const REFUND_WATCH_GRACE_DAYS = 7;
+
+/** The same bounded terminal-refund population for enforcement and alerting. */
+function settledRefundCandidates(): SQL {
+  return and(
+    eq(subscriptions.status, 'canceled'),
+    eq(subscriptions.cancelSource, 'refund'),
+    sql`now() <= COALESCE(
+            ${subscriptions.currentPeriodEnd},
+            ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
+          ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
+  )!;
+}
 
 /** Deterministic digest of the material subscription state. */
 function stateHash(sub: NormalizedSubscription): string {
@@ -595,14 +607,17 @@ export class BillingReconciliationService {
    * only thing that ends the plan, so this never shortens what someone
    * paid for.
    *
-   * Latency is up to one sweep (6h) plus worker boot. That is inside
-   * every renewal window we can bill on, and it buys the retry
-   * durability an inline call would not have.
+   * The verdict worker runs every ten minutes; bucketing can spread
+   * large populations across passes. This buys retry durability
+   * without an outbound call inside the webhook transaction.
    */
   async enforceLocalVerdicts(runIndex: number): Promise<VerdictPassResult> {
-    const eligible = and(
-      inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
-      inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+    const eligible = or(
+      and(
+        inArray(subscriptions.cancelSource, ['refund', 'chargeback']),
+        inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+      ),
+      settledRefundCandidates(),
     )!;
     const slice = await this.bucketPredicate(eligible, runIndex);
     const rows = await this.db
@@ -610,6 +625,7 @@ export class BillingReconciliationService {
         provider: subscriptions.provider,
         providerSubscriptionId: subscriptions.providerSubscriptionId,
         cancelSource: subscriptions.cancelSource,
+        status: subscriptions.status,
       })
       .from(subscriptions)
       .where(slice.predicate ? and(eligible, slice.predicate) : eligible)
@@ -715,6 +731,27 @@ export class BillingReconciliationService {
         // Both reads landed — the provider is genuinely reachable, so the
         // consecutive-failure streak is broken.
         consecutiveErrors[row.provider] = 0;
+
+        // Approval webhooks can free the local slot before this sweep runs.
+        // Keep that row terminal and the repurchase separate, but still stop
+        // the exact old provider renewal after a fresh full-refund confirmation.
+        if (row.status === 'canceled') {
+          if (facts.settled === 'refund') {
+            if (!provider.cancelAtPeriodEnd) {
+              await this.adapterFor(row.provider).cancelSubscription(row.providerSubscriptionId);
+              enforced += 1;
+              this.logger.warn(
+                `billing.reconcile.settled_refund_renewal_stopped provider=${row.provider} sub=${row.providerSubscriptionId} — confirmed full refund; canceled old renewal without changing local entitlement`,
+              );
+            }
+          } else {
+            unenforced += 1;
+            this.logger.log(
+              `billing.reconcile.settled_refund_unconfirmed provider=${row.provider} sub=${row.providerSubscriptionId} — full refund not confirmed; no provider or entitlement write`,
+            );
+          }
+          continue;
+        }
 
         // SETTLED FIRST. A live chargeback beside an old reversed one
         // still ends the plan, so a settled cause outranks any
@@ -915,9 +952,9 @@ export class BillingReconciliationService {
    * the PROVIDER agrees it is terminal (D253).
    *
    * This is the part of the settlement design that cannot be dropped for
-   * scope. Flipping the row to `canceled` makes every other pass lose
-   * interest in it — drift, workspace reconcile and the verdict pass all
-   * select on `status IN ('active','past_due','paused')` — and the
+   * scope. Flipping the row to `canceled` excludes it from local
+   * drift and workspace reconciliation, which select on granting
+   * statuses. The verdict pass still stops confirmed old renewals; the
    * terminal-canceled floor in the projector discards any later
    * `active`/`past_due` payload for it. A payment webhook changes no
    * entitlement.
@@ -946,18 +983,7 @@ export class BillingReconciliationService {
     rebilling: number;
     unreadable: number;
   }> {
-    const eligible = and(
-      eq(subscriptions.status, 'canceled'),
-      eq(subscriptions.cancelSource, 'refund'),
-      // `interval '1 day' * n::int` rather than a string-built
-      // `interval 'n days'` — the multiplication takes a bound
-      // parameter, so the window constants stay TypeScript values
-      // instead of being interpolated into SQL text.
-      sql`now() <= COALESCE(
-            ${subscriptions.currentPeriodEnd},
-            ${subscriptions.entitlementEndsAt} + interval '1 day' * ${REFUND_WATCH_FALLBACK_DAYS}::int
-          ) + interval '1 day' * ${REFUND_WATCH_GRACE_DAYS}::int`,
-    )!;
+    const eligible = settledRefundCandidates();
     const slice = await this.bucketPredicate(eligible, runIndex);
     const rows = await this.db
       .select({
