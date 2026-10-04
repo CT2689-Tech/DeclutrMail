@@ -6,9 +6,9 @@
  *
  * The provider computes the exact immediate charge so the confirm panel
  * can state a number instead of "a prorated difference". `enabled`
- * gates the fetch to the upgrade panel being open; the result is never
+ * gates the fetch to the change panel being open; the result is never
  * cached across targets (each target/cycle pair is its own key) and a
- * failure blocks immediate confirmation until a fresh quote is available.
+ * failure blocks confirmation until a fresh, validated preview is available.
  */
 
 import { PlanChangePreviewSchema } from '@declutrmail/shared/contracts';

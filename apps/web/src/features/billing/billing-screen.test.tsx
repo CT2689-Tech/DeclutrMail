@@ -62,7 +62,13 @@ import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contr
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import {
+  addFetchHandlers,
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { launchCheckout, type CheckoutEvents } from './checkout';
@@ -2840,6 +2846,16 @@ describe('BillingScreen — paid subscriber', () => {
   it('puts coverage and invoices before plan shopping, with configured-price labeling and manifest consequences', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
+          }),
+      },
+    ]);
     renderScreen();
     const current = await screen.findByTestId('current-plan-card');
     expect(current).toHaveTextContent('Plan price: $19/mo');
@@ -2859,7 +2875,9 @@ describe('BillingScreen — paid subscriber', () => {
     const panel = await screen.findByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('No longer included after the change: Daily Brief, Follow-ups');
     expect(panel).toHaveTextContent('Existing connected inboxes continue working');
-    expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
+    );
   });
 
   it('upgrade panel states a credit outcome as landing in the account balance, conditional on confirm', async () => {
@@ -2932,16 +2950,29 @@ describe('BillingScreen — paid subscriber', () => {
         },
       },
     ]);
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
+          }),
+      },
+    ]);
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
-    expect(panel).toHaveTextContent('$0 today');
+    await waitFor(() => expect(panel).toHaveTextContent('$0 today'));
     expect(panel).toHaveTextContent('no refund or credit');
     // …and therefore NOT the money-back line, which read as a flat
     // contradiction of the sentence right above it (founder, 2026-07-30).
     // It belongs on the branch where money moves today.
     expect(panel).not.toHaveTextContent('30-day money-back guarantee');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const notice = await screen.findByTestId('scheduled-plan-change-notice');
@@ -3363,10 +3394,23 @@ describe('BillingScreen — paid subscriber', () => {
           ),
       },
     ]);
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
+          }),
+      },
+    ]);
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const alert = await within(panel).findByRole('alert');

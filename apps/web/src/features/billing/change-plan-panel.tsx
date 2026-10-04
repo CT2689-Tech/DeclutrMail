@@ -8,6 +8,7 @@ import type {
   BillingProviderId,
   PurchasableTier as PaidTier,
 } from '@declutrmail/shared/contracts';
+import { apiErrorCode } from '@/lib/api/client';
 import { GroupTitle } from '@/features/settings/settings-list';
 import { PlanConsequences } from './plan-coverage';
 import { usePlanChangePreview } from './api/use-plan-change-preview';
@@ -57,12 +58,12 @@ export function ChangePlanPanel({
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
-  // Upgrades charge NOW — ask the provider for the exact prorated
-  // number while the panel is open. Immediate confirmation requires a fresh quote.
+  // Every change requires a fresh provider preview: upgrades quote the
+  // charge; downgrades verify no bill and retention of the paid period.
   const preview = usePlanChangePreview({
     tierId: target,
     cycle,
-    enabled: !samePlan && !isDowngrade,
+    enabled: !samePlan,
   });
   const previewData = preview.data;
   const quoteResult = previewData?.kind === 'immediate' ? previewData.result : null;
@@ -83,7 +84,11 @@ export function ChangePlanPanel({
     !preview.isFetching &&
     !preview.isError &&
     preview.isSuccess &&
-    quotedCharge !== null &&
+    (isDowngrade
+      ? currentPeriodEnd !== null &&
+        previewData?.kind === 'deferred' &&
+        previewData.effectiveAt === currentPeriodEnd
+      : quotedCharge !== null) &&
     preview.dataUpdatedAt > expiredQuote &&
     Date.now() - preview.dataUpdatedAt < 30_000;
   const nextBilledDate =
@@ -119,20 +124,33 @@ export function ChangePlanPanel({
                 {' '}
                 — plan price {toLabel}{' '}
                 {isDowngrade
-                  ? effectiveDate
+                  ? quoteReady && effectiveDate
                     ? `from ${effectiveDate}.`
-                    : 'from your next renewal.'
+                    : 'if your provider can schedule it.'
                   : 'from now on.'}
               </span>
             ) : null}
           </p>
-          {isDowngrade ? (
+          {isDowngrade && quoteReady ? (
             <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
               <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your current
               plan stays active
               {effectiveDate ? ` through ${effectiveDate}` : ' through this billing period'}, then{' '}
               {TIER_MANIFEST[target].name} ({cycle}) begins. There is no refund or credit for the
               period you already paid for.
+            </p>
+          ) : isDowngrade ? (
+            <p
+              role={preview.isError ? 'alert' : 'status'}
+              style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
+            >
+              {preview.isFetching
+                ? 'Checking whether your provider can schedule this change…'
+                : apiErrorCode(preview.error) === 'PLAN_CHANGE_UNSUPPORTED'
+                  ? 'Your provider can’t schedule this change while preserving your paid period. Try another billing interval.'
+                  : apiErrorCode(preview.error) === 'PLAN_CHANGE_TOO_LATE'
+                    ? 'This change is too close to renewal. Try again after your plan renews.'
+                    : 'We could not confirm this schedule. Refresh the quote before continuing.'}
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
@@ -198,7 +216,7 @@ export function ChangePlanPanel({
         </p>
       ) : null}
       <PlanConsequences fromTier={fromTier} toTier={target} />
-      {!isDowngrade && !samePlan && !quoteReady && !preview.isFetching ? (
+      {!samePlan && !quoteReady && !preview.isFetching ? (
         <Button onClick={() => void preview.refetch()} disabled={isPending}>
           Refresh quote
         </Button>
@@ -222,13 +240,13 @@ export function ChangePlanPanel({
         <Button
           tone="primary"
           onClick={() => {
-            if (!isDowngrade && (!quoteReady || Date.now() - preview.dataUpdatedAt >= 30_000)) {
+            if (!quoteReady || Date.now() - preview.dataUpdatedAt >= 30_000) {
               void preview.refetch();
               return;
             }
             onConfirm();
           }}
-          disabled={isPending || samePlan || (!isDowngrade && !quoteReady)}
+          disabled={isPending || samePlan || !quoteReady}
         >
           {isPending
             ? isDowngrade
