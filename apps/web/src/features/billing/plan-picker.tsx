@@ -14,7 +14,7 @@ import type {
   BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
-import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 
 import {
   currencyForPricePoint,
@@ -597,6 +597,7 @@ export function PlanPicker({
             tierId={id}
             cycle={cycle}
             isCurrent={id === currentTier}
+            isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
             currentCycle={grantingSub?.cycle ?? null}
             canSwitchCycle={grantingSub?.provider === 'paddle'}
             isSelected={id === selected}
@@ -799,6 +800,7 @@ function PlanCard({
   tierId,
   cycle,
   isCurrent,
+  isUpgrade,
   currentCycle,
   isSelected,
   disabled,
@@ -812,6 +814,8 @@ function PlanCard({
   tierId: StripTierId;
   cycle: BillingCycle;
   isCurrent: boolean;
+  /** A purchase only upgrades access when its tier exceeds the current entitlement. */
+  isUpgrade: boolean;
   /** The granting subscription's billing cycle, or null without one. */
   currentCycle: BillingCycle | null;
   isSelected: boolean;
@@ -853,8 +857,8 @@ function PlanCard({
   // questions are now separate props: `currentCycle` is a fact on any
   // rail, `canSwitchCycle` is the affordance.
   //
-  // `currentCycle` is null only when nothing grants a paid plan, i.e.
-  // Free — which has no cycle, so the toggle cannot make its badge wrong.
+  // `currentCycle` is null when no subscription grants the current plan.
+  // Free and complimentary plans have no billing cycle to compare.
   const isCurrentPlan = isCurrent && (!hasGrantingSubscription || currentCycle === cycle);
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
@@ -869,7 +873,9 @@ function PlanCard({
         : null
       : hasGrantingSubscription
         ? `Switch to ${tier.name}`
-        : `Upgrade to ${tier.name}`;
+        : isUpgrade
+          ? `Upgrade to ${tier.name}`
+          : `Subscribe to ${tier.name}`;
 
   return (
     <div

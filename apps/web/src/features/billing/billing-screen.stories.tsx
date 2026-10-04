@@ -415,6 +415,20 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
     ),
 };
 
+/** Complimentary Pro: subscribing to a lower paid tier is not an upgrade. */
+export const CompedPro: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        complimentary: { tier: 'pro', expiresAt: null },
+        tier: 'pro',
+        foundingMember: false,
+        pendingCheckout: null,
+        subscription: null,
+      }),
+    ),
+};
+
 /** A NON-BACKING past_due row (entitlement granted elsewhere) still
  *  surfaces its dunning warning through the non-backing notice (A6). */
 export const NonBackingPastDue: Story<typeof BillingScreen> = {
