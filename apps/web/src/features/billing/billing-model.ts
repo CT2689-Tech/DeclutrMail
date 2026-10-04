@@ -459,29 +459,19 @@ export function backingStatusNote(
     //
     // The two verdicts now differ in TENSE, and that is the point.
     //
-    // A REFUND is pending, not finished. Since 2026-08-25 the plan runs
-    // until the provider confirms the refund, so past tense here would
-    // tell a customer their plan had ended while they were still using
-    // it. There is no date to give: approval is a provider review queue
-    // we cannot see — the first live one took 10.5 hours, and the next
-    // is not promised to. So the note says what is true (you still have
-    // this) and what happens next (it ends when the money goes back),
-    // and promises no clock.
+    // A REFUND is pending, not finished. The subscription still backs
+    // access during bounded grace, until approval or grace expiry. The
+    // grace deadline is not in this payload and approval has no SLA.
     //
     // A CHARGEBACK still ends entitlement immediately (founder decision
     // 2026-07-20), so its copy stays in the past tense.
     if (backing.sub.cancelSource === 'refund') {
       return {
         tone: 'warn',
-        // "…or your current period ends" is not padding. The deadline is
-        // `LEAST(now() + 7d, current_period_end)`, so a refund with fewer
-        // than seven days of period left switches the customer to Free
-        // with no confirmation ever arriving. An earlier draft of this
-        // line promised the plan "until your payment provider confirms
-        // it" full stop, which is precisely the assert-what-you-don't-know
-        // shape this screen exists to avoid — caught by the design gate,
-        // not by a test.
-        text: 'Your refund is being processed — you keep this plan until your payment provider confirms it or your current period ends, whichever comes first. Nothing to do until then.',
+        // Approval can end access before the bounded grace expires, and
+        // grace can end before the paid period. Its deadline is not on
+        // this payload, so do not promise the whole period or invent a date.
+        text: 'Your refund is being processed. Access from this subscription ends on approval or when the refund grace period expires.',
       };
     }
     if (backing.sub.cancelSource === 'chargeback') {

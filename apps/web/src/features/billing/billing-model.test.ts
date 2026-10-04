@@ -391,16 +391,15 @@ describe('backingStatusNote', () => {
     });
   }
 
-  // Where the two verdicts diverge, 2026-08-25. A pending refund keeps
-  // the plan until the provider confirms it, so past-tense copy would
-  // tell a customer their plan had ended while they were still using it —
-  // the assert-what-you-don't-know defect this screen exists to avoid,
-  // pointed at the customer's own account state.
+  // A pending refund keeps subscription access until approval or bounded
+  // grace expiry. Past-tense copy would claim the plan already ended.
   it('refund copy is PRESENT tense — the plan is still held', () => {
     const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'refund' as const };
     const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
     expect(note.text).toContain('being processed');
-    expect(note.text).toContain('you keep this plan');
+    expect(note.text).toContain('ends on approval');
+    expect(note.text).toContain('grace period expires');
+    expect(note.text).not.toContain('current period ends');
     // The exact claim that was wrong: this row has NOT ended.
     expect(note.text).not.toContain('ended');
     // No deadline is promised — provider approval is a review queue we
