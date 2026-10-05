@@ -69,6 +69,28 @@ export class BriefController {
     return ok(brief);
   }
 
+  /** Recent saved editions remain reachable before today's snapshot exists. */
+  @Get('recent')
+  @RateLimit('triage-load')
+  async recent(
+    @CurrentUser() principal: { userId: string },
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<Brief[]>> {
+    const user = await this.users.findById(principal.userId);
+    const to = resolvePersistedBriefTodayLocal(new Date(), user?.timezone);
+    // Calendar arithmetic, not elapsed hours: DST does not change the range.
+    const start = new Date(`${to}T00:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - 29);
+    return ok(
+      await this.reads.listByRange(
+        mailbox.id,
+        start.toISOString().slice(0, 10),
+        to,
+        principal.userId,
+      ),
+    );
+  }
+
   /**
    * GET /api/briefs?from=YYYY-MM-DD&to=YYYY-MM-DD — historical Brief
    * list in a date range, newest first.

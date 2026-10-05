@@ -271,3 +271,13 @@ export const WithHistory: Story<typeof BriefScreen> = {
       ]),
     ),
 };
+
+/** Before today's delivery, saved editions remain available with an honest status. */
+export const WaitingWithSavedEdition: Story<typeof BriefScreen> = {
+  render: () => {
+    const client = makeClient(BASE);
+    client.setQueryData(briefKeys.today(), { data: null });
+    client.setQueryData(briefKeys.recent(), { data: [BASE] });
+    return frame(client);
+  },
+};

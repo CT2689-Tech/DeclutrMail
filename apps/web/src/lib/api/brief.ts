@@ -173,6 +173,17 @@ export async function fetchBriefHistory(
   return { ...envelope, data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })) };
 }
 
+/** Latest 30 local days, resolved by the server even when today has no edition. */
+export async function fetchRecentBriefs(
+  signal?: AbortSignal,
+): Promise<Envelope<BriefWire[], unknown>> {
+  const envelope = await apiGet<BriefWire[]>('/api/briefs/recent', { signal });
+  return {
+    ...envelope,
+    data: envelope.data.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })),
+  };
+}
+
 /**
  * Absorb `noiseSenders` at the one boundary it enters through. An API
  * built before D65 omits the field entirely; the archive controls read
