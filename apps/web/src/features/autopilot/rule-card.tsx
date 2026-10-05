@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { Switch } from '@/features/settings/switch';
@@ -310,7 +310,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
 }
 
 /**
- * "Last run Jun 9 · 14 matched · 7 senders" / "Hasn't run yet".
+ * The recorded evaluation time and match counts, not completed Gmail actions.
  *
  * `lastRunActions` is written by the apply worker as
  * `matchesForRule.length` — the MATCH count, in both Observe and
@@ -320,15 +320,31 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
  * fail. Activity is the ledger of what actually happened; this line
  * reports what the rule matched.
  */
-function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): string {
+function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): ReactNode {
   if (rule.lastRunAt == null) return "Hasn't run yet";
   const d = new Date(rule.lastRunAt);
-  const when = !localizeDate
-    ? 'recorded'
-    : Number.isNaN(d.getTime())
-      ? rule.lastRunAt
-      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return `Last run ${when} · ${rule.lastRunActions} matched · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`;
+  const validTime = !Number.isNaN(d.getTime());
+  const when =
+    localizeDate && validTime
+      ? d.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short',
+        })
+      : 'recorded';
+  return (
+    <>
+      {validTime ? (
+        <time dateTime={rule.lastRunAt}>Last evaluated {when}</time>
+      ) : (
+        'Evaluation time unavailable'
+      )}
+      {` · ${rule.lastRunActions} matched · ${rule.lastRunSenders} sender${rule.lastRunSenders === 1 ? '' : 's'}`}
+    </>
+  );
 }
 
 /** D10 observe-window countdown; null when not in Observe mode. */
