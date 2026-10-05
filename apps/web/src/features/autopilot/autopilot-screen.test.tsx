@@ -132,6 +132,72 @@ beforeEach(() => {
   authState.tier = 'pro';
 });
 
+describe('Autopilot evaluation freshness', () => {
+  it('shows a precise evaluation time after keyboard expansion and retains matched semantics', async () => {
+    const priorTimezone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      renderScreen(
+        ready([
+          {
+            ...NEWSLETTER_GRAVEYARD,
+            lastRunAt: '2026-10-05T08:05:00.171Z',
+            lastRunActions: 39,
+            lastRunSenders: 39,
+          },
+        ]),
+      );
+      const details = screen.getByRole('button', {
+        name: /show details for rule Newsletter graveyard/i,
+      });
+      details.focus();
+      await userEvent.keyboard('{Enter}');
+      expect(details).toHaveAttribute('aria-expanded', 'true');
+      const evaluated = screen.getByText('Last evaluated Oct 5, 2026, 1:05 AM PDT');
+      expect(evaluated.tagName).toBe('TIME');
+      expect(evaluated).toHaveAttribute('datetime', '2026-10-05T08:05:00.171Z');
+      expect(evaluated.parentElement).toHaveTextContent('39 matched · 39 senders');
+      await userEvent.keyboard('{Enter}');
+      expect(screen.queryByText(/Last evaluated/)).not.toBeInTheDocument();
+    } finally {
+      if (priorTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTimezone;
+    }
+  });
+
+  it('keeps missing and malformed evaluation times distinct without exposing malformed input', () => {
+    renderScreen(
+      ready([
+        { ...NEWSLETTER_GRAVEYARD, lastRunAt: null },
+        { ...LONG_DORMANT_UNSUBSCRIBE, lastRunAt: 'invalid-fixture-value' },
+      ]),
+    );
+    openAllRuleDetails();
+    expect(screen.getByText("Hasn't run yet")).toBeInTheDocument();
+    expect(screen.getByText(/Evaluation time unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText(/invalid-fixture-value/)).not.toBeInTheDocument();
+  });
+
+  it('disambiguates evaluations during the repeated DST hour', () => {
+    const priorTimezone = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      renderScreen(
+        ready([
+          { ...NEWSLETTER_GRAVEYARD, lastRunAt: '2026-11-01T08:30:00.000Z' },
+          { ...LONG_DORMANT_UNSUBSCRIBE, lastRunAt: '2026-11-01T09:30:00.000Z' },
+        ]),
+      );
+      openAllRuleDetails();
+      expect(screen.getByText('Last evaluated Nov 1, 2026, 1:30 AM PDT')).toBeInTheDocument();
+      expect(screen.getByText('Last evaluated Nov 1, 2026, 1:30 AM PST')).toBeInTheDocument();
+    } finally {
+      if (priorTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTimezone;
+    }
+  });
+});
+
 describe('Autopilot pending pages', () => {
   afterEach(() => resetFetchStub());
   it('keeps a resolved older page scoped rather than implying the whole queue is empty', () => {

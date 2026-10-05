@@ -38,7 +38,7 @@ const meta: StoryMeta<typeof RuleCard> = {
     docs: {
       description: {
         component:
-          'One preset rule in the D101 rules-management list, as a quiet row: name, status word, enabled switch, a one-line description, dry-run preview (D103 scoped per D192) and Resume for paused rules. Last-run summary, pending count, observe-window countdown and the confidence-threshold slider (presets 1–2 only) sit behind Details. Canonical K/A/U/L/D verbs only (D227) — the description reads Archives / Unsubscribes / Moves to Later.',
+          'One preset rule in the D101 rules-management list, as a quiet row: name, status word, enabled switch, a one-line description, dry-run preview (D103 scoped per D192) and Resume for paused rules. Precise last-evaluation time in the viewer’s timezone, matched counts, pending count, observe-window countdown and the confidence-threshold slider (presets 1–2 only) sit behind Details. Canonical K/A/U/L/D verbs only (D227) — the description reads Archives / Unsubscribes / Moves to Later.',
       },
     },
   },
