@@ -17,6 +17,7 @@ export const briefKeys = {
   all: ['brief'] as const,
   /** Today's Brief (D69 frozen snapshot) for the current active mailbox. */
   today: () => ['brief', 'today'] as const,
+  recent: () => ['brief', 'recent'] as const,
   /**
    * A range of past Briefs. Keyed on the range so a widened window is a
    * separate entry rather than a silent overwrite of a narrower one.

@@ -33,6 +33,7 @@ import {
 import type { BriefWire } from '@/lib/api/brief';
 import { briefKeys } from './api/query-keys';
 import { makeQueryClient } from '@/lib/query-client';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({ me: {} }),
@@ -197,6 +198,232 @@ describe('BriefScreen — edge states', () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
+  });
+
+  it.each(['404', 'hydrated-null'])(
+    'keeps saved editions reachable when today is absent (%s)',
+    async (absence) => {
+      let opened = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/briefs/today',
+          respond: () => new Response('{}', { status: 404 }),
+        },
+        {
+          method: 'GET',
+          path: '/api/briefs/recent',
+          respond: () => jsonOk({ data: [BASE_BRIEF, PAST_BRIEF] }),
+        },
+        {
+          method: 'POST',
+          path: `/api/briefs/${BASE_BRIEF.id}/mark-opened`,
+          respond: () => {
+            opened++;
+            return jsonOk({ data: {} });
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      if (absence === 'hydrated-null') client.setQueryData(briefKeys.today(), { data: null });
+      render(
+        <QueryWrapper client={client}>
+          <BriefScreen />
+        </QueryWrapper>,
+      );
+      await screen.findByText('Q4 plan review');
+      expect(
+        screen.getByText(/today.s brief is not available yet. showing a saved edition/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/your first edition/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/messages yesterday/i)).not.toBeInTheDocument();
+      await userEvent.selectOptions(screen.getByLabelText('Brief day'), PAST_BRIEF.runDateLocal);
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument();
+      expect(opened).toBe(0);
+    },
+  );
+
+  it.each([403, 409])(
+    'hides cached saved editions after a %i history rejection',
+    async (status) => {
+      let rejected = false;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/briefs/today',
+          respond: () => new Response('{}', { status: 404 }),
+        },
+        {
+          method: 'GET',
+          path: '/api/briefs/recent',
+          respond: () =>
+            rejected ? new Response('{}', { status }) : jsonOk({ data: [BASE_BRIEF] }),
+        },
+      ]);
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <BriefScreen />
+        </QueryWrapper>,
+      );
+      await screen.findByText('Q4 plan review');
+      rejected = true;
+      await act(async () => {
+        await client.refetchQueries({ queryKey: briefKeys.recent() });
+      });
+      await screen.findByText(/couldn.t load saved editions/i);
+      expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+    },
+  );
+
+  it('discards retained history at a reconnect boundary before a failed refetch', async () => {
+    let failed = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response('{}', { status: 404 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => (failed ? jsonServerError() : jsonOk({ data: [BASE_BRIEF, PAST_BRIEF] })),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Q4 plan review');
+    await userEvent.selectOptions(screen.getByLabelText('Brief day'), PAST_BRIEF.runDateLocal);
+    failed = true;
+    act(() => window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT)));
+    expect(screen.queryByText('Lease renewal needs signing')).not.toBeInTheDocument();
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+    await act(async () => {
+      await client.refetchQueries({ queryKey: briefKeys.recent() });
+    });
+    await screen.findByText(/couldn.t load saved editions/i);
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+  });
+
+  it('rejects an older cached range when today arrives after a scope reset', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response('{}', { status: 404 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => jsonOk({ data: [BASE_BRIEF, PAST_BRIEF] }),
+      },
+      { method: 'GET', path: '/api/briefs', respond: () => new Promise<Response>(() => {}) },
+    ]);
+    const client = createTestQueryClient();
+    client.setQueryData(
+      briefKeys.history('2026-04-25', BASE_BRIEF.runDateLocal),
+      { data: [BASE_BRIEF, PAST_BRIEF] },
+      { updatedAt: Date.now() - 60000 },
+    );
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Q4 plan review');
+    await userEvent.selectOptions(screen.getByLabelText('Brief day'), PAST_BRIEF.runDateLocal);
+    act(() => window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT)));
+    act(() =>
+      client.setQueryData(briefKeys.today(), {
+        data: {
+          ...BASE_BRIEF,
+          id: 'new-mailbox-edition',
+          briefPayload: {
+            narrative: '',
+            reply: [{ ...BASE_BRIEF.briefPayload.reply[0], subject: 'New mailbox edition' }],
+            fyi: [],
+            noise: [],
+          },
+        },
+      }),
+    );
+    await screen.findByText('New mailbox edition');
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+    expect(screen.queryByText('Lease renewal needs signing')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Brief day')).not.toBeInTheDocument();
+  });
+
+  it('discloses a failed history refresh while retaining a saved edition', async () => {
+    let failed = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response('{}', { status: 404 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => (failed ? jsonServerError() : jsonOk({ data: [BASE_BRIEF] })),
+      },
+    ]);
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BriefScreen />
+      </QueryWrapper>,
+    );
+    await screen.findByText('Q4 plan review');
+    failed = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: briefKeys.recent() });
+    });
+    await screen.findByText(
+      /couldn.t refresh saved editions; showing a previously loaded edition/i,
+    );
+    expect(screen.getByText('Q4 plan review')).toBeInTheDocument();
+  });
+
+  it('distinguishes unavailable history from no saved editions', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response('{}', { status: 404 }),
+      },
+      { method: 'GET', path: '/api/briefs/recent', respond: () => jsonServerError() },
+    ]);
+    renderScreen();
+    await screen.findByText(/couldn.t load saved editions/i);
+    expect(screen.queryByText(/your first edition/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('does not fall back to history after a rejected mailbox read', async () => {
+    let historyReads = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => new Response('{}', { status: 403 }),
+      },
+      {
+        method: 'GET',
+        path: '/api/briefs/recent',
+        respond: () => {
+          historyReads++;
+          return jsonOk({ data: [BASE_BRIEF] });
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('heading', { name: /couldn.t load your brief/i });
+    expect(historyReads).toBe(0);
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
   });
 
   it('renders the generic error branch on 500', async () => {

@@ -14,14 +14,15 @@
  * Failure is deliberately quiet. History is a secondary affordance on a
  * screen whose primary content is today's Brief; if the range read
  * fails, the day switcher simply does not offer other days, and the
- * Brief itself is unaffected. The caller surfaces nothing.
+ * Brief itself is unaffected. When today is absent, the caller exposes
+ * an unavailable-history status rather than claiming no saved editions exist.
  */
 
 import { useQuery } from '@tanstack/react-query';
 
-import { fetchBriefHistory } from '@/lib/api/brief';
+import { fetchBriefHistory, fetchRecentBriefs } from '@/lib/api/brief';
 
-import { briefHistoryQueryOptions } from './query-options';
+import { briefKeys } from './query-keys';
 
 /** How far back the day switcher looks. */
 export const BRIEF_HISTORY_DAYS = 30;
@@ -45,15 +46,20 @@ export function shiftLocalDate(date: string, days: number): string {
 
 /**
  * @param anchorRunDate the `runDateLocal` of the Brief currently shown,
- *   or `null` while it is still loading (the query stays disabled).
+ *   or `null` to read the server-resolved recent window when `readRecent` is true.
  */
-export function useBriefHistory(anchorRunDate: string | null) {
+export function useBriefHistory(anchorRunDate: string | null, readRecent = false) {
   const to = anchorRunDate ?? '';
   const from = anchorRunDate ? shiftLocalDate(anchorRunDate, -(BRIEF_HISTORY_DAYS - 1)) : '';
 
   return useQuery({
-    ...briefHistoryQueryOptions(fetchBriefHistory, from, to),
-    enabled: anchorRunDate !== null,
+    queryKey: anchorRunDate === null ? briefKeys.recent() : briefKeys.history(from, to),
+    queryFn: ({ signal }) =>
+      anchorRunDate === null ? fetchRecentBriefs(signal) : fetchBriefHistory(from, to, signal),
+    // The server-resolved moving window can gain an edition; fixed ranges
+    // retain the existing hour-long cache lifetime.
+    staleTime: anchorRunDate === null ? 30 * 1000 : 60 * 60 * 1000,
+    enabled: anchorRunDate !== null || readRecent,
     select: (envelope) => envelope.data,
     // A range read that 4xxs is a designed state, not a retry (CLAUDE.md
     // §8): the mailbox guard can 409 here exactly as it does on the

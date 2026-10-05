@@ -43,3 +43,28 @@ describe('BriefController.today', () => {
     expect(getForDate).toHaveBeenCalledWith('mailbox-1', '2026-07-07', 'user-1');
   });
 });
+
+describe('BriefController.recent', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each([
+    ['America/Los_Angeles', '2026-09-05', '2026-10-04'],
+    [null, '2026-09-06', '2026-10-05'],
+    ['invalid-zone', '2026-09-06', '2026-10-05'],
+  ])(
+    'uses the persisted timezone %s and scopes history to the guarded mailbox',
+    async (timezone, from, to) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-10-05T06:00:00Z'));
+      const listByRange = vi.fn().mockResolvedValue([{ id: 'saved-edition' }]);
+      const controller = new BriefController(
+        { listByRange } as unknown as BriefReadService,
+        { findById: vi.fn().mockResolvedValue({ timezone }) } as unknown as UsersService,
+      );
+      expect(await controller.recent({ userId: 'user-1' }, { id: 'mailbox-1' })).toEqual({
+        data: [{ id: 'saved-edition' }],
+      });
+      expect(listByRange).toHaveBeenCalledWith('mailbox-1', from, to, 'user-1');
+    },
+  );
+});

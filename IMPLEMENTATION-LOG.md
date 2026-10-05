@@ -305,3 +305,15 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 ## Autopilot evaluation freshness — 2026-10-05
 
 The optional rule-details upgrade surfaces the existing recorded evaluation timestamp with date, time and viewer timezone while retaining match-count semantics. Source and synthetic verification are separate from deployment and production readback; see docs/execution/autopilot-evaluation-time-audit.md.
+
+
+## Brief history before delivery — 2026-10-05
+
+D61/D64/D69/D70 follow-up: before today's snapshot exists, returning users can
+read saved editions from a server-resolved 30-day range. The screen distinguishes
+pending today, saved history unavailable, and a stale saved receipt; it no longer
+calls every absent day a first edition. Access rejection and mailbox scope resets
+exclude retained history from both content and the day switcher. Generation,
+billing, preferences and frozen payload writes remain unchanged. Verification
+and rollout evidence belongs to the PR and its exact checks/release; this entry
+alone is not production verification.
