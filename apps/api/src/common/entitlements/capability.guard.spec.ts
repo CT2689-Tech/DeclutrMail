@@ -177,7 +177,7 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       surface: 'briefs',
       capability: 'brief',
       controller: BriefController,
-      gated: ['today', 'list', 'markOpened'],
+      gated: ['today', 'recent', 'list', 'markOpened'],
       exempt: [],
     },
     {
