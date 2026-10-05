@@ -29,6 +29,7 @@ import type {
   BriefSenderGroupWire,
   BriefWire,
 } from '@/lib/api/brief';
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
@@ -134,7 +135,31 @@ export function BriefScreen() {
   // so switching days does not remount the body and lose the Noise
   // section's Done marks for the day the user came back to.
   const [selectedRunDate, setSelectedRunDate] = useState<string | null>(null);
-  const history = useBriefHistory(query.data?.runDateLocal ?? null);
+  const todayMissing = notYet || (query.isSuccess && query.data == null);
+  const history = useBriefHistory(query.data?.runDateLocal ?? null, todayMissing);
+  const historyResetAt = useRef(0);
+  const historyScope = useRef({ mailboxId, updatedAt: history.dataUpdatedAt });
+  if (history.dataUpdatedAt !== historyScope.current.updatedAt) {
+    historyScope.current = { mailboxId, updatedAt: history.dataUpdatedAt };
+  }
+  const historyRejected =
+    history.error instanceof ApiError && history.error.status >= 400 && history.error.status < 500;
+  const [, forceScopeReset] = useState(0);
+  useMailboxScopeReset(mailboxId ?? undefined, () => {
+    // Invalidation keeps mounted query data. Discard its generation at the
+    // switch/reconnect boundary, even when the mailbox id stays the same.
+    historyResetAt.current = Date.now();
+    historyScope.current = { mailboxId: '__reset__', updatedAt: history.dataUpdatedAt };
+    setSelectedRunDate(null);
+    forceScopeReset((generation) => generation + 1);
+  });
+  const acceptedHistory =
+    !historyRejected &&
+    historyScope.current.mailboxId === mailboxId &&
+    history.dataUpdatedAt >= historyResetAt.current
+      ? history.data
+      : undefined;
+  const savedEdition = todayMissing ? acceptedHistory?.[0] : undefined;
 
   // `mailbox_id: null` keeps the historical event contract. The nullable
   // auth hook above binds Gmail links in production without making isolated
@@ -145,13 +170,22 @@ export function BriefScreen() {
 
   if (query.isLoading) return <LoadingState />;
 
-  if (query.isError && !retainEdition) {
+  if (query.isError && !retainEdition && !savedEdition) {
     // 404 is a designed state, not a real error (D69 worker tick can
     // lag yesterday's wall-clock 8am by up to an hour for some UTC
     // offsets). Branch on `ApiError.status === 404` so we render the
     // "Brief lands soon" message instead of the generic retry CTA.
     if (notYet) {
-      return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
+      return (
+        <NotYetState
+          historyLoading={history.isFetching}
+          historyFailed={history.isError}
+          onRefresh={() => {
+            handleBriefRefresh(query.refetch);
+            void history.refetch();
+          }}
+        />
+      );
     }
     // Non-404 → log to Sentry as a feature exception so the dashboard
     // separates 'brief failed to load' from 'brief is just late'.
@@ -161,12 +195,21 @@ export function BriefScreen() {
     );
   }
 
-  const brief = query.data;
+  const brief = query.data ?? savedEdition;
   if (!brief) {
     // Defensive: success + no data shouldn't happen (envelope contract
     // guarantees data on 2xx), but render the not-yet branch rather
     // than crashing if it does.
-    return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
+    return (
+      <NotYetState
+        historyLoading={history.isFetching}
+        historyFailed={history.isError}
+        onRefresh={() => {
+          handleBriefRefresh(query.refetch);
+          void history.refetch();
+        }}
+      />
+    );
   }
 
   // A selected date that is not in the fetched range falls back to
@@ -175,7 +218,7 @@ export function BriefScreen() {
   const selected =
     selectedRunDate === null
       ? brief
-      : (history.data?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
+      : (acceptedHistory?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
 
   return (
     <BriefBody
@@ -184,12 +227,16 @@ export function BriefScreen() {
       // Only today's Brief is a "first view" worth recording. Marking a
       // three-week-old snapshot opened because someone browsed back to
       // it would make D61's opened_at mean something else entirely.
-      isToday={selected.id === brief.id && !notYet}
-      refreshFailed={refreshFailed}
-      notYet={notYet}
+      isToday={selected.id === brief.id && !todayMissing}
+      refreshFailed={refreshFailed || (history.isError && todayMissing)}
+      notYet={todayMissing}
+      historyRefreshFailed={todayMissing && history.isError}
       refreshing={query.isFetching}
-      onRefresh={() => handleBriefRefresh(query.refetch)}
-      days={history.data ?? []}
+      onRefresh={() => {
+        handleBriefRefresh(query.refetch);
+        if (todayMissing) void history.refetch();
+      }}
+      days={acceptedHistory ?? []}
       selectedRunDate={selectedRunDate}
       onSelectRunDate={setSelectedRunDate}
     />
@@ -226,6 +273,7 @@ function BriefBody({
   notYet,
   refreshing,
   onRefresh,
+  historyRefreshFailed,
 }: {
   brief: BriefWire;
   mailboxEmail: string | null;
@@ -238,6 +286,7 @@ function BriefBody({
   refreshFailed: boolean;
   notYet: boolean;
   refreshing: boolean;
+  historyRefreshFailed: boolean;
   onRefresh: () => void;
 }) {
   const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
@@ -300,9 +349,13 @@ function BriefBody({
         }
       />
       <BriefReturnLinks />
-      {refreshFailed && (
+      {(refreshFailed || notYet) && (
         <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
-          {notYet ? 'Today’s Brief is not available yet.' : 'Couldn’t refresh your Brief.'}{' '}
+          {notYet
+            ? historyRefreshFailed
+              ? 'Today’s Brief is not available yet. Couldn’t refresh saved editions; showing a previously loaded edition.'
+              : 'Today’s Brief is not available yet. Showing a saved edition.'
+            : 'Couldn’t refresh your Brief.'}{' '}
           <Button tone="ghost" size="sm" disabled={refreshing} onClick={onRefresh}>
             Try again
           </Button>
@@ -1396,7 +1449,15 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
  * briefly. Copy matches D70's calm tone without claiming "no email";
  * we don't know that yet.
  */
-function NotYetState({ onRefresh }: { onRefresh: () => void }) {
+function NotYetState({
+  onRefresh,
+  historyLoading,
+  historyFailed,
+}: {
+  onRefresh: () => void;
+  historyLoading: boolean;
+  historyFailed: boolean;
+}) {
   return (
     <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
       <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
@@ -1404,13 +1465,15 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
       <EmptyState
         headingLevel={2}
         title="Your Brief is not available yet"
-        description="Your first edition will summarize a previous day of email after your inbox has been scanned."
+        description="Each edition summarizes a previous day of email after your inbox has been scanned. Check your delivery time in settings."
         action={
           <Button tone="primary" onClick={onRefresh}>
             Refresh
           </Button>
         }
       />
+      {historyLoading && <p role="status">Checking saved editions…</p>}
+      {historyFailed && <p role="status">Couldn’t load saved editions. Try Refresh.</p>}
       <EditorialContents
         label="While you wait"
         items={[
