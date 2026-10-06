@@ -1,0 +1,36 @@
+name: Inspect Paddle sandbox
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paddle-sandbox-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: Sandbox
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Read sandbox catalog and notification destinations
+        env:
+          PADDLE_ENV: sandbox
+          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+        run: node scripts/paddle-sandbox-inspection.mjs "${{ runner.temp }}/paddle-sandbox-inspection.json"
+      - name: Retain sanitized inspection, including unavailable sections
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: paddle-sandbox-inspection
+          path: ${{ runner.temp }}/paddle-sandbox-inspection.json
+          retention-days: 1
+          if-no-files-found: error
