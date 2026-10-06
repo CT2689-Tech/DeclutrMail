@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createServer } from 'node:http';
 import test from 'node:test';
 import { inspectSandbox } from './paddle-sandbox-inspection.mjs';
 
@@ -256,6 +257,42 @@ test('HTTP, transport, oversized and malformed reads retain failure without resp
     assert.equal(result.sections.destinations.status, 'complete');
     assert.ok(!JSON.stringify(result).includes(privateMarker));
     assert.ok(!JSON.stringify(result).includes(key));
+  }
+});
+
+test('HTTP errors abort their unread bodies immediately rather than leaving a connection open', async () => {
+  let resolveClosed;
+  const closed = new Promise((resolve) => {
+    resolveClosed = resolve;
+  });
+  const server = createServer((_request, response) => {
+    response.on('close', resolveClosed);
+    response.writeHead(503);
+    response.write(privateMarker); // Deliberately never end the error response.
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  let timer;
+  try {
+    const result = await inspectSandbox({
+      env,
+      fetchImpl: async (input, options) => {
+        if (new URL(input).pathname !== '/products') return empty();
+        return fetch(`http://127.0.0.1:${server.address().port}`, options);
+      },
+    });
+    assert.equal(result.sections.products.httpStatus, 503);
+    assert.equal(result.sections.destinations.status, 'complete');
+    assert.ok(!JSON.stringify(result).includes(privateMarker));
+    await Promise.race([
+      closed,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('unread error connection stayed open')), 2000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 
