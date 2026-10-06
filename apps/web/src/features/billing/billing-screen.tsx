@@ -704,7 +704,6 @@ export function BillingScreen({
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
         pauseConfirming={pauseConfirming}
-        paymentPending={pending !== null || data?.pendingCheckout != null}
         onCancel={() => setCancelOpen(true)}
         onResumeCancellation={() =>
           resumeCancellation.mutate(undefined, {
@@ -1219,10 +1218,11 @@ export function PaymentProcessingNotice({
               <p style={{ margin: 0, fontSize: text.sm, color: color.fg }}>
                 {kind === 'checkout' || kind === 'checkout_intent' ? (
                   <>
-                    <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong>{' '}
-                    — a card statement entry or a Paddle receipt email. If the payment did go
-                    through and you check out again, you could be charged twice. Resuming
-                    doesn&rsquo;t cancel the earlier payment.
+                    <strong style={{ fontWeight: 600 }}>Check for a charge first</strong> — on your
+                    bank or card statement, or in your payment receipt. Confirm only if no charge
+                    went through. You&rsquo;ll return to plan selection. If the earlier payment
+                    completes, another checkout could charge you twice. Confirming doesn&rsquo;t
+                    cancel that payment.
                   </>
                 ) : (
                   <>
@@ -1245,8 +1245,8 @@ export function PaymentProcessingNotice({
                 </Button>
                 <Button style={recoveryButtonStyle} tone="danger" onClick={onRelease}>
                   {kind === 'checkout' || kind === 'checkout_intent'
-                    ? 'I checked — no charge. Resume checkout'
-                    : 'I checked — nothing applied. Let me retry'}
+                    ? 'Confirm no charge'
+                    : 'Confirm not applied'}
                 </Button>
               </div>
             </div>
@@ -1258,12 +1258,8 @@ export function PaymentProcessingNotice({
                 onClick={() => setConfirmingRelease(true)}
               >
                 {kind === 'checkout' || kind === 'checkout_intent'
-                  ? providerCheck === 'none_found'
-                    ? 'No payment found — resume checkout'
-                    : providerCheck === 'no_pending'
-                      ? 'Nothing in flight — resume checkout'
-                      : 'Review before resuming checkout'
-                  : 'The change didn’t apply — let me retry'}
+                  ? 'Review checkout'
+                  : 'Review plan change'}
               </Button>
             </div>
           )
@@ -1273,7 +1269,7 @@ export function PaymentProcessingNotice({
           // single explicit release is enough.
           <div>
             <Button style={recoveryButtonStyle} tone="default" onClick={onRelease}>
-              Stop waiting — let me try again
+              Stop waiting
             </Button>
           </div>
         )
@@ -1290,7 +1286,6 @@ function CurrentPlanCard({
   cleanupResetsAt,
   billingDark,
   pauseConfirming,
-  paymentPending,
   onCancel,
   onResumeCancellation,
   isResumingCancellation,
@@ -1300,8 +1295,6 @@ function CurrentPlanCard({
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
-  /** A pending checkout may already hold card details or a payment. */
-  paymentPending: boolean;
   /** QA-billing-20260901-03 — a pause was requested but the webhook that
    *  actually changes `status` hasn't landed yet. The plan is still
    *  active and billing at its current price until that confirms, so
@@ -1416,31 +1409,19 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {plan.entitlementTier === 'free' &&
-      (plan.nonBacking === null || cleanupRemaining !== null) ? (
+      {plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          {/* "No card on file" is a claim about the PROVIDER — with a
-              paused or ended subscription record the provider may well
-              hold one. A pending checkout may also have collected payment details,
-              so reassurance requires no history AND no unresolved payment. */}
-          {plan.nonBacking === null && !paymentPending ? 'Free forever — no card on file.' : null}
-          {cleanupRemaining !== null ? (
-            <>
-              {' '}
-              <strong style={{ fontWeight: 600, color: color.fg }}>
-                {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions
-                left
-                {/* QA-billing-20260901-04: the reset is the signup
+          <strong style={{ fontWeight: 600, color: color.fg }}>
+            {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left
+            {/* QA-billing-20260901-04: the reset is the signup
                     anniversary, not the calendar month — "this month" was
                     provably wrong (e.g. an anniversary of the 27th, told
                     in the first days of the next month). The real date is
                     already fetched by useTier(); state it instead. */}
-                {formatBillingDate(cleanupResetsAt)
-                  ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
-                  : '.'}
-              </strong>
-            </>
-          ) : null}
+            {formatBillingDate(cleanupResetsAt)
+              ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
+              : '.'}
+          </strong>
         </p>
       ) : null}
 

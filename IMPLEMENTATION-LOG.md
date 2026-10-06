@@ -347,3 +347,15 @@ failed before their repairs. Local browser/API smoke and release builds passed;
 independent review found no blockers. PR, CI/queue, deployment and production
 readback remain distinct stages. See
 `docs/execution/billing-complimentary-completion-2026-10-06.md`.
+
+## Payment recovery labels — 2026-10-06
+
+D249 follow-up: pending-checkout recovery previously promised to resume checkout
+although its handler only released the hold and returned plan selection. Labels
+now distinguish reviewing recovery, explicitly confirming no charge, and returning
+to plans. Adjacent plan-change/resume recovery labels follow the same three-word
+budget. Provider checks, release eligibility, two-step assertions and billing
+state remain unchanged. The Free card also stops claiming the provider has no
+stored card without evidence. See
+`docs/execution/billing-recovery-language-2026-10-06.md`; real purchases and the
+original charge status remain separate verification requirements.

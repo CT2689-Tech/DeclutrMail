@@ -305,9 +305,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
     expect(within(card).getByText('$0')).toBeInTheDocument();
-    // "No card on file" may render ONLY with no subscription record at
-    // all (a paused/ended row means the provider may hold one).
-    expect(within(card).getByText(/Free forever — no card on file/)).toBeInTheDocument();
+    // Local subscription absence does not establish whether the provider
+    // retains a payment method, including after an abandoned checkout.
+    expect(card).not.toHaveTextContent(/no card on file/i);
     // QA-billing-20260901-04: the real signup-anniversary reset date,
     // not "this month" — the fixture's reset (Sep 17) is not the 1st,
     // so the old copy would have been visibly wrong.
@@ -1259,11 +1259,11 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // releases nothing yet.
     fireEvent.click(
       await within(notice).findByRole('button', {
-        name: 'Review before resuming checkout',
+        name: 'Review checkout',
       }),
     );
     const releaseConfirm = within(notice).getByTestId('release-confirm');
-    expect(releaseConfirm).toHaveTextContent(/you could be charged twice/i);
+    expect(releaseConfirm).toHaveTextContent(/charge you twice/i);
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
@@ -1274,12 +1274,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
 
     // Only the confirmed assertion releases the lock.
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'Review before resuming checkout' }),
-    );
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),
-    );
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review checkout' }));
+    fireEvent.click(within(notice).getByRole('button', { name: 'Confirm no charge' }));
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
@@ -1323,10 +1319,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     // While the server is asking the provider, the customer is NOT
     // asked to guess — no release affordance exists yet.
-    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    expect(
+      within(notice).queryByRole('button', { name: /review checkout|confirm no charge/i }),
+    ).toBeNull();
 
     resolveReconcile(jsonOk({ data: { outcome: 'none_found' } }));
-    await within(notice).findByRole('button', { name: 'No payment found — resume checkout' });
+    await within(notice).findByRole('button', { name: 'Review checkout' });
     expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
       'We checked with the payment provider — no completed payment found for this checkout.',
     );
@@ -1370,7 +1368,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     // Truth is written server-side; asking the customer to assert "no
     // charge" now would invite releasing a PAID checkout.
-    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    expect(
+      within(notice).queryByRole('button', { name: /review checkout|confirm no charge/i }),
+    ).toBeNull();
   });
 
   it('D249: an outcome this build does not know never reads as "Found your payment"', async () => {
@@ -1412,7 +1412,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       /found your payment/i,
     );
     // Unknown is not a verified absence: the release stays locked.
-    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    expect(
+      within(notice).queryByRole('button', { name: /review checkout|confirm no charge/i }),
+    ).toBeNull();
   });
 
   it('D249: payment_in_progress keeps the release LOCKED — a 3DS-window resume is the double charge', async () => {
@@ -1446,7 +1448,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     await waitFor(() =>
       expect(within(notice).getByTestId('provider-check')).toHaveTextContent('still in progress'),
     );
-    expect(within(notice).queryByRole('button', { name: /resume checkout/i })).toBeNull();
+    expect(
+      within(notice).queryByRole('button', { name: /review checkout|confirm no charge/i }),
+    ).toBeNull();
     // Re-check stays available — in-progress resolves on its own.
     expect(within(notice).getByRole('button', { name: 'Check again' })).toBeInTheDocument();
   });
@@ -1491,9 +1495,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       /found your payment/i,
     );
     // Nothing in flight anywhere → the way out is available.
-    expect(
-      within(notice).getByRole('button', { name: 'Nothing in flight — resume checkout' }),
-    ).toBeInTheDocument();
+    expect(within(notice).getByRole('button', { name: 'Review checkout' })).toBeInTheDocument();
   });
 
   it('D249: a stuck plan change reconciles via kind=change and reports change wording', async () => {
@@ -1584,9 +1586,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/payment found/i);
     // Provider-verified absence unlocks the single-click change release
     // without the 15-minute timer.
-    expect(
-      within(notice).getByRole('button', { name: 'Stop waiting — let me try again' }),
-    ).toBeInTheDocument();
+    expect(within(notice).getByRole('button', { name: 'Stop waiting' })).toBeInTheDocument();
   });
 
   it('a completing checkout never clobbers a surfaced (id-less) ambiguous change lock', async () => {
@@ -1711,12 +1711,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // Re-arming is the user's explicit two-step no-charge assertion —
     // available immediately for a surfaced reservation.
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'Review before resuming checkout' }),
-    );
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),
-    );
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review checkout' }));
+    fireEvent.click(within(notice).getByRole('button', { name: 'Confirm no charge' }));
     await waitFor(() =>
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
@@ -3190,9 +3186,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
 
     // Two-step: first click states the risk and releases nothing.
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'The change didn’t apply — let me retry' }),
-    );
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review plan change' }));
     const releaseConfirm = within(notice).getByTestId('release-confirm');
     expect(releaseConfirm).toHaveTextContent(/can move money again/i);
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
@@ -3201,12 +3195,8 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(notice).queryByTestId('release-confirm')).not.toBeInTheDocument();
 
     // Only the confirmed assertion releases.
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'The change didn’t apply — let me retry' }),
-    );
-    fireEvent.click(
-      within(notice).getByRole('button', { name: 'I checked — nothing applied. Let me retry' }),
-    );
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review plan change' }));
+    fireEvent.click(within(notice).getByRole('button', { name: 'Confirm not applied' }));
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Switch to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
