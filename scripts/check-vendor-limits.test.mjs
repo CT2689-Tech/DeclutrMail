@@ -168,11 +168,11 @@ async function withFetch(routes, env, check) {
   // A route may be a function of how many times it was called, for a
   // response that changes between the first attempt and the retry.
   const calls = {};
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options) => {
     const hit = Object.entries(routes).find(([prefix]) => String(url).startsWith(prefix));
     if (!hit) throw new Error(`no canned response for ${url}`);
     calls[hit[0]] = (calls[hit[0]] ?? 0) + 1;
-    const body = typeof hit[1] === 'function' ? hit[1](calls[hit[0]]) : hit[1];
+    const body = typeof hit[1] === 'function' ? hit[1](calls[hit[0]], { url, options }) : hit[1];
     if (body instanceof Error) throw body;
     return new Response(JSON.stringify(body), { status: 200 });
   };
@@ -293,6 +293,112 @@ const outcome = (name, n) => ({ by: { outcome: name }, totals: { 'sum(quantity)'
 const sentryRow = async (groups) => ({
   name: 'Sentry',
   ...(await withFetch({ 'https://sentry.io/api/0/': { groups } }, SENTRY, checkSentry)),
+});
+
+test('Sentry loss counters separate accepted, enforcement, invalid and closed SDK reasons without leaking unknown labels', async () => {
+  const marker = 'PRIVATE_UNKNOWN_REASON_NEVER_EXPORT';
+  const client = (reason, n) => ({
+    ...outcome('client_discard', n),
+    by: { outcome: 'client_discard', reason },
+  });
+  const row = await withFetch(
+    {
+      'https://sentry.io/api/0/': (_count, { url, options }) => {
+        const request = new URL(url);
+        assert.equal(request.origin, 'https://sentry.io');
+        assert.deepEqual(request.searchParams.getAll('groupBy'), ['outcome', 'reason']);
+        assert.equal(request.searchParams.get('category'), 'error');
+        assert.equal(request.searchParams.get('statsPeriod'), '1d');
+        assert.equal(options.method ?? 'GET', 'GET');
+        return {
+          groups: [
+            outcome('accepted', 10),
+            outcome('filtered', 1),
+            outcome('rate_limited', 3),
+            outcome('abuse', 2),
+            outcome('cardinality_limited', 1),
+            outcome('invalid', 2),
+            client('ratelimit_backoff', 7),
+            client('network_error', 4),
+            client('queue_overflow', 1),
+            client('cache_overflow', 1),
+            client('send_error', 1),
+            client('sample_rate', 2),
+            client('before_send', 3),
+            client('event_processor', 4),
+            client('internal_sdk_error', 1),
+            client(marker, 5),
+          ],
+        };
+      },
+    },
+    SENTRY,
+    checkSentry,
+  );
+  assert.equal(row.status, 'BREACH');
+  assert.deepEqual(row.usage, {
+    accepted_errors_24h: 10,
+    discarded_errors_24h: 31,
+    enforcement_discarded_errors_24h: 6,
+    invalid_errors_24h: 2,
+    client_discarded_errors_24h: 29,
+    client_ratelimit_backoff_errors_24h: 7,
+    client_network_error_errors_24h: 4,
+    client_queue_overflow_errors_24h: 1,
+    client_cache_overflow_errors_24h: 1,
+    client_send_error_errors_24h: 1,
+    client_sdk_filter_errors_24h: 9,
+    client_internal_error_errors_24h: 1,
+    client_other_discard_errors_24h: 5,
+  });
+  assert.ok(!JSON.stringify(row).includes(marker));
+  assert.deepEqual(
+    row.causes.map((c) => c.value),
+    [6, 10, 31],
+  );
+});
+
+test('Sentry loss counters retain absent and unfamiliar SDK reasons as unclassified numeric loss', async () => {
+  const groups = ['__proto__', null, 'unfamiliar'].map((reason) => ({
+    by: { outcome: 'client_discard', reason },
+    totals: { 'sum(quantity)': 2 },
+  }));
+  const row = await sentryRow(groups);
+  assert.equal(row.usage.client_discarded_errors_24h, 6);
+  assert.equal(row.usage.client_other_discard_errors_24h, 6);
+  assert.equal(row.usage.client_ratelimit_backoff_errors_24h, 0);
+  assert.equal(row.status, 'WARN');
+  assert.ok(!JSON.stringify(row).includes('unfamiliar'));
+});
+
+test('Sentry loss counters reject missing, malformed, fractional, negative and overflowing quantities as read errors', async () => {
+  for (const groups of [
+    null,
+    {},
+    [null],
+    [{ by: { outcome: 'accepted' }, totals: {} }],
+    ...[null, '', false, '2', -1, 0.5, 'invalid'].map((n) => [outcome('accepted', n)]),
+    [outcome('unknown', 5)],
+    [outcome('accepted', Number.MAX_SAFE_INTEGER), outcome('accepted', 1)],
+  ]) {
+    const row = await withFetch({ 'https://sentry.io/api/0/': { groups } }, SENTRY, () =>
+      runVendor({
+        name: 'Sentry',
+        requires: ['SENTRY_ORG', 'SENTRY_AUTH_TOKEN'],
+        check: checkSentry,
+      }),
+    );
+    assert.equal(row.status, 'ERROR');
+    assert.equal(row.detail, 'Invalid Sentry outcome aggregate');
+    assert.equal(row.usage, undefined);
+  }
+});
+
+test('readable zero Sentry loss differs from an empty unavailable response', async () => {
+  const zero = await sentryRow([outcome('accepted', 0)]);
+  assert.equal(zero.status, 'OK');
+  assert.ok(Object.values(zero.usage).every((n) => n === 0));
+  assert.equal((await sentryRow([])).status, 'ERROR');
 });
 
 test('a Sentry acknowledgment holds up to its ceiling and not past it', async () => {

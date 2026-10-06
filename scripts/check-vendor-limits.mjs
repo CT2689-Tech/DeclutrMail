@@ -549,13 +549,15 @@ export async function checkSentry() {
   const url = new URL(`https://sentry.io/api/0/organizations/${process.env.SENTRY_ORG}/stats_v2/`);
   url.searchParams.set('field', 'sum(quantity)');
   url.searchParams.set('groupBy', 'outcome');
+  url.searchParams.append('groupBy', 'reason');
   url.searchParams.set('category', 'error');
   url.searchParams.set('interval', '1d');
   url.searchParams.set('statsPeriod', '1d');
   const res = await httpJson(url.toString(), {
     headers: { Authorization: `Bearer ${process.env.SENTRY_AUTH_TOKEN}` },
   });
-  const groups = res.groups ?? [];
+  const groups = res?.groups;
+  if (!Array.isArray(groups)) throw new Error('Invalid Sentry outcome aggregate');
   // An empty payload is NOT a healthy day. Reading zero groups as "0
   // accepted, all clear" would make an auth failure, a renamed field or
   // a changed statsPeriod indistinguishable from a quiet mailbox — the
@@ -568,10 +570,45 @@ export async function checkSentry() {
     };
   }
 
-  const sumOutcome = (...names) =>
-    groups
-      .filter((g) => names.includes(g.by?.outcome))
-      .reduce((sum, g) => sum + (Number(g.totals?.['sum(quantity)']) || 0), 0);
+  const outcomes = new Set([
+    'accepted',
+    'filtered',
+    'rate_limited',
+    'invalid',
+    'client_discard',
+    'abuse',
+    'cardinality_limited',
+  ]);
+  for (const g of groups) {
+    const n = g?.totals?.['sum(quantity)'];
+    if (!outcomes.has(g?.by?.outcome) || !Number.isSafeInteger(n) || n < 0)
+      throw new Error('Invalid Sentry outcome aggregate');
+  }
+  const sumGroups = (predicate) => {
+    const n = groups.filter(predicate).reduce((sum, g) => sum + g.totals['sum(quantity)'], 0);
+    if (!Number.isSafeInteger(n)) throw new Error('Invalid Sentry outcome aggregate');
+    return n;
+  };
+  const sumOutcome = (...names) => sumGroups((g) => names.includes(g.by.outcome));
+  // Closed numeric labels only: provider/SDK reason strings never become telemetry keys.
+  const clientReasons = {
+    client_ratelimit_backoff_errors_24h: ['ratelimit_backoff'],
+    client_network_error_errors_24h: ['network_error'],
+    client_queue_overflow_errors_24h: ['queue_overflow'],
+    client_cache_overflow_errors_24h: ['cache_overflow'],
+    client_send_error_errors_24h: ['send_error'],
+    client_sdk_filter_errors_24h: ['sample_rate', 'before_send', 'event_processor'],
+    client_internal_error_errors_24h: ['internal_sdk_error'],
+  };
+  const clientUsage = Object.fromEntries(
+    Object.entries(clientReasons).map(([field, reasons]) => [
+      field,
+      sumGroups((g) => g.by.outcome === 'client_discard' && reasons.includes(g.by.reason)),
+    ]),
+  );
+  const clientDiscarded = sumOutcome('client_discard');
+  const knownClient = Object.values(clientUsage).reduce((sum, n) => sum + n, 0);
+  const otherClient = clientDiscarded - knownClient;
 
   // Outcomes where an event we WANTED was thrown away by enforcement.
   // Reading `accepted` alone (the only outcome that consumes paid quota)
@@ -610,7 +647,16 @@ export async function checkSentry() {
   return {
     status: worstStatus(causes),
     usagePct: volume.usagePct,
-    usage: { accepted_errors_24h: accepted, discarded_errors_24h: lost },
+    usage: {
+      accepted_errors_24h: accepted,
+      // Preserve this existing combined counter; enforcement losses have their own field.
+      discarded_errors_24h: lost,
+      enforcement_discarded_errors_24h: dropped,
+      invalid_errors_24h: sumOutcome('invalid'),
+      client_discarded_errors_24h: clientDiscarded,
+      ...clientUsage,
+      client_other_discard_errors_24h: otherClient,
+    },
     detail: causes
       .filter((c, i) => i === 1 || c.value > 0)
       .map((c) => c.text)

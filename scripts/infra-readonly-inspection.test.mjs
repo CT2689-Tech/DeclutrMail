@@ -173,6 +173,30 @@ test('existing native collector errors stay silent; valid snapshot and nonzero f
   assert.ok(!existsSync(sourcePath));
 });
 
+test('scoped projection retains only closed Sentry loss counters with no arbitrary reason labels', () => {
+  const data = snapshot();
+  data.vendors[6].usage = {
+    enforcement_discarded_errors_24h: 3,
+    invalid_errors_24h: 0,
+    client_discarded_errors_24h: 5,
+    client_ratelimit_backoff_errors_24h: 4,
+    client_network_error_errors_24h: 1,
+    client_queue_overflow_errors_24h: 0,
+    client_cache_overflow_errors_24h: 0,
+    client_send_error_errors_24h: 0,
+    client_sdk_filter_errors_24h: 0,
+    client_internal_error_errors_24h: 0,
+    client_other_discard_errors_24h: 0,
+    [privateMarker]: 10,
+  };
+  const result = projectSnapshot(data).vendors[6];
+  assert.equal(result.usage.client_ratelimit_backoff_errors_24h, 4);
+  assert.equal(result.usage.enforcement_discarded_errors_24h, 3);
+  assert.equal(Object.keys(result.usage).length, 11);
+  assert.equal(result.omittedUsageFields, 1);
+  assert.ok(!JSON.stringify(result).includes(privateMarker));
+});
+
 test('missing, malformed, oversized, timed-out and failed collection retain closed unavailable evidence', () => {
   for (const [execImpl, reason] of [
     [() => {}, 'snapshot_unavailable_or_invalid'],
