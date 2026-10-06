@@ -1,11 +1,16 @@
 import { Test } from '@nestjs/testing';
-import { Client, type Pool } from 'pg';
+import { Client, type Pool, type PoolClient } from 'pg';
 import type { ConnectionOptions } from 'node:tls';
 import { X509Certificate } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiDbDriver, createApiDatabase, nodePostgresPoolOptions } from './api-database.js';
+import {
+  apiDbDriver,
+  createApiDatabase,
+  nodePostgresPoolOptions,
+  readApiPoolDiagnostics,
+} from './api-database.js';
 import { DbModule, DRIZZLE } from './db.module.js';
 
 afterEach(() => {
@@ -13,6 +18,69 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('API adapter selection and ownership', () => {
+  it('reports only pool counts and checkout age, resets on release/removal and cleans up on close', async () => {
+    const connection = createApiDatabase({
+      DATABASE_URL: 'postgres://synthetic:local@127.0.0.1:1/db',
+      API_DB_DRIVER: 'node-postgres',
+    });
+    const pool = (connection.db as unknown as { $client: Pool }).$client;
+    const clock = vi.spyOn(performance, 'now');
+    const first = { secret: 'DSN, SQL and client identity stay private' } as unknown as PoolClient;
+    const second = { secret: 'another private client' } as unknown as PoolClient;
+    try {
+      clock.mockReturnValue(100);
+      pool.emit('acquire', first);
+      clock.mockReturnValue(200);
+      pool.emit('acquire', second);
+      clock.mockReturnValue(450);
+      expect(readApiPoolDiagnostics(connection.db)).toEqual({
+        driver: 'node-postgres',
+        total: 0,
+        idle: 0,
+        waiting: 0,
+        checkedOut: 2,
+        oldestCheckoutMs: 350,
+      });
+      pool.emit('release', new Error('private driver error'), first);
+      expect(readApiPoolDiagnostics(connection.db)?.oldestCheckoutMs).toBe(250);
+      pool.emit('remove', second);
+      expect(readApiPoolDiagnostics(connection.db)?.checkedOut).toBe(0);
+      expect(readApiPoolDiagnostics(connection.db)?.oldestCheckoutMs).toBe(0);
+      clock.mockReturnValue(500);
+      pool.emit('acquire', first);
+      clock.mockReturnValue(650);
+      expect(readApiPoolDiagnostics(connection.db)?.oldestCheckoutMs).toBe(150);
+    } finally {
+      await connection.close();
+    }
+    expect(readApiPoolDiagnostics(connection.db)).toBeUndefined();
+    for (const event of ['acquire', 'release', 'remove']) {
+      expect(pool.listenerCount(event)).toBe(0);
+    }
+  });
+
+  it('leaves unavailable drivers unknown and swallows a failed optional snapshot', async () => {
+    const legacy = createApiDatabase({
+      DATABASE_URL: 'postgres://synthetic:local@127.0.0.1:1/db',
+      API_DB_DRIVER: 'postgres-js',
+    });
+    const connection = createApiDatabase({
+      DATABASE_URL: 'postgres://synthetic:local@127.0.0.1:1/db',
+      API_DB_DRIVER: 'node-postgres',
+    });
+    try {
+      expect(readApiPoolDiagnostics(legacy.db)).toBeUndefined();
+      const pool = (connection.db as unknown as { $client: Pool }).$client;
+      vi.spyOn(pool, 'waitingCount', 'get').mockImplementation(() => {
+        throw new Error('private diagnostic failure');
+      });
+      expect(readApiPoolDiagnostics(connection.db)).toBeUndefined();
+    } finally {
+      await legacy.close();
+      await connection.close();
+    }
+  });
+
   it('keeps postgres-js unless the alternative is explicitly selected', () => {
     for (const value of [undefined, '', ' ', 'postgres-js']) {
       expect(apiDbDriver({ API_DB_DRIVER: value })).toBe('postgres-js');

@@ -2,7 +2,7 @@ import { drizzle as postgresJsDrizzle } from 'drizzle-orm/postgres-js';
 import { drizzle as nodePostgresDrizzle } from 'drizzle-orm/node-postgres';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import { schema } from '@declutrmail/db';
-import { Client, Pool } from 'pg';
+import { Client, Pool, type PoolClient } from 'pg';
 import type { ConnectionOptions } from 'node:tls';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
@@ -16,6 +16,27 @@ export interface ApiDatabaseConnection {
   readonly db: DrizzleDb;
   readonly driver: ApiDbDriver;
   close(): Promise<void>;
+}
+
+/** Per-process client slots, not PostgreSQL backend connections or SQL time. */
+export interface ApiPoolDiagnostics {
+  driver: 'node-postgres';
+  total: number;
+  idle: number;
+  waiting: number;
+  checkedOut: number;
+  oldestCheckoutMs: number;
+}
+
+const diagnostics = new WeakMap<DrizzleDb, () => ApiPoolDiagnostics>();
+
+/** Optional operational context; never change a response if diagnostics fail. */
+export function readApiPoolDiagnostics(db: DrizzleDb): ApiPoolDiagnostics | undefined {
+  try {
+    return diagnostics.get(db)?.();
+  } catch {
+    return undefined;
+  }
 }
 
 export function apiDbDriver(env: NodeJS.ProcessEnv = process.env): ApiDbDriver {
@@ -102,6 +123,15 @@ export function createApiDatabase(env: NodeJS.ProcessEnv = process.env): ApiData
   let db: DrizzleDb;
   if (driver === 'node-postgres') {
     const pool = new Pool(nodePostgresPoolOptions(env));
+    // Observe driver lifecycle events only. Keep no SQL, request, client ID or
+    // acquisition stack, and add no query wrapper, deadline or polling timer.
+    const checkedOut = new Map<PoolClient, number>();
+    const acquire = (client: PoolClient) => checkedOut.set(client, performance.now());
+    const release = (_error: unknown, client: PoolClient) => checkedOut.delete(client);
+    const remove = (client: PoolClient) => checkedOut.delete(client);
+    pool.on('acquire', acquire);
+    pool.on('release', release);
+    pool.on('remove', remove);
     // Idle socket errors are emitted rather than rejecting a request. pg
     // removes that connection; a listener prevents a process-level crash.
     // Never log the message, connection, SQL, DSN or bound values.
@@ -122,7 +152,32 @@ export function createApiDatabase(env: NodeJS.ProcessEnv = process.env): ApiData
     // No query names or .prepare(name): Drizzle executes unnamed statements.
     // SSL settings come from the DSN; certificate verification is not weakened.
     db = nodePostgresDrizzle(pool, { schema });
-    close = () => pool.end();
+    diagnostics.set(db, () => {
+      const now = performance.now();
+      let oldestCheckoutMs = 0;
+      for (const acquiredAt of checkedOut.values()) {
+        oldestCheckoutMs = Math.max(oldestCheckoutMs, now - acquiredAt);
+      }
+      return {
+        driver,
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+        checkedOut: checkedOut.size,
+        oldestCheckoutMs: Math.max(0, Math.round(oldestCheckoutMs)),
+      };
+    });
+    close = async () => {
+      try {
+        await pool.end();
+      } finally {
+        diagnostics.delete(db);
+        checkedOut.clear();
+        pool.off('acquire', acquire);
+        pool.off('release', release);
+        pool.off('remove', remove);
+      }
+    };
   } else {
     // Required by ADR-0022 for Supabase transaction pooling.
     const client = postgres(url, { prepare: false, ...apiPoolOptions(env) });
