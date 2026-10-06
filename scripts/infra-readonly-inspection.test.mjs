@@ -87,13 +87,11 @@ test('payment values are never read or forwarded; unrelated access stays scoped 
 });
 
 test('invalid, private and weak public keys fail before any collector starts', () => {
-  const weak = generateKeyPairSync('rsa', {
-    modulusLength: 1024,
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  });
+  // Public-only negative fixture: rejected before any collector or encryption.
+  const weakPublicFixture =
+    '-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCneb57iyHEAJglK8ZBggA+Hrib\nfBOZ4OpKsQpx4EMi5XJyhmqiHq+ZeDRVhyL5GZVSYkqsxME9FAv64aFdAxDmVBgd\neyYkk4qoD2oOor4RnPJPyLeSt/Tw9I/4NJxlBkm0KyorFI9Q+FLXV9BzKkM8KzyS\n4NYykYibfqrd2fKLnQIDAQAB\n-----END PUBLIC KEY-----\n';
   let calls = 0;
-  for (const pem of [undefined, privateMarker, privateKey, weak.publicKey])
+  for (const pem of [undefined, privateMarker, privateKey, weakPublicFixture])
     assert.throws(() =>
       inspectInfrastructure({ env: { INFRA_INSPECTION_PUBLIC_KEY: pem }, execImpl: () => calls++ }),
     );
