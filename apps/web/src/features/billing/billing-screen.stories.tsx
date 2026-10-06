@@ -680,3 +680,127 @@ function UnconfirmedBillingFixture() {
 export const PaymentUnconfirmedFullPage: Story<typeof BillingScreen> = {
   render: () => <UnconfirmedBillingFixture />,
 };
+
+/** Synthetic server projection beneath a complimentary entitlement. No provider calls. */
+function ComplimentaryConfirmationFixture({
+  confirmed = false,
+  paused = false,
+  ended = false,
+}: {
+  confirmed?: boolean;
+  paused?: boolean;
+  ended?: boolean;
+}) {
+  const [ready, setReady] = useState(false);
+  const [fixture] = useState(() => {
+    const me = meFixture('pro', null);
+    me.user.workspaceId = 'storybook-complimentary-confirmation';
+    const body: BillingSubscription = {
+      ...PRO_SUB,
+      complimentary: { tier: 'pro', expiresAt: null },
+      subscription: {
+        ...PRO_SUB.subscription!,
+        tier: ended ? 'pro' : 'plus',
+        cycle: 'annual',
+        currentPeriodEnd: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+        status: paused ? 'paused' : 'active',
+        grantsAccess: !paused && !ended,
+      },
+    };
+    return { me, body, client: makeClient(me, body) };
+  });
+  useEffect(() => {
+    const originalFetch = globalThis.fetch;
+    const key = pendingCheckoutKey(fixture.me.user.workspaceId);
+    const originalPending = window.localStorage.getItem(key);
+    const pending: PendingCheckout = {
+      workspaceId: fixture.me.user.workspaceId,
+      kind: paused ? 'resume' : confirmed ? 'checkout_intent' : 'change_unconfirmed',
+      fromTier: 'pro',
+      fromCycle: confirmed ? null : 'annual',
+      toTier: confirmed || paused ? 'plus' : 'pro',
+      toCycle: 'annual',
+      at: Date.now(),
+    };
+    window.localStorage.setItem(key, JSON.stringify(pending));
+    globalThis.fetch = async (input, init) => {
+      const req = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(req.url, window.location.origin).pathname;
+      const data =
+        req.method === 'POST' && path === '/api/billing/reconcile'
+          ? { outcome: 'provider_unavailable' }
+          : req.method !== 'GET'
+            ? null
+            : path === '/api/auth/me'
+              ? fixture.me
+              : path === '/api/billing/subscription'
+                ? fixture.body
+                : path === '/api/billing/invoices'
+                  ? { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 }
+                  : null;
+      return new Response(
+        JSON.stringify(
+          data
+            ? { data }
+            : {
+                error: {
+                  code: 'BILLING_DISABLED',
+                  message: 'Synthetic review: payment actions are disabled.',
+                },
+              },
+        ),
+        {
+          status: data ? 200 : 503,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
+    };
+    setReady(true);
+    return () => {
+      globalThis.fetch = originalFetch;
+      if (originalPending === null) window.localStorage.removeItem(key);
+      else window.localStorage.setItem(key, originalPending);
+    };
+  }, [fixture, confirmed, paused, ended]);
+  return ready ? (
+    <>
+      {!confirmed ? (
+        <button
+          onClick={() => {
+            fixture.body = {
+              ...fixture.body,
+              subscription: {
+                ...fixture.body.subscription!,
+                tier: paused ? 'plus' : 'pro',
+                status: 'active',
+                grantsAccess: true,
+              },
+            };
+            void fixture.client.invalidateQueries({ queryKey: billingKeys.subscription() });
+          }}
+        >
+          Simulate server confirmation (synthetic)
+        </button>
+      ) : null}
+      {frame(fixture.client)}
+    </>
+  ) : (
+    <p>Preparing synthetic paid confirmation…</p>
+  );
+}
+
+export const ComplimentaryPaidConfirmed: Story<typeof BillingScreen> = {
+  render: () => <ComplimentaryConfirmationFixture confirmed />,
+};
+
+export const ComplimentaryUpgradePending: Story<typeof BillingScreen> = {
+  render: () => <ComplimentaryConfirmationFixture />,
+};
+
+export const ComplimentaryResumePending: Story<typeof BillingScreen> = {
+  render: () => <ComplimentaryConfirmationFixture paused />,
+};
+
+export const ComplimentaryPaidAccessEnded: Story<typeof BillingScreen> = {
+  render: () => <ComplimentaryConfirmationFixture ended />,
+};

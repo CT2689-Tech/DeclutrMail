@@ -19,7 +19,7 @@
 // captured in subscription_events", anonymous enum for analytics).
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import {
   billingCustomers,
   pendingCheckouts,
@@ -48,7 +48,7 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
-import { lockSubscription } from './billing-webhook.service.js';
+import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
 
@@ -304,7 +304,15 @@ export class BillingService {
     // the most recent non-granting row. Row count per workspace is
     // bounded by the one-live-subscription rule.
     const rows = await this.db
-      .select()
+      .select({
+        ...getTableColumns(subscriptions),
+        // Status alone can mask expired dunning/refund access beneath a
+        // complimentary floor. Match recomputeWorkspaceTier's DB-time
+        // predicate so the browser does not infer money completion from
+        // that floor or reimplement provider deadline rules.
+        grantsAccess: sql<boolean>`${inArray(subscriptions.status, [...GRANTING_STATUSES])}
+          AND (${subscriptions.entitlementEndsAt} IS NULL OR ${subscriptions.entitlementEndsAt} > now())`,
+      })
       .from(subscriptions)
       .where(eq(subscriptions.workspaceId, workspaceId))
       .orderBy(desc(subscriptions.updatedAt));
@@ -356,6 +364,7 @@ export class BillingService {
               provider: sub.provider,
               tier: sub.tier,
               status: sub.status,
+              grantsAccess: sub.grantsAccess,
               cycle: sub.billingCycle,
               currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,

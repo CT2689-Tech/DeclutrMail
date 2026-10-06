@@ -77,6 +77,7 @@ import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './bi
 import { BillingScreen } from './billing-screen';
 import { BillingInvoiceHistoryGate } from './billing-invoice-history-gate';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
+import { billingKeys } from './api/query-keys';
 
 const FREE_BODY: BillingSubscription = {
   complimentary: null,
@@ -3877,6 +3878,267 @@ describe('BillingScreen — paid subscriber', () => {
     await waitFor(() => expect(notice).toHaveTextContent('It won’t renew'));
     expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(screen.queryByText(/stays active/)).not.toBeInTheDocument();
+  });
+});
+
+describe('BillingScreen — paid confirmation beneath complimentary access', () => {
+  const complimentaryPro: BillingSubscription = {
+    ...FREE_BODY,
+    tier: 'pro',
+    complimentary: { tier: 'pro', expiresAt: null },
+  };
+
+  it.each(['checkout', 'checkout_intent', 'change', 'change_unconfirmed', 'resume'] as const)(
+    '%s clears after the paid Plus target is confirmed, preserving complimentary Pro',
+    async (kind) => {
+      mockTier = 'pro';
+      mockCleanupRemaining = null;
+      writePendingCheckout(
+        'w',
+        kind,
+        'pro',
+        kind === 'checkout' || kind === 'checkout_intent'
+          ? null
+          : kind === 'resume'
+            ? 'annual'
+            : 'monthly',
+        'plus',
+        'annual',
+      );
+      stubSubscription(() =>
+        jsonOk({
+          data: {
+            ...complimentaryPro,
+            subscription: { ...SUB, tier: 'plus', cycle: 'annual', grantsAccess: true },
+          },
+        }),
+      );
+      renderScreen();
+
+      const card = await screen.findByTestId('current-plan-card');
+      await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+      expect(within(card).getByText('Pro')).toBeInTheDocument();
+      expect(within(card).getByText('Complimentary')).toBeInTheDocument();
+      expect(launchCheckout).not.toHaveBeenCalled();
+    },
+  );
+
+  it('confirms a still-granting past-due target without hiding its dunning warning', async () => {
+    mockTier = 'pro';
+    writePendingCheckout('w', 'checkout_intent', 'pro', null, 'plus', 'monthly');
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...complimentaryPro,
+          subscription: { ...SUB, tier: 'plus', status: 'past_due', grantsAccess: true },
+        },
+      }),
+    );
+    renderScreen();
+
+    await screen.findByTestId('current-plan-card');
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('non-backing-subscription-notice')).toHaveTextContent(
+      'Payment past due',
+    );
+  });
+
+  it.each(['change', 'change_unconfirmed', 'checkout_intent'] as const)(
+    '%s keeps the Pro target pending while the paid subscription is still Plus',
+    async (kind) => {
+      mockTier = 'pro';
+      const pending = writePendingCheckout('w', kind, 'pro', 'annual', 'pro', 'annual');
+      stubSubscription(() =>
+        jsonOk({
+          data: {
+            ...complimentaryPro,
+            subscription: { ...SUB, tier: 'plus', cycle: 'annual', grantsAccess: true },
+          },
+        }),
+      );
+      renderScreen();
+
+      await screen.findByTestId('current-plan-card');
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+      expect(launchCheckout).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps a resume pending while the paid Pro row is paused beneath complimentary Pro', async () => {
+    mockTier = 'pro';
+    const pending = writePendingCheckout('w', 'resume', 'pro', 'annual', 'pro', 'annual');
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...complimentaryPro,
+          subscription: { ...SUB, status: 'paused', cycle: 'annual' },
+        },
+      }),
+    );
+    renderScreen();
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+  });
+
+  it.each(['paused', 'canceled'] as const)(
+    'keeps a checkout pending when the target paid row is %s',
+    async (status) => {
+      mockTier = 'pro';
+      const pending = writePendingCheckout('w', 'checkout', 'free', null, 'pro', 'annual');
+      stubSubscription(() =>
+        jsonOk({
+          data: { ...complimentaryPro, subscription: { ...SUB, status, cycle: 'annual' } },
+        }),
+      );
+      renderScreen();
+
+      await screen.findByTestId('current-plan-card');
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    },
+  );
+
+  it('keeps a refund-backstop row pending when the paid target no longer grants access', async () => {
+    const pending = writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'monthly');
+    stubSubscription(() => jsonOk({ data: REFUND_SETTLING_BODY }));
+    renderScreen();
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+  });
+
+  it.each(['active', 'past_due'] as const)(
+    'keeps a matching %s paid target pending when the server says it no longer grants',
+    async (status) => {
+      mockTier = 'pro';
+      const pending = writePendingCheckout('w', 'checkout', 'free', null, 'pro', 'annual');
+      stubSubscription(() =>
+        jsonOk({
+          data: {
+            ...complimentaryPro,
+            subscription: { ...SUB, status, cycle: 'annual', grantsAccess: false },
+          },
+        }),
+      );
+      renderScreen();
+
+      const card = await screen.findByTestId('current-plan-card');
+      expect(within(card).getByText('Complimentary')).toBeInTheDocument();
+      expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
+      expect(
+        within(card).queryByRole('button', { name: 'Review cancellation' }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    },
+  );
+
+  it.each(['refund', 'chargeback'] as const)(
+    'keeps the money action pending for a %s verdict even while access still grants',
+    async (cancelSource) => {
+      mockTier = 'pro';
+      const pending = writePendingCheckout('w', 'checkout', 'free', null, 'pro', 'annual');
+      stubSubscription(() =>
+        jsonOk({
+          data: {
+            ...complimentaryPro,
+            subscription: {
+              ...SUB,
+              cycle: 'annual',
+              grantsAccess: true,
+              cancelAtPeriodEnd: true,
+              cancelSource,
+            },
+          },
+        }),
+      );
+      renderScreen();
+
+      await screen.findByTestId('current-plan-card');
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    },
+  );
+
+  it.each(['plus', 'pro'] as const)(
+    'holds an older server payload without grant proof for a paid %s target masked by complimentary Pro',
+    async (toTier) => {
+      mockTier = 'pro';
+      const pending = writePendingCheckout('w', 'checkout', 'free', null, toTier, 'annual');
+      stubSubscription(() =>
+        jsonOk({
+          data: { ...complimentaryPro, subscription: { ...SUB, tier: toTier, cycle: 'annual' } },
+        }),
+      );
+      renderScreen();
+
+      await screen.findByTestId('current-plan-card');
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    },
+  );
+
+  it('holds retained paid data through a failing refresh, then clears after an identical successful response', async () => {
+    mockTier = 'pro';
+    const body: BillingSubscription = {
+      ...complimentaryPro,
+      subscription: { ...SUB, tier: 'plus', cycle: 'annual', grantsAccess: true },
+    };
+    const pending = writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'annual');
+    const client = createTestQueryClient();
+    client.setQueryData(billingKeys.subscription(), body, { updatedAt: Date.now() - 61_000 });
+    let resolveRead!: (response: Response) => void;
+    let reads = 0;
+    stubSubscription(() => {
+      reads++;
+      return reads === 1
+        ? new Promise<Response>((resolve) => {
+            resolveRead = resolve;
+          })
+        : jsonOk({ data: body });
+    });
+    render(
+      <QueryWrapper client={client}>
+        <BillingScreen />
+      </QueryWrapper>,
+    );
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    await act(async () => resolveRead(jsonServerError()));
+    await waitFor(() =>
+      expect(client.getQueryState(billingKeys.subscription())?.status).toBe('error'),
+    );
+    expect(client.getQueryData(billingKeys.subscription())).toBe(body);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+
+    await act(async () => {
+      await client.refetchQueries({ queryKey: billingKeys.subscription() });
+    });
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(client.getQueryData(billingKeys.subscription())).toBe(body);
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(reads).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps a legacy cycle-less checkout pending when only complimentary access exists', async () => {
+    mockTier = 'pro';
+    const pending = writePendingCheckout('w', 'checkout', 'free', null, 'pro', null);
+    stubSubscription(() => jsonOk({ data: complimentaryPro }));
+    renderScreen();
+
+    await screen.findByTestId('current-plan-card');
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
+    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
   });
 });
 

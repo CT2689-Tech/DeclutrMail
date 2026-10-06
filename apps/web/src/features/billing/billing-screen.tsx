@@ -28,7 +28,7 @@ import type {
   BillingSubscription,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
-import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, TIER_RANK, type TierId } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
@@ -250,7 +250,7 @@ export function BillingScreen({
   // same-browser only — laptop pays, phone opens /billing). When the
   // server says a checkout is in flight and this browser holds no
   // local lock, synthesize one: the existing processing state machine
-  // (banner + poll + unlock-on-tier-flip) then runs unchanged. The
+  // (banner + poll + unlock-on-paid-confirmation) then runs unchanged. The
   // local lock stays authoritative when present — it carries the
   // richer fromTier/kind context the server row doesn't.
   const serverPending = data?.pendingCheckout ?? null;
@@ -268,8 +268,8 @@ export function BillingScreen({
       // TierId is the purchasable ladder; team/enterprise never checkout.
       fromTier: data.tier === 'plus' || data.tier === 'pro' ? data.tier : 'free',
       fromCycle: data.subscription?.cycle ?? null,
-      // The server row names what the checkout is buying — the flip
-      // detector unlocks the moment the workspace reaches it.
+      // The server row names what the checkout is buying — only a
+      // matching granting paid subscription can confirm completion.
       toTier: serverPending.tier,
       toCycle: serverPending.cycle,
       at: Date.now(),
@@ -298,15 +298,29 @@ export function BillingScreen({
   const tier: TierId = data?.tier ?? meTier;
   const subscription = data?.subscription ?? null;
 
-  // The webhook landed: the SERVER now reports a different tier — or,
-  // for cycle-only plan changes, a different billing cycle — than the
-  // action started from. Only then is success claimed.
+  // A complimentary entitlement can stay above the paid tier, or
+  // already equal an unconfirmed upgrade's target. Only the server's
+  // granting paid subscription can acknowledge the money action.
   useEffect(() => {
-    if (pending === null || data === null) return;
-    const reachedTargetTier = data.tier === pending.toTier;
-    const reachedTargetCycle =
-      pending.toCycle === null ||
-      (data.subscription !== null && data.subscription.cycle === pending.toCycle);
+    if (
+      pending === null ||
+      data === null ||
+      subscriptionQuery.isError ||
+      subscriptionQuery.isFetching
+    )
+      return;
+    const paid = data.subscription;
+    if (paid === null || (paid.status !== 'active' && paid.status !== 'past_due')) return;
+    if (paid.cancelSource === 'refund' || paid.cancelSource === 'chargeback') return;
+    // Older servers omit the proof: preserve matching-tier behavior,
+    // but hold complimentary mismatches until a new server confirms.
+    const grantsAccess =
+      paid.grantsAccess ??
+      (data.tier === paid.tier &&
+        (data.complimentary === null || TIER_RANK[data.complimentary.tier] < TIER_RANK[paid.tier]));
+    if (!grantsAccess || TIER_RANK[data.tier] < TIER_RANK[paid.tier]) return;
+    const reachedTargetTier = paid.tier === pending.toTier;
+    const reachedTargetCycle = pending.toCycle === null || paid.cycle === pending.toCycle;
     if (reachedTargetTier && reachedTargetCycle) {
       clearPendingCheckout(workspaceId);
       setPending(null);
@@ -319,7 +333,14 @@ export function BillingScreen({
       void queryClient.invalidateQueries();
       toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
     }
-  }, [pending, data, queryClient, workspaceId]);
+  }, [
+    pending,
+    data,
+    subscriptionQuery.isError,
+    subscriptionQuery.isFetching,
+    queryClient,
+    workspaceId,
+  ]);
 
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
@@ -1801,7 +1822,7 @@ function NonBackingSubscriptionNotice({
   const until = formatBillingDate(sub.pauseUntil);
   const retainedPeriodEnd = formatBillingDate(sub.currentPeriodEnd);
   const isPaused = sub.status === 'paused';
-  const mismatch = reason === 'tier_mismatch';
+  const mismatch = reason === 'tier_mismatch' || reason === 'access_ended';
   // Self-serve resume promises "$0 today, existing period continues" —
   // only render that promise when the record IS paused and the retained
   // period is actually known (ui-truth: never assert a period the read
