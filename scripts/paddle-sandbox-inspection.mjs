@@ -168,6 +168,8 @@ async function readPage(url, key, fetchImpl) {
     if (error instanceof InspectionError) throw error;
     throw new InspectionError(controller.signal.aborted ? 'timeout' : 'transport_error');
   } finally {
+    // Also close unread HTTP-error bodies; their status is sufficient and their content is private.
+    controller.abort();
     clearTimeout(timer);
   }
 }

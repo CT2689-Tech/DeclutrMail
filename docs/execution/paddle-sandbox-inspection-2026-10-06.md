@@ -59,12 +59,17 @@ Focused tests exercise live/legacy/malformed zero-request rejection, actual
 redirect policy, pagination reconstruction/poisoned URLs/duplicates/page limits,
 safe projections with embedded private markers, unknown SKU/destination states,
 HTTP/transport/oversize/malformed failures, and the actual fail-closed CLI.
-All ten focused tests passed, including the actual 15-second deadline. Three
+All eleven focused tests passed, including the actual 15-second deadline. Three
 negative controls independently removed the credential guard, selected the live
 host, and added a destination secret to the projection; each failed as expected,
 and the source was restored byte-for-byte. Actual CLI smoke with a synthetic fetch
 preload produced three complete sections and exit0 without external requests;
-missing credentials produced a safe report and exit1. Workspace typecheck passed;
+missing credentials produced a safe report and exit1. A pre-merge follow-up found
+that unread HTTP-error bodies lacked connection cleanup after status inspection.
+The request controller now aborts on all exits. An actual loopback native-fetch
+HTTP503 response deliberately never ends its body: the corrected source closes
+that response promptly while later sections complete. Removing the cleanup makes
+that regression fail on an open connection; source restored byte-for-byte. Workspace typecheck passed;
 full lint passed with six existing warnings; changed-file formatting/diff checks
 and strict implementation-log validation (249 rows) passed. Workflow contracts
 enforce manual main-only Sandbox-scoped read access and one-day sanitized failure
