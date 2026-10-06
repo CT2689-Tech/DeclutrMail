@@ -1,10 +1,17 @@
 import { Global, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 
-import { createApiDatabase, type ApiDatabaseConnection } from './api-database.js';
+import {
+  createApiDatabase,
+  readApiPoolDiagnostics,
+  type ApiDatabaseConnection,
+  type DrizzleDb,
+} from './api-database.js';
 export type { DrizzleDb } from './api-database.js';
 
 /** NestJS DI token for the Drizzle database instance. */
 export const DRIZZLE = 'DRIZZLE';
+/** Optional operational reader, also available to route-scoped error filters. */
+export const API_POOL_DIAGNOSTICS = Symbol('API_POOL_DIAGNOSTICS');
 
 /** Internal pool ownership; features receive only the ORM through DRIZZLE. */
 const API_DATABASE_CONNECTION = Symbol('API_DATABASE_CONNECTION');
@@ -25,8 +32,13 @@ const API_DATABASE_CONNECTION = Symbol('API_DATABASE_CONNECTION');
       inject: [API_DATABASE_CONNECTION],
       useFactory: (connection: ApiDatabaseConnection) => connection.db,
     },
+    {
+      provide: API_POOL_DIAGNOSTICS,
+      inject: [DRIZZLE],
+      useFactory: (db: DrizzleDb) => () => readApiPoolDiagnostics(db),
+    },
   ],
-  exports: [DRIZZLE],
+  exports: [DRIZZLE, API_POOL_DIAGNOSTICS],
 })
 export class DbModule implements OnApplicationShutdown {
   constructor(

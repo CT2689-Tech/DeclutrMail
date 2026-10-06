@@ -11,6 +11,7 @@ import { correlationMiddleware } from './common/correlation.middleware.js';
 import { requestTimingMiddleware } from './common/request-timing.middleware.js';
 import { securityHeadersMiddleware } from './common/security-headers.middleware.js';
 import { initSentry } from './observability/sentry.js';
+import { API_POOL_DIAGNOSTICS } from './db/db.module.js';
 
 /**
  * Parse `CORS_ORIGIN` into a value the `cors` middleware accepts.
@@ -206,7 +207,9 @@ async function bootstrap(): Promise<void> {
    */
   app.use(compression({ threshold: 1024 }));
   app.use(cookieParser());
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(
+    new AllExceptionsFilter().withPoolDiagnostics(app.get(API_POOL_DIAGNOSTICS)),
+  );
 
   const port = process.env.PORT ?? 4000;
   await app.listen(port);

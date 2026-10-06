@@ -301,6 +301,16 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 <!-- AUTO:DECISIONS:END -->
 
+## API pool failure diagnostics — 2026-10-06
+
+Relates to D159/D201. API checkout-timeout failures previously lacked pool
+occupancy and checked-out-client age. Optional node-postgres event observations
+now enrich existing operational failure records with counts/timing only, preserving
+responses, Sentry payloads, pool settings and retries. Native local HTTP saturation
+and recovery, lifecycle/error isolation and static verification are recorded in
+`docs/execution/api-pool-failure-diagnostics-2026-10-06.md`. This diagnostic change
+does not establish the historical incident's held-client cause or clear launch.
+
 ## Development Sentry isolation — 2026-10-06
 
 Relates to D159. Configured development DSNs previously initialized browser,

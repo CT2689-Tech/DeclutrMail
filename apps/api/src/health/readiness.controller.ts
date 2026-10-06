@@ -4,6 +4,7 @@ import { sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
+import { readApiPoolDiagnostics, type ApiPoolDiagnostics } from '../db/api-database.js';
 import { READINESS_REDIS } from './readiness-redis.provider.js';
 
 /** How long a single dependency probe may take before it counts as down. */
@@ -25,6 +26,7 @@ interface ReadinessBody {
 async function probe(
   dependency: 'database' | 'redis',
   run: () => Promise<unknown>,
+  poolDiagnostics?: () => ApiPoolDiagnostics | undefined,
 ): Promise<DependencyState> {
   const started = Date.now();
   const timeout = new Error('readiness probe timeout');
@@ -41,6 +43,7 @@ async function probe(
     // Client error events do not report our local timeout. Preserve the
     // dependency and failure category here; never log raw provider errors,
     // which can contain connection details or credentials.
+    const databasePool = poolDiagnostics?.();
     console.warn(
       JSON.stringify({
         level: 'warn',
@@ -48,6 +51,7 @@ async function probe(
         dependency,
         reason: error === timeout ? 'timeout' : 'error',
         durationMs: Date.now() - started,
+        ...(databasePool ? { databasePool } : {}),
       }),
     );
     return 'down';
@@ -85,7 +89,11 @@ export class ReadinessController {
   @Get()
   async getReadiness(@Res() res: Response): Promise<void> {
     const [database, redis] = await Promise.all([
-      probe('database', () => this.db.execute(sql`select 1`)),
+      probe(
+        'database',
+        () => this.db.execute(sql`select 1`),
+        () => readApiPoolDiagnostics(this.db),
+      ),
       // A missing REDIS_URL is a legitimate posture outside production
       // (local dev, CI), so it reads as `not_configured` rather than
       // `down` — the app genuinely has no Redis to be down.

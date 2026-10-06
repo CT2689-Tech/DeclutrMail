@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { createApiDatabase, type ApiDbDriver } from './api-database.js';
+import { Test } from '@nestjs/testing';
+import { createApiDatabase, readApiPoolDiagnostics, type ApiDbDriver } from './api-database.js';
+import { DRIZZLE } from './db.module.js';
+import { ReadinessController } from '../health/readiness.controller.js';
+import { READINESS_REDIS } from '../health/readiness-redis.provider.js';
+import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 
 const fixtureUrl = process.env.API_DRIVER_TEST_PG_URL;
 function fixtureDatabaseUrl(value: string): URL {
@@ -59,6 +64,84 @@ describe.skipIf(!fixtureUrl)('API adapters on real PostgreSQL', () => {
         await admin.query(`DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`);
       } finally {
         await admin.end();
+      }
+    }
+  });
+  it('exposes starvation in the real HTTP readiness failure, then drains and recovers', async () => {
+    const connection = createApiDatabase({
+      DATABASE_URL: databaseUrl,
+      API_DB_DRIVER: 'node-postgres',
+      API_DB_POOL_MAX: '1',
+    });
+    const module = await Test.createTestingModule({
+      controllers: [ReadinessController],
+      providers: [
+        { provide: DRIZZLE, useValue: connection.db },
+        { provide: READINESS_REDIS, useValue: { ping: async () => 'PONG' } },
+      ],
+    }).compile();
+    const app = module.createNestApplication();
+    app.useGlobalFilters(
+      new AllExceptionsFilter().withPoolDiagnostics(() => readApiPoolDiagnostics(connection.db)),
+    );
+    app.setGlobalPrefix('api');
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const transaction = connection.db.transaction(async (tx) => {
+      await tx.execute(sql`select 1`);
+      acquired();
+      await gate;
+    });
+    try {
+      await app.listen(0, '127.0.0.1');
+      await Promise.race([held, transaction]);
+      const origin = await app.getUrl();
+      const failed = await fetch(`${origin}/api/readyz`);
+      expect(failed.status).toBe(503);
+      expect(await failed.json()).toEqual({
+        status: 'degraded',
+        checks: { database: 'down', redis: 'ok' },
+      });
+      expect(log).toHaveBeenCalledTimes(1);
+      const record = JSON.parse(log.mock.calls[0]![0]);
+      expect(record).toMatchObject({
+        kind: 'readiness.dependency_failed',
+        dependency: 'database',
+        reason: 'timeout',
+        databasePool: { driver: 'node-postgres', total: 1, idle: 0, waiting: 1, checkedOut: 1 },
+      });
+      expect(record.databasePool.oldestCheckoutMs).toBeGreaterThanOrEqual(1900);
+      release();
+      await transaction;
+      const healthy = await fetch(`${origin}/api/readyz`);
+      expect(healthy.status).toBe(200);
+      expect(await healthy.json()).toEqual({
+        status: 'ok',
+        checks: { database: 'ok', redis: 'ok' },
+      });
+      expect(readApiPoolDiagnostics(connection.db)).toMatchObject({
+        total: 1,
+        idle: 1,
+        waiting: 0,
+        checkedOut: 0,
+        oldestCheckoutMs: 0,
+      });
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      try {
+        await transaction;
+      } finally {
+        await app.close();
+        await connection.close();
+        log.mockRestore();
       }
     }
   });

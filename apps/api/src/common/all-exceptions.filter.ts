@@ -6,7 +6,9 @@ import {
   type ExceptionFilter,
   HttpException,
   HttpStatus,
+  Inject,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
@@ -22,6 +24,8 @@ import {
 import { isSentryServerExceptionType } from '@declutrmail/shared/observability';
 
 import { AppException } from './app-exception.js';
+import type { ApiPoolDiagnostics } from '../db/api-database.js';
+import { API_POOL_DIAGNOSTICS } from '../db/db.module.js';
 
 const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
   'EAI_AGAIN',
@@ -73,6 +77,18 @@ const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
+  // Property injection preserves constructor metadata in subclasses that
+  // have their own required dependencies (the OAuth callback needs JWT).
+  @Optional()
+  @Inject(API_POOL_DIAGNOSTICS)
+  private poolDiagnostics?: () => ApiPoolDiagnostics | undefined;
+
+  /** Bind the reader when the global filter is created outside Nest DI. */
+  withPoolDiagnostics(reader: () => ApiPoolDiagnostics | undefined): this {
+    this.poolDiagnostics = reader;
+    return this;
+  }
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const http = host.switchToHttp();
     const res = http.getResponse<Response>();
@@ -106,6 +122,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const errorKind = this.errorName(exception);
       const exceptionCode = this.safeExceptionCode(errObj.code);
       const upstreamStatus = this.safeNumericStatus(errObj.response?.status);
+      // Context belongs only in the existing operational log, not the response
+      // or Sentry. A failed diagnostic cannot replace the original exception.
+      let databasePool: ApiPoolDiagnostics | undefined;
+      try {
+        databasePool = this.poolDiagnostics?.();
+      } catch {
+        // Optional telemetry must never interrupt recovery.
+      }
       const detail = {
         kind: 'exception.5xx',
         cid: correlationId,
@@ -115,6 +139,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         message: errObj.message,
         ...(exceptionCode !== null ? { code: exceptionCode } : {}),
         ...(upstreamStatus !== null ? { responseStatus: upstreamStatus } : {}),
+        ...(databasePool ? { databasePool } : {}),
       };
       console.error(JSON.stringify(detail));
       // Fire-and-forget Sentry capture. The dynamic import keeps the
