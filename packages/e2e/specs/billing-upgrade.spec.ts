@@ -106,7 +106,7 @@ interface ErrorEnvelope {
 interface SubscriptionView {
   tier: string;
   foundingMember: boolean;
-  subscription: { provider: string; status: string; cycle: string } | null;
+  subscription: { provider: string; status: string; cycle: string; grantsAccess?: boolean } | null;
 }
 
 /** Bare webhook controller response (not D202-enveloped). */
@@ -365,6 +365,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   expect(sub.foundingMember, 'pro_monthly is not the founding price').toBe(false);
   expect(sub.subscription?.provider).toBe('paddle');
   expect(sub.subscription?.status).toBe('active');
+  expect(
+    sub.subscription?.grantsAccess,
+    'signed webhook grants paid access independently of the effective tier',
+  ).toBe(true);
   expect(sub.subscription?.cycle).toBe('monthly');
 
   // ---- 7. At-least-once safety: replaying the SAME event id acks as

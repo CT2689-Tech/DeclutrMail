@@ -139,6 +139,10 @@ export const BillingSubscriptionSchema = z.object({
       provider: BillingProviderIdSchema,
       tier: PurchasableTierSchema,
       status: SubscriptionStatusSchema,
+      /** Server status/deadline proof, independent of complimentary access.
+       * Optional during rolling deploys; absence is not proof that a
+       * tier-mismatched paid subscription grants the current account. */
+      grantsAccess: z.boolean().optional(),
       cycle: BillingCycleSchema,
       currentPeriodEnd: z.iso.datetime().nullable(),
       cancelAtPeriodEnd: z.boolean(),

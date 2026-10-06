@@ -332,3 +332,18 @@ exclude retained history from both content and the day switcher. Generation,
 billing, preferences and frozen payload writes remain unchanged. Verification
 and rollout evidence belongs to the PR and its exact checks/release; this entry
 alone is not production verification.
+
+
+## Complimentary access and paid confirmation — 2026-10-06
+
+Relates to D117/D249/D260. Effective complimentary Pro previously kept a confirmed
+paid Plus action waiting and could prematurely confirm an unresolved Pro action.
+The subscription read now supplies optional database-computed paid grant proof;
+the screen uses the matching paid tier/cycle, retains holds through failing reads
+and money verdicts, and conservatively handles older responses beneath a grant.
+The central presentation derivation also excludes explicitly ended paid access
+from price/renewal claims. Meaningful caller, database and model negative controls
+failed before their repairs. Local browser/API smoke and release builds passed;
+independent review found no blockers. PR, CI/queue, deployment and production
+readback remain distinct stages. See
+`docs/execution/billing-complimentary-completion-2026-10-06.md`.

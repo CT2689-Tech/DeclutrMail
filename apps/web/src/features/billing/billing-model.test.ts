@@ -154,6 +154,25 @@ describe('deriveBillingViewState — backing classification', () => {
     expect(view).toMatchObject({ backing: { state: 'past_due', sub } });
   });
 
+  it.each(['active', 'past_due'] as const)(
+    'server-ended %s access cannot supply a paid price beneath a matching complimentary tier',
+    (status) => {
+      const sub = { ...SUB, status, grantsAccess: false };
+      const view = deriveBillingViewState(
+        snapshot({
+          data: {
+            ...body('pro', sub),
+            complimentary: { tier: 'pro', expiresAt: null },
+          },
+        }),
+      );
+      expect(view).toMatchObject({ backing: { state: 'none' }, nonBacking: { sub } });
+      if (view.kind !== 'plan') throw new Error('Expected the loaded plan state');
+      expect(currentPlanPriceLabel(view)).toBe('Complimentary');
+      expect(nonBackingBlocksNewCheckout(view.nonBacking)).toBe(true);
+    },
+  );
+
   it('cancelAtPeriodEnd on a granting match is cancel_scheduled', () => {
     const sub = { ...SUB, cancelAtPeriodEnd: true };
     const view = deriveBillingViewState(snapshot({ data: body('pro', sub) }));

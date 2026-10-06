@@ -477,6 +477,44 @@ describe('BillingService', () => {
     expect(result.subscription).toMatchObject({ tier: 'pro', status: 'active' });
   });
 
+  it.each([
+    { status: 'active', deadline: null, grantsAccess: true },
+    { status: 'past_due', deadline: null, grantsAccess: true },
+    { status: 'active', deadline: 'future', grantsAccess: true },
+    { status: 'past_due', deadline: 'future', grantsAccess: true },
+    { status: 'active', deadline: 'past', grantsAccess: false },
+    { status: 'past_due', deadline: 'past', grantsAccess: false },
+    { status: 'paused', deadline: null, grantsAccess: false },
+    { status: 'canceled', deadline: null, grantsAccess: false },
+  ] as const)(
+    'getSubscription paid grant proof: $status with $deadline deadline is $grantsAccess',
+    async ({ status, deadline, grantsAccess }) => {
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_grant_proof',
+        tier: 'plus',
+        status,
+        providerPriceId: 'pri_plus_m',
+        billingCycle: 'monthly',
+        entitlementEndsAt:
+          deadline === null
+            ? null
+            : new Date(Date.now() + (deadline === 'future' ? 1 : -1) * 86_400_000),
+      });
+      // Effective Pro cannot explain whether this lower paid row grants.
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, principal.workspaceId));
+
+      const result = await service.getSubscription(principal.workspaceId);
+      expect(result.tier).toBe('pro');
+      expect(result.subscription).toMatchObject({ tier: 'plus', status, grantsAccess });
+      expect(paddleCheckout).not.toHaveBeenCalled();
+    },
+  );
+
   it('getSubscription falls back to the most recent NON-granting row when nothing grants', async () => {
     await db.insert(subscriptions).values({
       workspaceId: principal.workspaceId,

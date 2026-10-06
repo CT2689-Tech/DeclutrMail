@@ -209,7 +209,8 @@ export type BackingState =
   | { state: 'none' }
   | { state: 'active' | 'past_due' | 'cancel_scheduled'; sub: SubscriptionRecord };
 
-export type NonBackingReason = 'paused' | 'canceled' | 'tier_mismatch' | 'refund_settling';
+export type NonBackingReason =
+  'paused' | 'canceled' | 'tier_mismatch' | 'refund_settling' | 'access_ended';
 
 /**
  * A real, actionable subscription record that does NOT grant the
@@ -322,6 +323,8 @@ function nonBackingReason(sub: SubscriptionRecord, entitlementTier: TierId): Non
     // workspace tier from subscription rows, which can downgrade it.
     return TIER_RANK[entitlementTier] > TIER_RANK[sub.tier] ? 'tier_mismatch' : 'paused';
   }
+  // A same-tier complimentary grant can mask ended paid access, too.
+  if (sub.grantsAccess === false) return 'access_ended';
   // Granting status but a different tier than the entitlement — the
   // backing test already failed, so the row cannot tell the plan story.
   return 'tier_mismatch';
@@ -333,7 +336,11 @@ function planViewOf(payload: BillingSubscription): BillingPlanView {
   let backing: BackingState = { state: 'none' };
   let nonBacking: NonBackingRecord | null = null;
   if (sub !== null) {
-    if ((sub.status === 'active' || sub.status === 'past_due') && sub.tier === entitlementTier) {
+    if (
+      sub.grantsAccess !== false &&
+      (sub.status === 'active' || sub.status === 'past_due') &&
+      sub.tier === entitlementTier
+    ) {
       backing = { state: sub.cancelAtPeriodEnd ? 'cancel_scheduled' : sub.status, sub };
     } else {
       nonBacking = { reason: nonBackingReason(sub, entitlementTier), sub };
