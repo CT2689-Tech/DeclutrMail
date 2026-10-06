@@ -1,0 +1,72 @@
+name: Inspect infrastructure without payment providers
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: 'RSA PUBLIC key PEM only; keep the private key locally'
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: infra-readonly-inspection
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GCP_WIF_PROVIDER: ${{ secrets.GCP_WIF_PROVIDER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Validate private inspection contracts
+        run: node --test scripts/infra-readonly-inspection.test.mjs
+      - name: Validate caller public key before authentication
+        env:
+          INFRA_INSPECTION_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: node --input-type=module -e 'import { validatePublicKey } from "./scripts/sentry-private-triage.mjs"; validatePublicKey(process.env.INFRA_INSPECTION_PUBLIC_KEY);'
+      - name: Authenticate using existing Google Workload Identity
+        if: env.GCP_WIF_PROVIDER != ''
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+        if: env.GCP_WIF_PROVIDER != ''
+      - name: Install existing database metadata client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends postgresql-client
+      - name: Collect permitted infrastructure metadata privately
+        env:
+          INFRA_INSPECTION_PUBLIC_KEY: ${{ inputs.public_key }}
+          SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
+          GCP_BILLING_EXPORT_TABLE: ${{ vars.GCP_BILLING_EXPORT_TABLE }}
+          GCP_BILLING_ACCOUNT_ID: ${{ secrets.GCP_BILLING_ACCOUNT_ID }}
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+          ANTHROPIC_ADMIN_KEY: ${{ secrets.ANTHROPIC_ADMIN_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
+          POSTHOG_PROJECT_ID: ${{ secrets.POSTHOG_PROJECT_ID }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          GH_BILLING_PAT: ${{ secrets.GH_BILLING_PAT }}
+        run: node scripts/infra-readonly-inspection.mjs "${{ runner.temp }}/infra-inspection.encrypted.json"
+      - name: Retain encrypted diagnostic including unavailable reads
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: infra-readonly-inspection
+          path: ${{ runner.temp }}/infra-inspection.encrypted.json
+          retention-days: 1
+          if-no-files-found: error

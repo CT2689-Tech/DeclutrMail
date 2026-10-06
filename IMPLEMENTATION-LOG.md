@@ -390,3 +390,15 @@ state remain unchanged. The Free card also stops claiming the provider has no
 stored card without evidence. See
 `docs/execution/billing-recovery-language-2026-10-06.md`; real purchases and the
 original charge status remain separate verification requirements.
+
+## Scoped infrastructure inspection — 2026-10-06
+
+Relates to D156/D159. The available full vendor watchdog binds production payment
+credentials, beyond the current exploratory-read authorization. A separate manual
+main-only workflow reuses nine non-payment metadata reads, excludes both payment
+credential families before their values are read, suppresses raw collector output
+and uploads only an authenticated encrypted report. Closed numeric projections
+retain unavailable sources and process failures. It publishes no monitoring
+heartbeat and cannot establish daily collector recovery or dashboard usability.
+The existing scheduled watchdog and Sentry encryption context remain intact. See
+`docs/execution/infra-readonly-inspection-2026-10-06.md` for review and verification.
