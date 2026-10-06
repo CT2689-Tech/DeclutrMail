@@ -87,6 +87,7 @@ describe('lazy browser Sentry facade', () => {
 
   afterEach(() => {
     __resetForTests();
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     addEventListenerSpy.mockRestore();
     removeEventListenerSpy.mockRestore();
@@ -98,6 +99,80 @@ describe('lazy browser Sentry facade', () => {
     } else {
       process.env.NEXT_PUBLIC_SENTRY_DSN = originalDsn;
     }
+  });
+
+  it.each([undefined, 'false', '1'])(
+    'keeps configured development reporting off for opt-in %s',
+    async (optIn) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', 'development');
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DEV_ENABLED', optIn);
+      const importer = vi.fn(async () => ({
+        initSentryBrowserRuntime: vi.fn(() => makeRuntime()),
+      }));
+      __testing.setRuntimeImporter(importer);
+
+      scheduleSentryBrowserInit();
+      captureFeatureException(new TypeError('synthetic summary failure'), {
+        surface: 'triage',
+        reason: 'today_summary',
+      });
+      expect(
+        await captureSentryBoundaryException(new Error('synthetic'), 'triage', undefined),
+      ).toBe(false);
+      await initSentryBrowser();
+      expect(importer).not.toHaveBeenCalled();
+      expect(requestIdleCallback).not.toHaveBeenCalled();
+      expect(
+        addEventListenerSpy.mock.calls.filter(
+          ([type]) => type === 'error' || type === 'unhandledrejection',
+        ),
+      ).toHaveLength(0);
+    },
+  );
+
+  it.each(['development', 'production', 'preview'])(
+    'preserves intentional reporting in %s',
+    async (environment) => {
+      vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', environment);
+      vi.stubEnv(
+        'NEXT_PUBLIC_SENTRY_DEV_ENABLED',
+        environment === 'development' ? 'true' : 'false',
+      );
+      const runtime = makeRuntime();
+      const importer = vi.fn(async () => ({ initSentryBrowserRuntime: vi.fn(() => runtime) }));
+      __testing.setRuntimeImporter(importer);
+      captureFeatureException(new Error('synthetic'), {
+        surface: 'triage',
+        reason: 'today_summary',
+      });
+      await initSentryBrowser();
+      expect(importer).toHaveBeenCalledTimes(1);
+      expect(runtime.captureFeatureException).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['production', undefined])(
+    'keeps a development runtime off with deployment label %s',
+    async (deploymentEnvironment) => {
+      vi.stubEnv('NODE_ENV', 'development');
+      vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', deploymentEnvironment);
+      vi.stubEnv('NEXT_PUBLIC_SENTRY_DEV_ENABLED', undefined);
+      const importer = vi.fn();
+      __testing.setRuntimeImporter(importer);
+      await initSentryBrowser();
+      expect(importer).not.toHaveBeenCalled();
+    },
+  );
+
+  it('treats an unspecified environment as development', async () => {
+    vi.stubEnv('NODE_ENV', undefined);
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_ENV', undefined);
+    vi.stubEnv('NEXT_PUBLIC_SENTRY_DEV_ENABLED', undefined);
+    const importer = vi.fn();
+    __testing.setRuntimeImporter(importer);
+    await initSentryBrowser();
+    expect(importer).not.toHaveBeenCalled();
   });
 
   it('does not import, schedule, or install listeners without a DSN', async () => {

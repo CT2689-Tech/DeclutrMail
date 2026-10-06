@@ -1,10 +1,22 @@
 import type * as Sentry from '@sentry/nextjs';
-import { scrubSentryBreadcrumb, scrubSentryEvent } from '@declutrmail/shared/observability';
+import {
+  isSentryEnvironmentEnabled,
+  scrubSentryBreadcrumb,
+  scrubSentryEvent,
+} from '@declutrmail/shared/observability';
 
 /** Shared Node/edge privacy boundary. Sentry is optional and exceptions-only here. */
 export function initSentryServerRuntime(sdk: Pick<typeof Sentry, 'init'>): boolean {
   const dsn = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
-  if (!dsn) return false;
+  if (
+    !dsn ||
+    !isSentryEnvironmentEnabled({
+      runtimeEnvironment: process.env.NODE_ENV,
+      deploymentEnvironment: process.env.VERCEL_ENV,
+      developmentOptIn: process.env.SENTRY_DEV_ENABLED,
+    })
+  )
+    return false;
   const release = process.env.SENTRY_RELEASE ?? process.env.NEXT_PUBLIC_SENTRY_RELEASE;
   try {
     sdk.init({

@@ -1,4 +1,5 @@
 import {
+  isSentryEnvironmentEnabled,
   scrubSentryEvent,
   scrubSentryLog,
   scrubSentryTransaction,
@@ -8,7 +9,8 @@ import {
 /**
  * Sentry server bootstrap (D159).
  *
- * Gated entirely on `SENTRY_DSN`. With no DSN, this module installs
+ * Gated on `SENTRY_DSN`; development also requires an explicit opt-in.
+ * Without an enabled DSN, this module installs
  * nothing — no SDK calls, no global side effects, no error swallowing
  * — so local dev (and the test suite) run unaffected.
  *
@@ -61,7 +63,14 @@ function readSampleRate(raw: string | undefined, fallback: number): number {
 export async function initSentry(): Promise<boolean> {
   if (initialized) return true;
   const dsn = process.env.SENTRY_DSN;
-  if (!dsn) return false; // local dev / unconfigured — no-op silently
+  if (
+    !dsn ||
+    !isSentryEnvironmentEnabled({
+      runtimeEnvironment: process.env.NODE_ENV,
+      developmentOptIn: process.env.SENTRY_DEV_ENABLED,
+    })
+  )
+    return false;
 
   pendingInit ??= (async () => {
     const Sentry = await import('@sentry/node');
