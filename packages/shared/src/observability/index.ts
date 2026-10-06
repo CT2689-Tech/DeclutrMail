@@ -6,6 +6,7 @@
 // `sentry-scrubber.ts` (Sentry wire) for the D7/D228 guarantees.
 
 export { scrubObject, scrubTelemetryPayload, scrubUrlDerived } from './scrubber.js';
+export { isSentryEnvironmentEnabled } from './sentry-environment.js';
 // Kept in a separate module so the eager browser path (PostHog) does not
 // pull the Sentry scrubbers into a first-load chunk — see the header of
 // `sentry-scrubber.ts` (D160).

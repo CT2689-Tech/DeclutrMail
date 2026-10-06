@@ -4,7 +4,7 @@ vi.mock('@sentry/node', () => ({
   init: sdkInit,
   anthropicAIIntegration: () => ({ name: 'AnthropicAI' }),
 }));
-import { __resetForTests, initSentry } from './sentry';
+import { __resetForTests, getInitializedSentry, initSentry } from './sentry';
 
 beforeEach(() => {
   __resetForTests();
@@ -17,6 +17,32 @@ afterEach(() => {
   vi.useRealTimers();
 });
 describe('optional Sentry bootstrap', () => {
+  it.each([undefined, 'false', '1'])(
+    'does not initialize configured development reporting for opt-in %s',
+    async (optIn) => {
+      vi.stubEnv('NODE_ENV', 'development');
+      vi.stubEnv('SENTRY_DEV_ENABLED', optIn);
+      expect(await initSentry()).toBe(false);
+      expect(sdkInit).not.toHaveBeenCalled();
+      expect(getInitializedSentry()).toBeUndefined();
+    },
+  );
+  it.each(['development', 'production'])(
+    'preserves intentional reporting in %s',
+    async (environment) => {
+      vi.stubEnv('NODE_ENV', environment);
+      vi.stubEnv('SENTRY_DEV_ENABLED', environment === 'development' ? 'true' : 'false');
+      expect(await initSentry()).toBe(true);
+      expect(sdkInit).toHaveBeenCalledTimes(1);
+      expect(sdkInit.mock.calls[0]![0].environment).toBe(environment);
+    },
+  );
+  it('treats an unspecified environment as development', async () => {
+    vi.stubEnv('NODE_ENV', undefined);
+    vi.stubEnv('SENTRY_DEV_ENABLED', undefined);
+    expect(await initSentry()).toBe(false);
+    expect(sdkInit).not.toHaveBeenCalled();
+  });
   it('does not load an unconfigured SDK', async () => {
     vi.stubEnv('SENTRY_DSN', '');
     expect(await initSentry()).toBe(false);

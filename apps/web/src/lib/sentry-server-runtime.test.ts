@@ -25,6 +25,47 @@ for (const runtime of ['server', 'edge'] as const) {
       await boot();
       expect(init).not.toHaveBeenCalled();
     });
+    it.each([undefined, 'false', '1'])(
+      'does not initialize configured development reporting for opt-in %s',
+      async (optIn) => {
+        vi.stubEnv('SENTRY_DSN', 'https://public@example.invalid/1');
+        vi.stubEnv('NODE_ENV', 'production');
+        vi.stubEnv('VERCEL_ENV', 'development');
+        vi.stubEnv('SENTRY_DEV_ENABLED', optIn);
+        await boot();
+        expect(init).not.toHaveBeenCalled();
+      },
+    );
+    it.each(['development', 'production', 'preview'])(
+      'preserves intentional reporting in %s',
+      async (environment) => {
+        vi.stubEnv('SENTRY_DSN', 'https://public@example.invalid/1');
+        vi.stubEnv('VERCEL_ENV', environment);
+        vi.stubEnv('SENTRY_DEV_ENABLED', environment === 'development' ? 'true' : 'false');
+        await boot();
+        expect(init).toHaveBeenCalledTimes(1);
+        expect(init.mock.calls[0]![0].environment).toBe(environment);
+      },
+    );
+    it.each(['production', undefined])(
+      'keeps a development runtime off with deployment label %s',
+      async (deploymentEnvironment) => {
+        vi.stubEnv('SENTRY_DSN', 'https://public@example.invalid/1');
+        vi.stubEnv('NODE_ENV', 'development');
+        vi.stubEnv('VERCEL_ENV', deploymentEnvironment);
+        vi.stubEnv('SENTRY_DEV_ENABLED', undefined);
+        await boot();
+        expect(init).not.toHaveBeenCalled();
+      },
+    );
+    it('treats an unspecified environment as development', async () => {
+      vi.stubEnv('SENTRY_DSN', 'https://public@example.invalid/1');
+      vi.stubEnv('NODE_ENV', undefined);
+      vi.stubEnv('VERCEL_ENV', undefined);
+      vi.stubEnv('SENTRY_DEV_ENABLED', undefined);
+      await boot();
+      expect(init).not.toHaveBeenCalled();
+    });
     it('scrubs every egress channel while retaining source-map identity', async () => {
       vi.stubEnv('SENTRY_DSN', 'https://public@example.invalid/1');
       await boot();

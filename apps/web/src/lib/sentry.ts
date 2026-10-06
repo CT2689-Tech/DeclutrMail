@@ -1,5 +1,7 @@
 'use client';
 
+import { isSentryEnvironmentEnabled } from '@declutrmail/shared/observability';
+
 /**
  * Lightweight browser Sentry facade.
  *
@@ -97,6 +99,14 @@ type WindowWithIdleCallback = Window & {
 };
 
 function configuredDsn(): string | undefined {
+  if (
+    !isSentryEnvironmentEnabled({
+      runtimeEnvironment: process.env.NODE_ENV,
+      deploymentEnvironment: process.env.NEXT_PUBLIC_VERCEL_ENV,
+      developmentOptIn: process.env.NEXT_PUBLIC_SENTRY_DEV_ENABLED,
+    })
+  )
+    return undefined;
   return process.env.NEXT_PUBLIC_SENTRY_DSN || undefined;
 }
 

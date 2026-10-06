@@ -301,6 +301,21 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 <!-- AUTO:DECISIONS:END -->
 
+## Development Sentry isolation — 2026-10-06
+
+Relates to D159. Configured development DSNs previously initialized browser,
+Next Node/edge, and API/worker reporting without opt-in, consuming the production
+organization's shared error quota. A shared environment guard now requires exact
+development opt-in, including development runtimes carrying a production label;
+production/preview reporting and privacy scrubbing remain intact. All 22 new
+caller regressions failed against the old startup modules. Focused suites passed
+73 web and 17 API tests, with workspace typecheck and changed-file lint passing.
+Actual browser and Node SDK rehearsals used a loopback sink: development off
+produced zero events, explicit opt-in and a production build captured synthetic
+events. Independent architecture/type/failure/defect-class review found no blockers.
+Full release checks and production readback remain separate integration stages.
+See `docs/execution/sentry-development-isolation-2026-10-06.md`.
+
 
 ## Autopilot evaluation freshness — 2026-10-05
 
