@@ -301,6 +301,16 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 <!-- AUTO:DECISIONS:END -->
 
+## Sandbox callback target attribution — 2026-10-06
+
+Relates to D117/D159. Sandbox metadata initially recognized only the public
+production API origin; verified Cloud Run aliases were indistinguishable from an
+unknown callback. The read-only diagnostic now recognizes the exact verified
+aliases, retains anonymous URL-shape categories for other endpoints and reports
+sensitive-field configuration as true/false/unknown. No target is contacted or
+trusted for a purchase based on these labels. See
+`docs/execution/paddle-sandbox-callback-targets-2026-10-06.md`.
+
 ## Sandbox billing inspection — 2026-10-06
 
 Relates to D117/D159. Missing callable Paddle tools left current sandbox catalog

@@ -31,6 +31,7 @@ const destination = () => ({
   active: true,
   api_version: 1,
   traffic_source: 'all',
+  include_sensitive_fields: false,
   type: 'url',
   destination: `https://api.declutrmail.com/api/webhooks/billing/paddle?secret=${privateMarker}`,
   endpoint_secret_key: privateMarker,
@@ -104,6 +105,7 @@ test('catalog then destinations are GET-only on fixed sandbox host; projections 
     callbackPathMatches: true,
     hasQuery: true,
     hasCredentials: false,
+    includeSensitiveFields: false,
     adapterEvents: ['transaction.completed'],
     otherEventCount: 1,
   });
@@ -143,6 +145,72 @@ test('email and foreign URL destinations and unknown SKU remain anonymous and do
   assert.deepEqual(
     result.sections.destinations.items.map((e) => e.category),
     ['email', 'other_url'],
+  );
+  assert.ok(!JSON.stringify(result).includes(privateMarker));
+});
+
+test('production aliases and tunnel/loopback targets are classified without revealing addresses or trusting lookalikes', async () => {
+  const examples = [
+    ['https://declutrmail-api-387835380133.us-central1.run.app', 'production_api'],
+    ['https://declutrmail-api-dg2ex7eepa-uc.a.run.app', 'production_api'],
+    ['https://declutrmail-api-387835380133.us-central1.run.app.evil.example', 'other_url'],
+    ['https://declutrmail-api-dg2ex7eepa-uc.a.run.app.evil.example', 'other_url'],
+    ['http://declutrmail-api-dg2ex7eepa-uc.a.run.app', 'other_cloud_run_url'],
+    ['https://user:secret@declutrmail-api-dg2ex7eepa-uc.a.run.app', 'other_cloud_run_url'],
+    ['https://unverified-service.example.run.app', 'other_cloud_run_url'],
+    ['https://synthetic-tunnel.trycloudflare.com', 'tunnel_url'],
+    ['https://synthetic-tunnel.ngrok-free.app', 'tunnel_url'],
+    ['https://synthetic-tunnel.ngrok.io', 'tunnel_url'],
+    ['https://synthetic-tunnel.trycloudflare.com.evil.example', 'other_url'],
+    ['http://127.0.0.1:4000', 'loopback_url'],
+    ['http://localhost:4000', 'loopback_url'],
+    ['http://[::1]:4000', 'loopback_url'],
+    ['http://localhost.evil.example:4000', 'other_url'],
+    ['https://declutrmail-api-387835380133.us-central1.run.app:8443', 'other_cloud_run_url'],
+  ];
+  const result = await inspectSandbox({
+    env,
+    fetchImpl: async (input) => {
+      if (new URL(input).pathname !== '/notification-settings') return empty();
+      return page(
+        examples.map(([origin], n) => ({
+          ...destination(),
+          id: id('ntfset', n + 1),
+          destination: origin + '/api/webhooks/billing/paddle?private=' + privateMarker,
+        })),
+      );
+    },
+  });
+  assert.equal(result.complete, true);
+  assert.deepEqual(
+    result.sections.destinations.items.map((row) => row.category),
+    examples.map(([, category]) => category),
+  );
+  assert.ok(
+    result.sections.destinations.items.every((row) => row.callbackPathMatches && row.hasQuery),
+  );
+  assert.ok(!JSON.stringify(result).includes(privateMarker));
+  for (const [origin] of examples) assert.ok(!JSON.stringify(result).includes(origin));
+});
+
+test('sensitive-field configuration is true/false/unknown rather than treating missing fields as disabled', async () => {
+  const result = await inspectSandbox({
+    env,
+    fetchImpl: async (input) => {
+      if (new URL(input).pathname !== '/notification-settings') return empty();
+      return page(
+        [true, false, undefined, privateMarker].map((value, n) => ({
+          ...destination(),
+          id: id('ntfset', n + 1),
+          include_sensitive_fields: value,
+        })),
+      );
+    },
+  });
+  assert.equal(result.complete, true);
+  assert.deepEqual(
+    result.sections.destinations.items.map((row) => row.includeSensitiveFields),
+    [true, false, null, null],
   );
   assert.ok(!JSON.stringify(result).includes(privateMarker));
 });

@@ -6,6 +6,13 @@ const HOST = 'https://sandbox-api.paddle.com';
 const MAX_PAGES = 5;
 const MAX_BYTES = 2 * 1024 * 1024;
 const TIMEOUT_MS = 15_000;
+// Verified in authenticated Cloud Run service/networking metadata on 2026-10-06.
+// Exact origins only: other run.app URLs are not assumed to be this production service.
+const PRODUCTION_API_ORIGINS = new Set([
+  'https://api.declutrmail.com',
+  'https://declutrmail-api-387835380133.us-central1.run.app',
+  'https://declutrmail-api-dg2ex7eepa-uc.a.run.app',
+]);
 const PRICE_SKUS = [
   'plus_monthly',
   'plus_annual',
@@ -107,10 +114,16 @@ function project(row, section) {
     }
     requireField(['https:', 'http:'].includes(url.protocol));
     hasCredentials = Boolean(url.username || url.password);
-    category =
-      url.origin === 'https://api.declutrmail.com' && !hasCredentials
-        ? 'production_api'
-        : 'other_url';
+    if (PRODUCTION_API_ORIGINS.has(url.origin) && !hasCredentials) category = 'production_api';
+    else if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) category = 'loopback_url';
+    else if (
+      ['.trycloudflare.com', '.ngrok-free.app', '.ngrok.io'].some((suffix) =>
+        url.hostname.endsWith(suffix),
+      )
+    )
+      category = 'tunnel_url';
+    else if (url.hostname.endsWith('.run.app')) category = 'other_cloud_run_url';
+    else category = 'other_url';
     callbackPathMatches = url.pathname === '/api/webhooks/billing/paddle';
     hasQuery = Boolean(url.search || url.hash);
   }
@@ -124,6 +137,8 @@ function project(row, section) {
     callbackPathMatches,
     hasQuery,
     hasCredentials,
+    includeSensitiveFields:
+      typeof row.include_sensitive_fields === 'boolean' ? row.include_sensitive_fields : null,
     adapterEvents: EVENTS.filter((name) => names.includes(name)),
     otherEventCount: names.filter((name) => !EVENTS.includes(name)).length,
   };
