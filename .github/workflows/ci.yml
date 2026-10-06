@@ -271,6 +271,8 @@ jobs:
         run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
+      - name: Scoped private infrastructure inspection contracts
+        run: node --test scripts/infra-readonly-inspection.test.mjs
       - name: Sandbox-only Paddle inspection contracts
         run: node --test scripts/paddle-sandbox-inspection.test.mjs
       - name: Build selection and artifact retention contracts

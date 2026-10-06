@@ -9,7 +9,10 @@ import { writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 const ORIGIN = 'https://sentry.io';
-const AAD = 'declutrmail:sentry-triage:v1';
+const ENCRYPTION_CONTEXTS = {
+  'sentry-triage': 'declutrmail:sentry-triage:v1',
+  'infra-readonly': 'declutrmail:infra-readonly:v1',
+};
 const identifier = (value) =>
   typeof value === 'string' && /^[A-Za-z0-9_.-]{1,100}$/.test(value) ? value : undefined;
 const count = (value) =>
@@ -224,13 +227,15 @@ export function validatePublicKey(pem) {
     throw new Error('RSA key with at least 2048 bits required');
   return key;
 }
-export function encryptReport(report, pem) {
+export function encryptReport(report, pem, purpose = 'sentry-triage') {
+  if (!Object.hasOwn(ENCRYPTION_CONTEXTS, purpose)) throw new Error('Invalid encryption purpose');
+  const aad = ENCRYPTION_CONTEXTS[purpose];
   const publicKey = validatePublicKey(pem),
     key = randomBytes(32),
     iv = randomBytes(12);
   try {
     const cipher = createCipheriv('aes-256-gcm', key, iv);
-    cipher.setAAD(Buffer.from(AAD));
+    cipher.setAAD(Buffer.from(aad));
     const ciphertext = Buffer.concat([
       cipher.update(JSON.stringify(report), 'utf8'),
       cipher.final(),
@@ -242,7 +247,7 @@ export function encryptReport(report, pem) {
     return {
       version: 1,
       algorithm: 'AES-256-GCM+RSA-OAEP-SHA256',
-      aad: AAD,
+      aad,
       wrappedKey: wrappedKey.toString('base64'),
       iv: iv.toString('base64'),
       tag: cipher.getAuthTag().toString('base64'),
