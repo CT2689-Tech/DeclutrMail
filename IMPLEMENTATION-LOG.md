@@ -402,3 +402,15 @@ retain unavailable sources and process failures. It publishes no monitoring
 heartbeat and cannot establish daily collector recovery or dashboard usability.
 The existing scheduled watchdog and Sentry encryption context remain intact. See
 `docs/execution/infra-readonly-inspection-2026-10-06.md` for review and verification.
+
+## Sentry loss counters — 2026-10-06
+
+Relates to D156/D159. Accepted and combined invalid/client-discarded usage could
+not distinguish quota enforcement from SDK backoff, transport errors or filtering.
+The existing aggregate GET now groups outcome and reason and retains only fixed
+numeric loss families, with unfamiliar reasons counted as unclassified. Existing
+combined counters and valid-data severity/acknowledgment semantics stay intact;
+malformed counts remain unavailable rather than becoming zero. The encrypted
+non-payment projection permits these counters without exporting raw reason
+strings. No capacity, schedule, provider policy or runtime billing change is made.
+See `docs/execution/sentry-loss-counters-2026-10-06.md` for bounded verification.
