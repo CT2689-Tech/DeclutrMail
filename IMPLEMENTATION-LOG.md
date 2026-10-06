@@ -301,6 +301,17 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 
 <!-- AUTO:DECISIONS:END -->
 
+## Sandbox billing inspection — 2026-10-06
+
+Relates to D117/D159. Missing callable Paddle tools left current sandbox catalog
+and destination configuration unverified. A manual main-only read workflow reuses
+the existing Sandbox environment credential, rejects live/legacy/malformed keys
+before requests, and reads only fixed sandbox GET endpoints. Bounded sanitized
+reports preserve partial/unavailable sections without exposing webhook secrets,
+destination addresses or raw responses. Configuration inspection does not prove
+payment/webhook/refund/renewal outcomes or launch readiness. See
+`docs/execution/paddle-sandbox-inspection-2026-10-06.md` for scope and verification.
+
 ## API pool failure diagnostics — 2026-10-06
 
 Relates to D159/D201. API checkout-timeout failures previously lacked pool
