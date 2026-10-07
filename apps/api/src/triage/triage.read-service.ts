@@ -33,6 +33,7 @@ import {
 } from '@declutrmail/shared/copy';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { currentTriageReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -753,6 +754,11 @@ export class TriageReadService {
         receivedCount: Number(r.totalReceived ?? 0),
         mailboxHasOutbound,
       });
+      const reasoning = currentTriageReasoning({
+        stored: r.reasoning,
+        generatedBy: r.generatedBy,
+        readRate,
+      });
 
       return {
         id: r.decisionId,
@@ -767,8 +773,8 @@ export class TriageReadService {
         confidence: Number(r.confidence),
         reasoning:
           isProtected && r.verdict !== 'keep'
-            ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${r.reasoning ?? ''}`.trimEnd()
-            : r.reasoning,
+            ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${reasoning}`.trimEnd()
+            : reasoning,
         generatedBy: r.generatedBy,
         scoredAt: r.producedAt.toISOString(),
         // Same rule as `buildRecommendation` on Sender Detail: past the

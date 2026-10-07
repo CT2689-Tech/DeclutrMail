@@ -15,6 +15,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { claimsMeasuredEngagement } from '../common/triage-reasoning.js';
 import { TriageReadService, noiseSharePct } from './triage.read-service.js';
 
 /**
@@ -771,6 +772,38 @@ describe('TriageReadService.listQueue — signals say "marked read", not "read r
       (s) => s.startsWith('Marked read') || s.startsWith('Read rate'),
     );
     expect(engagementSignal).toMatch(/^Marked read: /);
+  });
+});
+
+describe('TriageReadService.listQueue — stored prose cannot invent an unknown engagement rate', () => {
+  it('serves an honest fallback while a stale LLM explanation is being refreshed', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'unknown-engagement');
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'quiet@declutrmail.ai');
+    await db
+      .update(triageDecisions)
+      .set({
+        generatedBy: 'llm_haiku',
+        reasoning: 'This sender has a 0% read rate and zero messages received monthly.',
+      })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+
+    const [row] = await new TriageReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 12,
+    });
+
+    expect(row?.readRate).toBeNull();
+    expect(row?.reasoning).toBe(
+      'No mail arrived from this sender in the last 90 days, so marked-read activity is not measurable yet.',
+    );
+    expect(row?.reasoning).not.toContain('0%');
+  });
+
+  it('recognises measured engagement claims on either side of a percentage', () => {
+    expect(claimsMeasuredEngagement('Only 2% marked read over 90 days.')).toBe(true);
+    expect(claimsMeasuredEngagement('Read rate is 2% over 90 days.')).toBe(true);
+    expect(claimsMeasuredEngagement('There is no recent activity yet.')).toBe(false);
   });
 });
 

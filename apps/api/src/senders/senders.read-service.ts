@@ -68,6 +68,7 @@ import {
   WINDOWS,
 } from '@declutrmail/shared/senders';
 
+import { currentTriageReasoning } from '../common/triage-reasoning.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   ActivityFilter,
@@ -1585,6 +1586,7 @@ export class SendersReadService {
       row.rollingStats.baselineMsgs,
       'senders.baselineMsgs',
     );
+    const readRate = computeReadRate(last90dMsgs, last90dReadCount);
 
     return {
       id: row.id,
@@ -1607,7 +1609,7 @@ export class SendersReadService {
         row.inboxStats.unreadInboxCount,
         'senders.unreadInboxCount',
       ),
-      readRate: computeReadRate(last90dMsgs, last90dReadCount),
+      readRate,
       readRateSweeperMarked: ensureSafeIntegerNumber(
         row.rollingStats.last90dSweeperReadCount,
         'senders.last90dSweeperReadCount',
@@ -1640,6 +1642,7 @@ export class SendersReadService {
         row.lastDecision?.confidence ?? null,
         row.lastDecision?.reasoning ?? null,
         row.lastDecision?.expiresAt ?? null,
+        readRate,
         now,
       ),
       protectionFlags,
@@ -2016,6 +2019,7 @@ function buildRecommendation(
   confidence: number | string | null,
   reasoning: string | null,
   expiresAt: Date | string | null,
+  readRate: number | null,
   now: Date,
 ): SenderRecommendation | null {
   if (
@@ -2039,7 +2043,7 @@ function buildRecommendation(
   return {
     verdict,
     confidence: confidenceNum,
-    reasoning,
+    reasoning: currentTriageReasoning({ stored: reasoning, generatedBy, readRate }),
     generatedBy,
     scoredAt: (at instanceof Date ? at : new Date(at)).toISOString(),
     // A row with no expiry cannot be proven stale, so it isn't called
