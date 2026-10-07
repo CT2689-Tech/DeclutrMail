@@ -85,6 +85,11 @@ const MIRROR_PATH = join(REPO_ROOT, 'docs/execution/Implementation-Plan.md');
 const LOCAL_PATH = join(homedir(), '.claude/plans/i-want-you-to-smooth-kahn.md');
 
 const AUDIT_DATE = new Date().toISOString().slice(0, 10);
+const GH_READ_ATTEMPTS = 3;
+
+function waitBeforeRetry(attempt: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 1_000);
+}
 
 function resolvePlanPath(): string | null {
   if (existsSync(MIRROR_PATH)) return MIRROR_PATH;
@@ -124,19 +129,26 @@ function readFragments(): Map<number, Fragment> {
 
 /** Fail-loud merged-PR read. Never returns a silently-empty list. */
 function readMergedPrs(): PrRef[] {
-  let raw: string;
-  try {
-    raw = execFileSync(
-      'gh',
-      ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'number,body,files'],
-      { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
-    );
-  } catch (error) {
-    console.error('✗ Could not read merged PRs via `gh`. Refusing to treat that as "none".');
-    console.error(String(error));
-    process.exit(3);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GH_READ_ATTEMPTS; attempt += 1) {
+    try {
+      const raw = execFileSync(
+        'gh',
+        ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'number,body,files'],
+        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+      );
+      return JSON.parse(raw) as PrRef[];
+    } catch (error) {
+      lastError = error;
+      if (attempt < GH_READ_ATTEMPTS) {
+        console.warn(`Merged-PR read failed (attempt ${attempt}/${GH_READ_ATTEMPTS}); retrying.`);
+        waitBeforeRetry(attempt);
+      }
+    }
   }
-  return JSON.parse(raw) as PrRef[];
+  console.error('✗ Could not read merged PRs via `gh`. Refusing to treat that as "none".');
+  console.error(String(lastError));
+  process.exit(3);
 }
 
 /**

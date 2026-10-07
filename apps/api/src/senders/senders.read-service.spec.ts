@@ -1817,6 +1817,29 @@ describe('SendersReadService', () => {
         });
       });
 
+      it('does not pair an old measured rate claim with a currently unknown read rate', async () => {
+        const a = await seedSender(db, {
+          mailboxAccountId: mailboxId,
+          email: 'quiet-scored@x.com',
+          lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+        });
+        await seedTriageDecision(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: a.senderKey,
+          verdict: 'archive',
+          generatedBy: 'llm_haiku',
+          reasoning: 'This sender has a 0% read rate and no monthly messages.',
+          producedAt: new Date('2026-05-20T10:00:00Z'),
+        });
+
+        const detail = await svc.getSenderDetail(mailboxId, a.id);
+
+        expect(detail?.readRate).toBeNull();
+        expect(detail?.recommendation?.reasoning).toBe(
+          'No mail arrived from this sender in the last 90 days, so marked-read activity is not measurable yet.',
+        );
+      });
+
       /**
        * Re-scoring is trigger-driven against a 7-day TTL, so nearly every
        * stored decision is past `expires_at` on a real mailbox. Dropping
