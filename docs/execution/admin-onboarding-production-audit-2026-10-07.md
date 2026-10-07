@@ -84,6 +84,14 @@ explicitly authorized reversible staging fixture, is required for that exact
 production evidence. Resetting the administrator's live rows would be a
 destructive substitute and was excluded.
 
+### Fixed during integration: transient implementation-log API reads
+
+The merge-group gate twice received a GitHub GraphQL 502 while listing merged
+PR metadata. Its fail-closed behavior correctly blocked both candidates, while
+the identical strict command passed locally. The reader now makes three bounded
+attempts with short backoff before retaining the same exit-3 failure. It still
+never interprets an unreadable PR list as an empty list.
+
 ## Verification
 
 - Production built-in-browser reconnect: identity, consent, callback, ready
@@ -97,6 +105,8 @@ destructive substitute and was excluded.
 - Web synthetic onboarding: 95 cases across page, step derivation, and sync gate
   passed.
 - Web TypeScript check passed.
+- Strict implementation-log derivation passed locally after the bounded-retry
+  repair; persistent GitHub read failure remains fail-closed.
 
 The changed behavior is server-side and is verified at the database-backed read
 service boundary. The unmerged local guard has not yet been observed in
