@@ -75,14 +75,34 @@ ordinary sign-in and mailbox connection/reconnection plus preservation of the
 existing encrypted refresh token. This audit did not silently change the OAuth
 or token contract.
 
-### Production first-run remains unverified
+### Closed: production first-run verified with an unused Google identity
 
-Priority P1 launch evidence gap. The designated administrator account was not
-new, so its successful reconnect cannot prove the production promise-to-first-
-review journey. A separate unused Google Workspace test identity, or an
-explicitly authorized reversible staging fixture, is required for that exact
-production evidence. Resetting the administrator's live rows would be a
-destructive substitute and was excluded.
+The founder supplied a Google identity that had never connected to DeclutrMail.
+The first callback attempt failed closed before creating a user or workspace;
+the immediate retry completed consent and created the account. The onboarding
+gate showed live progress while one first-attempt worker run scanned 23,378
+Gmail message ids in about ten minutes. The durable sync result finished with
+status `succeeded`, readiness and stage both `ready`, progress 100%, zero
+unreadable messages, 303 indexed senders and no error code.
+
+The browser then reached the five-sender first-review handoff, completed setup
+through `Finish for today` without taking a Gmail action, and landed on Home.
+A full reload preserved the authenticated account and ready Home data; Triage
+then rendered its five real rows. The persisted user has a completed onboarding
+timestamp and an active mailbox. No administrator rows were reset or deleted,
+and no email was moved, deleted or unsubscribed during this verification.
+
+### Observed: one callback arrived without the OAuth state cookie
+
+Priority P2 reliability follow-up. The first fresh-account callback recorded
+`login.failure` with the closed reason `missing_state_cookie` and returned the
+generic retry message. Database readback confirmed that attempt created no user,
+workspace or mailbox. An immediate retry in the same built-in browser, with the
+same account and permission, succeeded end to end. The state cookie has a signed
+ten-minute lifetime; this failure occurred well inside that window. One
+successful retry does not identify whether the loss was browser-specific or a
+general callback reliability defect, so it remains an observed risk rather than
+a proven server repair.
 
 ### Fixed during integration: transient implementation-log API reads
 
@@ -97,6 +117,11 @@ never interprets an unreadable PR list as an empty list.
 - Production built-in-browser reconnect: identity, consent, callback, ready
   state, ten-row Triage queue, Settings, Activity, manual refresh, sign-out,
   return sign-in, persistence, and narrow layout passed.
+- Production fresh signup: unused Google identity, consent, safe failure before
+  persistence on the first missing-state callback, successful retry, live
+  23,378-message scan progress, single-attempt ready transition, five-sender
+  first-review handoff, completion without a Gmail action, Home reload and
+  Triage persistence passed.
 - API integration: 116 Triage and Sender read-service cases passed, with ten
   unrelated native-PostgreSQL cases skipped by their existing environment gate.
   Coverage includes the reproduced unknown-denominator/stale-prose contradiction,
@@ -108,8 +133,9 @@ never interprets an unreadable PR list as an empty list.
 - Strict implementation-log derivation passed locally after the bounded-retry
   repair; persistent GitHub read failure remains fail-closed.
 
-The changed behavior is server-side and is verified at the database-backed read
-service boundary. The unmerged local guard has not yet been observed in
-production. No production mailbox mutation requires restoration; the authorized
-administrator connection remains active. Independent review, PR checks, merge,
-deployment, and production readback are recorded separately as they complete.
+The read-time guard merged in PR #907, passed its merge queue and post-merge CI,
+and was deployed to the production API. Production readback showed an unknown
+marked-read value beside the no-mail explanation instead of the stale numeric
+claim. No production mailbox mutation requires restoration; both authorized
+connections remain active. Deletion and expiry verification remain pending by
+explicit request.
