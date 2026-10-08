@@ -81,10 +81,15 @@ The client-side full-blob buffer remains a source-confirmed scaling risk, suppor
 by the earlier 24 MiB synthetic failure. Replacing it is not a safe one-line change:
 native downloads weaken HTTP error/re-auth feedback, while incremental file writes
 have browser-support and user-gesture constraints. Treat a cross-browser 25 MiB+
-saved-file rehearsal as the acceptance test before choosing that design. Until that
-passes or launch eligibility enforces a proven artifact limit, the larger-export
-capacity path remains an open conditional launch hold. This does not recast the
-current 10.4 MB production export as failed.
+saved-file rehearsal as the acceptance test before choosing that design.
+
+Founder decision on 2026-10-07 PDT: DeclutrMail has no production users yet, and
+the 23,349-message production export completed successfully at 10.4 MB. The
+larger-export boundary is therefore accepted as post-launch capacity hardening and
+does not block the initial production launch. Revisit it before materially scaling
+the user base or after a support or monitoring signal involving a larger export.
+This decision preserves the earlier 24 MiB failure as unresolved capacity evidence;
+it does not classify that path as fixed.
 
 A durable export receipt/history could improve recovery, but it needs a defined
 storage and retention policy and cannot prove the user saved a local file. It remains
