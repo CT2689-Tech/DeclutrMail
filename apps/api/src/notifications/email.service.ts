@@ -101,10 +101,10 @@ export class EmailService implements EmailDeliveryPort {
       return { ok: false, reason: 'suppressed', detail: 'Recipient is on the suppression list.' };
     }
 
-    // Ships dormant: FOUNDER-FOLLOWUPS.md records that
-    // support@declutrmail.com .com delivery is still pending the
-    // domain-alias add. A bouncing Reply-To is worse than none, so the
-    // env fallback only applies once the founder sets this variable.
+    // The production worker binds support@declutrmail.com only after its
+    // Workspace alias and inbound delivery were verified (2026-10-07).
+    // Keeping the fallback environment-gated prevents non-production
+    // environments from advertising an unverified reply destination.
     // A caller can still pass `input.replyTo` explicitly regardless of
     // that fallback — e.g. the in-app support form replies to the user
     // who filed the request, not the founder's inbox.
