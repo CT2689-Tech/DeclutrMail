@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-08",
-  "snapshot_ts": "2026-10-08T02:39:28Z",
+  "snapshot_ts": "2026-10-08T04:52:45Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-08T02:37:00.020416Z",
-            "name": "declutrmail-api-00553-dis"
+            "creationTimestamp": "2026-10-08T04:50:12.231331Z",
+            "name": "declutrmail-api-00556-fup"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ad0de2cebb3018138b1dc164afe265642cae7f0f2dfe2cbec6a8d247b706c81a"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:e56e9e9d2987ebe0669128f5122806c628788358055606c8cc5ae795a01f3619"
               }
             ]
           },
@@ -157,7 +157,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00553-dis"
+              "revisionName": "declutrmail-api-00556-fup"
             }
           ]
         }
@@ -168,13 +168,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-08T02:35:40.121969Z",
-            "name": "declutrmail-worker-00142-7nb"
+            "creationTimestamp": "2026-10-08T04:48:50.986512Z",
+            "name": "declutrmail-worker-00143-kkk"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ad0de2cebb3018138b1dc164afe265642cae7f0f2dfe2cbec6a8d247b706c81a"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:e56e9e9d2987ebe0669128f5122806c628788358055606c8cc5ae795a01f3619"
               }
             ]
           },
@@ -264,6 +264,9 @@
                       "name": "WEB_URL"
                     },
                     {
+                      "name": "EMAIL_REPLY_TO"
+                    },
+                    {
                       "name": "REASONING_RATE_PER_MIN"
                     },
                     {
@@ -317,7 +320,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00142-7nb"
+              "revisionName": "declutrmail-worker-00143-kkk"
             }
           ]
         }
