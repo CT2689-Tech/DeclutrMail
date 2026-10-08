@@ -39,7 +39,13 @@ import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
 import { GmailScopeNotGrantedError, GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
 import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
-import { parseBillingReturnTo, STATE_COOKIE, STATE_COOKIE_PATH } from './oauth-browser.js';
+import {
+  oauthFlowId,
+  parseBillingReturnTo,
+  STATE_COOKIE,
+  STATE_COOKIE_PATH,
+  stateCookieName,
+} from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
@@ -354,7 +360,13 @@ export class GoogleOAuthController {
     const userAgentHeader = req.headers['user-agent'];
     const userAgent = typeof userAgentHeader === 'string' ? userAgentHeader : null;
 
-    const cookieRaw = (req.cookies as Record<string, unknown> | undefined)?.[STATE_COOKIE];
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+    const flowCookieName = stateCookieName(state);
+    const flowCookieRaw = flowCookieName ? cookies?.[flowCookieName] : undefined;
+    // Fixed-name fallback is read only for callbacks opened before this
+    // revision was deployed. New starts write the per-flow cookie below.
+    const legacyCookieRaw = cookies?.[STATE_COOKIE];
+    const cookieRaw = typeof flowCookieRaw === 'string' ? flowCookieRaw : legacyCookieRaw;
     if (typeof cookieRaw !== 'string') {
       // D181: pre-orchestrator validation failure — no user/workspace
       // context yet, so the audit row is identified by ip/UA only.
@@ -363,9 +375,13 @@ export class GoogleOAuthController {
         severity: 'warning',
         sourceIp: ipAddress,
         userAgent,
-        payload: { provider: 'google', reason: 'missing_state_cookie' },
+        payload: {
+          provider: 'google',
+          reason: 'missing_state_cookie',
+          ...this.callbackDiagnostics(req, state, code, oauthError),
+        },
       });
-      this.clearStateCookie(res);
+      this.clearStateCookie(res, state);
       throw new BadRequestException('Missing OAuth state cookie.');
     }
     const cookieState = this.readStateCookie(cookieRaw);
@@ -377,7 +393,7 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', reason: 'invalid_state_cookie' },
       });
-      this.clearStateCookie(res);
+      this.clearStateCookie(res, state);
       throw new BadRequestException('Invalid OAuth state cookie.');
     }
     if (typeof state !== 'string' || !statesMatch(state, cookieState.nonce)) {
@@ -388,9 +404,12 @@ export class GoogleOAuthController {
         userAgent,
         payload: { provider: 'google', reason: 'invalid_state' },
       });
-      this.clearStateCookie(res);
+      this.clearStateCookie(res, state);
       throw new BadRequestException('Invalid OAuth state.');
     }
+    // Consume the exact attempt before any external token exchange. Clearing
+    // this flow cannot invalidate another tab's in-progress consent.
+    this.clearStateCookie(res, state);
     const recoveryState = isTargetedRecoveryState(cookieState) ? cookieState : null;
     const recoveryMailboxId = recoveryState ? getRecoveryMailboxId(recoveryState) : undefined;
 
@@ -786,12 +805,24 @@ export class GoogleOAuthController {
       issuedAt,
       expiresAt: issuedAt + STATE_TTL_MS,
     };
-    res.cookie(STATE_COOKIE, this.jwt.sealOAuthState(JSON.stringify(state)), {
+    const cookieName = stateCookieName(state.nonce);
+    if (!cookieName) throw new Error('Generated OAuth nonce is not cookie-name safe.');
+    res.cookie(cookieName, this.jwt.sealOAuthState(JSON.stringify(state)), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: STATE_COOKIE_PATH,
       maxAge: STATE_TTL_MS,
+    });
+    void this.securityEvents.record({
+      eventType: 'oauth.start',
+      severity: 'info',
+      payload: {
+        provider: 'google',
+        mode: state.mode,
+        flowId: oauthFlowId(state.nonce),
+        cookieStrategy: 'per_flow',
+      },
     });
     res.redirect(302, this.oauth.getConsentUrl(state.nonce));
   }
@@ -851,8 +882,34 @@ export class GoogleOAuthController {
     throw new UnauthorizedException('Connect-mailbox session is no longer active.');
   }
 
-  private clearStateCookie(res: Response): void {
+  private clearStateCookie(res: Response, state?: unknown): void {
+    const flowCookieName = stateCookieName(state);
+    if (flowCookieName) res.clearCookie(flowCookieName, { path: STATE_COOKIE_PATH });
+    // Rolling-deploy compatibility. No new start writes this cookie.
     res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
+  }
+
+  /** Bounded metadata that explains cookie loss without storing secrets. */
+  private callbackDiagnostics(
+    req: Request,
+    state: unknown,
+    code: unknown,
+    oauthError: unknown,
+  ): Record<string, unknown> {
+    const cookieHeader = req.headers.cookie;
+    const secFetchSite = req.headers['sec-fetch-site'];
+    return {
+      flowId: oauthFlowId(state),
+      statePresent: typeof state === 'string' && state.length > 0,
+      codePresent: typeof code === 'string' && code.length > 0,
+      oauthErrorPresent: oauthError !== undefined,
+      cookieHeaderPresent: typeof cookieHeader === 'string' && cookieHeader.length > 0,
+      secFetchSite:
+        typeof secFetchSite === 'string' &&
+        ['same-origin', 'same-site', 'cross-site', 'none'].includes(secFetchSite)
+          ? secFetchSite
+          : 'unknown',
+    };
   }
 
   /** Fixed, local Settings destination for a signed targeted reconnect. */
