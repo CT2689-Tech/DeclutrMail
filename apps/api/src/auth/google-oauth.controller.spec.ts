@@ -16,6 +16,7 @@ import { BetaGateDeniedError } from './beta-gate.js';
 import { GmailScopeNotGrantedError, type GoogleOAuthService } from './google-oauth.service.js';
 import { GoogleOAuthController, parseBillingReturnTo } from './google-oauth.controller.js';
 import { JwtService } from './jwt.service.js';
+import { stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import type { SessionPrincipal, SessionsService } from './sessions.service.js';
 
@@ -1147,7 +1148,10 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     addMailbox: ReturnType<typeof vi.fn>;
     connect: ReturnType<typeof vi.fn>;
   };
-  let oauth: { exchangeCode: ReturnType<typeof vi.fn> };
+  let oauth: {
+    exchangeCode: ReturnType<typeof vi.fn>;
+    getConsentUrl: ReturnType<typeof vi.fn>;
+  };
   let securityEvents: ReturnType<typeof makeSecurityEvents>;
   let jwt: JwtService;
   let sessions: ReturnType<typeof makeSessions>;
@@ -1171,6 +1175,9 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     };
     oauth = {
       exchangeCode: vi.fn().mockResolvedValue({ email: 'first@example.com', refreshToken: 'rt' }),
+      getConsentUrl: vi.fn(
+        (state: string) => `https://accounts.google.test/consent?state=${state}`,
+      ),
     };
     securityEvents = makeSecurityEvents();
     jwt = makeJwtService();
@@ -1191,12 +1198,18 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       cookies?: Record<string, string>;
       ip?: string;
       userAgent?: string;
+      cookieHeader?: string;
+      secFetchSite?: string;
     } = {},
   ): Request {
     return {
       cookies: opts.cookies ?? {},
       ip: opts.ip ?? IP,
-      headers: { 'user-agent': opts.userAgent ?? UA },
+      headers: {
+        'user-agent': opts.userAgent ?? UA,
+        ...(opts.cookieHeader ? { cookie: opts.cookieHeader } : {}),
+        ...(opts.secFetchSite ? { 'sec-fetch-site': opts.secFetchSite } : {}),
+      },
     } as unknown as Request;
   }
 
@@ -1227,8 +1240,14 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
   }
 
   it('records login.failure { reason: missing_state_cookie } and still throws BadRequest', async () => {
+    const callbackState = 'A'.repeat(43);
     await expect(
-      controller.callback(req(), res as unknown as Response, 'code', NONCE),
+      controller.callback(
+        req({ cookieHeader: 'another_cookie=present', secFetchSite: 'cross-site' }),
+        res as unknown as Response,
+        'code',
+        callbackState,
+      ),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(securityEvents.record).toHaveBeenCalledWith(
@@ -1237,9 +1256,48 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
         severity: 'warning',
         sourceIp: IP,
         userAgent: UA,
-        payload: { provider: 'google', reason: 'missing_state_cookie' },
+        payload: expect.objectContaining({
+          provider: 'google',
+          reason: 'missing_state_cookie',
+          flowId: expect.stringMatching(/^[a-f0-9]{16}$/),
+          statePresent: true,
+          codePresent: true,
+          oauthErrorPresent: false,
+          cookieHeaderPresent: true,
+          secFetchSite: 'cross-site',
+        }),
       }),
     );
+  });
+
+  it('keeps overlapping OAuth starts independent and accepts either callback', async () => {
+    const first = { cookie: vi.fn(), redirect: vi.fn(), clearCookie: vi.fn() };
+    const second = { cookie: vi.fn(), redirect: vi.fn(), clearCookie: vi.fn() };
+
+    await controller.start(req(), first as unknown as Response);
+    await controller.start(req(), second as unknown as Response);
+
+    const [firstName, firstValue] = first.cookie.mock.calls[0] as [string, string];
+    const [secondName, secondValue] = second.cookie.mock.calls[0] as [string, string];
+    const firstState = decodeSignedState(jwt, firstValue);
+    const secondState = decodeSignedState(jwt, secondValue);
+    const firstNonce = firstState.nonce as string;
+    const secondNonce = secondState.nonce as string;
+
+    expect(firstName).toBe(stateCookieName(firstNonce));
+    expect(secondName).toBe(stateCookieName(secondNonce));
+    expect(firstName).not.toBe(secondName);
+
+    await controller.callback(
+      req({ cookies: { [firstName]: firstValue, [secondName]: secondValue } }),
+      res as unknown as Response,
+      'code',
+      firstNonce,
+    );
+
+    expect(oauth.exchangeCode).toHaveBeenCalledWith('code');
+    expect(res.clearCookie).toHaveBeenCalledWith(firstName, { path: '/api/auth/google' });
+    expect(res.clearCookie).not.toHaveBeenCalledWith(secondName, { path: '/api/auth/google' });
   });
 
   it('records one invalid-state-cookie reason for malformed or unauthenticated input', async () => {

@@ -18,6 +18,7 @@ import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 
 import { JwtService } from './jwt.service.js';
+import { stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 
 const WEB = 'https://app.example.test';
@@ -189,6 +190,27 @@ describe('OAuth exit filters', () => {
 
       expect(res.clearCookie).toHaveBeenCalledWith('oauth_state', { path: '/api/auth/google' });
       // Cleared on the response only: the landing page still came from it.
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        `${WEB}/settings?connect_start_result=failed#mailboxes`,
+      );
+    });
+
+    it('reads and clears the cookie belonging to the callback state', () => {
+      const state = 'A'.repeat(43);
+      const cookieName = stateCookieName(state);
+      if (!cookieName) throw new Error('Expected a per-flow cookie name.');
+      const cookies = {
+        [cookieName]: jwt.sealOAuthState(JSON.stringify({ nonce: state, mode: 'connect' })),
+      };
+
+      const res = run(
+        new OAuthCallbackExitFilter(jwt),
+        new Error('private runtime detail'),
+        fakeRequest({ cookies, query: { state } }),
+      );
+
+      expect(res.clearCookie).toHaveBeenCalledWith(cookieName, { path: '/api/auth/google' });
       expect(res.redirect).toHaveBeenCalledWith(
         302,
         `${WEB}/settings?connect_start_result=failed#mailboxes`,

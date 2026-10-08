@@ -5,7 +5,12 @@ import type { SignInResult } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 import { JwtService } from './jwt.service.js';
-import { parseBillingReturnTo, STATE_COOKIE, STATE_COOKIE_PATH } from './oauth-browser.js';
+import {
+  parseBillingReturnTo,
+  STATE_COOKIE,
+  STATE_COOKIE_PATH,
+  stateCookieName,
+} from './oauth-browser.js';
 
 /** Where a failed OAuth browser request lands. */
 type OAuthExit = { mode: 'login'; returnTo: string | undefined } | { mode: 'connect' };
@@ -82,12 +87,19 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
   // The state is single-use. A callback that failed clears it, as the
   // handler's own exits do; `exitFor` still reads it from the request.
   protected override respond(res: Response, status: number): void {
-    if (!res.headersSent) res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
+    if (!res.headersSent) {
+      const flowCookieName = stateCookieName(res.req.query?.state);
+      if (flowCookieName) res.clearCookie(flowCookieName, { path: STATE_COOKIE_PATH });
+      res.clearCookie(STATE_COOKIE, { path: STATE_COOKIE_PATH });
+    }
     super.respond(res, status);
   }
 
   protected exitFor(req: Request): OAuthExit {
-    const raw = (req.cookies as Record<string, unknown> | undefined)?.[STATE_COOKIE];
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+    const flowCookieName = stateCookieName(req.query?.state);
+    const flowRaw = flowCookieName ? cookies?.[flowCookieName] : undefined;
+    const raw = typeof flowRaw === 'string' ? flowRaw : cookies?.[STATE_COOKIE];
     const payload = typeof raw === 'string' ? this.jwt.openOAuthState(raw) : null;
     let state: { mode?: unknown; returnTo?: unknown } | null = null;
     try {
