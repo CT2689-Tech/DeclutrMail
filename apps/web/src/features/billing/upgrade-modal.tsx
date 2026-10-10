@@ -273,9 +273,7 @@ function actionTierTitle(d: ActionTierDetails): string {
   const plan = TIER_MANIFEST[d.requiredTier].name;
   return d.selector === 'sender-filter'
     ? `All-matching actions are part of ${plan}`
-    : d.selector === 'multi-sender'
-      ? `Multi-sender actions are part of ${plan}`
-      : `This action is part of ${plan}`;
+    : `This action is part of ${plan}`;
 }
 
 function proFeatureTitle(d: ProFeatureDetails): string {

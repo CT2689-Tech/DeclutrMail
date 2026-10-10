@@ -4,6 +4,7 @@ import {
   currencyForPricePoint,
   formatMoney,
   TIER_JOBS,
+  sharedAnnualMonthsFree,
 } from '@/features/marketing/pricing/pricing-model';
 import { TrackedCta } from './tracked-cta';
 
@@ -11,6 +12,7 @@ import { TrackedCta } from './tracked-cta';
 export function PricingTeaserView({ provider }: { provider: BillingProviderId }) {
   const { free, plus, pro } = TIER_MANIFEST;
   const founding = pro.promo;
+  const annualMonthsFree = sharedAnnualMonthsFree(provider);
   const money = (point: { usdCents: number; inrPaise: number; razorpayPlanId: string | null }) =>
     formatMoney(point, currencyForPricePoint(point, provider));
 
@@ -73,8 +75,10 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
               ? `${founding.name}: ${money(founding.annual)} / year, limited to the first ${founding.maxRedemptions} paid subscriptions. `
               : ''}
             Monthly prices shown in {provider === 'paddle' ? 'USD' : 'INR'}; local pricing, where
-            available, appears on the full pricing page. Annual billing saves two months on standard
-            paid plans.
+            available, appears on the full pricing page.
+            {annualMonthsFree !== null
+              ? ` Annual billing saves ${annualMonthsFree} months on standard paid plans.`
+              : ' Annual plans are also available.'}
           </p>
         </details>
       </div>

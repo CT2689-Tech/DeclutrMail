@@ -95,6 +95,21 @@ const FAQS: ReadonlyArray<{
     link: { href: '/pricing', label: 'Pricing' },
   },
   {
+    id: 'cleanup-counting',
+    q: 'What counts as a cleanup action, and when does Free reset?',
+    a: faqAnswer('cleanup-counting'),
+  },
+  {
+    id: 'billing-management',
+    q: 'How do I cancel, update my payment method, or get an invoice?',
+    a: faqAnswer('billing-management'),
+  },
+  {
+    id: 'billing-currency',
+    q: 'Can I choose or switch billing currency?',
+    a: faqAnswer('billing-currency'),
+  },
+  {
     id: 'refunds',
     q: 'Is there a refund policy?',
     a: faqAnswer('refunds-support'),

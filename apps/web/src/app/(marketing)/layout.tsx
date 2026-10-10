@@ -66,6 +66,12 @@ function tierOffers() {
             name,
             price: price.usdCents / 100,
             priceCurrency: 'USD',
+            priceSpecification: {
+              '@type': 'UnitPriceSpecification',
+              price: price.usdCents / 100,
+              priceCurrency: 'USD',
+              billingDuration: cycle === 'annual' ? 'P1Y' : 'P1M',
+            },
             url: `${siteUrl()}/pricing`,
           },
         ];
@@ -75,6 +81,12 @@ function tierOffers() {
             name,
             price: price.inrPaise / 100,
             priceCurrency: 'INR',
+            priceSpecification: {
+              '@type': 'UnitPriceSpecification',
+              price: price.inrPaise / 100,
+              priceCurrency: 'INR',
+              billingDuration: cycle === 'annual' ? 'P1Y' : 'P1M',
+            },
             url: `${siteUrl()}/pricing`,
           });
         }

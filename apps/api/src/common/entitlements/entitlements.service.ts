@@ -109,7 +109,7 @@ export interface CleanupSummary {
  *      all-matching starts at Pro (A3), sourced from the pricing config
  *      through the Action Registry.
  *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19/A3:
- *      Free 1 / Plus 1 / Pro 3). See `assertCanConnectMailbox`.
+ *      Free 1 / Plus 1 / Pro 5). See `assertCanConnectMailbox`.
  *
  * Gates throw `AppException` with a 402 + a registered error code so
  * the FE can branch on the code and render the upgrade prompt.
@@ -290,7 +290,7 @@ export class EntitlementsService {
 
   /**
    * Gate a FRESH cleanup enqueue: throws 402 `FREE_CAP_REACHED` when
-   * the workspace's lifetime quota cannot cover `unitsNeeded`.
+   * the workspace's current monthly quota cannot cover `unitsNeeded`.
    *
    * Callers MUST skip this check for an idempotent REPLAY (a request
    * whose `Idempotency-Key` row already exists) — a network-retried
@@ -349,9 +349,9 @@ export class EntitlementsService {
 
   /**
    * Enforce the Action Registry's minimum tier for one verb × selector
-   * pair. This is separate from the Free lifetime counter: Free keeps
-   * five `sender` cleanup actions, while `multi-sender` starts at Plus
-   * and `sender-filter` starts at Pro.
+   * pair. This is separate from the Free monthly counter: individual
+   * and multi-sender cleanup are available on Free; `sender-filter`
+   * starts at Pro. Limits come from the entitlement manifest.
    *
    * The registry is the source of truth for both the required tier and
    * whether a selector is supported. Call this at the API/service choke
