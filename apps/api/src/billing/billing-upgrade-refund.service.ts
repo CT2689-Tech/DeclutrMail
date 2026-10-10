@@ -24,6 +24,15 @@ import type {
 } from './upgrade-refund.types.js';
 import { lockSubscription } from './subscription-lock.js';
 
+/** Provider restoration is API-owned; worker has no attribution HMAC secret.
+ * Enabling it there could deduplicate a held event ahead of the capable API. */
+export function assertWorkerRefundRestoreDisabled(env: NodeJS.ProcessEnv): void {
+  if (env.BILLING_UPGRADE_REFUND_RESTORE_ENABLED === 'true')
+    throw new Error(
+      'Upgrade refund restoration must remain disabled on the worker; API owns this write',
+    );
+}
+
 type UpgradeSource = {
   id: string;
   workspaceId: string;

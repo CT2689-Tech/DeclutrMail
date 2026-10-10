@@ -1301,6 +1301,48 @@ describe('PaddleAdapter exact upgrade-charge evidence', () => {
       }).readRefundTransaction(t.id),
     ).toMatchObject({ upgradeIntentId: null, upgradePriceId: null });
   });
+  it('worker without HMAC cannot turn an upgrade refund into a whole-plan cancellation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        return new Response(
+          JSON.stringify(
+            url.pathname === '/adjustments'
+              ? {
+                  data: [
+                    {
+                      id: 'adj_exact',
+                      transaction_id: 'txn_exact',
+                      action: 'refund',
+                      type: 'full',
+                      status: 'approved',
+                      subscription_id: sub,
+                    },
+                  ],
+                  meta: { pagination: { has_more: false, next: '' } },
+                }
+              : { data: rawTransaction() },
+          ),
+        );
+      }),
+    );
+    const worker = makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+      PADDLE_WEBHOOK_SECRET: '',
+    });
+    expect(await worker.readRefundTransaction('txn_exact')).toMatchObject({
+      origin: 'subscription_update',
+      upgradeIntentId: null,
+    });
+    expect(await worker.providerCancellationFacts(sub)).toMatchObject({
+      settled: null,
+      upgradeRefunds: [
+        { adjustmentId: 'adj_exact', transactionId: 'txn_exact', status: 'approved' },
+      ],
+    });
+  });
   it('discovers one exact transaction inside frozen filters without a status filter', async () => {
     const fetchMock = install([{ id: 'txn_exact' }]);
     const found = await makeAdapter({
