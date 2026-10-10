@@ -107,3 +107,19 @@ export const Compact: Story = { render: () => <Row s={SUBSTACK} compact /> };
 export const CompactBusy: Story = {
   render: () => <Row s={SUBSTACK} compact activity={{ phase: 'working', verb: 'archive' }} />,
 };
+
+/** Cleanup changes live mail while the historical received counter stays higher. */
+export const AfterCleanup: Story = {
+  render: () => (
+    <Row s={makeSender({ ...SUBSTACK, totalReceived: 3558, inboxCount: 0, archivedCount: 850 })} />
+  ),
+};
+
+export const CompactAfterCleanup: Story = {
+  render: () => (
+    <Row
+      s={makeSender({ ...SUBSTACK, totalReceived: 3558, inboxCount: 0, archivedCount: 850 })}
+      compact
+    />
+  ),
+};

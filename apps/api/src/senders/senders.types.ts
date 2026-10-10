@@ -159,6 +159,8 @@ export interface SenderListRow {
    * report 2026-07-28).
    */
   inboxCount: number;
+  /** Live inbound Archive count, excluding Trash, Spam, Draft and Chat. */
+  archivedCount: number;
   /**
    * The UNREAD subset of `inboxCount`.
    *

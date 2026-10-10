@@ -638,6 +638,8 @@ describe('SendersReadService', () => {
       });
       const byEmail = new Map(rows.map((r) => [r.email, r] as const));
       expect(byEmail.get('hello@splitwise.example')!.inboxCount).toBe(0);
+      expect(byEmail.get('hello@splitwise.example')!.archivedCount).toBe(1);
+      expect(byEmail.get('news@inboxy.example')!.archivedCount).toBe(1);
       expect(byEmail.get('news@inboxy.example')!.inboxCount).toBe(3);
       expect(byEmail.get('news@inboxy.example')!.unreadInboxCount).toBe(2);
       expect(byEmail.get('hello@splitwise.example')!.unreadInboxCount).toBe(0);
@@ -655,6 +657,26 @@ describe('SendersReadService', () => {
       expect(queries).toHaveLength(3);
       for (const query of queries)
         expect([...query.matchAll(/AND 'INBOX' = ANY\(/g)].length).toBe(1);
+
+      // Cleanup changes labels immediately, before the received counter's recount.
+      await db.update(mailMessages).set({ labelIds: ['TRASH'] }).where(sql`
+        ${mailMessages.mailboxAccountId} = ${mailboxId}
+        AND ${mailMessages.senderKey} = ${inboxy.senderKey}
+        AND 'INBOX' = ANY(${mailMessages.labelIds})
+      `);
+      const refreshedRows = await measured.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      const refreshed = refreshedRows.find((row) => row.id === inboxy.id)!;
+      const refreshedDetail = await measured.getSenderDetail(mailboxId, inboxy.id);
+      expect(refreshed.totalReceived).toBe(byEmail.get('news@inboxy.example')!.totalReceived);
+      expect(refreshed.inboxCount).toBe(0);
+      expect(refreshed.archivedCount).toBe(1);
+      expect(refreshed.inboxCount).toBe(refreshedDetail!.inboxCount);
+      expect(refreshed.archivedCount).toBe(refreshedDetail!.archivedCount);
     });
 
     it('filters across the mailbox by live inbound Inbox membership without hiding unsubscribe-only senders by default', async () => {
