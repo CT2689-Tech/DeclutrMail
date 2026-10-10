@@ -411,21 +411,20 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'Billing must stop before account deletion. Open Billing to cancel, or contact support.',
+      'Stop billing before deleting your account. Cancel in Billing or contact support@declutrmail.com.',
   },
   DELETION_BILLING_UNVERIFIED: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
     message:
-      'We could not confirm that billing has stopped. Open Billing or contact support before deleting your account.',
+      'Billing status could not be verified. Open Billing or contact support@declutrmail.com.',
   },
   CHECKOUT_DELETION_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message:
-      'Account deletion is scheduled for this workspace. Cancel deletion in Settings before restarting billing.',
+    message: 'Cancel scheduled deletion in Settings before restarting billing.',
   },
   NO_PENDING_DELETION: {
     status: 409,

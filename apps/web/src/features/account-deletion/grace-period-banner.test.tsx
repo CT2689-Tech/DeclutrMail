@@ -71,7 +71,10 @@ describe('GracePeriodBanner', () => {
     const banner = await screen.findByTestId('deletion-grace-banner');
     expect(banner).toHaveTextContent('waiting for billing');
     expect(banner).not.toHaveTextContent('deletes shortly');
-    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'Review deletion in Settings' })).toHaveAttribute(
+      'href',
+      '/settings#account',
+    );
     expect(screen.getByRole('button', { name: 'Cancel deletion' })).toBeEnabled();
   });
 

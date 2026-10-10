@@ -66,14 +66,9 @@ export function GracePeriodBanner() {
         </span>
         {data?.billingBlockReason != null && (
           <span style={{ fontSize: text.sm }}>
-            <Link href="/billing" style={{ color: color.primary }}>
-              Open Billing
+            <Link href="/settings#account" style={{ color: color.primary }}>
+              Review deletion in Settings
             </Link>{' '}
-            or{' '}
-            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-              contact support
-            </a>
-            .
           </span>
         )}
         {!executing && data?.billingBlockReason == null && request.basis === 'undo-window' && (
