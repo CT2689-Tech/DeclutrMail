@@ -1288,6 +1288,90 @@ describe('PaddleAdapter exact upgrade-charge evidence', () => {
       },
     };
   }
+  function mixedCycleTransaction() {
+    const t = rawTransaction();
+    const credit = t.details.line_items[1]!;
+    credit.proration.rate = '0.99998';
+    credit.proration.billing_period.starts_at = '2026-10-10T11:59:58.517Z';
+    return {
+      ...t,
+      billing_period: {
+        starts_at: '2026-10-10T11:59:58.500Z',
+        ends_at: '2027-10-10T11:59:58.500Z',
+      },
+      items: t.details.line_items.map((l, i) => ({
+        price: { id: l.price_id },
+        quantity: l.quantity,
+        proration: i === 0 ? null : structuredClone(l.proration),
+      })),
+      details: {
+        ...t.details,
+        line_items: t.details.line_items.map((l, i) => ({
+          ...l,
+          proration: i === 0 ? null : l.proration,
+        })),
+      },
+    };
+  }
+  it('preserves the GET-confirmed full-period debit and prorated credit separately', async () => {
+    const t = mixedCycleTransaction();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
+    const value = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundTransaction(t.id);
+    expect(value).toMatchObject({
+      upgradeIntentId: intent,
+      lines: null,
+      mixedCycleSwap: {
+        periodStart: t.billing_period.starts_at,
+        periodEnd: t.billing_period.ends_at,
+        debit: { priceId: 'pri_target', quantity: 1, total: '1900' },
+        credit: {
+          priceId: 'pri_base',
+          quantity: -1,
+          total: '-900',
+          rate: '0.99998',
+          periodStart: '2026-10-10T11:59:58.517Z',
+          periodEnd: '2026-11-09T12:00:00.000Z',
+        },
+      },
+    });
+    expect(value).not.toHaveProperty('unproratedSwap');
+  });
+  it.each([
+    'item rate',
+    'item period',
+    'item quantity',
+    'debit metadata',
+    'credit missing',
+    'credit rate',
+    'credit period',
+    'root period',
+    'credit sign',
+    'extra item',
+  ])('rejects mixed-cycle attribution with %s mismatch', async (kind) => {
+    const t = mixedCycleTransaction();
+    if (kind === 'item rate') t.items[1]!.proration!.rate = '0.8';
+    if (kind === 'item period') t.items[1]!.proration!.billing_period.ends_at = end;
+    if (kind === 'item quantity') t.items[1]!.quantity = 1;
+    if (kind === 'debit metadata') Object.assign(t.items[0]!, { proration: { rate: '1' } });
+    if (kind === 'credit missing') t.details.line_items[1]!.proration = null;
+    if (kind === 'credit rate') t.details.line_items[1]!.proration!.rate = 'NaN';
+    if (kind === 'credit period')
+      t.details.line_items[1]!.proration!.billing_period.ends_at = start;
+    if (kind === 'root period') t.billing_period.ends_at = t.billing_period.starts_at;
+    if (kind === 'credit sign') t.details.line_items[1]!.totals.total = '900';
+    if (kind === 'extra item') t.items.push(structuredClone(t.items[1]!));
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
+    const value = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundTransaction(t.id);
+    expect(value?.lines).toBeNull();
+    expect(value).not.toHaveProperty('mixedCycleSwap');
+    expect(value).not.toHaveProperty('unproratedSwap');
+  });
   it('preserves the observed absent-proration swap explicitly without inventing a rate', async () => {
     const t = unproratedTransaction();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
@@ -1332,10 +1416,14 @@ describe('PaddleAdapter exact upgrade-charge evidence', () => {
     expect(value).not.toHaveProperty('unproratedSwap');
     expect(value?.lines).toBeNull();
   });
-  it.each(['workspace', 'intent'])(
-    'keeps an absent-proration swap unattributed after a tampered %s signature',
-    async (kind) => {
-      const t = unproratedTransaction();
+  it.each(
+    ['unprorated', 'mixed cycle'].flatMap((shape) =>
+      ['workspace', 'intent'].map((kind) => ({ shape, kind })),
+    ),
+  )(
+    'keeps a $shape swap unattributed after a tampered $kind signature',
+    async ({ shape, kind }) => {
+      const t = shape === 'mixed cycle' ? mixedCycleTransaction() : unproratedTransaction();
       if (kind === 'workspace') t.custom_data.sig = 'invalid';
       else t.custom_data.upgrade_intent_id = 'tampered';
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));

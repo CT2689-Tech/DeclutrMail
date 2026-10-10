@@ -81,6 +81,77 @@ function useUnproratedSwap() {
     ],
   };
 }
+async function useMixedCycleSwap() {
+  intent.to_cycle = 'annual';
+  state = {
+    ...state,
+    periodStart: '2026-10-10T11:59:58.500Z',
+    periodEnd: '2027-10-10T11:59:58.500Z',
+    nextBilledAt: '2027-10-10T11:59:58.500Z',
+    normalized: { ...state.normalized, currentPeriodEnd: '2027-10-10T11:59:58.500Z' },
+  };
+  await db
+    .update(subscriptions)
+    .set({
+      billingCycle: 'annual',
+      currentPeriodEnd: new Date(state.periodEnd),
+    })
+    .where(eq(subscriptions.providerSubscriptionId, 'sub_upgrade'));
+  const secret = 'synthetic-mixed-cycle-secret';
+  const sign = (value: string) => createHmac('sha256', secret).update(value).digest('hex');
+  const creditProration = {
+    rate: '0.99998',
+    billing_period: { starts_at: '2026-10-10T11:59:58.517Z', ends_at: end },
+  };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: transaction.id,
+            subscription_id: 'sub_upgrade',
+            origin: 'subscription_update',
+            status: 'completed',
+            created_at: transaction.createdAt,
+            billing_period: { starts_at: state.periodStart, ends_at: state.periodEnd },
+            custom_data: {
+              workspace_id: workspaceId,
+              sig: sign(`paddle:workspace:${workspaceId}`),
+              upgrade_intent_id: intent.intent_id,
+              upgrade_price_id: 'pri_target',
+              upgrade_sig: sign(
+                `paddle:upgrade:${intent.intent_id}:${workspaceId}:sub_upgrade:pri_target`,
+              ),
+            },
+            items: [
+              { price: { id: 'pri_target' }, quantity: 1, proration: null },
+              { price: { id: 'pri_base' }, quantity: -1, proration: creditProration },
+            ],
+            details: {
+              totals: { grand_total: '1000' },
+              line_items: [
+                { price_id: 'pri_target', quantity: 1, totals: { total: '1900' }, proration: null },
+                {
+                  price_id: 'pri_base',
+                  quantity: -1,
+                  totals: { total: '-900' },
+                  proration: creditProration,
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    ),
+  );
+  transaction = (await new PaddleAdapter({
+    PADDLE_ENV: 'sandbox',
+    PADDLE_API_KEY: 'synthetic',
+    PADDLE_WEBHOOK_SECRET: secret,
+  }).readRefundTransaction(transaction.id))!;
+  vi.unstubAllGlobals();
+}
 async function seedEvidence(bind = true) {
   await appendUpgradeRecord(db, 'sub_upgrade', 'local.upgrade_requested', intent.intent_id, intent);
   await appendUpgradeRecord(db, 'sub_upgrade', 'local.upgrade_attempt_closed', intent.intent_id, {
@@ -206,6 +277,106 @@ afterEach(() => {
 });
 
 describe('upgrade-only refund policy through canonical projection', () => {
+  it('binds the observed mixed-cycle charge and holds approved refunds without any restoration claim', async () => {
+    await useMixedCycleSwap();
+    expect(transaction.mixedCycleSwap).toBeDefined();
+    await seedEvidence(false);
+    expect(await policy.confirmPendingUpgrade('sub_upgrade', intent.intent_id)).toBe(true);
+    paddle.readRefundAdjustment.mockResolvedValue({ status: 'pending_approval', full: true });
+    expect(await policy.resolve(event())).toEqual({ kind: 'inert', reason: 'pending_approval' });
+    paddle.readRefundAdjustment.mockResolvedValue({ status: 'approved', full: true });
+    expect(await policy.resolve(event())).toEqual({
+      kind: 'hold',
+      reason: 'original_renewal_requires_support',
+    });
+    await projector.process('paddle', event(), { occurred_at: now });
+    expect((await projector.process('paddle', event(), { occurred_at: now })).kind).toBe(
+      'duplicate',
+    );
+    expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
+    expect(await hasUnresolvedUpgrade(db, 'sub_upgrade')).toBe(true);
+    expect((await db.select().from(subscriptions))[0]).toMatchObject({
+      tier: 'pro',
+      billingCycle: 'annual',
+      status: 'active',
+      currentPeriodEnd: new Date(state.periodEnd),
+      cancelSource: null,
+    });
+    expect(
+      (await db.select().from(subscriptionEvents)).filter((r) =>
+        ['local.upgrade_restore_started', 'local.upgrade_restore_completed'].includes(r.eventType),
+      ),
+    ).toHaveLength(0);
+  });
+  it('holds fully prorated cross-cycle refunds even if preview promises the original renewal', async () => {
+    intent.to_cycle = 'annual';
+    await seedEvidence();
+    expect(await policy.resolve(event())).toEqual({
+      kind: 'hold',
+      reason: 'original_renewal_requires_support',
+    });
+    expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
+    expect(
+      (await db.select().from(subscriptionEvents)).some(
+        (r) => r.eventType === 'local.upgrade_restore_started',
+      ),
+    ).toBe(false);
+  });
+  it.each([
+    'root start',
+    'root end',
+    'credit start',
+    'credit end',
+    'credit rate',
+    'same cycle',
+    'renewal',
+    'discount',
+    'later nonce',
+  ])('does not bind mixed-cycle evidence after %s drift', async (kind) => {
+    await useMixedCycleSwap();
+    const swap = transaction.mixedCycleSwap!;
+    if (kind === 'root start') swap.periodStart = requested;
+    if (kind === 'root end') swap.periodEnd = end;
+    if (kind === 'credit start') swap.credit.periodStart = now;
+    if (kind === 'credit end') swap.credit.periodEnd = state.periodEnd;
+    if (kind === 'credit rate') swap.credit.rate = '1.1';
+    if (kind === 'same cycle') intent.to_cycle = 'monthly';
+    if (kind === 'renewal') state.nextBilledAt = end;
+    if (kind === 'discount') state.discountId = 'dsc_changed';
+    if (kind === 'later nonce') transaction.createdAt = now;
+    await seedEvidence(false);
+    expect(await policy.confirmPendingUpgrade('sub_upgrade', intent.intent_id)).toBe(false);
+    expect(await hasUnresolvedUpgrade(db, 'sub_upgrade')).toBe(true);
+    expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
+  });
+  it.each(['local cancellation', 'provider cancellation', 'chargeback'])(
+    'retains stronger %s precedence for mixed-cycle refunds',
+    async (kind) => {
+      await useMixedCycleSwap();
+      await seedEvidence();
+      if (kind === 'local cancellation')
+        await db
+          .update(subscriptions)
+          .set({ cancelAtPeriodEnd: true })
+          .where(eq(subscriptions.providerSubscriptionId, 'sub_upgrade'));
+      if (kind === 'provider cancellation') state.scheduledAction = 'cancel';
+      if (kind === 'chargeback')
+        paddle.providerCancellationFacts.mockResolvedValue({
+          settled: 'chargeback',
+          refuted: { refund: false, chargeback: false },
+        });
+      expect(await policy.resolve(event())).toMatchObject({
+        kind: 'hold',
+        reason:
+          kind === 'local cancellation'
+            ? 'local_stop_or_plan_change'
+            : kind === 'provider cancellation'
+              ? 'provider_stop_or_discount_change'
+              : 'other_refund_or_chargeback',
+      });
+      expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
+    },
+  );
   it('binds the observed absent-proration swap, restores the base plan and deduplicates', async () => {
     // Recorded API shape, with fresh synthetic signatures and amounts.
     const secret = 'synthetic-upgrade-contract-secret';
@@ -526,14 +697,19 @@ describe('upgrade-only refund policy through canonical projection', () => {
       closed,
     );
   });
-  it.each([
-    'provider price',
-    'provider renewal',
-    'provider stop',
-    'canonical price',
-    'canonical revision',
-  ])('keeps fresh %s drift after frozen closure pending', async (kind) => {
-    useUnproratedSwap();
+  it.each(
+    ['unprorated', 'mixed cycle'].flatMap((shape) =>
+      [
+        'provider price',
+        'provider renewal',
+        'provider stop',
+        'canonical price',
+        'canonical revision',
+      ].map((kind) => ({ shape, kind })),
+    ),
+  )('keeps fresh $kind drift after $shape closure pending', async ({ shape, kind }) => {
+    if (shape === 'mixed cycle') await useMixedCycleSwap();
+    else useUnproratedSwap();
     await seedEvidence(false);
     if (kind === 'provider price') state = { ...state, priceId: 'pri_base' };
     if (kind === 'provider renewal') state = { ...state, nextBilledAt: '2026-12-09T12:00:00.000Z' };

@@ -37,6 +37,22 @@ export interface PaddleRefundTransaction {
     periodEnd: string;
     lines: Array<{ priceId: string; quantity: number; total: string }>;
   };
+  /** Explicit cross-cycle shape confirmed by Sandbox GET: full-period debit
+   * without proration, plus a prorated credit agreed by both item arrays.
+   * This can bind the charge, never authorize automatic date restoration. */
+  mixedCycleSwap?: {
+    periodStart: string;
+    periodEnd: string;
+    debit: { priceId: string; quantity: number; total: string };
+    credit: {
+      priceId: string;
+      quantity: number;
+      total: string;
+      rate: string;
+      periodStart: string;
+      periodEnd: string;
+    };
+  };
   lines: Array<{
     priceId: string;
     quantity: number;
