@@ -1269,6 +1269,109 @@ describe('PaddleAdapter exact upgrade-charge evidence', () => {
     vi.stubGlobal('fetch', fetchMock);
     return fetchMock;
   }
+  function unproratedTransaction() {
+    const t = rawTransaction();
+    return {
+      ...t,
+      billing_period: {
+        starts_at: '2026-10-09T12:00:00.000Z',
+        ends_at: '2026-11-09T12:00:00.000Z',
+      },
+      items: t.details.line_items.map((l) => ({
+        price: { id: l.price_id },
+        quantity: l.quantity,
+        proration: null,
+      })),
+      details: {
+        ...t.details,
+        line_items: t.details.line_items.map((l) => ({ ...l, proration: null })),
+      },
+    };
+  }
+  it('preserves the observed absent-proration swap explicitly without inventing a rate', async () => {
+    const t = unproratedTransaction();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
+    const value = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundTransaction(t.id);
+    expect(value).toMatchObject({
+      upgradeIntentId: intent,
+      lines: null,
+      unproratedSwap: {
+        periodStart: t.billing_period.starts_at,
+        periodEnd: t.billing_period.ends_at,
+        lines: [
+          { priceId: 'pri_target', quantity: 1, total: '1900' },
+          { priceId: 'pri_base', quantity: -1, total: '-900' },
+        ],
+      },
+    });
+    expect(JSON.stringify(value)).not.toContain('"rate"');
+  });
+  it.each([
+    'item mismatch',
+    'partial proration',
+    'malformed proration',
+    'reversed period',
+    'missing item',
+    'duplicate price',
+  ])('does not normalize an absent-proration swap with %s', async (kind) => {
+    const t = unproratedTransaction();
+    if (kind === 'item mismatch') t.items[0]!.quantity = 2;
+    if (kind === 'partial proration') Object.assign(t.items[0]!, { proration: { rate: '1' } });
+    if (kind === 'malformed proration') Object.assign(t.details.line_items[0]!, { proration: {} });
+    if (kind === 'reversed period') t.billing_period.ends_at = t.billing_period.starts_at;
+    if (kind === 'missing item') t.items.pop();
+    if (kind === 'duplicate price') t.details.line_items[1]!.price_id = 'pri_target';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
+    const value = await makeAdapter({
+      PADDLE_API_KEY: 'sandbox-fixture',
+      PADDLE_ENV: 'sandbox',
+    }).readRefundTransaction(t.id);
+    expect(value).not.toHaveProperty('unproratedSwap');
+    expect(value?.lines).toBeNull();
+  });
+  it.each(['workspace', 'intent'])(
+    'keeps an absent-proration swap unattributed after a tampered %s signature',
+    async (kind) => {
+      const t = unproratedTransaction();
+      if (kind === 'workspace') t.custom_data.sig = 'invalid';
+      else t.custom_data.upgrade_intent_id = 'tampered';
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: t }))));
+      expect(
+        await makeAdapter({
+          PADDLE_API_KEY: 'sandbox-fixture',
+          PADDLE_ENV: 'sandbox',
+        }).readRefundTransaction(t.id),
+      ).toMatchObject({ upgradeIntentId: null, upgradePriceId: null });
+    },
+  );
+  it('does not discard a second unsigned pending transaction in the original window', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname === '/transactions')
+          return new Response(
+            JSON.stringify({
+              data: [{ id: 'txn_exact' }, { id: 'txn_unsigned' }],
+              meta: { pagination: { has_more: false } },
+            }),
+          );
+        const t = rawTransaction(url.pathname.split('/').at(-1), 'billed');
+        if (t.id === 'txn_unsigned') t.custom_data.upgrade_sig = 'invalid';
+        else t.status = 'completed';
+        return new Response(JSON.stringify({ data: t }));
+      }),
+    );
+    expect(
+      await makeAdapter({
+        PADDLE_API_KEY: 'sandbox-fixture',
+        PADDLE_ENV: 'sandbox',
+      }).discoverUpgradeTransaction(sub, intent, start, end),
+    ).toBeNull();
+  });
   it('verifies both signatures and exposes only explicit prorated debit/credit metadata', async () => {
     install([{ id: 'txn_exact' }]);
     const value = await makeAdapter({

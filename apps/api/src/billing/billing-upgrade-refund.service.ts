@@ -57,6 +57,7 @@ export function matchesUpgradeCharge(
   end: string,
 ): boolean {
   if (
+    transaction.subscriptionId !== intent.provider_subscription_id ||
     transaction.upgradeIntentId !== intent.intent_id ||
     transaction.upgradePriceId !== intent.to_price_id ||
     transaction.origin !== 'subscription_update' ||
@@ -64,11 +65,38 @@ export function matchesUpgradeCharge(
     !transaction.positiveCharge ||
     !transaction.createdAt ||
     Date.parse(transaction.createdAt) < Date.parse(intent.requested_at) ||
-    Date.parse(transaction.createdAt) > Date.parse(end) ||
-    !transaction.lines ||
-    transaction.lines.length < 1 ||
-    transaction.lines.length > 2
+    Date.parse(transaction.createdAt) > Date.parse(end)
   )
+    return false;
+  const swap = transaction.unproratedSwap;
+  if (swap) {
+    if (
+      transaction.lines !== null ||
+      intent.from_cycle !== intent.to_cycle ||
+      intent.prior.priceId === intent.to_price_id ||
+      target.priceId !== intent.to_price_id ||
+      swap.lines.length !== 2 ||
+      !sameInstant(swap.periodStart, intent.prior.periodStart) ||
+      !sameInstant(swap.periodStart, target.periodStart) ||
+      !sameInstant(swap.periodEnd, intent.prior.periodEnd) ||
+      !sameInstant(swap.periodEnd, target.periodEnd) ||
+      !sameInstant(target.nextBilledAt, intent.prior.nextBilledAt) ||
+      !sameInstant(intent.prior.nextBilledAt, intent.prior.periodEnd) ||
+      target.scheduledAction !== null ||
+      intent.prior.scheduledAction !== null ||
+      target.discountId !== intent.prior.discountId ||
+      !sameInstant(target.discountEndsAt, intent.prior.discountEndsAt)
+    )
+      return false;
+    const debit = swap.lines.filter(
+      (l) => l.priceId === intent.to_price_id && l.quantity === 1 && BigInt(l.total) > 0n,
+    );
+    const credit = swap.lines.filter(
+      (l) => l.priceId === intent.prior.priceId && l.quantity === -1 && BigInt(l.total) < 0n,
+    );
+    return debit.length === 1 && credit.length === 1;
+  }
+  if (!transaction.lines || transaction.lines.length < 1 || transaction.lines.length > 2)
     return false;
   let debit = 0,
     credit = 0;
@@ -277,6 +305,16 @@ export class BillingUpgradeRefundService implements UpgradeRefundPolicy {
     const evidence = await intentEvidence(this.db, subscriptionId, intentId);
     if (!evidence?.target || !evidence.windowEnd || evidence.newerUpgrade) return false;
     if (evidence.transactionId) return true;
+    const [observed] = await this.db
+      .select()
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.provider, 'paddle'),
+          eq(subscriptions.providerSubscriptionId, subscriptionId),
+        ),
+      );
+    if (!observed) return false;
     const transaction = await this.paddle.discoverUpgradeTransaction(
       subscriptionId,
       intentId,
@@ -286,6 +324,21 @@ export class BillingUpgradeRefundService implements UpgradeRefundPolicy {
     if (
       !transaction ||
       !matchesUpgradeCharge(transaction, evidence.intent, evidence.target, evidence.windowEnd)
+    )
+      return false;
+    // Discovery can take multiple reads. Do not release its barrier using a
+    // frozen target after an intervening provider change or renewal.
+    const provider = await this.paddle.readUpgradeState(subscriptionId);
+    const target = evidence.target;
+    if (
+      !provider ||
+      provider.status !== 'active' ||
+      provider.scheduledAction !== null ||
+      provider.priceId !== target.priceId ||
+      !sameInstant(provider.periodStart, target.periodStart) ||
+      !sameInstant(provider.periodEnd, target.periodEnd) ||
+      !sameInstant(provider.nextBilledAt, target.nextBilledAt) ||
+      !sameDiscount(provider, evidence.intent.prior)
     )
       return false;
     return this.db.transaction(async (tx) => {
@@ -308,6 +361,13 @@ export class BillingUpgradeRefundService implements UpgradeRefundPolicy {
         );
       if (
         !current ||
+        current.id !== observed.id ||
+        current.workspaceId !== observed.workspaceId ||
+        current.updatedAt.getTime() !== observed.updatedAt.getTime() ||
+        current.providerPriceId !== target.priceId ||
+        current.tier !== evidence.intent.to_tier ||
+        current.billingCycle !== evidence.intent.to_cycle ||
+        !sameInstant(current.currentPeriodEnd?.toISOString() ?? null, target.periodEnd) ||
         current.status !== 'active' ||
         current.cancelSource !== null ||
         current.cancelAtPeriodEnd ||
