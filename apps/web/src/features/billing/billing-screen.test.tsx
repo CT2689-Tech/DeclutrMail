@@ -2078,7 +2078,7 @@ describe('BillingScreen — paid subscriber', () => {
     // Cache write-back: scheduled-cancel note renders; affordance gone.
     expect(
       await screen.findByText(
-        "Cancellation scheduled — your plan stays active until Jul 1, 2026, then you'll switch to Free.",
+        'Cancellation scheduled — access from this subscription continues until Jul 1, 2026. A separate complimentary grant may still apply.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review cancellation' })).not.toBeInTheDocument();
