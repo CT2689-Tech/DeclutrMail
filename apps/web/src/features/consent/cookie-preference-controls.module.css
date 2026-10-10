@@ -13,6 +13,9 @@
   background: var(--dm-primary-soft);
   border-color: var(--dm-primary-border);
 }
+.option > input {
+  flex-shrink: 0;
+}
 .title {
   font-weight: 600;
   color: var(--dm-fg);

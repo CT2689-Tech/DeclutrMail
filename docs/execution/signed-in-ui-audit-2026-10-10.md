@@ -65,7 +65,7 @@ The implementation choices below preserve action eligibility, preview/confirmati
 | 53      | Badges                          | Selected mailbox versus scan readiness are separate meanings; current plan and complimentary access explanation are explicit. CTA follows real paid-subscription state. |
 | 54      | Empty states                    | Empty weekly section hidden; support tool moved into disclosure. Equal-count scopes explained rather than silently changing their meaning.                              |
 | 55      | Help popover                    | Home help explains next steps, recorded progress and undo exclusion.                                                                                                    |
-| 56      | Capture artifact                | Fresh browser captures will omit the old viewport/devtools overlay; no application patch needed.                                                                        |
+| 56      | Capture artifact                | Fresh final captures omit the old viewport/devtools overlay; no application patch needed.                                                                               |
 | 57      | Modal subtitle wrap             | Shared modal heading/subtitle wrapping and concrete confirmation copy.                                                                                                  |
 
 ## Design-system audit mapping
@@ -99,6 +99,43 @@ One integration branch owns all shared files. Contributors worked in isolated wo
 
 ## Verification record
 
-Pending final integrated checks and browser matrix. This document does not yet claim merge or production verification.
+### Browser matrix
+
+Verified in Codex's built-in browser against a disposable synthetic stack. All 13 primary surfaces were inspected at desktop 1280×900 and mobile 390×844 in light and dark themes: Home, Senders, sender detail, Triage, Screener, Settings, Quiet hours, Activity, Daily brief, Autopilot, Later, Follow-ups, and Billing. Privacy & data and public Cookie preferences received an additional four-combination regression pass after the client-bundle optimization.
+
+The evidence log contains 87 captured states, including intermediate observations followed by corrected captures. None had document-level horizontal overflow. Extra checks covered 320px mobile, Later at 800px, expanded forms, empty and populated pages, the account menu, utility drawer, selection actions, and confirmation sheets. The latest verification tab reported no console errors or warnings. A development hot-reload stalled an earlier tab; a fresh tab on the same built-in browser completed the final checks.
+
+Verified interactions:
+
+- Keep completes against the real local API, marks the row Kept, and replaces its own pending notification with the settled result. No invented Undo action is offered.
+- Settings' Archive Inline preference renders the preview inside Triage; Separate window renders the dialog. The original preference was restored. Delete retains a separate confirmation with Cancel focused. Browser Archive/Delete previews were cancelled.
+- Disabled Unsubscribe explains its unavailable state. Action menu tests cover inert clicks and shortcuts.
+- The mobile selection action clears the bottom navigation; confirmation actions wrap at 320px. Undo's viewport-resize positioning has a focused regression test.
+- Switching to the empty second synthetic mailbox changes the visible state; switching back restores the original mailbox. Long account addresses wrap in the account menu.
+- Text/date/time/select fields use 16px on mobile, including Activity dates and the Later note. Quiet hours' timezone remains readable at 320px. Consent radios retain their native width while their full labels remain clickable.
+- Consent stays Essential only across the settings and public cookie surfaces. Static server-rendered guidance, the CASA claim, client consent controls and export controls remain present.
+
+Representative synthetic captures and the measurement log are saved alongside this report:
+
+- [Desktop dark Home](ui-audit-2026-10-10/desktop-dark-home-final.jpg)
+- [Mobile light Home](ui-audit-2026-10-10/mobile-light-home.jpg)
+- [Mobile dark settled Keep](ui-audit-2026-10-10/mobile-dark-keep-final.jpg)
+- [Viewport measurements](ui-audit-2026-10-10/view-metrics.json)
+
+### Automated checks and review
+
+- Shared suite: 739 tests passed across 63 files.
+- Monorepo typecheck passed; lint passed with six existing warnings and no errors.
+- Production web build, Storybook build and all 45 public prerender routes passed.
+- All 51 route bundle budgets passed without changing limits. Cookies fell from 153.2 kB to 151.3 kB (152 kB limit); Privacy settings fell from 262.6 kB to 256.6 kB (262 kB limit). Static privacy guidance now stays on the server; consent state and withdrawal handling remain client-side.
+- Full web suite initially reported 3,863 passes, three existing skips and one stale CASA source-location assertion after the server-rendering change. The assertion now checks the actual server footer and its shared-copy guarantee; its focused rerun passed 10/10. Final complete rerun and current CI are recorded on PR #916.
+- CI's earlier browser job completed 70 accessibility tests and eight component-paint tests before the billing journey hit an ambiguous Archive menu selector. Exact action names now distinguish Archive from an Unsubscribe explanation that mentions Archive. No behavioral assertions, required suites, or budgets were removed or weakened.
+- Three independent contributors reviewed the shared foundation, action lifecycle, navigation/preferences and page presentation. The final design-system gate reports zero blockers, warnings or informational findings after the disclosure easing and mobile consent-radio corrections.
+
+### Historical failures and limits
+
+Manual/review findings corrected during integration included mobile inline-font overrides, an intermediate Later breakpoint, viewport-relative Undo positioning, mismatched disclosure selectors, stale loading/error geometry and naming, singular/plural copy, separated recommendation text, and the stale pending Keep toast. The initial bundle and test failures above remain part of the record; later passes do not erase them.
 
 The local stack uses disposable PostgreSQL at 127.0.0.1:5418, Redis DB 12 at 127.0.0.1:6418, API 4118 and web 3118. It contains only synthetic fixtures, has no Gmail worker, and imports no repository environment credentials. Missing optional transactional-email configuration is expected in this harness. This pass does not validate real provider delivery, billing purchases or worker restoration.
+
+This report establishes UI implementation and local verification. PR readiness, required CI, merge-queue completion, deployment and production verification are separate states. Current merge evidence belongs to [PR #916](https://github.com/CT2689-Tech/DeclutrMail/pull/916).
