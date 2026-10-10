@@ -133,7 +133,7 @@ beforeEach(() => {
 afterEach(() => resetFetchStub());
 
 describe('checkout provider gate (D117)', () => {
-  it('offers Razorpay on a price point that carries a Razorpay id', async () => {
+  it('pauses a provisioned INR point before any checkout request', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
@@ -146,14 +146,13 @@ describe('checkout provider gate (D117)', () => {
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-
-    await waitFor(() =>
-      expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'annual', provider: 'razorpay' }),
-    );
+    const paused = within(panel).getByRole('button', { name: 'INR checkout paused' });
+    expect(paused).toBeDisabled();
+    fireEvent.click(paused);
+    expect(checkoutBody).toBeNull();
   });
 
-  it('a Razorpay pick never outlives the price point that offered it', async () => {
+  it('an unprovisioned promo requires an explicit USD choice during the INR pause', async () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     const panel = await screen.findByTestId('checkout-panel');
@@ -163,9 +162,13 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
 
     // Claim Founding Pro — a DIFFERENT price point, with no Razorpay
-    // id. The radio goes away; the stale pick must not survive it.
+    // id. Preserve an explicit USD choice; never silently route INR to USD.
     fireEvent.click(within(panel).getByRole('checkbox'));
-    expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
+    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
+    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: 'INR checkout paused' })).toBeDisabled();
+    expect(checkoutBody).toBeNull();
+    fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
@@ -197,7 +200,7 @@ describe('checkout currency (D117/D226)', () => {
     // The D226 preview is the "exactly what happens" step. Quoting $190
     // and then charging ₹15,999 is the preview lying about the one
     // number it exists to state.
-    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+    expect(panel).toHaveTextContent(/Reference price: ₹15,999\/yr/);
     expect(panel).not.toHaveTextContent(/\$190 billed annually/);
   });
 
@@ -220,7 +223,7 @@ describe('checkout currency (D117/D226)', () => {
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
 
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
-    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+    expect(panel).toHaveTextContent(/Reference price: ₹15,999\/yr/);
   });
 
   it('the Founding Pro claim quotes ITS OWN point, not the one on screen', async () => {
@@ -234,7 +237,7 @@ describe('checkout currency (D117/D226)', () => {
     const panel = await screen.findByTestId('checkout-panel');
 
     expect(within(panel).getByRole('checkbox')).not.toBeChecked();
-    expect(panel).toHaveTextContent(/₹15,999 billed annually/);
+    expect(panel).toHaveTextContent(/Reference price: ₹15,999\/yr/);
 
     const claim = within(panel).getByText(/Claim Founding Pro/);
     expect(claim).toHaveTextContent('$129/yr');

@@ -103,6 +103,8 @@ describe('BillingService', () => {
   let paddleInvoiceDocumentUrl: ReturnType<typeof vi.fn>;
   let paddlePaymentMethodSession: ReturnType<typeof vi.fn>;
   let razorpayListInvoices: ReturnType<typeof vi.fn>;
+  let razorpayCheckout: ReturnType<typeof vi.fn>;
+  let razorpayCancel: ReturnType<typeof vi.fn>;
   let reconciliationStub: BillingReconciliationService;
   let principal: { userId: string; workspaceId: string };
 
@@ -150,10 +152,12 @@ describe('BillingService', () => {
     razorpayListInvoices = vi
       .fn()
       .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 });
+    razorpayCheckout = vi.fn();
+    razorpayCancel = vi.fn().mockResolvedValue(undefined);
     const razorpay = {
       id: 'razorpay',
-      createCheckout: vi.fn(),
-      cancelSubscription: vi.fn(),
+      createCheckout: razorpayCheckout,
+      cancelSubscription: razorpayCancel,
       changePlan: vi.fn(),
       resumeSubscription: vi.fn(),
       clearScheduledCancellation: vi.fn(),
@@ -306,10 +310,41 @@ describe('BillingService', () => {
     expect(paddleCheckout).toHaveBeenCalledTimes(2);
   });
 
-  it('fails closed (BILLING_NOT_PROVISIONED) when the catalog has no id for the price point', async () => {
-    await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'razorpay' }),
-    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
+  it('refuses new INR checkout before catalog resolution, claims or provider side effects', async () => {
+    const before = await db.select().from(users).where(eq(users.id, principal.userId));
+    // Both a provisioned monthly price and unprovisioned annual price are paused.
+    for (const [tierId, cycle] of [
+      ['plus', 'monthly'],
+      ['pro', 'annual'],
+    ] as const)
+      await expect(
+        service.createCheckout(principal, { tierId, cycle, provider: 'razorpay' }),
+      ).rejects.toMatchObject({
+        code: 'BILLING_NOT_PROVISIONED',
+        details: { reason: 'inr_checkout_paused' },
+      });
+    expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+    expect(await db.select().from(users).where(eq(users.id, principal.userId))).toEqual(before);
+    expect(paddleCheckout).not.toHaveBeenCalled();
+    expect(razorpayCheckout).not.toHaveBeenCalled();
+  });
+
+  it('keeps existing INR cancellation available while new purchases are paused', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId: principal.workspaceId,
+      provider: 'razorpay',
+      providerSubscriptionId: 'sub_existing_inr',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: 'plan_plus_m',
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 30 * 86400000),
+    });
+    const result = await service.cancelAtPeriodEnd(principal, { reason: 'too_expensive' });
+    expect(razorpayCancel).toHaveBeenCalledWith('sub_existing_inr');
+    expect(result.subscription).toMatchObject({ provider: 'razorpay', cancelAtPeriodEnd: true });
+    expect(razorpayCheckout).not.toHaveBeenCalled();
   });
 
   it('rejects a second checkout while a granting subscription exists (SUBSCRIPTION_EXISTS)', async () => {

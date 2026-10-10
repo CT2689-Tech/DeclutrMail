@@ -8,7 +8,12 @@ import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
-import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
+import {
+  ERROR_CODES,
+  isErrorCode,
+  INR_NEW_PURCHASES_PAUSED,
+  INR_CHECKOUT_PAUSED_MESSAGE,
+} from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
   BillingProviderId,
@@ -395,7 +400,13 @@ export function PlanPicker({
     // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
     // before any payment surface can open. A second tab's claim now
     // finds the reservation and stands down.
-    if (disabled || checkout.isPending || confirmInFlight.current) return;
+    if (
+      disabled ||
+      checkout.isPending ||
+      confirmInFlight.current ||
+      (provider === 'razorpay' && INR_NEW_PURCHASES_PAUSED)
+    )
+      return;
     confirmInFlight.current = true;
     const attemptId = await onCheckoutAttempt(target, cycle);
     confirmInFlight.current = false;
@@ -713,6 +724,11 @@ export function checkoutErrorMessage(error: unknown): string | null {
   if (!error) return null;
   const code = apiErrorCode(error);
   if (code !== null && isErrorCode(code)) {
+    if (
+      code === 'BILLING_NOT_PROVISIONED' &&
+      apiErrorDetail(error, 'reason') === 'inr_checkout_paused'
+    )
+      return INR_CHECKOUT_PAUSED_MESSAGE;
     if (code === 'BILLING_DISABLED') {
       return 'Billing isn’t switched on yet — checkout opens here once it goes live.';
     }
@@ -1000,9 +1016,9 @@ function RazorpaySwitchPanel({
       }}
     >
       <p style={{ margin: 0 }}>
-        Plan changes aren&rsquo;t self-serve yet for subscriptions paid via Razorpay — email us and
-        we&rsquo;ll switch you to {TIER_MANIFEST[target].name} ({cycle}), usually within a day. Your
-        current plan keeps working in the meantime.
+        Plan changes aren&rsquo;t self-serve yet for subscriptions paid via Razorpay. Contact
+        support to review a change to {TIER_MANIFEST[target].name} ({cycle}). New INR purchases are
+        temporarily paused; your current plan keeps working in the meantime.
       </p>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <a

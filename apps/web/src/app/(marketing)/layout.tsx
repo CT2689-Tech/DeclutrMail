@@ -19,6 +19,7 @@
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
+import { INR_NEW_PURCHASES_PAUSED } from '@declutrmail/shared/contracts/billing-availability';
 
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { JsonLd } from '@/features/marketing/json-ld';
@@ -75,7 +76,7 @@ function tierOffers() {
             url: `${siteUrl()}/pricing`,
           },
         ];
-        if (price.razorpayPlanId !== null) {
+        if (price.razorpayPlanId !== null && !INR_NEW_PURCHASES_PAUSED) {
           offers.push({
             '@type': 'Offer',
             name,
