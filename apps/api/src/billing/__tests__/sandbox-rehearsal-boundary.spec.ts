@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { createServer } from 'node:http';
 import {
   assertSandboxRehearsalEnvironment,
   rehearsalCase,
   isRehearsalOperator,
+  REHEARSAL_LISTEN_PORT,
 } from '../../../scripts/helpers/sandbox-rehearsal-boundary.js';
 const env = {
   GITHUB_ACTIONS: 'true',
@@ -16,6 +18,25 @@ const env = {
   REHEARSAL_PUBLIC_URL: 'https://synthetic-fixture.trycloudflare.com',
 };
 describe('sandbox financial rehearsal boundary', () => {
+  it('reaches a denied HTTP response using the configured runtime port', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(403);
+      res.end('private_operator_required');
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(REHEARSAL_LISTEN_PORT, '127.0.0.1', resolve);
+    });
+    try {
+      const response = await fetch(`http://127.0.0.1:${REHEARSAL_LISTEN_PORT}/state?case=monthly`);
+      expect(response.status).toBe(403);
+      expect(await response.text()).toBe('private_operator_required');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
   it('accepts only the isolated sandbox context', () =>
     expect(() => assertSandboxRehearsalEnvironment(env)).not.toThrow());
   it.each([

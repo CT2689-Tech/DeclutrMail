@@ -1,4 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
+// 4045 is forbidden by WHATWG fetch (lockd); startup probes must use an allowed port.
+export const REHEARSAL_LISTEN_PORT = 4049;
 /** Money-path fixture boundary: never accepts live credentials or an external DB. */
 export function assertSandboxRehearsalEnvironment(env: NodeJS.ProcessEnv): void {
   if (
