@@ -5,6 +5,7 @@ import {
   rehearsalCase,
   isRehearsalOperator,
   REHEARSAL_LISTEN_PORT,
+  listenRehearsalServer,
 } from '../../../scripts/helpers/sandbox-rehearsal-boundary.js';
 const env = {
   GITHUB_ACTIONS: 'true',
@@ -23,10 +24,7 @@ describe('sandbox financial rehearsal boundary', () => {
       res.writeHead(403);
       res.end('private_operator_required');
     });
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(REHEARSAL_LISTEN_PORT, '127.0.0.1', resolve);
-    });
+    await listenRehearsalServer(server);
     try {
       const response = await fetch(`http://127.0.0.1:${REHEARSAL_LISTEN_PORT}/state?case=monthly`);
       expect(response.status).toBe(403);
@@ -34,6 +32,29 @@ describe('sandbox financial rehearsal boundary', () => {
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+  it('rejects an occupied port into cleanup instead of crashing the process', async () => {
+    const blocker = createServer();
+    await listenRehearsalServer(blocker);
+    const fixture = createServer();
+    let cleanupReached = false;
+    try {
+      await expect(
+        (async () => {
+          try {
+            await listenRehearsalServer(fixture);
+          } finally {
+            cleanupReached = true;
+          }
+        })(),
+      ).rejects.toMatchObject({ code: 'EADDRINUSE' });
+      expect(cleanupReached).toBe(true);
+      expect(fixture.listening).toBe(false);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        blocker.close((error) => (error ? reject(error) : resolve())),
       );
     }
   });

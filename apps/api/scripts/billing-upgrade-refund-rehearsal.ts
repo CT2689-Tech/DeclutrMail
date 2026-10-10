@@ -11,6 +11,7 @@ import {
   rehearsalCase,
   isRehearsalOperator,
   REHEARSAL_LISTEN_PORT,
+  listenRehearsalServer,
 } from './helpers/sandbox-rehearsal-boundary.js';
 import { buildRehearsalClient } from './helpers/sandbox-rehearsal-client.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
@@ -652,7 +653,7 @@ try {
     fixtures[name] = { workspaceId: w!.id, userId: u!.id, stage: 'initialized' };
   }
   // Bundled and checked before any provider write below.
-  await new Promise<void>((r) => server.listen(REHEARSAL_LISTEN_PORT, '127.0.0.1', r));
+  await listenRehearsalServer(server);
   const localUrl = `http://127.0.0.1:${REHEARSAL_LISTEN_PORT}`;
   evidence.phase = 'unauthenticated_probe';
   await record();
