@@ -208,16 +208,17 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     policies.push(wait, db, failed, scheduler, {
       displayName: 'DeclutrMail runtime observations missing or failing',
       documentation: documentation(
-        'At least one expected mailbox/scheduler/database/reconnect source or one of the four expected queue observations has no successful sample for 20 minutes, or collection failures persist. Inspect worker revision, permissions and collection error logs. Counts must remain unknown until collection recovers; the independent worker uptime check detects broader process failure.',
+        'At least one expected mailbox/scheduler/database/reconnect source or one of the four expected queue observations has no successful sample for 20 minutes, or collection failures persist. Inspect worker revision, permissions and collection error logs. One incident covers all missing sources; inspect the source/queue freshness dashboard and ops.collection logs for detail. Counts must remain unknown until collection recovers; the independent worker uptime check detects broader process failure.',
       ),
       conditions: [
         {
-          displayName: 'Expected runtime collection source absent',
+          displayName: 'Runtime telemetry coverage missing',
           conditionPrometheusQueryLanguage: {
-            query: EXPECTED_RUNTIME_COLLECTIONS.map(({ source, queue }) => {
+            query: `(${EXPECTED_RUNTIME_COLLECTIONS.map(({ source, queue }) => {
               const selector = `logging_googleapis_com:user_ops_collection_completed{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",source="${source}"${queue ? `,queue="${queue}"` : ''}}[20m]`;
-              return `(sum by (source, queue) (increase(${selector})) <= 0) or absent_over_time(${selector})`;
-            }).join(' or '),
+              return `sum((sum by (source, queue) (increase(${selector})) <= bool 0) or absent_over_time(${selector}))`;
+            }).join(' + ')}) > 0`,
+            labels: { service: 'declutrmail-worker', category: 'telemetry' },
             duration: '0s',
             evaluationInterval: '60s',
           },
