@@ -1,3 +1,4 @@
+import type { BillingLifecycleChangedPayload } from '@declutrmail/events';
 import { isAwaitingReconnect } from './mailbox-reconnect.js';
 import { desc, eq, gt, and } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -73,6 +74,7 @@ import type { WorkerContext } from './worker-context.js';
 
 /** The template kinds this pipeline delivers (D162; D6; D126; D189/D251; D232). */
 export type EmailKind =
+  | 'billing-lifecycle'
   | 'sync-complete'
   | 'sync-reminder-24h'
   | 'sync-failed'
@@ -153,6 +155,8 @@ export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>([
 
 /** One transactional email send. */
 export interface EmailSendJobData {
+  /** Identifier-only billing notice; validated and rendered at execution. */
+  billingContext?: BillingLifecycleChangedPayload;
   kind: EmailKind;
   /** Incident timestamp for stale reconnect-notice suppression. */
   reconnectRequiredAt?: string;
@@ -246,6 +250,10 @@ export interface EmailDeliveryPort {
 export interface EmailSendWorkerDeps {
   db: PostgresJsDatabase<typeof schema>;
   delivery: EmailDeliveryPort;
+  resolveBillingNotice?: (
+    context: BillingLifecycleChangedPayload,
+    userId: string,
+  ) => Promise<{ subject: string; text: string; html?: string } | null>;
 }
 
 export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSendResult> {
@@ -261,6 +269,17 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
   }
 
   async processJob(payload: EmailSendJobData, ctx: WorkerContext): Promise<EmailSendResult> {
+    if (payload.kind === 'billing-lifecycle') {
+      if (!payload.billingContext || payload.recipientOverride || !this.deps.resolveBillingNotice)
+        throw new ValidationError(
+          'Billing notice requires a fresh-state resolver and no recipient override.',
+        );
+      const rendered = await this.deps.resolveBillingNotice(payload.billingContext, payload.userId);
+      if (!rendered) return { outcome: 'skipped_recovered', kind: payload.kind, providerId: null };
+      payload = { ...payload, ...rendered };
+      if (rendered.html === undefined) delete payload.html;
+      delete payload.headers;
+    }
     if (
       !payload.userId ||
       !payload.kind ||

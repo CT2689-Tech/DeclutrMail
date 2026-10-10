@@ -18,6 +18,7 @@
 // synthetic `local.cancellation_requested` row (D118 — "reason
 // captured in subscription_events", anonymous enum for analytics).
 
+import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billing-notices.js';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
@@ -498,10 +499,16 @@ export class BillingService {
       const now = new Date();
       await this.db.transaction(async (tx) => {
         await lockSubscription(tx, sub.provider, sub.providerSubscriptionId);
+        const noticeBefore = await subscriptionNoticeSnapshot(
+          tx,
+          sub.provider,
+          sub.providerSubscriptionId,
+        );
         await tx
           .update(subscriptions)
           .set({ cancelAtPeriodEnd: true, updatedAt: now })
           .where(eq(subscriptions.id, sub.id));
+        await publishSubscriptionNotices(tx, noticeBefore);
 
         // D118 — reason into the normalized event stream (audit).
         //
