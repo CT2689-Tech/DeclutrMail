@@ -19,7 +19,6 @@ export default function Loading() {
       rows={1}
       rowHeight={440}
       rowRadius={tokens.radius['2xl']}
-      maxWidth={mode === 'list' ? 928 : 688}
       headerHeight={44}
     />
   );

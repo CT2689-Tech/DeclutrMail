@@ -60,7 +60,7 @@ export function ErrorState({
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: text['2xl'],
-          fontWeight: 650,
+          fontWeight: 600,
           lineHeight: 1,
         }}
       >
@@ -71,7 +71,7 @@ export function ErrorState({
           style={{
             color: color.fg,
             fontSize: text.xl,
-            fontWeight: 650,
+            fontWeight: 600,
             margin: 0,
             letterSpacing: '-0.02em',
           }}
