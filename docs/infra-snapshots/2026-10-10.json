@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-10",
-  "snapshot_ts": "2026-10-10T20:53:52Z",
+  "snapshot_ts": "2026-10-10T22:00:46Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-10T20:15:51.003860Z",
-            "name": "declutrmail-api-00574-loy"
+            "creationTimestamp": "2026-10-10T21:58:40.850280Z",
+            "name": "declutrmail-api-00580-bet"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:8d0e0291bff8a804f8cb5ffe6968fee015ef2d4864ca2a6e991516c7f5d3d0f2"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ec2b4d8ed0062d60c4ff02410b9d67e3f6b67be8904bc4e66ebc72155035e7f6"
               }
             ]
           },
@@ -157,7 +157,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00574-loy"
+              "revisionName": "declutrmail-api-00580-bet"
             }
           ]
         }
@@ -168,13 +168,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-10T20:14:29.820790Z",
-            "name": "declutrmail-worker-00149-lqw"
+            "creationTimestamp": "2026-10-10T21:57:24.426763Z",
+            "name": "declutrmail-worker-00151-4jw"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:8d0e0291bff8a804f8cb5ffe6968fee015ef2d4864ca2a6e991516c7f5d3d0f2"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ec2b4d8ed0062d60c4ff02410b9d67e3f6b67be8904bc4e66ebc72155035e7f6"
               }
             ]
           },
@@ -320,7 +320,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00149-lqw"
+              "revisionName": "declutrmail-worker-00151-4jw"
             }
           ]
         }
@@ -406,7 +406,7 @@
     "reason": "query_failed"
   },
   "atlas_migration": {
-    "raw": "  -- Current Version: 0081\n  -- Next Version:    Already at latest version"
+    "raw": "  -- Current Version: 0082\n  -- Next Version:    Already at latest version"
   },
   "iam": {
     "declutrmail_api_sa": {
