@@ -77,8 +77,10 @@ export function RecommendationBanner({
           fontSize: text.sm,
         }}
       >
-        Suggested: <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
-        {age && <> · {age}</>}
+        <span>
+          Suggested: <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
+          {age && <> · {age}</>}
+        </span>
       </summary>
       <div
         style={{
