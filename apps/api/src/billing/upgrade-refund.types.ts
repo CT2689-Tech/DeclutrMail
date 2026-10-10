@@ -29,6 +29,14 @@ export interface PaddleRefundTransaction {
   upgradePriceId: string | null;
   positiveCharge: boolean;
   createdAt: string | null;
+  /** Explicit absent-proration evidence: both provider item arrays agree.
+   * The policy must prove the root period equals both frozen snapshots.
+   * This is not a synthesized proration rate or a cross-cycle fallback. */
+  unproratedSwap?: {
+    periodStart: string;
+    periodEnd: string;
+    lines: Array<{ priceId: string; quantity: number; total: string }>;
+  };
   lines: Array<{
     priceId: string;
     quantity: number;

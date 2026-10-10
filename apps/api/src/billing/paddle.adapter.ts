@@ -144,6 +144,8 @@ interface PaddleTransaction {
   billed_at?: string | null;
   created_at?: string | null;
   currency_code?: string | null;
+  billing_period?: { starts_at?: unknown; ends_at?: unknown } | null;
+  items?: Array<{ price?: { id?: unknown }; quantity?: unknown; proration?: unknown }>;
   details?: {
     totals?: { grand_total?: string | null } | null;
     line_items?: Array<{
@@ -903,6 +905,44 @@ export class PaddleAdapter implements BillingProvider {
             periodEnd: l.proration!.billing_period!.ends_at as string,
           }))
         : null;
+    // Sandbox GET 38089520530 confirms that a same-period debit/credit
+    // swap may omit proration entirely. Preserve that shape separately;
+    // malformed or partly present metadata must never use this path.
+    const unproratedSwap =
+      !lines &&
+      validInstant(t.billing_period?.starts_at) &&
+      validInstant(t.billing_period?.ends_at) &&
+      Date.parse(t.billing_period.starts_at) < Date.parse(t.billing_period.ends_at) &&
+      Array.isArray(rawLines) &&
+      rawLines.length === 2 &&
+      Array.isArray(t.items) &&
+      t.items.length === 2 &&
+      new Set(rawLines.map((l) => l.price_id)).size === 2 &&
+      rawLines.every(
+        (l) =>
+          typeof l.price_id === 'string' &&
+          typeof l.quantity === 'number' &&
+          Number.isInteger(l.quantity) &&
+          typeof l.totals?.total === 'string' &&
+          /^-?\d+$/.test(l.totals.total) &&
+          l.proration == null &&
+          t.items!.filter(
+            (item) =>
+              item.price?.id === l.price_id &&
+              item.quantity === l.quantity &&
+              item.proration == null,
+          ).length === 1,
+      )
+        ? {
+            periodStart: t.billing_period.starts_at,
+            periodEnd: t.billing_period.ends_at,
+            lines: rawLines.map((l) => ({
+              priceId: l.price_id as string,
+              quantity: l.quantity as number,
+              total: l.totals!.total as string,
+            })),
+          }
+        : null;
     return {
       id,
       subscriptionId: t.subscription_id,
@@ -913,6 +953,7 @@ export class PaddleAdapter implements BillingProvider {
       positiveCharge: typeof amount === 'string' && /^\d+$/.test(amount) && BigInt(amount) > 0n,
       createdAt: validInstant(t.created_at) ? t.created_at : null,
       lines,
+      ...(unproratedSwap ? { unproratedSwap } : {}),
     };
   }
 
@@ -960,7 +1001,10 @@ export class PaddleAdapter implements BillingProvider {
           Date.parse(transaction.createdAt) > Date.parse(end)
         )
           return null;
-        if (transaction.upgradeIntentId === intentId) candidates.push(transaction);
+        // An unsigned, unreadable, unpaid or differently signed artifact in
+        // the same operation window is ambiguity, not a row to discard.
+        if (transaction.upgradeIntentId !== intentId) return null;
+        candidates.push(transaction);
       }
       if (!body.meta.pagination.has_more) return candidates.length === 1 ? candidates[0]! : null;
       const next = body.meta.pagination.next;

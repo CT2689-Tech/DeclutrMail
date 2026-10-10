@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { subscriptions, subscriptionEvents, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
@@ -11,6 +11,7 @@ import {
   matchesUpgradeCharge,
 } from '../billing-upgrade-refund.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
+import { PaddleAdapter } from '../paddle.adapter.js';
 import {
   appendUpgradeRecord,
   hasUnresolvedUpgrade,
@@ -69,6 +70,17 @@ const event = (id = 'adj_refund'): RefundEvent => ({
   providerSubscriptionId: 'sub_upgrade',
   refundReference: { adjustmentId: id, transactionId: 'txn_upgrade' },
 });
+function useUnproratedSwap() {
+  transaction.lines = null;
+  transaction.unproratedSwap = {
+    periodStart: prior.periodStart,
+    periodEnd: prior.periodEnd,
+    lines: [
+      { priceId: 'pri_target', quantity: 1, total: '1900' },
+      { priceId: 'pri_base', quantity: -1, total: '-900' },
+    ],
+  };
+}
 async function seedEvidence(bind = true) {
   await appendUpgradeRecord(db, 'sub_upgrade', 'local.upgrade_requested', intent.intent_id, intent);
   await appendUpgradeRecord(db, 'sub_upgrade', 'local.upgrade_attempt_closed', intent.intent_id, {
@@ -190,9 +202,112 @@ afterEach(() => {
   vi.useRealTimers();
   delete process.env.BILLING_UPGRADE_REFUND_RESTORE_ENABLED;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('upgrade-only refund policy through canonical projection', () => {
+  it('binds the observed absent-proration swap, restores the base plan and deduplicates', async () => {
+    // Recorded API shape, with fresh synthetic signatures and amounts.
+    const secret = 'synthetic-upgrade-contract-secret';
+    const sign = (value: string) => createHmac('sha256', secret).update(value).digest('hex');
+    const lines = [
+      { price_id: 'pri_target', quantity: 1, totals: { total: '1900' } },
+      { price_id: 'pri_base', quantity: -1, totals: { total: '-900' } },
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: {
+                id: transaction.id,
+                subscription_id: 'sub_upgrade',
+                origin: 'subscription_update',
+                status: 'completed',
+                created_at: transaction.createdAt,
+                billing_period: { starts_at: prior.periodStart, ends_at: prior.periodEnd },
+                custom_data: {
+                  workspace_id: workspaceId,
+                  sig: sign(`paddle:workspace:${workspaceId}`),
+                  upgrade_intent_id: intent.intent_id,
+                  upgrade_price_id: 'pri_target',
+                  upgrade_sig: sign(
+                    `paddle:upgrade:${intent.intent_id}:${workspaceId}:sub_upgrade:pri_target`,
+                  ),
+                },
+                items: lines.map((l) => ({
+                  price: { id: l.price_id },
+                  quantity: l.quantity,
+                  proration: null,
+                })),
+                details: { totals: { grand_total: '1000' }, line_items: lines },
+              },
+            }),
+          ),
+      ),
+    );
+    transaction = (await new PaddleAdapter({
+      PADDLE_ENV: 'sandbox',
+      PADDLE_API_KEY: 'synthetic',
+      PADDLE_WEBHOOK_SECRET: secret,
+    }).readRefundTransaction(transaction.id))!;
+    expect(transaction.unproratedSwap).toBeDefined();
+    await seedEvidence(false);
+    expect(await policy.confirmPendingUpgrade('sub_upgrade', intent.intent_id)).toBe(true);
+    expect((await projector.process('paddle', event(), { occurred_at: now })).kind).toBe(
+      'processed',
+    );
+    expect((await db.select().from(subscriptions))[0]).toMatchObject({
+      tier: 'plus',
+      providerPriceId: 'pri_base',
+      status: 'active',
+      currentPeriodEnd: new Date(end),
+      cancelSource: null,
+    });
+    expect(state.nextBilledAt).toBe(end);
+    expect(await hasUnresolvedUpgrade(db, 'sub_upgrade')).toBe(false);
+    expect((await projector.process('paddle', event(), { occurred_at: now })).kind).toBe(
+      'duplicate',
+    );
+    expect(paddle.restoreUpgradeStage.mock.calls.filter((c) => c[2] === false)).toHaveLength(1);
+    expect(paddle.restoreUpgradeStage.mock.calls.every((c) => c[1].priceId === 'pri_base')).toBe(
+      true,
+    );
+  });
+  it.each([
+    'start',
+    'end',
+    'cycle',
+    'renewal',
+    'discount',
+    'mixed item',
+    'quantity',
+    'credit sign',
+    'later nonce',
+  ])(
+    'holds absent-proration evidence with %s mismatch without a provider restoration',
+    async (kind) => {
+      useUnproratedSwap();
+      if (kind === 'start') transaction.unproratedSwap!.periodStart = requested;
+      if (kind === 'end') transaction.unproratedSwap!.periodEnd = '2026-12-09T12:00:00.000Z';
+      if (kind === 'cycle') intent.to_cycle = 'annual';
+      if (kind === 'renewal') state.nextBilledAt = '2026-12-09T12:00:00.000Z';
+      if (kind === 'discount') state.discountId = 'dsc_changed';
+      if (kind === 'mixed item') transaction.unproratedSwap!.lines[0]!.priceId = 'pri_addon';
+      if (kind === 'quantity') transaction.unproratedSwap!.lines[1]!.quantity = 1;
+      if (kind === 'credit sign') transaction.unproratedSwap!.lines[1]!.total = '900';
+      if (kind === 'later nonce') transaction.createdAt = now;
+      await seedEvidence(false);
+      expect(await policy.confirmPendingUpgrade('sub_upgrade', intent.intent_id)).toBe(false);
+      expect(await hasUnresolvedUpgrade(db, 'sub_upgrade')).toBe(true);
+      expect(await policy.resolve(event())).toMatchObject({
+        kind: 'hold',
+        reason: 'transaction_not_bound',
+      });
+      expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
+    },
+  );
   it.each([false, null])(
     'keeps ordinary refunds on the legacy policy despite strict upgrade coverage %j',
     async (full) => {
@@ -327,21 +442,25 @@ describe('upgrade-only refund policy through canonical projection', () => {
     });
     expect(paddle.restoreUpgradeStage).not.toHaveBeenCalled();
   });
-  it('keeps customer cancellation and never writes after local stop during preview', async () => {
-    await seedEvidence();
-    paddle.restoreUpgradeStage.mockImplementation(async () => {
-      await db
-        .update(subscriptions)
-        .set({ cancelAtPeriodEnd: true })
-        .where(eq(subscriptions.providerSubscriptionId, 'sub_upgrade'));
-      return { noBill: true, nextBilledAt: end };
-    });
-    expect(await policy.resolve(event())).toMatchObject({
-      kind: 'hold',
-      reason: 'stop_changed_before_restore',
-    });
-    expect(paddle.restoreUpgradeStage.mock.calls.every((c) => c[2] === true)).toBe(true);
-  });
+  it.each(['prorated', 'unprorated'])(
+    'keeps customer cancellation and never writes after local stop during %s preview',
+    async (shape) => {
+      if (shape === 'unprorated') useUnproratedSwap();
+      await seedEvidence();
+      paddle.restoreUpgradeStage.mockImplementation(async () => {
+        await db
+          .update(subscriptions)
+          .set({ cancelAtPeriodEnd: true })
+          .where(eq(subscriptions.providerSubscriptionId, 'sub_upgrade'));
+        return { noBill: true, nextBilledAt: end };
+      });
+      expect(await policy.resolve(event())).toMatchObject({
+        kind: 'hold',
+        reason: 'stop_changed_before_restore',
+      });
+      expect(paddle.restoreUpgradeStage.mock.calls.every((c) => c[2] === true)).toBe(true);
+    },
+  );
   it('holds renewal-changing restoration before a provider write', async () => {
     await seedEvidence();
     paddle.restoreUpgradeStage.mockResolvedValue({
@@ -406,6 +525,33 @@ describe('upgrade-only refund policy through canonical projection', () => {
       requested,
       closed,
     );
+  });
+  it.each([
+    'provider price',
+    'provider renewal',
+    'provider stop',
+    'canonical price',
+    'canonical revision',
+  ])('keeps fresh %s drift after frozen closure pending', async (kind) => {
+    useUnproratedSwap();
+    await seedEvidence(false);
+    if (kind === 'provider price') state = { ...state, priceId: 'pri_base' };
+    if (kind === 'provider renewal') state = { ...state, nextBilledAt: '2026-12-09T12:00:00.000Z' };
+    if (kind === 'provider stop') state = { ...state, scheduledAction: 'cancel' };
+    if (kind === 'canonical price')
+      await db.update(subscriptions).set({ providerPriceId: 'pri_changed' });
+    if (kind === 'canonical revision')
+      paddle.discoverUpgradeTransaction.mockImplementation(async () => {
+        await db.update(subscriptions).set({ updatedAt: new Date('2026-10-10T12:00:00.001Z') });
+        return transaction;
+      });
+    expect(await policy.confirmPendingUpgrade('sub_upgrade', intent.intent_id)).toBe(false);
+    expect(await hasUnresolvedUpgrade(db, 'sub_upgrade')).toBe(true);
+    expect(
+      (await db.select().from(subscriptionEvents)).some(
+        (r) => r.eventType === 'local.upgrade_transaction_bound',
+      ),
+    ).toBe(false);
   });
   it('keeps a refund review pending after delayed confirmation of its original upgrade', async () => {
     await seedEvidence(false);
