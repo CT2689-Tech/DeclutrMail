@@ -1,3 +1,4 @@
+import { parseUpgradeReturnTo } from '@declutrmail/shared/contracts/app-navigation';
 // /billing — current plan + plan comparison + change/cancel flows
 // (D119, D120, D121; tiers per D17–D21, gating context D77/D81).
 //
@@ -6,13 +7,14 @@
 // they can be exercised by tests and Storybook without the router.
 
 import { Suspense } from 'react';
+
 import { headers } from 'next/headers';
 
 import { BillingScreen } from '@/features/billing/billing-screen';
 import { billingSubscriptionQueryOptions } from '@/features/billing/api/query-options';
 import { getServerBillingSubscription } from '@/features/billing/api/server-billing';
 import { ServerBillingInvoices } from '@/features/billing/server-billing-invoices';
-import { parseBillingIntentParams } from '@/features/billing/billing-intent';
+import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
@@ -50,6 +52,7 @@ export default async function BillingPage({
     >
       <BillingScreen
         initialIntent={initialIntent}
+        returnTo={parseUpgradeReturnTo(params.from)}
         initialProvider={defaultProviderForCountry(country)}
         invoiceHistory={
           <Suspense fallback={null}>

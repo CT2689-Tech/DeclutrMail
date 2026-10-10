@@ -43,10 +43,7 @@ describe('NotFound page — D167 / D140', () => {
 
   it('signed-in visitors are routed back into the app (Triage / Senders) — D140', () => {
     render(<NotFoundView authed />);
-    expect(screen.getByRole('link', { name: /back to triage/i })).toHaveAttribute(
-      'href',
-      '/triage',
-    );
+    expect(screen.getByRole('link', { name: /back to home/i })).toHaveAttribute('href', '/home');
     expect(screen.getByRole('link', { name: /open senders/i })).toHaveAttribute('href', '/senders');
     // App destinations must NOT leak into the anonymous experience.
     expect(screen.queryByRole('link', { name: /see pricing/i })).not.toBeInTheDocument();

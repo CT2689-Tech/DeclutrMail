@@ -93,6 +93,7 @@ export class AuthSignupOrchestrator {
     user: { id: string; workspaceId: string; email: string };
     mailbox: { id: string };
     isNewSignup: boolean;
+    onboardingComplete: boolean;
   }> {
     const email = canonicalizeGmailProviderAccountId(input.email);
     // Identity resolution (Option 1 — "login follows mailbox").
@@ -149,6 +150,7 @@ export class AuthSignupOrchestrator {
     // OAuth redirect, and the 6h WatchRenewalWorker heals a miss.
     await this.gmailWatch.watchMailbox(mailboxId);
 
+    const onboardingComplete = (await this.users.findById(userId))?.onboardedAt != null;
     const { tokens } = await this.sessions.issue({
       userId,
       workspaceId,
@@ -165,6 +167,7 @@ export class AuthSignupOrchestrator {
       user: { id: userId, workspaceId, email },
       mailbox: { id: mailboxId },
       isNewSignup,
+      onboardingComplete,
     };
   }
 

@@ -52,7 +52,7 @@ export async function navigateToCheckout(
 
 export async function navigateToFreeApp(push: (path: string) => void): Promise<void> {
   if (await hasSession()) {
-    push('/senders');
+    push('/home');
     return;
   }
   window.location.assign(withSignupRef(permissionEntryUrl()));

@@ -30,13 +30,14 @@ import { CONNECT_ERROR_COPY, connectErrorCode } from './oauth-result';
  * Next.js "useSearchParams should be wrapped in a Suspense boundary"
  * build constraint — the value is only needed once, client-side.
  */
-export function useConnectResultToast(): void {
+export function useConnectResultToast({ exempt = false } = {}): void {
   const fired = useRef(false);
   // Someone who has not finished onboarding is about to be sent to
   // /onboarding, and the gate carries this result there to show (D108).
   // Using it up here first would lose it. A failed read counts as done, so
   // the result still shows somewhere.
-  const onboarded = onboardingGateVerdict(useOnboardingState()) === 'open';
+  const verdict = onboardingGateVerdict(useOnboardingState());
+  const onboarded = exempt || verdict === 'open';
   useEffect(() => {
     if (fired.current || typeof window === 'undefined' || !onboarded) return;
     fired.current = true;

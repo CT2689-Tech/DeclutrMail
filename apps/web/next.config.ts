@@ -51,7 +51,29 @@ const nextConfig: NextConfig = {
    * apex so Google cannot keep www as a second canonical. Host-gated —
    * see the module docblock for why that gate is load-bearing.
    */
-  redirects: async () => [...wwwApexRedirects(), ...legacyDomainRedirects()],
+  redirects: async () => [
+    ...wwwApexRedirects(),
+    ...legacyDomainRedirects(),
+    ...['dm_access', 'dm_refresh'].map((key) => ({
+      source: '/',
+      has: [
+        { type: 'host' as const, value: 'app.declutrmail.com' },
+        { type: 'cookie' as const, key },
+      ],
+      destination: '/home',
+      permanent: false,
+    })),
+    {
+      source: '/',
+      has: [{ type: 'host', value: 'app.declutrmail.com' }],
+      destination: '/sign-in',
+      permanent: false,
+    },
+    { source: '/login', destination: '/sign-in?returning=1', permanent: true },
+    { source: '/signup', destination: '/sign-in', permanent: true },
+    { source: '/dashboard', destination: '/home', permanent: true },
+    { source: '/app', destination: '/home', permanent: true },
+  ],
 
   /**
    * Inject the release tag into the PUBLIC env at build time so the

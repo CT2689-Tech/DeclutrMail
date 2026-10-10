@@ -3,8 +3,6 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { onboardingPathKeepingOAuthResult } from '@/features/mailboxes/oauth-result';
-
 import { onboardingGateVerdict, useOnboardingState } from './api/use-onboarding';
 
 /**
@@ -37,18 +35,34 @@ import { onboardingGateVerdict, useOnboardingState } from './api/use-onboarding'
  * locking every user out of the app because one read failed is the
  * worse failure mode; the onboarding flow itself re-checks on entry.
  */
-export function useOnboardingGate(): { gating: boolean; resolving: boolean } {
+export function useOnboardingGate({ exempt = false } = {}): {
+  gating: boolean;
+  resolving: boolean;
+} {
   const router = useRouter();
   const verdict = onboardingGateVerdict(useOnboardingState());
-  const shouldGate = verdict === 'gating';
+  const shouldGate = !exempt && verdict === 'gating';
 
   useEffect(() => {
     if (shouldGate) {
       // Keep a closed OAuth result (a reconnect that came back without
       // Gmail, say) so /onboarding can still say what happened (D108).
-      router.replace(onboardingPathKeepingOAuthResult(window.location.search));
+      let cancelled = false;
+      const search = window.location.search;
+      const destination = `${window.location.pathname}${search}${window.location.hash}`;
+      void import('./onboarding-return-to')
+        .then(({ onboardingPathKeepingOAuthResult }) => {
+          if (!cancelled) router.replace(onboardingPathKeepingOAuthResult(search, destination));
+        })
+        .catch(() => {
+          // A missing helper chunk must not strand the gated screen.
+          if (!cancelled) router.replace('/onboarding');
+        });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [shouldGate, router]);
 
-  return { gating: shouldGate, resolving: verdict === 'resolving' };
+  return { gating: shouldGate, resolving: !exempt && verdict === 'resolving' };
 }

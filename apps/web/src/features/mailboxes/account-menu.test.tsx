@@ -39,6 +39,10 @@ let healthById: Record<string, MailboxHealth | undefined>;
 let entitlements: TierEntitlements;
 
 const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/senders',
+  useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
+}));
 vi.mock('@declutrmail/shared', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   toast: toastSpy,
@@ -356,7 +360,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
     expect(screen.getByRole('link', { name: 'Upgrade to connect another →' })).toHaveAttribute(
       'href',
-      '/billing',
+      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
