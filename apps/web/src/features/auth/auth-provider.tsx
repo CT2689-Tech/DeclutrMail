@@ -137,7 +137,7 @@ function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: 24,
-        background: 'var(--color-bg, #fff)',
+        background: 'var(--dm-bg)',
       }}
     >
       <div style={{ width: '100%', maxWidth: 420 }}>
@@ -176,7 +176,7 @@ function AuthSkeleton() {
         position: 'fixed',
         inset: 0,
         display: 'flex',
-        background: 'var(--color-bg, #fff)',
+        background: 'var(--dm-bg)',
       }}
     >
       <style>{`@keyframes dm-skeleton-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }`}</style>

@@ -196,7 +196,7 @@ export function AccountMenu() {
             top: 44,
             right: 0,
             transformOrigin: 'top right',
-            width: 320,
+            width: 360,
             maxWidth: 'calc(100vw - 24px)',
             maxHeight: 'calc(100vh - 72px)',
             overflowY: 'auto',
@@ -216,7 +216,7 @@ export function AccountMenu() {
               screen, not just this pill — a first-timer switching by
               accident had no way to know why their sender list changed. */}
           <div style={{ padding: '8px 12px 10px', fontSize: text.sm, color: color.fgMuted }}>
-            Everything you see is scoped to the active account.
+            Selected marks the Gmail account shown across the app.
           </div>
           {me.mailboxes.length === 0 && (
             <div style={{ padding: '6px 12px', color: color.fgMuted }}>No mailboxes connected.</div>
@@ -268,8 +268,9 @@ export function AccountMenu() {
                       });
                     }}
                     style={{
-                      flex: '1 1 180px',
-                      minWidth: 150,
+                      flex: '1 1 100%',
+                      minWidth: 0,
+                      flexWrap: 'wrap',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
@@ -288,10 +289,9 @@ export function AccountMenu() {
                     </span>
                     <span
                       style={{
-                        flex: 1,
+                        flex: '1 1 calc(100% - 22px)',
                         minWidth: 0,
                         display: 'block',
-                        overflow: 'hidden',
                         fontWeight: isSelected ? 600 : 500,
                       }}
                     >
@@ -299,9 +299,7 @@ export function AccountMenu() {
                         title={m.email}
                         style={{
                           display: 'block',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
+                          overflowWrap: 'anywhere',
                         }}
                       >
                         {m.email}
@@ -316,13 +314,13 @@ export function AccountMenu() {
                             marginTop: 2,
                           }}
                         >
-                          {isSelected && <MenuStatus tone="primary">Active</MenuStatus>}
+                          {isSelected && <MenuStatus tone="primary">Selected</MenuStatus>}
                           <MenuStatus tone="danger">Needs reconnect</MenuStatus>
                         </span>
                       )}
                     </span>
                     {isSelected && !isDisconnected && !needsReconnect && (
-                      <MenuStatus tone="primary">Active</MenuStatus>
+                      <MenuStatus tone="primary">Selected</MenuStatus>
                     )}
                     {isDisconnected && (
                       <MenuStatus

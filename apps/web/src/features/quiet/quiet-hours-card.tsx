@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, Pill, Skeleton, tokens } from '@declutrmail/shared';
 import { SelectWell } from '@/features/settings/settings-list';
 import { Switch } from '@/features/settings/switch';
 import {
@@ -67,6 +67,28 @@ function timeZoneOptions(current: string): string[] {
   }
 }
 
+/** Stable labels retain the region so similarly named cities stay distinct. */
+function timeZoneLabel(zone: string): string {
+  const common: Record<string, string> = {
+    'America/Los_Angeles': 'Pacific Time (Los Angeles)',
+    'America/Denver': 'Mountain Time (Denver)',
+    'America/Chicago': 'Central Time (Chicago)',
+    'America/New_York': 'Eastern Time (New York)',
+    'Asia/Kolkata': 'India Time (Kolkata)',
+    'Asia/Calcutta': 'India Time (Kolkata)',
+    UTC: 'Coordinated Universal Time (UTC)',
+  };
+  if (common[zone]) return common[zone];
+  const [region, ...city] = zone.split('/');
+  return city.length ? `${city.join(' / ').replaceAll('_', ' ')} (${region})` : zone;
+}
+
+/** English UI uses the same 12-hour convention as the form's language. */
+function displayTime(value: string): string {
+  const [hour = 0, minute = 0] = value.split(':').map(Number);
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
 /** Present for assistive tech, invisible on screen. */
 const visuallyHidden = {
   position: 'absolute',
@@ -101,9 +123,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
 
   return (
     <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
-      <header
-        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingLeft: 16 }}
-      >
+      <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           style={{
             fontFamily: font.sans,
@@ -202,7 +222,6 @@ function QuietHoursForm({
   const [draft, setDraft] = useState<QuietHoursConfig>(initial);
   const [zones, setZones] = useState<string[]>([initial.timezone]);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const isPhone = useIsAtMost('xs');
 
   useEffect(() => {
     if (!useBrowserDefault) return;
@@ -238,32 +257,30 @@ function QuietHoursForm({
   };
 
   const inputStyle = {
-    fontFamily: font.sans,
-    fontSize: text.md,
-    fontWeight: 500,
+    ...tokens.field,
     fontVariantNumeric: 'tabular-nums',
-    color: color.fg,
-    background: color.fill,
-    border: 'none',
-    borderRadius: radius.sm,
-    padding: '0 14px',
-    height: isPhone ? 44 : 36,
-    boxSizing: 'border-box',
+    minWidth: 0,
+    width: 152,
   } as const;
 
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
+    <div style={{ display: 'grid', gap: 12 }} lang="en-US">
+      <style>{`
+        .dm-quiet-timezone-control { min-width: 0; width: min(100%, 360px); flex: 1 1 240px; }
+        .dm-quiet-timezone-control > span { display: flex; width: 100%; }
+      `}</style>
       <div style={groupSurface}>
-        <Row label="Quiet hours">
+        <Row label="Enable quiet hours">
           <Switch
             checked={draft.enabled}
             disabled={saving}
-            ariaLabel="Quiet hours"
+            ariaLabel="Enable quiet hours"
             onChange={(next) => set({ enabled: next })}
           />
         </Row>
         <Row label="Start" divider>
           <input
+            className="dm-field"
             type="time"
             value={draft.startLocal}
             disabled={saving}
@@ -274,6 +291,7 @@ function QuietHoursForm({
         </Row>
         <Row label="End" divider>
           <input
+            className="dm-field"
             type="time"
             value={draft.endLocal}
             disabled={saving}
@@ -282,21 +300,34 @@ function QuietHoursForm({
             style={inputStyle}
           />
         </Row>
-        <Row label="Timezone" divider>
-          <SelectWell
-            value={draft.timezone}
-            disabled={saving}
-            onFocus={() => setZones(timeZoneOptions(draft.timezone))}
-            onChange={(e) => set({ timezone: e.target.value })}
-            aria-label="Quiet window timezone"
-            style={{ maxWidth: isPhone ? 190 : 260, height: isPhone ? 44 : 36 }}
-          >
-            {zones.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </SelectWell>
+        <Row label="Timezone" divider className="dm-quiet-timezone-row">
+          <div className="dm-quiet-timezone-control">
+            <SelectWell
+              value={draft.timezone}
+              disabled={saving}
+              onFocus={() => setZones(timeZoneOptions(draft.timezone))}
+              onChange={(e) => set({ timezone: e.target.value })}
+              aria-label="Quiet window timezone"
+              style={{ width: '100%', maxWidth: '100%' }}
+            >
+              {zones.map((z) => (
+                <option key={z} value={z}>
+                  {timeZoneLabel(z)}
+                </option>
+              ))}
+            </SelectWell>
+            <span
+              style={{
+                display: 'block',
+                marginTop: 8,
+                fontSize: text.sm,
+                color: color.fgMuted,
+                overflowWrap: 'anywhere',
+              }}
+            >
+              {timeZoneLabel(draft.timezone)}
+            </span>
+          </div>
         </Row>
       </div>
 
@@ -310,7 +341,7 @@ function QuietHoursForm({
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          Ends at {draft.endLocal} the next day.
+          Ends at {displayTime(draft.endLocal)} the next day.
         </span>
       )}
 
@@ -360,19 +391,23 @@ const groupSurface = {
 function Row({
   label,
   divider = false,
+  className,
   children,
 }: {
   label: string;
   divider?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
     <div
+      className={className}
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 12,
+        flexWrap: 'wrap',
         minHeight: 56,
         padding: '6px 16px',
         boxSizing: 'border-box',

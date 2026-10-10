@@ -2,7 +2,7 @@
 //
 // Visual reference for the five-group rail, contextual feature navigation,
 // the quiet top bar with the `?` help button, and (at ≤760px
-// viewports) the horizontal workspace groups. Per D210, shared components ship with
+// viewports) the bottom workspace navigation. Per D210, shared components ship with
 // Storybook coverage.
 //
 // Uses the same locally-declared CSF shims as the sibling primitive
@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof AppShell> = {
     docs: {
       description: {
         component:
-          'App chrome. The fixed 72px rail groups the workspace into Overview, Clean up, Automations, Catch up and Activity, with Settings below. Section navigation exposes child screens, counts and plan gates. The top bar holds account controls and contextual help. At 760px and below, the same five groups form a horizontal row above the workspace; the hamburger opens the complete feature menu.',
+          'App chrome. The fixed 72px rail groups the workspace into Home, Clean up, Automations, Catch up and Activity, with Settings below. Section navigation exposes child screens, counts and plan gates. The top bar holds account controls and contextual help. At 760px and below, the same five groups form a bottom navigation bar; the hamburger opens Settings, Billing, Help and account utilities.',
       },
     },
   },
@@ -68,7 +68,13 @@ function Screen() {
 export const Default: Story = {
   render: () => (
     <div style={{ height: '100vh' }}>
-      <AppShell active="senders" onNavigate={() => undefined} counts={COUNTS} locks={LOCKS}>
+      <AppShell
+        accountLabel="review@example.com"
+        active="senders"
+        onNavigate={() => undefined}
+        counts={COUNTS}
+        locks={LOCKS}
+      >
         <Screen />
       </AppShell>
     </div>
@@ -80,7 +86,13 @@ export const Default: Story = {
 export const NoScreenHelp: Story = {
   render: () => (
     <div style={{ height: '100vh' }}>
-      <AppShell active="senders" onNavigate={() => undefined} counts={COUNTS} locks={LOCKS}>
+      <AppShell
+        accountLabel="review@example.com"
+        active="senders"
+        onNavigate={() => undefined}
+        counts={COUNTS}
+        locks={LOCKS}
+      >
         <div style={{ padding: 24, fontFamily: font.sans, color: color.fg }}>Page content</div>
       </AppShell>
     </div>

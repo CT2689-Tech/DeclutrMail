@@ -110,7 +110,6 @@ export function PrivacyDataView({
         gap: 32,
       }}
     >
-      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <EditorialKicker>Your workspace / Privacy & data</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
       <EditorialDescription>

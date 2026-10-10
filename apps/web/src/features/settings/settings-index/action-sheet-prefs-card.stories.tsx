@@ -5,8 +5,8 @@
 //
 // Variants covered (per D211 edge-state inventory + Storybook contract):
 //   • Defaults      — every verb shows the sheet (D34 default)
-//   • SkipsEnabled  — Unsubscribe + Later opted into the inline path
-//   • Saving        — one toggle's PATCH in flight
+//   • InlineEnabled  — Unsubscribe + Later opted into the inline path
+//   • Saving        — one choice's PATCH in flight
 //   • SaveFailed    — PATCH failed, inline alert
 //   • Loading       — settings read in flight
 //   • Error         — settings read failed, retry affordance
@@ -35,7 +35,7 @@ const meta: StoryMeta<typeof ActionSheetPrefsCard> = {
     docs: {
       description: {
         component:
-          "Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the switch's state word (Row / Window) says where it lands, never whether. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.",
+          'Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the Inline / Separate window choices say where it lands in Triage. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
       },
     },
   },
@@ -62,7 +62,7 @@ export const Defaults: Story<typeof ActionSheetPrefsCard> = {
   args: baseArgs,
 };
 
-export const SkipsEnabled: Story<typeof ActionSheetPrefsCard> = {
+export const InlineEnabled: Story<typeof ActionSheetPrefsCard> = {
   args: {
     ...baseArgs,
     state: {

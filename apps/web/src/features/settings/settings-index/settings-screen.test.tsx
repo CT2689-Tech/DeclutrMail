@@ -329,7 +329,7 @@ describe('SettingsScreen', () => {
     const revokedRow = screen
       .getByText('chintan.a.thakkar.crypt@gmail.com')
       .closest('li') as HTMLElement;
-    expect(within(revokedRow).getByText('Active')).toBeInTheDocument();
+    expect(within(revokedRow).getByText('Selected')).toBeInTheDocument();
     // This mailbox is already one of the two active accounts, so
     // re-authorizing it consumes no new slot and remains available at
     // the Pro limit. Its id binds Google's returned identity to B.
@@ -374,7 +374,7 @@ describe('SettingsScreen', () => {
       'li',
     ) as HTMLElement;
     expect(within(row).getByText('Not synced yet')).toBeInTheDocument();
-    expect(within(row).queryByText('Ready')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Scan complete')).not.toBeInTheDocument();
   });
 
   it('still says "Ready" for a mailbox whose sync really did complete', async () => {
@@ -386,7 +386,7 @@ describe('SettingsScreen', () => {
     const row = (await screen.findByText('chintan.a.thakkar.crypt@gmail.com')).closest(
       'li',
     ) as HTMLElement;
-    expect(within(row).getByText('Ready')).toBeInTheDocument();
+    expect(within(row).getByText('Scan complete')).toBeInTheDocument();
   });
 
   it('shows a visible reason next to a Reconnect disabled by data deletion', async () => {
@@ -497,7 +497,7 @@ describe('SettingsScreen', () => {
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
   });
 
-  it('labels each preview-placement toggle with where the preview actually lands', async () => {
+  it('labels each preview-placement choice with where the preview actually lands', async () => {
     const patches: unknown[] = [];
     installFetchStub([
       ...happyHandlers(),
@@ -517,26 +517,25 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
 
-    const toggle = await screen.findByRole('switch', {
-      name: /show the archive preview in the row/i,
-    });
-    // pref=false → the sheet opens, so the preview is in a WINDOW. The
-    // legacy 'Show'/'Skip' wording named the sheet (a word this card
-    // never uses) and so read as the inverse of the switch's own label.
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(toggle).toHaveTextContent('Separate window');
-    expect(toggle).not.toHaveTextContent('Inline');
+    const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
+    const inline = within(placement).getByRole('radio', { name: 'Inline' });
+    const window = within(placement).getByRole('radio', { name: 'Separate window' });
+    expect(window).toBeChecked();
+    expect(inline).not.toBeChecked();
 
-    await userEvent.click(toggle);
-
-    // pref=true → the sheet is skipped and the preview renders in the ROW.
+    await userEvent.click(inline);
     await waitFor(() => expect(patches).toEqual([{ archive: true }]));
-    await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-    expect(toggle).toHaveTextContent('Inline');
-    expect(toggle).not.toHaveTextContent('Separate window');
+    await waitFor(() => expect(inline).toBeChecked());
+    expect(window).not.toBeChecked();
+
+    await userEvent.click(window);
+    await waitFor(() => expect(patches).toEqual([{ archive: true }, { archive: false }]));
+    await waitFor(() => expect(window).toBeChecked());
+    expect(inline).not.toBeChecked();
+    expect(screen.getByText('Always opens a separate confirmation window.')).toBeInTheDocument();
   });
 
-  it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {
+  it('D34 choice PATCHes the single changed key and mirrors into the triage store', async () => {
     const patches: unknown[] = [];
     installFetchStub([
       ...happyHandlers(),
@@ -556,12 +555,10 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
 
-    const toggle = await screen.findByRole('switch', {
-      name: /show the unsubscribe preview in the row/i,
-    });
-    expect(toggle).toHaveAttribute('aria-checked', 'false');
-
-    await userEvent.click(toggle);
+    const placement = await screen.findByRole('group', { name: 'Unsubscribe preview placement' });
+    const inline = within(placement).getByRole('radio', { name: 'Inline' });
+    expect(inline).not.toBeChecked();
+    await userEvent.click(inline);
 
     await waitFor(() => expect(patches).toEqual([{ unsubscribe: true }]));
     // Store mirror — the action sheet reads this; the very next
@@ -570,6 +567,39 @@ describe('SettingsScreen', () => {
       expect(useTriageStore.getState().rememberPreference.Unsubscribe).toBe(true),
     );
     expect(useTriageStore.getState().rememberPreference.Archive).toBe(false);
+  });
+
+  it('keeps the saved placement after a failed change and allows retry', async () => {
+    let attempts = 0;
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/action-sheet-prefs',
+        respond: async () => {
+          attempts += 1;
+          if (attempts === 1) return new Response('Unavailable', { status: 503 });
+          return jsonOk({
+            data: { actionSheetPrefs: { archive: true, unsubscribe: false, later: false } },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
+    const inline = within(placement).getByRole('radio', { name: 'Inline' });
+    const window = within(placement).getByRole('radio', { name: 'Separate window' });
+    await userEvent.click(inline);
+    expect(
+      await screen.findByText('Could not save the preference. Try again.'),
+    ).toBeInTheDocument();
+    expect(window).toBeChecked();
+    expect(inline).not.toBeChecked();
+    expect(useTriageStore.getState().rememberPreference.Archive).toBe(false);
+    await userEvent.click(inline);
+    await waitFor(() => expect(inline).toBeChecked());
+    expect(useTriageStore.getState().rememberPreference.Archive).toBe(true);
+    expect(attempts).toBe(2);
   });
 
   it('email reminders toggle round-trips through PATCH /api/me/email-prefs', async () => {
