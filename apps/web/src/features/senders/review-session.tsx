@@ -290,7 +290,7 @@ export function ReviewSession({
             style={{
               margin: '12px 0 8px',
               fontSize: text['3xl'],
-              fontWeight: 650,
+              fontWeight: 600,
               letterSpacing: '-0.022em',
               lineHeight: 1.15,
             }}

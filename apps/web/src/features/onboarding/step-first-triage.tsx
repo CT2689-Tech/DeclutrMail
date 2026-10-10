@@ -133,11 +133,7 @@ export function StepFirstTriage({
             would not take them back out — so no total here is provable. */}
         <h1
           style={{
-            fontFamily: font.sans,
-            fontSize: text['3xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.025em',
-            lineHeight: 1.12,
+            ...tokens.typography.pageTitle,
             color: color.fg,
             margin: '0 0 12px',
           }}
@@ -200,9 +196,7 @@ export function StepFirstTriage({
           <h1
             style={{
               margin: 0,
-              fontSize: text['2xl'],
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
+              ...tokens.typography.pageTitle,
               color: color.fg,
             }}
           >

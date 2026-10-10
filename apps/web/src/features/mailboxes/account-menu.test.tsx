@@ -265,7 +265,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     const { user } = await renderOpenMenu();
     const row = screen.getByTestId(`account-mailbox-${MAILBOX_A.id}`);
 
-    expect(within(row).getAllByText('Active')).toHaveLength(1);
+    expect(within(row).getAllByText('Selected')).toHaveLength(1);
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     expect(
@@ -297,7 +297,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     const row = screen.getByTestId(`account-mailbox-${MAILBOX_B.id}`);
 
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
-    expect(within(row).queryByText('Active')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Selected')).not.toBeInTheDocument();
     expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     const selector = within(row).getByRole('button', {
       name: `Switch to mailbox ${MAILBOX_B.email}, needs reconnect`,
@@ -373,7 +373,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     const healthyRow = screen.getByTestId(`account-mailbox-${MAILBOX_A.id}`);
     const disconnectedRow = screen.getByTestId(`account-mailbox-${MAILBOX_C.id}`);
 
-    expect(within(healthyRow).getByText('Active')).toBeInTheDocument();
+    expect(within(healthyRow).getByText('Selected')).toBeInTheDocument();
     expect(within(healthyRow).queryByText('Needs reconnect')).not.toBeInTheDocument();
     // -05: two similarly-truncated addresses need the full value on hover —
     // the pill trigger already has this; the dropdown row did not.
@@ -408,10 +408,10 @@ describe('AccountMenu Gmail reconnect health', () => {
     // -04: a first-timer switching by accident should learn, right here,
     // that it rescopes every screen — not just this menu.
     expect(
-      within(dialog).getByText('Everything you see is scoped to the active account.'),
+      within(dialog).getByText('Selected marks the Gmail account shown across the app.'),
     ).toBeInTheDocument();
     expect(useMailboxesHealthSpy).toHaveBeenLastCalledWith(me.mailboxes, { enabled: true });
-    expect(dialog.getAttribute('style')).toContain('width: 320px');
+    expect(dialog.getAttribute('style')).toContain('width: 360px');
     expect(dialog.getAttribute('style')).toContain('max-width: calc(100vw - 24px)');
     expect(dialog.getAttribute('style')).toContain('max-height: calc(100vh - 72px)');
     expect(dialog.getAttribute('style')).toContain('overflow-y: auto');

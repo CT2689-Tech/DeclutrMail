@@ -1,4 +1,5 @@
 import {
+  CASA_VERIFICATION_APPROVED_ON,
   DATA_EXPORT_FORMAT_MANIFEST,
   DATA_EXPORT_LIMITATION,
   GMAIL_CONNECTION_DATA_INVENTORY,
@@ -13,7 +14,8 @@ import {
 } from '@declutrmail/shared';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
-import { SettingsGroup } from '../settings-list';
+import { CookiePreferences } from '@/features/consent/cookie-preferences';
+import { DrillRow, SettingsGroup, SettingsRow } from '../settings-list';
 
 const { color, text, motion, radius, shadow } = tokens;
 
@@ -232,3 +234,45 @@ const bodyTextStyle = {
   lineHeight: 1.55,
   margin: 0,
 } as const;
+
+/** Static settings guidance is server-composed; only the consent radios hydrate. */
+export function PrivacyDataFooter() {
+  return (
+    <>
+      {/* D147 — the standing surface to change or withdraw the cookie
+          choice (GDPR Art. 7(3)); also mounted on the public /cookies page. */}
+      <div id="privacy-cookie-preferences" style={{ scrollMarginTop: 24 }}>
+        <CookiePreferences />
+      </div>
+
+      {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
+      <SettingsGroup id="privacy-leave-cleanly" title="Leave cleanly">
+        <SettingsRow
+          label="Disconnect a mailbox"
+          detail="Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+        />
+        <SettingsRow
+          label="Disconnect & delete one mailbox's saved data"
+          detail="Also permanently deletes that mailbox's saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
+        />
+        <DrillRow href="/settings#account" label="Delete account and data" />
+      </SettingsGroup>
+
+      {/* 6 — legal & evidence (CASA row: static copy per plan). */}
+      <SettingsGroup id="privacy-legal-evidence" title="Legal & evidence">
+        <SettingsRow
+          label="CASA Tier 2 verification"
+          detail={
+            <>
+              DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security assessment.
+              Google approved our OAuth verification on {CASA_VERIFICATION_APPROVED_ON} for the
+              single restricted scope we request, gmail.modify. It is recertified annually.
+            </>
+          }
+        />
+        <DrillRow href="/privacy" label="Privacy Policy" />
+        <DrillRow href="/terms" label="Terms" />
+      </SettingsGroup>
+    </>
+  );
+}

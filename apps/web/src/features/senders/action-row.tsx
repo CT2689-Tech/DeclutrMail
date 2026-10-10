@@ -13,7 +13,11 @@
 
 import { useState } from 'react';
 import { ActionPopover, ActionPopoverTrigger, Button, tokens } from '@declutrmail/shared';
-import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
+import {
+  deriveDefaultPrimary,
+  unsubscribeUnavailableReason,
+  type VerbId,
+} from '@declutrmail/shared/actions';
 import {
   isRowBusy,
   RowActivityPill,
@@ -150,6 +154,9 @@ export function SenderActionRow({
         <ActionPopover
           ariaLabel={`Actions for ${senderLabel}`}
           capabilities={capabilities}
+          disabledReasons={{
+            unsubscribe: unsubscribeUnavailableReason(sender.unsubscribeMethod) ?? '',
+          }}
           dimmedVerb={primaryVerbId}
           onPick={(verbId) => {
             onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });

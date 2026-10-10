@@ -15,7 +15,7 @@ import Triage from './triage/loading';
 const routes = [
   { View: Activity, title: 'Activity', kicker: 'Your history / Every outcome in view', gap: 20 },
   { View: Autopilot, title: 'Autopilot', kicker: 'Automations / Your rules', gap: 32 },
-  { View: Brief, title: 'Daily Brief', kicker: 'Catch up / Your daily edition', gap: 24 },
+  { View: Brief, title: 'Daily brief', kicker: 'Catch up / Your daily edition', gap: 24 },
   { View: Followups, title: 'Follow-ups', kicker: 'Catch up / Conversations', gap: 32 },
   { View: Later, title: 'Later', kicker: 'Catch up / Coming back to you', gap: 32 },
   { View: Quiet, title: 'Quiet hours', kicker: 'Automations / On your schedule', gap: 24 },
@@ -34,7 +34,7 @@ describe('Route loading continuity', () => {
       expect(html).toContain(`font-family:${editorialTitleStyle.fontFamily}`);
       expect(html).toContain(`font-size:${editorialTitleStyle.fontSize}`);
       expect(html).toContain(`padding:${editorialColumnStyle.padding}`);
-      expect(heading.parentElement).toHaveStyle({ maxWidth: '1120px', gap: `${gap}px` });
+      expect(heading.parentElement).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
       expect(screen.getByText(kicker)).toBeInTheDocument();
       expect(screen.getByRole('status', { name: /Loading/i })).toHaveAttribute('aria-busy', 'true');
       expect(screen.queryByRole('button')).toBeNull();
@@ -43,11 +43,12 @@ describe('Route loading continuity', () => {
   it('adopts persisted List geometry after hydration while SSR stays deterministic', () => {
     localStorage.setItem('dm.triage.mode', JSON.stringify('list'));
     try {
-      expect(renderToStaticMarkup(<Triage />)).toContain('max-width:688px');
+      expect(renderToStaticMarkup(<Triage />)).toContain('max-width:640px');
       render(<Triage />);
       const wrapper = screen.getByRole('heading', { name: 'Triage', level: 1 }).parentElement;
-      expect(wrapper).toHaveStyle({ maxWidth: '928px' });
+      expect(wrapper).toHaveStyle({ maxWidth: '1480px' });
       expect(wrapper).toHaveAttribute('data-triage-mode', 'list');
+      expect(screen.getByRole('status')).toHaveStyle({ maxWidth: '880px' });
       expect(localStorage.getItem('dm.triage.mode')).toBe('"list"');
     } finally {
       localStorage.removeItem('dm.triage.mode');
@@ -59,8 +60,9 @@ describe('Route loading continuity', () => {
     expect(renderToStaticMarkup(<Triage />)).toContain(
       `font-family:${editorialTitleStyle.fontFamily}`,
     );
-    expect(heading.parentElement).toHaveStyle({ maxWidth: '688px', gap: '20px' });
+    expect(heading.parentElement).toHaveStyle({ maxWidth: '1480px', gap: '20px' });
     expect(heading.parentElement?.className).toContain('triage');
+    expect(screen.getByRole('status')).toHaveStyle({ maxWidth: '640px' });
     expect(screen.getByText('Clean up / A considered decision')).toBeInTheDocument();
   });
 });

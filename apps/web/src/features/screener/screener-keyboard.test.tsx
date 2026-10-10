@@ -199,8 +199,8 @@ describe('Screener keyboard handler (#220, D226)', () => {
     );
 
     const unsubscribe = screen.getByRole('button', { name: /^Unsubscribe$/ });
-    expect(unsubscribe).toBeDisabled();
-    expect(unsubscribe).toHaveAttribute('title', expect.stringMatching(/No unsubscribe channel/i));
+    expect(unsubscribe).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('note')).toHaveTextContent(/No unsubscribe channel/i);
     fireEvent.keyDown(window, { key: 'u' });
     expect(previewRegion(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
@@ -336,7 +336,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     await user.keyboard('{Enter}');
     expect(allMailChip).toHaveAttribute('aria-checked', 'true');
     expect(bodies).toHaveLength(0);
-    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeEnabled();
   });
 
   it('Enter on Cancel cancels the preview without submitting Delete', async () => {
@@ -374,13 +374,13 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('combobox', { name: 'How far back to delete' });
-    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeDisabled();
 
     fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
       target: { value: 'all' },
     });
-    expect(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ })).toBeEnabled();
-    fireEvent.click(screen.getByRole('button', { name: /^Delete( [\d,]+)? for/ }));
+    expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).not.toHaveProperty('olderThanDays');
   });

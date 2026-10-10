@@ -162,11 +162,7 @@ export function StepProtectionReview({
       <PanelShell corner={corner}>
         <h1
           style={{
-            fontFamily: font.sans,
-            fontSize: text['3xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.025em',
-            lineHeight: 1.12,
+            ...tokens.typography.pageTitle,
             color: color.fg,
             margin: '0 0 12px',
           }}
@@ -232,10 +228,7 @@ export function StepProtectionReview({
           <OnboardingPhase phase="review" />
           <h1
             style={{
-              fontFamily: font.sans,
-              fontSize: text['2xl'],
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
+              ...tokens.typography.pageTitle,
               color: color.fg,
               lineHeight: 1.2,
               margin: '0 0 4px',

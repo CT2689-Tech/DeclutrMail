@@ -167,7 +167,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    const checkbox = await screen.findByRole('switch', { name: 'Quiet hours' });
+    const checkbox = await screen.findByRole('switch', { name: 'Enable quiet hours' });
     // In place and silent before the save: a region inserted together
     // with its text, or one that already says it, announces nothing.
     const region = saveStatus('a@b.com');
@@ -223,7 +223,7 @@ describe('QuietRoute', () => {
         <QuietRoute />
       </QueryWrapper>,
     );
-    await screen.findByRole('switch', { name: 'Quiet hours' });
+    await screen.findByRole('switch', { name: 'Enable quiet hours' });
 
     // The poll starts — in flight, not yet resolved.
     await act(async () => {
@@ -232,10 +232,10 @@ describe('QuietRoute', () => {
     await waitFor(() => expect(getCalls).toBe(2));
 
     // The save starts and finishes while the poll is still pending.
-    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     await waitFor(() => expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00'));
-    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
 
     // The stale poll resolves last, with the pre-save (enabled: true) data.
     // `waitFor` is the wrong tool below this point: `enabled: false` is
@@ -253,7 +253,7 @@ describe('QuietRoute', () => {
     expect(client.getQueryData(['quiet', 'hours', MAILBOX_A])).toMatchObject({
       config: { enabled: false },
     });
-    expect(screen.getByRole('switch', { name: 'Quiet hours' })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
   });
 
   it('stops saying Saved once the form is edited again', async () => {
@@ -273,11 +273,11 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
 
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
@@ -294,7 +294,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
     await waitFor(() =>
@@ -332,7 +332,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
     // The mutation settling (isPending flips back false, restoring the
@@ -365,7 +365,7 @@ describe('QuietRoute', () => {
     ]);
 
     const { unmount } = renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     await waitFor(() => expect(failPut).toBeDefined());
 
@@ -396,7 +396,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 
@@ -412,7 +412,7 @@ describe('QuietRoute', () => {
     const { unmount } = renderRoute();
     try {
       expect(await screen.findByTestId('quiet-card-loading')).toBeInTheDocument();
-      expect(screen.queryByRole('switch', { name: 'Quiet hours' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('switch', { name: 'Enable quiet hours' })).not.toBeInTheDocument();
     } finally {
       // Unmount first, so the paused read never resumes against the stub.
       unmount();
@@ -478,7 +478,7 @@ describe('QuietRoute', () => {
         <QuietRoute />
       </QueryWrapper>,
     );
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
@@ -491,7 +491,7 @@ describe('QuietRoute', () => {
 
     failing = false;
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
+    expect(await screen.findByRole('switch', { name: 'Enable quiet hours' })).toBeInTheDocument();
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
 
@@ -522,7 +522,7 @@ describe('QuietRoute', () => {
         <QuietRoute />
       </QueryWrapper>,
     );
-    await userEvent.click(await screen.findByRole('switch', { name: 'Quiet hours' }));
+    await userEvent.click(await screen.findByRole('switch', { name: 'Enable quiet hours' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
     await waitFor(() => expect(saveStatus('a@b.com')).toHaveTextContent('Saved'));
 
@@ -538,7 +538,7 @@ describe('QuietRoute', () => {
       await client.invalidateQueries();
     });
 
-    expect(await screen.findByRole('switch', { name: 'Quiet hours' })).toBeInTheDocument();
+    expect(await screen.findByRole('switch', { name: 'Enable quiet hours' })).toBeInTheDocument();
     expect(saveStatus('a@b.com').textContent).toBe('');
   });
 

@@ -16,7 +16,6 @@ export default function LaterError({
       gap={32}
       title="Later"
       kicker="Catch up / Coming back to you"
-      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="snoozed"

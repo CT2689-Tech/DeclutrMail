@@ -71,9 +71,8 @@ export function PageHeader({
 }
 
 /**
- * The quiet label above a group or a section: sans, muted, sentence
- * case. `as="div"` where the surrounding markup already owns the
- * heading outline.
+ * A shared section heading above a settings group. `as="div"` is for
+ * layouts where the surrounding markup already owns the heading outline.
  */
 export function GroupTitle({
   as: Tag = 'h2',
@@ -90,10 +89,8 @@ export function GroupTitle({
       style={{
         margin: '0 0 8px',
         paddingLeft: inset ? ROW_INSET : 0,
-        fontFamily: font.sans,
-        fontSize: text.sm,
-        fontWeight: 600,
-        color: color.fgMuted,
+        ...tokens.typography.sectionTitle,
+        color: color.fg,
       }}
     >
       {children}
@@ -338,37 +335,40 @@ export function SettingsSwitch({
 }
 
 /**
- * A native `<select>` drawn as a capsule well: neutral fill, no outline,
- * a muted chevron on the right. Native so keyboard, screen readers and
+ * A native `<select>` using the shared field style with a muted chevron.
+ * Native so keyboard, screen readers and
  * the phone picker all behave exactly as before.
  */
 export function SelectWell({
   style,
+  className,
   children,
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { style?: CSSProperties }) {
   return (
-    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+    <span
+      style={{
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        maxWidth: '100%',
+        minWidth: 0,
+      }}
+    >
       <style>{`.dm-select-well { transition: background ${motion.fast} ${motion.ease}; }
 .dm-select-well:hover:not(:disabled) { background: ${color.fillHover}; }
 .dm-select-well:focus-visible { outline: 2px solid ${color.primary}; outline-offset: 2px; }`}</style>
       <select
         {...props}
-        className="dm-select-well"
+        className={`dm-field dm-select-well${className ? ` ${className}` : ''}`}
         style={{
           appearance: 'none',
           WebkitAppearance: 'none',
-          fontFamily: font.sans,
-          fontSize: text.md,
-          fontWeight: 500,
+          ...tokens.field,
           fontVariantNumeric: 'tabular-nums',
-          color: color.fg,
-          background: color.fill,
-          border: 'none',
-          borderRadius: radius.pill,
-          height: 36,
-          padding: '0 34px 0 14px',
-          boxSizing: 'border-box',
+          padding: '0 36px 0 12px',
+          maxWidth: '100%',
+          minWidth: 0,
           cursor: props.disabled ? 'default' : 'pointer',
           opacity: props.disabled ? 0.6 : 1,
           ...style,

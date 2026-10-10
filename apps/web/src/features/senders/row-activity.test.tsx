@@ -14,6 +14,9 @@ import {
 // time." The row the user clicked is where their eyes are.
 describe('row activity — what a sender row says about its own action', () => {
   it.each([
+    [{ phase: 'working', verb: 'keep' }, 'Keeping…'],
+    [{ phase: 'done', verb: 'keep', affectedCount: null }, 'Kept'],
+    [{ phase: 'failed', verb: 'keep' }, 'Keep failed'],
     [{ phase: 'working', verb: 'archive' }, 'Archiving…'],
     [{ phase: 'working', verb: 'later' }, 'Moving to Later…'],
     [{ phase: 'working', verb: 'delete' }, 'Deleting…'],

@@ -122,7 +122,7 @@ function renderScreen(client: QueryClient) {
  * backlog toggle). Pins the digit AND that it counts email.
  */
 function liveCount(n: string) {
-  return screen.getByText(new RegExp(`\\b${n} emails?\\b`));
+  return screen.getAllByText(new RegExp(`\\b${n} emails?\\b`))[0];
 }
 
 function expandRow(senderName: string) {
@@ -2484,7 +2484,9 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       // Confirm the verdict batch through its D226 sheet.
       fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
       const batchSheet = await screen.findByRole('dialog');
-      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+      const batchConfirm = within(batchSheet).getByRole('button', {
+        name: /^Archive( [\d,]+ emails?)?$/,
+      });
       await waitFor(() => expect(batchConfirm).not.toBeDisabled());
       fireEvent.click(batchConfirm);
       await waitFor(() => expect(bulkEnqueues).toHaveLength(1));
@@ -2572,7 +2574,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
   async function confirmDomainBatch() {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
     const sheet = await screen.findByRole('dialog');
-    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.click(confirm);
   }
@@ -2855,7 +2857,9 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
     const batchSheet = await screen.findByRole('dialog');
-    const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const batchConfirm = within(batchSheet).getByRole('button', {
+      name: /^Archive( [\d,]+ emails?)?$/,
+    });
     await waitFor(() => expect(batchConfirm).not.toBeDisabled());
     fireEvent.click(batchConfirm);
 
@@ -2960,7 +2964,7 @@ describe('TriageScreen — a held row stays out of every batch', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Archive all \d+ recommended senders/ }));
     const sheet = await screen.findByRole('dialog');
-    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const confirm = within(sheet).getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.click(confirm);
 

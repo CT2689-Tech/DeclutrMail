@@ -257,7 +257,6 @@ export function SettingsScreen({
         gap: 32,
       }}
     >
-      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <div
         role="status"
         aria-live="polite"
@@ -397,7 +396,7 @@ type PlanRowState =
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
 /**
- * Plan & billing drill-in — the only way to /billing once it leaves the
+ * Billing drill-in — the only way to /billing once it leaves the
  * sidebar, so the link renders in EVERY state; a failed read adds a
  * retry row under it instead of replacing it.
  */
@@ -406,7 +405,7 @@ function PlanRow({ state }: { state: PlanRowState }) {
     <>
       <DrillRow
         href="/billing"
-        label="Plan & billing"
+        label="Billing"
         value={
           state.kind === 'loading' ? (
             <span role="status">Loading plan…</span>

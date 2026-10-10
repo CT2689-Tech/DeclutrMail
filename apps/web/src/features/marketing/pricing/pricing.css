@@ -464,6 +464,7 @@
   line-height: 1.6;
 }
 
+.dm-tier-note a,
 .dm-pricing-facts a {
   color: var(--dm-primary);
   font-weight: 600;

@@ -2,7 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 
-const { color, font } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * The mailbox note shown above an action preview — presentational only.
@@ -25,14 +25,14 @@ export function MailboxActionContextView({ mailboxEmail }: { mailboxEmail?: stri
         display: 'flex',
         alignItems: 'center',
         flexWrap: 'wrap',
-        gap: 6,
-        padding: '7px 10px',
-        borderRadius: 7,
+        gap: 8,
+        padding: '8px 12px',
+        borderRadius: radius.sm,
         border: `1px solid ${color.line}`,
         background: color.paper,
         color: color.fgSoft,
         fontFamily: font.sans,
-        fontSize: 11.5,
+        fontSize: text.sm,
         lineHeight: 1.4,
       }}
     >
@@ -40,8 +40,9 @@ export function MailboxActionContextView({ mailboxEmail }: { mailboxEmail?: stri
       <strong
         style={{
           color: color.fg,
-          fontFamily: font.mono,
-          fontSize: 11,
+          fontFamily: font.sans,
+          fontSize: text.sm,
+          fontWeight: 500,
           overflowWrap: 'anywhere',
         }}
       >

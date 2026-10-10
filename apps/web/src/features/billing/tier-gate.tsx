@@ -133,9 +133,7 @@ export function TierGate({
       <h1
         style={{
           margin: 0,
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
+          ...tokens.typography.pageTitle,
           color: color.fg,
         }}
       >

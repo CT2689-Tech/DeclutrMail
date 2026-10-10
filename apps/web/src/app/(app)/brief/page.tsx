@@ -30,7 +30,7 @@ import { ServerApiError, serverGetEnvelope } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
-  title: 'Daily Brief — DeclutrMail',
+  title: 'Daily brief — DeclutrMail',
 };
 
 export default async function BriefPage() {
@@ -68,7 +68,7 @@ export default async function BriefPage() {
     >
       <TierGate
         capability="brief"
-        title="Your Morning Brief"
+        title="Daily brief"
         pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
       >
         <BriefScreen />

@@ -476,7 +476,7 @@ export function ProductUndoTray({
       dataSource={dataSource}
       onViewActivity={() => router.push('/activity')}
       style={{
-        bottom: floatingSurfaceLayout.undoTrayBottom,
+        bottom: `calc(${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px))`,
         zIndex: floatingSurfaceLayout.undoTrayZIndex,
       }}
     />

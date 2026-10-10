@@ -185,7 +185,7 @@ async function openSender(name = 'Sender A') {
 
 async function confirmArchive() {
   const dialog = await screen.findByRole('dialog');
-  const confirm = await within(dialog).findByRole('button', { name: 'Archive 12' });
+  const confirm = await within(dialog).findByRole('button', { name: 'Archive 12 emails' });
   await waitFor(() => expect(confirm).toBeEnabled());
   fireEvent.click(confirm);
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());

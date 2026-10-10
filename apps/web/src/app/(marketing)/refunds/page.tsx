@@ -54,11 +54,12 @@ export default function RefundPolicyPage() {
 
       <LegalSection id="cancellation" title="2. Cancellation">
         <p>
-          You can cancel your subscription at any time from Settings → Billing. Cancellation stops
-          future renewals; your paid features stay active until the end of the current billing
-          period, after which your account moves to the Free plan. Canceling does not delete any of
-          your data. Cancellation on its own does not trigger a refund — if you also want your money
-          back, the 30-day guarantee in Section 3 covers it.
+          You can cancel your subscription at any time from the account menu → Billing, or Settings
+          → Plan &amp; billing. Cancellation stops future renewals; your paid features stay active
+          until the end of the current billing period, after which subscription access ends (a
+          separate complimentary grant may still apply). Canceling does not delete any of your data.
+          Cancellation on its own does not trigger a refund — if you also want your money back, the
+          30-day guarantee in Section 3 covers it.
         </p>
       </LegalSection>
 
@@ -73,9 +74,10 @@ export default function RefundPolicyPage() {
         <p>
           Because the charge is returned in full,{' '}
           <strong>paid features end when the refund is issued</strong> and your account moves to the
-          Free plan — this is the one way it differs from cancelling, which keeps your features
-          until the end of the period you paid for (Section 2). Your data is untouched either way,
-          and nothing stops you subscribing again later.
+          Free plan unless a separate complimentary grant applies — this is the one way it differs
+          from cancelling, which keeps your features until the end of the period you paid for
+          (Section 2). Your data is untouched either way, and nothing stops you subscribing again
+          later.
         </p>
         <p>
           One fair-use note, so the guarantee stays sustainable: the money-back guarantee can be

@@ -360,7 +360,7 @@ export function ActionSheet({
                   borderRadius: radius.lg,
                   background: color.fill,
                   fontSize: text.md,
-                  fontWeight: 550,
+                  fontWeight: 500,
                   textAlign: 'left',
                 }}
               >

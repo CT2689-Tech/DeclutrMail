@@ -5,7 +5,7 @@ import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { FilterFields, type FilterFieldsProps } from './activity-filter-fields';
 
-const { color, font, motion, radius, shadow, text } = tokens;
+const { color, font, motion, radius, shadow } = tokens;
 
 /** Loaded only when Filter opens; the normal Activity view needs neither dialog. */
 export function ActivityFilterDialog({
@@ -98,8 +98,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
         >
           <span
             style={{
-              fontSize: text.xl,
-              fontWeight: 650,
+              ...tokens.typography.dialogTitle,
               letterSpacing: '-0.02em',
               color: color.fg,
             }}

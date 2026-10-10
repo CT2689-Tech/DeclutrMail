@@ -115,6 +115,85 @@ export const font = {
   display: 'var(--dm-font-display)',
 } as const;
 
+/** Semantic roles keep equal content at equal scale across feature surfaces. */
+export const typography = {
+  pageTitle: {
+    fontFamily: font.display,
+    fontSize: 'var(--dm-type-page-title)',
+    fontWeight: 400,
+    lineHeight: 1.12,
+    letterSpacing: '-0.035em',
+  },
+  homeTitle: {
+    fontFamily: font.display,
+    fontSize: 'var(--dm-type-home-title)',
+    fontWeight: 400,
+    lineHeight: 1.1,
+    letterSpacing: '-0.035em',
+  },
+  sectionTitle: {
+    fontFamily: font.display,
+    fontSize: 'var(--dm-type-section-title)',
+    fontWeight: 400,
+    lineHeight: 1.2,
+    letterSpacing: '-0.025em',
+  },
+  dialogTitle: {
+    fontFamily: font.sans,
+    fontSize: 24,
+    fontWeight: 600,
+    lineHeight: 1.25,
+    letterSpacing: '-0.02em',
+  },
+  kicker: {
+    fontFamily: font.sans,
+    fontSize: 11,
+    fontWeight: 600,
+    lineHeight: 1.5,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+  },
+  stat: {
+    fontFamily: font.display,
+    fontSize: 'var(--dm-type-stat)',
+    fontWeight: 400,
+    lineHeight: 1.1,
+    letterSpacing: '-0.03em',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  heroStat: {
+    fontFamily: font.display,
+    fontSize: 'var(--dm-type-hero-stat)',
+    fontWeight: 400,
+    lineHeight: 1.05,
+    letterSpacing: '-0.03em',
+    fontVariantNumeric: 'tabular-nums',
+  },
+  rowCount: {
+    fontFamily: font.sans,
+    fontSize: 20,
+    fontWeight: 600,
+    lineHeight: 1.2,
+    letterSpacing: '-0.02em',
+    fontVariantNumeric: 'tabular-nums',
+  },
+} as const;
+
+/** Shared native-control appearance; native keyboard and picker behavior stay intact. */
+export const field = {
+  minHeight: 44,
+  minWidth: 0,
+  maxWidth: '100%',
+  padding: '10px 12px',
+  border: '1px solid var(--dm-border)',
+  borderRadius: 10,
+  background: color.card,
+  color: color.fg,
+  fontFamily: font.sans,
+  fontSize: 'var(--dm-field-font-size, 14px)',
+  lineHeight: 1.4,
+} as const;
+
 /** Normalised type scale (px). */
 export const text = {
   '2xs': 11,
@@ -190,6 +269,8 @@ export const breakpoint = {
 export const tokens = {
   color,
   font,
+  typography,
+  field,
   text,
   space,
   radius,

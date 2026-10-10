@@ -18,7 +18,6 @@ export default function AdminSecurityError({
       gap={20}
       title="Security events"
       kicker="Operator workspace / Audit log"
-      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="admin-security"

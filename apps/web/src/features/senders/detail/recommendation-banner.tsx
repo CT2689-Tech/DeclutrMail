@@ -42,23 +42,9 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 
 export function RecommendationBanner({
   recommendation,
-  toolbarHighlight,
 }: {
   recommendation: Recommendation | null;
-  /**
-   * QA-sender-detail-20260902-07: the toolbar's fact-derived primary verb
-   * (`derivePrimaryVerbId`) and this banner's engine suggestion are two
-   * independently-sourced signals that can disagree with no explanation
-   * of which is which. Optional so existing callers (Storybook, other
-   * fixtures) don't need updating to keep compiling; `undefined` and
-   * `null` both render the pre-existing copy.
-   */
-  toolbarHighlight?: Verdict | null;
 }) {
-  if (recommendation == null) return null;
-
-  const { verdict, reasoning, signals, scoredAt } = recommendation;
-  const verbLabel = VERDICT_LABEL[verdict];
   // Hydration-safe clock. `/senders/[id]` server-renders and hydrates
   // this component, so a bare `new Date()` in the render body gives the
   // server and the browser two different clocks — across a day boundary
@@ -67,21 +53,23 @@ export function RecommendationBanner({
   // decoration and can wait one tick. Same guard the triage and
   // screener rows use; this was the last surface without it.
   const now = useNow();
+  if (recommendation == null) return null;
+  const { verdict, reasoning, signals, scoredAt } = recommendation;
+  const verbLabel = VERDICT_LABEL[verdict];
   // QA-sender-detail-20260902-08: this surface used to build its own
   // " · scored X" string from the lower-level `scoredAge`, while Triage
   // and the Screener called the shared `scoredAgeLabel` — three copies of
   // one fact, one already drifted. Calling the same function here means
   // fixing the word "scored" is a one-place change again.
   const age = scoredAt && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
-  const disagreesWithToolbar = toolbarHighlight != null && toolbarHighlight !== verdict;
 
   return (
     <details
+      className="dm-disclosure"
       aria-label={`Optional suggestion: ${verbLabel}`}
       style={{ color: color.fg, fontFamily: font.sans }}
     >
-      {/* A quiet line, not a card: the filled verb above is the page's one
-          call to action, and this is the engine's separate read (D245). */}
+      {/* The suggestion has its own source, reasoning and freshness. */}
       <summary
         style={{
           cursor: 'pointer',
@@ -89,9 +77,10 @@ export function RecommendationBanner({
           fontSize: text.sm,
         }}
       >
-        Suggestion · <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
-        {disagreesWithToolbar && <> — highlighted button is {VERDICT_LABEL[toolbarHighlight]}</>}
-        {age && <> · {age}</>}
+        <span>
+          Suggested: <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
+          {age && <> · {age}</>}
+        </span>
       </summary>
       <div
         style={{

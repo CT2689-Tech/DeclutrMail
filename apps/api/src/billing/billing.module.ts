@@ -9,14 +9,12 @@
 // endpoints 503 `BILLING_DISABLED` until `BILLING_ENABLED=true`;
 // webhooks 503 until their signing secret env is set.
 //
-// REFUND / CHARGEBACK POLICY (D117 spec note): a Paddle refund or
-// chargeback adjustment maps to `cancellation_scheduled` — the
-// subscription gets `cancel_at_period_end = true` and the tier HOLDS
-// until the provider ends the period (downgrade-at-period-end
-// semantics, mirroring D118's no-proration cancel). Immediate hard
-// revocation is intentionally NOT done from the adjustment event: the
-// provider's own subscription.canceled event is the authoritative
-// terminal signal and arrives when the subscription actually ends.
+// Refund / chargeback verdicts retain their provenance across later provider
+// updates. Refund access is bounded while settlement is pending, ends when
+// settlement is confirmed, and is restored on rejection. Partial refunds do
+// not end access. Chargebacks revoke subscription access immediately; a
+// separate complimentary grant may still preserve the workspace's tier.
+// See BillingWebhookService for the authoritative transition logic.
 //
 // AuthModule provides JwtGuard/CsrfGuard dependencies (JwtService,
 // SessionsService, CsrfService) for the authed routes.

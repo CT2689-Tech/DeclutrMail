@@ -1,13 +1,9 @@
 'use client';
 
+import { useId } from 'react';
+import { tokens } from '@declutrmail/shared';
 import type { ActionSheetPrefs } from '@declutrmail/shared/contracts';
-import {
-  SettingsGroup,
-  SettingsRow,
-  SettingsRowStatus,
-  SettingsSaveError,
-  SettingsSwitch,
-} from '../settings-list';
+import { SettingsGroup, SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
 
 /** Wire keys in display order, with their user-facing KAULD verb. */
 const VERB_ROWS: ReadonlyArray<{
@@ -24,18 +20,7 @@ export type ActionSheetPrefsCardState =
   | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; prefs: ActionSheetPrefs };
 
-/**
- * Settings → Actions (D34) — per-verb preview placement.
- *
- * D226: the action PREVIEW always renders; only where it lands is a
- * preference. The switch's state word says exactly that — "Row" or
- * "Window" — so neither value reads as "no preview". Keep is absent by
- * design (non-destructive, never sheeted).
- *
- * Dumb component: the container owns the PATCH + persistence; this
- * renders state + emits `onToggle(wire, next)`. `children` are extra
- * rows the container appends to the same group.
- */
+/** Preview placement for Triage; true persists the inline choice. */
 export function ActionSheetPrefsCard({
   state,
   onToggle,
@@ -51,6 +36,7 @@ export function ActionSheetPrefsCard({
   saveFailed: boolean;
   children?: React.ReactNode;
 }) {
+  const id = useId();
   return (
     <SettingsGroup
       id="actions"
@@ -61,24 +47,56 @@ export function ActionSheetPrefsCard({
         ) : null
       }
     >
+      <p
+        style={{
+          margin: 0,
+          padding: '16px 16px 8px',
+          color: tokens.color.fgMuted,
+          fontSize: tokens.text.sm,
+          lineHeight: 1.5,
+        }}
+      >
+        Choose where previews open in Triage. Senders and sender details use a separate window.
+      </p>
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
           <SettingsRow
             key={wire}
-            label={`${verb} preview in the row`}
-            detail="The preview always appears. Choose inline in the sender row or in a separate window."
+            label={verb}
+            detail={pendingWire === wire ? <span role="status">Saving…</span> : undefined}
+            style={{ paddingBlock: 12 }}
           >
-            <SettingsSwitch
-              ariaLabel={`Show the ${verb} preview in the row`}
-              on={state.prefs[wire]}
-              // States where the preview lands. 'Skip'/'Show' named the
-              // SHEET — a word this group never shows — and read as the
-              // inverse of the "…in the row" label.
-              stateLabel={state.prefs[wire] ? 'Inline' : 'Separate window'}
+            <fieldset
+              aria-label={`${verb} preview placement`}
               disabled={pendingWire !== null}
-              pending={pendingWire === wire}
-              onToggle={() => onToggle(wire, !state.prefs[wire])}
-            />
+              className="dm-preview-placement"
+              style={{
+                display: 'flex',
+                margin: 0,
+                padding: 4,
+                gap: 4,
+                border: `1px solid ${tokens.color.border}`,
+                borderRadius: tokens.radius.md,
+                background: tokens.color.fill,
+                minWidth: 0,
+              }}
+            >
+              {[
+                { value: true, label: 'Inline' },
+                { value: false, label: 'Separate window' },
+              ].map((choice) => (
+                <label key={choice.label} className="dm-preview-choice">
+                  <input
+                    type="radio"
+                    name={`${id}-${wire}`}
+                    value={String(choice.value)}
+                    checked={state.prefs[wire] === choice.value}
+                    onChange={() => onToggle(wire, choice.value)}
+                  />
+                  <span>{choice.label}</span>
+                </label>
+              ))}
+            </fieldset>
           </SettingsRow>
         ))
       ) : (
@@ -88,6 +106,20 @@ export function ActionSheetPrefsCard({
           errorLabel="Could not load action preferences."
         />
       )}
+      <SettingsRow
+        label="Delete"
+        detail="Always opens a separate confirmation window."
+        style={{ paddingBlock: 12 }}
+      />
+      <style>{`
+        .dm-preview-choice { position: relative; cursor: pointer; }
+        .dm-preview-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+        .dm-preview-choice span { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 12px; border-radius: ${tokens.radius.sm}px; font-size: ${tokens.text.sm}px; font-weight: 500; color: ${tokens.color.fgSoft}; }
+        .dm-preview-choice input:checked + span { background: ${tokens.color.card}; color: ${tokens.color.fg}; box-shadow: ${tokens.shadow.button}; }
+        .dm-preview-choice input:focus-visible + span { outline: 2px solid ${tokens.color.primary}; outline-offset: 1px; }
+        .dm-preview-placement:disabled { opacity: .6; }
+        .dm-preview-placement:disabled .dm-preview-choice { cursor: default; }
+      `}</style>
       {children}
     </SettingsGroup>
   );

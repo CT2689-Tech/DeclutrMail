@@ -145,6 +145,8 @@ export const BillingSubscriptionSchema = z.object({
       grantsAccess: z.boolean().optional(),
       cycle: BillingCycleSchema,
       currentPeriodEnd: z.iso.datetime().nullable(),
+      /** Exact access deadline from the server; optional during rolling deploys. */
+      entitlementEndsAt: z.iso.datetime().nullable().optional(),
       cancelAtPeriodEnd: z.boolean(),
       /**
        * WHY the plan is ending, when it is. `provider` covers an

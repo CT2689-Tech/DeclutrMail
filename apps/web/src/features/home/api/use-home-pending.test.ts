@@ -18,4 +18,10 @@ describe('selectHomeSenderPreviews', () => {
       { id: 'three', name: 'Three', domain: 'three.test', inboxCount: 1 },
     ]);
   });
+
+  it('preserves cached brand availability for the shared avatar resolver', () => {
+    const sender = { senderId: 'one', senderName: 'One', senderDomain: 'one.test', inboxCount: 4 };
+    expect(selectHomeSenderPreviews([{ ...sender, brandMark: false }])[0]?.brandMark).toBe(false);
+    expect(selectHomeSenderPreviews([{ ...sender, brandMark: true }])[0]?.brandMark).toBe(true);
+  });
 });

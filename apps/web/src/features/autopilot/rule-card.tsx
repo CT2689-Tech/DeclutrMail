@@ -119,7 +119,7 @@ export function RuleCard({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: text.lg, fontWeight: 550, color: color.fg }}>{name}</span>
+          <span style={{ fontSize: text.lg, fontWeight: 500, color: color.fg }}>{name}</span>
           <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
         <Switch
@@ -155,7 +155,16 @@ export function RuleCard({
           ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
           ariaExpanded={detailsOpen}
         >
-          {detailsOpen ? 'Hide details' : 'Details'}
+          Details
+          <span
+            aria-hidden="true"
+            style={{
+              display: 'inline-block',
+              transform: detailsOpen ? 'rotate(180deg)' : undefined,
+            }}
+          >
+            ⌄
+          </span>
         </Button>
         {rule.mode === 'paused' && (
           <Button
@@ -350,7 +359,7 @@ function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): ReactNod
 /** D10 observe-window countdown; null when not in Observe mode. */
 function observeWindowSummary(rule: AutopilotRuleDto, now: number | null): string | null {
   if (rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'Watch first window complete';
+  if (rule.observeWindowElapsed) return 'Initial observation complete';
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;

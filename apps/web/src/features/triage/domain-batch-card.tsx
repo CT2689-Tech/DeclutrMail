@@ -227,7 +227,7 @@ export function DomainBatchCard({
           <span
             style={{
               fontFamily: font.display,
-              fontSize: text['4xl'],
+              fontSize: 'var(--dm-type-hero-stat)',
               fontWeight: 600,
               lineHeight: 1,
               letterSpacing: '-0.02em',

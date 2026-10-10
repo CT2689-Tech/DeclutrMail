@@ -9,11 +9,11 @@
 // pairing so the cross-surface scale stays consistent.
 //
 // Variants:
-//   - `hero`    — Fraunces 40px / 300 / -0.03em
+//   - `hero`    — responsive hero-stat role
 //                 SenderCard primary monthly volume; hero slice headline
-//   - `display` — Fraunces 28px / 400 / -0.025em
+//   - `display` — Fraunces stat role
 //                 SenderDetailHeader sender name; SenderTable total cell
-//   - `stat`    — Fraunces 20px / 500 / -0.02em
+//   - `stat`    — Geist row-count role
 //                 Stat strip values (Detail + card stat strip)
 //   - `data`    — Geist Mono 13px / 500 / 0.01em + tabular-nums
 //                 Inline counts, percents, dates
@@ -55,27 +55,9 @@ export interface NumericDisplayProps {
 }
 
 const VARIANT_STYLE: Record<NumericDisplayVariant, CSSProperties> = {
-  hero: {
-    fontFamily: font.display,
-    fontSize: 40,
-    fontWeight: 300,
-    letterSpacing: '-0.03em',
-    lineHeight: 1,
-  },
-  display: {
-    fontFamily: font.display,
-    fontSize: 28,
-    fontWeight: 400,
-    letterSpacing: '-0.025em',
-    lineHeight: 1.05,
-  },
-  stat: {
-    fontFamily: font.display,
-    fontSize: 20,
-    fontWeight: 500,
-    letterSpacing: '-0.02em',
-    lineHeight: 1.1,
-  },
+  hero: tokens.typography.heroStat,
+  display: tokens.typography.stat,
+  stat: tokens.typography.rowCount,
   data: {
     fontFamily: font.mono,
     fontSize: 13,

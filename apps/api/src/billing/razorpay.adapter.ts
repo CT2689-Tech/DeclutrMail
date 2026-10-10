@@ -478,9 +478,8 @@ export class RazorpayAdapter implements BillingProvider {
   /**
    * Self-serve plan changes are PADDLE-ONLY at launch (D117/D120).
    * Razorpay plan updates change the billing frequency + remaining
-   * count semantics of the subscription, no Razorpay catalog id is
-   * provisioned in any environment (the go-live runbook provisions
-   * Paddle), and none of it has been exercised against the real API —
+   * count semantics of the subscription. Catalog provisioning does not
+   * establish safe update semantics, and this path has not been rehearsed —
    * shipping a guessed PATCH here would be a guaranteed-failing (or
    * worse, mis-billing) path. Fail closed with the designed code; the
    * FE routes Razorpay subscribers to support instead.

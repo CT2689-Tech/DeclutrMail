@@ -116,7 +116,7 @@ export function EmptyState({
         <Heading
           style={{
             fontSize: text.xl,
-            fontWeight: 650,
+            fontWeight: 600,
             margin: 0,
             letterSpacing: '-0.02em',
             color: color.fg,

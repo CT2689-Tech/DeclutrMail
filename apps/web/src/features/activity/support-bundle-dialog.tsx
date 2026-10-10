@@ -124,9 +124,7 @@ export function ActivitySupportBundleDialog({
             style={{
               margin: 0,
               color: color.fg,
-              fontSize: text.xl,
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
+              ...tokens.typography.dialogTitle,
             }}
           >
             Export Activity support bundle

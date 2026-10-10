@@ -114,19 +114,27 @@ afterEach(() => {
 });
 
 function renderLayout() {
-  return render(
-    <QueryWrapper client={createTestQueryClient()}>
+  const client = createTestQueryClient();
+  const layout = () => (
+    <QueryWrapper client={client}>
       <AppLayout>
         <span>authed app body</span>
       </AppLayout>
-    </QueryWrapper>,
+    </QueryWrapper>
   );
+  const result = render(layout());
+  return {
+    ...result,
+    rerenderAt(pathname: string) {
+      pathnameRef.current = pathname;
+      result.rerender(layout());
+    },
+  };
 }
 
-async function openFullNavigation() {
+async function openUtilityNavigation() {
   await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
-  const dialog = screen.getByRole('dialog', { name: 'Navigation menu' });
-  return within(dialog).getByRole('navigation', { name: 'Product navigation' });
+  return screen.getByRole('dialog', { name: 'Navigation menu' });
 }
 
 function ok(payload: unknown): Response {
@@ -500,7 +508,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // sidebar — scope to the sidebar's landmark.
     const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
     expect(nav.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
-      'Overview',
+      'Home',
       'Clean up',
       'Automations',
       'Catch up',
@@ -517,8 +525,8 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(section.getByRole('button', { name: 'Screener' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeInTheDocument();
     const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
-    expect(primary.getAllByRole('button').map((row) => row.textContent)).toEqual([
-      'Overview',
+    expect(primary.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
+      'Home',
       'Clean up',
       'Automations',
       'Catch up',
@@ -538,29 +546,77 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
   });
 
-  it('keeps every feature reachable through the full mobile menu', async () => {
+  it('keeps every feature reachable through primary and contextual navigation', async () => {
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+    const { rerenderAt } = renderLayout();
+    await screen.findByText('authed app body');
+    const groups = [
+      { label: 'Home', route: '/home', destinations: [] },
+      {
+        label: 'Clean up',
+        route: '/senders',
+        destinations: [
+          ['Senders', '/senders'],
+          ['Triage', '/triage'],
+          ['Screener', '/screener'],
+        ],
+      },
+      {
+        label: 'Automations',
+        route: '/autopilot',
+        destinations: [
+          ['Autopilot', '/autopilot'],
+          ['Quiet hours', '/quiet'],
+        ],
+      },
+      {
+        label: 'Catch up',
+        route: '/brief',
+        destinations: [
+          ['Daily brief', '/brief'],
+          ['Follow-ups', '/followups'],
+          ['Later', '/later'],
+        ],
+      },
+      { label: 'Activity', route: '/activity', destinations: [] },
+    ] as const;
+    for (const group of groups) {
+      const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
+      await userEvent.click(primary.getByRole('button', { name: group.label }));
+      expect(pushSpy).toHaveBeenLastCalledWith(group.route);
+      rerenderAt(group.route);
+      expect(primary.getByRole('button', { name: group.label })).toHaveAttribute(
+        'aria-current',
+        'page',
+      );
+      for (const [label, route] of group.destinations) {
+        const section = within(screen.getByRole('navigation', { name: `${group.label} views` }));
+        await userEvent.click(section.getByRole('button', { name: new RegExp(`^${label}`) }));
+        expect(pushSpy).toHaveBeenLastCalledWith(route);
+        rerenderAt(route);
+        expect(section.getByRole('button', { name: new RegExp(`^${label}`) })).toHaveAttribute(
+          'aria-current',
+          'page',
+        );
+      }
+    }
+  });
+
+  it('keeps account, billing and help reachable through the mobile utility menu', async () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
     renderLayout();
     await screen.findByText('authed app body');
-    const destinations = [
-      ['Home', '/home'],
-      ['Senders', '/senders'],
-      ['Triage', '/triage'],
-      ['Screener', '/screener'],
-      ['Autopilot', '/autopilot'],
-      ['Quiet', '/quiet'],
-      ['Brief', '/brief'],
-      ['Follow-ups', '/followups'],
-      ['Later', '/later'],
-      ['Activity', '/activity'],
-    ];
-    for (const [label, route] of destinations) {
-      const nav = await openFullNavigation();
-      const button = within(nav)
-        .getAllByRole('button')
-        .find((item) => item.textContent?.startsWith(label!));
-      expect(button, `${label} remains reachable`).toBeDefined();
-      await userEvent.click(button!);
+    for (const [label, route] of [
+      ['Manage Gmail accounts', '/settings#mailboxes'],
+      ['Settings', '/settings'],
+      ['Billing', '/billing'],
+      ['Help & glossary', '/settings/help'],
+    ]) {
+      const dialog = await openUtilityNavigation();
+      expect(within(dialog).queryByRole('navigation', { name: 'Product navigation' })).toBeNull();
+      expect(within(dialog).getByText('founder@example.test')).toBeVisible();
+      expect(within(dialog).getByRole('button', { name: 'Close navigation menu' })).toBeVisible();
+      await userEvent.click(within(dialog).getByRole('button', { name: new RegExp(label!) }));
       expect(pushSpy).toHaveBeenLastCalledWith(route);
       expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).toBeNull();
     }
@@ -629,7 +685,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
 });
 
 describe('(app) layout — screener badge tier gating (D74/D77)', () => {
-  it('lets Home own the count while its route is streaming and observes the hydrated badge', async () => {
+  it('lets Home own the count while its route is streaming and observes the hydrated nav summary', async () => {
     pathnameRef.current = '/home';
     const countSpy = vi.fn(() => ok({ data: { pending: 3 } }));
     installFetchStub([
@@ -651,10 +707,11 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
     await act(async () => {
       client.setQueryData(['screener', 'count'], { pending: 3 });
     });
-    await openFullNavigation();
-    expect(
-      await screen.findByLabelText('3 senders awaiting a first review in Screener'),
-    ).toBeInTheDocument();
+    const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
+    expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute(
+      'aria-description',
+      expect.stringContaining('3 senders awaiting a first review in Screener'),
+    );
     expect(countSpy).not.toHaveBeenCalled();
   });
 
@@ -1320,34 +1377,41 @@ describe('(app) layout — undo tray stays off account surfaces (D245)', () => {
 });
 
 describe('nav plan chips after D251 (design-gate B1)', () => {
-  it('plus: Autopilot and Screener carry no lock chip; Brief still chips Pro', async () => {
+  it('plus: Autopilot and Screener carry no lock chip; Daily brief still chips Pro', async () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'plus' }));
-    renderLayout();
+    const { rerenderAt } = renderLayout();
+    await screen.findByText('authed app body');
+    // Entitlement chips live beside their actual destination in contextual navigation.
+    const screener = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+      'button',
+      { name: /^Screener/ },
+    );
+    expect(within(screener).queryByLabelText(/^(Plus|Pro) feature$/)).toBeNull();
 
-    const nav = await openFullNavigation();
-    const chips = within(nav).queryAllByLabelText(/^(Plus|Pro) feature$/);
-    // Sidebar nav items render as <button>, not links (sidebar.tsx) —
-    // the chip sits inside the button next to the label span.
-    const chippedFor = (label: string) =>
-      chips.some((chip) => chip.closest('button')?.textContent?.includes(label));
+    rerenderAt('/autopilot');
+    const autopilot = within(
+      screen.getByRole('navigation', { name: 'Automations views' }),
+    ).getByRole('button', { name: /^Autopilot/ });
+    expect(within(autopilot).queryByLabelText(/^(Plus|Pro) feature$/)).toBeNull();
 
-    // Plus OWNS these screens now — a lock chip on them is the chip's
-    // contract inverted (a paying user told their screen is paywalled).
-    expect(chippedFor('Autopilot')).toBe(false);
-    expect(chippedFor('Screener')).toBe(false);
-    // Still genuinely locked on plus.
-    expect(chippedFor('Brief')).toBe(true);
+    rerenderAt('/brief');
+    const brief = within(screen.getByRole('navigation', { name: 'Catch up views' })).getByRole(
+      'button',
+      { name: /^Daily brief/ },
+    );
+    expect(within(brief).getByLabelText('Pro feature')).toBeInTheDocument();
   });
 
   it('free: Autopilot chips Plus (the granting tier), not Pro', async () => {
+    pathnameRef.current = '/autopilot';
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'free' }));
     renderLayout();
+    await screen.findByText('authed app body');
 
-    const nav = await openFullNavigation();
-    const autopilotItem = within(nav)
-      .getAllByRole('button')
-      .find((b) => b.textContent?.includes('Autopilot'));
-    expect(autopilotItem).toBeDefined();
-    expect(within(autopilotItem!).getByLabelText('Plus feature')).toBeInTheDocument();
+    const autopilot = within(
+      screen.getByRole('navigation', { name: 'Automations views' }),
+    ).getByRole('button', { name: /^Autopilot/ });
+    expect(within(autopilot).getByLabelText('Plus feature')).toBeInTheDocument();
+    expect(within(autopilot).queryByLabelText('Pro feature')).toBeNull();
   });
 });

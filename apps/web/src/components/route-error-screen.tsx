@@ -141,7 +141,7 @@ export function RouteErrorScreen({
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: text['2xl'],
-            fontWeight: 650,
+            fontWeight: 600,
             lineHeight: 1,
             marginBottom: 20,
           }}
@@ -152,7 +152,7 @@ export function RouteErrorScreen({
           style={{
             fontFamily: font.sans,
             fontSize: text['2xl'],
-            fontWeight: 650,
+            fontWeight: 600,
             letterSpacing: '-0.02em',
             margin: 0,
           }}

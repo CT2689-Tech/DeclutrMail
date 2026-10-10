@@ -1,6 +1,11 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import {
+  BRIEF_PROCESSING_NOTE,
+  CHECKOUT_TOTAL_NOTE,
+  RAZORPAY_LIMITATIONS_NOTE,
+} from './billing-copy';
 import type { BillingCycle, BillingProviderId } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
@@ -102,7 +107,7 @@ export function ConfirmPanel({
               checked={provider === 'razorpay'}
               onChange={onProviderChange}
               title="UPI · cards · netbanking (India)"
-              detail="Billed in INR equivalent — secure checkout by Razorpay"
+              detail="INR pricing — secure checkout by Razorpay"
             />
           </div>
         </fieldset>
@@ -129,14 +134,33 @@ export function ConfirmPanel({
               Claim {tier.promo.name} — {formatMoney(tier.promo.annual, promoCurrency)}/yr
             </strong>{' '}
             <span style={{ color: color.fgMuted }}>
-              First {tier.promo.maxRedemptions} members, price locked while you stay subscribed. If
-              spots run out, checkout will say so.
+              First {tier.promo.maxRedemptions} paid subscriptions, price locked while you stay
+              subscribed. If spots run out, checkout will say so.
             </span>
           </span>
         </label>
       ) : null}
 
       <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>{impact}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{CHECKOUT_TOTAL_NOTE}</p>
+      {provider === 'razorpay' && (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          {RAZORPAY_LIMITATIONS_NOTE}{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            Contact support
+          </a>
+          .
+        </p>
+      )}
+      {tier.id === 'pro' && (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+          {BRIEF_PROCESSING_NOTE}{' '}
+          <a href="/privacy" style={{ color: color.primary }}>
+            Privacy details
+          </a>
+          .
+        </p>
+      )}
       <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
 
       {errorMessage != null && (

@@ -56,7 +56,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         />,
       );
 
-      const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+      const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -96,14 +96,14 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ }));
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
     // The count is the title and the button; its scope sits in Details.
     expect(
       screen.getByRole('heading', { name: /Archive 3 emails from 3 senders\?/ }),
     ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Archive 3' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Archive 3 emails' })).toBeEnabled();
     expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.getByText(/From example\.com\./)).toBeInTheDocument();
     expect(screen.getByText(/One undo reverses the whole batch/)).toBeInTheDocument();
@@ -125,7 +125,9 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.getByRole('button', { name: /^Later( [\d,]+)?$/ })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^(Later|Move [\d,]+ emails? to Later)$/ }),
+    ).toBeDisabled();
 
     rerender(
       <BatchActionSheet
@@ -138,7 +140,9 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    expect(screen.getByRole('button', { name: /^Later( [\d,]+)?$/ })).not.toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: /^(Later|Move [\d,]+ emails? to Later)$/ }),
+    ).not.toBeDisabled();
   });
 
   // Codex review 2026-09-03, round 2: the live preview can legitimately
@@ -162,7 +166,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -192,7 +196,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
       />,
     );
     // A no-op that would still spend cleanup actions on Free.
-    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -251,7 +255,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+)?$/ });
+    const confirm = screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();

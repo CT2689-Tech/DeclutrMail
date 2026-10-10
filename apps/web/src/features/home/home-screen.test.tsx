@@ -211,7 +211,7 @@ describe('HomeScreen', () => {
   it('new user: no number, a title and the button', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Nothing cleared yet')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/senders');
   });
@@ -220,15 +220,15 @@ describe('HomeScreen', () => {
     authCell.me = meFor('pro', 'syncing');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Reading your Gmail')).toBeInTheDocument();
+    expect(await screen.findByText('Reading your Gmail.')).toBeInTheDocument();
   });
 
   it('new user whose scan failed: says so and links to Gmail accounts', async () => {
     authCell.me = meFor('pro', 'failed');
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Gmail scan failed')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing cleared yet')).toBeNull();
+    expect(await screen.findByText('Gmail scan failed.')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/settings#mailboxes');
   });
 

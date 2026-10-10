@@ -24,14 +24,21 @@ function emit() {
   for (const listener of listeners) listener(queue);
 }
 
-export function toast(msg: string, tone: ToastTone = 'info'): void {
+/** Return an idempotent dismiss callback for notifications tied to a pending request. */
+export function toast(msg: string, tone: ToastTone = 'info'): () => void {
   const id = Math.random().toString(36).slice(2);
   queue = [...queue, { id, msg, tone }];
   emit();
-  setTimeout(() => {
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    clearTimeout(timer);
     queue = queue.filter((t) => t.id !== id);
     emit();
-  }, 3600);
+  };
+  const timer = setTimeout(dismiss, 3600);
+  return dismiss;
 }
 
 // Every toast is the same inverse surface (fg ink: near-black on light,
@@ -63,7 +70,9 @@ export function ToastHost() {
     <div
       style={{
         position: 'fixed',
-        bottom: 20,
+        bottom: 'calc(20px + var(--dm-tabbar-inset, 0px))',
+        maxWidth: 'calc(100vw - 32px)',
+        width: 'max-content',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 200,

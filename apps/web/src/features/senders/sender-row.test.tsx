@@ -72,7 +72,7 @@ describe('<SenderRow /> — what the row says', () => {
     expect(screen.getByText('emails')).toBeInTheDocument();
     expect(screen.queryByText(/37/)).not.toBeInTheDocument();
     expect(screen.getByText('42 in inbox')).toBeInTheDocument();
-    expect(screen.getByText('20% marked read · 90d')).toBeInTheDocument();
+    expect(screen.getByText('20% marked read · 90 days')).toBeInTheDocument();
   });
 
   it('refreshes current mail after cleanup while the received history stays unchanged', () => {
@@ -137,7 +137,7 @@ describe('<SenderRow /> — what the row says', () => {
     expect(name.parentElement).not.toContainElement(status);
     expect(screen.getAllByText('Request accepted')).toHaveLength(1);
     expect(screen.getByText('18 in inbox')).toBeInTheDocument();
-    expect(screen.getByText('12% marked read · 90d')).toBeInTheDocument();
+    expect(screen.getByText('12% marked read · 90 days')).toBeInTheDocument();
   });
 
   it('keeps one compact activity status below the identity without changing its accessible label', () => {

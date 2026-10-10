@@ -29,11 +29,11 @@ const options = ['7:00 AM', '8:00 AM', '9:00 AM'].map((label) => (
 ));
 
 export const Default: Story<typeof SelectWell> = {
-  args: { 'aria-label': 'Daily Brief delivery hour', defaultValue: '8:00 AM', children: options },
+  args: { 'aria-label': 'Daily brief delivery hour', defaultValue: '8:00 AM', children: options },
 };
 export const Disabled: Story<typeof SelectWell> = {
   args: {
-    'aria-label': 'Daily Brief delivery hour',
+    'aria-label': 'Daily brief delivery hour',
     defaultValue: '8:00 AM',
     disabled: true,
     children: options,

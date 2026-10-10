@@ -6,6 +6,7 @@
 // the D146 validation threshold.
 
 import type { Metadata } from 'next';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ACTION_SAFETY_SUMMARY } from '@declutrmail/shared';
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -46,10 +47,13 @@ export default function TermsOfServicePage() {
           cleanup service. It shows you your inbox organized by sender, recommends cleanup
           decisions, and — when you approve them — performs actions on your Gmail on your behalf:
           Keep, Archive, Unsubscribe, Later, or Delete. Manual mail-moving actions are previewed
-          before they run and recorded in an activity log. Archive, Later, and Delete use your
-          plan&rsquo;s Activity Undo window. Delete also has separate Gmail Trash recovery, normally
-          up to 30 days unless Trash is emptied sooner. By creating an account or using DeclutrMail
-          you agree to these terms and to our <a href="/privacy">Privacy Policy</a>.
+          before they run and recorded in an activity log. Archive, Later, and Delete use the
+          {UNIFORM_UNDO_WINDOW_DAYS === null
+            ? 'plan’s Activity Undo window'
+            : `${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window on every plan`}
+          . Delete also has separate Gmail Trash recovery, normally up to 30 days unless Trash is
+          emptied sooner. By creating an account or using DeclutrMail you agree to these terms and
+          to our <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 
@@ -103,9 +107,18 @@ export default function TermsOfServicePage() {
           </li>
         </ul>
         <p>
-          Refunds are described in our <a href="/refunds">Refund Policy</a>. If a payment fails or a
-          subscription lapses, paid features stop and your account returns to the Free plan — your
-          data is not deleted by a lapse.
+          Refunds are described in our <a href="/refunds">Refund Policy</a>. A subscription marked
+          past due keeps subscription access for up to 14 days after its billing period ends. If the
+          provider supplies no period end, the window starts when the past-due event is processed.
+          Access can end sooner if the provider cancels or halts the subscription. When subscription
+          access ends, your plan is Free unless a separate complimentary grant still applies; your
+          data is not deleted.
+        </p>
+        <p>
+          Paddle offers a 30-day pause: subscription access ends immediately and billing resumes
+          automatically after 30 days. Razorpay plan changes, payment-method updates, pausing and
+          undoing cancellation require support. Existing connected inboxes keep working after a
+          downgrade; new connections are blocked while above your plan’s inbox limit.
         </p>
       </LegalSection>
 

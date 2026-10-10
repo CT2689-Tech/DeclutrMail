@@ -45,7 +45,7 @@ describe('RouteErrorScreen', () => {
       expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
       expect(screen.getByText(kicker)).toBeInTheDocument();
       expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
-      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1120px', gap: `${gap}px` });
+      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1480px', gap: `${gap}px` });
       expect(document.body).not.toHaveTextContent('private backend value');
       fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
       expect(reset).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe('RouteErrorScreen', () => {
     localStorage.setItem('dm.triage.mode', JSON.stringify('list'));
     try {
       render(<TriageError error={new Error('private')} reset={() => {}} />);
-      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '928px' });
+      expect(screen.getByRole('region')).toHaveStyle({ maxWidth: '1480px' });
       expect(screen.getByRole('region')).toHaveAttribute('data-triage-mode', 'list');
       expect(screen.getByRole('region').className).toContain('triage');
       expect(localStorage.getItem('dm.triage.mode')).toBe('"list"');

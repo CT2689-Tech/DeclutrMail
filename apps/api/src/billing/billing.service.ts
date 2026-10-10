@@ -418,6 +418,7 @@ export class BillingService {
               grantsAccess: sub.grantsAccess,
               cycle: sub.billingCycle,
               currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
+              entitlementEndsAt: sub.entitlementEndsAt?.toISOString() ?? null,
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
               cancelSource: sub.cancelSource,
               pauseUntil: sub.pauseUntil?.toISOString() ?? null,

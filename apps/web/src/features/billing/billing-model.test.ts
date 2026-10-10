@@ -475,3 +475,45 @@ describe('annual savings reflect the displayed currency', () => {
     expect(sharedAnnualMonthsFree('razorpay')).toBeNull();
   });
 });
+
+describe('past-due deadline disclosure', () => {
+  it('shows the server access deadline and tolerates an older API without one', () => {
+    const sub = { ...SUB, status: 'past_due' as const, entitlementEndsAt: '2026-11-12T12:00:00Z' };
+    expect(backingStatusNote({ state: 'past_due', sub })?.text).toMatch(
+      /Access from this subscription ends.*Nov 12/,
+    );
+    expect(
+      backingStatusNote({ state: 'past_due', sub: { ...SUB, status: 'past_due' } })?.text,
+    ).not.toContain('Access from this subscription ends');
+  });
+});
+
+describe('past-due scheduled cancellation disclosure', () => {
+  it('uses the server dunning deadline even when cancellation is scheduled and avoids promising Free', () => {
+    const sub = {
+      ...SUB,
+      status: 'past_due' as const,
+      cancelAtPeriodEnd: true,
+      entitlementEndsAt: '2026-11-12T12:00:00Z',
+    };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub });
+    expect(note?.text).toMatch(/Payment past due.*Nov 12/);
+    expect(note?.text).toContain('complimentary grant may still apply');
+    expect(note?.text).not.toContain('switch to Free');
+  });
+});
+
+describe('refund notice precedence', () => {
+  it('preserves the refund verdict notice when the refunded subscription is also past due', () => {
+    const sub = {
+      ...SUB,
+      status: 'past_due' as const,
+      cancelAtPeriodEnd: true,
+      cancelSource: 'refund' as const,
+      entitlementEndsAt: '2026-11-12T12:00:00Z',
+    };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub });
+    expect(note?.text).toContain('refund is being processed');
+    expect(note?.text).not.toContain('unless payment is resolved');
+  });
+});

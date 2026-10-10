@@ -7,6 +7,7 @@ import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import { track } from '@/lib/posthog';
+import { BRIEF_PROCESSING_NOTE } from '@/features/billing/billing-copy';
 import { navigateToCheckout, navigateToFreeApp } from './cta';
 import {
   cardBullets,
@@ -149,6 +150,11 @@ export function TierCard({
           </li>
         ))}
       </ul>
+      {tier.id === 'pro' && (
+        <p className="dm-tier-note">
+          {BRIEF_PROCESSING_NOTE} <a href="/privacy">Privacy details</a>
+        </p>
+      )}
     </div>
   );
 }

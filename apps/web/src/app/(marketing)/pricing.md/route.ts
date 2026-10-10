@@ -17,7 +17,6 @@ import { type PricePoint } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
-  CAPABILITY_LABELS,
   TIER_JOBS,
   cardBullets,
   comparablePricingTiers,
@@ -27,6 +26,14 @@ import {
   foundingProPromo,
   pricingTiers,
 } from '@/features/marketing/pricing/pricing-model';
+import {
+  CLEANUP_COUNT_NOTE,
+  CLEANUP_RESET_NOTE,
+  BRIEF_PROCESSING_NOTE,
+  BILLING_MANAGEMENT_NOTE,
+  PROVIDER_SWITCH_NOTE,
+  RAZORPAY_LIMITATIONS_NOTE,
+} from '@/features/billing/billing-copy';
 import { siteUrl } from '@/features/marketing/landing/urls';
 
 /** D245: derived so this machine-readable doc can't hedge a uniform ladder. */
@@ -79,7 +86,7 @@ function promoSection(): string {
   return [
     `### ${promo.name}`,
     '',
-    `Annual: ${priceLine(promo.annual, '/yr')} for the first ${promo.maxRedemptions} paying subscribers.`,
+    `Annual: ${priceLine(promo.annual, '/yr')} for the first ${promo.maxRedemptions} paid subscriptions.`,
     `Grants ${hostTier.name} capabilities. The price stays locked while the subscription remains active.`,
     'Limited redemption, so it is not listed as a standing price.',
   ].join('\n');
@@ -132,9 +139,16 @@ ${unavailableSection()}
 
 ${comparisonTable()}
 
-Capability names above are the user-facing ones. "${CAPABILITY_LABELS.autopilot}"
-and "${CAPABILITY_LABELS['autopilot-active']}" are the same feature at two
-behaviours a user chooses between, not two products and not two plans.
+Autopilot offers Watch first (collect suggestions for approval) and Act now
+(act on future matches). Some safety-sensitive presets always require approval.
+
+## Cleanup quota and Daily Brief
+
+${CLEANUP_COUNT_NOTE}
+
+${CLEANUP_RESET_NOTE}
+
+${BRIEF_PROCESSING_NOTE} Privacy details: ${origin}/privacy
 
 ## What every plan does, including Free
 
@@ -159,6 +173,10 @@ behaviours a user chooses between, not two products and not two plans.
 - Paid plans carry a 30-day money-back guarantee. Terms: ${origin}/refunds
 - Cancel any time from billing settings; access continues to the end of the
   paid period.
+- ${BILLING_MANAGEMENT_NOTE}
+- ${RAZORPAY_LIMITATIONS_NOTE}
+- ${PROVIDER_SWITCH_NOTE}
+- After a downgrade, existing connected inboxes keep working; adding another is blocked while above the new plan's inbox limit.
 - Gmail and Google Workspace only. DeclutrMail is not affiliated with or
   endorsed by Google.
 - Full pricing page: ${origin}/pricing

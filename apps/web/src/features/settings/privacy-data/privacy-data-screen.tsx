@@ -8,18 +8,17 @@ import {
 } from '@/features/editorial/page';
 
 import { useEffect, type ReactNode } from 'react';
-import { Button, CASA_VERIFICATION_APPROVED_ON, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Button, ScreenIntro, tokens } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { track } from '@/lib/posthog';
 import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
 import { dataExportFailure, useDataExport, type DataExportFailure } from '../api/use-data-export';
-import { DrillRow, PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
+import { PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 import type { PrivacyDataExportCopy } from './privacy-data-content';
 
 const { color, font, text } = tokens;
@@ -45,9 +44,11 @@ const { color, font, text } = tokens;
  */
 export function PrivacyDataRoute({
   privacyContent,
+  footerContent,
   exportCopy,
 }: {
   privacyContent: ReactNode;
+  footerContent: ReactNode;
   exportCopy: PrivacyDataExportCopy;
 }) {
   const { me } = useAuth();
@@ -60,6 +61,7 @@ export function PrivacyDataRoute({
   return (
     <PrivacyDataView
       privacyContent={privacyContent}
+      footerContent={footerContent}
       exportCopy={exportCopy}
       mailboxes={me.mailboxes}
       undoDays={undoDays}
@@ -75,6 +77,7 @@ export function PrivacyDataRoute({
 /** Dumb view — storyable without auth/query shims. */
 export function PrivacyDataView({
   privacyContent,
+  footerContent,
   exportCopy,
   mailboxes,
   undoDays,
@@ -85,6 +88,7 @@ export function PrivacyDataView({
   onExport,
 }: {
   privacyContent: ReactNode;
+  footerContent: ReactNode;
   exportCopy: PrivacyDataExportCopy;
   mailboxes: MeMailbox[];
   /** Tier-resolved undo window; null while the tier is unknown. */
@@ -110,7 +114,6 @@ export function PrivacyDataView({
         gap: 32,
       }}
     >
-      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <EditorialKicker>Your workspace / Privacy & data</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
       <EditorialDescription>
@@ -242,40 +245,7 @@ export function PrivacyDataView({
         </div>
       </Section>
 
-      {/* D147 — the standing surface to change or withdraw the cookie
-          choice (GDPR Art. 7(3)); also mounted on the public /cookies page. */}
-      <div id="privacy-cookie-preferences" style={{ scrollMarginTop: 24 }}>
-        <CookiePreferences />
-      </div>
-
-      {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
-      <Section title="Leave cleanly">
-        <SettingsRow
-          label="Disconnect a mailbox"
-          detail="Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
-        />
-        <SettingsRow
-          label="Disconnect & delete one mailbox's saved data"
-          detail="Also permanently deletes that mailbox's saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
-        />
-        <DrillRow href="/settings#account" label="Delete account and data" />
-      </Section>
-
-      {/* 6 — legal & evidence (CASA row: static copy per plan). */}
-      <Section title="Legal & evidence">
-        <SettingsRow
-          label="CASA Tier 2 verification"
-          detail={
-            <>
-              DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security assessment.
-              Google approved our OAuth verification on {CASA_VERIFICATION_APPROVED_ON} for the
-              single restricted scope we request, gmail.modify. It is recertified annually.
-            </>
-          }
-        />
-        <DrillRow href="/privacy" label="Privacy Policy" />
-        <DrillRow href="/terms" label="Terms" />
-      </Section>
+      {footerContent}
     </div>
   );
 }

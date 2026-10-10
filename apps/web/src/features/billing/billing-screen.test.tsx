@@ -321,7 +321,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ).not.toBeInTheDocument();
     // Picker marks Free as current — no CTA on the current plan.
     const freeOption = screen.getByTestId('plan-option-free');
-    expect(within(freeOption).getByText('Current')).toBeInTheDocument();
+    expect(within(freeOption).getByText('Current plan')).toBeInTheDocument();
     expect(within(freeOption).queryByRole('button')).not.toBeInTheDocument();
   });
 
@@ -1254,7 +1254,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Billing', level: 1 })).toBeInTheDocument();
     expect(within(notice).getByText('What we know')).toBeInTheDocument();
     expect(within(notice).getByText('What happens next')).toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
@@ -2109,7 +2109,7 @@ describe('BillingScreen — paid subscriber', () => {
     // Cache write-back: scheduled-cancel note renders; affordance gone.
     expect(
       await screen.findByText(
-        "Cancellation scheduled — your plan stays active until Jul 1, 2026, then you'll switch to Free.",
+        'Cancellation scheduled — access from this subscription continues until Jul 1, 2026. A separate complimentary grant may still apply.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review cancellation' })).not.toBeInTheDocument();
@@ -2167,12 +2167,14 @@ describe('BillingScreen — paid subscriber', () => {
 
     // Annual is the default; the Pro card is genuinely current there.
     await screen.findByTestId('current-plan-card');
-    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(within(screen.getByTestId('plan-picker')).getByText('Current plan')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
 
     // Now every card on screen is a switch target, so nothing is CURRENT.
-    await waitFor(() => expect(screen.queryByText('Current')).toBeNull());
+    await waitFor(() =>
+      expect(within(screen.getByTestId('plan-picker')).queryByText('Current plan')).toBeNull(),
+    );
     // Screen readers must hear the same thing sighted users see — the
     // badge and `aria-current` were driven by different flags, so the
     // monthly card still announced itself as current (Codex, 2026-07-31).
@@ -2205,11 +2207,13 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     await screen.findByTestId('current-plan-card');
-    expect(screen.getByText('Current')).toBeInTheDocument();
+    expect(within(screen.getByTestId('plan-picker')).getByText('Current plan')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
 
-    await waitFor(() => expect(screen.queryByText('Current')).toBeNull());
+    await waitFor(() =>
+      expect(within(screen.getByTestId('plan-picker')).queryByText('Current plan')).toBeNull(),
+    );
     // The badge is a FACT (cycle is known); the switch CTA is an
     // AFFORDANCE Razorpay does not support. Separate props, separate
     // answers — the CTA must stay absent.
@@ -2893,7 +2897,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(current).toHaveTextContent('Plan price: $19/mo');
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage).toHaveTextContent('1 of 5 connected inboxes');
-    expect(within(coverage).getByRole('link', { name: 'Daily Brief' })).toHaveAttribute(
+    expect(within(coverage).getByRole('link', { name: 'Daily brief' })).toHaveAttribute(
       'href',
       '/brief',
     );

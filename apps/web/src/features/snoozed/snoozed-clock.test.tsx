@@ -130,7 +130,7 @@ describe('Later account calendar clock', () => {
     try {
       fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
       const note = screen.getByPlaceholderText('Note (optional)');
-      const custom = screen.getByLabelText('Custom · America/Los_Angeles');
+      const custom = screen.getByLabelText('Custom · America/Los Angeles');
       fireEvent.change(note, { target: { value: 'read after the weekend' } });
       fireEvent.change(custom, { target: { value: '2026-10-05T10:00' } });
       note.focus();
@@ -414,7 +414,7 @@ describe('Later account calendar clock', () => {
       );
       try {
         fireEvent.click(screen.getByRole('button', { name: /Change return time/ }));
-        fireEvent.change(screen.getByLabelText('Custom · America/Los_Angeles'), {
+        fireEvent.change(screen.getByLabelText('Custom · America/Los Angeles'), {
           target: { value: wallTime },
         });
         expect(screen.getByRole('button', { name: 'Set' })).toBeEnabled();

@@ -1,0 +1,2185 @@
+[
+  {
+    "name": "desktop-light-triage",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Triage",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-triage",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Triage",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-triage",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-triage",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-archive-preview",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-menu",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-settings",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": "Daily brief delivery hour",
+        "size": "16px",
+        "width": 122
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Settings",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-settings",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": "Daily brief delivery hour",
+        "size": "16px",
+        "width": 122
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Settings",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-settings",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": "Daily brief delivery hour",
+        "size": "14px",
+        "width": 113
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Settings",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-settings",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 1
+      },
+      {
+        "label": "Daily brief delivery hour",
+        "size": "14px",
+        "width": 113
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Settings",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-inline-preview",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Triage",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-autopilot-empty",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Autopilot",
+        "x": 110
+      }
+    ],
+    "height": 720,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-quiet",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Quiet window start",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "14px",
+        "width": 607
+      },
+      {
+        "label": "Quiet window start",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "14px",
+        "width": 607
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Quiet hours",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-quiet",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Quiet window start",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "14px",
+        "width": 607
+      },
+      {
+        "label": "Quiet window start",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "14px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "14px",
+        "width": 607
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Quiet hours",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-quiet",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 314
+      },
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 314
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Quiet hours",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-quiet",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 314
+      },
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 314
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Quiet hours",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "narrow-light-quiet",
+    "documentWidth": 310,
+    "fields": [
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 234
+      },
+      {
+        "label": "Quiet window start",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window end",
+        "size": "16px",
+        "width": 152
+      },
+      {
+        "label": "Quiet window timezone",
+        "size": "16px",
+        "width": 234
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Quiet hours",
+        "x": 16
+      }
+    ],
+    "height": 740,
+    "theme": "light",
+    "width": 320
+  },
+  {
+    "name": "mobile-light-brief",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Include Fresh Finds Weekly in the archive",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Daily brief",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-brief",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Include Fresh Finds Weekly in the archive",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Daily brief",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-brief",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Include Fresh Finds Weekly in the archive",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Daily brief",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-brief",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Include Fresh Finds Weekly in the archive",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Daily brief",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-later",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Later",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-later",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Later",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "tablet-dark-later",
+    "documentWidth": 800,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Later",
+        "x": 96
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 800
+  },
+  {
+    "name": "mobile-dark-later",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Later",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-later",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Later",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-later-form",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "16px",
+        "width": 246
+      },
+      {
+        "label": null,
+        "size": "13px",
+        "width": 262
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Later",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-activity-empty",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "14px",
+        "width": 303
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Activity",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-billing",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Billing",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-billing",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Billing",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-billing",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Billing",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-billing",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Billing",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-senders-final",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "14px",
+        "width": 205
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Senders",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-senders",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "14px",
+        "width": 205
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Senders",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-senders",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-senders",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-selection-fab",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-sender-detail",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "28px",
+        "text": "Fresh Finds Weekly",
+        "x": 101
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-sender-detail",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "28px",
+        "text": "Fresh Finds Weekly",
+        "x": 101
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-sender-detail",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "28px",
+        "text": "Fresh Finds Weekly",
+        "x": 346
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-sender-detail",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "28px",
+        "text": "Fresh Finds Weekly",
+        "x": 346
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-screener",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Filter loaded senders",
+        "size": "14px",
+        "width": 314
+      },
+      {
+        "label": "Sort loaded senders",
+        "size": "14px",
+        "width": 314
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Screener",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-screener",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Filter loaded senders",
+        "size": "14px",
+        "width": 314
+      },
+      {
+        "label": "Sort loaded senders",
+        "size": "14px",
+        "width": 314
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Screener",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-screener",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Filter loaded senders",
+        "size": "16px",
+        "width": 173
+      },
+      {
+        "label": "Sort loaded senders",
+        "size": "16px",
+        "width": 173
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Screener",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-screener",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Filter loaded senders",
+        "size": "16px",
+        "width": 173
+      },
+      {
+        "label": "Sort loaded senders",
+        "size": "16px",
+        "width": 173
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Screener",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-screener-expanded",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Filter loaded senders",
+        "size": "16px",
+        "width": 168
+      },
+      {
+        "label": "Sort loaded senders",
+        "size": "16px",
+        "width": 168
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Screener",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-home",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "32px",
+        "text": "A little roomfor a clearer day.",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-home",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "32px",
+        "text": "A little roomfor a clearer day.",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-home-final",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "48px",
+        "text": "A little roomfor a clearer day.",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-home-final",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "48px",
+        "text": "A little roomfor a clearer day.",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-activity",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "14px",
+        "width": 185
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Activity",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-activity",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "14px",
+        "width": 185
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Activity",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-activity",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "16px",
+        "width": 293
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Activity",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-activity",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "16px",
+        "width": 293
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Activity",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-activity-filter",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "16px",
+        "width": 293
+      },
+      {
+        "label": null,
+        "size": "13px",
+        "width": 114
+      },
+      {
+        "label": null,
+        "size": "13px",
+        "width": 114
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Activity",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-autopilot",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Select suggestion for Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Autopilot",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-autopilot-details",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Confidence threshold for rule Review low-engagement senders for Archive",
+        "size": "13.3333px",
+        "width": 120
+      },
+      {
+        "label": "Select suggestion for Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Autopilot",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-autopilot",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Confidence threshold for rule Review low-engagement senders for Archive",
+        "size": "13.3333px",
+        "width": 120
+      },
+      {
+        "label": "Select suggestion for Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Autopilot",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-autopilot",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Confidence threshold for rule Review low-engagement senders for Archive",
+        "size": "13.3333px",
+        "width": 120
+      },
+      {
+        "label": "Select suggestion for Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Autopilot",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-autopilot",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": "Confidence threshold for rule Review low-engagement senders for Archive",
+        "size": "13.3333px",
+        "width": 120
+      },
+      {
+        "label": "Select suggestion for Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Autopilot",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-followups",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Follow-ups",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-followups",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Follow-ups",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-followups",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Follow-ups",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-followups",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Follow-ups",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-account-menu",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Follow-ups",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-empty-second-account",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Follow-ups",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "narrow-light-account-menu",
+    "documentWidth": 320,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Follow-ups",
+        "x": 16
+      }
+    ],
+    "height": 740,
+    "theme": "light",
+    "width": 320
+  },
+  {
+    "name": "narrow-light-triage",
+    "documentWidth": 320,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 740,
+    "theme": "light",
+    "width": 320
+  },
+  {
+    "name": "narrow-light-delete-preview",
+    "documentWidth": 320,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 740,
+    "theme": "light",
+    "width": 320
+  },
+  {
+    "name": "mobile-dark-delete-preview",
+    "documentWidth": 390,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Triage",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "desktop-dark-delete-preview",
+    "documentWidth": 1280,
+    "fields": [],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Triage",
+        "x": 110
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "mobile-dark-disabled-menu",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-keep-result",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-later-form-final",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "16px",
+        "width": 246
+      },
+      {
+        "label": "Note (optional)",
+        "size": "16px",
+        "width": 262
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Later",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-brief-final",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Include Fresh Finds Weekly in the archive",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Daily brief",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-keep-final",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search senders",
+        "size": "16px",
+        "width": 225
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Senders",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-activity-filter-final",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": "Search sender",
+        "size": "16px",
+        "width": 293
+      },
+      {
+        "label": "Select activity row from Fresh Finds Weekly",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      },
+      {
+        "label": "Select activity row from Meadow Lane Dispatch",
+        "size": "13.3333px",
+        "width": 18
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Activity",
+        "x": 16
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-privacy",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 4
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 7
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Privacy & data",
+        "x": 56
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-privacy-consent",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 4
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 7
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Privacy & data",
+        "x": 56
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-privacy-consent-final",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Privacy & data",
+        "x": 56
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  },
+  {
+    "name": "mobile-light-privacy-consent",
+    "documentWidth": 390,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "30px",
+        "text": "Privacy & data",
+        "x": 56
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "desktop-light-privacy-consent",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Privacy & data",
+        "x": 150
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-privacy-consent",
+    "documentWidth": 1280,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "39.68px",
+        "text": "Privacy & data",
+        "x": 150
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-dark-cookies",
+    "documentWidth": 1270,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "68px",
+        "text": "Cookie Preferences",
+        "x": 275
+      }
+    ],
+    "height": 900,
+    "theme": "dark",
+    "width": 1280
+  },
+  {
+    "name": "desktop-light-cookies",
+    "documentWidth": 1270,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "68px",
+        "text": "Cookie Preferences",
+        "x": 275
+      }
+    ],
+    "height": 900,
+    "theme": "light",
+    "width": 1280
+  },
+  {
+    "name": "mobile-light-cookies",
+    "documentWidth": 380,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "40px",
+        "text": "Cookie Preferences",
+        "x": 20
+      }
+    ],
+    "height": 844,
+    "theme": "light",
+    "width": 390
+  },
+  {
+    "name": "mobile-dark-cookies",
+    "documentWidth": 380,
+    "fields": [
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      },
+      {
+        "label": null,
+        "size": "13.3333px",
+        "width": 13
+      }
+    ],
+    "headings": [
+      {
+        "font": "Fraunces, \"Times New Roman\", serif",
+        "size": "40px",
+        "text": "Cookie Preferences",
+        "x": 20
+      }
+    ],
+    "height": 844,
+    "theme": "dark",
+    "width": 390
+  }
+]

@@ -146,7 +146,7 @@ describe('Triage preview — verification detail (D226 parity)', () => {
     expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
     // The mandatory D226 content is untouched: count + destination.
-    expect(screen.getByText(/17 emails from .*leave your inbox/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Archive 17 emails?' })).toBeInTheDocument();
   });
 
   // Same rule the senders modal follows: a panel counting "what currently
@@ -203,7 +203,7 @@ describe('Triage preview — the count lives in the title, once', () => {
   it('asks the question with the count when there is mail to move', () => {
     renderPreview({ verb: 'Delete', inboxCount: 1 });
     const dialog = screen.getByRole('dialog', { name: 'Delete 1 email?' });
-    expect(within(dialog).getByRole('button', { name: 'Delete 1' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Delete 1 email' })).toBeEnabled();
     // Where it goes and how to undo it, each stated.
     expect(dialog).toHaveAccessibleDescription(/move to Gmail Trash/);
     expect(within(dialog).getByText(/Undo/)).toBeInTheDocument();

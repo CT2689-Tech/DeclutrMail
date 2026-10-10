@@ -37,7 +37,7 @@ export function RouteLoading({
   rows,
   rowHeight,
   rowRadius = radius.lg,
-  maxWidth = 1120,
+  maxWidth = 1480,
   gap = 24,
   headerHeight = 36,
 }: {
@@ -83,7 +83,15 @@ export function RouteLoading({
         aria-busy="true"
         aria-live="polite"
         aria-label={label}
-        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          width: '100%',
+          ...(variant === 'triage'
+            ? { maxWidth: triageMode === 'list' ? 880 : 640, marginInline: 'auto' }
+            : {}),
+        }}
       >
         {Array.from({ length: rows }, (_, i) => (
           <Skeleton key={i} variant="rect" height={rowHeight} borderRadius={rowRadius} />

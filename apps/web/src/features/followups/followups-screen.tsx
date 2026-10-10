@@ -300,38 +300,31 @@ function FollowupsOverview({ overdue, recent }: { overdue: number; recent: numbe
         gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
       }}
     >
-      {cards.map((card, index) => (
+      {cards.map((card) => (
         <a
           key={card.href}
           href={card.href}
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 7,
-            padding: '18px 20px',
+            gap: 8,
+            padding: '20px',
             border: `1px solid ${color.line}`,
-            borderRadius: 10,
-            background: index === 0 ? color.card : color.fill,
+            borderRadius: tokens.radius.md,
+            background: color.card,
             color: color.fg,
             textDecoration: 'none',
           }}
         >
           <span
             style={{
-              color: color.primary,
-              fontSize: text.xs,
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
+              ...tokens.typography.kicker,
+              color: color.fgMuted,
             }}
           >
             {card.title}
           </span>
-          <strong
-            style={{ fontFamily: font.display, fontSize: 26, fontWeight: 400, lineHeight: 1.1 }}
-          >
-            {card.count}
-          </strong>
+          <strong style={tokens.typography.stat}>{card.count}</strong>
           <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
             {card.detail} →
           </span>
@@ -398,22 +391,22 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
         alignItems: 'baseline',
         gap: 6,
         margin: 0,
-        fontSize: text.lg,
-        fontWeight: 650,
-        letterSpacing: '-0.01em',
+        ...tokens.typography.sectionTitle,
         color: color.fg,
       }}
     >
       {label}
       <span
         style={{
-          color: color.fgMuted,
-          fontSize: text.md,
-          fontWeight: 500,
-          fontVariantNumeric: 'tabular-nums',
+          ...tokens.typography.rowCount,
+          color: color.fgSoft,
+          background: color.fill,
+          padding: '2px 8px',
+          borderRadius: tokens.radius.pill,
+          alignSelf: 'center',
         }}
       >
-        · {count}
+        {count}
       </span>
     </h2>
   );
@@ -517,7 +510,7 @@ export function FollowupListItem({
         <details
           style={{ fontSize: text.xs, marginTop: 4, maxWidth: 180, overflowWrap: 'anywhere' }}
         >
-          <summary style={{ cursor: 'pointer' }}>Evaluation</summary>
+          <summary className="dm-disclosure">Evaluation</summary>
           <p style={{ margin: '4px 0 0' }}>
             {evaluationKnown ? (
               <>
@@ -539,15 +532,9 @@ export function FollowupListItem({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open in Gmail — ${recipient.name}: ${subject}`}
-          style={{
-            fontSize: text.sm,
-            fontWeight: 500,
-            color: color.primary,
-            textDecoration: 'none',
-            whiteSpace: 'nowrap',
-          }}
+          className="dm-external-link"
         >
-          Open in Gmail
+          Open in Gmail <span aria-hidden="true">↗</span>
         </a>
       ) : (
         <span aria-hidden="true" />

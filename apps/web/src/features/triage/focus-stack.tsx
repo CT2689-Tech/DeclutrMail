@@ -74,6 +74,7 @@ export function TriageFocusStack({
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  const clearPending = useTriageStore((s) => s.clearPending);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
 
   useEffect(() => {
@@ -106,6 +107,7 @@ export function TriageFocusStack({
         onAction={(verb) => onAction(verb, row)}
         inlinePreview={inlinePreviewFor(row.id, pendingAction, {
           inboxCount: previewInboxCount,
+          onCancel: clearPending,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
         })}

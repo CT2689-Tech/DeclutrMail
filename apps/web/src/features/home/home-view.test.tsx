@@ -17,9 +17,13 @@ describe('HomeView', () => {
       action,
     };
     const { rerender } = render(<HomeView state={state} />);
-    expect(screen.getByText('emails cleared since Jan 2026')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your cleanup so far' })).toHaveTextContent(
+      'emails cleared since Jan 2026',
+    );
     rerender(<HomeView state={state} timeZone="America/Los_Angeles" />);
-    expect(screen.getByText('emails cleared since Dec 2025')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your cleanup so far' })).toHaveTextContent(
+      'emails cleared since Dec 2025',
+    );
   });
 
   it('keeps the complete workspace discoverable with clear plan context', () => {
@@ -34,15 +38,15 @@ describe('HomeView', () => {
     // Anchored: the Quiet tile's own detail text now says "...Autopilot
     // holds its actions", so an unanchored /Autopilot/ matches both tiles.
     expect(screen.getByRole('link', { name: /^Autopilot/ })).toHaveAttribute('href', '/autopilot');
-    expect(screen.getByRole('link', { name: /Daily Brief Included with Pro/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Daily brief Included with Pro/ })).toHaveAttribute(
       'href',
       '/brief',
     );
     rerender(<HomeView state={ready} tier="pro" />);
-    expect(screen.getByRole('link', { name: /Daily Brief/ })).toHaveAttribute('href', '/brief');
+    expect(screen.getByRole('link', { name: /Daily brief/ })).toHaveAttribute('href', '/brief');
     expect(screen.getByRole('link', { name: /Follow-ups/ })).toHaveAttribute('href', '/followups');
     expect(screen.getByRole('link', { name: /Later/ })).toHaveAttribute('href', '/later');
-    expect(screen.getByRole('link', { name: /Quiet Hours/ })).toHaveAttribute('href', '/quiet');
+    expect(screen.getByRole('link', { name: /Quiet hours/ })).toHaveAttribute('href', '/quiet');
   });
 
   it('ready: recorded progress and the primary next step remain intact', () => {
@@ -61,7 +65,9 @@ describe('HomeView', () => {
       />,
     );
     expect(screen.getByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(screen.getByText(/emails cleared since Mar 2026/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your cleanup so far' })).toHaveTextContent(
+      'emails cleared since Mar 2026',
+    );
     expect(screen.getByText('Emails archived')).toBeInTheDocument();
     expect(screen.getByText('34')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /See your activity/ })).toHaveAttribute(
@@ -89,7 +95,7 @@ describe('HomeView', () => {
         }}
       />,
     );
-    expect(screen.getByRole('link', { name: /Daily Brief 3 replies to consider/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Daily brief 3 replies to consider/ })).toHaveAttribute(
       'href',
       '/brief',
     );
@@ -100,6 +106,26 @@ describe('HomeView', () => {
       screen.getByRole('link', { name: /Autopilot 50\+ suggestions to review/ }),
     ).toHaveAttribute('href', '/autopilot');
     expect(screen.getByRole('link', { name: /Review 4 today/ })).toHaveAttribute('href', '/triage');
+  });
+
+  it.each([1, 2])('uses matching grammar for %i Autopilot suggestions', (suggestions) => {
+    render(
+      <HomeView
+        tier="pro"
+        workflows={{ brief: null, followups: null, suggestions }}
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action,
+        }}
+      />,
+    );
+    const unit = suggestions === 1 ? 'suggestion' : 'suggestions';
+    expect(
+      screen.getByRole('link', { name: `Autopilot ${suggestions} ${unit} to review` }),
+    ).toHaveAttribute('href', '/autopilot');
   });
 
   it('shows current Inbox counts and both pending tasks', () => {
@@ -199,20 +225,20 @@ describe('HomeView', () => {
   it('empty: no number at all — a title and the link', () => {
     render(<HomeView state={{ kind: 'empty', syncing: false, action }} />);
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByText('Nothing cleared yet')).toBeInTheDocument();
+    expect(screen.getByText('Nothing cleared yet.')).toBeInTheDocument();
     expect(screen.getByRole('link')).toHaveAttribute('href', '/senders');
   });
 
   it('empty while the mailbox is still syncing says so', () => {
     render(<HomeView state={{ kind: 'empty', syncing: true, action }} />);
-    expect(screen.getByText('Reading your Gmail')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing cleared yet')).toBeNull();
+    expect(screen.getByText('Reading your Gmail.')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
   });
 
   it('sync-failed: says the scan failed and links to Gmail accounts — never "Nothing cleared yet"', () => {
     render(<HomeView state={{ kind: 'sync-failed', needsReconnect: false }} />);
-    expect(screen.getByText('Gmail scan failed')).toBeInTheDocument();
-    expect(screen.queryByText('Nothing cleared yet')).toBeNull();
+    expect(screen.getByText('Gmail scan failed.')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing cleared yet.')).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     const links = screen.getAllByRole('link');
     expect(links).toHaveLength(1);
@@ -296,7 +322,7 @@ describe('Home primary task hierarchy', () => {
     );
     const primary = screen.getByRole('link', { name: /Review senders/ });
     const stamp = screen.getByRole('region', { name: 'Your cleanup so far' });
-    expect(stamp.compareDocumentPosition(primary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(primary.compareDocumentPosition(stamp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'intro');
   });
   it('uses the compact intro for a first review without implying an incomplete scan is ready', () => {
@@ -310,6 +336,6 @@ describe('Home primary task hierarchy', () => {
     expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'review');
     rerender(<HomeView state={{ ...first, syncing: true }} />);
     expect(container.firstElementChild).toHaveAttribute('data-home-priority', 'intro');
-    expect(screen.getByRole('heading', { name: 'Reading your Gmail' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Reading your Gmail.' })).toBeInTheDocument();
   });
 });

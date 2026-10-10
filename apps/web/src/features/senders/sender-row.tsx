@@ -141,9 +141,9 @@ function CountCell({
       <span
         style={{
           display: 'flex',
-          flexDirection: compact ? 'column' : 'row',
-          alignItems: compact ? 'flex-end' : 'baseline',
-          gap: compact ? 0 : 4,
+          flexDirection: 'row',
+          alignItems: 'baseline',
+          gap: 4,
         }}
       >
         <span
@@ -200,7 +200,7 @@ export function SenderRow({
     <div className={styles.rowEvidence}>
       {s.inboxCount != null && <span>{s.inboxCount.toLocaleString('en-US')} in inbox</span>}
       {s.archivedCount != null && <span>{s.archivedCount.toLocaleString('en-US')} archived</span>}
-      {s.readRate != null && <span>{formatReadRatePct(s.readRate)}% marked read · 90d</span>}
+      {s.readRate != null && <span>{formatReadRatePct(s.readRate)}% marked read · 90 days</span>}
     </div>
   );
 

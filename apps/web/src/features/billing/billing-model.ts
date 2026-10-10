@@ -468,7 +468,7 @@ export function backingStatusNote(
     //
     // A REFUND is pending, not finished. The subscription still backs
     // access during bounded grace, until approval or grace expiry. The
-    // grace deadline is not in this payload and approval has no SLA.
+    // approval has no SLA; a deadline does not promise when approval occurs.
     //
     // A CHARGEBACK still ends entitlement immediately (founder decision
     // 2026-07-20), so its copy stays in the past tense.
@@ -476,8 +476,7 @@ export function backingStatusNote(
       return {
         tone: 'warn',
         // Approval can end access before the bounded grace expires, and
-        // grace can end before the paid period. Its deadline is not on
-        // this payload, so do not promise the whole period or invent a date.
+        // grace can end before the paid period, so do not promise the whole period.
         text: 'Your refund is being processed. Access from this subscription ends on approval or when the refund grace period expires.',
       };
     }
@@ -487,15 +486,24 @@ export function backingStatusNote(
         text: 'This plan ended after a chargeback. Email support@declutrmail.com if that looks wrong.',
       };
     }
-    const end = formatBillingDate(backing.sub.currentPeriodEnd);
-    return {
-      tone: 'warn',
-      text: end
-        ? `Cancellation scheduled — your plan stays active until ${end}, then you'll switch to Free.`
-        : "Cancellation scheduled — you'll switch to Free at the end of the current period.",
-    };
+    if (backing.sub.status !== 'past_due') {
+      const end = formatBillingDate(backing.sub.currentPeriodEnd);
+      return {
+        tone: 'warn',
+        text: end
+          ? `Cancellation scheduled — access from this subscription continues until ${end}. A separate complimentary grant may still apply.`
+          : 'Cancellation scheduled — access from this subscription continues until the end of the current period. A separate complimentary grant may still apply.',
+      };
+    }
   }
-  if (backing.state === 'past_due') {
+  if (
+    backing.state === 'past_due' ||
+    (backing.state === 'cancel_scheduled' && backing.sub.status === 'past_due')
+  ) {
+    const deadline = formatBillingDate(backing.sub.entitlementEndsAt ?? null);
+    const deadlineNote = deadline
+      ? ` Access from this subscription ends by ${deadline} unless payment is resolved; a separate complimentary grant may still apply.`
+      : '';
     // Names the affordance that is now ON THIS SCREEN. The previous
     // wording — "update your payment method with the provider" — sent
     // the customer to a provider they had no link to, on the one status
@@ -508,9 +516,10 @@ export function backingStatusNote(
     return {
       tone: 'warn',
       text:
-        backing.sub.provider === 'razorpay'
+        (backing.sub.provider === 'razorpay'
           ? 'Payment past due — see the payment-method section below; we’ll help you fix this.'
-          : 'Payment past due — update your payment method below to keep your plan.',
+          : 'Payment past due — update your payment method below to keep your plan.') +
+        deadlineNote,
     };
   }
   return null;

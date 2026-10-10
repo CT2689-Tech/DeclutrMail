@@ -287,6 +287,10 @@ function AppChrome({ children }: { children: ReactNode }) {
           <AppShell
             active={active}
             accountInitial={me.user.email.charAt(0).toUpperCase()}
+            accountLabel={
+              me.mailboxes.find((mailbox) => mailbox.id === me.activeMailboxId)?.email ??
+              me.user.email
+            }
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
             routeKey={pathname}
