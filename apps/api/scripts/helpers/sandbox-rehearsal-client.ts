@@ -7,7 +7,7 @@ export async function buildRehearsalClient(): Promise<string> {
 const selected=()=>document.getElementById('scenario').value;const message=document.getElementById('message');
 let operatorKey='';document.getElementById('authenticate').onclick=()=>{operatorKey=document.getElementById('operator').value;document.getElementById('operator').value='';message.textContent='Operator key loaded for this tab only.';};
 async function action(path){const r=await fetch(path+'?case='+selected(),{method:'POST',headers:{'x-rehearsal-key':operatorKey}});const v=await r.json();if(!r.ok)throw new Error(v.error);return v;}
-for(const [id,path] of [['buy','/checkout'],['upgrade','/upgrade'],['refund','/refund'],['finish','/finish']])document.getElementById(id).onclick=async()=>{try{const v=await action(path);if(id==='buy')await launchCheckout(v);message.textContent='Request accepted; provider evidence is shown below.';}catch(e){message.textContent=e.message;}};
+for(const [id,path] of [['buy','/checkout'],['upgrade','/upgrade'],['refund','/refund'],['finish','/finish'],['abort','/abort']])document.getElementById(id).onclick=async()=>{try{const v=await action(path);if(id==='buy')await launchCheckout(v);message.textContent='Request accepted; provider evidence is shown below.';}catch(e){message.textContent=e.message;}};
 setInterval(async()=>{if(!operatorKey)return;try{const r=await fetch('/state?case='+selected(),{headers:{'x-rehearsal-key':operatorKey}});document.getElementById('state').textContent=JSON.stringify(await r.json(),null,2);}catch{}},5000);`;
   const output = await build({
     configFile: false,
