@@ -34,6 +34,7 @@ import type { toast as sharedToast } from '@declutrmail/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { ONBOARDING_STATE_KEY } from '@/features/onboarding/api/query-options';
 import { DEFAULT_SENDERS_QUERY } from '@/features/senders/api/query-options';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { useSenders } from '@/features/senders/api/use-senders';
@@ -125,6 +126,7 @@ function renderLayout() {
   const result = render(layout());
   return {
     ...result,
+    client,
     rerenderAt(pathname: string) {
       pathnameRef.current = pathname;
       result.rerender(layout());
@@ -297,7 +299,7 @@ describe('(app) layout auth boundary — D134', () => {
     await vi.waitFor(() => {
       expect(assignSpy).toHaveBeenCalled();
     });
-    expect(String(assignSpy.mock.calls[0]![0])).toContain('/api/auth/google/start');
+    expect(String(assignSpy.mock.calls[0]![0])).toContain('/sign-in?returning=1');
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
   });
 });
@@ -436,49 +438,61 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(summarySpy.mock.calls[0]![1].toString()).not.toContain('q=');
   });
 
-  // D108: someone who has not finished onboarding can come back from Google
-  // to a Settings or Triage URL. The gate sends them to /onboarding, and the
-  // one-line result must travel with them, not be used up first.
   it.each([
     [
-      '/settings?reconnect_result=gmail_access_missing',
-      '/onboarding?reconnect_result=gmail_access_missing',
+      '/triage?connect_error=connect_failed',
+      '/onboarding?connect_error=connect_failed&returnTo=%2Ftriage',
     ],
-    ['/settings?connect_start_result=failed', '/onboarding?connect_start_result=failed'],
-    ['/triage?connect_error=connect_failed', '/onboarding?connect_error=connect_failed'],
-    // An unlisted code still says the connect failed, as it does in the app.
-    ['/triage?connect_error=something-new', '/onboarding?connect_error=connect_failed'],
-    ['/settings?reconnect_result=not-a-result', '/onboarding'],
-  ])('carries the OAuth result from %s through the onboarding gate', async (from, to) => {
+    [
+      '/triage?connect_error=something-new',
+      '/onboarding?connect_error=connect_failed&returnTo=%2Ftriage',
+    ],
+    ['/senders?sender=s-123', '/onboarding?returnTo=%2Fsenders%3Fsender%3Ds-123'],
+  ])('preserves the intent from %s through onboarding', async (from, to) => {
     const setURL = (u: string) =>
       (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(u);
     setURL(`http://localhost${from}`);
+    pathnameRef.current = from.split('?')[0]!;
     installFetchStub(authedHandlers({ onboardedAt: null }));
-
     try {
       renderLayout();
-
       await vi.waitFor(() => expect(replaceSpy).toHaveBeenCalledWith(to));
-      // The chrome's own connect toast leaves it for /onboarding to show.
-      // Asserted on the toast call: the gated chrome renders no toast host,
-      // so an on-screen check here could never fail.
       expect(toastSpy).not.toHaveBeenCalled();
     } finally {
       setURL('http://localhost/senders');
     }
   });
 
-  it('replaces the route with /onboarding when onboarding is incomplete (strict gate)', async () => {
+  it.each(['/settings', '/settings/privacy', '/settings/help', '/billing'])(
+    'keeps %s accessible before onboarding finishes',
+    async (path) => {
+      pathnameRef.current = path;
+      installFetchStub(authedHandlers({ onboardedAt: null }));
+      const { client } = renderLayout();
+      await act(async () => {
+        await vi.waitFor(() =>
+          expect(client.getQueryData(ONBOARDING_STATE_KEY)).toMatchObject({ onboardedAt: null }),
+        );
+      });
+      expect(screen.getByText('authed app body')).toBeInTheDocument();
+      expect(replaceSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it('keeps mailbox-scoped sender policies gated before onboarding finishes', async () => {
+    pathnameRef.current = '/settings/senders';
+    (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
+      'http://localhost/settings/senders',
+    );
     installFetchStub(authedHandlers({ onboardedAt: null }));
-
     renderLayout();
-
-    await vi.waitFor(() => {
-      expect(replaceSpy).toHaveBeenCalledWith('/onboarding');
-    });
-    // Once the gate engages the chrome renders nothing behind the
-    // redirect — no half-authed screen.
+    await vi.waitFor(() =>
+      expect(replaceSpy).toHaveBeenCalledWith('/onboarding?returnTo=%2Fsettings%2Fsenders'),
+    );
     expect(screen.queryByText('authed app body')).not.toBeInTheDocument();
+    (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
+      'http://localhost/senders',
+    );
   });
 
   it('refreshes the router when the active mailbox scope resets', async () => {
@@ -1189,7 +1203,9 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
 
     renderLayout();
 
-    await vi.waitFor(() => expect(replaceSpy).toHaveBeenCalledWith('/onboarding'));
+    await vi.waitFor(() =>
+      expect(replaceSpy).toHaveBeenCalledWith('/onboarding?returnTo=%2Fsenders'),
+    );
     // The reconnect gate must NOT have flashed.
     expect(screen.queryByText('No active mailbox')).not.toBeInTheDocument();
   });

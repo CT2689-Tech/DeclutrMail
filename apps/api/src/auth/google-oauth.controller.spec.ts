@@ -14,7 +14,7 @@ import type { SecurityEventsService } from '../security-events/security-events.s
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import { GmailScopeNotGrantedError, type GoogleOAuthService } from './google-oauth.service.js';
-import { GoogleOAuthController, parseBillingReturnTo } from './google-oauth.controller.js';
+import { GoogleOAuthController, parseAppReturnTo } from './google-oauth.controller.js';
 import { JwtService } from './jwt.service.js';
 import { stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
@@ -387,11 +387,11 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   });
 
   it('shares the strict validator with the callback trust boundary', () => {
-    expect(parseBillingReturnTo('/billing?plan=plus&cycle=monthly')).toBe(
+    expect(parseAppReturnTo('/billing?plan=plus&cycle=monthly')).toBe(
       '/billing?plan=plus&cycle=monthly',
     );
-    expect(parseBillingReturnTo('/senders')).toBeUndefined();
-    expect(parseBillingReturnTo(['/billing?plan=plus&cycle=monthly'])).toBeUndefined();
+    expect(parseAppReturnTo('/senders')).toBe('/senders');
+    expect(parseAppReturnTo(['/billing?plan=plus&cycle=monthly'])).toBeUndefined();
   });
 
   it('stores an allowlisted ref in login state and drops junk', async () => {
@@ -1746,7 +1746,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(
       302,
-      `${webBase}/triage?connect_error=MAILBOX_OWNED_BY_OTHER_WORKSPACE`,
+      `${webBase}/settings?connect_error=MAILBOX_OWNED_BY_OTHER_WORKSPACE#mailboxes`,
     );
   });
 
@@ -1856,7 +1856,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(
       302,
-      `${webBase}/triage?connect_error=connect_failed`,
+      `${webBase}/settings?connect_error=connect_failed#mailboxes`,
     );
     expect(securityEvents.record).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1921,6 +1921,69 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/billing?plan=plus&cycle=monthly`);
+  });
+
+  it.each(['/senders/s-123', '/settings?cancelDeletion=1#account'])(
+    'returns a login to its original app destination %s',
+    async (destination) => {
+      await controller.callback(
+        req({ cookies: loginCookie(NONCE, destination) }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      );
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        `${process.env.WEB_URL ?? 'http://localhost:3000'}${destination}`,
+      );
+    },
+  );
+
+  it('resumes unfinished onboarding directly on a returning login', async () => {
+    orchestrator.connect.mockResolvedValueOnce({
+      tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
+      csrfToken: 'csrf',
+      user: { id: 'u-99', workspaceId: 'w-99', email: 'returning@example.test' },
+      mailbox: { id: 'mailbox-99' },
+      isNewSignup: false,
+      onboardingComplete: false,
+    });
+    await controller.callback(
+      req({ cookies: loginCookie(NONCE, '/senders/s-123') }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${process.env.WEB_URL ?? 'http://localhost:3000'}/onboarding?returnTo=%2Fsenders%2Fs-123`,
+    );
+  });
+
+  it.each([
+    '/settings?cancelDeletion=1#account',
+    '/settings/privacy',
+    '/settings/help',
+    '/billing',
+  ])('opens account recovery %s for an unfinished returning user', async (destination) => {
+    orchestrator.connect.mockResolvedValueOnce({
+      tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
+      csrfToken: 'csrf',
+      user: { id: 'u-99', workspaceId: 'w-99', email: 'returning@example.test' },
+      mailbox: { id: 'mailbox-99' },
+      isNewSignup: false,
+      onboardingComplete: false,
+    });
+    await controller.callback(
+      req({ cookies: loginCookie(NONCE, destination) }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+    expect(res.redirect).toHaveBeenCalledWith(
+      302,
+      `${process.env.WEB_URL ?? 'http://localhost:3000'}${destination}`,
+    );
   });
 
   it('finishes onboarding before returning a new signup to billing', async () => {

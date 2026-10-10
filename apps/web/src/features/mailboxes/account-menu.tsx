@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
+import { billingIntentPath } from '@/features/billing/billing-intent';
 import { tokens, toast } from '@declutrmail/shared';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -46,6 +48,7 @@ const { color, font, motion, radius, shadow, text } = tokens;
  */
 export function AccountMenu() {
   const { me } = useAuth();
+  const from = useUpgradeReturnTo();
   const [open, setOpen] = useState(false);
 
   // Fetch the data dialog while the menu is open, before its button is
@@ -464,7 +467,11 @@ export function AccountMenu() {
                     : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan's limit.`}
                 </span>
                 <Link
-                  href="/billing"
+                  href={billingIntentPath({
+                    plan: 'pro',
+                    cycle: 'monthly',
+                    ...(from ? { from } : {}),
+                  })}
                   onClick={() => setOpen(false)}
                   style={{
                     color: color.primary,

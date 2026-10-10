@@ -1,16 +1,11 @@
 import { Catch, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import type { SignInResult } from '@declutrmail/shared/contracts';
+import { parseAppReturnTo, type SignInResult } from '@declutrmail/shared/contracts';
 
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
 import { JwtService } from './jwt.service.js';
-import {
-  parseBillingReturnTo,
-  STATE_COOKIE,
-  STATE_COOKIE_PATH,
-  stateCookieName,
-} from './oauth-browser.js';
+import { STATE_COOKIE, STATE_COOKIE_PATH, stateCookieName } from './oauth-browser.js';
 
 /** Where a failed OAuth browser request lands. */
 type OAuthExit = { mode: 'login'; returnTo: string | undefined } | { mode: 'connect' };
@@ -65,7 +60,7 @@ abstract class OAuthExitFilter extends AllExceptionsFilter {
 @Catch()
 export class LoginStartExitFilter extends OAuthExitFilter {
   protected exitFor(req: Request): OAuthExit {
-    return { mode: 'login', returnTo: parseBillingReturnTo(req.query?.returnTo) };
+    return { mode: 'login', returnTo: parseAppReturnTo(req.query?.returnTo) };
   }
 }
 
@@ -109,6 +104,6 @@ export class OAuthCallbackExitFilter extends OAuthExitFilter {
       state = null;
     }
     if (state?.mode === 'connect') return { mode: 'connect' };
-    return { mode: 'login', returnTo: parseBillingReturnTo(state?.returnTo) };
+    return { mode: 'login', returnTo: parseAppReturnTo(state?.returnTo) };
   }
 }

@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 
 import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
@@ -49,6 +50,7 @@ export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
   const { tier } = useTier();
+  const from = useUpgradeReturnTo();
 
   useEffect(() => {
     if (!hit) return;
@@ -87,7 +89,11 @@ export function UpgradeModal() {
   // page uses — the copy above quotes monthly prices, so the intent
   // carries `monthly` (the billing screen's toggle flips it in place).
   const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (requiredTier ?? 'pro');
-  const upgradeHref = billingIntentPath({ plan: targetPlan, cycle: 'monthly' });
+  const upgradeHref = billingIntentPath({
+    plan: targetPlan,
+    cycle: 'monthly',
+    ...(from ? { from } : {}),
+  });
   const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
@@ -240,7 +246,11 @@ export function UpgradeModal() {
         {nudge ? (
           <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
             {MONEY_BACK_NOTE} ·{' '}
-            <Link href="/pricing" onClick={dismiss} style={{ color: color.fgMuted }}>
+            <Link
+              href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
+              onClick={dismiss}
+              style={{ color: color.fgMuted }}
+            >
               Compare plans
             </Link>
           </p>

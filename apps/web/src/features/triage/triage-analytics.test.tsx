@@ -45,6 +45,7 @@ vi.mock('@declutrmail/shared', async (importOriginal) => {
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/triage',
+  useSearchParams: () => new URLSearchParams(),
 }));
 const authMe = vi.hoisted(() => ({
   user: { id: 'user-1', email: 'user@example.com', workspaceId: 'workspace-1' },

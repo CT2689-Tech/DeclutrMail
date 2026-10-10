@@ -1,3 +1,4 @@
+import { PublicAuthActions } from './public-auth-actions';
 import Link from 'next/link';
 
 import { Logo } from '@declutrmail/shared';
@@ -6,7 +7,6 @@ import { isFeatureEnabled } from '@/lib/flags';
 
 import { ALTERNATIVES_SLUGS, COMPARISONS, alternativesFor } from '../comparison/comparison-data';
 import { permissionEntryUrl } from '../landing/urls';
-import { TrackedCta } from '../landing/tracked-cta';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '../learn/how-to-content';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
@@ -103,24 +103,7 @@ export function PublicHeader() {
             <PublicNavLinks links={PRODUCT_LINKS} />
           </nav>
 
-          <div className="dm-public-actions">
-            <TrackedCta
-              className="dm-public-sign-in"
-              href={permissionEntryUrl()}
-              cta="connect_gmail"
-              placement="nav_sign_in"
-            >
-              Sign in
-            </TrackedCta>
-            <TrackedCta
-              className="dm-public-start"
-              href={permissionEntryUrl()}
-              cta="connect_gmail"
-              placement="nav"
-            >
-              Start free
-            </TrackedCta>
-          </div>
+          <PublicAuthActions />
 
           {isFeatureEnabled('darkMode') ? (
             <ThemeToggle className="dm-public-theme-toggle" showLabel />

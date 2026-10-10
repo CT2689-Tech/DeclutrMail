@@ -1,5 +1,3 @@
-import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
-
 /**
  * URL helpers for the public marketing surface (D134).
  *
@@ -40,12 +38,29 @@ export function oauthStartUrl(returnTo?: string): string {
 
 /** New connections review permissions before the final Google consent hop. */
 export function permissionEntryUrl(returnTo?: string): string {
-  const destination = safePublicReturnTo(returnTo);
+  const destination = publicBillingDestination(returnTo);
   return destination ? `/sign-in?${new URLSearchParams({ returnTo: destination })}` : '/sign-in';
 }
 
-/** Preserve only the same validated checkout intent supported by the OAuth callback. */
-export function safePublicReturnTo(value?: string): string | undefined {
-  const intent = parseBillingIntentPath(value);
-  return intent ? billingIntentPath(intent) : undefined;
+// Public acquisition links carry a closed paid-plan choice. General app
+// destinations are validated by the sign-in page, API and onboarding.
+// Keep this small builder off the general app redirect module.
+function publicBillingDestination(value?: string): string | undefined {
+  if (!value?.startsWith('/billing?') || value.includes('#') || value.includes('\\'))
+    return undefined;
+  const query = new URLSearchParams(value.slice('/billing?'.length));
+  const keys = [...query.keys()];
+  if (
+    new Set(keys).size !== keys.length ||
+    keys.some((key) => !['plan', 'cycle', 'promo'].includes(key))
+  )
+    return undefined;
+  const plan = query.get('plan');
+  const cycle = query.get('cycle');
+  const promo = query.get('promo');
+  if ((plan !== 'plus' && plan !== 'pro') || (cycle !== 'monthly' && cycle !== 'annual'))
+    return undefined;
+  if (promo !== null && (promo !== 'foundingPro' || plan !== 'pro' || cycle !== 'annual'))
+    return undefined;
+  return value;
 }

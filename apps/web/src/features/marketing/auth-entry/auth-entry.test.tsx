@@ -68,3 +68,20 @@ describe('AuthEntry step 1 — the real OAuth disclosure (final-review finding)'
     expect(screen.queryByText(/organize your Gmail/i)).not.toBeInTheDocument();
   });
 });
+
+describe('returning sign-in', () => {
+  it('keeps the requested destination and permission disclosure with returning copy', () => {
+    render(<AuthEntry returning returnTo="/settings?cancelDeletion=1" />);
+    expect(screen.getByRole('heading', { name: /Welcome back/ })).toBeInTheDocument();
+    const href = screen.getByRole('link', { name: /Continue with Google/ }).getAttribute('href')!;
+    expect(new URL(href, 'https://app.test').searchParams.get('returnTo')).toBe(
+      '/settings?cancelDeletion=1',
+    );
+    expect(screen.getByText(/words it more broadly/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'After you connect' })).not.toBeInTheDocument();
+  });
+  it('clearly confirms that logout ended the session', () => {
+    render(<AuthEntry signedOut />);
+    expect(screen.getByRole('heading', { name: /signed out/ })).toBeInTheDocument();
+  });
+});

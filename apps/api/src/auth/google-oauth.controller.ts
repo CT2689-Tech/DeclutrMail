@@ -22,6 +22,8 @@ import {
   type ErrorCode,
   GMAIL_ACCESS_MISSING_RESULT,
   isErrorCode,
+  isUserScopedAppPath,
+  parseAppReturnTo,
   parseSignupAttributionRef,
   SIGNUP_ATTRIBUTION_REFS,
   SIGNUP_REF_COOKIE,
@@ -39,18 +41,12 @@ import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
 import { GmailScopeNotGrantedError, GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
 import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
-import {
-  oauthFlowId,
-  parseBillingReturnTo,
-  STATE_COOKIE,
-  STATE_COOKIE_PATH,
-  stateCookieName,
-} from './oauth-browser.js';
+import { oauthFlowId, STATE_COOKIE, STATE_COOKIE_PATH, stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
 import { setSessionCookies } from './session-cookies.js';
 
-export { parseBillingReturnTo };
+export { parseAppReturnTo };
 
 /** Signed state and browser cookie share the same bounded consent window. */
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -75,7 +71,7 @@ interface OAuthStateBase {
 
 interface LoginOAuthState extends OAuthStateBase {
   mode: 'login';
-  /** Canonical local billing destination; login mode only. */
+  /** Validated local app destination; login mode only. */
   returnTo?: string | undefined;
   /** First-touch marketing channel; login mode only. Set-once on new signup. */
   ref?: SignupAttributionRef | undefined;
@@ -122,7 +118,7 @@ const oauthStateSchema = z
         issuedAt: z.number().int().positive(),
         expiresAt: z.number().int().positive(),
         mode: z.literal('login'),
-        returnTo: z.string().max(512).optional(),
+        returnTo: z.string().max(1024).optional(),
         ref: z.enum(SIGNUP_ATTRIBUTION_REFS).optional(),
       })
       .strict(),
@@ -204,7 +200,7 @@ export class GoogleOAuthController {
     @Query('returnTo') returnTo?: unknown,
     @Query('ref') ref?: unknown,
   ): Promise<void> {
-    const safeReturnTo = parseBillingReturnTo(returnTo);
+    const safeReturnTo = parseAppReturnTo(returnTo);
     const cookies = req.cookies as Record<string, unknown> | undefined;
     // The shared parent-domain cookie is the set-once source of truth. The
     // query remains the fallback for preview hosts that cannot write a
@@ -690,7 +686,10 @@ export class GoogleOAuthController {
           userAgent,
           payload: { provider: 'google', mode: 'connect', reason: code },
         });
-        res.redirect(302, `${webBase}/triage?connect_error=${encodeURIComponent(code)}`);
+        res.redirect(
+          302,
+          `${webBase}/settings?connect_error=${encodeURIComponent(code)}#mailboxes`,
+        );
       }
       return;
     }
@@ -777,14 +776,21 @@ export class GoogleOAuthController {
     });
     // New signups land on the onboarding sync gate (D6, D109) — it
     // polls real sync state and auto-advances once readiness = ready.
-    // Returning users skip straight to /home (their sync is already
-    // done): one number and the next thing to do. The gate route lives
+    // Returning users with unfinished setup resume onboarding, unless
+    // they are opening account recovery controls that do not require Gmail.
+    // Completed users return to their requested app route or /home. The gate route lives
     // at apps/web/src/app/onboarding/page.tsx.
     // Re-validate the cookie value at the trust boundary even though
     // `/start` canonicalized it. This keeps a forged/dev cookie from
     // becoming an open redirect after a successful Google login.
-    const returnTo = parseBillingReturnTo(cookieState.returnTo);
-    const target = result.isNewSignup
+    const returnTo = parseAppReturnTo(cookieState.returnTo);
+    const accountRecovery =
+      !result.isNewSignup &&
+      returnTo !== undefined &&
+      isUserScopedAppPath(new URL(returnTo, webBase).pathname);
+    const needsOnboarding =
+      (result.isNewSignup || result.onboardingComplete === false) && !accountRecovery;
+    const target = needsOnboarding
       ? returnTo
         ? `${webBase}/onboarding?${new URLSearchParams({ returnTo }).toString()}`
         : `${webBase}/onboarding`
@@ -950,7 +956,7 @@ export class GoogleOAuthController {
     result: SignInResult | undefined,
   ): void {
     // Same trust-boundary re-validation as the success redirect.
-    const returnTo = parseBillingReturnTo(state.returnTo);
+    const returnTo = parseAppReturnTo(state.returnTo);
     const query = new URLSearchParams({
       ...(result ? { auth_result: result } : {}),
       ...(returnTo ? { returnTo } : {}),
