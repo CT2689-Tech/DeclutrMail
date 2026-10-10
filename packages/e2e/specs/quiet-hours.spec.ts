@@ -90,7 +90,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     endLocal: '07:00',
     timezone: 'America/Los_Angeles',
   };
-  const toggle = page.getByRole('switch', { name: 'Quiet hours', exact: true });
+  const toggle = page.getByRole('switch', { name: 'Enable quiet hours', exact: true });
   const expectQuietReady = async () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
     await expectScreenMounted(page);
@@ -118,7 +118,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   const timezone = page.getByRole('combobox', { name: 'Quiet window timezone' });
   await timezone.focus();
   await timezone.selectOption(config.timezone);
-  await expect(page.getByText('Ends at 07:00 the next day.')).toBeVisible();
+  await expect(page.getByText('Ends at 7:00 AM the next day.')).toBeVisible();
   const save = page.getByRole('button', { name: 'Save quiet hours', exact: true });
   const firstWrite = page.waitForResponse(
     (response) => response.url().endsWith(path) && response.request().method() === 'PUT',
@@ -156,7 +156,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await end.focus();
   await end.press('ArrowUp');
   await expect(end).toHaveValue('08:00');
-  await expect(page.getByText('Ends at 08:00 the next day.')).toBeVisible();
+  await expect(page.getByText('Ends at 8:00 AM the next day.')).toBeVisible();
   await expect(save).toBeEnabled();
   await save.click();
   await expect(
@@ -174,7 +174,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await end.focus();
   await end.press('ArrowUp');
   await expect(end).toHaveValue('08:00');
-  await expect(page.getByText('Ends at 08:00 the next day.')).toBeVisible();
+  await expect(page.getByText('Ends at 8:00 AM the next day.')).toBeVisible();
   await expect(save).toBeEnabled();
   const retry = page.waitForResponse(
     (response) => response.url().endsWith(path) && response.request().method() === 'PUT',
