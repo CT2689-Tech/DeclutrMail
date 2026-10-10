@@ -1164,3 +1164,37 @@ describe('RazorpayAdapter.providerCancellationFacts', () => {
     });
   });
 });
+
+describe('Razorpay deletion billing evidence', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([
+    ['cancelled', 'stopped'],
+    ['completed', 'stopped'],
+    ['expired', 'stopped'],
+    ['halted', 'billable'],
+    ['active', 'billable'],
+    ['created', 'billable'],
+    ['authenticated', 'billable'],
+    ['unknown', 'unknown'],
+  ])('classifies raw %s as %s without entitlement normalization', async (status, expected) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'sub_delete', status }))),
+    );
+    expect(
+      await makeAdapter({
+        RAZORPAY_KEY_ID: 'rzp_test_delete',
+        RAZORPAY_KEY_SECRET: 'test',
+      }).deletionBillingState('sub_delete'),
+    ).toBe(expected);
+  });
+  it('does not accept 404 as cancellation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+    expect(
+      await makeAdapter({
+        RAZORPAY_KEY_ID: 'rzp_test_delete',
+        RAZORPAY_KEY_SECRET: 'test',
+      }).deletionBillingState('sub_delete'),
+    ).toBe('unknown');
+  });
+});

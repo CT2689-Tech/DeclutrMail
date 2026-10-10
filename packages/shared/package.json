@@ -18,6 +18,7 @@
     "./copy": "./src/copy/index.ts",
     "./copy/preview-eyebrow": "./src/copy/preview-eyebrow.ts",
     "./entitlements": "./src/entitlements/index.ts",
+    "./entitlements/tier-ids": "./src/entitlements/tier-ids.ts",
     "./entitlements/undo-window": "./src/entitlements/undo-window.ts",
     "./flags": "./src/flags/index.ts",
     "./hooks/use-focus-trap": "./src/hooks/use-focus-trap.ts",

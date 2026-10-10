@@ -716,6 +716,17 @@ export class PaddleAdapter implements BillingProvider {
     return res.json();
   }
 
+  /** Deletion safety reads raw provider status, not local entitlement status. */
+  async deletionBillingState(id: string): Promise<'stopped' | 'billable' | 'unknown'> {
+    const body = await this.authedGet(`/subscriptions/${encodeURIComponent(id)}`, `sub=${id}`);
+    const sub = (body as { data?: { id?: string; status?: string } } | null)?.data;
+    if (sub?.id !== id || typeof sub.status !== 'string') return 'unknown';
+    if (sub.status === 'canceled') return 'stopped';
+    return ['active', 'past_due', 'paused', 'trialing'].includes(sub.status)
+      ? 'billable'
+      : 'unknown';
+  }
+
   /** D249 — GET /subscriptions/{id}. See FetchSubscriptionResult. */
   async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const body = await this.authedGet(

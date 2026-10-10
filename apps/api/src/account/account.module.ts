@@ -5,6 +5,7 @@ import { createRedisConnection, EMAIL_SEND_QUEUE } from '@declutrmail/workers';
 import type { EmailSendJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { BillingModule } from '../billing/billing.module.js';
 import { SecurityEventsModule } from '../security-events/security-events.module.js';
 import { UndoModule } from '../undo/undo.module.js';
 import { AccountController } from './account.controller.js';
@@ -34,7 +35,7 @@ import { DataExportService } from './export.service.js';
  * logs-and-skips the scheduled email instead of failing the request.
  */
 @Module({
-  imports: [AuthModule, UndoModule, SecurityEventsModule],
+  imports: [AuthModule, UndoModule, SecurityEventsModule, BillingModule],
   controllers: [AccountController, DataExportController],
   providers: [
     DataExportService,

@@ -33,6 +33,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
+import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { enqueueEmailSend } from './email-send.queue.js';
@@ -75,7 +76,16 @@ export interface DeletionSweepResult {
   durationMs: number;
 }
 
+type DeletionDb = PgDatabase<PgQueryResultHKT, typeof schema>;
+
+export interface DeletionBillingSafety {
+  assertStopped(userId: string): Promise<void>;
+  withVerifiedStopped<T>(userId: string, action: (tx: DeletionDb) => Promise<T>): Promise<T>;
+}
+
 export interface DeletionPurgeDeps {
+  /** Required, fail-closed billing facade supplied by the API composition root. */
+  billingSafety: DeletionBillingSafety;
   db: WorkerDb;
   /** Per-mailbox token-bound watch + OAuth grant lifecycle resolver. */
   gmailLifecycle: GmailLifecycleAccess;
@@ -810,26 +820,51 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
   private async purgeOne(request: DueRequest): Promise<void> {
     const { db } = this.deps;
 
+    // Legacy requests predate the API guard. A blocked request stays
+    // cancellable, and no OAuth, receipt or data removal has occurred.
+    try {
+      await this.deps.billingSafety.assertStopped(request.userId);
+    } catch (error) {
+      await db
+        .update(accountDeletionRequests)
+        .set({ status: 'pending', executedAt: null, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(accountDeletionRequests.id, request.id),
+            or(
+              eq(accountDeletionRequests.status, 'pending'),
+              and(
+                eq(accountDeletionRequests.status, 'executing'),
+                lt(accountDeletionRequests.executedAt, executingTakeoverCutoff()),
+              ),
+            ),
+          ),
+        );
+      throw error;
+    }
+
     // 1. Claim. Conditional so a cancel that raced the sweep wins, and
     // so two replicas can't both take over the same stranded row: an
     // 'executing' row is claimable only past the takeover cutoff — the
     // winner's fresh executed_at makes the loser's UPDATE match no row.
-    const [claimedRow] = await db
-      .update(accountDeletionRequests)
-      .set({ status: 'executing', executedAt: sql`now()`, updatedAt: sql`now()` })
-      .where(
-        and(
-          eq(accountDeletionRequests.id, request.id),
-          or(
-            eq(accountDeletionRequests.status, 'pending'),
-            and(
-              eq(accountDeletionRequests.status, 'executing'),
-              lt(accountDeletionRequests.executedAt, executingTakeoverCutoff()),
+    const [claimedRow] = await this.deps.billingSafety.withVerifiedStopped(request.userId, (tx) =>
+      tx
+        .update(accountDeletionRequests)
+        .set({ status: 'executing', executedAt: sql`now()`, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(accountDeletionRequests.id, request.id),
+            or(
+              eq(accountDeletionRequests.status, 'pending'),
+              and(
+                eq(accountDeletionRequests.status, 'executing'),
+                lt(accountDeletionRequests.executedAt, executingTakeoverCutoff()),
+              ),
             ),
           ),
-        ),
-      )
-      .returning({ id: accountDeletionRequests.id });
+        )
+        .returning({ id: accountDeletionRequests.id }),
+    );
     if (!claimedRow) {
       this.log('claim_lost', request, {});
       return;
@@ -876,6 +911,8 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       await this.clearInitialSyncArtifacts(mailboxId);
     }
 
+    await this.deps.billingSafety.assertStopped(request.userId);
+
     // 4. Receipt email — BEFORE the drop (see class doc for why).
     await this.enqueueReceipt(request, user.email);
 
@@ -890,16 +927,21 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
 
     // 6c. Workspace when sole member (cascades the user + this request
     // row), else just the user.
-    const [otherMember] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.workspaceId, user.workspaceId), sql`${users.id} <> ${request.userId}`))
-      .limit(1);
-    if (otherMember) {
-      await db.delete(users).where(eq(users.id, request.userId));
-    } else {
-      await db.delete(workspaces).where(eq(workspaces.id, user.workspaceId));
-    }
+    const workspaceDeleted = await this.deps.billingSafety.withVerifiedStopped(
+      request.userId,
+      async (tx) => {
+        const [otherMember] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(eq(users.workspaceId, user.workspaceId), sql`${users.id} <> ${request.userId}`),
+          )
+          .limit(1);
+        if (otherMember) await tx.delete(users).where(eq(users.id, request.userId));
+        else await tx.delete(workspaces).where(eq(workspaces.id, user.workspaceId));
+        return !otherMember;
+      },
+    );
 
     this.log('purged', request, {
       mailboxes: mailboxIds.length,
@@ -908,7 +950,7 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
       watchFailed: lifecycle.watch.failed,
       grantsRevoked: lifecycle.grant.revoked,
       grantsSkipped: lifecycle.grant.skipped,
-      workspaceDeleted: !otherMember,
+      workspaceDeleted,
     });
   }
 

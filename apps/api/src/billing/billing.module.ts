@@ -26,6 +26,7 @@ import { AutopilotModule } from '../autopilot/autopilot.module.js';
 import { BillingPaddleWebhookController } from '../webhooks/billing-paddle.controller.js';
 import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.controller.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { BillingDeletionGuard } from './billing-deletion-guard.js';
 import { BillingController } from './billing.controller.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { BillingService } from './billing.service.js';
@@ -45,6 +46,7 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
   ],
   providers: [
     BillingService,
+    BillingDeletionGuard,
     BillingWebhookService,
     BillingReconciliationService,
     // Explicit factories: these classes take plain (non-injectable)
@@ -53,6 +55,6 @@ import { RazorpayAdapter } from './razorpay.adapter.js';
     { provide: PaddleAdapter, useFactory: (): PaddleAdapter => new PaddleAdapter() },
     { provide: RazorpayAdapter, useFactory: (): RazorpayAdapter => new RazorpayAdapter() },
   ],
-  exports: [BillingService],
+  exports: [BillingService, BillingDeletionGuard],
 })
 export class BillingModule {}

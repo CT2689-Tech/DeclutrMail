@@ -1113,6 +1113,37 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     }
   });
 
+  it('deletion refusal releases the local checkout reservation before any provider launch', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'CHECKOUT_DELETION_PENDING', message: 'Deletion pending' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'Cancel deletion in Settings',
+    );
+    expect(launchCheckout).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
   it('checkout 409 SUBSCRIPTION_EXISTS renders its shared inline message', async () => {
     installFetchStub([
       {

@@ -406,6 +406,26 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Account deletion is already scheduled for this account.',
   },
+  DELETION_BILLING_BLOCKED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'Stop billing before deleting your account. Cancel in Billing or contact support@declutrmail.com.',
+  },
+  DELETION_BILLING_UNVERIFIED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message:
+      'Billing status could not be verified. Open Billing or contact support@declutrmail.com.',
+  },
+  CHECKOUT_DELETION_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Cancel deletion in Settings before restarting billing.',
+  },
   NO_PENDING_DELETION: {
     status: 409,
     severityTier: 'inline_recoverable',

@@ -218,6 +218,7 @@ import { unsubscribeHeadersFor, unsubscribeUrl } from './notifications/unsubscri
 import { runBillingReconciliationSweep } from './billing/billing-reconciliation.sweep.js';
 import { AutopilotReadService } from './autopilot/autopilot.read-service.js';
 import { BillingCatalog } from './billing/billing-catalog.js';
+import { BillingDeletionGuard } from './billing/billing-deletion-guard.js';
 import { BillingReconciliationService } from './billing/billing-reconciliation.service.js';
 import { billingVerdictDeps } from './billing/billing-verdict.deps.js';
 import { BillingWebhookService } from './billing/billing-webhook.service.js';
@@ -2741,6 +2742,7 @@ async function bootstrap(): Promise<void> {
    */
   const deletionPurgeWorker = new AccountDeletionPurgeWorker({
     db,
+    billingSafety: new BillingDeletionGuard(db, new PaddleAdapter(), new RazorpayAdapter()),
     gmailLifecycle: { getClient: getGmailClient },
     topicName: gmailPubsubTopic,
     emailQueue: emailSendQueue,

@@ -1,4 +1,4 @@
-import { TIER_IDS, type TierId } from '@declutrmail/shared/entitlements';
+import { TIER_IDS, type TierId } from '@declutrmail/shared/entitlements/tier-ids';
 
 // A small synchronous seam shared with the consent-lazy capture context.
 // Logout/account switching clears this even when analytics is unavailable.

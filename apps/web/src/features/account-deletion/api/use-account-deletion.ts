@@ -15,7 +15,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AccountDeletionRequest, AccountDeletionStatus } from '@declutrmail/shared/contracts';
-import { apiErrorCode, apiGet, apiPost } from '@/lib/api/client';
+import { apiGet, apiPost } from '@/lib/api/client';
 import { ACCOUNT_DELETION_QUERY_KEY, accountDeletionQueryOptions } from './query-options';
 
 export { ACCOUNT_DELETION_QUERY_KEY } from './query-options';
@@ -37,13 +37,9 @@ export function useRequestAccountDeletion() {
       return env.data;
     },
     onSuccess: (status) => qc.setQueryData(ACCOUNT_DELETION_QUERY_KEY, status),
-    // Another tab or device already scheduled it: re-read, so the pending
-    // row (and its Cancel) replaces the request form this view went stale on.
-    onError: (err) => {
-      if (apiErrorCode(err) === 'DELETION_ALREADY_PENDING') {
-        void qc.invalidateQueries({ queryKey: ACCOUNT_DELETION_QUERY_KEY });
-      }
-    },
+    // Any failed scheduling attempt may have raced another device or newer
+    // billing state. Re-read canonical status while retaining the POST error.
+    onError: () => void qc.invalidateQueries({ queryKey: ACCOUNT_DELETION_QUERY_KEY }),
   });
 }
 

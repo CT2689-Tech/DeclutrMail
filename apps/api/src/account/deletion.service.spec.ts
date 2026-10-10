@@ -3,6 +3,8 @@ import {
   mailboxAccounts,
   schema,
   securityEvents,
+  subscriptions,
+  pendingCheckouts,
   undoJournal,
   users,
   workspaces,
@@ -15,6 +17,7 @@ import type { Queue } from 'bullmq';
 
 import type { EmailSendJobData } from '@declutrmail/workers';
 
+import { BillingDeletionGuard } from '../billing/billing-deletion-guard.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { UndoService } from '../undo/undo.service.js';
 import { AccountDeletionOrchestrator } from './deletion.service.js';
@@ -85,8 +88,53 @@ describe('AccountDeletionOrchestrator', () => {
       db as never,
       new UndoService(db as never),
       new SecurityEventsService(db as never),
+      new BillingDeletionGuard(
+        db as never,
+        { deletionBillingState: async () => 'stopped' } as never,
+        { deletionBillingState: async () => 'stopped' } as never,
+      ),
       fake.queue,
     );
+  });
+
+  describe('billing safety', () => {
+    it.each(['active', 'past_due', 'paused'] as const)(
+      'blocks %s before request/audit/email, including waiver',
+      async (status) => {
+        await db.insert(subscriptions).values({
+          workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_paid',
+          providerPriceId: 'pri_plus',
+          tier: 'plus',
+          billingCycle: 'monthly',
+          status,
+          cancelAtPeriodEnd: true,
+        });
+        for (const confirmPhrase of ['DELETE', 'DELETE AND WAIVE UNDO']) {
+          await expect(orch.requestDeletion({ userId }, { confirmPhrase })).rejects.toMatchObject({
+            code: 'DELETION_BILLING_BLOCKED',
+          });
+        }
+        expect(await db.select().from(accountDeletionRequests)).toHaveLength(0);
+        expect(await db.select().from(securityEvents)).toHaveLength(0);
+        expect(emailJobs).toHaveLength(0);
+      },
+    );
+
+    it('does not infer safety from an expired checkout claim', async () => {
+      await db.insert(pendingCheckouts).values({
+        workspaceId,
+        provider: 'paddle',
+        tier: 'plus',
+        billingCycle: 'monthly',
+        expiresAt: new Date(0),
+      });
+      await expect(
+        orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' }),
+      ).rejects.toMatchObject({ code: 'DELETION_BILLING_UNVERIFIED' });
+      expect(await db.select().from(accountDeletionRequests)).toHaveLength(0);
+    });
   });
 
   describe('computeProjection — D232 per-USER math', () => {

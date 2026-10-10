@@ -10,7 +10,7 @@ import {
   minimumTierForCapability,
   TIER_MANIFEST,
 } from '@declutrmail/shared/entitlements';
-import { GracePeriodBanner } from '@/features/account-deletion/grace-period-banner';
+import { GracePeriodBanner } from '@/features/account-deletion/lazy-grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';

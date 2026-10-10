@@ -37,6 +37,7 @@ export function GracePeriodBanner() {
 
   const executing = request.status === 'executing';
   const immediate = request.basis === 'waived-immediate';
+  const billingBlocked = data.billingBlockReason != null;
 
   return (
     <div
@@ -55,13 +56,23 @@ export function GracePeriodBanner() {
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: text.md, fontWeight: 600, color: color.dangerText }}>
-          {executing
-            ? 'Account deletion is in progress.'
-            : immediate
-              ? 'Account deletion was requested without the undo wait — your data deletes shortly.'
-              : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
+          {billingBlocked ? (
+            <>
+              Account deletion is waiting for billing.{' '}
+              <a href="/settings#account" style={{ color: color.primary }}>
+                Review deletion in Settings
+              </a>
+              .
+            </>
+          ) : executing ? (
+            'Account deletion is in progress.'
+          ) : immediate ? (
+            'Account deletion was requested without the undo wait — your data deletes shortly.'
+          ) : (
+            `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`
+          )}
         </span>
-        {!executing && request.basis === 'undo-window' && (
+        {!executing && !billingBlocked && request.basis === 'undo-window' && (
           <span style={{ fontSize: text.sm, color: color.fgSoft }}>
             This date is later than the usual 7 days so your open undo windows keep working until
             they expire.
