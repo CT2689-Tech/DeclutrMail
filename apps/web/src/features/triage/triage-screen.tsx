@@ -163,8 +163,10 @@ const NO_ROWS: readonly TriageDecisionRow[] = [];
  * group, outside the (app) shell, so a full document load is correct
  * (same pattern as the OAuth start navigation in AccountMenu).
  */
-function openPricing(): void {
-  window.location.assign('/pricing');
+function openPricing(plan: 'plus' | 'pro'): void {
+  window.location.assign(
+    `/billing?${new URLSearchParams({ plan, cycle: 'monthly', from: '/triage' })}`,
+  );
 }
 
 /**
@@ -1729,14 +1731,14 @@ export function TriageScreen({
         {state.kind === 'loading' && <TriageLoadingState variant={mode} />}
         {state.kind === 'error' && <TriageErrorState error={state.error} onRetry={state.retry} />}
         {/* "See Plus" routes to the real pricing page (D19) — a hard
-          navigation since /pricing lives in the (marketing) route
+          navigation to Billing retains the feature context
           group; the modal checkout flow lands with the billing FE
           (U13). */}
         {resting && (state.kind === 'empty' || state.kind === 'ready') && (
           <section aria-label="Nothing to decide">
             <TriageEmptyState
               stats={state.stats}
-              onOpenUpgrade={openPricing}
+              onOpenUpgrade={() => openPricing(state.stats.tier === 'plus' ? 'pro' : 'plus')}
               readiness={mailboxReadiness}
               syncNeedsReconnect={mailboxNeedsReconnect}
               footnote={journey === 'daily' ? <TodayHandledLine /> : undefined}

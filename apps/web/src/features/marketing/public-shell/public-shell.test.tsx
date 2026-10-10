@@ -32,7 +32,10 @@ describe('PublicHeader auth entry', () => {
     const authLinks = screen.getAllByRole('link', { name: /Sign in|Start free/ });
     expect(authLinks.length).toBeGreaterThan(0);
     for (const link of authLinks) {
-      expect(link).toHaveAttribute('href', PERMISSION_ENTRY);
+      expect(link).toHaveAttribute(
+        'href',
+        link.textContent === 'Sign in' ? '/sign-in?returning=1' : PERMISSION_ENTRY,
+      );
     }
 
     expect(container.querySelectorAll('a[href*="/api/auth/google/start"]')).toHaveLength(0);
@@ -44,6 +47,26 @@ describe('PublicHeader auth entry', () => {
    * because both start the same OAuth flow, so `placement` is the only
    * discriminator — a shared value would silently merge the two series.
    */
+  it('offers a direct workspace link when a session hint is present', () => {
+    document.cookie = 'dm_csrf=synthetic-hint; path=/';
+    try {
+      render(<PublicHeader />);
+      expect(screen.getByRole('link', { name: 'Open DeclutrMail' })).toHaveAttribute(
+        'href',
+        '/home',
+      );
+      expect(screen.queryByRole('link', { name: 'Sign in' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+      const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
+      expect(mobile.getByRole('link', { name: 'Open DeclutrMail' })).toHaveAttribute(
+        'href',
+        '/home',
+      );
+    } finally {
+      document.cookie = 'dm_csrf=; Max-Age=0; path=/';
+    }
+  });
+
   it('keeps the sign-in and start-free CTAs on distinct placements', () => {
     render(<PublicHeader />);
 

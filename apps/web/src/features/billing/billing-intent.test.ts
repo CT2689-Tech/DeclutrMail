@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  billingIntentPath,
-  parseBillingIntentParams,
-  parseBillingIntentPath,
-} from './billing-intent';
+import { billingIntentPath } from './billing-intent';
+import { parseBillingIntentParams, parseBillingIntentPath } from './parse-billing-intent';
 
 describe('billing intent', () => {
   it('round-trips canonical paid plan, cycle, and promo intent', () => {
@@ -24,6 +21,14 @@ describe('billing intent', () => {
     '/billing?plan=pro&plan=plus&cycle=annual',
   ])('rejects an untrusted or impossible intent: %s', (path) => {
     expect(parseBillingIntentPath(path)).toBeNull();
+  });
+
+  it('preserves the exact upgrade origin through checkout intent', () => {
+    const intent = { plan: 'pro', cycle: 'monthly', from: '/senders?sender=s-123&q=news' } as const;
+    expect(parseBillingIntentPath(billingIntentPath(intent))).toEqual(intent);
+    expect(
+      parseBillingIntentParams({ plan: 'pro', cycle: 'monthly', from: '/billing' }),
+    ).toBeNull();
   });
 
   it('rejects array-valued server query parameters', () => {

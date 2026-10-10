@@ -30,6 +30,20 @@ describe('SyncGate failed — first-run escape hatch', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('offers account and help routes during a failed scan', () => {
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <SyncGate status={FAILED} mailboxId={MAILBOX_ID} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/settings');
+    expect(screen.getByRole('link', { name: 'Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'Get help' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
+  });
+
   it('offers Disconnect-and-start-over targeting the WATCHED mailbox', async () => {
     let deletedPath: string | null = null;
     installFetchStub([

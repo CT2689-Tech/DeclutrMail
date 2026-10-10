@@ -237,7 +237,10 @@ export const OVERRIDES_KB = {
   // shared-chunk drift from same-day merges (#829's D245 registry
   // entries, #830's Autopilot fixes) landing across many PRs at once.
   // 270 restores ~2 kB headroom.
-  '/(app)/billing/page': 270, // 267.1 — checkout + invoices + plan controls + editorial shell
+  // Journey recovery: shared entry imports stay within their existing budgets.
+  // Billing's confirmed-upgrade return adds ~0.2 kB to main's 269.9 kB
+  // (270.1 kB measured). Account for this bounded feature cost only here.
+  '/(app)/billing/page': 270.5,
   // Raised 261 -> 266 on 2026-09-29 (PR #825's cross-surface sender
   // busy-guard, merged with #805's D245 Protected re-check): measured
   // 261.7, up from 258.8. Same shape as /triage above — both guards

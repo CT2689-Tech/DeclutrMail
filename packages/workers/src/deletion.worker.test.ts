@@ -256,6 +256,10 @@ function makeWorker(db: Db) {
   const email = fakeEmailQueue();
   const scanProgress = fakeScanProgress();
   const worker = new AccountDeletionPurgeWorker({
+    billingSafety: {
+      assertStopped: async () => {},
+      withVerifiedStopped: async (_userId, action) => db.transaction((tx) => action(tx as never)),
+    },
     db: db as never,
     gmailLifecycle: lifecycle.access,
     topicName: TOPIC,
@@ -476,6 +480,43 @@ async function seedMailboxGraph(
 }
 
 describe('AccountDeletionPurgeWorker', () => {
+  it.each(['pending', 'executing'] as const)(
+    'retains a legacy %s account when billing cannot be verified, before OAuth, receipt or data removal',
+    async (status) => {
+      const db = await freshDb();
+      const seeded = await seedDueDeletion(db, { status, executedAt: new Date(0) });
+      const lifecycle = fakeLifecycle();
+      const email = fakeEmailQueue();
+      const worker = new AccountDeletionPurgeWorker({
+        db: db as never,
+        billingSafety: {
+          assertStopped: async () => {
+            throw new Error('Billing unresolved');
+          },
+          withVerifiedStopped: async () => {
+            throw new Error('Must not reach purge');
+          },
+        },
+        gmailLifecycle: lifecycle.access,
+        topicName: TOPIC,
+        emailQueue: email.queue,
+        renderReceiptEmail: async () => ({ subject: 'Synthetic receipt', text: 'test' }),
+      });
+      await expect(
+        worker.processJob({ scheduledAtMinute: '2026-10-10T10:00' }, ctx),
+      ).rejects.toThrow('failed to purge');
+      expect(
+        await db.select().from(workspaces).where(eq(workspaces.id, seeded.workspaceId)),
+      ).toHaveLength(1);
+      expect(await db.select().from(mailMessages)).toHaveLength(6);
+      expect(email.jobs).toHaveLength(0);
+      const [request] = await db.select().from(accountDeletionRequests);
+      expect(request!.status).toBe('pending');
+      expect(lifecycle.stopped).toHaveLength(0);
+      expect(lifecycle.revoked).toHaveLength(0);
+    },
+  );
+
   it('purges a due request end-to-end (rows gone, audit survives, receipt enqueued, watches stopped, scan-progress cleared)', async () => {
     const db = await freshDb();
     const seeded = await seedDueDeletion(db);
@@ -650,6 +691,10 @@ describe('AccountDeletionPurgeWorker', () => {
     const lifecycle = fakeLifecycle({ failStopFor: [seeded.mailboxIds[0]!] });
     const email = fakeEmailQueue();
     const worker = new AccountDeletionPurgeWorker({
+      billingSafety: {
+        assertStopped: async () => {},
+        withVerifiedStopped: async (_userId, action) => db.transaction((tx) => action(tx as never)),
+      },
       db: db as never,
       gmailLifecycle: lifecycle.access,
       topicName: TOPIC,
@@ -671,6 +716,10 @@ describe('AccountDeletionPurgeWorker', () => {
     const { store, cleared } = fakeScanProgress({ failFor: [seeded.mailboxIds[0]!] });
     const { queue: emailQueue } = fakeEmailQueue();
     const worker = new AccountDeletionPurgeWorker({
+      billingSafety: {
+        assertStopped: async () => {},
+        withVerifiedStopped: async (_userId, action) => db.transaction((tx) => action(tx as never)),
+      },
       db: db as never,
       gmailLifecycle: fakeLifecycle().access,
       topicName: TOPIC,
@@ -692,6 +741,10 @@ describe('AccountDeletionPurgeWorker', () => {
     const lifecycle = fakeLifecycle({ failRevokeFor: [seeded.mailboxIds[0]!] });
     const email = fakeEmailQueue();
     const worker = new AccountDeletionPurgeWorker({
+      billingSafety: {
+        assertStopped: async () => {},
+        withVerifiedStopped: async (_userId, action) => db.transaction((tx) => action(tx as never)),
+      },
       db: db as never,
       gmailLifecycle: lifecycle.access,
       topicName: TOPIC,
@@ -923,6 +976,10 @@ describe('mailbox indexed-data purge', () => {
     };
     const lifecycle = fakeLifecycle();
     const worker = new AccountDeletionPurgeWorker({
+      billingSafety: {
+        assertStopped: async () => {},
+        withVerifiedStopped: async (_userId, action) => db.transaction((tx) => action(tx as never)),
+      },
       db: db as never,
       gmailLifecycle: lifecycle.access,
       topicName: null,
@@ -1036,6 +1093,11 @@ describe('mailbox indexed-data purge — initial-sync Redis artifacts (D245)', (
         .values({ mailboxAccountId: target.mailboxId })
         .returning({ id: mailboxDataDeletionRequests.id });
       const purgeWorker = new AccountDeletionPurgeWorker({
+        billingSafety: {
+          assertStopped: async () => {},
+          withVerifiedStopped: async (_userId, action) =>
+            db.transaction((tx) => action(tx as never)),
+        },
         db: db as never,
         gmailLifecycle: fakeLifecycle().access,
         topicName: TOPIC,
