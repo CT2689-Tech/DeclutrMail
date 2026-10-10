@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ANALYTICS_PRIVACY_CLAIM, tokens } from '@declutrmail/shared';
 import {
   CONSENT_CHANGE_EVENT,
   readStoredConsent,
@@ -10,7 +9,7 @@ import {
 } from '@/lib/cookie-consent';
 import { withdrawAnalyticsConsent } from '@/lib/posthog';
 
-const { color, radius } = tokens;
+import styles from './cookie-preference-controls.module.css';
 
 /**
  * Cookie preferences — the D147 banner's change/withdrawal counterpart
@@ -29,7 +28,7 @@ const { color, radius } = tokens;
  * effective state (decline by default), and selecting it makes the
  * decline explicit (which also retires the banner).
  */
-export function CookiePreferenceControls() {
+export function CookiePreferenceControls({ analyticsDetail }: { analyticsDetail: string }) {
   const [stored, setStored] = useState<CookieConsent | null>(null);
 
   // Storage is read post-mount, same as the banner — SSR and the first
@@ -65,7 +64,7 @@ export function CookiePreferenceControls() {
         checked={selected === 'all'}
         onSelect={select}
         title="Accept all"
-        detail={`Also allow PostHog analytics so we can see which features matter. ${ANALYTICS_PRIVACY_CLAIM}`}
+        detail={analyticsDetail}
       />
       <ConsentRadio
         value="essential"
@@ -92,19 +91,7 @@ function ConsentRadio({
   detail: string;
 }) {
   return (
-    <label
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        padding: '8px 10px',
-        background: checked ? color.primarySoft : color.card,
-        border: `1px solid ${checked ? color.primaryBorder : color.line}`,
-        borderRadius: radius.md,
-        cursor: 'pointer',
-        fontSize: 12.5,
-      }}
-    >
+    <label className={styles.option} data-selected={checked ? 'true' : 'false'}>
       <input
         type="radio"
         name="cookie-consent"
@@ -119,8 +106,8 @@ function ConsentRadio({
         onClick={() => onSelect(value)}
       />
       <span>
-        <span style={{ fontWeight: 600, color: color.fg }}>{title}</span>{' '}
-        <span style={{ color: color.fgMuted }}>— {detail}</span>
+        <span className={styles.title}>{title}</span>{' '}
+        <span className={styles.detail}>— {detail}</span>
       </span>
     </label>
   );

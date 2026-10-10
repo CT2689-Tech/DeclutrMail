@@ -1,9 +1,10 @@
-'use client';
-
 import type { CSSProperties, ReactNode } from 'react';
 import { color, radius, shadow } from '../tokens/tokens';
 
-/** The canonical surface — white card, hairline border, soft shadow. */
+/**
+ * The canonical surface — white card, hairline border, soft shadow.
+ * No client-only behavior: server-rendered guidance need not hydrate its frame.
+ */
 export function Card({
   children,
   padding = 16,

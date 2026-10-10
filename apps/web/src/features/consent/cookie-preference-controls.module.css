@@ -1,0 +1,22 @@
+.option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-line);
+  border-radius: var(--dm-radius-md);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+.option[data-selected='true'] {
+  background: var(--dm-primary-soft);
+  border-color: var(--dm-primary-border);
+}
+.title {
+  font-weight: 600;
+  color: var(--dm-fg);
+}
+.detail {
+  color: var(--dm-fg-muted);
+}

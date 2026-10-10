@@ -21,7 +21,11 @@ import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shar
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { Me } from '@/features/auth/api/use-me';
 import { PrivacyDataView } from './privacy-data-screen';
-import { PrivacyDataContent, PRIVACY_DATA_EXPORT_COPY } from './privacy-data-content';
+import {
+  PrivacyDataContent,
+  PrivacyDataFooter,
+  PRIVACY_DATA_EXPORT_COPY,
+} from './privacy-data-content';
 
 const mailbox = (id: string, email: string): Me['mailboxes'][number] => ({
   id,
@@ -40,6 +44,7 @@ function renderView(overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = 
   return render(
     <PrivacyDataView
       privacyContent={<PrivacyDataContent />}
+      footerContent={<PrivacyDataFooter />}
       exportCopy={PRIVACY_DATA_EXPORT_COPY}
       mailboxes={TWO_MAILBOXES}
       undoDays={30}
@@ -237,6 +242,7 @@ describe('PrivacyDataView', () => {
   it('keeps an opened native inventory disclosure through export state changes', async () => {
     const props = {
       privacyContent: <PrivacyDataContent />,
+      footerContent: <PrivacyDataFooter />,
       exportCopy: PRIVACY_DATA_EXPORT_COPY,
       mailboxes: TWO_MAILBOXES,
       undoDays: 30,
@@ -266,6 +272,7 @@ describe('PrivacyDataView', () => {
   it('updates an existing live region when preparation finishes', () => {
     const props = {
       privacyContent: <PrivacyDataContent />,
+      footerContent: <PrivacyDataFooter />,
       exportCopy: PRIVACY_DATA_EXPORT_COPY,
       mailboxes: TWO_MAILBOXES,
       undoDays: 30,
