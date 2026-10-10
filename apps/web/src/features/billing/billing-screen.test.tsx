@@ -1010,7 +1010,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
-    expect(assign).toHaveBeenCalledWith('/brief');
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/brief'));
     assign.mockRestore();
     // The lock lifts with the pending state — plan changes are
     // available again against the NEW tier.

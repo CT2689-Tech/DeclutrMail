@@ -2,16 +2,23 @@ import { expect, test } from '@playwright/test';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
 import { BILLING_SEED } from '../helpers/seed-billing';
+import { E2E_ENV } from '../helpers/env';
 
 // Only fixed synthetic rows in the isolated database. No provider calls.
 const fixture = BILLING_SEED;
-test.beforeEach(async () => {
+// Logout revokes its server session, so never inherit the suite’s shared session.
+test.use({ storageState: { cookies: [], origins: [] } });
+test.beforeEach(async ({ page }) => {
   const sql = dbConnect();
   try {
     await applyJourneySeed(sql);
   } finally {
     await sql.end();
   }
+  await page.goto(
+    `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: fixture.email })}`,
+  );
+  await expect(page).toHaveURL(`${E2E_ENV.webUrl}/home`);
 });
 test.afterEach(async () => {
   const sql = dbConnect();

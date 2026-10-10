@@ -218,7 +218,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
         respond: () => new Response(null, { status: 401 }),
       },
     ]);
-    vi.doMock('@declutrmail/shared/contracts/app-navigation', () => {
+    vi.doMock('./returning-sign-in', () => {
       throw new Error('Synthetic chunk failure');
     });
     try {
@@ -227,7 +227,7 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
       await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status: 401 });
       expect(assign).toHaveBeenCalledExactlyOnceWith('/sign-in?returning=1');
     } finally {
-      vi.doUnmock('@declutrmail/shared/contracts/app-navigation');
+      vi.doUnmock('./returning-sign-in');
     }
   });
 

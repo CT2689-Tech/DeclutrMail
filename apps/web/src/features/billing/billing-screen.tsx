@@ -335,11 +335,8 @@ export function BillingScreen({
       void queryClient.invalidateQueries();
       toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
       if (TIER_RANK[pending.toTier] > TIER_RANK[pending.fromTier]) {
-        void import('@declutrmail/shared/contracts/app-navigation')
-          .then(({ parseUpgradeReturnTo }) => {
-            const destination = parseUpgradeReturnTo(returnTo ?? initialIntent?.from);
-            if (destination) window.location.assign(destination);
-          })
+        void import('./return-after-upgrade')
+          .then(({ returnAfterUpgrade }) => returnAfterUpgrade(returnTo ?? initialIntent?.from))
           .catch(() => {
             // The plan is confirmed; Billing remains a usable fallback
             // when the optional return-navigation chunk is unavailable.
