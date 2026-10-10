@@ -68,6 +68,43 @@ export function matchesUpgradeCharge(
     Date.parse(transaction.createdAt) > Date.parse(end)
   )
     return false;
+  const mixed = transaction.mixedCycleSwap;
+  if (mixed) {
+    const { debit, credit } = mixed;
+    return (
+      transaction.lines === null &&
+      !transaction.unproratedSwap &&
+      intent.from_cycle !== intent.to_cycle &&
+      intent.prior.priceId !== intent.to_price_id &&
+      target.priceId === intent.to_price_id &&
+      sameInstant(mixed.periodStart, target.periodStart) &&
+      sameInstant(mixed.periodEnd, target.periodEnd) &&
+      Date.parse(mixed.periodStart) >= Date.parse(intent.requested_at) &&
+      Date.parse(mixed.periodStart) <= Date.parse(end) &&
+      Date.parse(mixed.periodStart) < Date.parse(mixed.periodEnd) &&
+      sameInstant(target.nextBilledAt, target.periodEnd) &&
+      sameInstant(intent.prior.nextBilledAt, intent.prior.periodEnd) &&
+      target.scheduledAction === null &&
+      intent.prior.scheduledAction === null &&
+      target.discountId === intent.prior.discountId &&
+      sameInstant(target.discountEndsAt, intent.prior.discountEndsAt) &&
+      debit.priceId === intent.to_price_id &&
+      debit.quantity === 1 &&
+      BigInt(debit.total) > 0n &&
+      credit.priceId === intent.prior.priceId &&
+      credit.quantity === -1 &&
+      BigInt(credit.total) < 0n &&
+      /^\d+(\.\d+)?$/.test(credit.rate) &&
+      Number.isFinite(Number(credit.rate)) &&
+      Number(credit.rate) > 0 &&
+      Number(credit.rate) <= 1 &&
+      Date.parse(credit.periodStart) >= Date.parse(intent.requested_at) &&
+      Date.parse(credit.periodStart) <= Date.parse(end) &&
+      Date.parse(credit.periodStart) >= Date.parse(intent.prior.periodStart) &&
+      Date.parse(credit.periodStart) < Date.parse(credit.periodEnd) &&
+      sameInstant(credit.periodEnd, intent.prior.periodEnd)
+    );
+  }
   const swap = transaction.unproratedSwap;
   if (swap) {
     if (
@@ -531,6 +568,10 @@ export class BillingUpgradeRefundService implements UpgradeRefundPolicy {
     const facts = await this.paddle.providerCancellationFacts(event.providerSubscriptionId);
     if (!facts || facts.settled !== null)
       return this.hold(event, 'other_refund_or_chargeback', intent.intent_id);
+    // Charge attribution does not prove safe date restoration. Every
+    // cross-cycle representation stops before any restore claim or preview.
+    if (intent.from_cycle !== intent.to_cycle)
+      return this.hold(event, 'original_renewal_requires_support', intent.intent_id);
     // Safe delivery may ship before cutover. Automatic financial writes remain
     // disabled until sandbox rehearsal and explicit live cutover approval.
     if (process.env.BILLING_UPGRADE_REFUND_RESTORE_ENABLED !== 'true')

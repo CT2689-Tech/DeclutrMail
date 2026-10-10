@@ -943,6 +943,84 @@ export class PaddleAdapter implements BillingProvider {
             })),
           }
         : null;
+    // GET 38091567643 confirms a full-period debit with a separately
+    // prorated prior-plan credit. Both arrays must agree; no invented rate.
+    const mixedCycleSwap = (() => {
+      if (
+        lines ||
+        unproratedSwap ||
+        !validInstant(t.billing_period?.starts_at) ||
+        !validInstant(t.billing_period?.ends_at) ||
+        Date.parse(t.billing_period.starts_at) >= Date.parse(t.billing_period.ends_at) ||
+        !Array.isArray(rawLines) ||
+        rawLines.length !== 2 ||
+        !Array.isArray(t.items) ||
+        t.items.length !== 2 ||
+        new Set(rawLines.map((l) => l.price_id)).size !== 2 ||
+        !rawLines.every(
+          (l) =>
+            typeof l.price_id === 'string' &&
+            typeof l.quantity === 'number' &&
+            Number.isInteger(l.quantity) &&
+            typeof l.totals?.total === 'string' &&
+            /^-?\d+$/.test(l.totals.total),
+        )
+      )
+        return null;
+      const debit = rawLines.find(
+        (l) => l.quantity === 1 && BigInt(l.totals!.total as string) > 0n && l.proration == null,
+      );
+      const credit = rawLines.find(
+        (l) => l.quantity === -1 && BigInt(l.totals!.total as string) < 0n && l.proration != null,
+      );
+      const p = credit?.proration;
+      if (
+        !debit ||
+        !credit ||
+        typeof p?.rate !== 'string' ||
+        !/^\d+(\.\d+)?$/.test(p.rate) ||
+        !Number.isFinite(Number(p.rate)) ||
+        Number(p.rate) <= 0 ||
+        Number(p.rate) > 1 ||
+        !validInstant(p.billing_period?.starts_at) ||
+        !validInstant(p.billing_period?.ends_at) ||
+        Date.parse(p.billing_period.starts_at) >= Date.parse(p.billing_period.ends_at) ||
+        t.items.filter(
+          (item) =>
+            item.price?.id === debit.price_id && item.quantity === 1 && item.proration == null,
+        ).length !== 1
+      )
+        return null;
+      const items = t.items.filter(
+        (item) => item.price?.id === credit.price_id && item.quantity === -1,
+      );
+      const itemProration = items[0]?.proration as typeof p | undefined;
+      if (
+        items.length !== 1 ||
+        !itemProration ||
+        itemProration.rate !== p.rate ||
+        itemProration.billing_period?.starts_at !== p.billing_period.starts_at ||
+        itemProration.billing_period?.ends_at !== p.billing_period.ends_at
+      )
+        return null;
+      return {
+        periodStart: t.billing_period.starts_at,
+        periodEnd: t.billing_period.ends_at,
+        debit: {
+          priceId: debit.price_id as string,
+          quantity: debit.quantity as number,
+          total: debit.totals!.total as string,
+        },
+        credit: {
+          priceId: credit.price_id as string,
+          quantity: credit.quantity as number,
+          total: credit.totals!.total as string,
+          rate: p.rate,
+          periodStart: p.billing_period.starts_at,
+          periodEnd: p.billing_period.ends_at,
+        },
+      };
+    })();
     return {
       id,
       subscriptionId: t.subscription_id,
@@ -954,6 +1032,7 @@ export class PaddleAdapter implements BillingProvider {
       createdAt: validInstant(t.created_at) ? t.created_at : null,
       lines,
       ...(unproratedSwap ? { unproratedSwap } : {}),
+      ...(mixedCycleSwap ? { mixedCycleSwap } : {}),
     };
   }
 
