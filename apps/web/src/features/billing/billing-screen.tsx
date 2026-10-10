@@ -148,8 +148,10 @@ export function BillingScreen({
   initialIntent = null,
   initialProvider = 'paddle',
   invoiceHistory,
+  returnTo,
 }: {
   initialIntent?: BillingIntent | null;
+  returnTo?: string | undefined;
   /** Geo-derived default rail (D117); the radio still overrides it. */
   initialProvider?: BillingProviderId;
   /** Optional server-streamed invoice section; stories retain the local fallback. */
@@ -332,6 +334,14 @@ export function BillingScreen({
       void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
       void queryClient.invalidateQueries();
       toast(`Plan updated — you're on ${TIER_MANIFEST[data.tier].name}.`, 'success');
+      if (TIER_RANK[pending.toTier] > TIER_RANK[pending.fromTier]) {
+        void import('./return-after-upgrade')
+          .then(({ returnAfterUpgrade }) => returnAfterUpgrade(returnTo ?? initialIntent?.from))
+          .catch(() => {
+            // The plan is confirmed; Billing remains a usable fallback
+            // when the optional return-navigation chunk is unavailable.
+          });
+      }
     }
   }, [
     pending,
@@ -340,6 +350,8 @@ export function BillingScreen({
     subscriptionQuery.isFetching,
     queryClient,
     workspaceId,
+    returnTo,
+    initialIntent?.from,
   ]);
 
   // "Usually within a minute" needs a state for when it isn't (§8 —

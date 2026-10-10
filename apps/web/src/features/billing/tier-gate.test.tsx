@@ -8,6 +8,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 let mockTier = 'free';
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/senders',
+  useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
+}));
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -58,11 +62,14 @@ describe('TierGate', () => {
     // D19 manifest price + D121 note, no hardcoded dollars in the gate.
     expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly',
+      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
     // The money-back note appears exactly once.
     expect(screen.getAllByText(/30-day money-back guarantee/)).toHaveLength(1);
-    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute(
+      'href',
+      '/billing?from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+    );
     expect(screen.queryByTestId('gated-child')).not.toBeInTheDocument();
     expect(childMounted()).toBe(false);
   });
@@ -89,7 +96,7 @@ describe('TierGate', () => {
     // the manifest, so this assertion moves with the ladder by construction.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 

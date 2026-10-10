@@ -323,6 +323,7 @@ function toNormalizedSubscription(
     providerCustomerId: sub.customer_id ?? null,
     providerPriceId: priceId,
     status,
+    foundingAllocationEligible: sub.status === 'active' || sub.status === 'past_due',
     currentPeriodEnd: sub.current_billing_period?.ends_at ?? null,
     cancelAtPeriodEnd: scheduledCancel,
     // D118 — paused subscriptions resume via scheduled_change; Paddle
@@ -1049,6 +1050,17 @@ export class PaddleAdapter implements BillingProvider {
       noBill: preview ? noBill : true,
       nextBilledAt: validInstant(d?.next_billed_at) ? d.next_billed_at : null,
     };
+  }
+
+  /** Deletion safety reads raw provider status, not local entitlement status. */
+  async deletionBillingState(id: string): Promise<'stopped' | 'billable' | 'unknown'> {
+    const body = await this.authedGet(`/subscriptions/${encodeURIComponent(id)}`, `sub=${id}`);
+    const sub = (body as { data?: { id?: string; status?: string } } | null)?.data;
+    if (sub?.id !== id || typeof sub.status !== 'string') return 'unknown';
+    if (sub.status === 'canceled') return 'stopped';
+    return ['active', 'past_due', 'paused', 'trialing'].includes(sub.status)
+      ? 'billable'
+      : 'unknown';
   }
 
   /** D249 — GET /subscriptions/{id}. See FetchSubscriptionResult. */

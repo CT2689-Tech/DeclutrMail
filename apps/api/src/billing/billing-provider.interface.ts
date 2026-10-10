@@ -193,6 +193,9 @@ export interface NormalizedSubscription {
    * candidates that predate the claim; webhook mappings may omit it.
    */
   providerCreatedAt?: string | null;
+  /** Raw pre-payment/trial states must not allocate a NEW Founding seat.
+   * Optional for older synthetic projections during a rolling deployment. */
+  foundingAllocationEligible?: boolean;
 }
 
 /** D249 — what a provider-truth subscription read actually found. */

@@ -75,8 +75,7 @@ import type { UpgradeRefundPolicy } from './upgrade-refund.types.js';
 import { appendUpgradeRecord, intentEvidence } from './upgrade-intents.js';
 export { lockSubscription } from './subscription-lock.js';
 
-/** Advisory-lock key for the D126 founding counter (arbitrary, unique). */
-const FOUNDING_LOCK_KEY = 117_126;
+import { claimFoundingRedemption, recordFoundingRedemption } from './founding-redemptions.js';
 
 /** Statuses that grant their tier (see header — paused grants nothing).
  *  Exported for the D249 reconciler, whose candidate filter must be the
@@ -224,6 +223,9 @@ export function projectWebhookPayload(
       projected.current_period_end = sub.currentPeriodEnd;
       projected.cancel_at_period_end = sub.cancelAtPeriodEnd;
       projected.pause_until = sub.pauseUntil;
+      if (sub.foundingAllocationEligible !== undefined) {
+        projected.founding_allocation_eligible = sub.foundingAllocationEligible;
+      }
       projected.workspace_id = sub.workspaceId;
       if (event.upgradeRefundRestoration) {
         projected.upgrade_refund_intent_id = event.upgradeRefundRestoration.intentId;
@@ -641,6 +643,7 @@ export class BillingWebhookService {
             cancelSource: subscriptions.cancelSource,
             entitlementEndsAt: subscriptions.entitlementEndsAt,
             cancelAtPeriodEnd: subscriptions.cancelAtPeriodEnd,
+            foundingMember: subscriptions.foundingMember,
           })
           .from(subscriptions)
           .where(
@@ -811,33 +814,27 @@ export class BillingWebhookService {
             .onConflictDoNothing();
         }
 
-        // D126 founding assignment — advisory lock + count, race-safe.
+        // Preserve an existing allocation even if this snapshot changes price.
+        if (current?.foundingMember) {
+          await recordFoundingRedemption(tx, provider, sub.providerSubscriptionId);
+        }
+        // D126: permanent allocation, serialized under the original global cap lock.
         let founding = false;
         if (entry.founding) {
-          const [existing] = await tx
-            .select({ foundingMember: subscriptions.foundingMember })
-            .from(subscriptions)
-            .where(
-              and(
-                eq(subscriptions.provider, provider),
-                eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
-              ),
-            )
-            .limit(1);
-          if (existing?.foundingMember) {
-            founding = true; // already claimed — replays never re-count
-          } else {
-            await tx.execute(sql`SELECT pg_advisory_xact_lock(${FOUNDING_LOCK_KEY})`);
-            const [row] = await tx
-              .select({ count: sql<number>`count(*)::int` })
-              .from(subscriptions)
-              .where(eq(subscriptions.foundingMember, true));
-            founding = (row?.count ?? 0) < this.catalog.foundingMaxRedemptions;
-            if (!founding) {
-              this.logger.warn(
-                `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
-              );
-            }
+          const eligible =
+            (sub.status === 'active' || sub.status === 'past_due') &&
+            sub.foundingAllocationEligible !== false;
+          founding = await claimFoundingRedemption(
+            tx,
+            provider,
+            sub.providerSubscriptionId,
+            this.catalog.foundingMaxRedemptions,
+            eligible,
+          );
+          if (!founding && eligible) {
+            this.logger.warn(
+              `billing.founding.sold_out_purchase sub=${sub.providerSubscriptionId} — pro_annual_founding past 250, granting pro without price-lock flag`,
+            );
           }
         }
 

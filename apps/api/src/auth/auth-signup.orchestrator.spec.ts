@@ -29,6 +29,7 @@ import { EmailRaceLostError } from '../users/users.service.js';
 describe('AuthSignupOrchestrator.connect — identity resolution', () => {
   let users: {
     findByEmail: ReturnType<typeof vi.fn>;
+    findById: ReturnType<typeof vi.fn>;
     insertWorkspaceAndUser: ReturnType<typeof vi.fn>;
     patchPreferences: ReturnType<typeof vi.fn>;
   };
@@ -51,6 +52,7 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
   beforeEach(() => {
     users = {
       findByEmail: vi.fn(),
+      findById: vi.fn().mockResolvedValue({ onboardedAt: '2026-01-01T00:00:00Z' }),
       insertWorkspaceAndUser: vi.fn(),
       patchPreferences: vi.fn().mockResolvedValue(undefined),
     };

@@ -725,6 +725,24 @@ export class RazorpayAdapter implements BillingProvider {
     }
   }
 
+  /** `halted` may recover: it is never deletion-safe cancellation evidence. */
+  async deletionBillingState(id: string): Promise<'stopped' | 'billable' | 'unknown'> {
+    const res = await fetch(`${API_BASE}/v1/subscriptions/${encodeURIComponent(id)}`, {
+      headers: { Authorization: this.authHeader() },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    });
+    if (res.status === 404) return 'unknown';
+    if (!res.ok) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const sub = (await res.json()) as { id?: string; status?: string };
+    if (sub.id !== id || typeof sub.status !== 'string') return 'unknown';
+    if (['cancelled', 'completed', 'expired'].includes(sub.status)) return 'stopped';
+    return ['created', 'authenticated', 'active', 'pending', 'halted', 'paused'].includes(
+      sub.status,
+    )
+      ? 'billable'
+      : 'unknown';
+  }
+
   /** D249 — GET /v1/subscriptions/{id}. See FetchSubscriptionResult. */
   async fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult> {
     const auth = this.authHeader();

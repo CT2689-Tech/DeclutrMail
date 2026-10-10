@@ -200,11 +200,11 @@ function stubSubscription(respond: () => Response | Promise<Response>) {
   installFetchStub([{ method: 'GET', path: '/api/billing/subscription', respond }]);
 }
 
-function renderScreen(initialIntent: BillingIntent | null = null) {
+function renderScreen(initialIntent: BillingIntent | null = null, returnTo?: string) {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <BillingScreen initialIntent={initialIntent} />
+      <BillingScreen initialIntent={initialIntent} returnTo={returnTo} />
     </QueryWrapper>,
   );
 }
@@ -967,7 +967,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
           }),
       },
     ]);
-    renderScreen();
+    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+    renderScreen(null, '/brief');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
@@ -996,6 +997,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Switch to Free' })).not.toBeInTheDocument();
 
+    expect(assign).not.toHaveBeenCalled();
+
     // "Webhook lands": the server now reports pro — the immediate
     // post-completion refetch picks it up and the pending state clears.
     subscriptionBody = {
@@ -1007,6 +1010,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('/brief'));
+    assign.mockRestore();
     // The lock lifts with the pending state — plan changes are
     // available again against the NEW tier.
     expect(screen.getByRole('button', { name: 'Switch to Free' })).toBeInTheDocument();
@@ -1106,6 +1111,37 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('deletion refusal releases the local checkout reservation before any provider launch', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'CHECKOUT_DELETION_PENDING', message: 'Deletion pending' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    expect(await within(panel).findByRole('alert')).toHaveTextContent(
+      'Cancel deletion in Settings',
+    );
+    expect(launchCheckout).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
   it('checkout 409 SUBSCRIPTION_EXISTS renders its shared inline message', async () => {

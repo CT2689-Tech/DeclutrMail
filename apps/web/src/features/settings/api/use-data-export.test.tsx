@@ -94,6 +94,7 @@ describe('useDataExport — expired session', () => {
   });
 
   it('routes a dead session to re-auth rather than leaving the rate-limit banner up', async () => {
+    window.history.replaceState(null, '', '/settings/privacy');
     const assignSpy = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
     installFetchStub([
       { method: 'GET', path: '/api/account/export', respond: () => unauthorized() },
@@ -108,7 +109,9 @@ describe('useDataExport — expired session', () => {
     result.current.mutate('decisions-csv');
 
     await waitFor(() => expect(assignSpy).toHaveBeenCalledTimes(1));
-    expect(String(assignSpy.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
+    expect(String(assignSpy.mock.calls[0]?.[0])).toBe(
+      '/sign-in?returning=1&returnTo=%2Fsettings%2Fprivacy',
+    );
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(clickSpy).not.toHaveBeenCalled();
   });

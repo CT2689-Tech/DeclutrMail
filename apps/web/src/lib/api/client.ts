@@ -19,8 +19,8 @@
  *   4. 401 retry-once-via-refresh: a single rotation through
  *      `POST /api/auth/refresh` is attempted on the first 401. A second
  *      401 — whether the refresh failed outright or its replay 401'd
- *      again — is terminal: this module redirects to the OAuth start
- *      endpoint itself (`redirectToLogin`, idempotent) before throwing
+ *      again — is terminal: this module redirects to returning sign-in
+ *      (`redirectToLogin`, idempotent) before throwing
  *      the `ApiError`. Callers never need their own redirect for this.
  *   5. Parse the D202 envelope. Successful responses unwrap to
  *      `Envelope<T>` so callers receive the raw `data` plus optional
@@ -29,7 +29,7 @@
  *      TanStack Query) can branch on `error instanceof ApiError`.
  */
 
-import type { Envelope } from '@declutrmail/shared/contracts';
+import { type Envelope } from '@declutrmail/shared/contracts';
 
 /** Resolves the API base URL from the public env var. Empty string allows path-only fetches. */
 function getApiBaseUrl(): string {
@@ -254,7 +254,7 @@ async function apiRequest<T>(
       // was removed in favor of trusting this one. `redirectToLogin` is
       // idempotent within a tick so concurrent terminal-401s don't stack
       // navigations.
-      if (!options.suppressAuthRedirect) redirectToLogin();
+      if (!options.suppressAuthRedirect) await redirectToLogin();
     }
     throw new ApiError(
       res.status,
@@ -325,21 +325,33 @@ async function attemptRefresh(): Promise<boolean> {
  */
 export async function recoverFromUnauthorized(alreadyRetried = false): Promise<boolean> {
   if (!alreadyRetried && (await attemptRefresh())) return true;
-  redirectToLogin();
+  await redirectToLogin();
   return false;
 }
 
 /** Guards against stacking navigations when several requests 401 at once. */
-let redirecting = false;
+let redirecting: false | 'login' | 'logout' = false;
+
+/** Reserve the intentional logout destination before clearing the query cache. */
+export function redirectAfterLogout(): void {
+  if (typeof window === 'undefined') return;
+  redirecting = 'logout';
+  window.location.assign('/sign-in?signed_out=1');
+}
 
 /**
- * Hard-navigate to the OAuth start endpoint. Called on a terminal 401
+ * Hard-navigate to the returning sign-in screen with the original app URL. Called on a terminal 401
  * (access expired AND refresh failed) so a dead session surfaces as a
  * re-login instead of a silent failure. No-op in SSR.
  */
-function redirectToLogin(): void {
+async function redirectToLogin(): Promise<void> {
   if (redirecting || typeof window === 'undefined') return;
-  redirecting = true;
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-  window.location.assign(`${apiBase}/api/auth/google/start`);
+  redirecting = 'login';
+  let target = '/sign-in?returning=1';
+  try {
+    target = (await import('./returning-sign-in')).returningSignInPath();
+  } catch {
+    // A missing chunk drops context, never the way back into the app.
+  }
+  if (redirecting === 'login') window.location.assign(target);
 }

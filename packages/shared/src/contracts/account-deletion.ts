@@ -81,5 +81,7 @@ export type AccountDeletionPending = z.infer<typeof AccountDeletionPendingSchema
 export const AccountDeletionStatusSchema = z.object({
   request: AccountDeletionPendingSchema.nullable(),
   projection: AccountDeletionProjectionSchema,
+  // Optional for rolling frontend/API deployments; POST always enforces safety.
+  billingBlockReason: z.enum(['subscription', 'checkout', 'verification']).nullable().optional(),
 });
 export type AccountDeletionStatus = z.infer<typeof AccountDeletionStatusSchema>;

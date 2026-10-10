@@ -1,5 +1,7 @@
 'use client';
 
+import { OnboardingAccountLinks } from './onboarding-account-links';
+
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 import { OnboardingPhase } from './onboarding-phase';
 
@@ -571,6 +573,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       >
         <OnboardingPhase phase="scan" />
         {children}
+        <OnboardingAccountLinks />
       </div>
     </main>
   );

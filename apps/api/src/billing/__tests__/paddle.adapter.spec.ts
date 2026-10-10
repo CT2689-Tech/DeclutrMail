@@ -1413,3 +1413,48 @@ describe('PaddleAdapter exact upgrade-charge evidence', () => {
     );
   });
 });
+
+describe('Paddle deletion billing evidence', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([
+    ['canceled', 'stopped'],
+    ['active', 'billable'],
+    ['paused', 'billable'],
+    ['past_due', 'billable'],
+    ['future_status', 'unknown'],
+  ])('classifies raw %s as %s', async (status, expected) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(new Response(JSON.stringify({ data: { id: 'sub_delete', status } }))),
+    );
+    expect(
+      await makeAdapter({
+        PADDLE_API_KEY: 'sandbox_test',
+        PADDLE_ENV: 'sandbox',
+      }).deletionBillingState('sub_delete'),
+    ).toBe(expected);
+  });
+  it.each([null, { id: 'other', status: 'canceled' }, { id: 'sub_delete' }])(
+    'does not accept missing or malformed evidence %j',
+    async (data) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            data === null
+              ? new Response('', { status: 404 })
+              : new Response(JSON.stringify({ data })),
+          ),
+      );
+      expect(
+        await makeAdapter({
+          PADDLE_API_KEY: 'sandbox_test',
+          PADDLE_ENV: 'sandbox',
+        }).deletionBillingState('sub_delete'),
+      ).toBe('unknown');
+    },
+  );
+});

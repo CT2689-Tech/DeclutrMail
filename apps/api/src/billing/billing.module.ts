@@ -26,6 +26,7 @@ import { AutopilotModule } from '../autopilot/autopilot.module.js';
 import { BillingPaddleWebhookController } from '../webhooks/billing-paddle.controller.js';
 import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.controller.js';
 import { BillingCatalog } from './billing-catalog.js';
+import { BillingDeletionGuard } from './billing-deletion-guard.js';
 import { BillingController } from './billing.controller.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { BillingService } from './billing.service.js';
@@ -46,6 +47,7 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
   ],
   providers: [
     BillingService,
+    BillingDeletionGuard,
     BillingWebhookService,
     BillingReconciliationService,
     BillingUpgradeRefundService,
@@ -55,6 +57,6 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
     { provide: PaddleAdapter, useFactory: (): PaddleAdapter => new PaddleAdapter() },
     { provide: RazorpayAdapter, useFactory: (): RazorpayAdapter => new RazorpayAdapter() },
   ],
-  exports: [BillingService],
+  exports: [BillingService, BillingDeletionGuard],
 })
 export class BillingModule {}

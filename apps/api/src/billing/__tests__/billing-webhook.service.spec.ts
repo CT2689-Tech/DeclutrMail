@@ -747,6 +747,27 @@ describe('BillingWebhookService.process', () => {
     expect(after.filter((s) => s.foundingMember)).toHaveLength(2);
   });
 
+  it('does not permanently allocate a Founding seat for Paddle trialing, but allocates after activation', async () => {
+    const trial = paddleSubscriptionActivated({
+      workspaceId,
+      priceId: TEST_PRICE_IDS.paddle.pro_annual_founding,
+      eventId: 'evt_founding_trial',
+    });
+    (trial.data as Record<string, unknown>).status = 'trialing';
+    await service.process('paddle', paddle.mapWebhookEvent(trial), trial);
+    const [trialRow] = await db.select().from(subscriptions);
+    expect(trialRow!.foundingMember).toBe(false);
+    const activated = paddleSubscriptionActivated({
+      workspaceId,
+      priceId: TEST_PRICE_IDS.paddle.pro_annual_founding,
+      eventId: 'evt_founding_activated',
+    });
+    activated.occurred_at = '2026-06-11T10:01:00.000000Z';
+    await service.process('paddle', paddle.mapWebhookEvent(activated), activated);
+    const [paidRow] = await db.select().from(subscriptions);
+    expect(paidRow!.foundingMember).toBe(true);
+  });
+
   // 2026-08-25. This assertion is INVERTED from what it was, and the old
   // version was not wrong when it was written — it pinned the founder's
   // 2026-07-31 rule that a refund stops the service at once.

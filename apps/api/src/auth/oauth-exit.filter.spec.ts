@@ -112,6 +112,17 @@ describe('OAuth exit filters', () => {
       expect(JSON.stringify(res.redirect.mock.calls)).not.toContain('private');
     });
 
+    it('preserves a settings recovery link after a failed login start', () => {
+      const res = run(
+        new LoginStartExitFilter(),
+        new BadRequestException(),
+        fakeRequest({ query: { returnTo: '/settings?cancelDeletion=1#account' } }),
+      );
+      const redirect = new URL(res.redirect.mock.calls[0]![1] as string);
+      expect(redirect.pathname).toBe('/sign-in');
+      expect(redirect.searchParams.get('returnTo')).toBe('/settings?cancelDeletion=1#account');
+    });
+
     it('drops a forged returnTo instead of leaving the site', () => {
       const res = run(
         new LoginStartExitFilter(),

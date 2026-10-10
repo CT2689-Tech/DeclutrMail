@@ -1,5 +1,6 @@
 import { legacyUpgradePolicy } from './fixtures.js';
 import {
+  accountDeletionRequests,
   billingCustomers,
   pendingCheckouts,
   subscriptionEvents,
@@ -184,6 +185,32 @@ describe('BillingService', () => {
       .values({ workspaceId: ws!.id, email: 'buyer@example.com' })
       .returning({ id: users.id });
     principal = { userId: user!.id, workspaceId: ws!.id };
+  });
+
+  it('rejects checkout during pending deletion before contacting the provider', async () => {
+    await db
+      .insert(accountDeletionRequests)
+      .values({ userId: principal.userId, effectiveAt: new Date(), basis: 'flat-grace' });
+    await expect(
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_DELETION_PENDING' });
+    expect(paddleCheckout).not.toHaveBeenCalled();
+    expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
+  });
+
+  it('retains every attempt when a claim is released or replaced after expiry', async () => {
+    const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
+    await service.createCheckout(principal, dto);
+    await service.releasePendingCheckout(principal.workspaceId);
+    await service.createCheckout(principal, dto);
+    await db.update(pendingCheckouts).set({ expiresAt: new Date(0) });
+    await service.createCheckout(principal, dto);
+    const attempts = await db
+      .select()
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.eventType, 'local.checkout_attempted'));
+    expect(attempts).toHaveLength(3);
+    expect(new Set(attempts.map((row) => row.providerEventId)).size).toBe(3);
   });
 
   it('checkout resolves the catalog price, records billing_region, delegates to the adapter', async () => {

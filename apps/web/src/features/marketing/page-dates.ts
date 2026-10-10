@@ -6,7 +6,7 @@
  * gets no sitemap `lastmod` — never a build-time date.
  */
 export const PAGE_LAST_UPDATED = {
-  '/privacy': '2026-09-19',
+  '/privacy': '2026-10-10',
   '/cookies': '2026-09-18',
   '/help': '2026-10-10',
   '/security': '2026-08-07',
